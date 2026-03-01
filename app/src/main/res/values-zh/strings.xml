@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <resources>
-  <string name="about_page_github">Github</string>
+    <string name="chat_page_title">对话</string>
+    <string name="about_page_github">Github</string>
   <string name="about_page_license">License</string>
   <string name="about_page_system">系统</string>
   <string name="about_page_title">关于</string>
@@ -781,5 +782,106 @@
   <string name="assistant_lorebooks_desc">选择该角色使用的设定集</string>
   <string name="assistant_lorebooks_empty">未配置任何设定集</string>
   <string name="assistant_lorebooks_empty_hint">在 设置 → 提示词注入 → 设定集 中创建 Lorebook</string>
+  <!-- Python Engine Tools -->
+  <string name="assistant_page_local_tools_python_engine_title">Python 引擎</string>
+  <string name="chat_message_tool_python_eval">正在运行 Python</string>
+  <string name="chat_message_tool_python_pip">正在安装依赖包</string>
+  <string name="chat_message_tool_python_write_file">写入文件: %1$s</string>
+  <string name="chat_message_tool_python_read_file">读取文件: %1$s</string>
+  <string name="chat_message_tool_python_list_files">列出沙盒文件</string>
+  <string name="chat_message_tool_python_delete_file">删除文件: %1$s</string>
+  <string name="chat_message_tool_python_import">导入附件</string>
+  <string name="chat_message_tool_python_output">输出</string>
+
+  <!-- UI Display -->
+  <string name="setting_display_page_show_assistant_bubbles_title">显示助手对话气泡</string>
+  <string name="setting_display_page_show_assistant_bubbles_desc">在助手的消息周围显示聊天气泡</string>
+  <string name="setting_provider_page_add_from_list">从列表添加</string>
+
+  <!-- Context Management -->
+  <string name="context_search_results_title">搜索结果</string>
+  <string name="context_max_search_results">保留最近 %d 次搜索</string>
+  <string name="context_max_search_results_desc">限制保留的搜索结果数量 (0 = 无限制)</string>
+  <string name="context_max_search_results_value">%d 次搜索</string>
+
+  <!-- Message Summarization (Context Refresh) -->
+  <string name="context_max_search_results_unlimited">无限制</string>
+  <string name="context_refresh_desc">将对话压缩为摘要以释放上下文空间</string>
+  <string name="context_refresh_enable">启用消息总结</string>
+  <string name="context_refresh_enable_desc">在聊天输入栏显示总结按钮</string>
+  <string name="context_refresh_messages">将总结 %d 条消息</string>
+  <string name="context_refresh_tokens">预计消耗 ~%d tokens</string>
+  <string name="context_refresh_loading">正在总结对话…</string>
+  <string name="context_refresh_complete">消息已总结！</string>
+  <string name="context_refresh_cleaned">已总结 %d 条消息</string>
+  <string name="context_refresh_last">上次总结: %s</string>
+  <string name="minimal_input_summarize">总结</string>
+  <string name="minimal_input_summarize_desc">总结对话</string>
+  <string name="minimal_input_lorebooks">设定集</string>
+  <string name="minimal_input_modes">模式</string>
+  <string name="minimal_input_thinking_desc">思考更久，获得更好的回答</string>
+  <string name="minimal_input_search">搜索</string>
+  <string name="minimal_input_photos">照片</string>
+  <string name="minimal_input_files">文件</string>
+  <string name="setting_chat_input_style_minimal">" 极简模式"</string>
+  <string name="minimal_input_camera">相机</string>
+  <string name="assistant_lorebooks_enabled">"启用 %d "</string>
+  <string name="context_management_title">\t上下文管理</string>
+  <string name="context_management_desc">设定集,聊天记录,搜索结果</string>
+  <string name="context_lorebooks_title">设定集</string>
+  <string name="context_message_history_title">消息历史</string>
+  <string name="text_selection_explain">解释</string>
+  <string name="text_selection_summarize">总结</string>
+  <string name="text_selection_copy">复制</string>
+  <string name="text_selection_assistant">角色</string>
+  <string name="text_selection_use_default">使用默认角色</string>
+  <string name="text_selection_translate_language">翻译为</string>
+  <string name="text_selection_action_prompt">提示词模板</string>
+  <string name="greeting_early_morning">起床啦，太阳晒屁股啦！</string>
+  <string name="greeting_lunch_time">午餐时间！</string>
+  <string name="greeting_late_evening">准备休息了吗？</string>
+  <string name="greeting_early_hours">还没睡吗？快去休息吧。</string>
+  <string name="new_chat_template_write">写作</string>
+  <string name="new_chat_template_write_prompt">帮我写作</string>
+  <string name="new_chat_template_code">代码</string>
+  <string name="new_chat_template_code_prompt">帮我写代码</string>
+  <string name="new_chat_template_brainstorm">头脑风暴</string>
+  <string name="time_label_daytime_chatter">日间闲聊</string>
+  <string name="time_label_night_owl">熬夜党</string>
+  <string name="setting_ui_customization_title">自定义UI</string>
+  <string name="setting_chat_input_style">输入样式</string>
+  <string name="new_chat_stat_avg_messages">日均</string>
+  <string name="new_chat_stat_most_used_model">首选模型</string>
+  <string name="time_label_early_bird">早起党</string>
+  <string name="new_chat_stat_streak">"连续天数 "</string>
+  <string name="new_chat_stat_days">天</string>
+  <string name="new_chat_stat_total_chats">对话数</string>
+  <string name="new_chat_action_create_image">生成图片</string>
+  <string name="new_chat_action_translate">翻译</string>
+  <string name="new_chat_action_more">更多</string>
+  <string name="setting_new_chat_header_big_icon">助手</string>
+  <string name="setting_new_chat_header">标题栏</string>
+  <string name="new_chat_template_learn_prompt">解释</string>
+  <string name="use_global">使用全局配置</string>
+  <string name="context_refresh_no_summarizer">先在设置里配置一个摘要模型</string>
+  <string name="context_refresh_confirm_title">是否总结消息？</string>
+  <string name="context_refresh_never">永不总结</string>
+  <string name="context_refresh_button">总结消息</string>
+  <string name="chat_message_tool_python_code">代码</string>
+  <string name="context_max_messages">最大上下文条数</string>
+  <string name="context_enable_summarization">总结较早的消息</string>
+  <string name="context_enable_summarization_desc">生成精简摘要，以保留上下文</string>
+  <string name="export_format_sillytavern">傻瓜酒馆（SillyTavern）</string>
+  <string name="export_format_tavern">酒馆（兼容）</string>
+  <string name="text_selection_translate">翻译</string>
+  <string name="setting_android_integration">安卓端集成</string>
+  <string name="minimal_input_thinking">思考中</string>
+  <string name="setting_chat_input_style_desc">消息输入栏的外观</string>
+  <string name="setting_new_chat_content_templates">模板</string>
+  <string name="setting_new_chat_content_stats">数据</string>
+  <string name="new_chat_template_brainstorm_prompt">我们来一起想想关于……</string>
+  <string name="new_chat_template_learn">学习</string>
+  <string name="context_refresh_confirm_message">这会把你的对话历史总结成精简格式。 AI 会记住关键要点，但详细的消息会被摘要替代。</string>
+  <string name="lorebook_export_success">设定集（Lorebook）导出成功</string>
 </resources>
 

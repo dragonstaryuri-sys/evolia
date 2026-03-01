@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -13,6 +14,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +62,7 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.AssistantAffectScope
 import me.rerere.rikkahub.data.model.MessageNode
@@ -73,6 +76,7 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.formatNumber
 import me.rerere.rikkahub.utils.copyMessageToClipboard
@@ -91,19 +95,19 @@ data class MessageTurnGroup(
 ) {
     val firstNode get() = nodes.first()
     val lastNode get() = nodes.last()
-    
+
     /** Node with the most message versions - used for version switching controls */
     val nodeWithMostVersions get() = nodes.maxByOrNull { it.messages.size } ?: lastNode
-    
+
     /** The active versionTag from the first node's current message */
     val activeVersionTag: String? get() = firstNode.currentMessage.versionTag
-    
-    /** 
+
+    /**
      * Nodes filtered to only include those with a message matching the active versionTag.
-     * For backwards compatibility, if no versionTag exists on the active version, 
+     * For backwards compatibility, if no versionTag exists on the active version,
      * we show nodes that have at least one null-tagged message (pre-versioning nodes).
-     * 
-     * IMPORTANT: This returns nodes with their selectIndex adjusted to point to the 
+     *
+     * IMPORTANT: This returns nodes with their selectIndex adjusted to point to the
      * message matching the active versionTag, not the original currentMessage.
      */
     val filteredNodes: List<MessageNode> get() {
@@ -125,10 +129,10 @@ data class MessageTurnGroup(
             }
         }
     }
-    
+
     /** All message parts from filtered nodes in the group */
     val allParts: List<UIMessagePart> get() = filteredNodes.flatMap { it.currentMessage.parts }
-    
+
     /** Combined token usage for filtered messages in the group */
     val combinedUsage: TokenUsage? get() {
         val usages = filteredNodes.mapNotNull { it.currentMessage.usage }
@@ -140,7 +144,7 @@ data class MessageTurnGroup(
             cachedTokens = usages.sumOf { it.cachedTokens }
         )
     }
-    
+
     /** Combined generation duration for filtered messages */
     val combinedGenerationDurationMs: Long? get() {
         val durations = filteredNodes.mapNotNull { it.currentMessage.generationDurationMs }
@@ -154,22 +158,22 @@ data class MessageTurnGroup(
  */
 fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     if (isEmpty()) return emptyList()
-    
+
     val groups = mutableListOf<MessageTurnGroup>()
     var currentGroup = mutableListOf<MessageNode>()
     var currentGroupRole: MessageRole? = null  // The "logical" role for grouping
-    
+
     // Helper to determine the logical role for grouping:
     // TOOL messages belong to ASSISTANT turn, others are their own role
     fun getGroupingRole(role: MessageRole): MessageRole = when (role) {
         MessageRole.TOOL -> MessageRole.ASSISTANT
         else -> role
     }
-    
+
     forEach { node ->
         val nodeRole = node.currentMessage.role
         val logicalRole = getGroupingRole(nodeRole)
-        
+
         // Start a new group if logical role changes
         if (logicalRole != currentGroupRole && currentGroup.isNotEmpty()) {
             groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
@@ -178,11 +182,11 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         currentGroup.add(node)
         currentGroupRole = logicalRole
     }
-    
+
     if (currentGroup.isNotEmpty() && currentGroupRole != null) {
         groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
     }
-    
+
     return groups
 }
 
@@ -192,18 +196,18 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
 private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry> {
     val entries = mutableListOf<TimelineEntry>()
     val memoryTools = setOf("create_memory", "edit_memory", "delete_memory")
-    
+
     // Find tool results to match with tool calls
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
         .associateBy { it.toolCallId }
-    
+
     parts.forEach { part ->
         when (part) {
             is UIMessagePart.Reasoning -> {
                 val durationMs = if (part.finishedAt != null) {
                     (part.finishedAt!! - part.createdAt).inWholeMilliseconds
                 } else 0L
-                
+
                 entries.add(TimelineEntry.Reasoning(
                     id = "reasoning_${entries.size}",
                     content = part.reasoning,
@@ -234,7 +238,7 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
             else -> {}
         }
     }
-    
+
     return entries
 }
 
@@ -306,18 +310,18 @@ private fun deriveActivityState(
 ): ActivityState {
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
         .associateBy { it.toolCallId }
-    
+
     val reasoningParts = parts.filterIsInstance<UIMessagePart.Reasoning>()
     val toolCalls = parts.filterIsInstance<UIMessagePart.ToolCall>()
-    
+
     // Only count text AFTER the last tool-related part as "currently replying"
-    // This prevents text from before tool calls (e.g. "Let me run that for you") 
+    // This prevents text from before tool calls (e.g. "Let me run that for you")
     // from causing a "Replying" state during/between tool calls
     val lastToolIndex = parts.indexOfLast { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }
     val hasRecentText = parts.drop(lastToolIndex + 1)
         .filterIsInstance<UIMessagePart.Text>()
         .any { it.text.isNotBlank() }
-        
+
     if (!loading) {
         // Generation complete - determine what to show based on activities
         val totalReasoningMs = reasoningParts.sumOf { r ->
@@ -325,16 +329,16 @@ private fun deriveActivityState(
                 (r.finishedAt!! - r.createdAt).inWholeMilliseconds
             } else 0L
         }
-        
+
         // Group tools by CATEGORY (Python, Search, etc.) not individual tool names
         val toolCategories = toolCalls.map { categorizeToolName(it.toolName) }.distinct()
-        
+
         val hasReasoning = totalReasoningMs > 0
         val hasTools = toolCategories.isNotEmpty()
-        
+
         // Count distinct activity categories (not individual tools)
         val activityCount = (if (hasReasoning) 1 else 0) + toolCategories.size
-        
+
         return when {
             activityCount == 0 -> ActivityState.Hidden  // No activities, hide pill
             activityCount == 1 && hasReasoning -> ActivityState.CompletedSingle(
@@ -353,13 +357,13 @@ private fun deriveActivityState(
             )
         }
     }
-    
+
     // Check for active reasoning
     val activeReasoning = reasoningParts.lastOrNull { it.finishedAt == null }
     if (activeReasoning != null) {
         return ActivityState.Reasoning(startTimeMs = activeReasoning.createdAt.toEpochMilliseconds())
     }
-    
+
     // Check for active tool calls (tool call without matching result)
     val activeTool = toolCalls.lastOrNull { toolResults[it.toolCallId] == null }
     if (activeTool != null) {
@@ -369,21 +373,21 @@ private fun deriveActivityState(
             startTimeMs = System.currentTimeMillis()
         )
     }
-    
+
     // Check if we have any text AFTER the last tool activity
     if (hasRecentText) {
         // Text is being generated after all tools completed - show "Replying" state
         return ActivityState.Replying
     }
-    
+
     return ActivityState.Waiting
 }
 
 /**
  * Redesigned ChatMessage component for a GROUP of consecutive messages.
- * 
+ *
  * For user message turns: Right-aligned bubbles, long-press for menu
- * For assistant message turns: 
+ * For assistant message turns:
  *   - Name + Avatar row at the top
  *   - Activity Pill below name
  *   - Stacked message bubbles with grouped corners
@@ -411,6 +415,7 @@ fun ChatMessageTurn(
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
 ) {
     val settings = LocalSettings.current
+    val navController = LocalNavController.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
     val textStyle = LocalTextStyle.current.copy(
         fontSize = LocalTextStyle.current.fontSize * effectiveDisplay.fontSizeRatio,
@@ -418,7 +423,7 @@ fun ChatMessageTurn(
     )
     val configuration = LocalConfiguration.current
     val maxBubbleWidth = (configuration.screenWidthDp * 0.85f).dp
-    
+
     // State for sheets
     var showActionsSheet by remember { mutableStateOf(false) }
     var showSelectCopySheet by remember { mutableStateOf(false) }
@@ -427,11 +432,11 @@ fun ChatMessageTurn(
     var showUserDropdown by remember { mutableStateOf(false) }
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }  // User message toolbar visibility
-    
+
     // Activity state from ALL nodes in the group
     // For multi-node turns (with tools), the current generation is on the last node
     val activityState = deriveActivityState(group.allParts, loading && isLastTurn)
-    
+
     // Timeline entries from all parts - computed fresh to avoid stale data
     val timelineEntries = buildTimelineEntries(group.allParts)
 
@@ -448,7 +453,15 @@ fun ChatMessageTurn(
             ?: group.filteredNodes.lastOrNull()
             ?: group.lastNode
     }
-    
+
+    val onAvatarClick = {
+        assistant?.id?.let { id ->
+            Log.d("ChatMessage", "Navigating to AssistantDetail from Message Avatar: $id")
+            navController.navigate(Screen.AssistantDetail(id = id.toString()))
+        }
+        Unit
+    }
+
     ProvideTextStyle(textStyle) {
         when (group.role) {
             MessageRole.USER -> {
@@ -466,7 +479,7 @@ fun ChatMessageTurn(
                     modifier = modifier
                 )
             }
-            
+
             MessageRole.ASSISTANT -> {
                 AssistantMessageTurn(
                     group = group,
@@ -491,6 +504,7 @@ fun ChatMessageTurn(
                             actionsExpanded = !actionsExpanded
                         }
                     },
+                    onAvatarClick = onAvatarClick,
                     onRegenerate = { onRegenerate(group.lastNode) },
                     onUpdate = onUpdate,
                     onOpenActionSheet = { showActionsSheet = true },
@@ -501,11 +515,11 @@ fun ChatMessageTurn(
                     modifier = modifier
                 )
             }
-            
+
             else -> { /* System messages not rendered */ }
         }
     }
-    
+
     // Sheets
     if (showTimelineSheet) {
         ActivityTimelineSheet(
@@ -515,7 +529,7 @@ fun ChatMessageTurn(
             assistantId = assistant?.id?.toString()
         )
     }
-    
+
     if (showActionsSheet) {
         ChatMessageActionsSheet(
             message = actionTargetNode.currentMessage,
@@ -529,7 +543,7 @@ fun ChatMessageTurn(
             onDismissRequest = { showActionsSheet = false }
         )
     }
-    
+
     if (showSelectCopySheet) {
         ChatMessageCopySheet(
             message = actionTargetNode.currentMessage,
@@ -556,7 +570,7 @@ private fun UserMessageTurn(
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics()
-    
+
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.End,
@@ -566,7 +580,7 @@ private fun UserMessageTurn(
         val allImages = group.nodes.flatMap { node ->
             node.currentMessage.parts.filterIsInstance<UIMessagePart.Image>()
         }
-        
+
         // Display images above the text bubbles
         if (allImages.isNotEmpty()) {
             FlowRow(
@@ -584,7 +598,7 @@ private fun UserMessageTurn(
                 }
             }
         }
-        
+
         // Message bubbles
         group.nodes.forEachIndexed { nodeIndex, node ->
             val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()
@@ -592,8 +606,8 @@ private fun UserMessageTurn(
                 // Calculate bubble position based on overall position in group
                 val isFirst = nodeIndex == 0 && partIndex == 0
                 val isLast = nodeIndex == group.nodes.lastIndex && partIndex == textParts.lastIndex
-                val totalBubbles = group.nodes.sumOf { n -> 
-                    n.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().size 
+                val totalBubbles = group.nodes.sumOf { n ->
+                    n.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().size
                 }
                 val position = when {
                     totalBubbles == 1 -> BubblePosition.SINGLE
@@ -601,7 +615,7 @@ private fun UserMessageTurn(
                     isLast -> BubblePosition.LAST
                     else -> BubblePosition.MIDDLE
                 }
-                
+
                 GroupedMessageBubble(
                     position = position,
                     role = BubbleRole.USER,
@@ -622,7 +636,7 @@ private fun UserMessageTurn(
                 }
             }
         }
-        
+
         // Toolbar - appears on tap
         AnimatedVisibility(
             visible = showToolbar,
@@ -655,7 +669,7 @@ private fun UserMessageTurn(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 // Regenerate button
                 if (showRegenerate) {
                     Box(
@@ -675,7 +689,7 @@ private fun UserMessageTurn(
                         )
                     }
                 }
-                
+
                 // More options button
                 Box(
                     modifier = Modifier
@@ -716,6 +730,7 @@ private fun AssistantMessageTurn(
     onCitationClick: (String) -> Unit,
     onActivityPillClick: (ActivityType?) -> Unit,
     onBubbleClick: () -> Unit,
+    onAvatarClick: () -> Unit,
     onRegenerate: () -> Unit,
     onUpdate: (MessageNode) -> Unit,
     onOpenActionSheet: () -> Unit,
@@ -740,14 +755,14 @@ private fun AssistantMessageTurn(
         haptics.perform(HapticPattern.Pop)
         onBubbleClick()
     }
-    
+
     // Get avatar info
     val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: "Assistant"
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
-    
+
     // Check if there's interesting activity (reasoning or tools)
     val hasInterestingActivity = activityState !is ActivityState.Hidden
-    
+
     // Collect all text parts from filtered nodes (only nodes matching active versionTag)
     val allTextBubbles = mutableListOf<Pair<MessageNode, UIMessagePart.Text>>()
     group.filteredNodes.forEach { node ->
@@ -757,10 +772,10 @@ private fun AssistantMessageTurn(
             }
         }
     }
-    
+
     // Consistent spacing between all elements
     val elementSpacing = 4.dp
-    
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -778,17 +793,23 @@ private fun AssistantMessageTurn(
                 // [Name] (if enabled)
                 // [Avatar] [Pills row]
                 // [Full-width bubble]
-                
+
                 // Name above pills (only if enabled)
                 if (showModelName) {
                     Text(
                         text = avatarName,
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.graphicsLayer { alpha = nameAlpha }
+                        modifier = Modifier
+                            .graphicsLayer { alpha = nameAlpha }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onAvatarClick
+                            )
                     )
                 }
-                
+
                 // Avatar + Pills row
                 Row(
                     verticalAlignment = Alignment.Top,
@@ -800,6 +821,7 @@ private fun AssistantMessageTurn(
                             modifier = Modifier.size(36.dp),
                             value = avatarValue,
                             loading = loading,
+                            onClick = onAvatarClick
                         )
                     }
 
@@ -829,6 +851,7 @@ private fun AssistantMessageTurn(
                                 modifier = Modifier.size(36.dp),
                                 value = avatarValue,
                                 loading = loading,
+                                onClick = onAvatarClick
                             )
                         }
                         if (showModelName) {
@@ -836,13 +859,19 @@ private fun AssistantMessageTurn(
                                 text = avatarName,
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.graphicsLayer { alpha = nameAlpha }
+                                modifier = Modifier
+                                    .graphicsLayer { alpha = nameAlpha }
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = onAvatarClick
+                                    )
                             )
                         }
                     }
                 }
             }
-            
+
             // Message bubbles - full width, standard bubble positions (no connection to pills)
             allTextBubbles.forEachIndexed { index, (node, part) ->
                 val position = when {
@@ -851,7 +880,7 @@ private fun AssistantMessageTurn(
                     index == allTextBubbles.lastIndex -> BubblePosition.LAST
                     else -> BubblePosition.MIDDLE
                 }
-                
+
                 GroupedMessageBubble(
                     position = position,
                     role = BubbleRole.ASSISTANT,
@@ -885,6 +914,7 @@ private fun AssistantMessageTurn(
                             modifier = Modifier.size(36.dp),
                             value = avatarValue,
                             loading = loading,
+                            onClick = onAvatarClick
                         )
                     }
                     if (showModelName) {
@@ -892,7 +922,13 @@ private fun AssistantMessageTurn(
                             text = avatarName,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.graphicsLayer { alpha = nameAlpha }
+                            modifier = Modifier
+                                .graphicsLayer { alpha = nameAlpha }
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onAvatarClick
+                                )
                         )
                     }
                 }
@@ -922,7 +958,7 @@ private fun AssistantMessageTurn(
                 )
             }
         }
-        
+
         // Token statistics - combined for all messages in group
         if (showTokenUsage && group.combinedUsage != null && !loading) {
             TokenStatisticsInline(
@@ -931,10 +967,10 @@ private fun AssistantMessageTurn(
                 modifier = Modifier
             )
         }
-        
+
         // Action buttons
         val showActions = !loading && (isLastTurn || actionsExpanded)
-        
+
         AnimatedVisibility(
             visible = showActions,
             enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) +
@@ -969,14 +1005,14 @@ private fun TokenStatisticsInline(
     modifier: Modifier = Modifier
 ) {
     val grayColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-    
+
     // Calculate tokens per second
     val tokensPerSecond: Float? = generationDurationMs?.let { durationMs ->
         if (durationMs > 0) {
             (usage.completionTokens / (durationMs / 1000.0)).toFloat()
         } else null
     }
-    
+
     Row(
         modifier = modifier.padding(top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1004,7 +1040,7 @@ private fun TokenStatisticsInline(
                 color = grayColor
             )
         }
-        
+
         // Received tokens
         Row(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -1022,7 +1058,7 @@ private fun TokenStatisticsInline(
                 color = grayColor
             )
         }
-        
+
         // Tokens per second
         if (tokensPerSecond != null && tokensPerSecond > 0) {
             Row(

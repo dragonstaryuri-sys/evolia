@@ -5,6 +5,7 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
+import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.developer.DeveloperVM
 import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
@@ -34,6 +35,7 @@ val viewModelModule = module {
             okHttpClient = get()
         )
     }
+    viewModelOf(::ChatListVM)
     viewModelOf(::AssistantVM)
     viewModel<AssistantDetailVM> {
         AssistantDetailVM(
@@ -58,4 +60,3 @@ val viewModelModule = module {
     viewModelOf(::MenuVM)
     viewModelOf(::TextSelectionVM)
 }
-

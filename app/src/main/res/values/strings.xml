@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_page_title">Chats</string>
     <string name="about_page_github">Github</string>
     <string name="about_page_license">License</string>
     <string name="about_page_system">System</string>
@@ -961,5 +962,3 @@
     <string name="minimal_input_summarize">Summarize</string>
     <string name="minimal_input_summarize_desc">Summarize the conversation</string>
 </resources>
-
-
