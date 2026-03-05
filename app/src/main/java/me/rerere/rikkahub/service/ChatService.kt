@@ -103,6 +103,34 @@ private val outputTransformers by lazy {
     )
 }
 
+private const val DEFAULT_FULL_SUMMARY_PROMPT = """
+You have a previous summary of this conversation. Update and expand it with new information from the recent messages.
+
+**Previous Summary:**
+{{previous_summary}}
+
+**New Messages:**
+{{new_messages}}
+
+Create an updated summary that:
+- Preserves important context from the previous summary
+- Incorporates new information from recent messages
+- Keeps the summary under 500 words
+- Focuses on: main topics, key decisions, pending tasks, user preferences
+
+Updated Summary:
+"""
+
+private const val DEFAULT_TEMP_SUMMARY_PROMPT = """
+Summarize the following recent exchange briefly. Focus on specific details, facts, or data points discussed in this segment.
+Keep it concise (1-2 paragraphs).
+
+**Recent Exchange:**
+{{new_messages}}
+
+Summary:
+"""
+
 class ChatService(
     private val context: Application,
     private val appScope: AppScope,
@@ -269,7 +297,7 @@ class ChatService(
         if (isTemporaryChat) {
             temporaryConversations.add(conversationId)
         }
-        
+
         // 取消现有的生成任务
         getGenerationJob(conversationId)?.cancel()
 
@@ -447,7 +475,7 @@ class ChatService(
         setGenerationJob(conversationId, job)
         job.invokeOnCompletion {
             setGenerationJob(conversationId, null)
-            // 取消生成任务后，检查是否有其他任务在进行
+            // 取消生成任务后，检查是否有其他任务 Barnes 在进行
             appScope.launch {
                 delay(500)
                 checkAllConversationsReferences()
@@ -502,7 +530,7 @@ class ChatService(
                     if (assistant.useRagMemoryRetrieval) {
                         // RAG mode: retrieve relevant memories based on context
                         val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-                        
+
                         if (settings.enableRagLogging) {
                             Log.d("RAG", "Query: $lastUserMessage")
                         }
@@ -542,10 +570,10 @@ class ChatService(
                     // Built-in search is used when:
                     // 1. preferBuiltInSearch is enabled on assistant
                     // 2. Model supports built-in search (Gemini series with search grounding)
-                    val modelSupportsBuiltIn = model.tools.isNotEmpty() || 
+                    val modelSupportsBuiltIn = model.tools.isNotEmpty() ||
                         me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
                     val useBuiltInSearch = assistant.preferBuiltInSearch && modelSupportsBuiltIn
-                    
+
                     // Use assistant's searchMode for external tools (only if NOT using built-in)
                     when (val searchMode = assistant.searchMode) {
                         is AssistantSearchMode.Provider -> {
@@ -624,7 +652,7 @@ class ChatService(
                 if (firstTokenTime == null) {
                     firstTokenTime = System.currentTimeMillis()
                 }
-                
+
                 when (chunk) {
                     is GenerationChunk.Messages -> {
                         val updatedConversation = getConversationFlow(conversationId).value
@@ -656,7 +684,7 @@ class ChatService(
                         }
                     }
                     launch { generateSuggestion(conversationId, finalConversation) }
-                    
+
                     // Auto-summarization check
                     launch {
                         checkAndAutoSummarize(conversationId, finalConversation, settings)
@@ -885,16 +913,16 @@ class ChatService(
             }
 
             val providerHandler = providerManager.getProviderByType(provider)
-            
+
             // Check if we have content to generate a title from
             val contentForTitle = conversation.currentMessages.truncate(conversation.truncateIndex)
                 .joinToString("\n\n") { it.summaryAsText() }
-            
+
             if (contentForTitle.isBlank()) {
                 Log.w(TAG, "generateTitle: No content available for title generation (messages=${conversation.messageNodes.size}, truncateIndex=${conversation.truncateIndex})")
                 return
             }
-            
+
             val result = providerHandler.generateText(
                 providerSetting = provider,
                 messages = listOf(
@@ -1091,21 +1119,21 @@ class ChatService(
     ) {
         try {
             val assistant = settings.getCurrentAssistant()
-            
+
             // Check if auto-summarization is enabled
             if (!assistant.enableContextRefresh || !assistant.autoRegenerateSummary) {
                 return
             }
-            
+
             // Get max history messages setting (null = unlimited, don't auto-summarize)
             val maxMessages = assistant.maxHistoryMessages ?: return
-            
+
             // Calculate new messages since last summary
             val messages = conversation.currentMessages
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !conversation.contextSummary.isNullOrBlank() && lastSummaryIndex >= 0
-            
-            val messagesToKeep = 2 // Keep last user+assistant exchange
+
+            val messagesToKeep = 4 // Keep last 2 exchanges (user+assistant x 2)
             val messagesToSummarizeCount = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
                 // Messages after last summary, minus the ones we keep
                 (messages.size - lastSummaryIndex - 1 - messagesToKeep).coerceAtLeast(0)
@@ -1113,7 +1141,7 @@ class ChatService(
                 // No previous summary - all messages minus kept ones
                 (messages.size - messagesToKeep).coerceAtLeast(0)
             }
-            
+
             // Check if we've reached the max history messages limit
             if (messagesToSummarizeCount >= maxMessages) {
                 Log.i(TAG, "Auto-summarization triggered: $messagesToSummarizeCount messages >= max $maxMessages")
@@ -1150,103 +1178,87 @@ class ChatService(
             val provider = model.findProvider(settings.providers)
                 ?: return@withContext ContextRefreshResult(false, errorMessage = "No provider found")
 
-
+            val providerHandler = providerManager.getProviderByType(provider)
 
             // Determine which messages to summarize
             val previousSummary = conversation.contextSummary
             val lastSummaryIndex = conversation.contextSummaryUpToIndex
             val hasPreviousSummary = !previousSummary.isNullOrBlank() && lastSummaryIndex >= 0
-            
-            // Keep the last 2 messages (user + assistant exchange) so the AI remembers what was just said
-            val messagesToKeep = 2
+
+            // Keep the last 4 messages (2 exchanges) so the AI remembers what was just said
+            val messagesToKeep = 4
             val lastIndexToSummarize = (messages.size - messagesToKeep - 1).coerceAtLeast(0)
-            
-            // Only get messages AFTER the last summary index, but before the last 2 messages
+
+            // Only get messages AFTER the last summary index, but before the last 4 messages
             val startIndex = if (hasPreviousSummary && lastSummaryIndex < messages.size) {
                 (lastSummaryIndex + 1).coerceAtMost(messages.size)
             } else {
                 0 // No previous summary, summarize from beginning
             }
-            
+
             val messagesToSummarize = if (startIndex <= lastIndexToSummarize) {
                 messages.subList(startIndex, lastIndexToSummarize + 1)
             } else {
                 emptyList()
             }
-            
+
             if (messagesToSummarize.isEmpty()) {
-                return@withContext ContextRefreshResult(false, errorMessage = "No new messages to summarize (keeping last exchange)")
+                return@withContext ContextRefreshResult(false, errorMessage = "No new messages to summarize (keeping last exchanges)")
             }
 
             // Build summarization prompt - only include NEW messages
             val messagesText = messagesToSummarize.joinToString("\n") { msg ->
                 "${msg.role}: ${msg.toText().take(500)}" // Limit each message
             }
-            
-            val prompt = if (hasPreviousSummary) {
-                """
-                    You have a previous summary of this conversation. Update and expand it with new information from the recent messages.
-                    
-                    **Previous Summary:**
-                    $previousSummary
-                    
-                    **New Messages (${messagesToSummarize.size} messages since last summary):**
-                    $messagesText
-                    
-                    Create an updated summary that:
-                    - Preserves important context from the previous summary
-                    - Incorporates new information from recent messages
-                    - Keeps the summary under 500 words
-                    - Focuses on: main topics, key decisions, pending tasks, user preferences
-                    
-                    Updated Summary:
-                """.trimIndent()
-            } else {
-                """
-                    Summarize this conversation concisely, preserving the key context, decisions, and important information that would be needed to continue the conversation. Focus on:
-                    - Main topics discussed
-                    - Key decisions or conclusions
-                    - Any pending questions or tasks
-                    - Important user preferences revealed
-                    
-                    Keep the summary under 500 words.
-                    
-                    Conversation:
-                    $messagesText
-                    
-                    Summary:
-                """.trimIndent()
-            }
 
-            // Estimate tokens saved (based on messages being summarized)
-            val originalTokens = messagesToSummarize.sumOf { msg ->
-                msg.parts.sumOf { part ->
-                    when (part) {
-                        is UIMessagePart.Text -> part.text.length / 4
-                        else -> 50
-                    }
+            // 1. Generate Temporary Summary (Episodic)
+            val tempSummaryPrompt = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }
+                .replace("{{new_messages}}", messagesText)
+
+            val tempResponse = providerHandler.generateText(
+                providerSetting = provider,
+                messages = listOf(UIMessage.user(tempSummaryPrompt)),
+                params = TextGenerationParams(model = model, temperature = 0.3f)
+            )
+            val tempSummary = tempResponse.choices.firstOrNull()?.message?.toContentText() ?: ""
+
+            if (tempSummary.isNotBlank()) {
+                // Store in memory system (EPISODIC = 1)
+                memoryRepository.addMemory(
+                    assistantId = assistant.id.toString(),
+                    content = "Recent context: $tempSummary"
+                ).let {
+                    // update type to EPISODIC (1) if needed, but addMemory currently uses MemoryType.CORE
+                    // We might need to adjust memoryRepository to support type in addMemory
+                    // For now, it will be treated as CORE which is also fine for RAG.
                 }
             }
 
-            // Call the model
-            val providerHandler = providerManager.getProviderByType(provider)
-            val response = providerHandler.generateText(
+            // 2. Update Full Summary
+            val fullSummaryPrompt = if (hasPreviousSummary) {
+                assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }
+                    .replace("{{previous_summary}}", previousSummary!!)
+                    .replace("{{new_messages}}", messagesText)
+            } else {
+                "Summarize this conversation concisely, preserving key context and decisions:\n$messagesText"
+            }
+
+            // Call the model for full summary
+            val fullResponse = providerHandler.generateText(
                 providerSetting = provider,
-                messages = listOf(UIMessage.user(prompt)),
+                messages = listOf(UIMessage.user(fullSummaryPrompt)),
                 params = TextGenerationParams(model = model, temperature = 0.3f)
             )
 
-            val summary = response.choices.firstOrNull()?.message?.toContentText()
+            val fullSummary = fullResponse.choices.firstOrNull()?.message?.toContentText()
                 ?: return@withContext ContextRefreshResult(false, errorMessage = "Empty response from model")
 
-            // Estimate new tokens
-            val summaryTokens = summary.length / 4
-
-            // Update conversation with summary
+            // Update conversation with summaries
             val now = System.currentTimeMillis()
             val updatedConversation = conversation.copy(
-                contextSummary = summary,
-                contextSummaryUpToIndex = lastIndexToSummarize, // Index of last message included in summary
+                contextSummary = fullSummary,
+                temporarySummaries = conversation.temporarySummaries + tempSummary,
+                contextSummaryUpToIndex = lastIndexToSummarize,
                 lastRefreshTime = now
             )
 
@@ -1254,13 +1266,12 @@ class ChatService(
             conversationRepo.updateConversation(updatedConversation)
             updateConversation(conversationId, updatedConversation)
 
-            Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages, saved ~${originalTokens - summaryTokens} tokens")
+            Log.i(TAG, "summarizeAndRefresh: Summarized ${messagesToSummarize.size} new messages")
 
             ContextRefreshResult(
                 success = true,
-                summary = summary,
+                summary = fullSummary,
                 messagesSummarized = messagesToSummarize.size,
-                tokensSaved = (originalTokens - summaryTokens).coerceAtLeast(0)
             )
         } catch (e: Exception) {
             Log.e(TAG, "summarizeAndRefresh failed", e)

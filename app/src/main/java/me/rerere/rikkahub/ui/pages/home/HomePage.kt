@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,13 +31,14 @@ import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
+import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import org.koin.androidx.compose.koinViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 
 enum class HomeTab {
-    CHATS, ME
+    CHATS, DISCOVER, ME
 }
 
 @Composable
@@ -52,6 +54,12 @@ fun HomePage() {
                     onClick = { currentTab = HomeTab.CHATS },
                     icon = { Icon(Icons.Rounded.ChatBubble, null) },
                     label = { Text(stringResource(R.string.chat_page_title)) }
+                )
+                NavigationBarItem(
+                    selected = currentTab == HomeTab.DISCOVER,
+                    onClick = { currentTab = HomeTab.DISCOVER },
+                    icon = { Icon(Icons.Rounded.Explore, null) },
+                    label = { Text(stringResource(R.string.discover_page_title)) }
                 )
                 NavigationBarItem(
                     selected = currentTab == HomeTab.ME,
@@ -70,6 +78,7 @@ fun HomePage() {
             ) { tab ->
                 when (tab) {
                     HomeTab.CHATS -> AgentListPage()
+                    HomeTab.DISCOVER -> DiscoverPage()
                     HomeTab.ME -> SettingPage()
                 }
             }
@@ -103,6 +112,9 @@ fun AgentListPage() {
                     assistant = assistant,
                     onClick = {
                         scope.launch {
+                            // 切换当前助手
+                            vm.selectAssistant(assistant.id)
+
                             // 查找该助手的最近一次会话
                             val lastConv = repo.getConversationsOfAssistant(assistant.id)
                                 .first()

@@ -409,8 +409,8 @@
   <string name="setting_mcp_page_url_label">URL</string>
   <string name="setting_model_page_chat_model">聊天模型</string>
   <string name="setting_model_page_chat_model_desc">全局默认的聊天模型</string>
-  <string name="setting_model_page_learning_mode">学习模式提示</string>
-  <string name="setting_model_page_learning_mode_desc">配置用于学习模式的提示</string>
+  <string name="setting_model_page_learning_mode">学习模式提示词</string>
+  <string name="setting_model_page_learning_mode_desc">配置用于学习模式的提示词</string>
   <string name="setting_model_page_ocr_model">OCR 模型</string>
   <string name="setting_model_page_ocr_model_desc">用于图像光学字符识别的模型</string>
   <string name="setting_model_page_ocr_prompt_vars">变量：图像数据：{images}</string>
@@ -544,6 +544,7 @@
   <string name="setting_provider_page_qr_decode_failed">解析二维码失败：%s</string>
   <string name="setting_provider_page_reasoning">推理</string>
   <string name="setting_provider_page_response_api">Response API</string>
+  <string name="setting_provider_page_reasoning_desc">推理能力配置</string>
   <string name="setting_provider_page_response_api_warning">Response API是OpenAI新一代API，大部分提供商并不支持，如果你不知道这是什么，不要开启</string>
   <string name="setting_provider_page_save">保存</string>
   <string name="setting_provider_page_save_success">保存成功</string>
@@ -695,12 +696,12 @@
   <string name="setting_page_prompt_injections_desc">模式与设定集</string>
   <string name="prompt_injections_page_injection_types">注入类型</string>
   <string name="prompt_injections_page_modes">模式</string>
-  <string name="prompt_injections_page_modes_desc">可启用 / 禁用的自定义提示</string>
-  <string name="prompt_injections_page_lorebooks">世界观书</string>
+  <string name="prompt_injections_page_modes_desc">可启用 / 禁用的自定义提示词</string>
+  <string name="prompt_injections_page_lorebooks">世界观设定集</string>
   <string name="prompt_injections_page_lorebooks_desc">上下文触发式提示词条</string>
   <string name="modes_page_description_title">自定义模式</string>
   <string name="modes_page_description_text">定义可在每个对话中单独开关的自定义提示词。优先级更高的模式会被优先注入。</string>
-  <string name="modes_page_deleted">模式「% s」已删除</string>
+  <string name="modes_page_deleted">模式「%s」已删除</string>
   <string name="modes_page_enable_by_default">默认启用</string>
   <string name="modes_page_empty_title">暂无模式</string>
   <string name="modes_page_empty_desc">添加模式以注入自定义提示词</string>
@@ -728,12 +729,12 @@
   <string name="injection_position_at_depth">在指定深度</string>
   <string name="lorebooks_page_description_title">世界设定集</string>
   <string name="lorebooks_page_description_text">创建有条理的提示词集合，可根据关键词或语义相似度自动激活。</string>
-  <string name="lorebooks_page_deleted">设定集「% s」已删除</string>
+  <string name="lorebooks_page_deleted">设定集「%s」已删除</string>
   <string name="lorebooks_page_empty_title">还没有设定集</string>
   <string name="lorebooks_page_empty_desc">添加设定集，以注入上下文感知的提示词</string>
   <string name="lorebooks_page_unnamed">未命名设定集</string>
   <string name="lorebooks_page_no_description">暂无描述</string>
-  <string name="lorebooks_page_entries_count">% d 个条目</string>
+  <string name="lorebooks_page_entries_count">%d 个条目</string>
   <string name="lorebooks_page_create_lorebook">创建设定集</string>
   <string name="lorebooks_page_name">页面名称</string>
   <string name="lorebooks_page_name_placeholder">例如：奇幻世界</string>
@@ -771,7 +772,7 @@
   <string name="modes_picker_none">未配置任何模式</string>
   <string name="modes_page_default_enabled">默认启用</string>
   <string name="modes_page_default_enabled_desc">对新对话自动启用</string>
-  <string name="lorebook_entry_deleted">条目 % s 已删除</string>
+  <string name="lorebook_entry_deleted">条目 %s 已删除</string>
   <string name="lorebooks_picker_title">设定集</string>
   <string name="lorebooks_picker_none">没有设定集</string>
   <string name="lorebooks_section_available">可用的设定集</string>
@@ -823,19 +824,24 @@
   <string name="minimal_input_search">搜索</string>
   <string name="minimal_input_photos">照片</string>
   <string name="minimal_input_files">文件</string>
+  <string name="setting_chat_input_style_floating">Dreamland</string>
   <string name="setting_chat_input_style_minimal">" 极简模式"</string>
   <string name="minimal_input_camera">相机</string>
   <string name="assistant_lorebooks_enabled">"启用 %d "</string>
   <string name="context_management_title">\t上下文管理</string>
   <string name="context_management_desc">设定集,聊天记录,搜索结果</string>
   <string name="context_lorebooks_title">设定集</string>
+  <string name="context_lorebooks_desc">选择要与该助手一起使用的设定集（Lorebook）</string>
   <string name="context_message_history_title">消息历史</string>
   <string name="text_selection_explain">解释</string>
   <string name="text_selection_summarize">总结</string>
+  <string name="text_selection_custom_placeholder">针对这段文本提一个问题……</string>
   <string name="text_selection_copy">复制</string>
+  <string name="text_selection_preview">预览</string>
   <string name="text_selection_assistant">角色</string>
   <string name="text_selection_use_default">使用默认角色</string>
   <string name="text_selection_translate_language">翻译为</string>
+  <string name="text_selection_action_name">按钮名称</string>
   <string name="text_selection_action_prompt">提示词模板</string>
   <string name="greeting_early_morning">起床啦，太阳晒屁股啦！</string>
   <string name="greeting_lunch_time">午餐时间！</string>
@@ -860,20 +866,25 @@
   <string name="new_chat_action_translate">翻译</string>
   <string name="new_chat_action_more">更多</string>
   <string name="setting_new_chat_header_big_icon">助手</string>
+  <string name="setting_new_chat_title">新会话</string>
   <string name="setting_new_chat_header">标题栏</string>
   <string name="new_chat_template_learn_prompt">解释</string>
   <string name="use_global">使用全局配置</string>
   <string name="context_refresh_no_summarizer">先在设置里配置一个摘要模型</string>
   <string name="context_refresh_confirm_title">是否总结消息？</string>
   <string name="context_refresh_never">永不总结</string>
+  <string name="context_refresh_title">消息总结</string>
   <string name="context_refresh_button">总结消息</string>
   <string name="chat_message_tool_python_code">代码</string>
   <string name="context_max_messages">最大上下文条数</string>
+  <string name="context_max_messages_unlimited">无限制</string>
   <string name="context_enable_summarization">总结较早的消息</string>
   <string name="context_enable_summarization_desc">生成精简摘要，以保留上下文</string>
-  <string name="export_format_sillytavern">傻瓜酒馆（SillyTavern）</string>
-  <string name="export_format_tavern">酒馆（兼容）</string>
+  <string name="export_format_sillytavern">SillyTavern</string>
+  <string name="export_format_tavern">Tavern (兼容)</string>
+  <string name="text_selection_menu_label">问问 DreamLand</string>
   <string name="text_selection_translate">翻译</string>
+  <string name="text_selection_generating">生成中…</string>
   <string name="setting_android_integration">安卓端集成</string>
   <string name="minimal_input_thinking">思考中</string>
   <string name="setting_chat_input_style_desc">消息输入栏的外观</string>
@@ -882,6 +893,43 @@
   <string name="new_chat_template_brainstorm_prompt">我们来一起想想关于……</string>
   <string name="new_chat_template_learn">学习</string>
   <string name="context_refresh_confirm_message">这会把你的对话历史总结成精简格式。 AI 会记住关键要点，但详细的消息会被摘要替代。</string>
+  <string name="lorebook_import_success">导入：%s</string>
   <string name="lorebook_export_success">设定集（Lorebook）导出成功</string>
-</resources>
+  <string name="text_selection_ask">提问</string>
+  <string name="context_max_messages_desc">发送给模型的消息条数限制（0 = 无限制）</string>
+  <string name="context_max_messages_value">%d 消息</string>
+  <string name="lorebook_export_error">设定集（Lorebook）导出失败</string>
+  <string name="lorebook_export_format">导出格式</string>
+  <string name="text_selection_continue_chat">在应用中继续</string>
+  <string name="setting_android_integration_desc">选中文本后弹出的菜单设置</string>
+  <string name="text_selection_edit_action">编辑操作</string>
+  <string name="text_selection_add_action">添加操作</string>
+  <string name="text_selection_actions">快捷操作</string>
+  <string name="text_selection_action_delete">删除操作</string>
+  <string name="text_selection_action_cannot_delete">该操作不能删除</string>
+  <string name="reset">恢复默认</string>
+  <string name="text_selection_try_it">试试看</string>
+  <string name="text_selection_setup_instructions">在你设备上任意位置选中文本，在弹出的工具栏里找到 “DreamLand”，点击它就能使用这些功能。</string>
+  <string name="text_selection_demo_text">这是一段你可以选中的示例文本！长按选中这些文字，然后在文本选择工具栏里找到 DreamLand并点击。如果没看到，可以点一下更多（⋮），就能找到。</string>
 
+    <!-- Discover -->
+    <string name="discover_page_title">发现</string>
+    <string name="discover_page_forum">论坛</string>
+    <string name="discover_page_forum_desc">社区与扩展 (开发中)</string>
+    <string name="discover_page_diary">日记</string>
+    <string name="discover_page_diary_desc">管理 Agent 的日记</string>
+    <string name="discover_page_developing">该功能正在开发中</string>
+    <string name="discover_page_diary_title">Agent 日记</string>
+    <string name="discover_page_diary_generate">生成今日日记</string>
+    <string name="discover_page_diary_empty">暂无日记。开始聊天并生成一篇吧！</string>
+    <string name="discover_page_diary_delete_confirm">确定要删除这篇日记吗？</string>
+    <string name="discover_page_diary_generating">正在生成日记...</string>
+    <string name="discover_page_diary_generate_success">日记生成成功</string>
+    <string name="discover_page_diary_no_chat_today">今日没有找到聊天记录</string>
+
+    <!-- Diary Settings -->
+    <string name="setting_model_page_diary_model">日记生成模型</string>
+    <string name="setting_model_page_diary_model_desc">用于生成 Agent 日记的模型</string>
+    <string name="setting_model_page_diary_prompt">日记提示词</string>
+    <string name="setting_model_page_diary_prompt_desc">日记生成的提示词。变量: {content}</string>
+</resources>

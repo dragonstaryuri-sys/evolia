@@ -1,13 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import android.app.Application
-import android.content.Context
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.net.toUri
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -16,6 +12,7 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +26,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
@@ -68,7 +66,18 @@ class ChatVM(
     private val appScope: me.rerere.rikkahub.AppScope
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
+
+    // Track if conversation data has been loaded from the service
+    private val _isConversationLoaded = MutableStateFlow(false)
+    val isConversationLoaded: StateFlow<Boolean> = _isConversationLoaded
+
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
+        .onEach {
+            // Any emission from the service means we've successfully connected to the data stream
+            _isConversationLoaded.value = true
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
+
     var chatListInitialized by mutableStateOf(false)
 
     val conversationJob: StateFlow<Job?> =
@@ -98,7 +107,10 @@ class ChatVM(
         viewModelScope.launch {
             chatService.initializeConversation(_conversationId)
         }
-        context.writeStringPreference("lastConversationId", _conversationId.toString())
+        // Move I/O to IO Dispatcher
+        viewModelScope.launch(Dispatchers.IO) {
+            context.writeStringPreference("lastConversationId", _conversationId.toString())
+        }
     }
 
     override fun onCleared() {
@@ -185,10 +197,12 @@ class ChatVM(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
 
-    // 重点：抽屉里的会话列表现在只显示属于当前助手的会话
+    // Use distinctUntilChanged to prevent frequent flatMapLatest during message streaming
+    private val currentAssistantIdFlow = conversation.map { it.assistantId }.distinctUntilChanged()
+
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(
-            conversation.map { it.assistantId }.distinctUntilChanged(),
+            currentAssistantIdFlow,
             _searchQuery
         ) { assistantId, query -> assistantId to query }
             .flatMapLatest { (assistantId, query) ->

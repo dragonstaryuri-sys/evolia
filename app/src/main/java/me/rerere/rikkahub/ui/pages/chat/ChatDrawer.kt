@@ -7,6 +7,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -29,7 +30,7 @@ fun ChatDrawerContent(
     navController: NavHostController,
     vm: ChatVM,
     settings: Settings,
-    current: Conversation,
+    conversationId: Uuid,
     drawerState: DrawerState? = null,
 ) {
     val conversations = vm.conversations.collectAsLazyPagingItems()
@@ -63,7 +64,6 @@ fun ChatDrawerContent(
             // New Chat Button for THIS Assistant
             Button(
                 onClick = {
-                    // Create a new conversation ID and navigate to it
                     navigateToChatPage(navController, chatId = Uuid.random())
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -78,7 +78,7 @@ fun ChatDrawerContent(
 
             // Conversation History List
             ConversationList(
-                current = current,
+                current = remember(conversationId) { Conversation.dummy().copy(id = conversationId) },
                 conversations = conversations,
                 conversationJobs = conversationJobs.keys,
                 recentlyRestoredIds = recentlyRestoredIds,
@@ -86,7 +86,6 @@ fun ChatDrawerContent(
                 onSearchQueryChange = { vm.updateSearchQuery(it) },
                 modifier = Modifier.weight(1f),
                 onClick = {
-                    // Switch to the selected conversation
                     navigateToChatPage(navController, it.id)
                 },
                 onDelete = { vm.deleteConversation(it) },

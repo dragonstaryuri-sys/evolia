@@ -97,6 +97,8 @@ class GenerationHandler(
         truncateIndex: Int = -1,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
+        contextSummary: String? = null,
+        temporarySummaries: List<String> = emptyList()
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -155,7 +157,9 @@ class GenerationHandler(
                 memories = memories ?: emptyList(),
                 truncateIndex = truncateIndex,
                 stream = assistant.streamOutput,
-                enabledModeIds = enabledModeIds
+                enabledModeIds = enabledModeIds,
+                contextSummary = contextSummary,
+                temporarySummaries = temporarySummaries
             )
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
@@ -247,6 +251,8 @@ class GenerationHandler(
         memories: List<AssistantMemory>,
         truncateIndex: Int,
         enabledModeIds: Set<Uuid> = emptySet(),
+        contextSummary: String? = null,
+        temporarySummaries: List<String> = emptyList()
     ): BuildMessagesResult {
         // Token estimator (rough estimate: 4 chars per token)
         fun estimateTokens(text: String) = text.length / 4
@@ -269,7 +275,7 @@ class GenerationHandler(
             val denominator = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
             return if (denominator == 0f) 0f else dotProduct / denominator
         }
-        
+
         // Helper to check if and why lorebook entry activated
         fun getLorebookEntryActivationReason(entry: LorebookEntry, recentMessages: List<String>, queryEmbedding: List<Float>? = null): String? {
             if (!entry.enabled) return null
@@ -336,7 +342,7 @@ class GenerationHandler(
         } else {
             settings.modes.filter { it.defaultEnabled }
         }
-        
+
         // Build UsedMode list for UI display
         val usedModes = enabledModes.mapIndexed { index, mode ->
             val reason = if (enabledModeIds.contains(mode.id)) {
@@ -359,7 +365,7 @@ class GenerationHandler(
         val hasRagEntries = lorebooksForAssistant.any { lorebook ->
             lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled }
         }
-        
+
         // Compute query embedding only if there are RAG entries
         val queryEmbedding: List<Float>? = if (hasRagEntries) {
             try {
@@ -375,11 +381,9 @@ class GenerationHandler(
 
         // Collect activated lorebook entries from enabled lorebooks assigned to this assistant
         // Also track UsedLorebookEntry info for the UI display
-        // Collect activated lorebook entries from enabled lorebooks assigned to this assistant
-        // Also track UsedLorebookEntry info for the UI display
         data class ActivatedEntryWithLorebook(val lorebook: Lorebook, val entry: LorebookEntry, val entryIndex: Int, val reason: String)
         val activatedEntriesWithLorebook = lorebooksForAssistant
-            .flatMap { lorebook -> 
+            .flatMap { lorebook ->
                 lorebook.entries.mapIndexedNotNull { index, entry ->
                     val reason = getLorebookEntryActivationReason(entry, recentMessagesForScan, queryEmbedding)
                     if (reason != null) {
@@ -388,7 +392,7 @@ class GenerationHandler(
                 }
             }
         val activatedEntries = activatedEntriesWithLorebook.map { it.entry }
-        
+
         // Build UsedLorebookEntry list for UI display
         val usedLorebookEntries = activatedEntriesWithLorebook.mapIndexed { priority, activated ->
             // Serialize cover Avatar to JSON string for UI display
@@ -419,7 +423,7 @@ class GenerationHandler(
 
         // 1. Base System Prompt (BEFORE_SYSTEM modes/entries + System + Learning + AFTER_SYSTEM modes/entries + Tools)
         val baseSystemPromptBuilder = StringBuilder()
-        
+
         // BEFORE_SYSTEM injections
         beforeSystemModes.forEach { mode ->
             baseSystemPromptBuilder.append(mode.prompt)
@@ -429,19 +433,19 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(entry.prompt)
             baseSystemPromptBuilder.appendLine()
         }
-        
-        // Original system prompt  
+
+        // Original system prompt
         if (assistant.systemPrompt.isNotBlank()) {
             baseSystemPromptBuilder.append(assistant.systemPrompt)
         }
-        
+
         // Learning mode (legacy - still supported)
         if (assistant.learningMode) {
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
             baseSystemPromptBuilder.appendLine()
         }
-        
+
         // AFTER_SYSTEM injections
         afterSystemModes.forEach { mode ->
             baseSystemPromptBuilder.appendLine()
@@ -451,12 +455,27 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(entry.prompt)
         }
-        
+
         // Tool prompts
         tools.forEach { tool ->
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(tool.systemPrompt(model, messages))
         }
+
+        // Context Summaries
+        if (!contextSummary.isNullOrBlank()) {
+            baseSystemPromptBuilder.append("\n\n## Overall Conversation Summary\n")
+            baseSystemPromptBuilder.append(contextSummary)
+        }
+
+        val tempSummaries = temporarySummaries.takeLast(assistant.maxTemporarySummariesToInclude)
+        if (tempSummaries.isNotEmpty()) {
+            baseSystemPromptBuilder.append("\n\n## Recent Context Highlights\n")
+            tempSummaries.forEachIndexed { index, s ->
+                baseSystemPromptBuilder.append("${index + 1}. $s\n")
+            }
+        }
+
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
         currentTokens += estimateTokens(baseSystemPrompt)
 
@@ -465,7 +484,7 @@ class GenerationHandler(
         val historyLimitedMessages = assistant.maxHistoryMessages?.let { limit ->
             if (limit > 0) messages.limitContext(limit) else messages
         } ?: messages
-        
+
         // Prune search results if configured
         val searchPrunedMessages = assistant.maxSearchResultsRetained?.let { maxSearches ->
             if (maxSearches > 0) {
@@ -476,10 +495,10 @@ class GenerationHandler(
                     }
                     if (hasSearchResult) index else null
                 }
-                
+
                 // Keep only the last N search results
                 val indicesToPrune = searchResultIndices.dropLast(maxSearches).toSet()
-                
+
                 if (indicesToPrune.isNotEmpty()) {
                     historyLimitedMessages.mapIndexed { index, msg ->
                         if (index in indicesToPrune) {
@@ -496,10 +515,10 @@ class GenerationHandler(
                 } else historyLimitedMessages
             } else historyLimitedMessages
         } ?: historyLimitedMessages
-        
+
         // Chat History (reverse order to prioritize recent)
         val chatHistoryCandidates = searchPrunedMessages.truncate(truncateIndex).reversed()
-        
+
         // Memories (Prepare effective memories including recent chats if enabled)
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
             val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
@@ -507,8 +526,8 @@ class GenerationHandler(
                 val recentConversations = conversationRepo.getRecentConversations(
                     assistantId = assistant.id,
                     limit = 3,
-                ).filter { 
-                    java.time.LocalDateTime.ofInstant(it.updateAt, java.time.ZoneId.systemDefault()).toLocalDate() == today 
+                ).filter {
+                    java.time.LocalDateTime.ofInstant(it.updateAt, java.time.ZoneId.systemDefault()).toLocalDate() == today
                 }
                 recentConversations.map { conversation ->
                     AssistantMemory(
@@ -529,7 +548,7 @@ class GenerationHandler(
         // 3. Allocation Logic
         val selectedMessages = mutableListOf<UIMessage>()
         val selectedMemories = mutableListOf<AssistantMemory>()
-        
+
         val remainingTokens = maxTokens - currentTokens
         if (remainingTokens <= 0) {
             // Edge case: System prompt too large. Just return minimums.
@@ -542,13 +561,13 @@ class GenerationHandler(
 
         // Add minimums first
         var usedTokens = 0
-        
+
         // Add min chat history
         chatHistoryCandidates.take(minChatHistory).forEach {
             selectedMessages.add(it)
             usedTokens += estimateTokens(it)
         }
-        
+
         // Add min memories
         effectiveMemoriesCandidates.take(minMemories).forEach {
             selectedMemories.add(it)
@@ -560,7 +579,7 @@ class GenerationHandler(
         if (availableTokens > 0) {
             val remainingChatHistory = chatHistoryCandidates.drop(minChatHistory)
             val remainingMemories = effectiveMemoriesCandidates.drop(minMemories)
-            
+
             when (assistant.contextPriority) {
                 me.rerere.rikkahub.data.model.ContextPriority.CHAT_HISTORY -> {
                     // Prioritize Chat History
@@ -647,7 +666,7 @@ class GenerationHandler(
                 }
             }
         }
-        
+
         // Collect attachments from activated lorebook entries
         val lorebookAttachmentParts = activatedEntries.flatMap { entry ->
             entry.attachments.map { attachment ->
@@ -663,10 +682,10 @@ class GenerationHandler(
                 }
             }
         }
-        
+
         // Combine all context attachments
         val allContextAttachments = modeAttachmentParts + lorebookAttachmentParts
-        
+
         val builtMessages = buildList {
             val finalSystemPrompt = buildString {
                 append(baseSystemPrompt)
@@ -678,7 +697,7 @@ class GenerationHandler(
             if (finalSystemPrompt.isNotBlank()) {
                 add(UIMessage.system(finalSystemPrompt))
             }
-            
+
             // Add mode and lorebook attachments as a user message if there are any
             if (allContextAttachments.isNotEmpty()) {
                 add(UIMessage(
@@ -686,7 +705,7 @@ class GenerationHandler(
                     parts = allContextAttachments
                 ))
             }
-            
+
             // Restore chat history order
             addAll(selectedMessages.sortedBy { messages.indexOf(it) })
         }
@@ -705,7 +724,7 @@ class GenerationHandler(
                 activationReason = reason
             )
         }
-        
+
         return BuildMessagesResult(
             messages = builtMessages,
             activatedLorebookEntries = usedLorebookEntries,
@@ -727,7 +746,9 @@ class GenerationHandler(
         memories: List<AssistantMemory>,
         truncateIndex: Int,
         stream: Boolean,
-        enabledModeIds: Set<Uuid> = emptySet()
+        enabledModeIds: Set<Uuid> = emptySet(),
+        contextSummary: String? = null,
+        temporarySummaries: List<String> = emptyList()
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -737,7 +758,9 @@ class GenerationHandler(
             tools = tools,
             memories = memories,
             truncateIndex = truncateIndex,
-            enabledModeIds = enabledModeIds
+            enabledModeIds = enabledModeIds,
+            contextSummary = contextSummary,
+            temporarySummaries = temporarySummaries
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
         val usedLorebookEntries = buildResult.activatedLorebookEntries
@@ -953,11 +976,11 @@ class GenerationHandler(
 
         val coreMemories = memories.filter { it.type == 0 } // CORE
         val episodicMemories = memories.filter { it.type == 1 } // EPISODIC
-        
+
         return buildString {
             append("## Memories\n")
             append("These are memories that you can reference in the future conversations.\n")
-            
+
             if (coreMemories.isNotEmpty()) {
                 append("### Core Memories\n")
                 coreMemories.forEach { memory ->
@@ -967,16 +990,16 @@ class GenerationHandler(
 
             if (episodicMemories.isNotEmpty()) {
                 append("### Episodic Memories\n")
-                
+
                 val now = java.time.LocalDate.now()
                 val yesterday = now.minusDays(1)
                 val lastWeek = now.minusWeeks(1)
-                
+
                 val groupedEpisodes = episodicMemories.groupBy { memory ->
                     val date = java.time.Instant.ofEpochMilli(memory.timestamp)
                         .atZone(java.time.ZoneId.systemDefault())
                         .toLocalDate()
-                    
+
                     when {
                         date.isEqual(now) -> "Today"
                         date.isEqual(yesterday) -> "Yesterday"
@@ -984,7 +1007,7 @@ class GenerationHandler(
                         else -> "Older"
                     }
                 }
-                
+
                 // Order: Today -> Yesterday -> This Week -> Older
                 listOf("Today", "Yesterday", "This Week", "Older").forEach { group ->
                     val memoriesInGroup = groupedEpisodes[group]
@@ -996,11 +1019,11 @@ class GenerationHandler(
                     }
                 }
             }
-            
+
             if (model.abilities.contains(ModelAbility.TOOL)) {
                 append(
                     """
-                        
+
                         ## Memory Tool
                         You are a stateless large language model; you **cannot store memories** internally. To remember information, you must use **memory tools**.
                         Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.
@@ -1009,7 +1032,7 @@ class GenerationHandler(
                         - If a relevant record already exists, call `edit_memory` to update it.
                         - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
                         **Note:** You can only edit or delete **Core Memories** (which have an ID). Episodic Memories are read-only context.
-                        
+
                         **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
                         During chats, act like a personal secretary and **proactively** record user-related information, including but not limited to:
                         - Name/Nickname
@@ -1102,12 +1125,12 @@ class GenerationHandler(
     private fun sanitizeToolCallArguments(arguments: String): String {
         if (arguments.isBlank()) return "{}"
         val trimmed = arguments.trim()
-        
+
         // Find the first complete JSON object
         var braceCount = 0
         var inString = false
         var escape = false
-        
+
         for ((index, char) in trimmed.withIndex()) {
             if (escape) {
                 escape = false

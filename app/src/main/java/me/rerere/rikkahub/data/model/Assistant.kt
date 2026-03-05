@@ -54,6 +54,7 @@ data class Assistant(
     val maxTokenUsage: Int = 81920, // 80k default
     val contextPriority: ContextPriority = ContextPriority.BALANCED,
     val summarizerModelId: Uuid? = null, // Model used for memory summarization
+    val diaryModelId: Uuid? = null, // Model used for diary generation
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useRagMemoryRetrieval: Boolean = true, // If true, use vector-based RAG. If false, inject all memories
@@ -95,6 +96,9 @@ data class Assistant(
     val maxSearchResultsRetained: Int? = null, // null = keep all, e.g. 2 = keep last 2 search results
     val enableContextRefresh: Boolean = false, // Show Summarize Messages button in chat input
     val autoRegenerateSummary: Boolean = false, // Automatically summarize when maxHistoryMessages reached
+    val maxTemporarySummariesToInclude: Int = 3, // Number of temporary summaries to include in context
+    val fullSummaryPrompt: String = "", // Custom full summary prompt
+    val temporarySummaryPrompt: String = "", // Custom temporary summary prompt
 
     // Memory System Configuration & Stats
     val consolidationDelayMinutes: Int = 30, // Wait time before consolidating a chat
@@ -141,11 +145,11 @@ sealed class AssistantSearchMode {
     @Serializable
     @SerialName("off")
     data object Off : AssistantSearchMode()
-    
+
     @Serializable
     @SerialName("builtin")
     data object BuiltIn : AssistantSearchMode()
-    
+
     @Serializable
     @SerialName("provider")
     data class Provider(val index: Int) : AssistantSearchMode()

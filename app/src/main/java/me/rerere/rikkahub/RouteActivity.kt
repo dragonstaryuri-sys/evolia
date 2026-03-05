@@ -85,6 +85,8 @@ import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.pages.home.HomePage
+import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
+import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
@@ -401,6 +403,8 @@ class RouteActivity : ComponentActivity() {
                     composable<Screen.SettingAndroidIntegration> { SettingAndroidIntegrationPage() }
                     composable<Screen.SettingUICustomization> { SettingUICustomizationPage() }
                     composable<Screen.SettingFonts> { SettingFontsPage() }
+                    composable<Screen.Discover> { DiscoverPage() }
+                    composable<Screen.DiaryList> { DiaryListPage() }
                 }
                 AppToasterHost(state = toastState)
                 }
@@ -495,4 +499,10 @@ sealed interface Screen {
 
     @Serializable
     data object SettingFonts : Screen
+
+    @Serializable
+    data object Discover : Screen
+
+    @Serializable
+    data object DiaryList : Screen
 }

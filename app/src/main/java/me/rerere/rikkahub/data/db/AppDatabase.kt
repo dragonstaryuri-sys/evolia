@@ -18,12 +18,14 @@ import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.data.db.dao.AgentDiaryDAO
 import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.data.model.MessageNode
 import me.rerere.rikkahub.utils.JsonInstant
 import kotlinx.serialization.json.JsonArray
@@ -36,8 +38,16 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 @Database(
-    entities = [ConversationEntity::class, MemoryEntity::class, GenMediaEntity::class, ChatEpisodeEntity::class, EmbeddingCacheEntity::class, DailyActivityEntity::class],
-    version = 23,
+    entities = [
+        ConversationEntity::class,
+        MemoryEntity::class,
+        GenMediaEntity::class,
+        ChatEpisodeEntity::class,
+        EmbeddingCacheEntity::class,
+        DailyActivityEntity::class,
+        AgentDiaryEntity::class
+    ],
+    version = 24,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -57,6 +67,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 19, to = 20),
         AutoMigration(from = 20, to = 21), // Adds context_summary, context_summary_up_to_index, last_prune_time, last_prune_message_count, last_refresh_time to ConversationEntity
         AutoMigration(from = 21, to = 22), // Adds DailyActivityEntity table for persistent streak tracking
+        AutoMigration(from = 23, to = 24), // Adds AgentDiaryEntity table
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -73,9 +84,11 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun dailyActivityDao(): DailyActivityDAO
 
+    abstract fun agentDiaryDao(): AgentDiaryDAO
+
     companion object {
         const val TAG = "AppDatabase"
-        
+
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 11 to 12")
@@ -89,11 +102,11 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS `ChatEpisodeEntity` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `assistant_id` TEXT NOT NULL, 
-                        `content` TEXT NOT NULL, 
-                        `embedding` TEXT, 
-                        `start_time` INTEGER NOT NULL, 
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `embedding` TEXT,
+                        `start_time` INTEGER NOT NULL,
                         `end_time` INTEGER NOT NULL
                     )
                     """.trimIndent()
@@ -129,20 +142,20 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_14_16 = object : Migration(14, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 14 to 16")
-                
+
                 // 1. Handle ChatEpisodeEntity
                 // Create new table with correct schema
                 db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS `ChatEpisodeEntity_new` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, 
-                        `assistant_id` TEXT NOT NULL, 
-                        `content` TEXT NOT NULL, 
-                        `embedding` TEXT, 
-                        `start_time` INTEGER NOT NULL, 
-                        `end_time` INTEGER NOT NULL, 
-                        `last_accessed_at` INTEGER NOT NULL DEFAULT 0, 
-                        `significance` INTEGER NOT NULL DEFAULT 5, 
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `embedding` TEXT,
+                        `start_time` INTEGER NOT NULL,
+                        `end_time` INTEGER NOT NULL,
+                        `last_accessed_at` INTEGER NOT NULL DEFAULT 0,
+                        `significance` INTEGER NOT NULL DEFAULT 5,
                         `conversation_id` TEXT DEFAULT ''
                     )
                     """.trimIndent()
@@ -181,13 +194,13 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE ChatEpisodeEntity_new RENAME TO ChatEpisodeEntity")
 
                 // 2. Handle MemoryEntity (Ensure columns exist)
-                // We can't easily check column existence and add IF NOT EXISTS in SQLite in one go, 
+                // We can't easily check column existence and add IF NOT EXISTS in SQLite in one go,
                 // but we can catch exceptions or check pragma.
                 // Since we are migrating to 16, let's ensure the schema is correct.
-                // The safest way for MemoryEntity if we suspect issues is to recreate it too, 
+                // The safest way for MemoryEntity if we suspect issues is to recreate it too,
                 // but for now let's assume it's mostly fine or just needs columns.
                 // However, since we are doing a manual migration, let's be safe and check/add columns if needed.
-                
+
                 val memoryColumns = mutableListOf<String>()
                 val memCursor = db.query("PRAGMA table_info(MemoryEntity)")
                 while (memCursor.moveToNext()) {

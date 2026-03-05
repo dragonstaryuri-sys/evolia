@@ -28,6 +28,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.Avatar
@@ -88,6 +89,8 @@ class SettingsStore(
         val OCR_MODEL = stringPreferencesKey("ocr_model")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
         val EMBEDDING_MODEL = stringPreferencesKey("embedding_model")
+        val DIARY_MODEL = stringPreferencesKey("diary_model")
+        val DIARY_PROMPT = stringPreferencesKey("diary_prompt")
 
         // 提供商
         val PROVIDERS = stringPreferencesKey("providers")
@@ -157,6 +160,8 @@ class SettingsStore(
                 ocrModelId = preferences[OCR_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
                 embeddingModelId = preferences[EMBEDDING_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
+                diaryModelId = preferences[DIARY_MODEL]?.let { Uuid.parse(it) } ?: GEMINI_2_5_FLASH_ID,
+                diaryPrompt = preferences[DIARY_PROMPT] ?: DEFAULT_DIARY_PROMPT,
                 assistantId = preferences[SELECT_ASSISTANT]?.let { Uuid.parse(it) }
                     ?: DEFAULT_ASSISTANT_ID,
                 assistantTags = preferences[ASSISTANT_TAGS]?.let {
@@ -320,9 +325,9 @@ class SettingsStore(
             Log.w(TAG, "Cannot update dummy settings")
             return
         }
-        
+
         // Auto-update recently used assistants when assistant changes
-        val settingsToSave = if (settings.assistantId != settingsFlow.value.assistantId && 
+        val settingsToSave = if (settings.assistantId != settingsFlow.value.assistantId &&
             !settingsFlow.value.init &&
             settings.assistants.any { it.id == settings.assistantId }) {
             val updatedList = buildList {
@@ -336,14 +341,14 @@ class SettingsStore(
         } else {
             settings
         }
-        
+
         // Handle explicit secret deletions (user cleared a field that had a value)
         // This must be called BEFORE migration to remove deleted secrets from SecureStore
         secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, settingsToSave)
-        
+
         // Migrate secrets from plaintext to SecureStore if needed
         val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settingsToSave)
-        
+
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
         dataStore.edit { preferences ->
             preferences[DYNAMIC_COLOR] = settingsToSave.dynamicColor
@@ -366,6 +371,8 @@ class SettingsStore(
             preferences[OCR_MODEL] = settingsToSave.ocrModelId.toString()
             preferences[OCR_PROMPT] = settingsToSave.ocrPrompt
             preferences[EMBEDDING_MODEL] = settingsToSave.embeddingModelId.toString()
+            preferences[DIARY_MODEL] = settingsToSave.diaryModelId.toString()
+            preferences[DIARY_PROMPT] = settingsToSave.diaryPrompt
 
             preferences[PROVIDERS] = JsonInstant.encodeToString(migratedSettings.providers)
 
@@ -429,7 +436,7 @@ class SettingsStore(
         val current = settingsFlow.value
         // Only add if the assistant exists
         if (current.assistants.none { it.id == assistantId }) return
-        
+
         val updatedList = buildList {
             add(assistantId)
             current.recentlyUsedAssistants
@@ -437,7 +444,7 @@ class SettingsStore(
                 .take(2)
                 .forEach { add(it) }
         }
-        
+
         if (updatedList != current.recentlyUsedAssistants) {
             update(current.copy(recentlyUsedAssistants = updatedList))
         }
@@ -467,6 +474,8 @@ data class Settings(
     val ocrModelId: Uuid = Uuid.random(),
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
     val embeddingModelId: Uuid = Uuid.random(),
+    val diaryModelId: Uuid = Uuid.random(),
+    val diaryPrompt: String = DEFAULT_DIARY_PROMPT,
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
     val providers: List<ProviderSetting> = DEFAULT_PROVIDERS,
     val assistants: List<Assistant> = DEFAULT_ASSISTANTS,
@@ -777,7 +786,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
         temperature = 0.6f,
         systemPrompt = """
-            You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
+            You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one.
 
             **Context:
             - You are currently chatting to {{user}}
@@ -866,4 +875,3 @@ fun Settings.sanitize(): Pair<Settings, me.rerere.rikkahub.data.sync.BackupClean
 
     return cleanedSettings to result
 }
-

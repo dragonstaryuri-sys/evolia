@@ -860,7 +860,7 @@
     <string name="export_format_tavern">Tavern (Compatible)</string>
 
     <!-- Text Selection Integration -->
-    <string name="text_selection_menu_label">Ask LastChat</string>
+    <string name="text_selection_menu_label">Ask XX</string>
     <string name="text_selection_translate">Translate</string>
     <string name="text_selection_explain">Explain</string>
     <string name="text_selection_summarize">Summarize</string>
@@ -961,4 +961,26 @@
     <string name="minimal_input_lorebooks_desc">Add context from your lorebooks</string>
     <string name="minimal_input_summarize">Summarize</string>
     <string name="minimal_input_summarize_desc">Summarize the conversation</string>
+
+    <!-- Discover -->
+    <string name="discover_page_title">Discover</string>
+    <string name="discover_page_forum">Forum</string>
+    <string name="discover_page_forum_desc">Community and extensions (WIP)</string>
+    <string name="discover_page_diary">Diary</string>
+    <string name="discover_page_diary_desc">Manage agent diaries</string>
+    <string name="discover_page_developing">This feature is currently under development</string>
+    <string name="discover_page_diary_title">Agent Diaries</string>
+    <string name="discover_page_diary_generate">Generate Today\'s Diary</string>
+    <string name="discover_page_diary_empty">No diaries yet. Start chatting and generate one!</string>
+    <string name="discover_page_diary_delete_confirm">Are you sure you want to delete this diary entry?</string>
+    <string name="discover_page_diary_generating">Generating diary...</string>
+    <string name="discover_page_diary_generate_success">Diary generated successfully</string>
+    <string name="discover_page_diary_no_chat_today">No chat records found for today</string>
+
+    <!-- Diary Settings -->
+    <string name="setting_model_page_diary_model">Diary Model</string>
+    <string name="setting_model_page_diary_model_desc">Model for generating agent diaries</string>
+    <string name="setting_model_page_diary_prompt">Diary Prompt</string>
+    <string name="setting_model_page_diary_prompt_desc">Prompt for diary generation. Vars: {content}</string>
+
 </resources>

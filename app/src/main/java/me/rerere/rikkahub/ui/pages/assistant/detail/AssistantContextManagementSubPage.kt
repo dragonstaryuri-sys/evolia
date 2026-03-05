@@ -25,6 +25,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -77,9 +78,9 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // MESSAGE HISTORY
+        // MESSAGE HISTORY & SUMMARIZATION
         // ═══════════════════════════════════════════════════════════════════
-        
+
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
             // Warning banner when message summarization is enabled but no summarizer model is set
             val needsSummarizerWarning = assistant.enableContextRefresh && assistant.summarizerModelId == null
@@ -90,18 +91,17 @@ fun AssistantContextManagementSubPage(
             ) {
                 SummarizerWarningBanner(onClick = onNavigateToModels)
             }
-            
-            // 1. Message summarization toggle (first - enables manual summarization button)
+
+            // 1. Message summarization toggle
             SettingGroupItem(
-                title = "Message summarization",
-                subtitle = "Summarize older messages in conversation",
+                title = "Context Refresh / Summarization",
+                subtitle = "Enable context optimization via summarization",
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableContextRefresh,
                         onCheckedChange = { enabled ->
                             onUpdate(assistant.copy(
                                 enableContextRefresh = enabled,
-                                // If disabling, also disable auto-summarize
                                 autoRegenerateSummary = if (!enabled) false else assistant.autoRegenerateSummary
                             ))
                         }
@@ -115,8 +115,8 @@ fun AssistantContextManagementSubPage(
                     ))
                 }
             )
-            
-            // 2. Auto-summarize toggle (only visible when Message summarization is ON)
+
+            // 2. Auto-summarize toggle
             AnimatedVisibility(
                 visible = assistant.enableContextRefresh,
                 enter = fadeIn() + expandVertically(),
@@ -138,8 +138,8 @@ fun AssistantContextManagementSubPage(
                     }
                 )
             }
-            
-            // 3. History limit slider (only visible when Auto-summarize is ON)
+
+            // 3. History limit slider
             AnimatedVisibility(
                 visible = assistant.enableContextRefresh && assistant.autoRegenerateSummary,
                 enter = fadeIn() + expandVertically(),
@@ -147,12 +147,12 @@ fun AssistantContextManagementSubPage(
             ) {
                 val historyLimit = assistant.maxHistoryMessages ?: 10
                 var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
-                
+
                 SliderSettingCard(
                     title = "History limit",
                     value = sliderValue,
                     valueText = "${sliderValue.roundToInt()} messages",
-                    description = "Number of messages before auto-summarization triggers",
+                    description = "Number of messages before auto-summarization triggers (retains last 4 messages)",
                     onValueChange = { sliderValue = it },
                     onValueChangeFinished = {
                         val newValue = sliderValue.roundToInt()
@@ -160,8 +160,32 @@ fun AssistantContextManagementSubPage(
                             maxHistoryMessages = if (newValue <= 1) 10 else newValue
                         ))
                     },
-                    valueRange = 5f..50f,
-                    steps = 44
+                    valueRange = 5f..100f,
+                    steps = 94
+                )
+            }
+
+            // 4. Temporary Summaries Limit (Episodic)
+            AnimatedVisibility(
+                visible = assistant.enableContextRefresh,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                val tempLimit = assistant.maxTemporarySummariesToInclude
+                var tempSliderValue by remember(tempLimit) { mutableFloatStateOf(tempLimit.toFloat()) }
+
+                SliderSettingCard(
+                    title = "Episodic summaries to include",
+                    value = tempSliderValue,
+                    valueText = "${tempSliderValue.roundToInt()} summaries",
+                    description = "Number of recent segment summaries to include as historical background",
+                    onValueChange = { tempSliderValue = it },
+                    onValueChangeFinished = {
+                        val newValue = tempSliderValue.roundToInt()
+                        onUpdate(assistant.copy(maxTemporarySummariesToInclude = newValue))
+                    },
+                    valueRange = 0f..20f,
+                    steps = 20
                 )
             }
         }
@@ -172,7 +196,7 @@ fun AssistantContextManagementSubPage(
         SettingsGroup(title = stringResource(R.string.context_search_results_title)) {
             val maxSearchResults = assistant.maxSearchResultsRetained ?: 0
             var searchSliderValue by remember(maxSearchResults) { mutableFloatStateOf(maxSearchResults.toFloat()) }
-            
+
             SliderSettingCard(
                 title = if (searchSliderValue.roundToInt() == 0) {
                     stringResource(R.string.context_max_search_results_unlimited)
@@ -192,6 +216,40 @@ fun AssistantContextManagementSubPage(
                 valueRange = 0f..50f,
                 steps = 49
             )
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // CUSTOM PROMPTS
+        // ═══════════════════════════════════════════════════════════════════
+        AnimatedVisibility(
+            visible = assistant.enableContextRefresh,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            SettingsGroup(title = "Custom Summarization Prompts") {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedTextField(
+                        value = assistant.fullSummaryPrompt,
+                        onValueChange = { onUpdate(assistant.copy(fullSummaryPrompt = it)) },
+                        label = { Text("Full Summary Prompt") },
+                        placeholder = { Text("Leave blank for default. Supports {{previous_summary}}, {{new_messages}}") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+
+                    OutlinedTextField(
+                        value = assistant.temporarySummaryPrompt,
+                        onValueChange = { onUpdate(assistant.copy(temporarySummaryPrompt = it)) },
+                        label = { Text("Episodic Summary Prompt") },
+                        placeholder = { Text("Leave blank for default. Supports {{new_messages}}") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3
+                    )
+                }
+            }
         }
 
         Spacer(Modifier.height(32.dp))

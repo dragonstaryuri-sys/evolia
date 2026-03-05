@@ -65,9 +65,9 @@ fun AssistantModelSubPage(
             // Chat Model (Primary)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -93,13 +93,13 @@ fun AssistantModelSubPage(
                     )
                 }
             }
-            
+
             // Background Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -125,13 +125,13 @@ fun AssistantModelSubPage(
                     )
                 }
             }
-            
+
             // Summarizer Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -157,6 +157,38 @@ fun AssistantModelSubPage(
                     )
                 }
             }
+
+            // Diary Model
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_model_page_diary_model),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_model_page_diary_model_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ModelSelector(
+                        modelId = assistant.diaryModelId,
+                        providers = providers,
+                        type = ModelType.CHAT,
+                        onSelect = { onUpdate(assistant.copy(diaryModelId = it.id)) },
+                    )
+                }
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -173,7 +205,7 @@ fun AssistantModelSubPage(
                     else -> "Chaotic ($temp)"
                 }
             } else "Default"
-            
+
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_temperature),
                 subtitle = tempLabel,
@@ -186,7 +218,7 @@ fun AssistantModelSubPage(
                     )
                 }
             )
-            
+
             // Temperature Slider
             AnimatedVisibility(
                 visible = assistant.temperature != null,
@@ -194,9 +226,9 @@ fun AssistantModelSubPage(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Surface(
-                    color = if (LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
+                    color = if (LocalDarkMode.current)
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    else
                         MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = RoundedCornerShape(10.dp)
                 ) {
@@ -253,9 +285,9 @@ fun AssistantModelSubPage(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Surface(
-                    color = if (LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
+                    color = if (LocalDarkMode.current)
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    else
                         MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = RoundedCornerShape(10.dp)
                 ) {
@@ -291,9 +323,9 @@ fun AssistantModelSubPage(
             // Thinking Budget
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_thinking_budget),
-                subtitle = if (assistant.thinkingBudget != null && assistant.thinkingBudget > 0) 
-                    "${assistant.thinkingBudget} tokens" 
-                else 
+                subtitle = if (assistant.thinkingBudget != null && assistant.thinkingBudget > 0)
+                    "${assistant.thinkingBudget} tokens"
+                else
                     "Disabled",
                 trailing = {
                     ReasoningButton(
@@ -308,9 +340,9 @@ fun AssistantModelSubPage(
             // Max Tokens
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_max_tokens),
-                subtitle = if (assistant.maxTokens != null) 
-                    stringResource(R.string.assistant_page_max_tokens_limit, assistant.maxTokens) 
-                else 
+                subtitle = if (assistant.maxTokens != null)
+                    stringResource(R.string.assistant_page_max_tokens_limit, assistant.maxTokens)
+                else
                     stringResource(R.string.assistant_page_max_tokens_no_token_limit),
                 trailing = {
                     OutlinedTextField(

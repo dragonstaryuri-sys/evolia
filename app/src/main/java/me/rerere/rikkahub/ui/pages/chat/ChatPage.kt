@@ -1,9 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,11 +14,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
@@ -32,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PermanentNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -39,14 +39,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.material3.rememberDrawerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,6 +74,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.data.datastore.ChatInputStyle
 import me.rerere.rikkahub.ui.components.ai.ChatInput
@@ -117,6 +112,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
 
     val setting by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val isConversationLoaded by vm.isConversationLoaded.collectAsStateWithLifecycle()
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
@@ -124,49 +120,39 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val newChatStats by vm.newChatStats.collectAsStateWithLifecycle()
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val softwareKeyboardController = LocalSoftwareKeyboardController.current
-
-    // Handle back press when drawer is open
-    BackHandler(enabled = drawerState.isOpen) {
-        scope.launch {
-            drawerState.close()
-        }
-    }
-
-    // Hide keyboard when drawer is open
-    LaunchedEffect(drawerState.isOpen) {
-        if (drawerState.isOpen) {
-            softwareKeyboardController?.hide()
-        }
-    }
 
     val windowAdaptiveInfo = currentWindowDpSize()
     val isBigScreen =
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
 
     val inputState = rememberChatInputState(
-        message = remember(files) {
-            buildList {
-                val localFiles = context.createChatFilesByContents(files)
-                val contentTypes = files.mapNotNull { file ->
-                    context.getFileMimeType(file)
-                }
-                localFiles.forEachIndexed { index, file ->
-                    val type = contentTypes.getOrNull(index)
-                    if (type?.startsWith("image/") == true) {
-                        add(UIMessagePart.Image(url = file.toString()))
-                    } else if (type?.startsWith("video/") == true) {
-                        add(UIMessagePart.Video(url = file.toString()))
-                    } else if (type?.startsWith("audio/") == true) {
-                        add(UIMessagePart.Audio(url = file.toString()))
-                    }
-                }
-            }
-        },
+        message = emptyList(),
         textContent = remember(text) {
             text?.base64Decode() ?: ""
         }
     )
+
+    // Move I/O to IO Dispatcher to prevent main thread lag
+    LaunchedEffect(files) {
+        if (files.isNotEmpty()) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val localFiles = context.createChatFilesByContents(files)
+                val contentTypes = files.mapNotNull { file ->
+                    context.getFileMimeType(file)
+                }
+                val parts = localFiles.mapIndexedNotNull { index, file ->
+                    val type = contentTypes.getOrNull(index)
+                    when {
+                        type?.startsWith("image/") == true -> UIMessagePart.Image(url = file.toString())
+                        type?.startsWith("video/") == true -> UIMessagePart.Video(url = file.toString())
+                        type?.startsWith("audio/") == true -> UIMessagePart.Audio(url = file.toString())
+                        else -> null
+                    }
+                }
+                inputState.setContents(parts)
+            }
+        }
+    }
 
     val chatListState = rememberLazyListState()
     LaunchedEffect(vm) {
@@ -181,9 +167,9 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
             drawerContent = {
                 ChatDrawerContent(
                     navController = navController,
-                    current = conversation,
                     vm = vm,
                     settings = setting,
+                    conversationId = conversation.id,
                     drawerState = drawerState
                 )
             }
@@ -193,6 +179,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
                 loadingJob = loadingJob,
                 setting = setting,
                 conversation = conversation,
+                isConversationLoaded = isConversationLoaded,
                 drawerState = drawerState,
                 navController = navController,
                 vm = vm,
@@ -211,9 +198,9 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
             drawerContent = {
                 ChatDrawerContent(
                     navController = navController,
-                    current = conversation,
                     vm = vm,
                     settings = setting,
+                    conversationId = conversation.id,
                     drawerState = drawerState
                 )
             }
@@ -223,6 +210,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
                 loadingJob = loadingJob,
                 setting = setting,
                 conversation = conversation,
+                isConversationLoaded = isConversationLoaded,
                 drawerState = drawerState,
                 navController = navController,
                 vm = vm,
@@ -245,6 +233,7 @@ private fun ChatPageContent(
     setting: Settings,
     bigScreen: Boolean,
     conversation: Conversation,
+    isConversationLoaded: Boolean,
     drawerState: DrawerState,
     navController: NavHostController,
     vm: ChatVM,
@@ -266,7 +255,7 @@ private fun ChatPageContent(
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
 
-    LaunchedEffect(initialSearchQuery, conversation.messageNodes) {
+    LaunchedEffect(initialSearchQuery, conversation.id) {
         if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
             val matchIndex = conversation.messageNodes.indexOfFirst { node ->
                 node.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true)
@@ -300,7 +289,10 @@ private fun ChatPageContent(
                 topBar = {
                     TopBar(
                         settings = setting,
-                        conversation = conversation,
+                        conversationId = conversation.id,
+                        hasUserMessages = remember(conversation.messageNodes) {
+                            conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                        },
                         bigScreen = bigScreen,
                         drawerState = drawerState,
                         previewMode = previewMode,
@@ -321,9 +313,9 @@ private fun ChatPageContent(
                 },
                 containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets(0.dp)
-            ) { padding ->
+            ) { _ ->
                 Box(
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     ChatList(
                         innerPadding = PaddingValues(top = topMessagePadding, bottom = 140.dp),
@@ -425,7 +417,9 @@ private fun ChatPageContent(
                         },
                     )
 
-                val hasUserSentMessages = conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                val hasUserSentMessages = remember(conversation.messageNodes) {
+                    conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                }
                 val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                 val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
 
@@ -458,9 +452,14 @@ private fun ChatPageContent(
                 val headerStyle = effectiveDisplaySetting.newChatHeaderStyle
                 val contentStyle = effectiveDisplaySetting.newChatContentStyle
                 val showNewChatContent = headerStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE || contentStyle != me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE
+
                 val isKeyboardOpen = WindowInsets.isImeVisible
                 val hasTextInput = inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
-                val shouldShowNewChatContent = !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && showNewChatContent && !hasTextInput && !isKeyboardOpen
+
+                // CRITICAL FIX: Only show NewChatContent if the conversation is fully loaded
+                // AND there are truly no messages. This prevents the "flash" of empty state.
+                val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && showNewChatContent && !hasTextInput && !isKeyboardOpen
+
                 var showHeaderAssistantPicker by remember { mutableStateOf(false) }
 
                 androidx.compose.animation.AnimatedVisibility(
@@ -478,10 +477,7 @@ private fun ChatPageContent(
                         hasBackgroundImage = currentAssistant.background != null,
                         onTemplateClick = { prompt -> inputState.setMessageTextAndFocus(prompt, scope) },
                         onNavigateToImageGen = { navController.navigate(Screen.ImageGen) },
-                        onAvatarClick = {
-                            Log.d("ChatPage", "Navigating to AssistantDetail from NewChatContent avatar")
-                            navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                        }
+                        onAvatarClick = { showHeaderAssistantPicker = true }
                     )
                 }
 
@@ -556,7 +552,7 @@ private fun ChatPageContent(
                             chatSuggestions = conversation.chatSuggestions,
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
-                                    vm.handleMessageSend(listOf(UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
+                                    vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
                                     scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
                                 } else { toaster.show("Please select a model first", type = ToastType.Error) }
                             },
@@ -607,7 +603,7 @@ private fun ChatPageContent(
                             chatSuggestions = conversation.chatSuggestions,
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
-                                    vm.handleMessageSend(listOf(UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
+                                    vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
                                     scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
                                 } else { toaster.show("Please select a model first", type = ToastType.Error) }
                             },
@@ -666,7 +662,8 @@ private data class TopBarActionState(
 @Composable
 private fun TopBar(
     settings: Settings,
-    conversation: Conversation,
+    conversationId: kotlin.uuid.Uuid,
+    hasUserMessages: Boolean,
     drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
@@ -684,10 +681,10 @@ private fun TopBar(
     val topPillSize = 48.dp
     var showAssistantPicker by remember { mutableStateOf(false) }
     val currentAssistant = settings.getCurrentAssistant()
-    val isEmpty = !conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+    val isEmpty = !hasUserMessages
     var animateTopPillIn by remember { mutableStateOf(false) }
 
-    LaunchedEffect(conversation.id) {
+    LaunchedEffect(conversationId) {
         animateTopPillIn = false
         delay(16)
         animateTopPillIn = true
@@ -731,19 +728,10 @@ private fun TopBar(
 
             Spacer(Modifier.weight(1f))
 
-            // Center Title (Agent Name)
             Text(
                 text = currentAssistant.name,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
-                modifier = Modifier
-                    .align(Alignment.CenterVertically)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        Log.d("ChatPage", "Navigating to AssistantDetail from TopBar Title")
-                        navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                    }
+                modifier = Modifier.align(Alignment.CenterVertically)
             )
 
             Spacer(Modifier.weight(1f))
@@ -774,7 +762,7 @@ private fun TopBar(
                             !hasPresetMessages && headerShowsAvatar
                         },
                         assistantId = currentAssistant.id,
-                        conversationId = conversation.id
+                        conversationId = conversationId
                     ),
                     transitionSpec = {
                         (androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)) + androidx.compose.animation.scaleIn(initialScale = 0.92f, animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f))) togetherWith (androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 400f)) + androidx.compose.animation.scaleOut(targetScale = 0.92f, animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 400f))) using androidx.compose.animation.SizeTransform(clip = false, sizeAnimationSpec = { _, _ -> androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f) })
@@ -797,15 +785,7 @@ private fun TopBar(
                                         Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                     }
                                     Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                            name = currentAssistant.name.ifBlank { "Character" },
-                                            value = currentAssistant.avatar,
-                                            modifier = Modifier.size(30.dp),
-                                            onClick = {
-                                                Log.d("ChatPage", "Navigating to AssistantDetail from TopBar Avatar")
-                                                navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                                            }
-                                        )
+                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(name = currentAssistant.name.ifBlank { "Character" }, value = currentAssistant.avatar, modifier = Modifier.size(30.dp), onClick = { showAssistantPicker = true })
                                     }
                                 }
                                 isEmptyState && isTempChat -> {
@@ -813,15 +793,7 @@ private fun TopBar(
                                         Icon(Icons.Rounded.History, "Make Normal Chat")
                                     }
                                     Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                            name = currentAssistant.name.ifBlank { "Character" },
-                                            value = currentAssistant.avatar,
-                                            modifier = Modifier.size(30.dp),
-                                            onClick = {
-                                                Log.d("ChatPage", "Navigating to AssistantDetail from TopBar Avatar (TempChat)")
-                                                navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                                            }
-                                        )
+                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(name = currentAssistant.name.ifBlank { "Character" }, value = currentAssistant.avatar, modifier = Modifier.size(30.dp), onClick = { showAssistantPicker = true })
                                     }
                                 }
                                 else -> {

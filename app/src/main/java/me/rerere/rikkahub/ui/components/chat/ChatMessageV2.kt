@@ -429,7 +429,6 @@ fun ChatMessageTurn(
     var showSelectCopySheet by remember { mutableStateOf(false) }
     var showTimelineSheet by remember { mutableStateOf(false) }
     var initialTimelineExpandedType by remember { mutableStateOf<ActivityType?>(null) }
-    var showUserDropdown by remember { mutableStateOf(false) }
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }  // User message toolbar visibility
 
@@ -476,6 +475,7 @@ fun ChatMessageTurn(
                     onRegenerate = { onRegenerate(group.lastNode) },
                     onOpenMenu = { showActionsSheet = true },
                     showRegenerate = showRegenerate,
+                    enableHaptics = effectiveDisplay.enableUIHaptics,
                     modifier = modifier
                 )
             }
@@ -492,6 +492,7 @@ fun ChatMessageTurn(
                     maxWidth = maxBubbleWidth,
                     showTokenUsage = effectiveDisplay.showTokenUsage,
                     showAssistantBubbles = effectiveDisplay.showAssistantBubbles,
+                    enableHaptics = effectiveDisplay.enableUIHaptics,
                     onCitationClick = onCitationClick,
                     onActivityPillClick = { type ->
                         initialTimelineExpandedType = type
@@ -567,9 +568,10 @@ private fun UserMessageTurn(
     onRegenerate: () -> Unit,
     onOpenMenu: () -> Unit,
     showRegenerate: Boolean,
+    enableHaptics: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val haptics = rememberPremiumHaptics()
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -727,6 +729,7 @@ private fun AssistantMessageTurn(
     maxWidth: androidx.compose.ui.unit.Dp,
     showTokenUsage: Boolean,
     showAssistantBubbles: Boolean,
+    enableHaptics: Boolean,
     onCitationClick: (String) -> Unit,
     onActivityPillClick: (ActivityType?) -> Unit,
     onBubbleClick: () -> Unit,
@@ -744,7 +747,7 @@ private fun AssistantMessageTurn(
     val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
     val showIcon = effectiveDisplay.showModelIcon
     val showModelName = effectiveDisplay.showModelName
-    val haptics = rememberPremiumHaptics()
+    val haptics = rememberPremiumHaptics(enabled = enableHaptics)
     val showName = showModelName && (!isLastTurn || !loading)
     val nameAlpha by animateFloatAsState(
         targetValue = if (showName) 1f else 0f,

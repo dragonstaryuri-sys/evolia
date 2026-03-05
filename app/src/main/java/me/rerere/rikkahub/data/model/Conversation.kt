@@ -40,6 +40,7 @@ data class Conversation(
     val updateAt: Instant = Instant.now(),
     val isConsolidated: Boolean = false,
     val contextSummary: String? = null, // Summary of pruned messages
+    val temporarySummaries: List<String> = emptyList(), // Episodic summaries
     val contextSummaryUpToIndex: Int = -1, // Messages 0..N were summarized into contextSummary
     val lastPruneTime: Long = 0L, // Timestamp of last auto-prune
     val lastPruneMessageCount: Int = 0, // Messages pruned in last auto-prune
