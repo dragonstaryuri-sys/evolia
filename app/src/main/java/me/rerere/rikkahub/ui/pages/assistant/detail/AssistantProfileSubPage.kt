@@ -19,14 +19,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.TagsInput
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
-import me.rerere.rikkahub.data.model.Tag as DataTag
+import me.rerere.rikkahub.core.data.model.Tag as DataTag
 
 /**
  * Profile tab - Assistant identity and appearance settings.
@@ -64,7 +64,7 @@ fun AssistantProfileSubPage(
                 },
                 modifier = Modifier.size(96.dp)
             )
-            
+
             Text(
                 text = "Tap to change avatar",
                 style = MaterialTheme.typography.labelSmall,
@@ -90,13 +90,13 @@ fun AssistantProfileSubPage(
                     )
                 }
             )
-            
+
             // Tags - vertical layout to prevent height growth
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
             ) {

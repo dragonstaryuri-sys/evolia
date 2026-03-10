@@ -2,8 +2,6 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,15 +30,11 @@ import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.People
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -58,7 +52,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -71,15 +64,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.model.Avatar
-import me.rerere.rikkahub.data.model.Lorebook
+import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Lorebook
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
-import me.rerere.rikkahub.ui.components.ui.UIAvatar
-import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.FormItem
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.ToastAction
@@ -92,7 +81,6 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.LorebookExportImport
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.plus
-import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -104,14 +92,14 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
     val haptics = rememberPremiumHaptics()
     val toaster = LocalToaster.current
     val context = LocalContext.current
-    
+
     var showAddDialog by remember { mutableStateOf(false) }
-    
+
     // Track drag state for neighbor offset
     var draggingIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { mutableStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
-    
+
     // File picker for import
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -195,7 +183,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                                 modifier = Modifier.size(24.dp)
                             )
                         }
-                        
+
                         // Lorebooks tab (selected)
                         Box(
                             modifier = Modifier
@@ -213,10 +201,10 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                         }
                     }
                 }
-                
+
                 // FAB aligned to end/right
                 FloatingActionButton(
-                    onClick = { 
+                    onClick = {
                         showAddDialog = true
                         haptics.perform(HapticPattern.Pop)
                     },
@@ -264,7 +252,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 }
                 Spacer(Modifier.height(8.dp))
             }
-            
+
             if (settings.lorebooks.isEmpty()) {
                 item(key = "empty") {
                     Card(
@@ -309,7 +297,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                         index == settings.lorebooks.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
-                    
+
                     val neighborOffset = when {
                         draggingIndex == -1 -> 0f
                         index == draggingIndex - 1 && isUnlocked -> dragOffset * 0.15f
@@ -365,7 +353,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 }
             }
             }
-            
+
             // Bottom fade gradient
             Box(
                 modifier = Modifier
@@ -480,8 +468,8 @@ private fun LorebookCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = lorebook.description.ifEmpty { 
-                        stringResource(R.string.lorebooks_page_no_description) 
+                    text = lorebook.description.ifEmpty {
+                        stringResource(R.string.lorebooks_page_no_description)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -511,12 +499,12 @@ internal fun LorebookCreatorSheet(
     onSave: (Lorebook) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    
+
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var cover by remember { mutableStateOf<Avatar?>(null) }
     var showCoverPicker by remember { mutableStateOf(false) }
-    
+
     val context = LocalContext.current
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -529,7 +517,7 @@ internal fun LorebookCreatorSheet(
             }
         }
     }
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState
@@ -583,7 +571,7 @@ internal fun LorebookCreatorSheet(
                         }
                     }
                 }
-                
+
                 // Name input
                 Column(modifier = Modifier.weight(1f)) {
                     Text(

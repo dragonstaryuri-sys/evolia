@@ -16,8 +16,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.palette.graphics.Palette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Avatar
 import java.io.File
 import java.io.InputStream
 import java.net.URL

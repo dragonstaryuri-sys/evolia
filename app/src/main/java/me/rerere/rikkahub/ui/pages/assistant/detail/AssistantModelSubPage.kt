@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,7 +20,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -31,13 +29,14 @@ import androidx.compose.ui.unit.dp
 import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
+import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toFixed
 
@@ -196,22 +195,22 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = "Generation") {
             // Temperature
-            val tempLabel = if (assistant.temperature != null) {
-                val temp = assistant.temperature
+            val temperature = assistant.temperature
+            val tempLabel = temperature?.let { temp ->
                 when (temp) {
                     in 0.0f..0.3f -> "Strict ($temp)"
                     in 0.3f..1.0f -> "Balanced ($temp)"
                     in 1.0f..1.5f -> "Creative ($temp)"
                     else -> "Chaotic ($temp)"
                 }
-            } else "Default"
+            } ?: "Default"
 
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_temperature),
                 subtitle = tempLabel,
                 trailing = {
                     HapticSwitch(
-                        checked = assistant.temperature != null,
+                        checked = temperature != null,
                         onCheckedChange = { enabled ->
                             onUpdate(assistant.copy(temperature = if (enabled) 1.0f else null))
                         }
@@ -221,7 +220,7 @@ fun AssistantModelSubPage(
 
             // Temperature Slider
             AnimatedVisibility(
-                visible = assistant.temperature != null,
+                visible = temperature != null,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -234,7 +233,7 @@ fun AssistantModelSubPage(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Slider(
-                            value = assistant.temperature ?: 1.0f,
+                            value = temperature ?: 1.0f,
                             onValueChange = { onUpdate(assistant.copy(temperature = it.toFixed(2).toFloatOrNull() ?: 0.6f)) },
                             valueRange = 0f..2f,
                             steps = 19,
@@ -244,7 +243,7 @@ fun AssistantModelSubPage(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val currentTemp = assistant.temperature ?: 1.0f
+                            val currentTemp = temperature ?: 1.0f
                             val tagType = when (currentTemp) {
                                 in 0.0f..0.3f -> TagType.INFO
                                 in 0.3f..1.0f -> TagType.SUCCESS
@@ -265,12 +264,13 @@ fun AssistantModelSubPage(
             }
 
             // Top-P
+            val topP = assistant.topP
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_top_p),
-                subtitle = if (assistant.topP != null) "Enabled (${assistant.topP})" else "Default",
+                subtitle = if (topP != null) "Enabled ($topP)" else "Default",
                 trailing = {
                     HapticSwitch(
-                        checked = assistant.topP != null,
+                        checked = topP != null,
                         onCheckedChange = { enabled ->
                             onUpdate(assistant.copy(topP = if (enabled) 0.9f else null))
                         }
@@ -280,7 +280,7 @@ fun AssistantModelSubPage(
 
             // Top-P Slider
             AnimatedVisibility(
-                visible = assistant.topP != null,
+                visible = topP != null,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -293,7 +293,7 @@ fun AssistantModelSubPage(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Slider(
-                            value = assistant.topP ?: 0.9f,
+                            value = topP ?: 0.9f,
                             onValueChange = { onUpdate(assistant.copy(topP = it.toFixed(2).toFloatOrNull() ?: 0.9f)) },
                             valueRange = 0f..1f,
                             steps = 9,
@@ -321,15 +321,16 @@ fun AssistantModelSubPage(
             )
 
             // Thinking Budget
+            val thinkingBudget = assistant.thinkingBudget
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_thinking_budget),
-                subtitle = if (assistant.thinkingBudget != null && assistant.thinkingBudget > 0)
-                    "${assistant.thinkingBudget} tokens"
+                subtitle = if (thinkingBudget != null && thinkingBudget > 0)
+                    "$thinkingBudget tokens"
                 else
                     "Disabled",
                 trailing = {
                     ReasoningButton(
-                        reasoningTokens = assistant.thinkingBudget ?: 0,
+                        reasoningTokens = thinkingBudget ?: 0,
                         onUpdateReasoningTokens = { tokens ->
                             onUpdate(assistant.copy(thinkingBudget = tokens))
                         }
@@ -338,15 +339,16 @@ fun AssistantModelSubPage(
             )
 
             // Max Tokens
+            val maxTokens = assistant.maxTokens
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_max_tokens),
-                subtitle = if (assistant.maxTokens != null)
-                    stringResource(R.string.assistant_page_max_tokens_limit, assistant.maxTokens)
+                subtitle = if (maxTokens != null)
+                    stringResource(R.string.assistant_page_max_tokens_limit, maxTokens)
                 else
                     stringResource(R.string.assistant_page_max_tokens_no_token_limit),
                 trailing = {
                     OutlinedTextField(
-                        value = assistant.maxTokens?.toString() ?: "",
+                        value = maxTokens?.toString() ?: "",
                         onValueChange = { text ->
                             val tokens = if (text.isBlank()) null else text.toIntOrNull()?.takeIf { it > 0 }
                             onUpdate(assistant.copy(maxTokens = tokens))

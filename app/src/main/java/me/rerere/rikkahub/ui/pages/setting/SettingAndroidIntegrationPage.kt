@@ -2,9 +2,6 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -19,15 +16,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Lightbulb
@@ -57,8 +51,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -72,13 +64,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.model.DEFAULT_TEXT_SELECTION_ACTIONS
-import me.rerere.rikkahub.data.model.TextSelectionAction
-import me.rerere.rikkahub.data.model.TextSelectionConfig
+import me.rerere.rikkahub.core.data.model.DEFAULT_TEXT_SELECTION_ACTIONS
+import me.rerere.rikkahub.core.data.model.TextSelectionAction
+import me.rerere.rikkahub.core.data.model.TextSelectionConfig
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
-import me.rerere.rikkahub.ui.components.ui.ItemPosition
-import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.ToastAction
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -89,7 +79,6 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.plus
 import org.koin.compose.koinInject
-import kotlin.uuid.Uuid
 
 private val COMMON_LANGUAGES = listOf(
     "English", "Spanish", "French", "German", "Italian", "Portuguese",
@@ -105,7 +94,7 @@ fun SettingAndroidIntegrationPage(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
-    
+
     val config = settings.textSelectionConfig
     var editingAction by remember { mutableStateOf<TextSelectionAction?>(null) }
     var showResetDialog by remember { mutableStateOf(false) }
@@ -126,7 +115,7 @@ fun SettingAndroidIntegrationPage(
                 contentPadding = innerPadding + PaddingValues(bottom = 80.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                
+
                 // Try It Section - Demo with selectable text
                 item {
                     SettingsGroup(title = stringResource(R.string.text_selection_try_it)) {
@@ -141,7 +130,7 @@ fun SettingAndroidIntegrationPage(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            
+
                             // Demo text box
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
@@ -157,7 +146,7 @@ fun SettingAndroidIntegrationPage(
                                     )
                                 }
                             }
-                            
+
                             Text(
                                 text = stringResource(R.string.text_selection_demo_hint),
                                 style = MaterialTheme.typography.bodySmall,
@@ -173,7 +162,7 @@ fun SettingAndroidIntegrationPage(
                         // Assistant picker - default to Generical
                         val defaultAssistant = settings.assistants.find { it.name == "Generical" }
                             ?: settings.assistants.firstOrNull()
-                        
+
                         SettingGroupItem(
                             title = stringResource(R.string.text_selection_assistant),
                             subtitle = settings.assistants.find { it.id == config.assistantId }?.name
@@ -184,9 +173,9 @@ fun SettingAndroidIntegrationPage(
                                     selectedOption = config.assistantId ?: defaultAssistant?.id,
                                     onOptionSelected = { selected ->
                                         scope.launch {
-                                            settingsStore.update {
-                                                it.copy(textSelectionConfig = config.copy(assistantId = selected))
-                                            }
+                                            settingsStore.update(
+                                                settings.copy(textSelectionConfig = config.copy(assistantId = selected))
+                                            )
                                         }
                                     },
                                     optionToString = { id ->
@@ -206,9 +195,9 @@ fun SettingAndroidIntegrationPage(
                                     selectedOption = config.translateLanguage,
                                     onOptionSelected = { lang ->
                                         scope.launch {
-                                            settingsStore.update {
-                                                it.copy(textSelectionConfig = config.copy(translateLanguage = lang))
-                                            }
+                                            settingsStore.update(
+                                                settings.copy(textSelectionConfig = config.copy(translateLanguage = lang))
+                                            )
                                         }
                                     },
                                     optionToString = { it },
@@ -255,9 +244,9 @@ fun SettingAndroidIntegrationPage(
                     val newActions = config.actions.map {
                         if (it.id == updated.id) updated else it
                     }
-                    settingsStore.update {
-                        it.copy(textSelectionConfig = config.copy(actions = newActions))
-                    }
+                    settingsStore.update(
+                        settings.copy(textSelectionConfig = config.copy(actions = newActions))
+                    )
                 }
                 editingAction = null
             }
@@ -275,11 +264,11 @@ fun SettingAndroidIntegrationPage(
                     onClick = {
                         val oldActions = config.actions
                         scope.launch {
-                            settingsStore.update {
-                                it.copy(textSelectionConfig = config.copy(
+                            settingsStore.update(
+                                settings.copy(textSelectionConfig = config.copy(
                                     actions = DEFAULT_TEXT_SELECTION_ACTIONS
                                 ))
-                            }
+                            )
                         }
                         toaster.show(
                             message = "Actions reset to defaults",
@@ -287,11 +276,11 @@ fun SettingAndroidIntegrationPage(
                                 label = context.getString(R.string.undo),
                                 onClick = {
                                     scope.launch {
-                                        settingsStore.update {
-                                            it.copy(textSelectionConfig = it.textSelectionConfig.copy(
+                                        settingsStore.update(
+                                            settings.copy(textSelectionConfig = settings.textSelectionConfig.copy(
                                                 actions = oldActions
                                             ))
-                                        }
+                                        )
                                     }
                                 }
                             )
@@ -356,7 +345,7 @@ private fun PreviewCard(
                         )
                     }
                 }
-                
+
                 // Preview text
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -463,8 +452,8 @@ private fun ActionCard(
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) 
-                MaterialTheme.colorScheme.surfaceContainerLow 
+            containerColor = if (LocalDarkMode.current)
+                MaterialTheme.colorScheme.surfaceContainerLow
             else MaterialTheme.colorScheme.surfaceContainerHigh
         ),
         shape = AppShapes.CardLarge
@@ -479,7 +468,7 @@ private fun ActionCard(
             },
             supportingContent = {
                 Text(
-                    text = action.prompt.take(60).replace("\n", " ") + 
+                    text = action.prompt.take(60).replace("\n", " ") +
                         if (action.prompt.length > 60) "..." else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

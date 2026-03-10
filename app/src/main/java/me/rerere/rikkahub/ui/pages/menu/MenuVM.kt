@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -82,11 +82,11 @@ class MenuVM(
 
     private fun calculateTimeLabel(hours: List<Int>): TimeLabel {
         if (hours.isEmpty()) return TimeLabel.DAYTIME_CHATTER
-        
+
         var earlyBird = 0   // 5am-11am (5-10)
         var daytime = 0     // 11am-6pm (11-17)
         var nightOwl = 0    // 6pm-5am (18-23, 0-4)
-        
+
         for (hour in hours) {
             when (hour) {
                 in 5..10 -> earlyBird++
@@ -94,7 +94,7 @@ class MenuVM(
                 else -> nightOwl++
             }
         }
-        
+
         return when {
             earlyBird >= daytime && earlyBird >= nightOwl -> TimeLabel.EARLY_BIRD
             daytime >= earlyBird && daytime >= nightOwl -> TimeLabel.DAYTIME_CHATTER
@@ -104,31 +104,31 @@ class MenuVM(
 
     private fun calculateStreak(distinctDates: List<String>): Int {
         if (distinctDates.isEmpty()) return 0
-        
+
         val formatter = DateTimeFormatter.ISO_LOCAL_DATE
-        val dates = distinctDates.mapNotNull { 
+        val dates = distinctDates.mapNotNull {
             try { LocalDate.parse(it, formatter) } catch (e: Exception) { null }
         }.sortedDescending()
-        
+
         if (dates.isEmpty()) return 0
-        
+
         val today = LocalDate.now()
         val yesterday = today.minusDays(1)
-        
+
         val startDate = when {
             dates.contains(today) -> today
             dates.contains(yesterday) -> yesterday
             else -> return 0
         }
-        
+
         var streak = 0
         var current = startDate
-        
+
         while (dates.contains(current)) {
             streak++
             current = current.minusDays(1)
         }
-        
+
         return streak
     }
 }

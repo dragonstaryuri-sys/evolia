@@ -12,7 +12,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import java.time.LocalDate
@@ -121,17 +121,17 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
                 val locationManager = it.context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
                 val location = locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
                     ?: locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
-                
-                location?.let { loc -> 
+
+                location?.let { loc ->
                     try {
                         val geocoder = android.location.Geocoder(it.context, Locale.getDefault())
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                             // For Android 13+, Geocoder is async, but we need sync here for the placeholder.
                             // This is a limitation of the current synchronous placeholder architecture.
-                            // We'll try a best-effort approach or stick to the deprecated sync method for now 
+                            // We'll try a best-effort approach or stick to the deprecated sync method for now
                             // as we are in a background thread context usually (or should be).
                             // However, since this might run on main thread in UI, we should be careful.
-                            // Given the constraints, we will use the synchronous getFromLocation for now, 
+                            // Given the constraints, we will use the synchronous getFromLocation for now,
                             // acknowledging it might block slightly.
                             @Suppress("DEPRECATION")
                             val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)

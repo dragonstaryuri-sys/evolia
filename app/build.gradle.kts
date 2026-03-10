@@ -32,6 +32,16 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
+
+        // 注入清单占位符，强制安装时解压原生库以兼容 16 KB 页面
+        manifestPlaceholders["extractNativeLibs"] = "true"
+    }
+
+    packaging {
+        jniLibs {
+            // 设置为 true 配合 extractNativeLibs=true，确保 .so 文件被解压到磁盘
+            useLegacyPackaging = true
+        }
     }
 
     splits {
@@ -82,6 +92,7 @@ android {
             }
             isMinifyEnabled = true
             isShrinkResources = true
+            isZipAlignEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -90,7 +101,7 @@ android {
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
         debug {
-
+            isZipAlignEnabled = true
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
@@ -323,6 +334,8 @@ dependencies {
     implementation(project(":search"))
     implementation(project(":tts"))
     implementation(project(":common"))
+    implementation(project(":core-data"))
+    implementation(project(":discover"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation(kotlin("reflect"))
 

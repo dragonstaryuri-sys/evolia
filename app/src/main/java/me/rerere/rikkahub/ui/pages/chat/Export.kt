@@ -82,7 +82,7 @@ import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
-import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.BitmapComposer
@@ -90,10 +90,10 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
-import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.getActivity
-import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.toLocalString
 import org.koin.compose.koinInject
 import java.io.FileOutputStream

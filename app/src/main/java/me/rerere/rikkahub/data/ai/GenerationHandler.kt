@@ -17,7 +17,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
-import me.rerere.ai.core.MessageRole
+import me.rerere.ai.core.MessageRole as CoreMessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
@@ -30,9 +30,13 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.UsedLorebookEntry
+import me.rerere.ai.ui.UsedMemory
+import me.rerere.ai.ui.UsedMode
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
@@ -43,16 +47,17 @@ import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
-import me.rerere.rikkahub.data.model.InjectionPosition
-import me.rerere.rikkahub.data.model.Lorebook
-import me.rerere.rikkahub.data.model.LorebookActivationType
-import me.rerere.rikkahub.data.model.LorebookEntry
-import me.rerere.rikkahub.data.model.Mode
-import me.rerere.rikkahub.data.model.ModeAttachmentType
-import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.ContextPriority
+import me.rerere.rikkahub.core.data.model.InjectionPosition
+import me.rerere.rikkahub.core.data.model.Lorebook
+import me.rerere.rikkahub.core.data.model.LorebookActivationType
+import me.rerere.rikkahub.core.data.model.LorebookEntry
+import me.rerere.rikkahub.core.data.model.ModeAttachmentType
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
 import kotlin.uuid.Uuid
@@ -64,9 +69,9 @@ private const val TAG = "GenerationHandler"
  */
 data class BuildMessagesResult(
     val messages: List<UIMessage>,
-    val activatedLorebookEntries: List<me.rerere.ai.ui.UsedLorebookEntry>,
-    val usedModes: List<me.rerere.ai.ui.UsedMode> = emptyList(),
-    val usedMemories: List<me.rerere.ai.ui.UsedMemory> = emptyList()
+    val activatedLorebookEntries: List<UsedLorebookEntry>,
+    val usedModes: List<UsedMode> = emptyList(),
+    val usedMemories: List<UsedMemory> = emptyList()
 )
 
 @Serializable
@@ -83,7 +88,7 @@ class GenerationHandler(
     private val memoryRepo: MemoryRepository,
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
-    private val embeddingService: me.rerere.rikkahub.data.ai.rag.EmbeddingService,
+    private val embeddingService: EmbeddingService,
 ) {
     fun generateText(
         settings: Settings,
@@ -225,7 +230,7 @@ class GenerationHandler(
                 }
             }
             messages = messages + UIMessage(
-                role = MessageRole.TOOL,
+                role = CoreMessageRole.TOOL,
                 parts = results
             )
             emit(
@@ -308,7 +313,8 @@ class GenerationHandler(
                 }
                 LorebookActivationType.RAG -> {
                     // RAG activation uses embedding similarity
-                    if (entry.embedding == null || entry.embedding.isEmpty()) {
+                    val entryEmbedding = entry.embedding
+                    if (entryEmbedding == null || entryEmbedding.isEmpty()) {
                         Log.d(TAG, "RAG entry '${entry.name}' has no embedding, skipping")
                         null
                     } else if (queryEmbedding == null) {
@@ -316,7 +322,7 @@ class GenerationHandler(
                         null
                     } else {
                         // Compute cosine similarity
-                        val similarity = cosineSimilarity(entry.embedding, queryEmbedding)
+                        val similarity = cosineSimilarity(entryEmbedding, queryEmbedding)
                         val threshold = 0.7f // Similarity threshold for activation
                         val activated = similarity >= threshold
                         if (activated) {
@@ -344,13 +350,13 @@ class GenerationHandler(
         }
 
         // Build UsedMode list for UI display
-        val usedModes = enabledModes.mapIndexed { index, mode ->
+        val usedModesList = enabledModes.mapIndexed { index, mode ->
             val reason = if (enabledModeIds.contains(mode.id)) {
                 "Activated by user"
             } else {
                 "Default enabled"
             }
-            me.rerere.ai.ui.UsedMode(
+            UsedMode(
                 modeId = mode.id.toString(),
                 modeName = mode.name,
                 modeIcon = mode.icon,
@@ -394,16 +400,16 @@ class GenerationHandler(
         val activatedEntries = activatedEntriesWithLorebook.map { it.entry }
 
         // Build UsedLorebookEntry list for UI display
-        val usedLorebookEntries = activatedEntriesWithLorebook.mapIndexed { priority, activated ->
+        val usedLorebookEntriesList = activatedEntriesWithLorebook.mapIndexed { priority, activated ->
             // Serialize cover Avatar to JSON string for UI display
             val coverJson = activated.lorebook.cover?.let { cover ->
                 try {
-                    json.encodeToString(me.rerere.rikkahub.data.model.Avatar.serializer(), cover)
+                    json.encodeToString(Avatar.serializer(), cover)
                 } catch (e: Exception) {
                     null
                 }
             }
-            me.rerere.ai.ui.UsedLorebookEntry(
+            UsedLorebookEntry(
                 lorebookId = activated.lorebook.id.toString(),
                 lorebookName = activated.lorebook.name,
                 lorebookCover = coverJson,
@@ -505,8 +511,8 @@ class GenerationHandler(
                             // Replace search result content with a minimal placeholder
                             msg.copy(parts = msg.parts.map { part ->
                                 if (part is UIMessagePart.ToolResult && part.toolName == "search_web") {
-                                    part.copy(content = kotlinx.serialization.json.buildJsonObject {
-                                        put("note", kotlinx.serialization.json.JsonPrimitive("Earlier search results pruned to save context"))
+                                    part.copy(content = buildJsonObject {
+                                        put("note", JsonPrimitive("Earlier search results pruned to save context"))
                                     })
                                 } else part
                             })
@@ -581,7 +587,7 @@ class GenerationHandler(
             val remainingMemories = effectiveMemoriesCandidates.drop(minMemories)
 
             when (assistant.contextPriority) {
-                me.rerere.rikkahub.data.model.ContextPriority.CHAT_HISTORY -> {
+                ContextPriority.CHAT_HISTORY -> {
                     // Prioritize Chat History
                     for (msg in remainingChatHistory) {
                         val cost = estimateTokens(msg)
@@ -598,7 +604,7 @@ class GenerationHandler(
                         }
                     }
                 }
-                me.rerere.rikkahub.data.model.ContextPriority.MEMORIES -> {
+                ContextPriority.MEMORIES -> {
                     // Prioritize Memories
                     for (mem in remainingMemories) {
                         val cost = estimateTokens(mem.content)
@@ -615,7 +621,7 @@ class GenerationHandler(
                         } else break
                     }
                 }
-                me.rerere.rikkahub.data.model.ContextPriority.BALANCED -> {
+                ContextPriority.BALANCED -> {
                     // Balanced (e.g. 50/50 split of remaining, or round-robin)
                     // Simple round-robin approach
                     var msgIndex = 0
@@ -701,7 +707,7 @@ class GenerationHandler(
             // Add mode and lorebook attachments as a user message if there are any
             if (allContextAttachments.isNotEmpty()) {
                 add(UIMessage(
-                    role = me.rerere.ai.core.MessageRole.USER,
+                    role = CoreMessageRole.USER,
                     parts = allContextAttachments
                 ))
             }
@@ -710,13 +716,13 @@ class GenerationHandler(
             addAll(selectedMessages.sortedBy { messages.indexOf(it) })
         }
         // Build UsedMemory list for UI display
-        val usedMemories = selectedMemories.mapIndexed { index, memory ->
+        val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
             val reason = when {
                 memory.id == -1 -> "Recent episode boost"  // Recent chat reference
                 assistant.useRagMemoryRetrieval -> "Contextually relevant"  // RAG mode
                 else -> "Always included"  // Basic mode
             }
-            me.rerere.ai.ui.UsedMemory(
+            UsedMemory(
                 memoryId = memory.id,
                 memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
                 memoryType = memory.type,
@@ -727,9 +733,9 @@ class GenerationHandler(
 
         return BuildMessagesResult(
             messages = builtMessages,
-            activatedLorebookEntries = usedLorebookEntries,
-            usedModes = usedModes,
-            usedMemories = usedMemories
+            activatedLorebookEntries = usedLorebookEntriesList,
+            usedModes = usedModesList,
+            usedMemories = usedMemoriesList
         )
     }
 
@@ -812,7 +818,7 @@ class GenerationHandler(
             // Attach all context sources to the last assistant message after streaming completes
             if (hasContextSources) {
                 messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
+                    if (index == messages.lastIndex && message.role == CoreMessageRole.ASSISTANT) {
                         message.copy(
                             usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
                             usedModes = usedModes.ifEmpty { null },
@@ -851,7 +857,7 @@ class GenerationHandler(
             // Attach all context sources to the last assistant message
             if (hasContextSources) {
                 messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
+                    if (index == messages.lastIndex && message.role == CoreMessageRole.ASSISTANT) {
                         message.copy(
                             usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
                             usedModes = usedModes.ifEmpty { null },
@@ -1049,7 +1055,7 @@ class GenerationHandler(
         sourceText: String,
         targetLanguage: Locale,
         modelIdOverride: Uuid? = null,
-        onStreamUpdate: ((String) -> Unit)? = null
+        onStreamUpdate: (suspend (String) -> Unit)? = null
     ): Flow<String> = flow {
         val modelId = modelIdOverride ?: settings.translateModeId
         val model = settings.providers.findModelById(modelId)

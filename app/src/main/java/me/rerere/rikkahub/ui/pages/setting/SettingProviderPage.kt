@@ -3,35 +3,20 @@ package me.rerere.rikkahub.ui.pages.setting
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,18 +28,10 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -66,27 +43,22 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.ViewList
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -97,7 +69,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -107,23 +78,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -159,7 +121,7 @@ import me.rerere.rikkahub.utils.ImageUtils
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import me.rerere.rikkahub.data.model.Tag as DataTag
+import me.rerere.rikkahub.core.data.model.Tag as DataTag
 
 
 @Composable
@@ -167,37 +129,37 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
-    
+
     // Search query state
     var searchQuery by remember { mutableStateOf("") }
-    
+
     // View mode comes from settings for persistence
     val viewMode = settings.displaySetting.providerViewMode
-    
+
     // Tag filter state
     var selectedTagIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
-    
+
     // Filter providers based on search and tags
     val filteredProviders = remember(settings.providers, searchQuery, selectedTagIds) {
         var result = settings.providers
-        
+
         // Filter by search query
         if (searchQuery.isNotBlank()) {
             result = result.filter { provider ->
                 provider.name.contains(searchQuery, ignoreCase = true)
             }
         }
-        
+
         // Filter by tags
         if (selectedTagIds.isNotEmpty()) {
             result = result.filter { provider ->
                 provider.tags.containsAll(selectedTagIds)
             }
         }
-        
+
         result
     }
-    
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
@@ -239,7 +201,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
             // Delete confirmation dialog state
             var showDeleteDialog by remember { mutableStateOf(false) }
             var providerToDelete by remember { mutableStateOf<ProviderSetting?>(null) }
-            
+
             // Search bar at top with view mode toggle
             // Search bar
             OutlinedTextField(
@@ -260,7 +222,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     }
                 } else null
             )
-            
+
             // Tag filter row - only show when there are tags
             if (settings.providerTags.isNotEmpty()) {
                 ProviderTagsFilterRow(
@@ -269,7 +231,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     onUpdateSelectedTagIds = { selectedTagIds = it }
                 )
             }
-            
+
             // Provider list/grid view with AnimatedContent
             // Provider list view
             ProviderListView(
@@ -299,11 +261,11 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             )
-            
+
             // Delete confirmation dialog
             if (showDeleteDialog && providerToDelete != null) {
                 AlertDialog(
-                    onDismissRequest = { 
+                    onDismissRequest = {
                         showDeleteDialog = false
                         providerToDelete = null
                     },
@@ -314,7 +276,7 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
                         Text(stringResource(R.string.setting_provider_page_delete_dialog_text))
                     },
                     dismissButton = {
-                        TextButton(onClick = { 
+                        TextButton(onClick = {
                             showDeleteDialog = false
                             providerToDelete = null
                         }) {
@@ -396,25 +358,25 @@ private fun ProviderListView(
 ) {
     val lazyListState = rememberLazyListState()
     val density = LocalDensity.current
-    
+
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         onReorder(from.index, to.index)
     }
-    
+
     // State for swipe neighbor tracking
     var draggingIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
-    
-    
+
+
     val canDelete = allProviders.size > 1
-    
+
     // Reset neighborsUnlocked when offset returns to 0
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
     }
-    
+
     // Check for matching preset when no providers found
     val matchingPreset = remember(searchQuery, providers) {
         if (providers.isEmpty() && searchQuery.isNotBlank()) {
@@ -450,7 +412,7 @@ private fun ProviderListView(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 32.dp)
                     )
-                    
+
                     Surface(
                         onClick = {
                             val provider = matchingPreset.toProviderSetting()
@@ -490,7 +452,7 @@ private fun ProviderListView(
                 }
             }
         }
-        
+
         itemsIndexed(providers, key = { _, it -> it.id }) { index, provider ->
                 val position = when {
                     providers.size == 1 -> ItemPosition.ONLY
@@ -498,18 +460,18 @@ private fun ProviderListView(
                     index == providers.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
-                
+
                 // Calculate neighbor offset
                 val thresholdPx = with(density) { 35.dp.toPx() }
                 if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
                     neighborsUnlocked = true
                 }
-                
-                val shouldNeighborFollow = draggingIndex >= 0 && 
-                    draggingIndex != index && 
-                    !isUnlocked && 
+
+                val shouldNeighborFollow = draggingIndex >= 0 &&
+                    draggingIndex != index &&
+                    !isUnlocked &&
                     !neighborsUnlocked
-                
+
                 val neighborOffset = if (shouldNeighborFollow) {
                     val distance = kotlin.math.abs(index - draggingIndex)
                     when (distance) {
@@ -520,7 +482,7 @@ private fun ProviderListView(
                 } else {
                     0f
                 }
-                
+
 
                 ReorderableItem(
                     state = reorderableState,
@@ -796,7 +758,7 @@ private fun AddButton(
     var showBottomSheet by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showCustomProviderDialog by remember { mutableStateOf(false) }
-    
+
     // Custom provider dialog state
     val customDialogState = useEditState<ProviderSetting> {
         onAdd(it)
@@ -817,7 +779,7 @@ private fun AddButton(
     if (showBottomSheet) {
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val scope = rememberCoroutineScope()
-        
+
         ModalBottomSheet(
             onDismissRequest = {
                 showBottomSheet = false
@@ -853,7 +815,7 @@ private fun AddButton(
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
                 )
-                
+
                 // Search bar
                 OutlinedTextField(
                     value = searchQuery,
@@ -871,9 +833,9 @@ private fun AddButton(
                         }
                     } else null
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // Filter presets based on search
                 val filteredPresets = remember(searchQuery) {
                     if (searchQuery.isBlank()) {
@@ -885,7 +847,7 @@ private fun AddButton(
                         }
                     }
                 }
-                
+
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides null
                 ) {
@@ -954,7 +916,7 @@ private fun AddButton(
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                     }
-                    
+
                     // Provider presets
                     itemsIndexed(filteredPresets, key = { _, preset -> preset.name }) { index, preset ->
                         val position = when {
@@ -963,14 +925,14 @@ private fun AddButton(
                             index == filteredPresets.lastIndex -> ItemPosition.LAST
                             else -> ItemPosition.MIDDLE
                         }
-                        
+
                         val shape = when (position) {
                             ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
                             ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
                             ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
                             ItemPosition.ONLY -> RoundedCornerShape(24.dp)
                         }
-                        
+
                         Surface(
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
@@ -1010,7 +972,7 @@ private fun AddButton(
                             }
                         }
                     }
-                    
+
                     item {
                         Spacer(modifier = Modifier.height(16.dp))
                     }
@@ -1019,7 +981,7 @@ private fun AddButton(
             }
         }
     }
-    
+
     // Custom provider dialog (old behavior)
     if (customDialogState.isEditing) {
         AlertDialog(
@@ -1069,17 +1031,17 @@ private fun ProviderItemContent(
     onClick: () -> Unit
 ) {
     // Define the normal card color (used for both enabled background and disabled border)
-    val normalCardColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-        MaterialTheme.colorScheme.surfaceContainerLow 
-    else 
+    val normalCardColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+        MaterialTheme.colorScheme.surfaceContainerLow
+    else
         MaterialTheme.colorScheme.surfaceContainerHigh
-    
+
     // Disabled cards: transparent background (black in dark mode) with outline
-    val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-        Color.Black 
-    else 
+    val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+        Color.Black
+    else
         MaterialTheme.colorScheme.surface
-    
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1103,18 +1065,18 @@ private fun ProviderItemContent(
     ) {
         // Desaturation for disabled providers - use Paint with ColorFilter for grayscale
         // IMPORTANT: remember must be called unconditionally (outside of if/else)
-        val saturationMatrix = remember { 
-            android.graphics.ColorMatrix().apply { setSaturation(0f) } 
+        val saturationMatrix = remember {
+            android.graphics.ColorMatrix().apply { setSaturation(0f) }
         }
         val colorFilter = remember(saturationMatrix) {
             android.graphics.ColorMatrixColorFilter(saturationMatrix)
         }
-        val grayscalePaint = remember { 
+        val grayscalePaint = remember {
             android.graphics.Paint().apply {
                 this.colorFilter = colorFilter
             }
         }
-        
+
         val grayscaleModifier = if (!provider.enabled) {
             Modifier
                 .graphicsLayer { alpha = 0.99f } // Force offscreen buffer
@@ -1128,7 +1090,7 @@ private fun ProviderItemContent(
         } else {
             Modifier
         }
-        
+
         ProviderIcon(
             provider = provider,
             modifier = Modifier
@@ -1218,7 +1180,7 @@ private fun ProviderTagsFilterRow(
     val scrollState = rememberLazyListState()
     val canScrollBackward by remember { derivedStateOf { scrollState.canScrollBackward } }
     val canScrollForward by remember { derivedStateOf { scrollState.canScrollForward } }
-    
+
     LazyRow(
         state = scrollState,
         contentPadding = PaddingValues(horizontal = 16.dp),

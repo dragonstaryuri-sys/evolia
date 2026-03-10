@@ -55,7 +55,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.hooks.heroAnimation
@@ -67,11 +67,8 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
-import me.rerere.rikkahub.data.model.Tag as DataTag
-import me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog
 import me.rerere.rikkahub.utils.AssistantExportImport
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.components.ui.ToastAction
 
 
 // Sub-routes within assistant detail
@@ -124,7 +121,7 @@ fun AssistantDetailPage(
     var showExportOptionsDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
     var pendingExportContent by remember { androidx.compose.runtime.mutableStateOf("") }
     var pendingExportBytes by remember { androidx.compose.runtime.mutableStateOf<ByteArray?>(null) }
-    
+
     // Export file launcher (JSON)
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -132,7 +129,7 @@ fun AssistantDetailPage(
         if (uri != null && pendingExportContent.isNotEmpty()) {
             scope.launch {
                 try {
-                    context.contentResolver.openOutputStream(uri)?.use { 
+                    context.contentResolver.openOutputStream(uri)?.use {
                         it.write(pendingExportContent.toByteArray())
                     }
                     toaster.show(context.getString(R.string.export_success))
@@ -144,7 +141,7 @@ fun AssistantDetailPage(
             }
         }
     }
-    
+
     // Export file launcher (PNG)
     val pngExportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("image/png")
@@ -152,7 +149,7 @@ fun AssistantDetailPage(
         if (uri != null && pendingExportBytes != null) {
             scope.launch {
                 try {
-                    context.contentResolver.openOutputStream(uri)?.use { 
+                    context.contentResolver.openOutputStream(uri)?.use {
                         it.write(pendingExportBytes!!)
                     }
                     toaster.show(context.getString(R.string.export_success))
@@ -173,7 +170,7 @@ fun AssistantDetailPage(
             vm.clearSnackbarMessage()
         }
     }
-    
+
     // Auto-navigate to start route if specified (e.g., for deep linking to memory)
     LaunchedEffect(startRoute) {
         if (startRoute == AssistantDetailRoutes.MEMORY) {
@@ -222,7 +219,7 @@ fun AssistantDetailPage(
                                     contentDescription = "Export"
                                 )
                             }
-                            
+
                             DropdownMenu(
                                 expanded = showExportMenu,
                                 onDismissRequest = { showExportMenu = false }
@@ -348,7 +345,7 @@ fun AssistantDetailPage(
                 AssistantProfileSubPage(
                     assistant = assistant,
                     tags = tags,
-                    onUpdate = { onUpdate(it) },
+                    onUpdate = ::onUpdate, // 函数引用，等价于 { onUpdate(it) }
                     vm = vm
                 )
             }
@@ -358,7 +355,7 @@ fun AssistantDetailPage(
                 AssistantModelSubPage(
                     assistant = assistant,
                     providers = providers,
-                    onUpdate = { onUpdate(it) }
+                    onUpdate = ::onUpdate
                 )
             }
 
@@ -385,7 +382,7 @@ fun AssistantDetailPage(
             composable(AssistantDetailRoutes.LOREBOOKS) {
                 AssistantLorebooksSubPage(
                     assistant = assistant,
-                    onUpdate = { onUpdate(it) },
+                    onUpdate = ::onUpdate,
                     vm = vm
                 )
             }
@@ -394,7 +391,7 @@ fun AssistantDetailPage(
             composable(AssistantDetailRoutes.TOOLS) {
                 AssistantToolsSubPage(
                     assistant = assistant,
-                    onUpdate = { onUpdate(it) },
+                    onUpdate = ::onUpdate,
                     vm = vm,
                     mcpServerConfigs = mcpServerConfigs
                 )
@@ -430,7 +427,7 @@ fun AssistantDetailPage(
             composable(AssistantDetailRoutes.UI) {
                 AssistantUISubPage(
                     assistant = assistant,
-                    onUpdate = { onUpdate(it) }
+                    onUpdate = ::onUpdate
                 )
             }
 
@@ -445,7 +442,7 @@ fun AssistantDetailPage(
     }
 
 
-    
+
     if (showExportOptionsDialog) {
         me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog(
             title = "Export Options",
@@ -457,9 +454,9 @@ fun AssistantDetailPage(
                 scope.launch {
                     try {
                         val content = AssistantExportImport.exportToLastChatBundle(
-                            assistant = assistant, 
-                            context = context, 
-                            includeMemories = includeMemories, 
+                            assistant = assistant,
+                            context = context,
+                            includeMemories = includeMemories,
                             includeLorebooks = includeLorebooks
                         )
                         pendingExportContent = content
@@ -515,13 +512,13 @@ private fun AssistantDetailHome(
                     .size(96.dp)
                     .heroAnimation(key = "assistant_avatar_${assistant.id}")
             )
-            
+
             Text(
                 text = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center
             )
-            
+
             if (assistant.systemPrompt.isNotBlank()) {
                 Text(
                     text = assistant.systemPrompt,

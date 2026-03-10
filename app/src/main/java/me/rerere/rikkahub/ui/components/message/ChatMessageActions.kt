@@ -57,7 +57,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.utils.copyMessageToClipboard
@@ -80,7 +80,7 @@ fun ColumnScope.ChatMessageActionButtons(
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
     var isPendingDelete by remember { mutableStateOf(false) }
     var showContextSheet by remember { mutableStateOf(false) }
-    
+
     val usedEntries = message.usedLorebookEntries ?: emptyList()
     val usedModes = message.usedModes ?: emptyList()
     val usedMemories = message.usedMemories ?: emptyList()
@@ -93,7 +93,7 @@ fun ColumnScope.ChatMessageActionButtons(
             isPendingDelete = false
         }
     }
-    
+
     // Context sources sheet
     if (showContextSheet && hasContextSources) {
         ContextSourcesSheet(
@@ -130,7 +130,7 @@ fun ColumnScope.ChatMessageActionButtons(
                 modifier = Modifier.padding(start = 4.dp)
             )
         }
-        
+
         Icon(
             Icons.Rounded.ContentCopy, stringResource(R.string.copy), modifier = Modifier
                 .clip(CircleShape)

@@ -113,8 +113,8 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
@@ -129,7 +129,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import me.rerere.rikkahub.utils.deleteChatFiles
-import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.core.data.model.LocalToolOption
 import java.io.File
 import kotlin.uuid.Uuid
 
@@ -178,13 +178,13 @@ fun MinimalChatInput(
     // Sheet uses surfaceContainerLow always, buttons inside handle OLED colors
     val pickerSheetColor = MaterialTheme.colorScheme.surfaceContainerLow
     val pickerSheetShape = RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp)
-    
+
     // Camera permission - must be in parent, not inside ModalBottomSheet
     val cameraPermission = rememberPermissionState(PermissionCamera)
-    
+
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
-    
+
     // Collapse picker when keyboard opens
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
@@ -195,13 +195,13 @@ fun MinimalChatInput(
             focusManager.clearFocus()
         }
     }
-    
+
     fun sendMessage() {
         keyboardController?.hide()
         haptics.perform(HapticPattern.Send)
         if (state.loading) onCancelClick() else onSendClick()
     }
-    
+
     Box(
         modifier = modifier.fillMaxWidth(),
         contentAlignment = Alignment.BottomCenter
@@ -220,7 +220,7 @@ fun MinimalChatInput(
                     onDelete = onDeleteFile
                 )
             }
-            
+
             // Suggestions row
             androidx.compose.animation.AnimatedVisibility(
                 visible = chatSuggestions.isNotEmpty(),
@@ -232,7 +232,7 @@ fun MinimalChatInput(
                     onClickSuggestion = onClickSuggestion
                 )
             }
-            
+
             // Content receiver for clipboard image paste (must be outside Surface lambda)
             val receiveContentListener = remember {
                 ReceiveContentListener { transferableContent ->
@@ -253,7 +253,7 @@ fun MinimalChatInput(
                     }
                 }
             }
-            
+
             // Minimal input bar - plus button + text field with embedded action button
             Row(
                 verticalAlignment = Alignment.Bottom,
@@ -297,9 +297,9 @@ fun MinimalChatInput(
                         // Editing indicator - shown when editing a message
                         if (state.isEditing()) {
                             Surface(
-                                color = if (LocalDarkMode.current) 
+                                color = if (LocalDarkMode.current)
                                     MaterialTheme.colorScheme.surfaceContainerLowest  // Darker in dark mode
-                                else 
+                                else
                                     MaterialTheme.colorScheme.surfaceContainerHighest,  // Darker in light mode
                                 shape = RoundedCornerShape(16.dp),  // Optical roundness: 24dp outer - 8dp padding = 16dp
                                 modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 8.dp, bottom = 4.dp)  // Aligned with text
@@ -329,7 +329,7 @@ fun MinimalChatInput(
                                 }
                             }
                         }
-                        
+
                         // Text input with content receiver for paste + overlaid action button
                         Box(
                             modifier = Modifier.fillMaxWidth()
@@ -363,7 +363,7 @@ fun MinimalChatInput(
                                     bottom = 12.dp
                                 )
                             )
-                            
+
                             // Action button - bottom-right, extra bottom padding for visual alignment
                             Box(
                                 modifier = Modifier
@@ -375,7 +375,7 @@ fun MinimalChatInput(
                                     !state.isEmpty() -> "send"
                                     else -> "picker"
                                 }
-                                
+
                                 val containerColor by animateColorAsState(
                                     targetValue = when (currentAction) {
                                         "loading" -> MaterialTheme.colorScheme.errorContainer
@@ -384,9 +384,9 @@ fun MinimalChatInput(
                                     },
                                     label = "ActionContainerColor"
                                 )
-                                
+
                                 Surface(
-                                    onClick = { 
+                                    onClick = {
                                         if (currentAction == "send" || currentAction == "loading") sendMessage()
                                         else showPicker = true
                                     },
@@ -438,7 +438,7 @@ fun MinimalChatInput(
             }  // Row ends
         }  // Column ends
     }  // Box ends
-    
+
     // Bottom sheet picker with custom MinimalPickerContent
     // Optical roundness: sheet corners (40dp) = button corners (24dp) + padding (16dp)
     if (showPicker) {
@@ -490,22 +490,22 @@ private fun MinimalPickerContent(
     val localSettings = LocalSettings.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
-    
+
     // OLED dark mode detection for buttons (not sheet backgrounds)
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
     // Sheet background uses surfaceContainerLow always
     val sheetContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
-    
+
     // Camera state
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
-    
+
     // Crop state
     var showCropScreen by remember { mutableStateOf(false) }
     var imageToCrop by remember { mutableStateOf<Uri?>(null) }
-    
+
     // Sub-picker states
     var showModelPicker by remember { mutableStateOf(false) }
     var showReasoningPicker by remember { mutableStateOf(false) }
@@ -513,37 +513,37 @@ private fun MinimalPickerContent(
     var showLorebooksPicker by remember { mutableStateOf(false) }
     var showContextRefreshDialog by remember { mutableStateOf(false) }
     var showSearchPicker by remember { mutableStateOf(false) }
-    
+
     // Track the last valid search provider index so selection persists when search is disabled
     // Initialize from assistant's searchMode if available, otherwise use global setting
     val initialProviderIndex = when (val mode = assistant.searchMode) {
-        is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> mode.index
+        is me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider -> mode.index
         else -> settings.searchServiceSelected.coerceAtLeast(0)
     }
     var lastValidProviderIndex by rememberSaveable(initialProviderIndex) { mutableStateOf(initialProviderIndex) }
-    
+
     // Update lastValidProviderIndex when a valid external index is set
     val currentProviderIndex = when (val mode = assistant.searchMode) {
-        is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> mode.index
+        is me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider -> mode.index
         else -> -1
     }
     // Sync immediately when currentProviderIndex changes (no LaunchedEffect delay to prevent flickering)
     if (currentProviderIndex >= 0 && currentProviderIndex < settings.searchServices.size && currentProviderIndex != lastValidProviderIndex) {
         lastValidProviderIndex = currentProviderIndex
     }
-    
+
     // Calculate effective provider index (use tracked value when current is invalid)
     val effectiveProviderIndex = if (currentProviderIndex >= 0 && currentProviderIndex < settings.searchServices.size) {
         currentProviderIndex
     } else {
         lastValidProviderIndex.coerceIn(0, (settings.searchServices.size - 1).coerceAtLeast(0))
     }
-    
+
     // Button shapes for grouped appearance (24dp outer corners, 10dp inner, matches floating toolbar)
     val leftButtonShape = RoundedCornerShape(topStart = 24.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 10.dp)
     val middleButtonShape = RoundedCornerShape(10.dp)
     val rightButtonShape = RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
-    
+
     // Crop screen dialog
     if (showCropScreen && imageToCrop != null) {
         CropImageScreen(
@@ -565,7 +565,7 @@ private fun MinimalPickerContent(
             }
         )
     }
-    
+
     // Camera launcher
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
@@ -586,7 +586,7 @@ private fun MinimalPickerContent(
             cameraOutputUri = null
         }
     }
-    
+
     // Photo picker launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -606,7 +606,7 @@ private fun MinimalPickerContent(
             }
         }
     }
-    
+
     // File picker launcher - categorizes files by type
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -615,17 +615,17 @@ private fun MinimalPickerContent(
             val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
             val images = mutableListOf<android.net.Uri>()
             val documents = mutableListOf<me.rerere.ai.ui.UIMessagePart.Document>()
-            
+
             selectedUris.forEach { uri ->
                 val mimeType = context.contentResolver.getType(uri) ?: ""
                 val fileName = context.getFileNameFromUri(uri) ?: "file"
-                
+
                 // Allow if Python is enabled OR it's a generally supported type (Images/Text/PDF)
                 // Strict check for "Native" support usually implies Images, but app allows Text/PDF too.
-                val isSupported = mimeType.startsWith("image/") || 
-                                  mimeType.startsWith("text/") || 
+                val isSupported = mimeType.startsWith("image/") ||
+                                  mimeType.startsWith("text/") ||
                                   mimeType == "application/pdf"
-                                  
+
                 if (!isPythonEnabled && !isSupported) {
                      toaster.show("Unsupported file type: $fileName (Enable Python tool to use this file)")
                      return@forEach
@@ -648,7 +648,7 @@ private fun MinimalPickerContent(
                     }
                 }
             }
-            
+
             if (images.isNotEmpty()) {
                 state.addImages(context.createChatFilesByContents(images))
             }
@@ -658,7 +658,7 @@ private fun MinimalPickerContent(
             onDismiss()
         }
     }
-    
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -695,7 +695,7 @@ private fun MinimalPickerContent(
                     )
                 }
             }
-            
+
             // Photos button - icon only, no label
             MinimalFileButtonGroupedIconOnly(
                 icon = Icons.Rounded.Image,
@@ -705,7 +705,7 @@ private fun MinimalPickerContent(
                     imagePickerLauncher.launch("image/*")
                 }
             )
-            
+
             // Files button - icon only, no label
             MinimalFileButtonGroupedIconOnly(
                 icon = Icons.Rounded.FolderOpen,
@@ -716,13 +716,13 @@ private fun MinimalPickerContent(
                 }
             )
         }
-        
+
         // Separator
         HorizontalDivider(
             modifier = Modifier.padding(vertical = 8.dp),
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
         )
-        
+
         // Model picker - uses actual model icon, full-width clickable
         val currentModel = settings.getCurrentChatModel()
         val provider = currentModel?.findProvider(providers = settings.providers)
@@ -746,12 +746,12 @@ private fun MinimalPickerContent(
             },
             title = currentModel?.displayName ?: "Select Model",
             subtitle = currentModel?.modelId ?: "Choose a model to use",
-            onClick = { 
+            onClick = {
                 // Open model selector sheet
                 showModelPicker = true
             }
         )
-        
+
         // Reasoning picker - only show if model has reasoning ability (same as floating toolbar)
         if (currentModel?.abilities?.contains(me.rerere.ai.provider.ModelAbility.REASONING) == true) {
             MinimalPickerItem(
@@ -764,18 +764,18 @@ private fun MinimalPickerContent(
                 },
                 title = stringResource(R.string.minimal_input_thinking),
                 subtitle = stringResource(R.string.minimal_input_thinking_desc),
-                onClick = { 
+                onClick = {
                     showReasoningPicker = true
                 }
             )
         }
-        
+
         // Search picker - show selected provider if enabled (use effectiveProviderIndex to track current selection)
         val searchService = settings.searchServices.getOrNull(effectiveProviderIndex)
         val searchProviderName = if (searchService != null) {
             SearchServiceOptions.TYPES[searchService::class]
         } else null
-        
+
         // Show provider icon when search is enabled and a provider is configured
         MinimalPickerItem(
             icon = {
@@ -796,11 +796,11 @@ private fun MinimalPickerContent(
             },
             title = if (enableSearch && searchProviderName != null) searchProviderName else stringResource(R.string.minimal_input_search),
             subtitle = if (enableSearch) stringResource(R.string.web_search_enabled) else stringResource(R.string.minimal_input_search_desc),
-            onClick = { 
+            onClick = {
                 showSearchPicker = true
             }
         )
-        
+
         // Modes - use enabledModeIds from conversation or default modes
         val activeModesCount = if (conversation.enabledModeIds.isNotEmpty()) {
             conversation.enabledModeIds.size
@@ -819,11 +819,11 @@ private fun MinimalPickerContent(
             },
             title = stringResource(R.string.minimal_input_modes),
             subtitle = if (activeModesCount > 0) "$activeModesCount active" else stringResource(R.string.minimal_input_modes_desc),
-            onClick = { 
+            onClick = {
                 showModesPicker = true
             }
         )
-        
+
         // Lorebooks - show active count and blue icon when enabled
         val activeLorebooksCount = assistant.enabledLorebookIds.size
         val lorebooksActive = activeLorebooksCount > 0
@@ -838,11 +838,11 @@ private fun MinimalPickerContent(
             },
             title = stringResource(R.string.minimal_input_lorebooks),
             subtitle = if (activeLorebooksCount > 0) "$activeLorebooksCount active" else stringResource(R.string.minimal_input_lorebooks_desc),
-            onClick = { 
+            onClick = {
                 showLorebooksPicker = true
             }
         )
-        
+
         // Summarize button - only show when context refresh is enabled and more than 2 messages
         if (assistant.enableContextRefresh && conversation.currentMessages.size > 2) {
             MinimalPickerItem(
@@ -862,7 +862,7 @@ private fun MinimalPickerContent(
             )
         }
     }
-    
+
     // Reasoning picker sheet
     if (showReasoningPicker) {
         ReasoningPicker(
@@ -874,14 +874,14 @@ private fun MinimalPickerContent(
             }
         )
     }
-    
+
     // Model picker sheet - direct ModalBottomSheet (not ModelSelector which shows its own button)
     if (showModelPicker) {
         val modelPickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        val filteredProviders = settings.providers.filter { 
+        val filteredProviders = settings.providers.filter {
             it.enabled && it.models.any { model -> model.type == me.rerere.ai.provider.ModelType.CHAT }
         }
-        
+
         ModalBottomSheet(
             onDismissRequest = { showModelPicker = false },
             sheetState = modelPickerSheetState,
@@ -927,7 +927,7 @@ private fun MinimalPickerContent(
             }
         }
     }
-    
+
     // Modes picker sheet
     if (showModesPicker) {
         ModesPickerSheet(
@@ -937,7 +937,7 @@ private fun MinimalPickerContent(
             onDismiss = { showModesPicker = false }
         )
     }
-    
+
     // Lorebooks picker sheet
     if (showLorebooksPicker) {
         LorebooksPickerSheet(
@@ -951,7 +951,7 @@ private fun MinimalPickerContent(
             onDismiss = { showLorebooksPicker = false }
         )
     }
-    
+
     // Context Refresh dialog (same as floating toolbar)
     if (showContextRefreshDialog) {
         ContextRefreshDialog(
@@ -960,11 +960,11 @@ private fun MinimalPickerContent(
             onDismiss = { showContextRefreshDialog = false }
         )
     }
-    
+
     // Search picker sheet (same as floating toolbar) - direct content, no intermediate button
     if (showSearchPicker) {
         val chatModel = settings.getCurrentChatModel()
-        
+
         ModalBottomSheet(
             onDismissRequest = { showSearchPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -982,7 +982,7 @@ private fun MinimalPickerContent(
                     text = stringResource(R.string.search_picker_title),
                     style = MaterialTheme.typography.titleLarge
                 )
-                
+
                 // Direct SearchPicker content
                 SearchPicker(
                     enableSearch = enableSearch,
@@ -1095,9 +1095,9 @@ private fun MinimalFileButtonGrouped(
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
-    val buttonColor = if (isAmoled) androidx.compose.ui.graphics.Color.Black 
+    val buttonColor = if (isAmoled) androidx.compose.ui.graphics.Color.Black
                       else MaterialTheme.colorScheme.surfaceContainerHigh
-    
+
     Surface(
         onClick = onClick,
         shape = shape,
@@ -1137,9 +1137,9 @@ private fun MinimalFileButtonGroupedIconOnly(
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
-    val buttonColor = if (isAmoled) androidx.compose.ui.graphics.Color.Black 
+    val buttonColor = if (isAmoled) androidx.compose.ui.graphics.Color.Black
                       else MaterialTheme.colorScheme.surfaceContainerHigh
-    
+
     Surface(
         onClick = onClick,
         shape = shape,
@@ -1396,17 +1396,17 @@ private fun ChatSuggestionsRow(
             val isPressed = pressedSuggestionIndex == index
             val isAnythingSelected = selectedSuggestionIndex != null
             val isAnythingPressed = pressedSuggestionIndex != null
-            
+
             val targetScale = when {
                 isSelected -> 1.05f
                 isPressed -> 0.9f
                 else -> 1f
             }
-            
+
             val targetAlpha = when {
                 isSelected -> 0f
                 isAnythingSelected -> 0f
-                isAnythingPressed && !isPressed -> 0.5f 
+                isAnythingPressed && !isPressed -> 0.5f
                 visible -> 1f
                 else -> 0f
             }
@@ -1422,7 +1422,7 @@ private fun ChatSuggestionsRow(
                 animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
                 label = "suggestion_alpha"
             )
-            
+
             LaunchedEffect(isSelected) {
                 if (isSelected) {
                     kotlinx.coroutines.delay(200)

@@ -16,8 +16,8 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.activity.ShortcutHandlerActivity
 import java.net.URL
 import kotlin.uuid.Uuid
@@ -39,7 +39,7 @@ class AppShortcutManager(
 
     /**
      * Updates the dynamic shortcuts to show the recently used assistants.
-     * 
+     *
      * @param recentlyUsedIds List of assistant IDs in order of most recent use
      * @param assistants List of all available assistants
      */
@@ -49,12 +49,12 @@ class AppShortcutManager(
     ) {
         Log.d(TAG, "updateAssistantShortcuts called with ${recentlyUsedIds.size} recent IDs")
         Log.d(TAG, "recentlyUsedIds: $recentlyUsedIds")
-        
+
         val manager = shortcutManager ?: run {
             Log.w(TAG, "ShortcutManager is null (API level too low?)")
             return
         }
-        
+
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) {
             Log.w(TAG, "API level too low for shortcuts")
             return
@@ -69,10 +69,10 @@ class AppShortcutManager(
                     action = Intent.ACTION_VIEW
                     data = "lastchat://assistant/${assistant.id}".toUri()
                 }
-                
+
                 val name = assistant.name.ifEmpty { "Assistant" }
                 val icon = createAvatarIcon(assistant.avatar, name)
-                
+
                 ShortcutInfo.Builder(context, "assistant_${assistant.id}")
                     .setShortLabel(name)
                     .setLongLabel(context.getString(R.string.shortcut_chat_with, name))
@@ -83,7 +83,7 @@ class AppShortcutManager(
             }
 
         Log.d(TAG, "Created ${shortcuts.size} shortcuts")
-        
+
         try {
             manager.dynamicShortcuts = shortcuts
             Log.d(TAG, "Successfully set dynamic shortcuts")
@@ -122,7 +122,7 @@ class AppShortcutManager(
             }
         }
     }
-    
+
     /**
      * Creates a circular adaptive icon from a bitmap.
      * Adaptive icons have a safe zone in the center (inner 66%), so we need to
@@ -132,40 +132,40 @@ class AppShortcutManager(
         val fullSize = 108 // Full adaptive icon size
         val safeSize = 72 // Inner safe zone (66% of 108)
         val padding = (fullSize - safeSize) / 2 // 18dp padding on each side
-        
+
         // Scale source to fit in safe zone
         val scaledBitmap = Bitmap.createScaledBitmap(sourceBitmap, safeSize, safeSize, true)
         val resultBitmap = createBitmap(fullSize, fullSize)
         val canvas = Canvas(resultBitmap)
-        
+
         // Fill with background color
         val bgPaint = Paint().apply {
             color = 0xFFE0E0E0.toInt()
             isAntiAlias = true
         }
         canvas.drawCircle(fullSize / 2f, fullSize / 2f, fullSize / 2f, bgPaint)
-        
+
         // Create shader for the circular image, positioned in center
         val matrix = android.graphics.Matrix()
         matrix.setTranslate(padding.toFloat(), padding.toFloat())
-        
+
         val shader = android.graphics.BitmapShader(
             scaledBitmap,
             android.graphics.Shader.TileMode.CLAMP,
             android.graphics.Shader.TileMode.CLAMP
         )
         shader.setLocalMatrix(matrix)
-        
+
         val paint = Paint().apply {
             isAntiAlias = true
             this.shader = shader
         }
         canvas.drawCircle(fullSize / 2f, fullSize / 2f, safeSize / 2f, paint)
-        
+
         if (sourceBitmap != scaledBitmap) {
             scaledBitmap.recycle()
         }
-        
+
         return Icon.createWithAdaptiveBitmap(resultBitmap)
     }
 
@@ -176,14 +176,14 @@ class AppShortcutManager(
         val size = 108 // Adaptive icon size
         val bitmap = createBitmap(size, size)
         val canvas = Canvas(bitmap)
-        
+
         // Draw background
         val bgPaint = Paint().apply {
             color = 0xFFE8E8E8.toInt()
             isAntiAlias = true
         }
         canvas.drawCircle(size / 2f, size / 2f, size / 2f, bgPaint)
-        
+
         // Draw emoji
         val textPaint = Paint().apply {
             textSize = size * 0.5f
@@ -194,7 +194,7 @@ class AppShortcutManager(
         textPaint.getTextBounds(emoji, 0, emoji.length, bounds)
         val y = size / 2f + bounds.height() / 2f
         canvas.drawText(emoji, size / 2f, y, textPaint)
-        
+
         return Icon.createWithAdaptiveBitmap(bitmap)
     }
 
@@ -205,14 +205,14 @@ class AppShortcutManager(
         val size = 108
         val bitmap = createBitmap(size, size)
         val canvas = Canvas(bitmap)
-        
+
         // Draw background
         val bgPaint = Paint().apply {
             color = 0xFF6750A4.toInt() // Material You primary color
             isAntiAlias = true
         }
         canvas.drawCircle(size / 2f, size / 2f, size / 2f, bgPaint)
-        
+
         // Draw letter
         val letter = name.firstOrNull()?.uppercase() ?: "A"
         val textPaint = Paint().apply {
@@ -226,7 +226,7 @@ class AppShortcutManager(
         textPaint.getTextBounds(letter, 0, letter.length, bounds)
         val y = size / 2f + bounds.height() / 2f
         canvas.drawText(letter, size / 2f, y, textPaint)
-        
+
         return Icon.createWithAdaptiveBitmap(bitmap)
     }
 
@@ -241,14 +241,14 @@ class AppShortcutManager(
             val inputStream = connection.getInputStream()
             val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
             inputStream.close()
-            
+
             if (bitmap != null) {
                 // Create circular adaptive icon
                 val size = 108
                 val scaledBitmap = Bitmap.createScaledBitmap(bitmap, size, size, true)
                 val circularBitmap = createBitmap(size, size)
                 val canvas = Canvas(circularBitmap)
-                
+
                 val paint = Paint().apply {
                     isAntiAlias = true
                     shader = android.graphics.BitmapShader(
@@ -258,10 +258,10 @@ class AppShortcutManager(
                     )
                 }
                 canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
-                
+
                 bitmap.recycle()
                 scaledBitmap.recycle()
-                
+
                 Icon.createWithAdaptiveBitmap(circularBitmap)
             } else null
         } catch (e: Exception) {
@@ -276,7 +276,7 @@ class AppShortcutManager(
     fun clearAssistantShortcuts() {
         val manager = shortcutManager ?: return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) return
-        
+
         try {
             manager.removeAllDynamicShortcuts()
         } catch (e: Exception) {

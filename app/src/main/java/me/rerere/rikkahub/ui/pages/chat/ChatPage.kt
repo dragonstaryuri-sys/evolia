@@ -75,7 +75,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
-import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.data.datastore.ChatInputStyle
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
@@ -239,7 +239,7 @@ private fun ChatPageContent(
     vm: ChatVM,
     chatListState: LazyListState,
     enableWebSearch: Boolean,
-    currentSearchMode: me.rerere.rikkahub.data.model.AssistantSearchMode,
+    currentSearchMode: me.rerere.rikkahub.core.data.model.AssistantSearchMode,
     currentChatModel: Model?,
     initialSearchQuery: String? = null,
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
@@ -270,7 +270,7 @@ private fun ChatPageContent(
     var lastProviderIndex by rememberSaveable { mutableStateOf(0) }
 
     LaunchedEffect(currentSearchMode) {
-        if (currentSearchMode is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider) {
+        if (currentSearchMode is me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider) {
             lastProviderIndex = currentSearchMode.index
         }
     }
@@ -559,10 +559,10 @@ private fun ChatPageContent(
                             onCancelClick = { loadingJob?.cancel() },
                             enableSearch = enableWebSearch,
                             onToggleSearch = {
-                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.data.model.AssistantSearchMode.Off)
+                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
                                 else if (setting.searchServices.isNotEmpty()) {
                                     val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
-                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.data.model.AssistantSearchMode.Provider(validIndex))
+                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
                                 }
                             },
                             onSendClick = {
@@ -585,7 +585,7 @@ private fun ChatPageContent(
                             },
                             onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
                             onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
-                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.data.model.AssistantSearchMode.Provider(index)) },
+                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
                             onClearContext = { vm.handleMessageTruncate() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                             onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
@@ -610,10 +610,10 @@ private fun ChatPageContent(
                             onCancelClick = { loadingJob?.cancel() },
                             enableSearch = enableWebSearch,
                             onToggleSearch = {
-                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.data.model.AssistantSearchMode.Off)
+                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
                                 else if (setting.searchServices.isNotEmpty()) {
                                     val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
-                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.data.model.AssistantSearchMode.Provider(validIndex))
+                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
                                 }
                             },
                             onSendClick = {
@@ -636,7 +636,7 @@ private fun ChatPageContent(
                             },
                             onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
                             onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
-                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.data.model.AssistantSearchMode.Provider(index)) },
+                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
                             onClearContext = { vm.handleMessageTruncate() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                             onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },

@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.ai.mcp
 
 import android.util.Log
-import io.modelcontextprotocol.kotlin.sdk.CallToolRequest
 import io.modelcontextprotocol.kotlin.sdk.Implementation
 import io.modelcontextprotocol.kotlin.sdk.Tool
 import io.modelcontextprotocol.kotlin.sdk.client.Client
@@ -19,6 +18,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
 import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -108,16 +109,10 @@ class McpManager(
 
         if (client.transport == null) client.connect(getTransport(config))
         val result = client.callTool(
-            request = CallToolRequest(
-                name = tool.name,
-                arguments = args,
-            ),
-            options = RequestOptions(timeout = 60.seconds),
-            compatibility = true
+            name = tool.name,
+            arguments = args,
+            options = RequestOptions(timeout = 60.seconds)
         )
-        require(result != null) {
-            "Result is null"
-        }
         return McpJson.encodeToJsonElement(result.content)
     }
 
@@ -170,11 +165,12 @@ class McpManager(
         if (client.transport == null) {
             client.connect(getTransport(config))
         }
-        val serverTools = client.listTools()?.tools ?: emptyList()
+        val serverTools = client.listTools().tools
+        val currentSettings = settingsStore.settingsFlow.value
         Log.i(TAG, "sync: tools: $serverTools")
-        settingsStore.update { old ->
-            old.copy(
-                mcpServers = old.mcpServers.map { serverConfig ->
+        settingsStore.update(
+            currentSettings.copy(
+                mcpServers = currentSettings.mcpServers.map { serverConfig ->
                     if (serverConfig.id != config.id) return@map serverConfig
                     val common = serverConfig.commonOptions
                     val tools = common.tools.toMutableList()
@@ -221,7 +217,7 @@ class McpManager(
                     )
                 }
             )
-        }
+        )
 
         setStatus(config = config, status = McpStatus.Connected)
     }
@@ -271,6 +267,10 @@ internal val McpJson: Json by lazy {
     }
 }
 
-private fun Tool.Input.toSchema(): InputSchema {
-    return InputSchema.Obj(properties = this.properties, required = this.required)
+private fun Any?.toSchema(): InputSchema? {
+    val jsonObject = this as? JsonObject ?: return null
+    return InputSchema.Obj(
+        properties = jsonObject["properties"]?.jsonObject ?: JsonObject(emptyMap()),
+        required = jsonObject["required"]?.jsonArray?.map { (it as JsonPrimitive).content } ?: emptyList()
+    )
 }

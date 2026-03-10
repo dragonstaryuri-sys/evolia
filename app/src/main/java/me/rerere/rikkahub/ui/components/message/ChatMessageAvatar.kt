@@ -19,14 +19,11 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Avatar
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.context.LocalSettings
-import me.rerere.rikkahub.utils.formatNumber
-import me.rerere.rikkahub.utils.toLocalString
 
 @Composable
 fun ChatMessageUserAvatar(
@@ -89,7 +86,7 @@ fun ChatMessageAssistantAvatar(
         val defaultName = stringResource(R.string.assistant_page_default_assistant)
         val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: defaultName
         val avatarValue = assistant?.avatar ?: Avatar.Dummy
-        
+
         Row(
             modifier = modifier.padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

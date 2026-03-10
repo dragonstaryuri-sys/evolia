@@ -22,7 +22,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.common.JsonInstant
 import kotlin.uuid.Uuid
 
 @Composable
@@ -45,7 +45,7 @@ class ChatInputState {
     var messageContent by mutableStateOf(listOf<UIMessagePart>())
     var editingMessage by mutableStateOf<Uuid?>(null)
     var loading by mutableStateOf(false)
-    
+
     // FocusRequester for the text field - allows external focus requests
     val focusRequester = FocusRequester()
 
@@ -60,7 +60,7 @@ class ChatInputState {
     fun setMessageText(text: String) {
         textContent.setTextAndPlaceCursorAtEnd(text)
     }
-    
+
     /**
      * Sets message text and requests focus on the text field.
      * Use this when setting text from templates to show keyboard.

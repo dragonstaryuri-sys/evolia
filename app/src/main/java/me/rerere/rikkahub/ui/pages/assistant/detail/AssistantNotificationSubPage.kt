@@ -24,7 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.FormItem
 
 @Composable
@@ -102,7 +102,7 @@ fun AssistantNotificationSubPage(
                         ) {
                             OutlinedTextField(
                                 value = assistant.notificationStartHour.toString(),
-                                onValueChange = { 
+                                onValueChange = {
                                     val hour = it.toIntOrNull()?.coerceIn(0, 23) ?: 7
                                     onUpdateAssistant(assistant.copy(notificationStartHour = hour))
                                 },
@@ -111,7 +111,7 @@ fun AssistantNotificationSubPage(
                             )
                             OutlinedTextField(
                                 value = assistant.notificationEndHour.toString(),
-                                onValueChange = { 
+                                onValueChange = {
                                     val hour = it.toIntOrNull()?.coerceIn(0, 23) ?: 22
                                     onUpdateAssistant(assistant.copy(notificationEndHour = hour))
                                 },
@@ -127,7 +127,7 @@ fun AssistantNotificationSubPage(
                     ) {
                         OutlinedTextField(
                             value = assistant.notificationFrequencyHours.toString(),
-                            onValueChange = { 
+                            onValueChange = {
                                 val hours = it.toIntOrNull()?.coerceAtLeast(1) ?: 4
                                 onUpdateAssistant(assistant.copy(notificationFrequencyHours = hours))
                             },
@@ -141,7 +141,7 @@ fun AssistantNotificationSubPage(
                     ) {
                         OutlinedTextField(
                             value = assistant.spontaneousPrompt,
-                            onValueChange = { 
+                            onValueChange = {
                                 onUpdateAssistant(assistant.copy(spontaneousPrompt = it))
                             },
                             modifier = Modifier.fillMaxWidth(),

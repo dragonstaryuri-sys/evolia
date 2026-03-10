@@ -13,14 +13,12 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -39,7 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,27 +52,25 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
-import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantAffectScope
-import me.rerere.rikkahub.data.model.MessageNode
-import me.rerere.rikkahub.data.model.replaceRegexes
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantAffectScope
+import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.core.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
-import me.rerere.rikkahub.utils.JsonInstant
-import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.formatNumber
@@ -83,7 +78,6 @@ import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
-import me.rerere.ai.core.MessageRole as AIMessageRole
 
 /**
  * Represents a group of consecutive messages from the same role.

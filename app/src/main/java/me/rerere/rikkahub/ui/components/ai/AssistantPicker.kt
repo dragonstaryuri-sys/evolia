@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
@@ -150,7 +150,7 @@ fun AssistantPickerSheet(
 
     // 标签过滤状态
     var selectedTagIds by remember { mutableStateOf(emptySet<Uuid>()) }
-    
+
     // Transition state - which assistant is being switched to (null = not transitioning)
     var transitioningAssistantId by remember { mutableStateOf<Uuid?>(null) }
     val isTransitioning = transitioningAssistantId != null
@@ -168,7 +168,7 @@ fun AssistantPickerSheet(
 
     val isDarkMode = LocalDarkMode.current
     val haptics = rememberPremiumHaptics()
-    
+
     // State to lock the sheet height to its initial size to prevent jumping animations
     var sheetHeight by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
@@ -232,7 +232,7 @@ fun AssistantPickerSheet(
             ) {
                 itemsIndexed(filteredAssistants, key = { _, item -> item.id }) { index, assistant ->
                     val checked = assistant.id == currentAssistant.id
-                    
+
                     // Determine position in the list for corner rounding
                     val position = when {
                         filteredAssistants.size == 1 -> "ONLY"
@@ -240,7 +240,7 @@ fun AssistantPickerSheet(
                         index == filteredAssistants.lastIndex -> "LAST"
                         else -> "MIDDLE"
                     }
-                    
+
                     // Animated corner radius - selected items animate to fully round
                     val topCorner by animateDpAsState(
                         targetValue = if (checked) 50.dp else when (position) {
@@ -258,12 +258,12 @@ fun AssistantPickerSheet(
                         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
                         label = "bottomCorner"
                     )
-                    
+
                     val shape = RoundedCornerShape(
                         topStart = topCorner, topEnd = topCorner,
                         bottomStart = bottomCorner, bottomEnd = bottomCorner
                     )
-                    
+
                     // Use Row+clip+background pattern like ReasoningPicker
                     Row(
                         modifier = Modifier
@@ -271,7 +271,7 @@ fun AssistantPickerSheet(
                             .fillMaxWidth()
                             .clip(shape)
                             .background(
-                                color = if (checked) MaterialTheme.colorScheme.primaryContainer 
+                                color = if (checked) MaterialTheme.colorScheme.primaryContainer
                                        else if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                             )
                             .clickable(enabled = !isTransitioning) {

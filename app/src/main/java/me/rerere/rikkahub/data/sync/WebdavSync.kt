@@ -2,13 +2,13 @@ package me.rerere.rikkahub.data.sync
 
 import android.content.Context
 import me.rerere.rikkahub.utils.LogUtil
-import at.bitfire.dav4jvm.okhttp.BasicDigestAuthHandler
-import at.bitfire.dav4jvm.okhttp.DavCollection
-import at.bitfire.dav4jvm.okhttp.Response
-import at.bitfire.dav4jvm.okhttp.exception.NotFoundException
-import at.bitfire.dav4jvm.property.webdav.DisplayName
-import at.bitfire.dav4jvm.property.webdav.GetContentLength
-import at.bitfire.dav4jvm.property.webdav.GetLastModified
+import at.bitfire.dav4jvm.BasicDigestAuthHandler
+import at.bitfire.dav4jvm.DavCollection
+import at.bitfire.dav4jvm.Response as DavResponse
+import at.bitfire.dav4jvm.exception.HttpException
+import at.bitfire.dav4jvm.property.DisplayName
+import at.bitfire.dav4jvm.property.GetContentLength
+import at.bitfire.dav4jvm.property.GetLastModified
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -76,13 +76,19 @@ class WebdavSync(
                 depth = 1,
             ) { response, relation ->
                 LogUtil.i(TAG, "listBackupFiles: ${response.properties} ${response.href}")
-                if (relation == Response.HrefRelation.MEMBER) {
+                if (relation == DavResponse.HrefRelation.MEMBER) {
                     val displayName = response.properties.filterIsInstance<DisplayName>()
                         .firstOrNull()?.displayName ?: "Unknown"
                     val size = response.properties.filterIsInstance<GetContentLength>()
                         .firstOrNull()?.contentLength ?: 0L
-                    val lastModified = response.properties.filterIsInstance<GetLastModified>()
-                        .firstOrNull()?.lastModified ?: Instant.EPOCH
+                    val lm = response.properties.filterIsInstance<GetLastModified>()
+                        .firstOrNull()?.lastModified
+                    val lastModified: Instant = when (val obj = lm as Any?) {
+                        is Instant -> obj
+                        is java.util.Calendar -> obj.toInstant()
+                        is java.util.Date -> obj.toInstant()
+                        else -> Instant.EPOCH
+                    }
                     files.add(
                         WebDavBackupItem(
                             href = response.href.toString(),
@@ -252,7 +258,7 @@ class WebdavSync(
     private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
             LogUtil.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
-            
+
             var unsupportedZipEntriesBytes: Long = 0
             var settingsCleanupResult = BackupCleanupResult()
             // Temp directory for extraction
@@ -362,34 +368,34 @@ class WebdavSync(
 
                 // Sanitize and Restore Database
                 val tempDbFile = File(restoreTempDir, "rikka_hub.db")
-                
+
                 if (tempDbFile.exists()) {
                     LogUtil.i(TAG, "Starting database sanitization...")
                     try {
                          val (cleanDb, result) = DatabaseSanitizer.sanitize(context, tempDbFile)
                          sanitizationResult = result
-                         
+
                          // Move clean DB to final location
                          val finalDbFile = context.getDatabasePath("rikka_hub")
                          if(finalDbFile.exists()) finalDbFile.delete()
-                         
+
                          cleanDb.copyTo(finalDbFile, overwrite = true)
-                         
+
                          val cleanWal = File(cleanDb.path + "-wal")
                          val cleanShm = File(cleanDb.path + "-shm")
-                         
+
                          if(cleanWal.exists()) {
                              cleanWal.copyTo(File(finalDbFile.path + "-wal"), overwrite = true)
                          } else {
                              File(finalDbFile.path + "-wal").delete()
                          }
-                         
+
                          if(cleanShm.exists()) {
                              cleanShm.copyTo(File(finalDbFile.path + "-shm"), overwrite = true)
                          } else {
                              File(finalDbFile.path + "-shm").delete()
                          }
-                         
+
                          LogUtil.i(TAG, "Database restored and sanitized: $sanitizationResult")
                     } catch (e: Exception) {
                         LogUtil.e(TAG, "Failed to sanitize database", e)
@@ -398,14 +404,14 @@ class WebdavSync(
                 }
 
                 LogUtil.i(TAG, "restoreFromBackupFile: Restore completed successfully")
-                
+
                 // Combine cleanup results
                 val totalCleanupResult = settingsCleanupResult.copy(
                     unsupportedZipEntriesBytes = unsupportedZipEntriesBytes
                 )
-                
+
                 LogUtil.i(TAG, "restoreFromBackupFile: Cleanup summary - skipped ${unsupportedZipEntriesBytes} bytes, fixed ${totalCleanupResult.totalIssuesFixed} issues")
-                
+
                 RestoreResult(
                     sanitization = sanitizationResult,
                     settingsCleanup = totalCleanupResult
@@ -440,7 +446,7 @@ private fun WebDavConfig.requireClient(): OkHttpClient {
     val authHandler = BasicDigestAuthHandler(
         domain = null,
         username = this.username,
-        password = this.password.toCharArray()
+        password = this.password
     )
     val okHttpClient = OkHttpClient.Builder()
         .followRedirects(false)
@@ -475,12 +481,13 @@ private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatc
         propfind(depth = 0) { response, relation ->
             LogUtil.i(TAG, "ensureCollectionExists: $response $relation")
         }
-    } catch (e: NotFoundException) {
-        e.printStackTrace()
-        LogUtil.i(TAG, "ensureCollectionExists: ${this@ensureCollectionExists.location}")
-        mkCol(null) { res ->
-            LogUtil.i(TAG, "ensureCollectionExists: $res")
-        }
+    } catch (e: HttpException) {
+        if (e.code == 404) {
+            LogUtil.i(TAG, "ensureCollectionExists: ${this@ensureCollectionExists.location}")
+            mkCol(null) { res ->
+                LogUtil.i(TAG, "ensureCollectionExists: $res")
+            }
+        } else throw e
     }
 }
 

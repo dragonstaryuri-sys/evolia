@@ -1,5 +1,9 @@
 pluginManagement {
     repositories {
+        // 阿里云镜像 (Alibaba Mirrors)
+        maven("https://maven.aliyun.com/repository/google")
+        maven("https://maven.aliyun.com/repository/public")
+        maven("https://maven.aliyun.com/repository/gradle-plugin")
         google {
             content {
                 includeGroupByRegex("com\\.android.*")
@@ -22,10 +26,18 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        mavenLocal()
+        // 阿里云镜像 (Alibaba Mirrors)
+        maven("https://maven.aliyun.com/repository/google")
+        maven("https://maven.aliyun.com/repository/public")
         google()
         mavenCentral()
+
+        // JitPack (虽然慢，但有时必须)
         maven("https://jitpack.io")
-        mavenLocal()
+
+        // Ktor 开发版/预览版仓库
+        maven("https://maven.pkg.jetbrains.space/public/p/ktor/eap")
     }
 }
 
@@ -38,3 +50,5 @@ include(":tts")
 include(":common")
 include(":app:baselineprofile")
 include(":document")
+include(":discover")
+include(":core-data")

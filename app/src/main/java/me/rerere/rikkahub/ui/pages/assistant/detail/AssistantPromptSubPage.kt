@@ -82,12 +82,12 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.transformers.DefaultPlaceholderProvider
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.ai.transformers.TransformerContext
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantAffectScope
-import me.rerere.rikkahub.data.model.AssistantRegex
-import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.QuickMessage
-import me.rerere.rikkahub.data.model.toMessageNode
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantAffectScope
+import me.rerere.rikkahub.core.data.model.AssistantRegex
+import me.rerere.rikkahub.core.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.QuickMessage
+import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.Select
@@ -131,9 +131,9 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -287,9 +287,9 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -334,7 +334,7 @@ fun AssistantPromptSubPage(
                             append("{{ date }}")
                         }
                     }, style = MaterialTheme.typography.bodySmall)
-                    
+
                     DebouncedTextField(
                         value = assistant.messageTemplate,
                         onValueChange = {
@@ -354,7 +354,7 @@ fun AssistantPromptSubPage(
                             lineHeight = 16.sp
                         )
                     )
-                    
+
                     // Preview section
                     Column(
                         modifier = Modifier
@@ -432,9 +432,9 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -452,7 +452,7 @@ fun AssistantPromptSubPage(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    
+
                     assistant.presetMessages.fastForEachIndexed { index, presetMessage ->
                         // Each preset message in its own card
                         Surface(
@@ -557,9 +557,9 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
@@ -577,7 +577,7 @@ fun AssistantPromptSubPage(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    
+
                     assistant.regexes.fastForEachIndexed { index, regex ->
                         AssistantRegexCard(
                             regex = regex,
@@ -835,10 +835,10 @@ private fun FullScreenSystemPromptEditor(
     // Initialize once with the current value - do NOT re-sync from parent
     val textFieldState = rememberTextFieldState(initialText = systemPrompt)
     val scope = rememberCoroutineScope()
-    
+
     // Track if we've made any changes
     var hasUnsavedChanges by remember { mutableStateOf(false) }
-    
+
     // Debounced auto-save while typing (500ms debounce)
     LaunchedEffect(Unit) {
         snapshotFlow { textFieldState.text.toString() }
@@ -851,7 +851,7 @@ private fun FullScreenSystemPromptEditor(
                 }
             }
     }
-    
+
     // Track changes for unsaved indicator
     LaunchedEffect(Unit) {
         snapshotFlow { textFieldState.text.toString() }
@@ -933,4 +933,3 @@ private fun FullScreenSystemPromptEditor(
         }
     }
 }
-

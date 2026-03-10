@@ -60,7 +60,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.highlight.HighlightText
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.Favicon
@@ -68,8 +68,8 @@ import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
-import me.rerere.rikkahub.utils.JsonInstantPretty
-import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.common.JsonInstantPretty
+import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.saveToDownloads
 import org.koin.compose.koinInject
 
@@ -221,7 +221,7 @@ fun ToolCallItem(
                         Text(
                             text = previewText.take(100) + if (previewText.length > 100) "…" else "",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (error != null) MaterialTheme.colorScheme.error 
+                            color = if (error != null) MaterialTheme.colorScheme.error
                                    else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -439,7 +439,7 @@ private fun ToolCallPreviewSheet(
                         val stdout = contentObj?.get("stdout")?.jsonPrimitiveOrNull?.contentOrNull
                         val stderr = contentObj?.get("stderr")?.jsonPrimitiveOrNull?.contentOrNull
                         val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
-                        
+
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -465,7 +465,7 @@ private fun ToolCallPreviewSheet(
                                     modifier = Modifier.padding(12.dp)
                                 )
                             }
-                            
+
                             // Output section
                             Text(
                                 text = stringResource(R.string.chat_message_tool_python_output),
@@ -474,8 +474,8 @@ private fun ToolCallPreviewSheet(
                             )
                             Card(
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (error != null) 
-                                        MaterialTheme.colorScheme.errorContainer 
+                                    containerColor = if (error != null)
+                                        MaterialTheme.colorScheme.errorContainer
                                     else MaterialTheme.colorScheme.surfaceContainerLow
                                 ),
                                 modifier = Modifier.fillMaxWidth()
@@ -535,7 +535,7 @@ private fun ToolCallPreviewSheet(
                         val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
                         val context = androidx.compose.ui.platform.LocalContext.current
                         val scope = rememberCoroutineScope()
-                        
+
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -547,10 +547,10 @@ private fun ToolCallPreviewSheet(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            
+
                             Card(
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (success) 
+                                    containerColor = if (success)
                                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                                     else MaterialTheme.colorScheme.errorContainer
                                 ),
@@ -581,7 +581,7 @@ private fun ToolCallPreviewSheet(
                                             modifier = Modifier.weight(1f)
                                         )
                                     }
-                                    
+
                                     if (error != null) {
                                         Text(
                                             text = error,
@@ -589,7 +589,7 @@ private fun ToolCallPreviewSheet(
                                             color = MaterialTheme.colorScheme.error
                                         )
                                     }
-                                    
+
                                     // Download button
                                     if (success && uri != null) {
                                         androidx.compose.material3.FilledTonalButton(
@@ -650,7 +650,7 @@ private fun ToolCallPreviewSheet(
                                 }
                             }
                         }
-                        
+
                         // Arguments section
                         val clipboardManager = LocalClipboardManager.current
                         Column(

@@ -4,8 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,7 +30,7 @@ import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import kotlinx.serialization.json.Json
 import me.rerere.ai.ui.UsedLorebookEntry
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Avatar
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -48,18 +46,18 @@ fun LorebookStackIndicator(
     modifier: Modifier = Modifier
 ) {
     if (entries.isEmpty()) return
-    
+
     // Sort by priority (higher = first) and take top 3
     val sortedEntries = entries.sortedByDescending { it.priority }
     val displayEntries = sortedEntries.take(3)
     val extraCount = (entries.size - 3).coerceAtLeast(0)
-    
+
     // Config
     val bookWidth = 24.dp
     val bookHeight = 32.dp
     val overlap = 14.dp // How much subsequent books are visible (offset amount)
     val badgeSize = 20.dp
-    
+
     // Calculate total container size explicitly to avoid layout issues
     val totalWidth = if (displayEntries.isNotEmpty()) {
         val booksWidth = bookWidth + (overlap * (displayEntries.size - 1))
@@ -85,7 +83,7 @@ fun LorebookStackIndicator(
                 1 -> 0.7f    // Second - reduced
                 else -> 0.45f // Third - more reduced
             }
-            
+
             // Deserialize cover from JSON string
             val cover = remember(entry.lorebookCover) {
                 entry.lorebookCover?.let { coverJson ->
@@ -96,7 +94,7 @@ fun LorebookStackIndicator(
                     }
                 }
             }
-            
+
             BookCover(
                 lorebookName = entry.lorebookName,
                 cover = cover,
@@ -109,7 +107,7 @@ fun LorebookStackIndicator(
                     .height(bookHeight)
             )
         }
-        
+
         // "+N" circle badge
         if (extraCount > 0) {
             // Overlap halfway with the last card for depth (-10.dp = half of 20dp badge)
@@ -185,11 +183,11 @@ private fun BookCover(
                 Text(
                     text = lorebookName.take(1).uppercase(),
                     style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
-                    color = MaterialTheme.colorScheme.onSurface 
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
-        
+
         // Entry number at bottom with gradient background
         Box(
             modifier = Modifier

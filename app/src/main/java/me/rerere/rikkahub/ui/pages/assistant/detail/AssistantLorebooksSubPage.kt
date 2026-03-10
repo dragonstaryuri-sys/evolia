@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,8 +18,6 @@ import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -28,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,14 +32,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Lorebook
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Lorebook
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.Screen
-import kotlin.uuid.Uuid
+import me.rerere.rikkahub.core.data.model.Avatar
 
 @Composable
 fun AssistantLorebooksSubPage(
@@ -54,7 +50,7 @@ fun AssistantLorebooksSubPage(
     val settings by vm.settings.collectAsStateWithLifecycle()
     val lorebooks = settings.lorebooks
     val navController = LocalNavController.current
-    
+
     if (lorebooks.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -114,7 +110,7 @@ fun AssistantLorebooksSubPage(
                 }
                 Spacer(Modifier.height(12.dp))
             }
-            
+
             // Section header for lorebook list
             item(key = "section_header") {
                 Text(
@@ -124,10 +120,10 @@ fun AssistantLorebooksSubPage(
                     modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp)
                 )
             }
-            
+
             itemsIndexed(lorebooks, key = { _, it -> it.id }) { index, lorebook ->
                 val isEnabled = assistant.enabledLorebookIds.contains(lorebook.id)
-                
+
                 // Calculate position for connected card styling
                 val position = when {
                     lorebooks.size == 1 -> me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY
@@ -135,7 +131,7 @@ fun AssistantLorebooksSubPage(
                     index == lorebooks.lastIndex -> me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST
                     else -> me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE
                 }
-                
+
                 LorebookSelectionCard(
                     lorebook = lorebook,
                     isEnabled = isEnabled,
@@ -178,7 +174,7 @@ private fun LorebookSelectionCard(
             bottomStart = cornerRadius, bottomEnd = cornerRadius
         )
     }
-    
+
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
@@ -216,7 +212,7 @@ private fun LorebookSelectionCard(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     when (val cover = lorebook.cover) {
-                        is me.rerere.rikkahub.data.model.Avatar.Image -> {
+                        is Avatar.Image -> {
                             coil3.compose.AsyncImage(
                                 model = cover.url,
                                 contentDescription = null,
@@ -224,7 +220,7 @@ private fun LorebookSelectionCard(
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
                             )
                         }
-                        is me.rerere.rikkahub.data.model.Avatar.Emoji -> {
+                        is Avatar.Emoji -> {
                             Text(
                                 text = cover.content,
                                 fontSize = 24.sp

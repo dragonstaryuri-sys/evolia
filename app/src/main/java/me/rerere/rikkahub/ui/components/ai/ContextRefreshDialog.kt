@@ -44,7 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
@@ -66,7 +66,7 @@ fun ContextRefreshDialog(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var summarizedCount by remember { mutableIntStateOf(0) }
     var tokensSaved by remember { mutableIntStateOf(0) }
-    
+
     val messageCount = conversation.currentMessages.size
     val estimatedTokens = conversation.currentMessages.sumOf { msg ->
         msg.parts.sumOf { part ->
@@ -76,7 +76,7 @@ fun ContextRefreshDialog(
             }
         }
     }
-    
+
     // Calculate messages since last summary
     val lastSummaryIndex = conversation.contextSummaryUpToIndex
     val messagesSinceSummary = if (lastSummaryIndex >= 0) {
@@ -102,9 +102,9 @@ fun ContextRefreshDialog(
                 targetState = state,
                 label = "title_anim",
                 transitionSpec = {
-                    (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) + 
+                    (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
                         scaleIn(initialScale = 0.95f, animationSpec = spring(stiffness = Spring.StiffnessLow)))
-                        .togetherWith(fadeOut(animationSpec = spring(stiffness = Spring.StiffnessLow)) + 
+                        .togetherWith(fadeOut(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
                             scaleOut(targetScale = 0.95f, animationSpec = spring(stiffness = Spring.StiffnessLow)))
                 }
             ) { currentState ->
@@ -147,9 +147,9 @@ fun ContextRefreshDialog(
                 targetState = state,
                 label = "content_anim",
                 transitionSpec = {
-                    (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) + 
+                    (fadeIn(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
                         scaleIn(initialScale = 0.95f, animationSpec = spring(stiffness = Spring.StiffnessLow)))
-                        .togetherWith(fadeOut(animationSpec = spring(stiffness = Spring.StiffnessLow)) + 
+                        .togetherWith(fadeOut(animationSpec = spring(stiffness = Spring.StiffnessLow)) +
                             scaleOut(targetScale = 0.95f, animationSpec = spring(stiffness = Spring.StiffnessLow)))
                 }
             ) { currentState ->
@@ -163,24 +163,24 @@ fun ContextRefreshDialog(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            
+
                             // Keep last 2 messages (user + assistant exchange)
                             val messagesToKeep = 2
                             val lastIndexToSummarize = (messageCount - messagesToKeep - 1).coerceAtLeast(0)
-                            
+
                             // Calculate actual messages to summarize (excluding kept messages)
                             val startIndex = if (hasPreviousSummary && lastSummaryIndex >= 0 && lastSummaryIndex < messageCount) {
                                 (lastSummaryIndex + 1).coerceAtMost(messageCount)
                             } else {
                                 0
                             }
-                            
+
                             val messagesToSummarize = if (startIndex <= lastIndexToSummarize) {
                                 lastIndexToSummarize - startIndex + 1
                             } else {
                                 0
                             }
-                            
+
                             // Calculate tokens for messages that will be summarized
                             val messagesToProcess = if (startIndex <= lastIndexToSummarize && lastIndexToSummarize < conversation.currentMessages.size) {
                                 conversation.currentMessages.subList(startIndex, (lastIndexToSummarize + 1).coerceAtMost(conversation.currentMessages.size))
@@ -195,14 +195,14 @@ fun ContextRefreshDialog(
                                     }
                                 }
                             }
-                            
+
                             Text(
                                 text = "$messagesToSummarize messages will be summarized and ~$tokensToCleanUp tokens will be cleaned up.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            
+
                             // Show previous summary if exists
                             if (hasPreviousSummary) {
                                 Text(

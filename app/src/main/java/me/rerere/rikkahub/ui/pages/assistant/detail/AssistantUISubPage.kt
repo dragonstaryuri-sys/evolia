@@ -47,8 +47,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantUISettings
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantUISettings
 
 
 
@@ -92,8 +92,8 @@ fun AssistantUISubPage(
                 trailing = {
                     me.rerere.rikkahub.ui.components.ui.Select(
                         options = headerOptions,
-                        selectedOption = uiSettings.newChatHeaderStyle,
-                        onOptionSelected = { updateUI(uiSettings.copy(newChatHeaderStyle = it)) },
+                        selectedOption = headerOptions.find { it?.name == uiSettings.newChatHeaderStyle },
+                        onOptionSelected = { updateUI(uiSettings.copy(newChatHeaderStyle = it?.name)) },
                         optionToString = { style ->
                             when (style) {
                                 null -> stringResource(R.string.use_global)
@@ -106,10 +106,10 @@ fun AssistantUISubPage(
                     )
                 }
             )
-            
+
             // Avatar toggle - only show if header style is not NONE (resolved through per-assistant or global)
-            val effectiveHeaderStyle = uiSettings.newChatHeaderStyle ?: settings.displaySetting.newChatHeaderStyle
-            if (effectiveHeaderStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE) {
+            val effectiveHeaderStyle = uiSettings.newChatHeaderStyle ?: settings.displaySetting.newChatHeaderStyle.name
+            if (effectiveHeaderStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE.name) {
                 // Changed to use TriStateSettingItem for consistent look with other settings
                 TriStateSettingItem(
                     title = "Show Avatar in Header",
@@ -119,7 +119,7 @@ fun AssistantUISubPage(
                     onValueChange = { updateUI(uiSettings.copy(newChatShowAvatar = it)) }
                 )
             }
-            
+
             // Content style dropdown with optional override (null = use global)
             val contentOptions: List<me.rerere.rikkahub.data.datastore.NewChatContentStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.NewChatContentStyle.entries
             SettingGroupItem(
@@ -128,8 +128,8 @@ fun AssistantUISubPage(
                 trailing = {
                     me.rerere.rikkahub.ui.components.ui.Select(
                         options = contentOptions,
-                        selectedOption = uiSettings.newChatContentStyle,
-                        onOptionSelected = { updateUI(uiSettings.copy(newChatContentStyle = it)) },
+                        selectedOption = contentOptions.find { it?.name == uiSettings.newChatContentStyle },
+                        onOptionSelected = { updateUI(uiSettings.copy(newChatContentStyle = it?.name)) },
                         optionToString = { style ->
                             when (style) {
                                 null -> stringResource(R.string.use_global)
@@ -155,8 +155,8 @@ fun AssistantUISubPage(
                 trailing = {
                     me.rerere.rikkahub.ui.components.ui.Select(
                         options = inputOptions,
-                        selectedOption = uiSettings.chatInputStyle,
-                        onOptionSelected = { updateUI(uiSettings.copy(chatInputStyle = it)) },
+                        selectedOption = inputOptions.find { it?.name == uiSettings.chatInputStyle },
+                        onOptionSelected = { updateUI(uiSettings.copy(chatInputStyle = it?.name)) },
                         optionToString = { style ->
                             when (style) {
                                 null -> stringResource(R.string.use_global)
@@ -168,7 +168,7 @@ fun AssistantUISubPage(
                     )
                 }
             )
-            
+
             TriStateSettingItem(
                 title = "Show Character Avatar",
                 subtitle = "Show the character's avatar before messages",

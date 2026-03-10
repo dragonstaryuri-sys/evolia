@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
-import me.rerere.rikkahub.data.ai.tools.LocalToolOption
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.LocalToolOption
+import me.rerere.rikkahub.core.data.model.Assistant
 
 /**
  * Utility for checking and mapping feature permissions.
@@ -57,7 +57,7 @@ object PermissionChecker {
                 add(assistant.spontaneousPrompt)
                 addAll(assistant.quickMessages.map { it.content })
             }
-            
+
             if (textsToCheck.any { locationPlaceholderPattern.containsMatchIn(it) }) {
                 requiredPermissions.addAll(FeaturePermission.LOCATION.permissions)
             }

@@ -15,6 +15,9 @@ import me.rerere.rikkahub.ui.pages.discover.DiaryVM
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
@@ -42,10 +45,10 @@ val viewModelModule = module {
         AssistantDetailVM(
             id = it.get(),
             settingsStore = get(),
-            memoryRepository = get(),
-            conversationRepository = get(),
+            memoryRepository = get<MemoryRepository>(),
+            conversationRepository = get<ConversationRepository>(),
             context = get(),
-            chatEpisodeDAO = get(),
+            chatEpisodeDAO = get<ChatEpisodeDAO>(),
             providerManager = get(),
         )
     }

@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.rikkahub.common.JsonInstant
 
 object EmojiUtils {
     fun loadEmoji(context: Context): EmojiData {

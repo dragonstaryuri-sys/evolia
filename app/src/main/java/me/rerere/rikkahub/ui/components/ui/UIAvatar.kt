@@ -41,9 +41,8 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
-import me.rerere.rikkahub.utils.createChatFilesByContents
 
 @Composable
 fun TextAvatar(
@@ -89,7 +88,7 @@ fun UIAvatar(
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showUrlInput by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf("") }
-    
+
     // State for square cropper
     var showCropper by remember { mutableStateOf(false) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -207,7 +206,7 @@ fun UIAvatar(
                         onClick = {
                             showPickOption = false
                             if (name == "Generical") {
-                                onUpdate?.invoke(Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp))
+                                onUpdate?.invoke(Avatar.Resource(R.drawable.default_generical_pfp))
                             } else {
                                 onUpdate?.invoke(Avatar.Dummy)
                             }
@@ -290,7 +289,7 @@ fun UIAvatar(
             }
         )
     }
-    
+
     // Square cropper dialog
     if (showCropper && selectedImageUri != null) {
         me.rerere.rikkahub.ui.components.crop.SquareCropImageScreen(

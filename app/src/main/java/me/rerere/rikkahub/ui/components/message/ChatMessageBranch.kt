@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
-import me.rerere.rikkahub.data.model.MessageNode
+import me.rerere.rikkahub.core.data.model.MessageNode
 
 @Composable
 fun ChatMessageBranchSelector(

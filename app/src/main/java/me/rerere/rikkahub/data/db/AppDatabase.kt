@@ -12,22 +12,22 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
-import me.rerere.rikkahub.data.db.dao.ConversationDAO
-import me.rerere.rikkahub.data.db.dao.DailyActivityDAO
-import me.rerere.rikkahub.data.db.dao.EmbeddingCacheDAO
-import me.rerere.rikkahub.data.db.dao.GenMediaDAO
-import me.rerere.rikkahub.data.db.dao.MemoryDAO
-import me.rerere.rikkahub.data.db.dao.AgentDiaryDAO
-import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
-import me.rerere.rikkahub.data.db.entity.ConversationEntity
-import me.rerere.rikkahub.data.db.entity.DailyActivityEntity
-import me.rerere.rikkahub.data.db.entity.EmbeddingCacheEntity
-import me.rerere.rikkahub.data.db.entity.GenMediaEntity
-import me.rerere.rikkahub.data.db.entity.MemoryEntity
-import me.rerere.rikkahub.data.db.entity.AgentDiaryEntity
-import me.rerere.rikkahub.data.model.MessageNode
-import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.core.data.db.dao.ConversationDAO
+import me.rerere.rikkahub.core.data.db.dao.DailyActivityDAO
+import me.rerere.rikkahub.core.data.db.dao.EmbeddingCacheDAO
+import me.rerere.rikkahub.core.data.db.dao.GenMediaDAO
+import me.rerere.rikkahub.core.data.db.dao.MemoryDAO
+import me.rerere.rikkahub.core.data.db.dao.AgentDiaryDAO
+import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
+import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
+import me.rerere.rikkahub.core.data.db.entity.EmbeddingCacheEntity
+import me.rerere.rikkahub.core.data.db.entity.GenMediaEntity
+import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
+import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
+import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -65,9 +65,9 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 17, to = 18),
         AutoMigration(from = 18, to = 19),
         AutoMigration(from = 19, to = 20),
-        AutoMigration(from = 20, to = 21), // Adds context_summary, context_summary_up_to_index, last_prune_time, last_prune_message_count, last_refresh_time to ConversationEntity
-        AutoMigration(from = 21, to = 22), // Adds DailyActivityEntity table for persistent streak tracking
-        AutoMigration(from = 23, to = 24), // Adds AgentDiaryEntity table
+        AutoMigration(from = 20, to = 21),
+        AutoMigration(from = 21, to = 22),
+        AutoMigration(from = 23, to = 24),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -117,7 +117,7 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 12 to 13")
-                // Check if table exists before altering (table is created in MIGRATION_11_12)
+                // Check if table exists before altering
                 val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='ChatEpisodeEntity'")
                 val tableExists = cursor.count > 0
                 cursor.close()
@@ -143,8 +143,6 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 14 to 16")
 
-                // 1. Handle ChatEpisodeEntity
-                // Create new table with correct schema
                 db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS `ChatEpisodeEntity_new` (
@@ -161,7 +159,6 @@ abstract class AppDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
 
-                // Check if conversation_id exists in old table
                 val cursor = db.query("PRAGMA table_info(ChatEpisodeEntity)")
                 var hasConversationId = false
                 while (cursor.moveToNext()) {
@@ -172,7 +169,6 @@ abstract class AppDatabase : RoomDatabase() {
                 }
                 cursor.close()
 
-                // Copy data
                 if (hasConversationId) {
                     db.execSQL(
                         """
@@ -189,17 +185,8 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                 }
 
-                // Drop old and rename new
                 db.execSQL("DROP TABLE ChatEpisodeEntity")
                 db.execSQL("ALTER TABLE ChatEpisodeEntity_new RENAME TO ChatEpisodeEntity")
-
-                // 2. Handle MemoryEntity (Ensure columns exist)
-                // We can't easily check column existence and add IF NOT EXISTS in SQLite in one go,
-                // but we can catch exceptions or check pragma.
-                // Since we are migrating to 16, let's ensure the schema is correct.
-                // The safest way for MemoryEntity if we suspect issues is to recreate it too,
-                // but for now let's assume it's mostly fine or just needs columns.
-                // However, since we are doing a manual migration, let's be safe and check/add columns if needed.
 
                 val memoryColumns = mutableListOf<String>()
                 val memCursor = db.query("PRAGMA table_info(MemoryEntity)")
@@ -284,7 +271,7 @@ abstract class AppDatabase : RoomDatabase() {
                                                                             put("type", "me.rerere.ai.ui.UIMessagePart.Reasoning")
                                                                             part.entries.forEach { (partKey, partValue) ->
                                                                                 when (partKey) {
-                                                                                    "type" -> { /* skip, already added */ }
+                                                                                    "type" -> { /* skip */ }
                                                                                     "thinking" -> put("reasoning", partValue)
                                                                                     else -> put(partKey, partValue)
                                                                                 }
@@ -333,11 +320,9 @@ object TokenUsageConverter {
 
 val Migration_6_7 = object : Migration(6, 7) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        // ... (existing migration code) ...
         Log.i(AppDatabase.TAG, "migrate: start migrate from 6 to 7")
         db.beginTransaction()
         try {
-            // 创建新表结构（不包含messages列）
             db.execSQL(
                 """
                 CREATE TABLE ConversationEntity_new (
@@ -353,7 +338,6 @@ val Migration_6_7 = object : Migration(6, 7) {
             """.trimIndent()
             )
 
-            // 获取所有对话记录并转换数据
             val cursor =
                 db.query("SELECT id, assistant_id, title, messages, usage, create_at, update_at, truncate_index FROM ConversationEntity")
             val updates = mutableListOf<Array<Any?>>()
@@ -369,15 +353,10 @@ val Migration_6_7 = object : Migration(6, 7) {
                 val truncateIndex = cursor.getInt(7)
 
                 try {
-                    // 尝试解析旧格式的消息列表 List<UIMessage>
                     val oldMessages = JsonInstant.decodeFromString<List<UIMessage>>(messagesJson)
-
-                    // 转换为新格式 List<MessageNode>
                     val newMessages = oldMessages.map { message ->
                         MessageNode.of(message)
                     }
-
-                    // 序列化新格式
                     val newMessagesJson = JsonInstant.encodeToString(newMessages)
                     updates.add(
                         arrayOf(
@@ -392,13 +371,11 @@ val Migration_6_7 = object : Migration(6, 7) {
                         )
                     )
                 } catch (e: Exception) {
-                    // 如果解析失败，可能已经是新格式或者数据损坏，跳过
                     error("Failed to migrate messages for conversation $id: ${e.message}")
                 }
             }
             cursor.close()
 
-            // 批量插入数据到新表
             updates.forEach { values ->
                 db.execSQL(
                     "INSERT INTO ConversationEntity_new (id, assistant_id, title, nodes, usage, create_at, update_at, truncate_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -406,14 +383,9 @@ val Migration_6_7 = object : Migration(6, 7) {
                 )
             }
 
-            // 删除旧表
             db.execSQL("DROP TABLE ConversationEntity")
-
-            // 重命名新表
             db.execSQL("ALTER TABLE ConversationEntity_new RENAME TO ConversationEntity")
-
             db.setTransactionSuccessful()
-
             Log.i(AppDatabase.TAG, "migrate: migrate from 6 to 7 success (${updates.size} conversations updated)")
         } finally {
             db.endTransaction()

@@ -83,8 +83,8 @@ import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
@@ -147,7 +147,7 @@ fun AssistantMemorySettings(
             onUpdateMemory(it)
         }
     }
-    
+
     // Embedding progress dialog
     if (embeddingProgress != null && embeddingProgress.isRunning) {
         AlertDialog(
@@ -196,7 +196,7 @@ fun AssistantMemorySettings(
     val memorySearchQuery by assistantDetailVM.memorySearchQuery.collectAsState()
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
-    
+
     // Get all models for summarizer picker
     val providers by assistantDetailVM.providers.collectAsStateWithLifecycle()
     val allModels = remember(providers) { providers.flatMap { it.models } }
@@ -214,12 +214,12 @@ fun AssistantMemorySettings(
     ) {
         // Mode Indicator
         MemoryModeIndicator(mode = currentMode)
-        
+
         // ═══════════════════════════════════════════════════════════════════
         // SETTINGS GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroupHeader(title = "Memory Settings")
-        
+
         Column(
             modifier = Modifier.clip(RoundedCornerShape(24.dp)),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -244,7 +244,7 @@ fun AssistantMemorySettings(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 val isLockedByConsolidation = assistant.enableMemoryConsolidation
-                
+
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_page_recent_chats),
                     subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
@@ -260,7 +260,7 @@ fun AssistantMemorySettings(
                         Box(modifier = Modifier.graphicsLayer { alpha = toggleAlpha }) {
                             HapticSwitch(
                                 checked = assistant.enableRecentChatsReference || isLockedByConsolidation,
-                                onCheckedChange = { 
+                                onCheckedChange = {
                                     if (!isLockedByConsolidation) {
                                         onUpdateAssistant(assistant.copy(enableRecentChatsReference = it))
                                     }
@@ -355,7 +355,7 @@ fun AssistantMemorySettings(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = "Advanced Memory Settings")
-                
+
                 ConsolidationSettingsCard(
                     assistant = assistant,
                     onUpdateAssistant = onUpdateAssistant,
@@ -450,13 +450,13 @@ private fun MemorySettingsItem(
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.98f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
         label = "scale"
     )
-    
+
     val topCorner by animateDpAsState(
         targetValue = when (position) {
             "ONLY", "FIRST" -> 24.dp
@@ -473,7 +473,7 @@ private fun MemorySettingsItem(
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "bottomCorner"
     )
-    
+
     Surface(
         onClick = {
             if (onClick != null) {
@@ -538,7 +538,7 @@ private fun MemoryModeIndicator(mode: MemoryMode) {
         animationSpec = spring(),
         label = "modeColor"
     )
-    
+
     Surface(
         shape = RoundedCornerShape(24.dp),
         color = backgroundColor,
@@ -712,7 +712,7 @@ private fun ConsolidationSettingsCard(
                 }
             }
         }
-        
+
         // Consolidation Delay - corners depend on whether warning banner is shown
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -763,7 +763,7 @@ private fun ConsolidationSettingsCard(
                     Spacer(Modifier.width(8.dp))
                     Text("Consolidate All Memories Now")
                 }
-                
+
                 if (assistant.lastConsolidationTime > 0) {
                     val time = java.time.Instant.ofEpochMilli(assistant.lastConsolidationTime)
                         .atZone(java.time.ZoneId.systemDefault())
@@ -832,15 +832,15 @@ private fun MemoryStatisticsCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                
+
                 // Show embeddings when RAG is enabled
                 AnimatedVisibility(visible = assistant.useRagMemoryRetrieval) {
                     StatItem(
                         value = withEmbeddings.toString(),
                         label = "Embedded",
-                        color = if (withEmbeddings < memories.size) 
-                            MaterialTheme.colorScheme.error 
-                        else 
+                        color = if (withEmbeddings < memories.size)
+                            MaterialTheme.colorScheme.error
+                        else
                             MaterialTheme.colorScheme.tertiary
                     )
                 }
@@ -898,14 +898,14 @@ private fun ManageMemoriesSection(
     var selectedTab by remember { mutableIntStateOf(initialMemoryTab ?: 0) }
     var sortOrder by remember { mutableStateOf(MemorySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
-    
+
     // Auto-select tab when navigating from context sources
     LaunchedEffect(initialMemoryTab) {
         if (initialMemoryTab != null) {
             selectedTab = initialMemoryTab
         }
     }
-    
+
     // Auto-open memory editor when navigating from context sources
     LaunchedEffect(scrollToMemoryId, memories) {
         if (scrollToMemoryId != null && memories.isNotEmpty()) {
@@ -918,7 +918,7 @@ private fun ManageMemoriesSection(
 
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
-    
+
     // Filter and sort based on current settings
     val displayMemories = if (showMemoryTypes) {
         when (selectedTab) {
@@ -976,7 +976,7 @@ private fun ManageMemoriesSection(
                         }
                     }
                 }
-                
+
                 if (onRegenerateEmbeddings != null && assistant.useRagMemoryRetrieval && needsEmbeddingRegeneration) {
                     IconButton(onClick = onRegenerateEmbeddings) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Regenerate Embeddings")
@@ -1055,7 +1055,7 @@ private fun ManageMemoriesSection(
                     )
                 }
             }
-            
+
             if (displayMemories.isEmpty()) {
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1088,35 +1088,28 @@ private fun MemoryItem(
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.98f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
         label = "scale"
     )
-    
-    val topCorner by animateDpAsState(
-        targetValue = when (position) {
-            "ONLY", "FIRST" -> 24.dp
-            else -> 10.dp
-        },
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
-        label = "topCorner"
-    )
-    val bottomCorner by animateDpAsState(
-        targetValue = when (position) {
-            "ONLY", "LAST" -> 24.dp
-            else -> 10.dp
-        },
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 200f),
-        label = "bottomCorner"
-    )
-    
+
+    val topCorner = when (position) {
+        "ONLY", "FIRST" -> 24.dp
+        else -> 10.dp
+    }
+
+    val bottomCorner = when (position) {
+        "ONLY", "LAST" -> 24.dp
+        else -> 10.dp
+    }
+
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
             title = { Text(stringResource(R.string.assistant_page_delete)) },
-            text = { 
+            text = {
                 Text(
                     text = stringResource(R.string.delete_memory_confirmation) + "\n\n\"${memory.content.take(100)}${if (memory.content.length > 100) "..." else ""}\""
                 )
@@ -1138,7 +1131,7 @@ private fun MemoryItem(
             }
         )
     }
-    
+
     Surface(
         onClick = { onEditMemory(memory) },
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1191,7 +1184,7 @@ private fun MemoryItem(
                                 )
                             }
                         }
-                        
+
                         if (useRagMemoryRetrieval && !memory.hasEmbedding) {
                             Surface(
                                 color = Color(0xFFC62828),
@@ -1207,7 +1200,7 @@ private fun MemoryItem(
                         }
                     }
                 }
-                
+
                 Text(
                     text = memory.content,
                     maxLines = 4,
@@ -1215,12 +1208,12 @@ private fun MemoryItem(
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            
+
             // Only show delete for core memories (user-created)
             if (memory.type == 0) {
-                IconButton(onClick = { 
+                IconButton(onClick = {
                     haptics.perform(HapticPattern.Pop)
-                    showDeleteConfirmation = true 
+                    showDeleteConfirmation = true
                 }) {
                     Icon(Icons.Rounded.Delete, stringResource(R.string.assistant_page_delete))
                 }
@@ -1249,7 +1242,7 @@ private fun MemoryDebugger(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -18,12 +18,12 @@ import java.util.Calendar
 fun Greeting(
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.headlineMedium,
-    assistant: me.rerere.rikkahub.data.model.Assistant? = null
+    assistant: me.rerere.rikkahub.core.data.model.Assistant? = null
 ) {
     @Composable
     fun getGreetingMessage(): String {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        
+
         return when (hour) {
             in 5..7 -> stringResource(id = R.string.greeting_early_morning)
             in 8..11 -> stringResource(id = R.string.menu_page_morning_greeting)

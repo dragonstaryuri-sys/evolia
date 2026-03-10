@@ -21,9 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
-import me.rerere.rikkahub.data.ai.tools.LocalToolOption
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantSearchMode
+import me.rerere.rikkahub.core.data.model.LocalToolOption
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.ui.components.ai.McpPickerButton
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -42,7 +42,7 @@ fun AssistantToolsSubPage(
     mcpServerConfigs: List<McpServerConfig>
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -56,10 +56,10 @@ fun AssistantToolsSubPage(
         SettingsGroup(title = "Search") {
             // Build options list for Select
             val currentSearchMode = assistant.searchMode
-            
+
             // Create sealed class options for the selector
             data class SearchOption(val mode: AssistantSearchMode, val displayName: String)
-            
+
             val searchOptions = buildList {
                 add(SearchOption(AssistantSearchMode.Off, "Off"))
                 settings.searchServices.forEachIndexed { index, service ->
@@ -67,7 +67,7 @@ fun AssistantToolsSubPage(
                     add(SearchOption(AssistantSearchMode.Provider(index), name))
                 }
             }
-            
+
             val selectedOption = searchOptions.find { option ->
                 when (val mode = option.mode) {
                     is AssistantSearchMode.Off -> currentSearchMode is AssistantSearchMode.Off || currentSearchMode is AssistantSearchMode.BuiltIn
@@ -75,7 +75,7 @@ fun AssistantToolsSubPage(
                     is AssistantSearchMode.Provider -> currentSearchMode is AssistantSearchMode.Provider && currentSearchMode.index == mode.index
                 }
             } ?: searchOptions.first()
-            
+
             SettingGroupItem(
                 title = "Search Provider",
                 subtitle = selectedOption.displayName,
@@ -91,7 +91,7 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
-            
+
             // Prefer Built-in Search
             SettingGroupItem(
                 title = "Prefer Built-in Search",
@@ -114,7 +114,7 @@ fun AssistantToolsSubPage(
             val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
             onUpdate(assistant.copy(localTools = newLocalTools))
         }
-        
+
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
             // JavaScript Engine
             SettingGroupItem(
@@ -134,7 +134,7 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
-            
+
             // Device Control
             SettingGroupItem(
                 title = "Device Control",
@@ -149,7 +149,7 @@ fun AssistantToolsSubPage(
                                     permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                                 }
                                 permissions.add(Manifest.permission.CAMERA)
-                                
+
                                 if (permissions.isNotEmpty()) {
                                     deviceControlPermissionLauncher.launch(permissions.toTypedArray())
                                 } else {
@@ -164,7 +164,7 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
-            
+
             // Python Engine
             val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
             SettingGroupItem(

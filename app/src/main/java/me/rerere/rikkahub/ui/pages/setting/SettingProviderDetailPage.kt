@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -42,10 +41,8 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
 import androidx.compose.material3.FloatingToolbarDefaults.floatingToolbarVerticalNestedScroll
-import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -61,7 +58,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -71,7 +67,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -99,7 +94,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -131,8 +125,6 @@ import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ModelTypeTag
 import me.rerere.rikkahub.ui.components.ai.ProviderBalanceText
 import me.rerere.rikkahub.ui.components.nav.BackButton
-import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
-import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ProviderIcon
 import me.rerere.rikkahub.ui.components.ui.ModelIcon
 import me.rerere.rikkahub.ui.components.ui.ShareSheet
@@ -158,7 +150,7 @@ import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
-import me.rerere.rikkahub.data.model.Tag as DataTag
+import me.rerere.rikkahub.core.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
 
 @Composable
@@ -217,13 +209,13 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                 actions = {
                     val shareSheetState = rememberShareSheetState()
                     ShareSheet(shareSheetState)
-                    
+
                     // Test connection button
                     ConnectionTesterButton(
                         provider = provider,
                         scope = scope
                     )
-                    
+
                     IconButton(
                         onClick = {
                             shareSheetState.show(provider)
@@ -260,7 +252,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .then(
-                                    if (pager.currentPage == 0) 
+                                    if (pager.currentPage == 0)
                                         Modifier.background(MaterialTheme.colorScheme.primaryContainer)
                                     else Modifier.clickable {
                                         haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
@@ -273,19 +265,19 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                             Icon(
                                 imageVector = Icons.Rounded.Settings,
                                 contentDescription = stringResource(R.string.setting_provider_page_configuration),
-                                tint = if (pager.currentPage == 0) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
+                                tint = if (pager.currentPage == 0)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
-                        
+
                         // Models tab
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .then(
-                                    if (pager.currentPage == 1) 
+                                    if (pager.currentPage == 1)
                                         Modifier.background(MaterialTheme.colorScheme.primaryContainer)
                                     else Modifier.clickable {
                                         haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
@@ -298,19 +290,19 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                             Icon(
                                 imageVector = Icons.Rounded.ViewModule,
                                 contentDescription = stringResource(R.string.setting_provider_page_models),
-                                tint = if (pager.currentPage == 1) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
+                                tint = if (pager.currentPage == 1)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
-                        
+
                         // Proxy tab
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .then(
-                                    if (pager.currentPage == 2) 
+                                    if (pager.currentPage == 2)
                                         Modifier.background(MaterialTheme.colorScheme.primaryContainer)
                                     else Modifier.clickable {
                                         haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
@@ -323,8 +315,8 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                             Icon(
                                 imageVector = Icons.Rounded.Public,
                                 contentDescription = stringResource(R.string.setting_provider_page_network_proxy),
-                                tint = if (pager.currentPage == 2) 
-                                    MaterialTheme.colorScheme.onPrimaryContainer 
+                                tint = if (pager.currentPage == 2)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(24.dp)
                             )
@@ -354,11 +346,11 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                                 val updatedProviders = settings.providers.map {
                                     if (it.id == providerWithNewTags.id) providerWithNewTags else it
                                 }
-                                
+
                                 // Auto-cleanup: Filter out tags that are no longer used by any provider
                                 val usedTagIds = updatedProviders.flatMap { it.tags }.toSet()
                                 val cleanedTags = updatedTags.filter { tag -> tag.id in usedTagIds }
-                                
+
                                 val newSettings = settings.copy(
                                     providers = updatedProviders,
                                     providerTags = cleanedTags
@@ -430,7 +422,7 @@ private fun SettingProviderConfigPage(
                     }
                 )
             }
-            
+
             // Tags section
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
@@ -466,7 +458,7 @@ private fun SettingProviderConfigPage(
                 SettingProviderBalanceOption(
                     provider = internalProvider,
                     balanceOption = internalProvider.balanceOption,
-                    onEdit = { 
+                    onEdit = {
                         val updated = internalProvider.copyProvider(balanceOption = it)
                         internalProvider = updated
                         onEdit(updated)  // Auto-save like other config fields
@@ -484,7 +476,7 @@ private fun SettingProviderConfigPage(
                 )
             }
         }
-        
+
         // Bottom fade gradient
         Box(
             modifier = Modifier
@@ -754,11 +746,11 @@ private fun ModelList(
             it.printStackTrace()
         }
     }
-    
+
     // Sync icon data from fresh API response to existing saved models
     LaunchedEffect(modelList) {
         if (modelList.isEmpty()) return@LaunchedEffect
-        
+
         var needsUpdate = false
         val updatedModels = providerSetting.models.map { savedModel ->
             // Find matching model from fresh API data
@@ -767,7 +759,7 @@ private fun ModelList(
                 // Update icon data if fresh model has data that saved model lacks
                 val shouldUpdateIcon = savedModel.iconUrl.isNullOrBlank() && !freshModel.iconUrl.isNullOrBlank()
                 val shouldUpdateSlug = savedModel.providerSlug.isNullOrBlank() && !freshModel.providerSlug.isNullOrBlank()
-                
+
                 if (shouldUpdateIcon || shouldUpdateSlug) {
                     needsUpdate = true
                     savedModel.copy(
@@ -781,12 +773,12 @@ private fun ModelList(
                 savedModel
             }
         }
-        
+
         if (needsUpdate) {
             onUpdateProvider(providerSetting.copyProvider(models = updatedModels))
         }
     }
-    
+
     var expanded by rememberSaveable { mutableStateOf(true) }
     val lazyListState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -794,16 +786,16 @@ private fun ModelList(
     }
     val density = LocalDensity.current
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-    
+
     // State for swipe neighbor tracking
     var draggingIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
     var neighborsUnlocked by remember { mutableStateOf(false) }
-    
-    
+
+
     val canDelete = providerSetting.models.size > 1
-    
+
     // Reset neighborsUnlocked when offset returns to 0
     if (dragOffset == 0f && neighborsUnlocked) {
         neighborsUnlocked = false
@@ -831,18 +823,18 @@ private fun ModelList(
                     index == providerSetting.models.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
-                
+
                 // Calculate neighbor offset
                 val thresholdPx = with(density) { 35.dp.toPx() }
                 if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
                     neighborsUnlocked = true
                 }
-                
-                val shouldNeighborFollow = draggingIndex >= 0 && 
-                    draggingIndex != index && 
-                    !isUnlocked && 
+
+                val shouldNeighborFollow = draggingIndex >= 0 &&
+                    draggingIndex != index &&
+                    !isUnlocked &&
                     !neighborsUnlocked
-                
+
                 val neighborOffset = if (shouldNeighborFollow) {
                     val distance = kotlin.math.abs(index - draggingIndex)
                     when (distance) {
@@ -853,7 +845,7 @@ private fun ModelList(
                 } else {
                     0f
                 }
-                
+
                 ReorderableItem(
                     state = reorderableLazyListState,
                     key = item.id
@@ -915,7 +907,7 @@ private fun ModelList(
                     }
                 }
             }
-            
+
             // Empty state for saved models
             if (providerSetting.models.isEmpty()) {
                 item {
@@ -958,7 +950,7 @@ private fun ModelList(
                     )
                 )
         )
-        
+
         // Stacked FABs for adding models
         Column(
             modifier = Modifier
@@ -994,7 +986,7 @@ private fun ModelList(
                 },
                 parentProvider = providerSetting
             )
-            
+
             // Main FAB for add new custom model
             AddNewModelFab(
                 onAddModel = {
@@ -1390,9 +1382,9 @@ private fun ModelPickerFab(
 ) {
     var showPicker by remember { mutableStateOf(false) }
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-    
+
     FloatingActionButton(
-        onClick = { 
+        onClick = {
             showPicker = true
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
         },
@@ -1405,7 +1397,7 @@ private fun ModelPickerFab(
             contentDescription = stringResource(R.string.setting_provider_page_add_from_list)
         )
     }
-    
+
     if (showPicker) {
         ModalBottomSheet(
             onDismissRequest = { showPicker = false },
@@ -1435,7 +1427,7 @@ private fun ModelPickerFab(
                 val allFilteredSelected = filteredModels.isNotEmpty() && filteredModels.all { model ->
                     selectedModels.any { it.modelId == model.modelId }
                 }
-                
+
                 if (allFilteredSelected) {
                     // All filtered models are selected, show Deselect All
                     TextButton(onClick = {
@@ -1470,7 +1462,7 @@ private fun ModelPickerFab(
                         Text(stringResource(R.string.select_all))
                     }
                 }
-                
+
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1482,7 +1474,7 @@ private fun ModelPickerFab(
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                             }
-                            
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1593,9 +1585,9 @@ private fun AddNewModelFab(
     val dialogState = useEditState<Model> { onAddModel(it) }
     val scope = rememberCoroutineScope()
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-    
+
     FloatingActionButton(
-        onClick = { 
+        onClick = {
             dialogState.open(Model())
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
         },
@@ -1603,7 +1595,7 @@ private fun AddNewModelFab(
     ) {
         Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.setting_provider_page_add_model))
     }
-    
+
     if (dialogState.isEditing) {
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1721,7 +1713,7 @@ private fun ModelPicker(
                 val allFilteredSelected = filteredModels.isNotEmpty() && filteredModels.all { model ->
                     selectedModels.any { it.modelId == model.modelId }
                 }
-                
+
                 if (allFilteredSelected) {
                     // All filtered models are selected, show Deselect All
                     TextButton(onClick = {
@@ -1773,7 +1765,7 @@ private fun ModelPicker(
                                 is ProviderSetting.Google -> parentProvider.apiKey.isNotBlank()
                                 is ProviderSetting.Claude -> parentProvider.apiKey.isNotBlank()
                             }
-                            
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2207,9 +2199,9 @@ private fun ModelCard(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(0.dp))
                 .background(
-                    color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-                        MaterialTheme.colorScheme.surfaceContainerLow 
-                    else 
+                    color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    else
                         MaterialTheme.colorScheme.surfaceContainerHigh
                 )
                 .clickable {

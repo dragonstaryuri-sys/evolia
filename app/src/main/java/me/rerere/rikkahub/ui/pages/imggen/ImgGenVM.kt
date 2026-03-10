@@ -24,8 +24,8 @@ import me.rerere.ai.ui.ImageGenerationItem
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.db.entity.GenMediaEntity
-import me.rerere.rikkahub.data.repository.GenMediaRepository
+import me.rerere.rikkahub.core.data.db.entity.GenMediaEntity
+import me.rerere.rikkahub.core.data.db.repository.GenMediaRepository
 import me.rerere.rikkahub.utils.createImageFileFromBase64
 import me.rerere.rikkahub.utils.getImagesDir
 import java.io.File
@@ -135,7 +135,7 @@ class ImgGenVM(
                     ?: throw IllegalStateException("Provider setting not found")
 
                 // Check image generation method
-                val method = model.imageGenerationMethod 
+                val method = model.imageGenerationMethod
                     ?: me.rerere.ai.provider.ImageGenerationMethod.DIFFUSION // Default to diffusion for backward compatibility
 
                 val items = when (method) {
@@ -218,19 +218,19 @@ class ImgGenVM(
         val parts = mutableListOf<me.rerere.ai.ui.UIMessagePart>(
             me.rerere.ai.ui.UIMessagePart.Text(_prompt.value)
         )
-        
+
         _selectedImageUri.value?.let { uri ->
             try {
                 val inputStream = getApplication<Application>().contentResolver.openInputStream(uri)
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
-                
+
                 if (bytes != null) {
                     val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                     // Determine mime type
                     val mimeType = getApplication<Application>().contentResolver.getType(uri) ?: "image/jpeg"
                     val url = "data:$mimeType;base64,$base64"
-                    
+
                     parts.add(0, me.rerere.ai.ui.UIMessagePart.Image(url = url))
                 }
             } catch (e: Exception) {

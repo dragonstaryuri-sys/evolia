@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.components.ai
 
 import android.content.Context
-import android.content.Intent
 
 import android.net.Uri
 import android.util.Log
@@ -10,13 +9,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.content.MediaType
@@ -32,10 +29,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -52,22 +46,14 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.material3.BasicAlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.material3.ModalBottomSheet
@@ -99,10 +85,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.layout.onSizeChanged
 import me.rerere.ai.core.ReasoningLevel
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -112,9 +96,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -122,30 +104,22 @@ import me.rerere.ai.provider.BuiltInTools
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
-import androidx.core.net.toFile
 import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.AudioFile
-import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.AutoFixHigh
-import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.ClearAll
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Book
-import androidx.compose.material.icons.rounded.FlashOn
-import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.draw.rotate
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -153,17 +127,15 @@ import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.ModelType
-import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ui.KeepScreenOn
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
@@ -173,26 +145,19 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.data.ai.tools.LocalToolOption
+import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.utils.createChatFilesByContents
-import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.getFileNameFromUri
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
+import me.rerere.rikkahub.core.data.model.Avatar
 
 enum class ExpandState {
     Collapsed,
@@ -270,7 +235,7 @@ fun ChatInput(
 
     // Focus state for the text field
     var isFocused by remember { mutableStateOf(false) }
-    
+
     // Expanded state logic: Expanded ONLY when focused (keyboard open)
     // When collapsed with text, show pickers and single-line text preview
     val isExpanded = isFocused
@@ -395,7 +360,7 @@ fun ChatInput(
                             showPickers = false
                         }
                     }
-                    
+
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showPickers,
                         modifier = Modifier,
@@ -418,7 +383,7 @@ fun ChatInput(
                             val enableSearchMsg = stringResource(R.string.web_search_enabled)
                             val disableSearchMsg = stringResource(R.string.web_search_disabled)
                             val chatModel = settings.getCurrentChatModel()
-                            
+
                             SearchPickerButton(
                                 enableSearch = enableSearch,
                                 settings = settings,
@@ -438,10 +403,10 @@ fun ChatInput(
                                 onUpdateSearchService = onUpdateSearchService,
                                 model = chatModel,
                                 selectedProviderIndex = when (val mode = assistant.searchMode) {
-                                    is me.rerere.rikkahub.data.model.AssistantSearchMode.Provider -> mode.index
+                                    is me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider -> mode.index
                                     else -> -1
                                 },
-                                isBuiltInMode = assistant.searchMode is me.rerere.rikkahub.data.model.AssistantSearchMode.BuiltIn,
+                                isBuiltInMode = assistant.searchMode is me.rerere.rikkahub.core.data.model.AssistantSearchMode.BuiltIn,
                                 preferBuiltInSearch = assistant.preferBuiltInSearch,
                                 onTogglePreferBuiltInSearch = { enabled ->
                                     onUpdateAssistant(assistant.copy(preferBuiltInSearch = enabled))
@@ -470,7 +435,7 @@ fun ChatInput(
                     val amoledMode by rememberAmoledDarkMode()
                     val containerColor = if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                     val elevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
-                    
+
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Surface(
                             shape = RoundedCornerShape(innerCornerSize), // Dynamic Inner Shape
@@ -708,10 +673,10 @@ private fun TextInputRow(
             // Always use MultiLine to preserve Enter key for newlines
             // Use animated height constraint for visual collapse
             val hasText = state.textContent.text.isNotEmpty()
-            
+
             // Use imeVisible (keyboard state) for animation target - more stable than focus state
             val imeVisibleLocal = WindowInsets.isImeVisible
-            
+
             // Get container color for fade gradient (matches inner capsule with tonal elevation)
             val amoledModeLocal by rememberAmoledDarkMode()
             val fadeColor = if (amoledModeLocal && LocalDarkMode.current) {
@@ -720,13 +685,13 @@ private fun TextInputRow(
                 // Use the elevated surface color to match the actual Surface appearance
                 MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp)
             }
-            
+
             // Collapsed state: keyboard hidden
             val isCollapsed = !imeVisibleLocal
-            
+
             // Check if text would need multiple lines (approx > 40 chars per line)
             val hasMultiLineContent = hasText && state.textContent.text.length > 40
-            
+
             // Animated height with spring physics - only animate for multi-line content
             val animatedMaxHeight by animateDpAsState(
                 targetValue = if (isCollapsed) 56.dp else 200.dp,
@@ -743,7 +708,7 @@ private fun TextInputRow(
                 },
                 label = "text_height"
             )
-            
+
             // Animated alpha for fade overlay - appears when collapsed with text
             val fadeAlpha by animateFloatAsState(
                 targetValue = if (isCollapsed && hasText) 1f else 0f,
@@ -753,7 +718,7 @@ private fun TextInputRow(
                 ),
                 label = "fade_alpha"
             )
-            
+
             // Animated fade width - expands when collapsed with text
             val fadeWidth by animateDpAsState(
                 targetValue = if (isCollapsed && hasText) 60.dp else 0.dp,
@@ -763,7 +728,7 @@ private fun TextInputRow(
                 ),
                 label = "fade_width"
             )
-            
+
             // Delayed lineLimits state - waits for height animation before switching to SingleLine
             // This prevents text from reflowing mid-animation
             // outputTransformation handles newlines by replacing them with spaces visually
@@ -778,7 +743,7 @@ private fun TextInputRow(
                     useSingleLine = false
                 }
             }
-            
+
             // Box with animated height constraint and gradient fade mask
             Box(
                 modifier = Modifier
@@ -787,7 +752,7 @@ private fun TextInputRow(
                     .drawWithContent {
                         // Draw the content first
                         drawContent()
-                        
+
                         // Only draw the fade overlay when collapsed (keyboard hidden) with text
                         if (fadeWidth > 0.dp) {
                             // Draw a gradient overlay on the right side (before trailing icon)
@@ -795,7 +760,7 @@ private fun TextInputRow(
                             // Position gradient to end just before the trailing icon starts
                             val endX = size.width - 48.dp.toPx() // trailing icon area
                             val startX = endX - fadeWidthPx
-                            
+
                             drawRect(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(
@@ -999,7 +964,7 @@ private fun ChatSuggestionsRow(
 ) {
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
-    
+
     // State to track interaction
     var pressedSuggestionIndex by remember { mutableStateOf<Int?>(null) }
     var selectedSuggestionIndex by remember { mutableStateOf<Int?>(null) }
@@ -1060,14 +1025,14 @@ private fun ChatSuggestionsRow(
                 val isPressed = pressedSuggestionIndex == index
                 val isAnythingSelected = selectedSuggestionIndex != null
                 val isAnythingPressed = pressedSuggestionIndex != null
-                
+
                 // Animation States
                 val targetScale = when {
                     isSelected -> 1.05f // quick spring up before disappearing
                     isPressed -> 0.9f // shrink when pressed
                     else -> 1f
                 }
-                
+
                 val targetAlpha = when {
                     isSelected -> 0f // fade out after selection
                     isAnythingSelected -> 0f // others disappear immediately
@@ -1095,16 +1060,16 @@ private fun ChatSuggestionsRow(
                     ),
                     label = "suggestion_alpha"
                 )
-                
+
                 // Handle disappearance after selection animation
                 // When selected, wait for animation then trigger callback
                 LaunchedEffect(isSelected) {
                     if(isSelected) {
                         kotlinx.coroutines.delay(200) // Wait for spring up
                         onClickSuggestion(suggestion)
-                        //Reset state is handled by parent recomposition usually, 
+                        //Reset state is handled by parent recomposition usually,
                         // or we can reset here but the list might change.
-                        selectedSuggestionIndex = null 
+                        selectedSuggestionIndex = null
                         pressedSuggestionIndex = null
                     }
                 }
@@ -1164,11 +1129,11 @@ internal fun FilesPicker(
     val settings = LocalSettings.current
     val amoledMode by rememberAmoledDarkMode()
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
-    
+
     val isDarkMode = LocalDarkMode.current
     val isKeyboardVisible = WindowInsets.isImeVisible
     val showContextRefresh = assistant.enableContextRefresh && !isKeyboardVisible && conversation.currentMessages.size > 2
-    
+
     // Shapes for 3-button row - different based on keyboard visibility
     val topLeftShape = if (isKeyboardVisible) {
         RoundedCornerShape(topStart = 24.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 10.dp)
@@ -1188,10 +1153,10 @@ internal fun FilesPicker(
     val bottomRightShape = if (showContextRefresh) middleRightShape else RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
     // Full-width bottom row shape for context refresh
     val fullBottomShape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-    
+
     // State for context refresh dialog
     var showContextRefreshDialog by remember { mutableStateOf(false) }
-    
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1227,11 +1192,11 @@ internal fun FilesPicker(
                 }
             }
         }
-        
+
         // Modes and Lorebooks row - hidden when keyboard is visible
         var showModesPicker by remember { mutableStateOf(false) }
         var showLorebooksPicker by remember { mutableStateOf(false) }
-        
+
         if (!isKeyboardVisible) {
             // Calculate active modes count from conversation
             val activeModeCount = settings.modes.count { mode ->
@@ -1241,10 +1206,10 @@ internal fun FilesPicker(
                     conversation.enabledModeIds.contains(mode.id)
                 }
             }
-            
+
             // Calculate active lorebooks count from assistant
             val activeLorebookCount = assistant.enabledLorebookIds.size
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth().height(80.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -1331,7 +1296,7 @@ internal fun FilesPicker(
                     }
                 }
             }
-            
+
             // Context Refresh button row - shown when enabled
             if (showContextRefresh) {
                 val totalMessages = conversation.currentMessages.size
@@ -1345,7 +1310,7 @@ internal fun FilesPicker(
                     // No previous summary - all messages minus kept ones
                     (totalMessages - messagesToKeep).coerceAtLeast(0)
                 }
-                
+
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -1394,7 +1359,7 @@ internal fun FilesPicker(
                 onDismiss = { showModesPicker = false }
             )
         }
-        
+
         // Lorebooks picker sheet
         if (showLorebooksPicker) {
             LorebooksPickerSheet(
@@ -1408,7 +1373,7 @@ internal fun FilesPicker(
                 onDismiss = { showLorebooksPicker = false }
             )
         }
-        
+
         // Context Refresh confirmation dialog
         if (showContextRefreshDialog) {
             ContextRefreshDialog(
@@ -1491,7 +1456,7 @@ private fun ImagePickButton(
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
-    
+
     // State for crop dialog
     var showCropScreen by remember { mutableStateOf(false) }
     var imageToCrop by remember { mutableStateOf<Uri?>(null) }
@@ -1559,7 +1524,7 @@ fun TakePicButton(
     val settings = LocalSettings.current
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
-    
+
     // State for crop dialog
     var showCropScreen by remember { mutableStateOf(false) }
     var imageToCrop by remember { mutableStateOf<Uri?>(null) }
@@ -1746,7 +1711,7 @@ private fun BigIconTextButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val amoledMode by rememberAmoledDarkMode()
-    
+
     // Physics-based press feedback
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.92f else 1f,
@@ -1764,7 +1729,7 @@ private fun BigIconTextButton(
         ),
         label = "button_alpha"
     )
-    
+
     Column(
         modifier = modifier
             .graphicsLayer {
@@ -1830,7 +1795,7 @@ internal fun ModesPickerSheet(
     val isDarkMode = LocalDarkMode.current
     val cornerRadius = 28.dp
     val smallCorner = 8.dp
-    
+
     // Use local state for immediate UI feedback
     var localEnabledIds by remember(conversation.id) {
         mutableStateOf(
@@ -1841,10 +1806,10 @@ internal fun ModesPickerSheet(
             }
         )
     }
-    
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -1876,7 +1841,7 @@ internal fun ModesPickerSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-            
+
             if (settings.modes.isEmpty()) {
                 Text(
                     text = stringResource(R.string.modes_picker_none),
@@ -1887,7 +1852,7 @@ internal fun ModesPickerSheet(
                 settings.modes.forEachIndexed { index, mode ->
                     // Use local state for isEnabled
                     val isEnabled = localEnabledIds.contains(mode.id)
-                    
+
                     // Calculate position for grouped card styling
                     val position = when {
                         settings.modes.size == 1 -> me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY
@@ -1895,7 +1860,7 @@ internal fun ModesPickerSheet(
                         index == settings.modes.lastIndex -> me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST
                         else -> me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE
                     }
-                    
+
                     // Calculate shape based on position (grouped cards)
                     val shape = when (position) {
                         me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY -> RoundedCornerShape(cornerRadius)
@@ -1909,7 +1874,7 @@ internal fun ModesPickerSheet(
                             bottomStart = cornerRadius, bottomEnd = cornerRadius
                         )
                     }
-                    
+
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
@@ -1973,15 +1938,15 @@ internal fun LorebooksPickerSheet(
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
-    
+
     // Use local state for immediate UI feedback
     var localEnabledIds by remember(assistant.id) {
         mutableStateOf(assistant.enabledLorebookIds)
     }
-    
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -2013,7 +1978,7 @@ internal fun LorebooksPickerSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-            
+
             if (settings.lorebooks.isEmpty()) {
                 Text(
                     text = stringResource(R.string.lorebooks_picker_none),
@@ -2023,7 +1988,7 @@ internal fun LorebooksPickerSheet(
             } else {
                 settings.lorebooks.forEachIndexed { index, lorebook ->
                     val isEnabled = localEnabledIds.contains(lorebook.id)
-                    
+
                     // Calculate position for connected card styling
                     val position = when {
                         settings.lorebooks.size == 1 -> me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY
@@ -2031,7 +1996,7 @@ internal fun LorebooksPickerSheet(
                         index == settings.lorebooks.lastIndex -> me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST
                         else -> me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE
                     }
-                    
+
                     // Calculate shape based on position (grouped cards)
                     val cornerRadius = 28.dp
                     val smallCorner = 8.dp
@@ -2047,7 +2012,7 @@ internal fun LorebooksPickerSheet(
                             bottomStart = cornerRadius, bottomEnd = cornerRadius
                         )
                     }
-                    
+
                     CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
@@ -2086,7 +2051,7 @@ internal fun LorebooksPickerSheet(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     when (val cover = lorebook.cover) {
-                                        is me.rerere.rikkahub.data.model.Avatar.Image -> {
+                                        is Avatar.Image -> {
                                             AsyncImage(
                                                 model = cover.url,
                                                 contentDescription = null,
@@ -2094,7 +2059,7 @@ internal fun LorebooksPickerSheet(
                                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                             )
                                         }
-                                        is me.rerere.rikkahub.data.model.Avatar.Emoji -> {
+                                        is Avatar.Emoji -> {
                                             Text(
                                                 text = cover.content,
                                                 fontSize = 20.sp

@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
@@ -103,7 +103,7 @@ class ChatListVM(
         _searchQuery.value = query
     }
 
-    fun deleteConversation(conversation: me.rerere.rikkahub.data.model.Conversation) {
+    fun deleteConversation(conversation: me.rerere.rikkahub.core.data.model.Conversation) {
         chatService.deleteConversation(conversation)
     }
 
@@ -111,26 +111,26 @@ class ChatListVM(
         chatService.undoDeleteConversation(id)
     }
 
-    fun updatePinnedStatus(conversation: me.rerere.rikkahub.data.model.Conversation) {
+    fun updatePinnedStatus(conversation: me.rerere.rikkahub.core.data.model.Conversation) {
         viewModelScope.launch {
             conversationRepo.togglePinStatus(conversation.id)
         }
     }
 
-    fun updateConversationTitle(conversation: me.rerere.rikkahub.data.model.Conversation, title: String) {
+    fun updateConversationTitle(conversation: me.rerere.rikkahub.core.data.model.Conversation, title: String) {
         viewModelScope.launch {
             conversationRepo.updateConversation(conversation.copy(title = title))
         }
     }
 
-    fun generateTitle(conversation: me.rerere.rikkahub.data.model.Conversation, force: Boolean = false) {
+    fun generateTitle(conversation: me.rerere.rikkahub.core.data.model.Conversation, force: Boolean = false) {
         viewModelScope.launch {
             val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
             chatService.generateTitle(conversation.id, conversationFull, force)
         }
     }
 
-    fun consolidateConversation(conversation: me.rerere.rikkahub.data.model.Conversation) {
+    fun consolidateConversation(conversation: me.rerere.rikkahub.core.data.model.Conversation) {
         viewModelScope.launch {
             conversationRepo.markAsNotConsolidated(conversation.id)
             val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()

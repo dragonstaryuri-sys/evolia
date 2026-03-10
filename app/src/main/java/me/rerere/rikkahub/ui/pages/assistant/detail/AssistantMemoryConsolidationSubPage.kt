@@ -28,8 +28,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Psychology
 import me.rerere.ai.provider.Model
-import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.utils.toLocalString
 
@@ -112,8 +112,8 @@ fun AssistantMemoryConsolidationSubPage(
                             )
                             androidx.compose.material3.Slider(
                                 value = assistant.consolidationDelayMinutes.toFloat(),
-                                onValueChange = { 
-                                    onUpdate(assistant.copy(consolidationDelayMinutes = it.toInt())) 
+                                onValueChange = {
+                                    onUpdate(assistant.copy(consolidationDelayMinutes = it.toInt()))
                                 },
                                 valueRange = 0f..240f, // 0 to 4 hours
                                 steps = 23 // 10 min steps approx
@@ -148,7 +148,7 @@ fun AssistantMemoryConsolidationSubPage(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-    
+
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -163,7 +163,7 @@ fun AssistantMemoryConsolidationSubPage(
                                 value = stats.totalEpisodes.toString()
                             )
                         }
-                        
+
                         // Detailed Run Stats
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
@@ -171,7 +171,7 @@ fun AssistantMemoryConsolidationSubPage(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            
+
                             // Track A Stats
                             Column {
                                 Text(
@@ -207,7 +207,7 @@ fun AssistantMemoryConsolidationSubPage(
                             Spacer(Modifier.width(8.dp))
                             Text("Consolidate All Memories Now")
                         }
-                        
+
                         if (snackbarMessage != null && snackbarMessage!!.contains("consolidation")) {
                             Text(
                                 text = snackbarMessage!!,
@@ -228,7 +228,7 @@ fun AssistantMemoryConsolidationSubPage(
                     modifier = Modifier.padding(start = 8.dp)
                 )
             }
-            
+
             item {
                 if (episodes.isNotEmpty()) {
                     Text(

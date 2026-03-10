@@ -15,13 +15,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.db.dao.ChatEpisodeDAO
-import me.rerere.rikkahub.data.db.entity.ChatEpisodeEntity
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
-import me.rerere.rikkahub.data.model.Avatar
-import me.rerere.rikkahub.data.model.Tag
-import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Tag
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.utils.deleteChatFiles
 import kotlin.uuid.Uuid
 
@@ -31,12 +31,12 @@ class AssistantDetailVM(
     private val id: String,
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
-    private val conversationRepository: me.rerere.rikkahub.data.repository.ConversationRepository,
+    private val conversationRepository: ConversationRepository,
     private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val providerManager: me.rerere.ai.provider.ProviderManager,
 ) : ViewModel() {
-    private val assistantId = Uuid.parse(id)
+    private val assistantId = try { Uuid.parse(id) } catch (e: Exception) { Uuid.NIL } // 增加保护
 
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
@@ -69,16 +69,16 @@ class AssistantDetailVM(
         _memorySearchQuery
     ) { coreMemories, episodes, query ->
         val core = coreMemories
-        val episodic = episodes.map { 
+        val episodic = episodes.map {
             AssistantMemory(
                 id = -it.id, // Negative ID to distinguish from core memories
-                content = it.content, 
+                content = it.content,
                 type = 1, // EPISODIC
                 hasEmbedding = it.embedding != null,
                 embeddingModelId = it.embeddingModelId,
                 timestamp = it.startTime,
                 significance = it.significance
-            ) 
+            )
         }
         val allMemories = core + episodic
         if (query.isBlank()) {
@@ -141,7 +141,7 @@ class AssistantDetailVM(
                     assistantTags = tags
                 )
             )
-            
+
             // Then, update this assistant's tags
             val updatedAssistant = assistant.value.copy(tags = tagIds.toList())
             val latestSettings = settingsStore.settingsFlow.value
@@ -152,9 +152,9 @@ class AssistantDetailVM(
                     }
                 )
             )
-            
+
             Log.d(TAG, "updateTags: ${tagIds.joinToString(",")}")
-            
+
             // Now cleanup unused tags using the fresh state
             cleanupUnusedTagsInternal()
         }
@@ -290,7 +290,7 @@ class AssistantDetailVM(
                 } else {
                     10 // Default for debugging
                 }
-                
+
                 val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                     assistantId = assistantId.toString(),
                     query = query,
@@ -315,14 +315,14 @@ class AssistantDetailVM(
         viewModelScope.launch {
             try {
                 _embeddingProgress.value = EmbeddingProgress(0, 1, true)
-                
+
                 val (success, failure) = memoryRepository.regenerateEmbeddings(
                     assistantId = assistantId.toString(),
                     onProgress = { current, total ->
                         _embeddingProgress.value = EmbeddingProgress(current, total, true)
                     }
                 )
-                
+
                 _embeddingProgress.value = null
                 if (failure > 0) {
                     _snackbarMessage.value = "Completed: $success success, $failure failed. Check your API key or Model settings."
@@ -351,8 +351,9 @@ class AssistantDetailVM(
     }
 
     suspend fun checkAvatarDelete(old: Assistant, new: Assistant) {
-        if (old.avatar is Avatar.Image && old.avatar != new.avatar) {
-            context.deleteChatFiles(listOf(old.avatar.url.toUri()))
+        val oldAvatar = old.avatar
+        if (oldAvatar is Avatar.Image && oldAvatar != new.avatar) {
+            context.deleteChatFiles(listOf(oldAvatar.url.toUri()))
         }
     }
 
@@ -391,7 +392,7 @@ class AssistantDetailVM(
         averageMemoryLength
     ) { assistant, avgMsgLen, avgMemLen ->
         val sysPrompt = estimateTokens(assistant.systemPrompt)
-        
+
         // Dynamic estimates based on history
         val avgMsgTokens = (avgMsgLen / 4).coerceAtLeast(10)
         val avgMemTokens = (avgMemLen / 4).coerceAtLeast(10)
@@ -410,7 +411,7 @@ class AssistantDetailVM(
         val total = assistant.maxTokenUsage
         val available = (total - minUsage).coerceAtLeast(0)
         val avgMemTokens = (avgMemLen / 4).coerceAtLeast(10)
-        
+
         // If RAG is enabled, how many memories can we fit in the remaining space?
         // This is a rough upper bound for the slider
         (available / avgMemTokens).coerceAtLeast(5) // Minimum 5
@@ -444,7 +445,7 @@ class AssistantDetailVM(
         m.isNotEmpty() || e.isNotEmpty()
     }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
-    val hasLorebooks = assistant.map { 
+    val hasLorebooks = assistant.map {
         it.enabledLorebookIds.isNotEmpty()
     }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 }

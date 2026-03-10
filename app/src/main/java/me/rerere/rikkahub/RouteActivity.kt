@@ -242,15 +242,15 @@ class RouteActivity : ComponentActivity() {
                         }
                     }
 
-                    val messages = mutableListOf<me.rerere.rikkahub.data.model.MessageNode>()
+                    val messages = mutableListOf<me.rerere.rikkahub.core.data.model.MessageNode>()
                     if (userContent.isNotBlank()) {
                         val userMessage = me.rerere.ai.ui.UIMessage.user(userContent.trim())
-                        messages.add(me.rerere.rikkahub.data.model.MessageNode.of(userMessage))
+                        messages.add(me.rerere.rikkahub.core.data.model.MessageNode.of(userMessage))
                     }
                     val aiResponse = data.aiResponse
                     if (!aiResponse.isNullOrBlank()) {
                         val assistantMessage = me.rerere.ai.ui.UIMessage.assistant(aiResponse)
-                        messages.add(me.rerere.rikkahub.data.model.MessageNode.of(assistantMessage))
+                        messages.add(me.rerere.rikkahub.core.data.model.MessageNode.of(assistantMessage))
                     }
 
                     if (messages.isNotEmpty()) {
@@ -258,7 +258,7 @@ class RouteActivity : ComponentActivity() {
                             try { Uuid.parse(it) } catch (e: Exception) { null }
                         } ?: settings.assistantId
 
-                        val conversation = me.rerere.rikkahub.data.model.Conversation.ofId(
+                        val conversation = me.rerere.rikkahub.core.data.model.Conversation.ofId(
                             id = conversationId,
                             assistantId = assistantId,
                             messages = messages
@@ -343,6 +343,13 @@ class RouteActivity : ComponentActivity() {
                         exitTransition = { fadeOut() },
                     ) { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.Chat>()
+                        // 增加异常捕获以定位具体的错误 ID
+                        val uuid = try {
+                            Uuid.parse(route.id)
+                        } catch (e: Exception) {
+                            android.util.Log.e("RouteActivity", "Invalid UUID: ${route.id}")
+                            Uuid.random() // 或者跳转回首页
+                        }
                         ChatPage(
                             id = Uuid.parse(route.id),
                             text = route.text,

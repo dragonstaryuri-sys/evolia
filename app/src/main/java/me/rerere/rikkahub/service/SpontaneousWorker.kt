@@ -16,8 +16,8 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.utils.applyPlaceholders
 import org.koin.core.component.KoinComponent
@@ -38,16 +38,16 @@ class SpontaneousWorker(
         return try {
             val settings = settingsStore.settingsFlow.first()
             val assistant = settings.getCurrentAssistant()
-            
+
             // Check if enabled
             if (!assistant.enableSpontaneous) return Result.success()
-            
+
             // Check time window
             val currentHour = java.time.LocalTime.now().hour
             if (currentHour < assistant.notificationStartHour || currentHour >= assistant.notificationEndHour) {
                 return Result.success() // Outside notification hours
             }
-            
+
             // Check frequency
             val timeSinceLastNotification = System.currentTimeMillis() - assistant.lastNotificationTime
             val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
@@ -63,14 +63,14 @@ class SpontaneousWorker(
             // This logic can be refined. For now, let's just run.
 
             val modelId = assistant.backgroundModelId ?: assistant.chatModelId ?: settings.chatModelId
-            val model = settings.findModelById(modelId) 
+            val model = settings.findModelById(modelId)
                 ?: return Result.success()
             val provider = model.findProvider(settings.providers) ?: return Result.success()
             val providerHandler = providerManager.getProviderByType(provider)
 
             val oneDayMs = 24 * 60 * 60 * 1000L
             val lastNotificationInfo = if (
-                assistant.lastNotificationContent.isNotBlank() && 
+                assistant.lastNotificationContent.isNotBlank() &&
                 (System.currentTimeMillis() - assistant.lastNotificationTime < oneDayMs)
             ) {
                 "\n\nYou last sent a notification: \"${assistant.lastNotificationContent}\". Don't repeat yourself or be redundant."
@@ -84,24 +84,24 @@ class SpontaneousWorker(
                 limit = 5
             )
             val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
-            
+
             val customPrompt = assistant.spontaneousPrompt.ifBlank {
                 """
                 You are ${assistant.name}. You are running in the background to check in on the user. Be casual and friendly.
-                
+
                 Recent chat history:
                 {{history}}
-                
+
                 Relevant Memories:
                 {{memories}}
                 $lastNotificationInfo
-                
+
                 Do you want to send a spontaneous notification to the user right now?
                 Consider the context. Only send if:
                 - It's genuinely helpful or relevant
                 - You have a good reason (explain it in the "reason" field)
                 - It's not repetitive or annoying
-                
+
                 Output JSON format:
                 {
                     "send": true/false,
@@ -128,7 +128,7 @@ class SpontaneousWorker(
             )
 
             val responseText = result.choices.firstOrNull()?.message?.toContentText() ?: return Result.failure()
-            
+
             // Parse JSON (simple parsing, assuming model follows instruction)
             try {
                 val jsonStart = responseText.indexOf("{")
@@ -136,16 +136,16 @@ class SpontaneousWorker(
                 if (jsonStart != -1 && jsonEnd != -1) {
                     val jsonStr = responseText.substring(jsonStart, jsonEnd + 1)
                     val json = Json.parseToJsonElement(jsonStr).jsonObject
-                    
+
                     val send = json["send"]?.jsonPrimitive?.booleanOrNull ?: false
                     if (send) {
                         val title = json["title"]?.jsonPrimitive?.contentOrNull ?: assistant.name
                         val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
                         val reason = json["reason"]?.jsonPrimitive?.contentOrNull ?: "No reason provided"
-                        
+
                         if (content.isNotBlank()) {
                             sendNotification(title, content, conversation.id)
-                            
+
                             // Update assistant's last notification info (Full Reset)
                             val updatedAssistant = assistant.copy(
                                 lastNotificationTime = System.currentTimeMillis(),

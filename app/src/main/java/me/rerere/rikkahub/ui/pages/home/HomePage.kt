@@ -26,14 +26,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import org.koin.androidx.compose.koinViewModel
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlin.uuid.Uuid
 
@@ -92,7 +92,7 @@ fun AgentListPage() {
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val repo = org.koin.compose.koinInject<me.rerere.rikkahub.data.repository.ConversationRepository>()
+    val repo = org.koin.compose.koinInject<me.rerere.rikkahub.core.data.repository.ConversationRepository>()
 
     if (settings == null) return
 
@@ -117,8 +117,8 @@ fun AgentListPage() {
 
                             // 查找该助手的最近一次会话
                             val lastConv = repo.getConversationsOfAssistant(assistant.id)
-                                .first()
                                 .firstOrNull()
+                                ?.firstOrNull()
 
                             val chatId = lastConv?.id ?: Uuid.random()
                             navController.navigate(Screen.Chat(id = chatId.toString()))

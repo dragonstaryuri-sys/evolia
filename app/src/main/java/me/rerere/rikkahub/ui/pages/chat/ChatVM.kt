@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
@@ -36,12 +35,12 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantAffectScope
-import me.rerere.rikkahub.data.model.Avatar
-import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.replaceRegexes
-import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantAffectScope
+import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.replaceRegexes
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
@@ -121,26 +120,22 @@ class ChatVM(
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
 
-    @Suppress("UNCHECKED_CAST")
     val newChatStats: StateFlow<me.rerere.rikkahub.ui.components.chat.NewChatStats> = settings
         .flatMapLatest { currentSettings ->
             val assistantId = currentSettings.assistantId.toString()
-            val baseFlow = kotlinx.coroutines.flow.combine(
+            combine(
                 conversationRepo.getConversationCountFlow(),
                 conversationRepo.getDailyActivityDatesFlow(),
                 conversationRepo.getConversationHoursFlow(),
-                conversationRepo.getConversationCountByAssistantFlow(assistantId)
-            ) { totalChats, distinctDates, hours, assistantChats ->
-                kotlin.Pair(Triple(totalChats, distinctDates, hours), assistantChats)
-            }
-
-            kotlinx.coroutines.flow.combine(baseFlow, conversationRepo.getMostUsedModelIdForAssistantFlow(assistantId)) { (base, assistantChats), mostUsedModelId ->
-                val (totalChats, distinctDates, hours) = base
-                val today = java.time.LocalDate.now()
+                conversationRepo.getConversationCountByAssistantFlow(assistantId),
+                conversationRepo.getMostUsedModelIdForAssistantFlow(assistantId)
+            ) { totalChats, distinctDates, hours, assistantChats, mostUsedModelId ->
+                val today = LocalDate.now()
                 val formatter = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE
-                val dates = (distinctDates as List<String>).mapNotNull {
-                    try { java.time.LocalDate.parse(it, formatter) } catch (e: Exception) { null }
+                val dates = distinctDates.mapNotNull {
+                    try { LocalDate.parse(it, formatter) } catch (e: Exception) { null }
                 }.sortedDescending()
+
                 val hasChattedToday = dates.contains(today)
                 val yesterday = today.minusDays(1)
                 val startDate = when {
@@ -148,20 +143,33 @@ class ChatVM(
                     dates.contains(yesterday) -> yesterday
                     else -> null
                 }
+
                 val streak = if (startDate != null) {
                     var count = 0
-                    var current: java.time.LocalDate = startDate
-                    while (dates.contains(current)) { count++; current = current.minusDays(1) }
+                    var current: LocalDate = startDate
+                    while (dates.contains(current)) {
+                        count++
+                        current = current.minusDays(1)
+                    }
                     count
                 } else 0
-                val timeLabel = calculateTimeLabel(hours as List<Int>)
+
+                val timeLabel = calculateTimeLabel(hours)
                 val modelName = mostUsedModelId?.let { id ->
                     try {
-                        val uuid = kotlin.uuid.Uuid.parse(id)
+                        val uuid = Uuid.parse(id)
                         currentSettings.providers.flatMap { it.models }.find { it.id == uuid }?.displayName
                     } catch (e: Exception) { null }
                 }
-                me.rerere.rikkahub.ui.components.chat.NewChatStats(dailyStreak = streak, totalChats = totalChats as Int, timeLabel = timeLabel, hasChattedToday = hasChattedToday, assistantChats = assistantChats, mostUsedModelName = modelName)
+
+                me.rerere.rikkahub.ui.components.chat.NewChatStats(
+                    dailyStreak = streak,
+                    totalChats = totalChats,
+                    timeLabel = timeLabel,
+                    hasChattedToday = hasChattedToday,
+                    assistantChats = assistantChats,
+                    mostUsedModelName = modelName
+                )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), me.rerere.rikkahub.ui.components.chat.NewChatStats())
 
@@ -175,22 +183,27 @@ class ChatVM(
     val enableWebSearch = settings.map { settings ->
         val assistant = settings.assistants.find { it.id == settings.assistantId }
         when (assistant?.searchMode) {
-            is me.rerere.rikkahub.data.model.AssistantSearchMode.Off -> false
+            is me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off -> false
             else -> true
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     val currentSearchMode = settings.map { settings ->
         val assistant = settings.assistants.find { it.id == settings.assistantId }
-        assistant?.searchMode ?: me.rerere.rikkahub.data.model.AssistantSearchMode.Off
-    }.stateIn(viewModelScope, SharingStarted.Lazily, me.rerere.rikkahub.data.model.AssistantSearchMode.Off)
+        assistant?.searchMode ?: me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off
+    }.stateIn(viewModelScope, SharingStarted.Lazily, me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
 
-    fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.data.model.AssistantSearchMode) {
+    fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.core.data.model.AssistantSearchMode) {
         viewModelScope.launch {
-            settingsStore.update { settings ->
-                val assistantId = settings.assistantId
-                settings.copy(assistants = settings.assistants.map { if (it.id == assistantId) it.copy(searchMode = searchMode) else it })
-            }
+            val currentSettings = settingsStore.settingsFlow.value
+            val assistantId = currentSettings.assistantId
+            settingsStore.update(
+                currentSettings.copy(
+                    assistants = currentSettings.assistants.map {
+                        if (it.id == assistantId) it.copy(searchMode = searchMode) else it
+                    }
+                )
+            )
         }
     }
 
@@ -270,9 +283,14 @@ class ChatVM(
 
     fun setChatModel(assistant: Assistant, model: Model) {
         viewModelScope.launch {
-            settingsStore.update { settings ->
-                settings.copy(assistants = settings.assistants.map { if (it.id == assistant.id) it.copy(chatModelId = model.id) else it })
-            }
+            val currentSettings = settingsStore.settingsFlow.value
+            settingsStore.update(
+                currentSettings.copy(
+                    assistants = currentSettings.assistants.map {
+                        if (it.id == assistant.id) it.copy(chatModelId = model.id) else it
+                    }
+                )
+            )
         }
     }
 
@@ -305,7 +323,7 @@ class ChatVM(
         viewModelScope.launch {
             val lastTruncateIndex = conversation.value.messageNodes.lastIndex + 1
             val newConversation = conversation.value.copy(truncateIndex = if (conversation.value.truncateIndex == lastTruncateIndex) -1 else lastTruncateIndex, title = "", chatSuggestions = emptyList())
-            chatService.saveConversation(conversationId = _conversationId, conversation = newConversation)
+            chatService.saveConversation(id = _conversationId, conversation = newConversation)
         }
     }
 
@@ -351,7 +369,7 @@ class ChatVM(
                 val canDeleteByVersionTag = deleteVersionTag != null && index in turnStartIndex until turnEndIndex && n.role != me.rerere.ai.core.MessageRole.USER
                 val newMessages = n.messages.filter { msg -> if (canDeleteByVersionTag && msg.versionTag == deleteVersionTag) false else msg.id != message.id }
                 if (newMessages.isEmpty()) null
-                else n.copy(messages = newMessages, selectIndex = if (n.selectIndex >= newMessages.size) newMessages.lastIndex else n.selectIndex)
+                else n.copy(messages = newMessages, selectIndex = if (n.selectIndex >= newMessages.size) n.selectIndex else n.selectIndex)
             }
             conversation.copy(messageNodes = updatedNodes)
         }

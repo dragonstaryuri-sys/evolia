@@ -19,7 +19,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.data.sync.WebdavSync
-import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.utils.UiState
 import java.io.File
 
@@ -87,7 +87,7 @@ class BackupVM(
     suspend fun restoreFromLocalFile(file: File): WebdavSync.RestoreResult {
         return webdavSync.restoreFromLocalFile(file, settings.value.webDavConfig)
     }
-    
+
     fun restartApp(context: android.content.Context) {
         val packageManager = context.packageManager
         val intent = packageManager.getLaunchIntentForPackage(context.packageName)

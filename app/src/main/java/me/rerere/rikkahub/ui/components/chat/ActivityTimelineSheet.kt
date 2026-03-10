@@ -73,9 +73,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import me.rerere.rikkahub.utils.JsonInstantPretty
-import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
-import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.common.JsonInstantPretty
+import me.rerere.rikkahub.common.jsonPrimitiveOrNull
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes

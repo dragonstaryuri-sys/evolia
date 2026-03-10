@@ -50,7 +50,7 @@ import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.ai.ui.UsedMemory
 import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -75,11 +75,11 @@ fun ContextSourcesSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    
+
     val sortedModes = remember(modes) { modes.sortedByDescending { it.priority } }
     val sortedMemories = remember(memories) { memories.sortedByDescending { it.priority } }
     val sortedEntries = remember(entries) { entries.sortedByDescending { it.priority } }
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
@@ -111,7 +111,7 @@ fun ContextSourcesSheet(
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
-            
+
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -130,7 +130,7 @@ fun ContextSourcesSheet(
                     }
                     item { Spacer(Modifier.height(12.dp)) }
                 }
-                
+
                 // Memories Section
                 if (sortedMemories.isNotEmpty()) {
                     item { SectionHeader("Memories") }
@@ -146,7 +146,7 @@ fun ContextSourcesSheet(
                     }
                     item { Spacer(Modifier.height(12.dp)) }
                 }
-                
+
                 // Lorebook Entries Section
                 if (sortedEntries.isNotEmpty()) {
                     item { SectionHeader("Lorebook Entries") }
@@ -203,7 +203,7 @@ private fun ModeItem(
     onClick: () -> Unit
 ) {
     val isDarkMode = LocalDarkMode.current
-    
+
     // Optical roundness for the cover
     val opticalRadius = 12.dp
     val defaultRadius = 6.dp
@@ -213,7 +213,7 @@ private fun ModeItem(
         bottomStart = if (isLast) opticalRadius else defaultRadius,
         bottomEnd = defaultRadius
     )
-    
+
     Surface(
         onClick = onClick,
         shape = shape,
@@ -246,7 +246,7 @@ private fun ModeItem(
                     color = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             }
-            
+
             // Mode info
             Column(
                 modifier = Modifier.weight(1f),
@@ -286,7 +286,7 @@ private fun MemoryItem(
 ) {
     val isDarkMode = LocalDarkMode.current
     val isCore = memory.memoryType == 0
-    
+
     val backgroundColor = if (isCore) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
@@ -297,7 +297,7 @@ private fun MemoryItem(
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
-    
+
     // Optical roundness for the cover
     val opticalRadius = 12.dp
     val defaultRadius = 6.dp
@@ -307,7 +307,7 @@ private fun MemoryItem(
         bottomStart = if (isLast) opticalRadius else defaultRadius,
         bottomEnd = defaultRadius
     )
-    
+
     Surface(
         onClick = onClick,
         shape = shape,
@@ -363,7 +363,7 @@ private fun MemoryItem(
                     }
                 }
             }
-            
+
             // Memory info
             Column(
                 modifier = Modifier.weight(1f),
@@ -406,7 +406,7 @@ private fun LorebookEntryItem(
     onClick: () -> Unit
 ) {
     val isDarkMode = LocalDarkMode.current
-    
+
     val cover = remember(entry.lorebookCover) {
         entry.lorebookCover?.let { coverJson ->
             try {
@@ -416,7 +416,7 @@ private fun LorebookEntryItem(
             }
         }
     }
-    
+
     // Optical roundness for the cover
     val opticalRadius = 12.dp
     val defaultRadius = 6.dp
@@ -426,7 +426,7 @@ private fun LorebookEntryItem(
         bottomStart = if (isLast) opticalRadius else defaultRadius,
         bottomEnd = defaultRadius
     )
-    
+
     Surface(
         onClick = onClick,
         shape = shape,
@@ -481,7 +481,7 @@ private fun LorebookEntryItem(
                         )
                     }
                 }
-                
+
                 // Entry number
                 Box(
                     modifier = Modifier
@@ -506,7 +506,7 @@ private fun LorebookEntryItem(
                     )
                 }
             }
-            
+
             // Entry info
             Column(
                 modifier = Modifier.weight(1f),

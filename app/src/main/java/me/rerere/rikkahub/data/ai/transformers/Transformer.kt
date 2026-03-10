@@ -3,7 +3,7 @@ package me.rerere.rikkahub.data.ai.transformers
 import android.content.Context
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 
 class TransformerContext(
     val context: Context,

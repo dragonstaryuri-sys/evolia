@@ -17,8 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.tools.LocalToolOption
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.LocalToolOption
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.FormItem
 
 @Composable
@@ -69,7 +69,7 @@ fun AssistantLocalToolSubPage(
                         permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
                     }
                     permissions.add(android.Manifest.permission.CAMERA)
-                    
+
                     if (permissions.isNotEmpty()) {
                         deviceControlPermissionLauncher.launch(permissions.toTypedArray())
                     } else {
@@ -139,4 +139,3 @@ private fun LocalToolCard(
         )
     }
 }
-

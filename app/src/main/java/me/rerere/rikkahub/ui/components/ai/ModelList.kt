@@ -268,17 +268,17 @@ internal fun ColumnScope.ModelList(
 
     // Build a flat list of items for the LazyColumn - this enables precise scrolling to any model
     // Structure: [provider header, model, model, ...] for each provider
-    
+
     val providerListItems = remember(providers, modelType, searchKeywords, settings.value.favoriteModels) {
         buildList {
             providers.forEach { providerSetting ->
                 val filteredModels = providerSetting.models.fastFilter {
                     it.type == modelType && it.displayName.contains(searchKeywords, true)
                 }
-                
+
                 // Add provider header
                 add(ProviderListItem.Header(providerSetting))
-                
+
                 // Add each model as individual item
                 filteredModels.forEachIndexed { index, model ->
                     val itemPosition = when {
@@ -297,7 +297,7 @@ internal fun ColumnScope.ModelList(
             }
         }
     }
-    
+
     // Calculate position of selected model in the flat list
     val selectedModelPosition = remember(currentModel, favoriteModels, providerListItems) {
         if (currentModel == null) return@remember 0
@@ -338,11 +338,11 @@ internal fun ColumnScope.ModelList(
 
     // List state for scrolling
     val lazyListState = rememberLazyListState()
-    
+
     // Get viewport height for centering calculation
     val density = androidx.compose.ui.platform.LocalDensity.current
     var viewportHeight by remember { mutableStateOf(0) }
-    
+
     // Scroll to selected model centered on first composition
     LaunchedEffect(currentModel, viewportHeight) {
         if (currentModel != null && selectedModelPosition > 0 && viewportHeight > 0) {
@@ -375,9 +375,9 @@ internal fun ColumnScope.ModelList(
                 add(toIndex, removeAt(fromIndex))
             }
             coroutineScope.launch {
-                settingsStore.update { oldSettings ->
-                    oldSettings.copy(favoriteModels = newFavoriteModels)
-                }
+                settingsStore.update(
+                    settings.value.copy(favoriteModels = newFavoriteModels)
+                )
             }
         }
     }
@@ -406,7 +406,7 @@ internal fun ColumnScope.ModelList(
     }
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    
+
     OutlinedTextField(
         value = searchKeywords,
         onValueChange = { searchKeywords = it },
@@ -493,11 +493,11 @@ internal fun ColumnScope.ModelList(
                                 IconButton(
                                     onClick = {
                                         coroutineScope.launch {
-                                            settingsStore.update { settings ->
-                                                settings.copy(
-                                                    favoriteModels = settings.favoriteModels.filter { it != model.id }
+                                            settingsStore.update(
+                                                settings.value.copy(
+                                                    favoriteModels = settings.value.favoriteModels.filter { it != model.id }
                                                 )
-                                            }
+                                            )
                                         }
                                     }
                                 ) {
@@ -576,18 +576,15 @@ internal fun ColumnScope.ModelList(
                                 IconButton(
                                     onClick = {
                                         coroutineScope.launch {
-                                            settingsStore.update { settings ->
-                                                if (item.isFavorite) {
-                                                    settings.copy(
-                                                        favoriteModels = settings.favoriteModels.filter { it != item.model.id }
-                                                    )
-
-                                                } else {
-                                                    settings.copy(
-                                                        favoriteModels = settings.favoriteModels + item.model.id
-                                                    )
-                                                }
+                                            val currentSettings = settings.value
+                                            val newFavoriteModels = if (item.isFavorite) {
+                                                currentSettings.favoriteModels.filter { it != item.model.id }
+                                            } else {
+                                                currentSettings.favoriteModels + item.model.id
                                             }
+                                            settingsStore.update(
+                                                currentSettings.copy(favoriteModels = newFavoriteModels)
+                                            )
                                         }
                                     }
                                 ) {
@@ -700,7 +697,7 @@ private fun ModelItem(
 ) {
     val navController = LocalNavController.current
     val interactionSource = remember { MutableInteractionSource() }
-    
+
     // Calculate shape based on position - edges get 24dp, connections get 10dp
     val itemShape = if (select) {
         RoundedCornerShape(50.dp)  // Selected items are fully round
@@ -718,7 +715,7 @@ private fun ModelItem(
             ModelItemPosition.SINGLE -> RoundedCornerShape(24.dp)
         }
     }
-    
+
     if(inGroup) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

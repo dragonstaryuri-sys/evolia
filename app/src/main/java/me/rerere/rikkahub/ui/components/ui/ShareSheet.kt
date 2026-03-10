@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Share
 import me.rerere.ai.provider.ProviderSetting
-import me.rerere.rikkahub.utils.JsonInstant
+import me.rerere.rikkahub.common.JsonInstant
 import kotlin.io.encoding.Base64
 
 @Composable

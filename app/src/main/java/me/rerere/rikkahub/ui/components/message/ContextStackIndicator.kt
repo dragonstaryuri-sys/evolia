@@ -39,7 +39,7 @@ import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.ai.ui.UsedMemory
 import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -49,15 +49,15 @@ private val json = Json { ignoreUnknownKeys = true }
  */
 private sealed class ContextStackItem {
     abstract val priority: Int
-    
+
     data class Mode(val mode: UsedMode) : ContextStackItem() {
         override val priority: Int get() = mode.priority
     }
-    
+
     data class Memory(val memory: UsedMemory) : ContextStackItem() {
         override val priority: Int get() = memory.priority
     }
-    
+
     data class Lorebook(val entry: UsedLorebookEntry) : ContextStackItem() {
         override val priority: Int get() = entry.priority
     }
@@ -78,7 +78,7 @@ fun ContextStackIndicator(
     modifier: Modifier = Modifier
 ) {
     val isDarkMode = LocalDarkMode.current
-    
+
     // Combine all items and sort by priority
     val allItems = remember(modes, memories, entries) {
         buildList {
@@ -87,25 +87,25 @@ fun ContextStackIndicator(
             entries.forEach { add(ContextStackItem.Lorebook(it)) }
         }.sortedByDescending { it.priority }
     }
-    
+
     if (allItems.isEmpty()) return
-    
+
     val displayItems = allItems.take(3)
     val extraCount = (allItems.size - 3).coerceAtLeast(0)
-    
+
     // Config
     val bookWidth = 24.dp
     val bookHeight = 32.dp
     val overlap = 14.dp
     val badgeSize = 20.dp
-    
+
     val totalWidth = if (displayItems.isNotEmpty()) {
         val booksWidth = bookWidth + (overlap * (displayItems.size - 1))
         if (extraCount > 0) booksWidth + (badgeSize / 2) else booksWidth
     } else {
         0.dp
     }
-    
+
     // Overlay color for dimming (darken in dark mode, lighten in light mode)
     val overlayColor = if (isDarkMode) Color.Black else Color.White
 
@@ -124,7 +124,7 @@ fun ContextStackIndicator(
                 1 -> 0.3f     // Second - slight dim
                 else -> 0.55f // Third - more dim
             }
-            
+
             when (item) {
                 is ContextStackItem.Mode -> {
                     ModeCover(
@@ -160,7 +160,7 @@ fun ContextStackIndicator(
                             }
                         }
                     }
-                    
+
                     LorebookCover(
                         lorebookName = item.entry.lorebookName,
                         cover = cover,
@@ -176,7 +176,7 @@ fun ContextStackIndicator(
                 }
             }
         }
-        
+
         // "+N" circle badge
         if (extraCount > 0) {
             val badgeOffset = bookWidth + (overlap * (displayItems.size - 1)) - 10.dp
@@ -256,7 +256,7 @@ private fun MemoryCover(
     } else {
         MaterialTheme.colorScheme.onSecondaryContainer
     }
-    
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
@@ -365,7 +365,7 @@ private fun LorebookCover(
                 )
             }
         }
-        
+
         // Entry number at bottom
         Box(
             modifier = Modifier

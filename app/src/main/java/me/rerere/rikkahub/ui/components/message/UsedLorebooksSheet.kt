@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlinx.serialization.json.Json
 import me.rerere.ai.ui.UsedLorebookEntry
-import me.rerere.rikkahub.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -60,7 +60,7 @@ fun UsedLorebooksSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
@@ -91,7 +91,7 @@ fun UsedLorebooksSheet(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(start = 4.dp)
             )
-            
+
             // Entries list - grouped with small gap
             val sortedEntries = entries.sortedByDescending { it.priority }
             LazyColumn(
@@ -110,7 +110,7 @@ fun UsedLorebooksSheet(
                         )
                         else -> RoundedCornerShape(itemCornerRadius)
                     }
-                    
+
                     UsedLorebookEntryItem(
                         entry = entry,
                         onClick = { onEntryClick(entry) },
@@ -159,7 +159,7 @@ private fun UsedLorebookEntryItem(
                     }
                 }
             }
-            
+
             BookCoverItem(
                 lorebookName = entry.lorebookName,
                 cover = cover,
@@ -167,7 +167,7 @@ private fun UsedLorebookEntryItem(
                 isFirst = isFirst,
                 isLast = isLast
             )
-            
+
             // Entry info
             Column(
                 modifier = Modifier.weight(1f),
@@ -181,7 +181,7 @@ private fun UsedLorebookEntryItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 // Entry Title
                 Text(
                     text = entry.entryName.ifBlank { "Entry #${entry.entryIndex + 1}" },
@@ -189,7 +189,7 @@ private fun UsedLorebookEntryItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                
+
                 // Activation Reason
                 if (!entry.activationReason.isNullOrBlank()) {
                     Text(
@@ -215,20 +215,20 @@ private fun BookCoverItem(
 ) {
     val width = 45.dp
     val height = 60.dp
-    
+
     // Optical roundness calculation:
     // Outer Radius (24dp) - Padding (12dp) = 12dp
     // Default radius = 6dp
     val opticalRadius = 12.dp
     val defaultRadius = 6.dp
-    
+
     val shape = RoundedCornerShape(
         topStart = if (isFirst) opticalRadius else defaultRadius,
         topEnd = defaultRadius,
         bottomStart = if (isLast) opticalRadius else defaultRadius,
         bottomEnd = defaultRadius
     )
-    
+
     Box(
         modifier = Modifier
             .width(width)
@@ -271,11 +271,11 @@ private fun BookCoverItem(
                 Text(
                     text = lorebookName.take(1).uppercase(),
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface 
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }
-        
+
         // Entry number at bottom with gradient background
         Box(
             modifier = Modifier

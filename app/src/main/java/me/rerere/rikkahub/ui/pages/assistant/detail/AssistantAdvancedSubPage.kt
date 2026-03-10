@@ -28,7 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
@@ -48,7 +48,7 @@ fun AssistantAdvancedSubPage(
     ) { isGranted ->
         onUpdate(assistant.copy(enableSpontaneous = true))
     }
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -81,7 +81,7 @@ fun AssistantAdvancedSubPage(
                     )
                 }
             )
-            
+
             // Settings (only when enabled)
             AnimatedVisibility(
                 visible = assistant.enableSpontaneous,
@@ -97,7 +97,7 @@ fun AssistantAdvancedSubPage(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedTextField(
                                     value = assistant.notificationStartHour.toString(),
-                                    onValueChange = { 
+                                    onValueChange = {
                                         val hour = it.toIntOrNull()?.coerceIn(0, 23) ?: 7
                                         onUpdate(assistant.copy(notificationStartHour = hour))
                                     },
@@ -108,7 +108,7 @@ fun AssistantAdvancedSubPage(
                                 )
                                 OutlinedTextField(
                                     value = assistant.notificationEndHour.toString(),
-                                    onValueChange = { 
+                                    onValueChange = {
                                         val hour = it.toIntOrNull()?.coerceIn(0, 23) ?: 22
                                         onUpdate(assistant.copy(notificationEndHour = hour))
                                     },
@@ -128,7 +128,7 @@ fun AssistantAdvancedSubPage(
                         trailing = {
                             OutlinedTextField(
                                 value = assistant.notificationFrequencyHours.toString(),
-                                onValueChange = { 
+                                onValueChange = {
                                     val hours = it.toIntOrNull()?.coerceAtLeast(1) ?: 4
                                     onUpdate(assistant.copy(notificationFrequencyHours = hours))
                                 },
@@ -150,9 +150,9 @@ fun AssistantAdvancedSubPage(
             // Custom Headers - component has its own title
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -163,13 +163,13 @@ fun AssistantAdvancedSubPage(
                     )
                 }
             }
-            
+
             // Custom Bodies - component has its own title
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(10.dp)
             ) {

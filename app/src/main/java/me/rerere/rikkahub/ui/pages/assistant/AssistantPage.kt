@@ -77,10 +77,9 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.OutlinedButton
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.datastore.DEFAULT_ASSISTANTS_IDS
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -127,7 +126,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 
     // Import state
     var pendingImportResult by remember { mutableStateOf<AssistantExportImport.ImportResult.Configurable?>(null) }
-    
+
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -150,35 +149,35 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 
     // Search query state
     var searchQuery by remember { mutableStateOf("") }
-    
+
     // Tag filter state
     var selectedTagIds by remember { mutableStateOf(emptySet<kotlin.uuid.Uuid>()) }
-    
+
     // Filter assistants by both search query and tags
     val filteredAssistants = remember(settings.assistants, searchQuery, selectedTagIds) {
         var result = settings.assistants
-        
+
         // Filter by search query
         if (searchQuery.isNotBlank()) {
             result = result.filter { assistant ->
                 assistant.name.contains(searchQuery, ignoreCase = true)
             }
         }
-        
+
         // Filter by tags
         if (selectedTagIds.isNotEmpty()) {
             result = result.filter { assistant ->
                 assistant.tags.containsAll(selectedTagIds)
             }
         }
-        
+
         result
     }
-    
+
     val isFiltering = selectedTagIds.isNotEmpty() || searchQuery.isNotBlank()
-    
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    
+
     // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
@@ -236,7 +235,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     }
                 } else null
             )
-            
+
             // Tag filter row - only show when there are tags
             if (settings.assistantTags.isNotEmpty()) {
                 AssistantTagsFilterRow(
@@ -248,27 +247,27 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     }
                 )
             }
-            
+
             // State for swipe neighbor tracking
             var draggingIndex by remember { mutableStateOf(-1) }
             var dragOffset by remember { mutableFloatStateOf(0f) }
             var isUnlocked by remember { mutableStateOf(false) }
             var neighborsUnlocked by remember { mutableStateOf(false) }
-            
-            
+
+
             val density = androidx.compose.ui.platform.LocalDensity.current
             val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
-            
+
             // Check if delete is allowed (more than 1 assistant)
             val canDelete = settings.assistants.size > 1
-            
+
             // Reset neighborsUnlocked when offset returns to 0
             if (dragOffset == 0f && neighborsUnlocked) {
                 neighborsUnlocked = false
             }
-            
 
-            
+
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -284,18 +283,18 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         index == filteredAssistants.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
-                    
+
                     // Calculate neighbor offset for swipe effect
                     val thresholdPx = with(density) { 35.dp.toPx() }
                     if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
                         neighborsUnlocked = true
                     }
-                    
-                    val shouldNeighborFollow = draggingIndex >= 0 && 
-                        draggingIndex != index && 
-                        !isUnlocked && 
+
+                    val shouldNeighborFollow = draggingIndex >= 0 &&
+                        draggingIndex != index &&
+                        !isUnlocked &&
                         !neighborsUnlocked
-                    
+
                     val neighborOffset = if (shouldNeighborFollow) {
                         val distance = kotlin.math.abs(index - draggingIndex)
                         when (distance) {
@@ -306,7 +305,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     } else {
                         0f
                     }
-                    
+
 
                     // Collect memories OUTSIDE of ReorderableItem to prevent recomposition issues during drag
                     val memories by vm.getMemories(assistant).collectAsStateWithLifecycle(
@@ -314,7 +313,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     )
 
                     ReorderableItem(
-                        state = reorderableState, 
+                        state = reorderableState,
                         key = assistant.id
                     ) { isDragging ->
                         // Key on canDelete to force complete PhysicsSwipeToDelete recreation when list size changes
@@ -387,7 +386,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                     }  // ReorderableItem
                 }
             }
-            
+
         }
     }
 
@@ -407,7 +406,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                      }
                      // Clear missing models
                      val finalAssistant = AssistantExportImport.clearMissingModels(assistant)
-                     
+
                      vm.addAssistant(finalAssistant)
                      toaster.show("Character Imported")
                      pendingImportResult = null
@@ -620,7 +619,7 @@ fun AssistantTagsFilterRow(
     val scrollState = rememberLazyListState()
     val canScrollBackward by remember { derivedStateOf { scrollState.canScrollBackward } }
     val canScrollForward by remember { derivedStateOf { scrollState.canScrollForward } }
-    
+
     LazyRow(
         state = scrollState,
         contentPadding = PaddingValues(horizontal = 16.dp),

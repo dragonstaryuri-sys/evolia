@@ -72,7 +72,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Memory
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -378,7 +378,7 @@ private fun ConversationItem(
             hasAnimated = true
         }
     }
-    
+
     // Physics-based press feedback
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
@@ -390,10 +390,10 @@ private fun ConversationItem(
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
         label = "conversation_alpha"
     )
-    
+
     // Combine alphas: restored fade-in * press feedback
     val combinedAlpha = restoredAlpha * pressAlpha
-    
+
     val backgroundColor = if (selected) {
         MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp)
     } else {
@@ -438,7 +438,7 @@ private fun ConversationItem(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.weight(1f))
-            
+
             // Unconsolidated Dot
             AnimatedVisibility(showUnconsolidatedDot && !conversation.isConsolidated) {
                 Box(

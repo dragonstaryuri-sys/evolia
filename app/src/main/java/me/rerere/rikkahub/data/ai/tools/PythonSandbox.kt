@@ -52,13 +52,13 @@ class PythonSandbox(private val context: Context) {
     fun importFile(conversationId: Uuid, sourceUri: Uri, filename: String): String {
         val dir = getConversationDir(conversationId)
         val destFile = File(dir, filename)
-        
+
         context.contentResolver.openInputStream(sourceUri)?.use { input ->
             destFile.outputStream().use { output ->
                 input.copyTo(output)
             }
         } ?: throw java.io.FileNotFoundException("Could not open input stream for URI: $sourceUri (File not found or no permission)")
-        
+
         return destFile.absolutePath
     }
 
@@ -76,7 +76,7 @@ class PythonSandbox(private val context: Context) {
     fun listFiles(conversationId: Uuid): List<FileInfo> {
         val dir = getConversationDir(conversationId)
         if (!dir.exists()) return emptyList()
-        
+
         return dir.walkTopDown()
             .filter { it.isFile }
             .map { file ->
@@ -97,14 +97,14 @@ class PythonSandbox(private val context: Context) {
     fun deleteFile(conversationId: Uuid, relativePath: String): Boolean {
         val dir = getConversationDir(conversationId)
         val file = File(dir, relativePath)
-        
+
         // Security: ensure file is within sandbox directory
         val realPath = file.canonicalPath
         val realDir = dir.canonicalPath
         if (!realPath.startsWith(realDir)) {
             throw SecurityException("Access denied: path outside sandbox")
         }
-        
+
         return if (file.exists() && file.isFile) {
             file.delete()
         } else {

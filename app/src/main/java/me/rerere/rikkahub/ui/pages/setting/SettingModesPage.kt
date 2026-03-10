@@ -1,11 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -87,12 +84,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.data.model.InjectionPosition
-import me.rerere.rikkahub.data.model.Lorebook
-import me.rerere.rikkahub.data.model.Avatar
-import me.rerere.rikkahub.data.model.Mode
-import me.rerere.rikkahub.data.model.ModeAttachment
-import me.rerere.rikkahub.data.model.ModeAttachmentType
+import me.rerere.rikkahub.core.data.model.InjectionPosition
+import me.rerere.rikkahub.core.data.model.Lorebook
+import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.core.data.model.Mode
+import me.rerere.rikkahub.core.data.model.ModeAttachment
+import me.rerere.rikkahub.core.data.model.ModeAttachmentType
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -133,11 +130,11 @@ fun SettingModesPage(
     val navController = LocalNavController.current
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState { 2 }
-    
+
     var showAddDialog by remember { mutableStateOf(false) }
     var editingMode by remember { mutableStateOf<Mode?>(null) }
     var showAddLorebookDialog by remember { mutableStateOf(false) }
-    
+
     // Auto-scroll to mode if ID is provided
     LaunchedEffect(scrollToModeId, settings.modes) {
         if (scrollToModeId != null && settings.modes.isNotEmpty()) {
@@ -153,7 +150,7 @@ fun SettingModesPage(
             }
         }
     }
-    
+
     // File picker for lorebook import
     val lorebookImportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -176,12 +173,12 @@ fun SettingModesPage(
             }
         }
     }
-    
+
     // Track drag state for neighbor offset
     var draggingIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { mutableStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
-    
+
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         // Subtract 1 to account for the description header item
         val fromIndex = from.index - 1
@@ -252,7 +249,7 @@ fun SettingModesPage(
                                 modifier = Modifier.size(24.dp)
                             )
                         }
-                        
+
                         // Lorebooks tab
                         Box(
                             modifier = Modifier
@@ -279,10 +276,10 @@ fun SettingModesPage(
                         }
                     }
                 }
-                
+
                 // Add FAB - locked in position, action changes by page
                 FloatingActionButton(
-                    onClick = { 
+                    onClick = {
                         haptics.perform(HapticPattern.Pop)
                         if (pagerState.currentPage == 0) {
                             showAddDialog = true
@@ -341,7 +338,7 @@ fun SettingModesPage(
                 }
                 Spacer(Modifier.height(8.dp))
             }
-            
+
             if (settings.modes.isEmpty()) {
                 item(key = "empty") {
                     Card(
@@ -385,7 +382,7 @@ fun SettingModesPage(
                         index == settings.modes.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
-                    
+
                     // Calculate neighbor offset for physics effect
                     val neighborOffset = when {
                         draggingIndex == -1 -> 0f
@@ -395,7 +392,7 @@ fun SettingModesPage(
                     }
 
                     ReorderableItem(
-                        state = reorderableState, 
+                        state = reorderableState,
                         key = mode.id
                     ) { isDragging ->
                         PhysicsSwipeToDelete(
@@ -461,7 +458,7 @@ fun SettingModesPage(
                 }
             }
             }
-            
+
             // Bottom fade gradient
             Box(
                 modifier = Modifier
@@ -515,7 +512,7 @@ fun SettingModesPage(
             }
         )
     }
-    
+
     // Add Lorebook Dialog (page-level, used when on Lorebooks tab)
     if (showAddLorebookDialog) {
         LorebookCreatorSheet(
@@ -588,17 +585,17 @@ internal fun ModeEditorSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
-    
+
     var name by remember(mode) { mutableStateOf(mode?.name ?: "") }
     var icon by remember(mode) { mutableStateOf(mode?.icon) }
     var prompt by remember(mode) { mutableStateOf(mode?.prompt ?: "") }
     var defaultEnabled by remember(mode) { mutableStateOf(mode?.defaultEnabled ?: false) }
-    var injectionPosition by remember(mode) { 
-        mutableStateOf(mode?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM) 
+    var injectionPosition by remember(mode) {
+        mutableStateOf(mode?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM)
     }
     var depth by remember(mode) { mutableStateOf(mode?.depth ?: 0) }
     var attachments by remember(mode) { mutableStateOf(mode?.attachments ?: emptyList()) }
-    
+
     // Image picker launcher
     val imagePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -614,7 +611,7 @@ internal fun ModeEditorSheet(
             attachments = attachments + newAttachments
         }
     }
-    
+
     // Video picker launcher
     val videoPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -630,7 +627,7 @@ internal fun ModeEditorSheet(
             attachments = attachments + newAttachments
         }
     }
-    
+
     // Audio picker launcher
     val audioPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetMultipleContents()
@@ -646,7 +643,7 @@ internal fun ModeEditorSheet(
             attachments = attachments + newAttachments
         }
     }
-    
+
     // Document picker launcher
     val documentPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -668,7 +665,7 @@ internal fun ModeEditorSheet(
             attachments = attachments + newAttachments
         }
     }
-    
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -697,7 +694,7 @@ internal fun ModeEditorSheet(
         ) {
             Text(
                 text = stringResource(
-                    if (mode != null) R.string.modes_page_edit_mode 
+                    if (mode != null) R.string.modes_page_edit_mode
                     else R.string.modes_page_add_mode
                 ),
                 style = MaterialTheme.typography.titleLarge
@@ -732,7 +729,7 @@ internal fun ModeEditorSheet(
                             )
                         }
                     }
-                    
+
                     // Name field
                     OutlinedTextField(
                         value = name,
@@ -756,7 +753,7 @@ internal fun ModeEditorSheet(
                     placeholder = { Text(stringResource(R.string.modes_page_prompt_placeholder)) }
                 )
             }
-            
+
             // Attachments section
             FormItem(
                 label = { Text(stringResource(R.string.modes_page_attachments)) }
@@ -782,7 +779,7 @@ internal fun ModeEditorSheet(
                             }
                         }
                     }
-                    
+
                     // Add attachment buttons
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -941,7 +938,7 @@ private fun ModeAttachmentItem(
                         modifier = Modifier.padding(horizontal = 8.dp)
                     ) {
                         Icon(
-                            Icons.Rounded.AttachFile, 
+                            Icons.Rounded.AttachFile,
                             null,
                             modifier = Modifier.size(16.dp)
                         )
@@ -956,7 +953,7 @@ private fun ModeAttachmentItem(
                 }
             }
         }
-        
+
         // Remove button
         Icon(
             imageVector = Icons.Rounded.Close,
@@ -985,12 +982,12 @@ private fun LorebooksPageContent(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     val lazyListState = rememberLazyListState()
-    
+
     // Track drag state for neighbor offset
     var draggingIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { mutableStateOf(0f) }
     var isUnlocked by remember { mutableStateOf(false) }
-    
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier
@@ -1026,7 +1023,7 @@ private fun LorebooksPageContent(
                 }
                 Spacer(Modifier.height(8.dp))
             }
-            
+
             if (settings.lorebooks.isEmpty()) {
                 item(key = "lorebooks_empty") {
                     Card(
@@ -1071,7 +1068,7 @@ private fun LorebooksPageContent(
                         index == settings.lorebooks.lastIndex -> ItemPosition.LAST
                         else -> ItemPosition.MIDDLE
                     }
-                    
+
                     val neighborOffset = when {
                         draggingIndex == -1 -> 0f
                         index == draggingIndex - 1 && isUnlocked -> dragOffset * 0.15f
@@ -1127,7 +1124,7 @@ private fun LorebooksPageContent(
                 }
             }
         }
-        
+
         // Bottom fade gradient
         Box(
             modifier = Modifier
@@ -1143,7 +1140,7 @@ private fun LorebooksPageContent(
                     )
                 )
         )
-        
+
         // Import FAB only - Add button is in bottomBar
         FloatingActionButton(
             onClick = {
@@ -1184,7 +1181,7 @@ private fun LorebookListCard(
             bottomStart = 16.dp, bottomEnd = 6.dp
         )
     }
-    
+
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
@@ -1246,8 +1243,8 @@ private fun LorebookListCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = lorebook.description.ifEmpty { 
-                        stringResource(R.string.lorebooks_page_no_description) 
+                    text = lorebook.description.ifEmpty {
+                        stringResource(R.string.lorebooks_page_no_description)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

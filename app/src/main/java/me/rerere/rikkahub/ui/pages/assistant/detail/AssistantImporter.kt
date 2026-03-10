@@ -36,13 +36,13 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.utils.ImageUtils
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileMimeType
-import me.rerere.rikkahub.utils.jsonPrimitiveOrNull
+import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.R
 
 @Composable

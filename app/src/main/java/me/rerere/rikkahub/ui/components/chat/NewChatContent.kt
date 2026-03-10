@@ -54,7 +54,7 @@ import androidx.compose.ui.draw.drawWithContent
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.NewChatContentStyle
 import me.rerere.rikkahub.data.datastore.NewChatHeaderStyle
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.Greeting
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.pages.menu.TimeLabel
@@ -204,7 +204,7 @@ fun NewChatContent(
                 val secondaryColor = MaterialTheme.colorScheme.secondary
                 val writeColor = MaterialTheme.colorScheme.inversePrimary
                 val brainstormColor = MaterialTheme.colorScheme.tertiary
-                
+
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -231,7 +231,7 @@ fun NewChatContent(
                             onClick = { onTemplateClick(brainstormPrompt) }
                         )
                     }
-                    
+
                     // Second row: Code, Write
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -269,7 +269,7 @@ private fun TemplateCard(
     modifier: Modifier = Modifier
 ) {
     val cardColor = MaterialTheme.colorScheme.surfaceContainer
-    
+
     Card(
         onClick = onClick,
         modifier = modifier.wrapContentHeight(),
@@ -329,7 +329,7 @@ private fun ActionPill(
     } else {
         MaterialTheme.colorScheme.outlineVariant
     }
-    
+
     Surface(
         onClick = onClick,
         modifier = modifier,
@@ -370,7 +370,7 @@ private fun StatsWidgets(
         val streakContainerColor = if (stats.hasChattedToday) {
             MaterialTheme.colorScheme.errorContainer
         } else {
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow 
+            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow
             else MaterialTheme.colorScheme.surfaceContainerHigh
         }
         val streakContentColor = if (stats.hasChattedToday) {
@@ -378,7 +378,7 @@ private fun StatsWidgets(
         } else {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         }
-        
+
         // Streak card - full width, matching MenuPage StatCard layout
         StatCard(
             title = "Daily Streak",
@@ -415,9 +415,9 @@ private fun StatsWidgets(
                 title = "Chat Style",
                 value = timeLabelText,
                 icon = timeLabelIcon,
-                containerColor = if (LocalDarkMode.current) 
-                    MaterialTheme.colorScheme.surfaceContainerLow 
-                else 
+                containerColor = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
                     MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f).fillMaxHeight()
@@ -495,7 +495,7 @@ private fun AutoSizeText(
 ) {
     var textSize by remember { mutableStateOf(maxTextSize) }
     var readyToDraw by remember { mutableStateOf(false) }
-    
+
     Text(
         text = text,
         style = style.copy(fontSize = textSize),

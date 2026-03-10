@@ -6,12 +6,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.data.model.Assistant
-import me.rerere.rikkahub.data.model.Avatar
-import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
 
 class AssistantVM(
     private val settingsStore: SettingsStore,
@@ -34,9 +35,9 @@ class AssistantVM(
             val newAssistant = if (assistant.name.isBlank()) {
                 assistant.copy(
                     name = "Generical",
-                    avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
+                    avatar = Avatar.Resource(R.drawable.default_generical_pfp),
                     systemPrompt = """
-                        You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one. 
+                        You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one.
 
                         **Context:
                         - You are currently chatting to {{user}}
@@ -69,11 +70,12 @@ class AssistantVM(
 
         viewModelScope.launch {
             // Optimistic update: Remove from settings immediately
-            settingsStore.update { settings ->
-                settings.copy(
-                    assistants = settings.assistants.filter { it.id != assistant.id }
+            val currentSettings = settings.value
+            settingsStore.update(
+                currentSettings.copy(
+                    assistants = currentSettings.assistants.filter { it.id != assistant.id }
                 )
-            }
+            )
         }
 
         // Start delayed deletion of data
@@ -93,14 +95,13 @@ class AssistantVM(
 
         viewModelScope.launch {
             // Restore to settings
-            settingsStore.update { settings ->
-                if (settings.assistants.none { it.id == assistant.id }) {
-                    settings.copy(
-                        assistants = settings.assistants.plus(assistant)
+            val currentSettings = settings.value
+            if (currentSettings.assistants.none { it.id == assistant.id }) {
+                settingsStore.update(
+                    currentSettings.copy(
+                        assistants = currentSettings.assistants.plus(assistant)
                     )
-                } else {
-                    settings
-                }
+                )
             }
         }
     }

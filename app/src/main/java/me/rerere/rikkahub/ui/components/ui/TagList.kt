@@ -34,7 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.model.Tag
+import me.rerere.rikkahub.core.data.model.Tag
 import kotlin.uuid.Uuid
 
 @Composable

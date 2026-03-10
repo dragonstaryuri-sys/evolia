@@ -14,7 +14,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
@@ -35,17 +33,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -65,7 +60,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
@@ -95,9 +89,9 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
-import me.rerere.rikkahub.data.model.Conversation
-import me.rerere.rikkahub.data.model.MessageNode
-import me.rerere.rikkahub.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
@@ -111,6 +105,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.openUrl
 
@@ -312,10 +307,10 @@ private fun SharedTransitionScope.ChatListNormal(
         val nodeIndexById = remember(conversation.messageNodes) {
             conversation.messageNodes.mapIndexed { index, node -> node.id to index }.toMap()
         }
-        
+
         // Check if we need a phantom loading turn (loading but no assistant response yet)
         val needsPhantomLoadingTurn = loading && (
-            turnGroups.isEmpty() || 
+            turnGroups.isEmpty() ||
             turnGroups.lastOrNull()?.role == me.rerere.ai.core.MessageRole.USER
         )
 
@@ -330,7 +325,7 @@ private fun SharedTransitionScope.ChatListNormal(
         } else {
             turnGroups
         }
-        
+
         LazyColumn(
             state = state,
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
@@ -872,9 +867,9 @@ private fun PhantomLoadingTurn(
     val showModelName = effectiveDisplay.showModelName
     val showAssistantBubbles = effectiveDisplay.showAssistantBubbles
     val avatarName = assistant?.name?.ifEmpty { null } ?: "Assistant"
-    val avatarValue = assistant?.avatar ?: me.rerere.rikkahub.data.model.Avatar.Dummy
+    val avatarValue = assistant?.avatar ?: Avatar.Dummy
     val elementSpacing = if (showAssistantBubbles) 4.dp else 3.dp
-    
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(elementSpacing)

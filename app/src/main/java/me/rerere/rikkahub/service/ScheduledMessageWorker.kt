@@ -15,8 +15,8 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getAssistantById
-import me.rerere.rikkahub.data.repository.ConversationRepository
-import me.rerere.rikkahub.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.uuid.Uuid
@@ -48,7 +48,7 @@ class ScheduledMessageWorker(
 
             // Prepare context
             val history = conversation.currentMessages.takeLast(10).joinToString("\n") { "${it.role}: ${it.toText()}" }
-            
+
             // RAG Retrieval
             val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
             val memories = if (lastUserMessage.isNotBlank()) {
@@ -65,15 +65,15 @@ class ScheduledMessageWorker(
             val prompt = """
                 You are ${assistant.name}.
                 You scheduled a message to be sent to the user now.
-                
+
                 Reason for scheduling: "$reason"
-                
+
                 Recent Chat History:
                 $history
-                
+
                 Relevant Memories:
                 $memoryContext
-                
+
                 Generate the content of the notification message now.
                 - Be natural and conversational.
                 - Directly address the reason.

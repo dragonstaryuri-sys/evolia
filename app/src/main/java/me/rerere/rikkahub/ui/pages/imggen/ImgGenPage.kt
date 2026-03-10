@@ -137,17 +137,17 @@ fun ImageGenPage(
 ) {
     val scope = rememberCoroutineScope()
     val isGenerating by vm.isGenerating.collectAsStateWithLifecycle()
-    
+
     // State for switching between Generation and Gallery views
     var showGallery by remember { mutableStateOf(false) }
-    
+
     // Settings sheet state - lifted to page level for TopBar access
     var showSettingsSheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    
+
     // Cancel dialog for back handler during generation
     var showCancelDialog by remember { mutableStateOf(false) }
-    
+
     // Back handler: if in gallery, go back to image gen; if generating, show cancel dialog
     BackHandler(showGallery || isGenerating) {
         when {
@@ -307,18 +307,18 @@ private fun ImageGenScreen(
     // Animation phase tracking
     // Phases: 0=Idle, 1=Generating, 2=ImageArrived, 3=Printing, 4=Ejecting, 5=Falling, 6=Settled
     var animationPhase by remember { mutableStateOf(0) }
-    
+
     // Session history - accumulates all generated images in this session
     val sessionImages = remember { mutableStateListOf<GeneratedImage>() }
     val listState = rememberLazyListState()
-    
+
     // Track generation state changes
     LaunchedEffect(isGenerating) {
         if (isGenerating) {
             animationPhase = 1 // Generating
         }
     }
-    
+
     // Track when new images are generated
     LaunchedEffect(currentGeneratedImages) {
         if (currentGeneratedImages.isNotEmpty()) {
@@ -328,27 +328,27 @@ private fun ImageGenScreen(
                     sessionImages.add(0, newImage)
                 }
             }
-            
+
             // Phase sequence with delays and haptics
             animationPhase = 2 // ImageArrived
             kotlinx.coroutines.delay(200)
-            
+
             animationPhase = 3 // Printing - image starts emerging
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
             kotlinx.coroutines.delay(300)
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Tick)
             kotlinx.coroutines.delay(300)
-            
+
             animationPhase = 4 // Ejecting
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Pop)
             kotlinx.coroutines.delay(250)
-            
+
             animationPhase = 5 // Falling
             kotlinx.coroutines.delay(400)
-            
+
             animationPhase = 6 // Settled
             haptics.perform(me.rerere.rikkahub.ui.hooks.HapticPattern.Thud)
-            
+
             // Scroll to top to show newest image
             listState.animateScrollToItem(0)
         }
@@ -365,7 +365,7 @@ private fun ImageGenScreen(
     // Image animation values - simplified direct fall
     // Random rotation for natural look (slight misalignment)
     val randomRotation = remember { kotlin.random.Random.nextFloat() * 6f - 3f } // -3 to 3 degrees
-    
+
     val imageScale by animateFloatAsState(
         targetValue = when (animationPhase) {
             0, 1, 2 -> 0f  // Hidden during generation
@@ -374,7 +374,7 @@ private fun ImageGenScreen(
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
         label = "image_scale"
     )
-    
+
     // Y offset: Image rises from bottom (input bar area) to center
     val imageOffsetY by animateFloatAsState(
         targetValue = when (animationPhase) {
@@ -384,14 +384,14 @@ private fun ImageGenScreen(
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 200f),
         label = "image_offset"
     )
-    
-    
+
+
     val imageAlpha by animateFloatAsState(
         targetValue = if (animationPhase >= 3) 1f else 0f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "image_alpha"
     )
-    
+
     // Random slight rotation for natural landing
     val imageRotation by animateFloatAsState(
         targetValue = when (animationPhase) {
@@ -446,13 +446,13 @@ private fun ImageGenScreen(
                 ) { index, image ->
                     val isNewest = index == 0
                     var showPreview by remember { mutableStateOf(false) }
-                    
+
                     // Only animate the newest image
                     val itemScale = if (isNewest) imageScale else 1f
                     val itemOffsetY = if (isNewest) imageOffsetY else 0f
                     val itemAlpha = if (isNewest) imageAlpha else 1f
                     val itemRotation = if (isNewest) imageRotation else 0f
-                    
+
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -480,7 +480,7 @@ private fun ImageGenScreen(
                                 .clickable { showPreview = true },
                             contentScale = ContentScale.Crop
                         )
-                        
+
                         if (showPreview) {
                             ImagePreviewDialog(
                                 images = listOf("file://${image.filePath}"),
@@ -492,7 +492,7 @@ private fun ImageGenScreen(
                 }
             }
         }
-        
+
         // Top gradient removed per user request
 
         // Gradient behind floating toolbar
@@ -550,7 +550,7 @@ private fun FloatingInputBar(
     val cornerRadius = 28.dp
     val innerCornerRadius = 20.dp
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-    
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -583,7 +583,7 @@ private fun FloatingInputBar(
                     // Image picker button (for image-to-image generation)
                     val model = settings.findModelById(settings.imageGenerationModelId)
                     val supportsImageInput = model?.inputModalities?.contains(Modality.IMAGE) == true
-                    
+
                     if (supportsImageInput) {
                         Surface(
                             shape = RoundedCornerShape(innerCornerRadius),
@@ -938,9 +938,9 @@ private fun SettingsBottomSheet(
                     onlyIcon = false,
                     onSelect = { model ->
                         scope.launch {
-                            vm.settingsStore.update { oldSettings ->
-                                oldSettings.copy(imageGenerationModelId = model.id)
-                            }
+                            vm.settingsStore.update(
+                                settings.copy(imageGenerationModelId = model.id)
+                            )
                         }
                     }
                 )

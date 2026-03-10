@@ -11,3 +11,20 @@ local.properties
 .cursor
 .history
 .kotlin
+
+# 忽略所有模块的 build 目录
+*/build/
+build/
+# 忽略 Gradle 缓存
+.gradle/
+# 忽略本地配置
+local.properties
+# 忽略 IDE 配置
+.idea/
+*.iml
+# 忽略 APK/AAB 文件
+*.apk
+*.aab
+# 忽略 DataStore/SP 等本地数据
+*.db
+*.db-journal
