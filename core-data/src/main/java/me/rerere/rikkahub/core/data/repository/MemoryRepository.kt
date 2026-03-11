@@ -192,7 +192,7 @@ class MemoryRepository(
         )
     }
 
-    suspend fun addMemory(assistantId: String, content: String): AssistantMemory {
+    suspend fun addMemory(assistantId: String, content: String, type: Int = MemoryType.CORE): AssistantMemory {
         val embeddingResult = try {
             embeddingService.embedWithModelId(content, assistantId)
         } catch (e: Exception) {
@@ -205,7 +205,7 @@ class MemoryRepository(
             content = content,
             embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
             embeddingModelId = embeddingResult?.modelId,
-            type = MemoryType.CORE,
+            type = type,
             createdAt = System.currentTimeMillis(),
             lastAccessedAt = System.currentTimeMillis()
         )
@@ -217,7 +217,7 @@ class MemoryRepository(
             embeddingCacheDAO.insertEmbedding(
                 EmbeddingCacheEntity(
                     memoryId = id.toInt(),
-                    memoryType = MemoryType.CORE,
+                    memoryType = type,
                     modelId = embeddingResult.modelId,
                     embedding = JsonInstant.encodeToString(embeddingResult.embeddings.first())
                 )
@@ -227,7 +227,7 @@ class MemoryRepository(
         return AssistantMemory(
             id = id.toInt(),
             content = content,
-            type = MemoryType.CORE,
+            type = type,
             hasEmbedding = embeddingResult != null,
             embeddingModelId = embeddingResult?.modelId
         )
@@ -288,7 +288,7 @@ class MemoryRepository(
         val memoryScores = memories.mapNotNull { memory ->
             val embedding = getOrCreateEmbedding(
                 memoryId = memory.id,
-                memoryType = MemoryType.CORE,
+                memoryType = memory.type,
                 content = memory.content,
                 assistantId = assistantId,
                 existingEmbedding = memory.embedding,
@@ -410,7 +410,7 @@ class MemoryRepository(
                 embeddingCacheDAO.insertEmbedding(
                     EmbeddingCacheEntity(
                         memoryId = memory.id,
-                        memoryType = MemoryType.CORE,
+                        memoryType = memory.type,
                         modelId = currentModelId,
                         embedding = embeddingJson
                     )
@@ -487,7 +487,7 @@ class MemoryRepository(
                 embeddingCacheDAO.insertEmbedding(
                     EmbeddingCacheEntity(
                         memoryId = memory.id,
-                        memoryType = MemoryType.CORE,
+                        memoryType = memory.type,
                         modelId = currentModelId,
                         embedding = embeddingJson
                     )

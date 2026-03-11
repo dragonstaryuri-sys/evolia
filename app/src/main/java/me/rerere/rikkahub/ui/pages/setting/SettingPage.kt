@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.setting
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -42,6 +43,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
@@ -61,6 +63,7 @@ import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -89,7 +92,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val lazyListState = rememberLazyListState()
-    
+
     Scaffold(
         topBar = {
             OneUITopAppBar(
@@ -169,6 +172,47 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         subtitle = stringResource(R.string.setting_page_display_setting_desc),
                         icon = { Icon(Icons.Rounded.DesktopWindows, null, modifier = Modifier.size(20.dp)) },
                         onClick = { navController.navigate(Screen.SettingDisplay) }
+                    )
+
+                    // Language Selector
+                    val currentLocales = AppCompatDelegate.getApplicationLocales()
+                    val currentTag = if (currentLocales.isEmpty) "" else currentLocales.toLanguageTags()
+                    val languages = listOf(
+                        LanguageOption(stringResource(R.string.language_follow_system), ""),
+                        LanguageOption(stringResource(R.string.language_simplified_chinese), "zh-CN"),
+                        LanguageOption(stringResource(R.string.language_traditional_chinese), "zh-TW"),
+                        LanguageOption(stringResource(R.string.language_english), "en"),
+                        LanguageOption(stringResource(R.string.language_japanese), "ja"),
+                        LanguageOption(stringResource(R.string.language_korean), "ko"),
+                        LanguageOption(stringResource(R.string.language_french), "fr"),
+                        LanguageOption(stringResource(R.string.language_german), "de"),
+                        LanguageOption(stringResource(R.string.language_spanish), "es"),
+                        LanguageOption(stringResource(R.string.language_italian), "it"),
+                    )
+                    val selectedLanguage = languages.find {
+                        if (it.tag.isEmpty()) currentTag.isEmpty()
+                        else currentTag.split(",").any { tag -> tag.startsWith(it.tag) }
+                    } ?: languages.first()
+
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_language),
+                        icon = { Icon(Icons.Rounded.Translate, null, modifier = Modifier.size(20.dp)) },
+                        trailing = {
+                            Select(
+                                options = languages,
+                                selectedOption = selectedLanguage,
+                                onOptionSelected = { option ->
+                                    val appLocale: LocaleListCompat = if (option.tag.isEmpty()) {
+                                        LocaleListCompat.getEmptyLocaleList()
+                                    } else {
+                                        LocaleListCompat.forLanguageTags(option.tag)
+                                    }
+                                    AppCompatDelegate.setApplicationLocales(appLocale)
+                                },
+                                optionToString = { it.name },
+                                modifier = Modifier.wrapContentWidth()
+                            )
+                        }
                     )
 
                     SettingGroupItem(
@@ -278,13 +322,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         icon = { Icon(Icons.Rounded.Info, null, modifier = Modifier.size(20.dp)) },
                         onClick = { navController.navigate(Screen.SettingAbout) }
                     )
-                    
+
                     val context = LocalContext.current
                     SettingGroupItem(
                         title = "Buy Me a Coffee",
                         subtitle = "Support the development",
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
-                        onClick = { 
+                        onClick = {
                             context.openUrl("https://buymeacoffee.com/cocolalilal")
                         }
                     )
@@ -294,6 +338,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     }
 }
 
+private data class LanguageOption(val name: String, val tag: String)
 
 @Composable
 private fun ProviderConfigWarningCard(navController: NavHostController) {
@@ -350,7 +395,7 @@ fun SettingItem(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val haptics = rememberPremiumHaptics()
-    
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.97f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
@@ -361,7 +406,7 @@ fun SettingItem(
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
         label = "setting_alpha"
     )
-    
+
     Surface(
         onClick = {
             haptics.perform(HapticPattern.Tick)
@@ -395,20 +440,20 @@ private fun UpdateAvailableBanner(
     navController: NavHostController
 ) {
     if (!checkForUpdates) return
-    
+
     val updateChecker = org.koin.compose.koinInject<me.rerere.rikkahub.utils.UpdateChecker>()
     // Remember the flow to prevent creating a new one on each recomposition
     val updateFlow = remember(updateChecker) { updateChecker.checkUpdate() }
     val updateState by updateFlow.collectAsStateWithLifecycle(initialValue = me.rerere.rikkahub.utils.UiState.Loading)
     var showUpdateDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    
+
     when (val state = updateState) {
         is me.rerere.rikkahub.utils.UiState.Success -> {
             val updateInfo = state.data
             val currentVersion = me.rerere.rikkahub.BuildConfig.VERSION_NAME
             val isNewer = me.rerere.rikkahub.utils.Version(updateInfo.version) > me.rerere.rikkahub.utils.Version(currentVersion)
-            
+
             if (isNewer && updateInfo.downloads.isNotEmpty()) {
                 Card(
                     onClick = { showUpdateDialog = true },
@@ -449,7 +494,7 @@ private fun UpdateAvailableBanner(
                         )
                     }
                 }
-                
+
                 if (showUpdateDialog) {
                     AlertDialog(
                         onDismissRequest = { showUpdateDialog = false },

@@ -49,6 +49,7 @@ import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.common.JsonInstantPretty
+import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.model.Conversation
@@ -514,7 +515,7 @@ class ChatService(
             val tempPrompt = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }.replace("{{new_messages}}", text)
             val tempResp = handler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
-            if (tempSum.isNotBlank()) memoryRepository.addMemory(assistant.id.toString(), "Recent: $tempSum")
+            if (tempSum.isNotBlank()) memoryRepository.addMemory(assistant.id.toString(), "Recent: $tempSum", type = MemoryType.EPISODIC)
             val currentSummary = conv.contextSummary
             val fullPrompt = if (!currentSummary.isNullOrBlank()) assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }.replace("{{previous_summary}}", currentSummary).replace("{{new_messages}}", text) else "Summarize:\n$text"
             val fullResp = handler.generateText(provider, listOf(UIMessage.user(fullPrompt)), TextGenerationParams(model, 0.3f))

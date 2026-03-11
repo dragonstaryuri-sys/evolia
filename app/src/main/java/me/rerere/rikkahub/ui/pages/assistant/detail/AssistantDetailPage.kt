@@ -537,18 +537,18 @@ private fun AssistantDetailHome(
         // ═══════════════════════════════════════════════════════════════════
         // NAVIGATION CARDS - Grouped properly
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Configuration") {
+        SettingsGroup(title = stringResource(R.string.assistant_detail_group_configuration)) {
             NavigationCard(
                 icon = Icons.Rounded.Person,
-                title = "Profile",
-                description = "Name, avatar, tags, appearance",
+                title = stringResource(R.string.assistant_detail_profile_title),
+                description = stringResource(R.string.assistant_detail_profile_desc),
                 onClick = onNavigateToProfile
             )
 
             NavigationCard(
                 icon = Icons.AutoMirrored.Rounded.Chat,
                 title = stringResource(R.string.assistant_page_tab_prompt),
-                description = "System prompts, templates, regex",
+                description = stringResource(R.string.assistant_detail_prompts_desc),
                 onClick = onNavigateToPrompts
             )
 
@@ -561,40 +561,40 @@ private fun AssistantDetailHome(
 
             NavigationCard(
                 icon = Icons.Rounded.Psychology,
-                title = "Models",
-                description = "Chat model, summarizer, generation settings",
+                title = stringResource(R.string.assistant_detail_models_title),
+                description = stringResource(R.string.assistant_detail_models_desc),
                 onClick = onNavigateToModel
             )
         }
 
-        SettingsGroup(title = "Capabilities") {
+        SettingsGroup(title = stringResource(R.string.assistant_detail_group_capabilities)) {
             NavigationCard(
                 icon = Icons.Rounded.Memory,
                 title = stringResource(R.string.assistant_page_tab_memory),
-                description = "Memory settings, recent chats, RAG",
+                description = stringResource(R.string.assistant_detail_memory_desc),
                 onClick = onNavigateToMemory
             )
 
             NavigationCard(
                 icon = Icons.Rounded.Build,
-                title = "Tools & Search",
-                description = "Search providers, local tools, MCP",
+                title = stringResource(R.string.assistant_detail_tools_search_title),
+                description = stringResource(R.string.assistant_detail_tools_search_desc),
                 onClick = onNavigateToTools
             )
         }
 
-        SettingsGroup(title = "Other") {
+        SettingsGroup(title = stringResource(R.string.assistant_detail_group_other)) {
             NavigationCard(
                 icon = Icons.Rounded.Palette,
-                title = "UI Customization",
-                description = "Per-character display settings",
+                title = stringResource(R.string.assistant_detail_ui_customization_title),
+                description = stringResource(R.string.assistant_detail_ui_customization_desc),
                 onClick = onNavigateToUI
             )
 
             NavigationCard(
                 icon = Icons.Rounded.Tune,
-                title = "Advanced",
-                description = "Notifications, custom headers",
+                title = stringResource(R.string.assistant_detail_advanced_title),
+                description = stringResource(R.string.assistant_detail_advanced_desc),
                 onClick = onNavigateToAdvanced
             )
         }

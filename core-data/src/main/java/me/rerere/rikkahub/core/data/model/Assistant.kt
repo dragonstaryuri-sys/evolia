@@ -123,9 +123,17 @@ enum class ContextPriority { CHAT_HISTORY, BALANCED, MEMORIES }
 
 @Serializable
 sealed class AssistantSearchMode {
-    @Serializable @SerialName("off") data object Off : AssistantSearchMode()
-    @Serializable @SerialName("builtin") data object BuiltIn : AssistantSearchMode()
-    @Serializable @SerialName("provider") data class Provider(val index: Int) : AssistantSearchMode()
+    @Serializable
+    @SerialName("off") // 已经是短名，无需修改
+    data object Off : AssistantSearchMode()
+
+    @Serializable
+    @SerialName("builtin") // 已经是短名，无需修改
+    data object BuiltIn : AssistantSearchMode()
+
+    @Serializable
+    @SerialName("provider") // 已经是短名，无需修改
+    data class Provider(val index: Int) : AssistantSearchMode()
 }
 
 @Serializable
@@ -165,6 +173,11 @@ fun String.replaceRegexes(
 
 @Serializable
 sealed class PromptInjection {
-    @Serializable @SerialName("mode") data class ModeInjection(val name: String, val priority: Int, val prompt: String) : PromptInjection()
-    @Serializable @SerialName("regex") data class RegexInjection(val name: String, val regex: String) : PromptInjection()
+    @Serializable
+    @SerialName("mode")
+    data class ModeInjection(val name: String, val priority: Int, val prompt: String) : PromptInjection()
+
+    @Serializable
+    @SerialName("regex")
+    data class RegexInjection(val name: String, val regex: String) : PromptInjection()
 }

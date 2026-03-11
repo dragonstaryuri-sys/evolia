@@ -289,15 +289,15 @@
     <string name="imggen_page_save_failed">Save Failed: %1$s</string>
     <string name="imggen_page_settings_title">Settings</string>
     <string name="imggen_page_title">Image Generation</string>
-    <string name="language_english">🇺🇸 English</string>
-    <string name="language_french">🇫🇷 Français</string>
-    <string name="language_german">🇩🇪 Deutsch</string>
-    <string name="language_italian">🇮🇹 Italiano</string>
-    <string name="language_japanese">🇯🇵 日本語</string>
+    <string name="language_english">English</string>
+    <string name="language_french">Français</string>
+    <string name="language_german">Deutsch</string>
+    <string name="language_italian">Italiano</string>
+    <string name="language_japanese">日本語</string>
     <string name="language_korean">🇰🇷 한국어</string>
-    <string name="language_simplified_chinese">🇨🇳 简体中文</string>
-    <string name="language_spanish">🇪🇸 Español</string>
-    <string name="language_traditional_chinese">🇨🇳 繁體中文</string>
+    <string name="language_simplified_chinese">简体中文</string>
+    <string name="language_spanish">Español</string>
+    <string name="language_traditional_chinese">繁體中文</string>
     <string name="mcp_picker_syncing">Syncing MCP servers...</string>
     <string name="mcp_picker_title">MCP Servers</string>
     <string name="menu">Menu</string>
@@ -983,4 +983,77 @@
     <string name="setting_model_page_diary_prompt">Diary Prompt</string>
     <string name="setting_model_page_diary_prompt_desc">Prompt for diary generation. Vars: {content}</string>
 
+    <!-- Assistant Detail Page -->
+    <string name="assistant_detail_group_configuration">Configuration</string>
+    <string name="assistant_detail_group_capabilities">Capabilities</string>
+    <string name="assistant_detail_group_other">Other</string>
+    <string name="assistant_detail_profile_title">Profile</string>
+    <string name="assistant_detail_profile_desc">Name, avatar, tags, appearance</string>
+    <string name="assistant_detail_prompts_desc">System prompts, templates, regex</string>
+    <string name="assistant_detail_models_title">Models</string>
+    <string name="assistant_detail_models_desc">Chat model, summarizer, generation settings</string>
+    <string name="assistant_detail_memory_desc">Memory settings, recent chats, RAG</string>
+    <string name="assistant_detail_tools_search_title">Tools &amp; Search</string>
+    <string name="assistant_detail_tools_search_desc">Search providers, local tools, MCP</string>
+    <string name="assistant_detail_ui_customization_desc">Per-character display settings</string>
+    <string name="assistant_detail_advanced_title">Advanced</string>
+    <string name="assistant_detail_advanced_desc">Notifications, custom headers</string>
+    <string name="assistant_detail_ui_customization_title">UI Customization</string>
+    <!-- Language Settings -->
+    <string name="setting_page_language">Language</string>
+    <string name="language_follow_system">System</string>
+    <!-- Memory Settings Page Strings -->
+    <string name="memory_mode_label">Memory Mode: %1$s</string>
+    <string name="memory_settings_group">Memory Settings</string>
+    <string name="rag_settings_group">RAG Settings</string>
+    <string name="advanced_memory_settings_group">Advanced Memory Settings</string>
+    <string name="memory_debugger_group">Memory Debugger</string>
+
+    <string name="memory_mode_off">Off</string>
+    <string name="memory_mode_off_desc">Memory is disabled</string>
+    <string name="memory_mode_basic">Basic</string>
+    <string name="memory_mode_basic_desc">All memories sent to model in every conversation</string>
+    <string name="memory_mode_basic_recent">Basic + Recent Chats</string>
+    <string name="memory_mode_basic_recent_desc">Adds titles and timestamps of recent conversations</string>
+    <string name="memory_mode_basic_rag">Basic + RAG</string>
+    <string name="memory_mode_basic_rag_desc">Smart memory retrieval based on conversation context</string>
+    <string name="memory_mode_advanced">Advanced</string>
+    <string name="memory_mode_advanced_desc">Forms episodic memories with automatic consolidation</string>
+
+    <string name="rag_memory_retrieval">RAG Memory Retrieval</string>
+    <string name="rag_memory_retrieval_desc">Smart context-based memory retrieval</string>
+    <string name="advanced_memory">Advanced Memory</string>
+    <string name="advanced_memory_desc">Form episodic memories from conversations</string>
+
+    <string name="similarity_threshold">Similarity Threshold</string>
+    <string name="similarity_all">All</string>
+    <string name="similarity_exact">Exact</string>
+
+    <string name="consolidation_delay">Consolidation Delay</string>
+    <string name="consolidation_delay_desc">Wait time after a chat ends before forming memories</string>
+    <string name="consolidate_now">Consolidate All Memories Now</string>
+    <string name="last_run_time">Last run: %1$s</string>
+
+    <string name="memory_statistics">Memory Statistics</string>
+    <string name="stat_core">Core</string>
+    <string name="stat_episodic">Episodic</string>
+    <string name="stat_total">Total</string>
+    <string name="stat_embedded">Embedded</string>
+    <string name="estimated_capacity">Estimated capacity: ~%1$d memories</string>
+
+    <string name="search_memories">Search memories...</string>
+    <string name="no_memories_yet">No memories yet</string>
+    <string name="no_matching_memories">No matching memories</string>
+    <string name="memory_type_core">CORE</string>
+    <string name="memory_type_episodic">EPISODIC</string>
+    <string name="no_embedding">NO EMBEDDING</string>
+
+    <string name="rag_debugger_desc">Test RAG retrieval to see which memories are returned</string>
+    <string name="test_query_placeholder">Enter test query...</string>
+    <string name="test_button">Test</string>
+    <string name="retrieval_results_count">Results (%1$d):</string>
+    <string name="retrieval_score">Score: %1$s</string>
+    <string name="summarizer_warning">Select a summarizer model in the Models tab</string>
+    <string name="generating_embeddings">Generating Embeddings</string>
+    <string name="processing_items">Processing %1$d of %2$d items...</string>
 </resources>
