@@ -37,6 +37,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.service.DEFAULT_FULL_SUMMARY_PROMPT
+import me.rerere.rikkahub.service.DEFAULT_TEMP_SUMMARY_PROMPT
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
@@ -229,7 +231,7 @@ fun AssistantContextManagementSubPage(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     OutlinedTextField(
-                        value = assistant.fullSummaryPrompt,
+                        value = assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT },
                         onValueChange = { onUpdate(assistant.copy(fullSummaryPrompt = it)) },
                         label = { Text(stringResource(R.string.assistant_context_full_summary_prompt_label)) },
                         placeholder = { Text(stringResource(R.string.assistant_context_full_summary_prompt_desc)) },
@@ -238,7 +240,7 @@ fun AssistantContextManagementSubPage(
                     )
 
                     OutlinedTextField(
-                        value = assistant.temporarySummaryPrompt,
+                        value = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT },
                         onValueChange = { onUpdate(assistant.copy(temporarySummaryPrompt = it)) },
                         label = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_label)) },
                         placeholder = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_desc)) },

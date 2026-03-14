@@ -440,6 +440,13 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine()
         }
 
+        // Master Memory (Before System Prompt)
+        if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
+            baseSystemPromptBuilder.append("## Memory Archive\n")
+            baseSystemPromptBuilder.append(assistant.masterMemoryContent)
+            baseSystemPromptBuilder.append("\n\n")
+        }
+
         // Original system prompt
         if (assistant.systemPrompt.isNotBlank()) {
             baseSystemPromptBuilder.append(assistant.systemPrompt)

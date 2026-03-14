@@ -103,34 +103,6 @@ private val outputTransformers by lazy {
     )
 }
 
-private const val DEFAULT_FULL_SUMMARY_PROMPT = """
-You have a previous summary of this conversation. Update and expand it with new information from the recent messages.
-
-**Previous Summary:**
-{{previous_summary}}
-
-**New Messages:**
-{{new_messages}}
-
-Create an updated summary that:
-- Preserves important context from the previous summary
-- Incorporates new information from recent messages
-- Keeps the summary under 500 words
-- Focuses on: main topics, key decisions, pending tasks, user preferences
-
-Updated Summary:
-"""
-
-private const val DEFAULT_TEMP_SUMMARY_PROMPT = """
-Summarize the following recent exchange briefly. Focus on specific details, facts, or data points discussed in this segment.
-Keep it concise (1-2 paragraphs).
-
-**Recent Exchange:**
-{{new_messages}}
-
-Summary:
-"""
-
 class ChatService(
     private val context: Application,
     private val appScope: AppScope,

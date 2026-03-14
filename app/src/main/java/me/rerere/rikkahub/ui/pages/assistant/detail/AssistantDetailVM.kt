@@ -10,9 +10,11 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
@@ -257,6 +259,10 @@ class AssistantDetailVM(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage = _snackbarMessage.asStateFlow()
 
+    fun setSnackbarMessage(message: String?) {
+        _snackbarMessage.value = message
+    }
+
     fun clearSnackbarMessage() {
         _snackbarMessage.value = null
     }
@@ -325,11 +331,11 @@ class AssistantDetailVM(
 
                 _embeddingProgress.value = null
                 if (failure > 0) {
-                    _snackbarMessage.value = "Completed: $success success, $failure failed. Check your API key or Model settings."
+                    _snackbarMessage.value = context.getString(R.string.embedding_gen_completed, success, failure)
                 } else if (success > 0) {
-                    _snackbarMessage.value = "Successfully generated $success embeddings."
+                    _snackbarMessage.value = context.getString(R.string.embedding_gen_success, success)
                 } else {
-                    _snackbarMessage.value = "No embeddings needed regeneration."
+                    _snackbarMessage.value = context.getString(R.string.embedding_gen_none)
                 }
                 Log.i(TAG, "Regenerated embeddings: $success success, $failure failed")
             } catch (e: Exception) {
@@ -343,11 +349,14 @@ class AssistantDetailVM(
     fun consolidateMemories(isFullScan: Boolean) {
         val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
             .setInputData(
-                androidx.work.workDataOf("FULL_SCAN" to isFullScan)
+                androidx.work.workDataOf(
+                    "FULL_SCAN" to isFullScan,
+                    "ASSISTANT_ID" to assistantId.toString()
+                )
             )
             .build()
         androidx.work.WorkManager.getInstance(context).enqueue(request)
-        _snackbarMessage.value = "Memory consolidation started (Full Scan: $isFullScan)"
+        _snackbarMessage.value = context.getString(R.string.consolidation_started, isFullScan)
     }
 
     suspend fun checkAvatarDelete(old: Assistant, new: Assistant) {

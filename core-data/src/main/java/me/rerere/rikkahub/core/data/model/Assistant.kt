@@ -92,10 +92,16 @@ data class Assistant(
 
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 
-    // Missing fields found in UI
+    // Memory Consolidation
     val consolidationDelayMinutes: Int = 30,
     val lastConsolidationTime: Long = 0L,
     val lastConsolidationResult: String = "",
+
+    // Master Memory (Memory Archive)
+    val enableMasterMemory: Boolean = false,
+    val masterMemoryPrompt: String = "",
+    val masterMemoryContent: String = "",
+    val lastMasterMemoryUpdate: Long = 0L,
 )
 
 @Serializable
@@ -124,15 +130,15 @@ enum class ContextPriority { CHAT_HISTORY, BALANCED, MEMORIES }
 @Serializable
 sealed class AssistantSearchMode {
     @Serializable
-    @SerialName("off") // 已经是短名，无需修改
+    @SerialName("off")
     data object Off : AssistantSearchMode()
 
     @Serializable
-    @SerialName("builtin") // 已经是短名，无需修改
+    @SerialName("builtin")
     data object BuiltIn : AssistantSearchMode()
 
     @Serializable
-    @SerialName("provider") // 已经是短名，无需修改
+    @SerialName("provider")
     data class Provider(val index: Int) : AssistantSearchMode()
 }
 
