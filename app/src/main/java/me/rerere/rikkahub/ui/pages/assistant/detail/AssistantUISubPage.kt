@@ -1,63 +1,32 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-
 import androidx.compose.ui.res.stringResource
-
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-
-
-
-import androidx.compose.material.icons.rounded.Check
-
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-
-
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantUISettings
-
-
-
-
-
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
-
 
 /**
  * UI Customization subpage - Per-assistant display settings.
@@ -70,7 +39,6 @@ fun AssistantUISubPage(
 ) {
     val settings = LocalSettings.current
     val uiSettings = assistant.uiSettings
-    val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
 
     fun updateUI(newSettings: AssistantUISettings) {
         onUpdate(assistant.copy(uiSettings = newSettings))
@@ -82,9 +50,8 @@ fun AssistantUISubPage(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // New Chat Settings - moved to top as requested
+        // New Chat Settings
         SettingsGroup(title = stringResource(R.string.setting_new_chat_title)) {
-            // Header style dropdown with optional override (null = use global)
             val headerOptions: List<me.rerere.rikkahub.data.datastore.NewChatHeaderStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.entries
             SettingGroupItem(
                 title = stringResource(R.string.setting_new_chat_header),
@@ -107,20 +74,17 @@ fun AssistantUISubPage(
                 }
             )
 
-            // Avatar toggle - only show if header style is not NONE (resolved through per-assistant or global)
             val effectiveHeaderStyle = uiSettings.newChatHeaderStyle ?: settings.displaySetting.newChatHeaderStyle.name
             if (effectiveHeaderStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE.name) {
-                // Changed to use TriStateSettingItem for consistent look with other settings
                 TriStateSettingItem(
-                    title = "Show Avatar in Header",
-                    subtitle = "Display character avatar in the new chat header",
+                    title = stringResource(R.string.assistant_ui_new_chat_show_avatar_title),
+                    subtitle = stringResource(R.string.assistant_ui_new_chat_show_avatar_desc),
                     value = uiSettings.newChatShowAvatar,
                     globalValue = settings.displaySetting.newChatShowAvatar,
                     onValueChange = { updateUI(uiSettings.copy(newChatShowAvatar = it)) }
                 )
             }
 
-            // Content style dropdown with optional override (null = use global)
             val contentOptions: List<me.rerere.rikkahub.data.datastore.NewChatContentStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.NewChatContentStyle.entries
             SettingGroupItem(
                 title = stringResource(R.string.setting_new_chat_content),
@@ -147,7 +111,6 @@ fun AssistantUISubPage(
 
         // Chat Display Settings
         SettingsGroup(title = stringResource(R.string.setting_page_chat_settings)) {
-            // Input Style dropdown - added as first item in chat settings
             val inputOptions: List<me.rerere.rikkahub.data.datastore.ChatInputStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.ChatInputStyle.entries
             SettingGroupItem(
                 title = stringResource(R.string.setting_chat_input_style),
@@ -170,16 +133,16 @@ fun AssistantUISubPage(
             )
 
             TriStateSettingItem(
-                title = "Show Character Avatar",
-                subtitle = "Show the character's avatar before messages",
+                title = stringResource(R.string.assistant_ui_show_assistant_avatar_title),
+                subtitle = stringResource(R.string.assistant_ui_show_assistant_avatar_desc),
                 value = uiSettings.showAssistantAvatar,
                 globalValue = settings.displaySetting.showModelIcon,
                 onValueChange = { updateUI(uiSettings.copy(showAssistantAvatar = it)) }
             )
 
             TriStateSettingItem(
-                title = "Message Bubbles for Characters",
-                subtitle = "Show rounded chat bubbles for assistant messages",
+                title = stringResource(R.string.assistant_ui_show_assistant_bubbles_title),
+                subtitle = stringResource(R.string.assistant_ui_show_assistant_bubbles_desc),
                 value = uiSettings.showAssistantBubbles,
                 globalValue = settings.displaySetting.showAssistantBubbles,
                 onValueChange = { updateUI(uiSettings.copy(showAssistantBubbles = it)) }
@@ -203,7 +166,7 @@ fun AssistantUISubPage(
         }
 
         // Message Jumper Settings
-        SettingsGroup(title = "Message Jumper") {
+        SettingsGroup(title = stringResource(R.string.assistant_ui_message_jumper_group)) {
             TriStateSettingItem(
                 title = stringResource(R.string.setting_display_page_show_message_jumper_title),
                 subtitle = stringResource(R.string.setting_display_page_show_message_jumper_desc),
@@ -222,7 +185,7 @@ fun AssistantUISubPage(
         }
 
         // Code Blocks Settings
-        SettingsGroup(title = "Code Blocks") {
+        SettingsGroup(title = stringResource(R.string.assistant_ui_code_blocks_group)) {
             TriStateSettingItem(
                 title = stringResource(R.string.setting_display_page_code_block_auto_wrap_title),
                 subtitle = stringResource(R.string.setting_display_page_code_block_auto_wrap_desc),
@@ -241,10 +204,10 @@ fun AssistantUISubPage(
         }
 
         // Context Sources Settings
-        SettingsGroup(title = "Context Sources") {
+        SettingsGroup(title = stringResource(R.string.assistant_ui_context_sources_group)) {
             TriStateSettingItem(
-                title = "Show Context Stacks",
-                subtitle = "Show context sources (modes, memories, lorebooks) in message toolbar",
+                title = stringResource(R.string.assistant_ui_show_context_stacks_title),
+                subtitle = stringResource(R.string.assistant_ui_show_context_stacks_desc),
                 value = uiSettings.showContextStacks,
                 globalValue = settings.displaySetting.showContextStacks,
                 onValueChange = { updateUI(uiSettings.copy(showContextStacks = it)) }
@@ -288,19 +251,22 @@ private fun TriStateSettingItem(
                     FilterChip(
                         selected = value == true,
                         onClick = { onValueChange(true) },
-                        label = { Text("On") }
+                        label = { Text(stringResource(R.string.assistant_ui_state_on)) }
                     )
                     FilterChip(
                         selected = value == false,
                         onClick = { onValueChange(false) },
-                        label = { Text("Off") }
+                        label = { Text(stringResource(R.string.assistant_ui_state_off)) }
                     )
                 }
                 // Global below, fills to match On/Off width
                 FilterChip(
                     selected = value == null,
                     onClick = { onValueChange(null) },
-                    label = { Text("Global (${if (globalValue) "On" else "Off"})") },
+                    label = {
+                        val globalLabel = if (globalValue) stringResource(R.string.assistant_ui_state_on) else stringResource(R.string.assistant_ui_state_off)
+                        Text(stringResource(R.string.assistant_ui_state_global, globalLabel))
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -329,12 +295,12 @@ private fun FontSizeSettingItem(
             FilterChip(
                 selected = value == null,
                 onClick = { onValueChange(null) },
-                label = { Text("Global") }
+                label = { Text(stringResource(R.string.use_global)) }
             )
             FilterChip(
                 selected = value != null,
                 onClick = { if (value == null) onValueChange(1.0f) },
-                label = { Text("Custom") }
+                label = { Text(stringResource(R.string.assistant_ui_font_custom)) }
             )
         }
 

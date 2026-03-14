@@ -60,7 +60,7 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // MODELS GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Models") {
+        SettingsGroup(title = stringResource(R.string.assistant_model_group_models)) {
             // Chat Model (Primary)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -107,12 +107,12 @@ fun AssistantModelSubPage(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Background Model",
+                        text = stringResource(R.string.assistant_model_background_model),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "For notifications and background tasks",
+                        text = stringResource(R.string.assistant_model_background_model_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -139,12 +139,12 @@ fun AssistantModelSubPage(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Summarizer Model",
+                        text = stringResource(R.string.assistant_model_summarizer_model),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "For memory summarization and context refresh",
+                        text = stringResource(R.string.assistant_model_summarizer_model_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -193,17 +193,17 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // GENERATION GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Generation") {
+        SettingsGroup(title = stringResource(R.string.assistant_model_group_generation)) {
             // Temperature
             val temperature = assistant.temperature
             val tempLabel = temperature?.let { temp ->
                 when (temp) {
-                    in 0.0f..0.3f -> "Strict ($temp)"
-                    in 0.3f..1.0f -> "Balanced ($temp)"
-                    in 1.0f..1.5f -> "Creative ($temp)"
-                    else -> "Chaotic ($temp)"
+                    in 0.0f..0.3f -> stringResource(R.string.assistant_model_temp_strict, temp)
+                    in 0.3f..1.0f -> stringResource(R.string.assistant_model_temp_balanced, temp)
+                    in 1.0f..1.5f -> stringResource(R.string.assistant_model_temp_creative, temp)
+                    else -> stringResource(R.string.assistant_model_temp_chaotic, temp)
                 }
-            } ?: "Default"
+            } ?: stringResource(R.string.assistant_model_temp_default)
 
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_temperature),
@@ -267,7 +267,7 @@ fun AssistantModelSubPage(
             val topP = assistant.topP
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_top_p),
-                subtitle = if (topP != null) "Enabled ($topP)" else "Default",
+                subtitle = if (topP != null) stringResource(R.string.assistant_model_top_p_enabled, topP) else stringResource(R.string.assistant_model_top_p_default),
                 trailing = {
                     HapticSwitch(
                         checked = topP != null,
@@ -307,7 +307,7 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // OUTPUT GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Output") {
+        SettingsGroup(title = stringResource(R.string.assistant_model_group_output)) {
             // Stream Output
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_stream_output),
@@ -325,9 +325,9 @@ fun AssistantModelSubPage(
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_thinking_budget),
                 subtitle = if (thinkingBudget != null && thinkingBudget > 0)
-                    "$thinkingBudget tokens"
+                    stringResource(R.string.assistant_model_thinking_budget_value, thinkingBudget)
                 else
-                    "Disabled",
+                    stringResource(R.string.assistant_model_thinking_budget_disabled),
                 trailing = {
                     ReasoningButton(
                         reasoningTokens = thinkingBudget ?: 0,
@@ -354,7 +354,7 @@ fun AssistantModelSubPage(
                             onUpdate(assistant.copy(maxTokens = tokens))
                         },
                         modifier = Modifier.width(100.dp),
-                        placeholder = { Text("Auto") },
+                        placeholder = { Text(stringResource(R.string.assistant_model_max_tokens_auto)) },
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodySmall
                     )

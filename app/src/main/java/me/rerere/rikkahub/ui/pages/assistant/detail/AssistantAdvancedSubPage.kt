@@ -27,7 +27,9 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -59,11 +61,11 @@ fun AssistantAdvancedSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // NOTIFICATIONS GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Spontaneous Messaging") {
+        SettingsGroup(title = stringResource(R.string.assistant_advanced_group_spontaneous)) {
             // Enable toggle
             SettingGroupItem(
-                title = "Enable Spontaneous Messages",
-                subtitle = "Character can message you without prompting",
+                title = stringResource(R.string.assistant_advanced_enable_spontaneous_title),
+                subtitle = stringResource(R.string.assistant_advanced_enable_spontaneous_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableSpontaneous,
@@ -91,8 +93,8 @@ fun AssistantAdvancedSubPage(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // Active Hours
                     SettingGroupItem(
-                        title = "Active Hours",
-                        subtitle = "Time window for messages",
+                        title = stringResource(R.string.assistant_advanced_active_hours_title),
+                        subtitle = stringResource(R.string.assistant_advanced_active_hours_desc),
                         trailing = {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedTextField(
@@ -101,7 +103,7 @@ fun AssistantAdvancedSubPage(
                                         val hour = it.toIntOrNull()?.coerceIn(0, 23) ?: 7
                                         onUpdate(assistant.copy(notificationStartHour = hour))
                                     },
-                                    label = { Text("Start") },
+                                    label = { Text(stringResource(R.string.assistant_advanced_start_label)) },
                                     modifier = Modifier.width(70.dp),
                                     singleLine = true,
                                     textStyle = MaterialTheme.typography.bodySmall
@@ -112,7 +114,7 @@ fun AssistantAdvancedSubPage(
                                         val hour = it.toIntOrNull()?.coerceIn(0, 23) ?: 22
                                         onUpdate(assistant.copy(notificationEndHour = hour))
                                     },
-                                    label = { Text("End") },
+                                    label = { Text(stringResource(R.string.assistant_advanced_end_label)) },
                                     modifier = Modifier.width(70.dp),
                                     singleLine = true,
                                     textStyle = MaterialTheme.typography.bodySmall
@@ -123,8 +125,8 @@ fun AssistantAdvancedSubPage(
 
                     // Frequency
                     SettingGroupItem(
-                        title = "Frequency",
-                        subtitle = "Minimum hours between messages",
+                        title = stringResource(R.string.assistant_advanced_frequency_title),
+                        subtitle = stringResource(R.string.assistant_advanced_frequency_desc),
                         trailing = {
                             OutlinedTextField(
                                 value = assistant.notificationFrequencyHours.toString(),
@@ -146,7 +148,7 @@ fun AssistantAdvancedSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // CUSTOM REQUEST GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Custom Request") {
+        SettingsGroup(title = stringResource(R.string.assistant_advanced_group_custom_request)) {
             // Custom Headers - component has its own title
             Surface(
                 modifier = Modifier.fillMaxWidth(),

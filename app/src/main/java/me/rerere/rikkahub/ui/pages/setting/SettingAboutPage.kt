@@ -115,7 +115,7 @@ fun SettingAboutPage() {
 
             // Links Section
             Text(
-                text = "Links",
+                text = stringResource(R.string.about_page_links),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -132,8 +132,8 @@ fun SettingAboutPage() {
             ) {
                 AboutItem(
                     icon = Icons.Rounded.Code,
-                    title = "Source Code",
-                    subtitle = "GitHub Repository",
+                    title = stringResource(R.string.about_page_source_code),
+                    subtitle = stringResource(R.string.about_page_source_code_desc),
                     trailing = Icons.AutoMirrored.Rounded.OpenInNew,
                     onClick = {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Cocolalilal/LastChat"))
@@ -146,7 +146,7 @@ fun SettingAboutPage() {
 
             // System Information Section
             Text(
-                text = "System Information",
+                text = stringResource(R.string.about_page_system_info),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -163,19 +163,19 @@ fun SettingAboutPage() {
             ) {
                 AboutItem(
                     icon = Icons.Rounded.Android,
-                    title = "Android Version",
+                    title = stringResource(R.string.about_page_android_version),
                     subtitle = "${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})",
                     onClick = null
                 )
                 AboutItem(
                     icon = Icons.Rounded.PhoneAndroid,
-                    title = "Device",
+                    title = stringResource(R.string.about_page_device),
                     subtitle = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
                     onClick = null
                 )
                 AboutItem(
                     icon = Icons.Rounded.Memory,
-                    title = "Architecture",
+                    title = stringResource(R.string.about_page_architecture),
                     subtitle = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown",
                     onClick = null
                 )
@@ -185,7 +185,7 @@ fun SettingAboutPage() {
 
             // Credits
             Text(
-                text = "Based on RikkaHub by rerere",
+                text = stringResource(R.string.about_page_based_on),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center

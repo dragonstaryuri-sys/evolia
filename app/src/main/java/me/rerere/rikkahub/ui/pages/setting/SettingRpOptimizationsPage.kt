@@ -84,7 +84,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = "RP Optimizations",
+                title = stringResource(R.string.setting_display_rp_optimizations_title),
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
@@ -96,7 +96,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 onClick = { showAddDialog = true },
                 shape = AppShapes.CardLarge
             ) {
-                Icon(Icons.Rounded.Add, "Add Rule")
+                Icon(Icons.Rounded.Add, stringResource(R.string.rp_opt_add_rule))
             }
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
@@ -122,19 +122,19 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Custom Text Styling",
+                            text = stringResource(R.string.rp_opt_custom_text_styling),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Define custom color rules for markdown elements. Add rules with patterns below to change their text color.",
+                            text = stringResource(R.string.rp_opt_custom_text_styling_desc),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        
+
                         // Supported patterns section
                         Text(
-                            text = "Supported Patterns",
+                            text = stringResource(R.string.rp_opt_supported_patterns),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -142,17 +142,17 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             listOf(
-                                "*" to "Italic text (*text*)",
-                                "**" to "Bold text (**text**)",
-                                "~~" to "Strikethrough (~~text~~)",
-                                "`" to "Inline code (`text`)",
-                                "#" to "Heading 1",
-                                "##" to "Heading 2",
-                                "###" to "Heading 3",
-                                "####" to "Heading 4",
-                                "#####" to "Heading 5",
-                                "######" to "Heading 6",
-                                ">" to "Blockquotes"
+                                "*" to stringResource(R.string.rp_opt_pattern_italic),
+                                "**" to stringResource(R.string.rp_opt_pattern_bold),
+                                "~~" to stringResource(R.string.rp_opt_pattern_strikethrough),
+                                "`" to stringResource(R.string.rp_opt_pattern_inline_code),
+                                "#" to stringResource(R.string.rp_opt_pattern_h1),
+                                "##" to stringResource(R.string.rp_opt_pattern_h2),
+                                "###" to stringResource(R.string.rp_opt_pattern_h3),
+                                "####" to stringResource(R.string.rp_opt_pattern_h4),
+                                "#####" to stringResource(R.string.rp_opt_pattern_h5),
+                                "######" to stringResource(R.string.rp_opt_pattern_h6),
+                                ">" to stringResource(R.string.rp_opt_pattern_blockquote)
                             ).forEach { (pattern, desc) ->
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -198,7 +198,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "No rules yet. Tap + to add one.",
+                                text = stringResource(R.string.rp_opt_no_rules_yet),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -231,7 +231,7 @@ fun SettingRpOptimizationsPage(vm: SettingVM = koinViewModel()) {
                 item {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Preview",
+                        text = stringResource(R.string.fonts_page_preview_title),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(start = 16.dp)
@@ -355,7 +355,7 @@ private fun RpStyleRuleItem(
                     IconButton(onClick = onDelete) {
                         Icon(
                             Icons.Rounded.Delete,
-                            "Delete",
+                            stringResource(R.string.delete),
                             tint = MaterialTheme.colorScheme.error
                         )
                     }
@@ -376,7 +376,7 @@ private fun RpStyleRuleDialog(
     onSave: (RpStyleRule) -> Unit
 ) {
     var pattern by remember { mutableStateOf(rule?.pattern ?: "") }
-    var colorHex by remember { mutableStateOf(rule?.colorHex ?: "#808080") }    
+    var colorHex by remember { mutableStateOf(rule?.colorHex ?: "#808080") }
     // Parse current color for sliders
     val currentColor = try {
         Color(android.graphics.Color.parseColor(colorHex))
@@ -386,7 +386,7 @@ private fun RpStyleRuleDialog(
     var red by remember { mutableStateOf((currentColor.red * 255).toInt()) }
     var green by remember { mutableStateOf((currentColor.green * 255).toInt()) }
     var blue by remember { mutableStateOf((currentColor.blue * 255).toInt()) }
-    
+
     // Update colorHex when RGB sliders change
     fun updateColorFromRgb() {
         colorHex = String.format("#%02X%02X%02X", red, green, blue)
@@ -395,7 +395,7 @@ private fun RpStyleRuleDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(if (rule != null) "Edit Rule" else "Add Rule")
+            Text(if (rule != null) stringResource(R.string.rp_opt_dialog_edit_rule) else stringResource(R.string.rp_opt_dialog_add_rule))
         },
         text = {
             Column(
@@ -404,31 +404,31 @@ private fun RpStyleRuleDialog(
                 OutlinedTextField(
                     value = pattern,
                     onValueChange = { pattern = it },
-                    label = { Text("Pattern") },
-                    placeholder = { Text("e.g., *, **, ~~, >, #, %%, ||") },
+                    label = { Text(stringResource(R.string.rp_opt_dialog_pattern_label)) },
+                    placeholder = { Text(stringResource(R.string.rp_opt_dialog_pattern_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     supportingText = {
                         when (pattern) {
-                            "#", "##", "###", "####", "#####", "######" -> 
-                                Text("Heading level ${pattern.length}")
-                            ">" -> Text("Blockquotes")
-                            "*" -> Text("Italic text (*text*)")
-                            "**" -> Text("Bold text (**text**)")
-                            "~~" -> Text("Strikethrough (~~text~~)")
-                            "`" -> Text("Inline code (`text`)")
+                            "#", "##", "###", "####", "#####", "######" ->
+                                Text(stringResource(R.string.rp_opt_dialog_pattern_h_level, pattern.length))
+                            ">" -> Text(stringResource(R.string.rp_opt_pattern_blockquote))
+                            "*" -> Text(stringResource(R.string.rp_opt_pattern_italic))
+                            "**" -> Text(stringResource(R.string.rp_opt_pattern_bold))
+                            "~~" -> Text(stringResource(R.string.rp_opt_pattern_strikethrough))
+                            "`" -> Text(stringResource(R.string.rp_opt_pattern_inline_code))
                             else -> if (pattern.isNotEmpty()) {
-                                Text("Custom: ${pattern}text${pattern}")
+                                Text(stringResource(R.string.rp_opt_dialog_pattern_custom, pattern, pattern))
                             } else {
-                                Text("Enter any pattern")
+                                Text(stringResource(R.string.rp_opt_dialog_pattern_hint))
                             }
                         }
                     }
                 )
-                
+
                 OutlinedTextField(
                     value = colorHex,
-                    onValueChange = { 
+                    onValueChange = {
                         colorHex = it
                         // Try to update RGB sliders from hex
                         try {
@@ -438,7 +438,7 @@ private fun RpStyleRuleDialog(
                             blue = (c.blue * 255).toInt()
                         } catch (e: Exception) { }
                     },
-                    label = { Text("Color (Hex)") },
+                    label = { Text(stringResource(R.string.rp_opt_dialog_color_hex)) },
                     placeholder = { Text("#808080") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -456,10 +456,10 @@ private fun RpStyleRuleDialog(
                         )
                     }
                 )
-                
+
                 // Color presets row
                 Text(
-                    text = "Presets",
+                    text = stringResource(R.string.rp_opt_dialog_presets),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -482,7 +482,7 @@ private fun RpStyleRuleDialog(
                                 .size(32.dp)
                                 .clip(CircleShape)
                                 .background(color)
-                                .clickable { 
+                                .clickable {
                                     colorHex = hex
                                     val c = Color(android.graphics.Color.parseColor(hex))
                                     red = (c.red * 255).toInt()
@@ -492,7 +492,7 @@ private fun RpStyleRuleDialog(
                         )
                     }
                 }
-                
+
                 // RGB sliders - always visible for custom color selection
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -549,14 +549,13 @@ private fun RpStyleRuleDialog(
                     }
                 }
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )
 }
-

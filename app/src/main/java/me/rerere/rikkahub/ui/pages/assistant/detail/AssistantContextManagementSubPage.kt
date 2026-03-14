@@ -5,7 +5,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,8 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -94,8 +91,8 @@ fun AssistantContextManagementSubPage(
 
             // 1. Message summarization toggle
             SettingGroupItem(
-                title = "Context Refresh / Summarization",
-                subtitle = "Enable context optimization via summarization",
+                title = stringResource(R.string.assistant_context_refresh_title),
+                subtitle = stringResource(R.string.assistant_context_refresh_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.enableContextRefresh,
@@ -123,8 +120,8 @@ fun AssistantContextManagementSubPage(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 SettingGroupItem(
-                    title = "Auto-summarize messages",
-                    subtitle = "Automatically summarize when history limit is reached",
+                    title = stringResource(R.string.assistant_context_auto_summarize_title),
+                    subtitle = stringResource(R.string.assistant_context_auto_summarize_desc),
                     trailing = {
                         HapticSwitch(
                             checked = assistant.autoRegenerateSummary,
@@ -149,10 +146,10 @@ fun AssistantContextManagementSubPage(
                 var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
 
                 SliderSettingCard(
-                    title = "History limit",
+                    title = stringResource(R.string.assistant_context_history_limit_title),
                     value = sliderValue,
-                    valueText = "${sliderValue.roundToInt()} messages",
-                    description = "Number of messages before auto-summarization triggers (retains last 4 messages)",
+                    valueText = stringResource(R.string.assistant_context_history_limit_value, sliderValue.roundToInt()),
+                    description = stringResource(R.string.assistant_context_history_limit_desc),
                     onValueChange = { sliderValue = it },
                     onValueChangeFinished = {
                         val newValue = sliderValue.roundToInt()
@@ -175,10 +172,10 @@ fun AssistantContextManagementSubPage(
                 var tempSliderValue by remember(tempLimit) { mutableFloatStateOf(tempLimit.toFloat()) }
 
                 SliderSettingCard(
-                    title = "Episodic summaries to include",
+                    title = stringResource(R.string.assistant_context_episodic_limit_title),
                     value = tempSliderValue,
-                    valueText = "${tempSliderValue.roundToInt()} summaries",
-                    description = "Number of recent segment summaries to include as historical background",
+                    valueText = stringResource(R.string.assistant_context_episodic_limit_value, tempSliderValue.roundToInt()),
+                    description = stringResource(R.string.assistant_context_episodic_limit_desc),
                     onValueChange = { tempSliderValue = it },
                     onValueChangeFinished = {
                         val newValue = tempSliderValue.roundToInt()
@@ -226,7 +223,7 @@ fun AssistantContextManagementSubPage(
             enter = fadeIn() + expandVertically(),
             exit = fadeOut() + shrinkVertically()
         ) {
-            SettingsGroup(title = "Custom Summarization Prompts") {
+            SettingsGroup(title = stringResource(R.string.assistant_context_custom_prompts_title)) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -234,8 +231,8 @@ fun AssistantContextManagementSubPage(
                     OutlinedTextField(
                         value = assistant.fullSummaryPrompt,
                         onValueChange = { onUpdate(assistant.copy(fullSummaryPrompt = it)) },
-                        label = { Text("Full Summary Prompt") },
-                        placeholder = { Text("Leave blank for default. Supports {{previous_summary}}, {{new_messages}}") },
+                        label = { Text(stringResource(R.string.assistant_context_full_summary_prompt_label)) },
+                        placeholder = { Text(stringResource(R.string.assistant_context_full_summary_prompt_desc)) },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3
                     )
@@ -243,8 +240,8 @@ fun AssistantContextManagementSubPage(
                     OutlinedTextField(
                         value = assistant.temporarySummaryPrompt,
                         onValueChange = { onUpdate(assistant.copy(temporarySummaryPrompt = it)) },
-                        label = { Text("Episodic Summary Prompt") },
-                        placeholder = { Text("Leave blank for default. Supports {{new_messages}}") },
+                        label = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_label)) },
+                        placeholder = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_desc)) },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3
                     )
@@ -279,7 +276,7 @@ private fun SummarizerWarningBanner(
                 modifier = Modifier.size(20.dp)
             )
             Text(
-                text = "Select a summarizer model in the Models tab",
+                text = stringResource(R.string.assistant_context_no_summarizer_warning),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )

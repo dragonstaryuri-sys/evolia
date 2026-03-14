@@ -932,11 +932,11 @@
     <string name="discover_page_diary_delete_confirm">确定要删除这篇日记吗？</string>
     <string name="discover_page_diary_generating">正在生成日记...</string>
     <string name="discover_page_diary_generate_success">日记生成成功</string>
-    <string name="discover_page_diary_no_chat_today">今日没有找到聊天记录</string>
+    <string name="discover_page_diary_no_chat_today">没有找到今日聊天记录</string>
 
     <!-- Diary Settings -->
     <string name="setting_model_page_diary_model">日记生成模型</string>
-    <string name="setting_model_page_diary_model_desc">用于生成 Agent 日记的模型</string>
+    <string name="setting_model_page_diary_model_desc">用于生成智能体日记的模型</string>
     <string name="setting_model_page_diary_prompt">日记提示词</string>
     <string name="setting_model_page_diary_prompt_desc">日记生成的提示词。变量: {content}</string>
     <string name="setting_new_chat_header_desc">空聊天顶部显示的样式</string>
@@ -999,10 +999,205 @@
     <string name="memory_type_episodic">片段</string>
     <string name="no_embedding">无嵌入</string>
     <string name="rag_debugger_desc">测试 RAG 检索，查看返回的记忆</string>
-    <string name="test_query_placeholder">输入测试查询...</string>
+    <string name="test_query_placeholder">请输入...</string>
     <string name="test_button">测试</string>
     <string name="retrieval_results_count">结果（%1$d）：</string>
     <string name="retrieval_score">分数：%1$s</string>
     <string name="summarizer_warning">请在模型标签页中选择摘要模型</string>
+    <!-- Assistant Context Management Page -->
+    <string name="assistant_context_refresh_title">上下文刷新 / 摘要</string>
+    <string name="assistant_context_refresh_desc">通过摘要优化上下文</string>
+    <string name="assistant_context_auto_summarize_title">自动消息摘要</string>
+    <string name="assistant_context_auto_summarize_desc">达到历史消息上限时自动生成摘要</string>
+    <string name="assistant_context_history_limit_title">历史消息上限</string>
+    <string name="assistant_context_history_limit_value">%d 条消息</string>
+    <string name="assistant_context_history_limit_desc">触发自动摘要的消息数量（保留最后 4 条消息）</string>
+    <string name="assistant_context_episodic_limit_title">包含的片段摘要数量</string>
+    <string name="assistant_context_episodic_limit_value">%d 个摘要</string>
+    <string name="assistant_context_episodic_limit_desc">作为历史背景带入的近期片段摘要数量</string>
+    <string name="assistant_context_custom_prompts_title">自定义摘要提示词</string>
+    <string name="assistant_context_full_summary_prompt_label">完整摘要提示词</string>
+    <string name="assistant_context_full_summary_prompt_desc">留空使用默认，支持 {{previous_summary}}、{{new_messages}}</string>
+    <string name="assistant_context_episodic_summary_prompt_label">片段摘要提示词</string>
+    <string name="assistant_context_episodic_summary_prompt_desc">留空使用默认，支持 {{new_messages}}</string>
+    <string name="assistant_context_no_summarizer_warning">请在模型页面选择一个摘要模型</string>
+    <!-- Assistant Model Page -->
+    <string name="assistant_model_group_models">模型</string>
+    <string name="assistant_model_background_model">后台模型</string>
+    <string name="assistant_model_background_model_desc">用于通知与后台任务</string>
+    <string name="assistant_model_summarizer_model">摘要模型</string>
+    <string name="assistant_model_summarizer_model_desc">用于记忆摘要与上下文刷新</string>
+    <string name="assistant_model_group_generation">生成参数</string>
+    <string name="assistant_model_temp_strict">严谨（%s）</string>
+    <string name="assistant_model_temp_balanced">均衡（%s）</string>
+    <string name="assistant_model_temp_creative">创意（%s）</string>
+    <string name="assistant_model_temp_chaotic">自由发散（%s）</string>
+    <string name="assistant_model_temp_default">默认</string>
+    <string name="assistant_model_top_p_enabled">已开启（%s）</string>
+    <string name="assistant_model_top_p_default">默认</string>
+    <string name="assistant_model_group_output">输出设置</string>
+    <string name="assistant_model_thinking_budget_value">%d 个令牌</string>
+    <string name="assistant_model_thinking_budget_disabled">已关闭</string>
+    <string name="assistant_model_max_tokens_auto">自动</string>
+    <!-- Assistant Tools Page -->
+    <string name="assistant_tools_group_search">搜索</string>
+    <string name="assistant_tools_search_provider">搜索服务</string>
+    <string name="assistant_tools_search_off">关闭</string>
+    <string name="assistant_tools_prefer_built_in_search">优先使用内置搜索</string>
+    <string name="assistant_tools_prefer_built_in_search_desc">若模型支持，优先使用模型自带的搜索功能</string>
+    <string name="assistant_tools_device_control_title">设备控制</string>
+    <string name="assistant_tools_device_control_desc">通知、应用、闹钟、提醒事项</string>
+    <string name="assistant_tools_mcp_servers_title">MCP 服务器</string>
+    <string name="assistant_tools_mcp_servers_desc">启用外部工具服务器</string>
+    <!-- Assistant UI SubPage -->
+    <string name="assistant_ui_new_chat_show_avatar_title">在顶部显示头像</string>
+    <string name="assistant_ui_new_chat_show_avatar_desc">在新建聊天的顶部栏中显示角色头像</string>
+    <string name="assistant_ui_show_assistant_avatar_title">显示角色头像</string>
+    <string name="assistant_ui_show_assistant_avatar_desc">在消息前方显示角色头像</string>
+    <string name="assistant_ui_show_assistant_bubbles_title">角色消息气泡</string>
+    <string name="assistant_ui_show_assistant_bubbles_desc">为助手消息显示圆角聊天气泡</string>
+    <string name="assistant_ui_message_jumper_group">消息快捷跳转</string>
+    <string name="assistant_ui_code_blocks_group">代码块样式</string>
+    <string name="assistant_ui_context_sources_group">上下文来源</string>
+    <string name="assistant_ui_show_context_stacks_title">显示上下文来源</string>
+    <string name="assistant_ui_show_context_stacks_desc">在消息工具栏中显示上下文来源（模式、记忆、设定）</string>
+    <string name="assistant_ui_state_on">开启</string>
+    <string name="assistant_ui_state_off">关闭</string>
+    <string name="assistant_ui_state_global">全局（%s）</string>
+    <string name="assistant_ui_font_custom">自定义</string>
+    <!-- Assistant Advanced SubPage -->
+    <string name="assistant_advanced_group_spontaneous">主动消息</string>
+    <string name="assistant_advanced_enable_spontaneous_title">允许主动发送消息</string>
+    <string name="assistant_advanced_enable_spontaneous_desc">角色可在无触发情况下主动给你发消息</string>
+    <string name="assistant_advanced_active_hours_title">活跃时段</string>
+    <string name="assistant_advanced_active_hours_desc">允许发送消息的时间段</string>
+    <string name="assistant_advanced_start_label">开始</string>
+    <string name="assistant_advanced_end_label">结束</string>
+    <string name="assistant_advanced_frequency_title">发送频率</string>
+    <string name="assistant_advanced_frequency_desc">消息之间的最小间隔小时数</string>
+    <string name="assistant_advanced_group_custom_request">自定义请求</string>
+
+
+  <!-- Setting Display Page -->
+  <string name="setting_display_fonts_title">字体</string>
+  <string name="setting_display_fonts_desc">自定义标题、内容与代码的字体</string>
+  <string name="setting_display_ui_customization_desc">聊天界面、震动、代码块、字体大小等设置</string>
+  <string name="setting_display_check_for_updates_title">检查更新</string>
+  <string name="setting_display_check_for_updates_desc">自动从 GitHub 检查应用新版本</string>
+  <string name="setting_display_group_advanced">高级</string>
+  <string name="setting_display_rp_optimizations_title">角色扮演优化</string>
+  <string name="setting_display_rp_optimizations_desc">为角色扮演格式自定义文本样式</string>
+
+    <!-- Fonts Page -->
+    <string name="fonts_page_group_general">通用</string>
+    <string name="fonts_page_use_same_font_title">标题与内容使用同一字体</string>
+    <string name="fonts_page_use_same_font_desc">将标题与内容的字体设置绑定</string>
+    <string name="fonts_page_headers_title">标题</string>
+    <string name="fonts_page_headers_content_title">标题与内容</string>
+    <string name="fonts_page_headers_desc">标题、栏目标题与展示文字</string>
+    <string name="fonts_page_headers_content_desc">除代码块外的所有文字</string>
+    <string name="fonts_page_content_title">内容</string>
+    <string name="fonts_page_content_desc">正文、段落与消息内容</string>
+    <string name="fonts_page_code_blocks_title">代码块</string>
+    <string name="fonts_page_code_blocks_desc">代码、行内代码与等宽字体文本</string>
+    <string name="fonts_page_preview_title">预览</string>
+    <string name="fonts_page_reset_all_dialog_title">重置所有字体？</string>
+    <string name="fonts_page_reset_all_dialog_text">将会把所有字体设置恢复为默认值，已添加的自定义字体会保留但不再应用。</string>
+    <string name="fonts_page_reset_font_dialog_title">重置 %s 字体？</string>
+    <string name="fonts_page_reset_font_dialog_text">将会把 %s 的字体设置恢复为默认值。</string>
+    <string name="fonts_page_font_source">字体来源</string>
+    <string name="fonts_page_font_source_default">默认</string>
+    <string name="fonts_page_font_source_custom">自定义</string>
+    <string name="fonts_page_font_axes">字体可变参数</string>
+    <string name="fonts_page_axis_width">字宽</string>
+    <string name="fonts_page_axis_roundness">圆角程度</string>
+    <string name="fonts_page_typography">排版</string>
+    <string name="fonts_page_typo_size">大小</string>
+    <string name="fonts_page_typo_spacing">字间距</string>
+    <string name="fonts_page_opentype_features">OpenType 特性</string>
+    <string name="fonts_page_variable_font_info">可变字体 · %d 个参数</string>
+
+    <!-- UI Customization Page -->
+    <string name="ui_customization_message_jumper_title">消息快捷跳转</string>
+    <string name="ui_customization_haptics_title">震动反馈</string>
+    <string name="ui_customization_ui_haptic_feedback_title">界面震动反馈</string>
+    <string name="ui_customization_ui_haptic_feedback_desc">点击按钮与控件时触发触感反馈</string>
+    <string name="ui_customization_media_title">媒体</string>
+    <string name="ui_customization_code_blocks_title">代码块</string>
+
+    <!-- RP Optimizations Page -->
+    <string name="rp_opt_add_rule">添加规则</string>
+    <string name="rp_opt_custom_text_styling">自定义文本样式</string>
+    <string name="rp_opt_custom_text_styling_desc">为 Markdown 元素自定义颜色规则，添加匹配规则以修改文字颜色。</string>
+    <string name="rp_opt_supported_patterns">支持的格式</string>
+    <string name="rp_opt_pattern_italic">斜体 (*text*)</string>
+    <string name="rp_opt_pattern_bold">粗体 (**text**)</string>
+    <string name="rp_opt_pattern_strikethrough">删除线 (~~text~~)</string>
+    <string name="rp_opt_pattern_inline_code">行内代码 (`text`)</string>
+    <string name="rp_opt_pattern_h1">一级标题</string>
+    <string name="rp_opt_pattern_h2">二级标题</string>
+    <string name="rp_opt_pattern_h3">三级标题</string>
+    <string name="rp_opt_pattern_h4">四级标题</string>
+    <string name="rp_opt_pattern_h5">五级标题</string>
+    <string name="rp_opt_pattern_h6">六级标题</string>
+    <string name="rp_opt_pattern_blockquote">引用块</string>
+    <string name="rp_opt_no_rules_yet">暂无规则，点击 + 添加</string>
+
+    <!-- RP Rule Dialog -->
+    <string name="rp_opt_dialog_edit_rule">编辑规则</string>
+    <string name="rp_opt_dialog_add_rule">添加规则</string>
+    <string name="rp_opt_dialog_pattern_label">匹配格式</string>
+    <string name="rp_opt_dialog_pattern_placeholder">例如：*、**、~~、>、#、%%、||</string>
+    <string name="rp_opt_dialog_pattern_h_level">%d 级标题</string>
+    <string name="rp_opt_dialog_pattern_custom">自定义：%1$stext%2$s</string>
+    <string name="rp_opt_dialog_pattern_hint">输入自定义格式</string>
+    <string name="rp_opt_dialog_color_hex">颜色（十六进制）</string>
+    <string name="rp_opt_dialog_presets">预设</string>
+
+    <!-- TTS Page Extra (Text Filter) -->
+    <string name="tts_filter_rules_title">文本过滤规则</string>
+    <string name="tts_filter_rules_desc_title">配置用于语音朗读的文本匹配规则</string>
+    <string name="tts_filter_rules_desc_content">跳过：匹配该格式的文本会被跳过。\n仅朗读：只有匹配该格式的文本才会被朗读。</string>
+    <string name="tts_filter_rules_no_rules">暂无规则，点击 + 添加</string>
+    <string name="tts_filter_mode_skip">跳过</string>
+    <string name="tts_filter_mode_only_read">仅朗读</string>
+    <string name="tts_filter_dialog_edit">编辑规则</string>
+    <string name="tts_filter_dialog_add">添加规则</string>
+    <string name="tts_filter_dialog_pattern_label">匹配格式</string>
+    <string name="tts_filter_dialog_pattern_placeholder">例如：* 或 %</string>
+    <string name="tts_filter_dialog_pattern_hint">被 %1$s...%2$s 包裹的文本会被过滤</string>
+    <string name="tts_filter_dialog_mode_label">模式</string>
+    <string name="tts_filter_dialog_desc_skip">%1$s...%2$s 内的文本将被跳过</string>
+    <string name="tts_filter_dialog_desc_only_read">仅朗读 %1$s...%2$s 内的文本</string>
+
+    <!-- Android Integration Page Extra -->
+    <string name="android_integration_reset_desc">恢复默认操作</string>
+    <string name="android_integration_reset_confirm_text">确定要恢复为默认操作吗？这会覆盖你所有的自定义操作。</string>
+    <string name="android_integration_reset_success">已重置为默认操作</string>
+    <string name="android_integration_variable_hint">变量：%s</string>
+    <string name="android_integration_selected_text_preview">所选文本预览…</string>
+    <string name="android_integration_input_label">输入</string>
+    <string name="android_integration_none">无</string>
+
+    <!-- About Page -->
+    <string name="about_page_links">相关链接</string>
+    <string name="about_page_source_code">源代码</string>
+    <string name="about_page_source_code_desc">GitHub 仓库</string>
+    <string name="about_page_system_info">系统信息</string>
+    <string name="about_page_android_version">Android 版本</string>
+    <string name="about_page_device">设备</string>
+    <string name="about_page_architecture">架构</string>
+    <string name="about_page_based_on">基于Cocolalilal的LastChat项目二次开发</string>
+
+    <!-- Settings Page - Support & Updates -->
+    <string name="setting_page_donate_coffee">请我喝杯奶茶~</string>
+    <string name="setting_page_donate_coffee_desc">支持项目开发</string>
+    <string name="update_banner_title">有新版本可用</string>
+    <string name="update_banner_desc">版本 %s 已发布</string>
+    <string name="update_dialog_title">更新至 %s</string>
+    <string name="update_dialog_changelog">更新日志：</string>
+    <string name="update_dialog_no_changelog">暂无更新日志</string>
+    <string name="update_dialog_download">下载</string>
+    <string name="update_dialog_later">稍后</string>
 
 </resources>

@@ -93,12 +93,12 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                             )
                         }
                     )
-                    
+
                     // Only show avatar toggle if header style is not NONE
                     if (displaySetting.newChatHeaderStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE) {
                         SettingGroupItem(
-                            title = "Show Avatar in Header",
-                            subtitle = "When disabled, avatar moves to top-right corner",
+                            title = stringResource(R.string.assistant_ui_new_chat_show_avatar_title),
+                            subtitle = stringResource(R.string.assistant_ui_new_chat_show_avatar_desc),
                             trailing = {
                                 HapticSwitch(
                                     checked = displaySetting.newChatShowAvatar,
@@ -109,7 +109,7 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                             }
                         )
                     }
-                    
+
                     SettingGroupItem(
                         title = stringResource(R.string.setting_new_chat_content),
                         subtitle = stringResource(R.string.setting_new_chat_content_desc),
@@ -158,8 +158,8 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
-                        title = "Show Character Avatar",
-                        subtitle = "Show the character's avatar before messages",
+                        title = stringResource(R.string.assistant_ui_show_assistant_avatar_title),
+                        subtitle = stringResource(R.string.assistant_ui_show_assistant_avatar_desc),
                         trailing = {
                             HapticSwitch(
                                 checked = displaySetting.showModelIcon,
@@ -170,8 +170,8 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
-                        title = "Message Bubbles for Characters",
-                        subtitle = "Show rounded chat bubbles for assistant messages",
+                        title = stringResource(R.string.assistant_ui_show_assistant_bubbles_title),
+                        subtitle = stringResource(R.string.assistant_ui_show_assistant_bubbles_desc),
                         trailing = {
                             HapticSwitch(
                                 checked = displaySetting.showAssistantBubbles,
@@ -206,8 +206,8 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
-                        title = "Show Context Stacks",
-                        subtitle = "Show context sources (modes, memories, lorebooks) in message toolbar",
+                        title = stringResource(R.string.assistant_ui_show_context_stacks_title),
+                        subtitle = stringResource(R.string.assistant_ui_show_context_stacks_desc),
                         trailing = {
                             HapticSwitch(
                                 checked = displaySetting.showContextStacks,
@@ -219,11 +219,11 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                     )
                 }
             }
-            
+
             // Message Jumper Settings
             item {
                 SettingsGroup(
-                    title = "Message Jumper"
+                    title = stringResource(R.string.ui_customization_message_jumper_title)
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_display_page_show_message_jumper_title),
@@ -257,7 +257,7 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
             // Haptics Settings
             item {
                 SettingsGroup(
-                    title = "Haptics"
+                    title = stringResource(R.string.ui_customization_haptics_title)
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_display_page_enable_message_generation_haptic_effect_title),
@@ -272,8 +272,8 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
                     SettingGroupItem(
-                        title = "UI Haptic Feedback",
-                        subtitle = "Enable tactile feedback when tapping buttons and controls",
+                        title = stringResource(R.string.ui_customization_ui_haptic_feedback_title),
+                        subtitle = stringResource(R.string.ui_customization_ui_haptic_feedback_desc),
                         trailing = {
                             HapticSwitch(
                                 checked = displaySetting.enableUIHaptics,
@@ -289,7 +289,7 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
             // Media Settings
             item {
                 SettingsGroup(
-                    title = "Media"
+                    title = stringResource(R.string.ui_customization_media_title)
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_display_page_skip_crop_image_title),
@@ -309,7 +309,7 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
             // Code Blocks Settings
             item {
                 SettingsGroup(
-                    title = "Code Blocks"
+                    title = stringResource(R.string.ui_customization_code_blocks_title)
                 ) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_display_page_code_block_auto_wrap_title),

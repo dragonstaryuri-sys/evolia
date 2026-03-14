@@ -53,7 +53,7 @@ fun AssistantToolsSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // SEARCH GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Search") {
+        SettingsGroup(title = stringResource(R.string.assistant_tools_group_search)) {
             // Build options list for Select
             val currentSearchMode = assistant.searchMode
 
@@ -61,7 +61,7 @@ fun AssistantToolsSubPage(
             data class SearchOption(val mode: AssistantSearchMode, val displayName: String)
 
             val searchOptions = buildList {
-                add(SearchOption(AssistantSearchMode.Off, "Off"))
+                add(SearchOption(AssistantSearchMode.Off, stringResource(R.string.assistant_tools_search_off)))
                 settings.searchServices.forEachIndexed { index, service ->
                     val name = SearchServiceOptions.TYPES[service::class] ?: "Provider ${index + 1}"
                     add(SearchOption(AssistantSearchMode.Provider(index), name))
@@ -77,7 +77,7 @@ fun AssistantToolsSubPage(
             } ?: searchOptions.first()
 
             SettingGroupItem(
-                title = "Search Provider",
+                title = stringResource(R.string.assistant_tools_search_provider),
                 subtitle = selectedOption.displayName,
                 trailing = {
                     Select(
@@ -94,8 +94,8 @@ fun AssistantToolsSubPage(
 
             // Prefer Built-in Search
             SettingGroupItem(
-                title = "Prefer Built-in Search",
-                subtitle = "Use model's native search when available",
+                title = stringResource(R.string.assistant_tools_prefer_built_in_search),
+                subtitle = stringResource(R.string.assistant_tools_prefer_built_in_search_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.preferBuiltInSearch,
@@ -137,8 +137,8 @@ fun AssistantToolsSubPage(
 
             // Device Control
             SettingGroupItem(
-                title = "Device Control",
-                subtitle = "Notifications, apps, alarms, reminders",
+                title = stringResource(R.string.assistant_tools_device_control_title),
+                subtitle = stringResource(R.string.assistant_tools_device_control_desc),
                 trailing = {
                     HapticSwitch(
                         checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
@@ -192,8 +192,8 @@ fun AssistantToolsSubPage(
         if (mcpServerConfigs.isNotEmpty()) {
             SettingsGroup(title = stringResource(R.string.assistant_page_tab_mcp)) {
             SettingGroupItem(
-                    title = "MCP Servers",
-                    subtitle = "Enable external tool servers",
+                    title = stringResource(R.string.assistant_tools_mcp_servers_title),
+                    subtitle = stringResource(R.string.assistant_tools_mcp_servers_desc),
                     trailing = {
                         McpPickerButton(
                             assistant = assistant,

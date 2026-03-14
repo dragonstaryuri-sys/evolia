@@ -26,24 +26,37 @@ sealed class Avatar {
 
 object AvatarSerializer : JsonContentPolymorphicSerializer<Avatar>(Avatar::class) {
     override fun selectDeserializer(element: JsonElement): DeserializationStrategy<Avatar> {
-        val type = element.jsonObject["type"]?.jsonPrimitive?.contentOrNull
-        return when (type) {
-            "Dummy",
-            "me.rerere.rikkahub.data.model.Avatar.Dummy",
-            "me.rerere.rikkahub.core.data.model.Avatar.Dummy" -> Avatar.Dummy.serializer()
+        val jsonObject = element.jsonObject
+        // 尝试从 "type" 字段获取类名标识
+        val type = jsonObject["type"]?.jsonPrimitive?.contentOrNull
 
-            "Emoji",
-            "me.rerere.rikkahub.data.model.Avatar.Emoji",
-            "me.rerere.rikkahub.core.data.model.Avatar.Emoji" -> Avatar.Emoji.serializer()
+        return when {
+            // 匹配 Dummy
+            type == "Dummy" ||
+            type == "me.rerere.rikkahub.data.model.Avatar.Dummy" ||
+            type == "me.rerere.rikkahub.core.data.model.Avatar.Dummy" -> Avatar.Dummy.serializer()
 
-            "Image",
-            "me.rerere.rikkahub.data.model.Avatar.Image",
-            "me.rerere.rikkahub.core.data.model.Avatar.Image" -> Avatar.Image.serializer()
+            // 匹配 Emoji
+            type == "Emoji" ||
+            type == "me.rerere.rikkahub.data.model.Avatar.Emoji" ||
+            type == "me.rerere.rikkahub.core.data.model.Avatar.Emoji" -> Avatar.Emoji.serializer()
 
-            "Resource",
-            "me.rerere.rikkahub.data.model.Avatar.Resource",
-            "me.rerere.rikkahub.core.data.model.Avatar.Resource" -> Avatar.Resource.serializer()
+            // 匹配 Image
+            type == "Image" ||
+            type == "me.rerere.rikkahub.data.model.Avatar.Image" ||
+            type == "me.rerere.rikkahub.core.data.model.Avatar.Image" -> Avatar.Image.serializer()
 
+            // 匹配 Resource
+            type == "Resource" ||
+            type == "me.rerere.rikkahub.data.model.Avatar.Resource" ||
+            type == "me.rerere.rikkahub.core.data.model.Avatar.Resource" -> Avatar.Resource.serializer()
+
+            // 兜底逻辑：如果 type 匹配不上，但包含某些特征字段，尝试猜测
+            jsonObject.containsKey("url") -> Avatar.Image.serializer()
+            jsonObject.containsKey("content") -> Avatar.Emoji.serializer()
+            jsonObject.containsKey("id") -> Avatar.Resource.serializer()
+
+            // 实在不行返回 Dummy
             else -> Avatar.Dummy.serializer()
         }
     }

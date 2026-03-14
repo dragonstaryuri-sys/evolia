@@ -166,7 +166,7 @@ fun SettingAndroidIntegrationPage(
                         SettingGroupItem(
                             title = stringResource(R.string.text_selection_assistant),
                             subtitle = settings.assistants.find { it.id == config.assistantId }?.name
-                                ?: defaultAssistant?.name ?: "None",
+                                ?: defaultAssistant?.name ?: stringResource(R.string.android_integration_none),
                             trailing = {
                                 Select(
                                     options = settings.assistants.map { it.id },
@@ -208,7 +208,7 @@ fun SettingAndroidIntegrationPage(
                         // Reset to defaults button
                         SettingGroupItem(
                             title = stringResource(R.string.reset),
-                            subtitle = "Restore default actions",
+                            subtitle = stringResource(R.string.android_integration_reset_desc),
                             onClick = { showResetDialog = true }
                         )
                     }
@@ -258,7 +258,7 @@ fun SettingAndroidIntegrationPage(
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = { Text(stringResource(R.string.reset)) },
-            text = { Text("Are you sure you want to restore default actions? This will replace all your custom actions.") },
+            text = { Text(stringResource(R.string.android_integration_reset_confirm_text)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -271,7 +271,7 @@ fun SettingAndroidIntegrationPage(
                             )
                         }
                         toaster.show(
-                            message = "Actions reset to defaults",
+                            message = context.getString(R.string.android_integration_reset_success),
                             action = ToastAction(
                                 label = context.getString(R.string.undo),
                                 onClick = {
@@ -353,7 +353,7 @@ private fun PreviewCard(
                     color = MaterialTheme.colorScheme.surfaceContainerHigh // Same as popup
                 ) {
                     Text(
-                        text = "Selected text preview...",
+                        text = stringResource(R.string.android_integration_selected_text_preview),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp)
@@ -489,7 +489,7 @@ private fun ActionCard(
                         color = MaterialTheme.colorScheme.tertiaryContainer
                     ) {
                         Text(
-                            text = "Input",
+                            text = stringResource(R.string.android_integration_input_label),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -534,8 +534,8 @@ private fun EditActionDialog(
                 )
                 // Show variable hint only for relevant actions
                 val variableHint = when (action.id) {
-                    "translate" -> "Variable: {{language}}"
-                    "custom" -> "Variable: {{custom_prompt}}"
+                    "translate" -> stringResource(R.string.android_integration_variable_hint, "{{language}}")
+                    "custom" -> stringResource(R.string.android_integration_variable_hint, "{{custom_prompt}}")
                     else -> null
                 }
                 if (variableHint != null) {

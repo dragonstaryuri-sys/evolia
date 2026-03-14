@@ -294,7 +294,7 @@
     <string name="language_german">Deutsch</string>
     <string name="language_italian">Italiano</string>
     <string name="language_japanese">日本語</string>
-    <string name="language_korean">🇰🇷 한국어</string>
+    <string name="language_korean">한국어</string>
     <string name="language_simplified_chinese">简体中文</string>
     <string name="language_spanish">Español</string>
     <string name="language_traditional_chinese">繁體中文</string>
@@ -833,22 +833,6 @@
     <string name="context_max_search_results_value">%d searches</string>
     <string name="context_max_search_results_unlimited">Unlimited</string>
 
-    <!-- Context Refresh -->
-    <string name="context_refresh_title">Message Summarization</string>
-    <string name="context_refresh_button">Summarize Messages</string>
-    <string name="context_refresh_desc">Compress conversation into a summary to free up context space</string>
-    <string name="context_refresh_enable">Enable Message Summarization</string>
-    <string name="context_refresh_enable_desc">Show summarize button in chat input</string>
-    <string name="context_refresh_messages">%d messages will be summarized</string>
-    <string name="context_refresh_tokens">~%d tokens estimated</string>
-    <string name="context_refresh_loading">Summarizing conversation…</string>
-    <string name="context_refresh_complete">Messages summarized!</string>
-    <string name="context_refresh_cleaned">Summarized %d messages</string>
-    <string name="context_refresh_last">Last summary: %s</string>
-    <string name="context_refresh_never">Never summarized</string>
-    <string name="context_refresh_no_summarizer">Configure a summarizer model in settings first</string>
-    <string name="context_refresh_confirm_title">Summarize Messages?</string>
-    <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
 
     <!-- Import/Export -->
     <string name="lorebook_import_success">Imported: %s</string>
@@ -1056,4 +1040,216 @@
     <string name="summarizer_warning">Select a summarizer model in the Models tab</string>
     <string name="generating_embeddings">Generating Embeddings</string>
     <string name="processing_items">Processing %1$d of %2$d items...</string>
+
+    <!-- Assistant Context Management Page -->
+    <string name="assistant_context_refresh_title">Context Refresh / Summarization</string>
+    <string name="assistant_context_refresh_desc">Enable context optimization via summarization</string>
+    <string name="assistant_context_auto_summarize_desc">Automatically summarize when history limit is reached</string>
+    <string name="assistant_context_history_limit_title">History limit</string>
+    <string name="assistant_context_history_limit_value">%d messages</string>
+    <string name="assistant_context_history_limit_desc">Number of messages before auto-summarization triggers (retains last 4 messages)</string>
+    <string name="assistant_context_episodic_limit_title">Episodic summaries to include</string>
+    <string name="assistant_context_episodic_limit_value">%d summaries</string>
+    <string name="assistant_context_episodic_limit_desc">Number of recent segment summaries to include as historical background</string>
+    <string name="assistant_context_custom_prompts_title">Custom Summarization Prompts</string>
+    <string name="assistant_context_full_summary_prompt_label">Full Summary Prompt</string>
+    <string name="assistant_context_full_summary_prompt_desc">Leave blank for default. Supports {{previous_summary}}, {{new_messages}}</string>
+    <string name="assistant_context_episodic_summary_prompt_label">Episodic Summary Prompt</string>
+    <string name="assistant_context_episodic_summary_prompt_desc">Leave blank for default. Supports {{new_messages}}</string>
+    <string name="assistant_context_no_summarizer_warning">Select a summarizer model in the Models tab</string>
+    <string name="assistant_context_auto_summarize_title">Auto-summarize messages</string>
+    <string name="context_refresh_title">Message Summarization</string>
+    <string name="context_refresh_button">Summarize Messages</string>
+    <string name="context_refresh_enable">Enable Message Summarization</string>
+    <string name="context_refresh_enable_desc">Show summarize button in chat input</string>
+    <string name="context_refresh_messages">%d messages will be summarized</string>
+    <string name="context_refresh_tokens">~%d tokens estimated</string>
+    <string name="context_refresh_loading">Summarizing conversation…</string>
+    <string name="context_refresh_complete">Messages summarized!</string>
+    <string name="context_refresh_cleaned">Summarized %d messages</string>
+    <string name="context_refresh_last">Last summary: %s</string>
+    <string name="context_refresh_never">Never summarized</string>
+    <string name="context_refresh_no_summarizer">Configure a summarizer model in settings first</string>
+    <string name="context_refresh_confirm_title">Summarize Messages?</string>
+    <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
+
+    <!-- Assistant Model Page -->
+    <string name="assistant_model_group_models">Models</string>
+    <string name="assistant_model_background_model">Background Model</string>
+    <string name="assistant_model_background_model_desc">For notifications and background tasks</string>
+    <string name="assistant_model_summarizer_model">Summarizer Model</string>
+    <string name="assistant_model_summarizer_model_desc">For memory summarization and context refresh</string>
+    <string name="assistant_model_group_generation">Generation</string>
+    <string name="assistant_model_temp_strict">Strict (%s)</string>
+    <string name="assistant_model_temp_balanced">Balanced (%s)</string>
+    <string name="assistant_model_temp_creative">Creative (%s)</string>
+    <string name="assistant_model_temp_chaotic">Chaotic (%s)</string>
+    <string name="assistant_model_temp_default">Default</string>
+    <string name="assistant_model_top_p_enabled">Enabled (%s)</string>
+    <string name="assistant_model_top_p_default">Default</string>
+    <string name="assistant_model_group_output">Output</string>
+    <string name="assistant_model_thinking_budget_value">%d tokens</string>
+    <string name="assistant_model_thinking_budget_disabled">Disabled</string>
+    <string name="assistant_model_max_tokens_auto">Auto</string>
+    <!-- Assistant Tools Page -->
+    <string name="assistant_tools_group_search">Search</string>
+    <string name="assistant_tools_search_provider">Search Provider</string>
+    <string name="assistant_tools_search_off">Off</string>
+    <string name="assistant_tools_prefer_built_in_search">Prefer Built-in Search</string>
+    <string name="assistant_tools_prefer_built_in_search_desc">Use model\'s native search when available</string>
+    <string name="assistant_tools_device_control_title">Device Control</string>
+    <string name="assistant_tools_device_control_desc">Notifications, apps, alarms, reminders</string>
+    <string name="assistant_tools_mcp_servers_title">MCP Servers</string>
+    <string name="assistant_tools_mcp_servers_desc">Enable external tool servers</string>
+    <!-- Assistant UI SubPage -->
+    <string name="assistant_ui_new_chat_show_avatar_title">Show Avatar in Header</string>
+    <string name="assistant_ui_new_chat_show_avatar_desc">Display character avatar in the new chat header</string>
+    <string name="assistant_ui_show_assistant_avatar_title">Show Character Avatar</string>
+    <string name="assistant_ui_show_assistant_avatar_desc">Show the character\'s avatar before messages</string>
+    <string name="assistant_ui_show_assistant_bubbles_title">Message Bubbles for Characters</string>
+    <string name="assistant_ui_show_assistant_bubbles_desc">Show rounded chat bubbles for assistant messages</string>
+    <string name="assistant_ui_message_jumper_group">Message Jumper</string>
+    <string name="assistant_ui_code_blocks_group">Code Blocks</string>
+    <string name="assistant_ui_context_sources_group">Context Sources</string>
+    <string name="assistant_ui_show_context_stacks_title">Show Context Stacks</string>
+    <string name="assistant_ui_show_context_stacks_desc">Show context sources (modes, memories, lorebooks) in message toolbar</string>
+    <string name="assistant_ui_state_on">On</string>
+    <string name="assistant_ui_state_off">Off</string>
+    <string name="assistant_ui_state_global">Global (%s)</string>
+    <string name="assistant_ui_font_custom">Custom</string>
+
+    <!-- Assistant Advanced SubPage -->
+    <string name="assistant_advanced_group_spontaneous">Spontaneous Messaging</string>
+    <string name="assistant_advanced_enable_spontaneous_title">Enable Spontaneous Messages</string>
+    <string name="assistant_advanced_enable_spontaneous_desc">Character can message you without prompting</string>
+    <string name="assistant_advanced_active_hours_title">Active Hours</string>
+    <string name="assistant_advanced_active_hours_desc">Time window for messages</string>
+    <string name="assistant_advanced_start_label">Start</string>
+    <string name="assistant_advanced_end_label">End</string>
+    <string name="assistant_advanced_frequency_title">Frequency</string>
+    <string name="assistant_advanced_frequency_desc">Minimum hours between messages</string>
+    <string name="assistant_advanced_group_custom_request">Custom Request</string>
+
+    <!-- Setting Display Page -->
+    <string name="setting_display_fonts_title">Fonts</string>
+    <string name="setting_display_fonts_desc">Customize fonts for headers, content, and code</string>
+    <string name="setting_display_ui_customization_desc">Chat display, haptics, code blocks, font size and more</string>
+    <string name="setting_display_check_for_updates_title">Check for Updates</string>
+    <string name="setting_display_check_for_updates_desc">Automatically check GitHub for new app versions</string>
+    <string name="setting_display_group_advanced">Advanced</string>
+    <string name="setting_display_rp_optimizations_title">RP Optimizations</string>
+    <string name="setting_display_rp_optimizations_desc">Custom text styling for roleplay patterns</string>
+
+    <!-- Fonts Page -->
+    <string name="fonts_page_group_general">General</string>
+    <string name="fonts_page_use_same_font_title">Use same font for headers and content</string>
+    <string name="fonts_page_use_same_font_desc">Link header and content font settings together</string>
+    <string name="fonts_page_headers_title">Headers</string>
+    <string name="fonts_page_headers_content_title">Headers &amp; Content</string>
+    <string name="fonts_page_headers_desc">Titles, headings, and display text</string>
+    <string name="fonts_page_headers_content_desc">All text except code blocks</string>
+    <string name="fonts_page_content_title">Content</string>
+    <string name="fonts_page_content_desc">Body text, paragraphs, and messages</string>
+    <string name="fonts_page_code_blocks_title">Code Blocks</string>
+    <string name="fonts_page_code_blocks_desc">Code, inline code, and monospace text</string>
+    <string name="fonts_page_preview_title">Preview</string>
+    <string name="fonts_page_reset_all_dialog_title">Reset All Fonts?</string>
+    <string name="fonts_page_reset_all_dialog_text">This will reset all font settings to their defaults. Custom fonts will be kept but no longer applied.</string>
+    <string name="fonts_page_reset_font_dialog_title">Reset %s Font?</string>
+    <string name="fonts_page_reset_font_dialog_text">This will reset the font settings for %s to defaults.</string>
+    <string name="fonts_page_font_source">Font Source</string>
+    <string name="fonts_page_font_source_default">Default</string>
+    <string name="fonts_page_font_source_custom">Custom</string>
+    <string name="fonts_page_font_axes">Font Axes</string>
+    <string name="fonts_page_axis_width">Width</string>
+    <string name="fonts_page_axis_roundness">Roundness</string>
+    <string name="fonts_page_typography">Typography</string>
+    <string name="fonts_page_typo_size">Size</string>
+    <string name="fonts_page_typo_spacing">Letter Spacing</string>
+    <string name="fonts_page_opentype_features">OpenType Features</string>
+    <string name="fonts_page_variable_font_info">Variable font · %d axes</string>
+
+    <!-- UI Customization Page -->
+    <string name="ui_customization_message_jumper_title">Message Jumper</string>
+    <string name="ui_customization_haptics_title">Haptics</string>
+    <string name="ui_customization_ui_haptic_feedback_title">UI Haptic Feedback</string>
+    <string name="ui_customization_ui_haptic_feedback_desc">Enable tactile feedback when tapping buttons and controls</string>
+    <string name="ui_customization_media_title">Media</string>
+    <string name="ui_customization_code_blocks_title">Code Blocks</string>
+
+    <!-- RP Optimizations Page -->
+    <string name="rp_opt_add_rule">Add Rule</string>
+    <string name="rp_opt_custom_text_styling">Custom Text Styling</string>
+    <string name="rp_opt_custom_text_styling_desc">Define custom color rules for markdown elements. Add rules with patterns below to change their text color.</string>
+    <string name="rp_opt_supported_patterns">Supported Patterns</string>
+    <string name="rp_opt_pattern_italic">Italic text (*text*)</string>
+    <string name="rp_opt_pattern_bold">Bold text (**text**)</string>
+    <string name="rp_opt_pattern_strikethrough">Strikethrough (~~text~~)</string>
+    <string name="rp_opt_pattern_inline_code">Inline code (`text`)</string>
+    <string name="rp_opt_pattern_h1">Heading 1</string>
+    <string name="rp_opt_pattern_h2">Heading 2</string>
+    <string name="rp_opt_pattern_h3">Heading 3</string>
+    <string name="rp_opt_pattern_h4">Heading 4</string>
+    <string name="rp_opt_pattern_h5">Heading 5</string>
+    <string name="rp_opt_pattern_h6">Heading 6</string>
+    <string name="rp_opt_pattern_blockquote">Blockquotes</string>
+    <string name="rp_opt_no_rules_yet">No rules yet. Tap + to add one.</string>
+
+    <!-- RP Rule Dialog -->
+    <string name="rp_opt_dialog_edit_rule">Edit Rule</string>
+    <string name="rp_opt_dialog_add_rule">Add Rule</string>
+    <string name="rp_opt_dialog_pattern_label">Pattern</string>
+    <string name="rp_opt_dialog_pattern_placeholder">e.g., *, **, ~~, >, #, %%, ||</string>
+    <string name="rp_opt_dialog_pattern_h_level">Heading level %d</string>
+    <string name="rp_opt_dialog_pattern_custom">Custom: %1$stext%2$s</string>
+    <string name="rp_opt_dialog_pattern_hint">Enter any pattern</string>
+    <string name="rp_opt_dialog_color_hex">Color (Hex)</string>
+    <string name="rp_opt_dialog_presets">Presets</string>
+
+    <!-- TTS Page Extra (Text Filter) -->
+    <string name="tts_filter_rules_title">Text Filter Rules</string>
+    <string name="tts_filter_rules_desc_title">Configure text patterns for TTS</string>
+    <string name="tts_filter_rules_desc_content">Skip: Text matching the pattern will be skipped.\nOnly Read: Only text matching the pattern will be read.</string>
+    <string name="tts_filter_rules_no_rules">No rules yet. Tap + to add one.</string>
+    <string name="tts_filter_mode_skip">Skip</string>
+    <string name="tts_filter_mode_only_read">Only Read</string>
+    <string name="tts_filter_dialog_edit">Edit Rule</string>
+    <string name="tts_filter_dialog_add">Add Rule</string>
+    <string name="tts_filter_dialog_pattern_label">Pattern</string>
+    <string name="tts_filter_dialog_pattern_placeholder">e.g., * or %</string>
+    <string name="tts_filter_dialog_pattern_hint">Text wrapped like %1$stext%2$s will be filtered</string>
+    <string name="tts_filter_dialog_mode_label">Mode</string>
+    <string name="tts_filter_dialog_desc_skip">Text inside %1$s...%2$s will be skipped</string>
+    <string name="tts_filter_dialog_desc_only_read">Only text inside %1$s...%2$s will be read</string>
+
+    <!-- Android Integration Page Extra -->
+    <string name="android_integration_reset_desc">Restore default actions</string>
+    <string name="android_integration_reset_confirm_text">Are you sure you want to restore default actions? This will replace all your custom actions.</string>
+    <string name="android_integration_reset_success">Actions reset to defaults</string>
+    <string name="android_integration_variable_hint">Variable: %s</string>
+    <string name="android_integration_selected_text_preview">Selected text preview...</string>
+    <string name="android_integration_input_label">Input</string>
+    <string name="android_integration_none">None</string>
+
+    <!-- About Page -->
+    <string name="about_page_links">Links</string>
+    <string name="about_page_source_code">Source Code</string>
+    <string name="about_page_source_code_desc">GitHub Repository</string>
+    <string name="about_page_system_info">System Information</string>
+    <string name="about_page_android_version">Android Version</string>
+    <string name="about_page_device">Device</string>
+    <string name="about_page_architecture">Architecture</string>
+    <string name="about_page_based_on">Based on LastChat by Cocolalilal</string>
+
+    <!-- Settings Page - Support & Updates -->
+    <string name="setting_page_donate_coffee">Buy Me a Coffee</string>
+    <string name="setting_page_donate_coffee_desc">Support the development</string>
+    <string name="update_banner_title">Update Available</string>
+    <string name="update_banner_desc">Version %s is available</string>
+    <string name="update_dialog_title">Update to %s</string>
+    <string name="update_dialog_changelog">Changelog:</string>
+    <string name="update_dialog_no_changelog">No changelog available</string>
+    <string name="update_dialog_download">Download</string>
+    <string name="update_dialog_later">Later</string>
+
 </resources>

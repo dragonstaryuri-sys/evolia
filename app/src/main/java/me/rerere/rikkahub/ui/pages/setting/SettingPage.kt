@@ -108,7 +108,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                 navController.navigate(Screen.Developer)
                             }
                         ) {
-                            Icon(Icons.Rounded.Build, "Developer")
+                            Icon(Icons.Rounded.Build, stringResource(R.string.setting_display_page_developer_mode))
                         }
                     }
                 }
@@ -325,8 +325,8 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 
                     val context = LocalContext.current
                     SettingGroupItem(
-                        title = "Buy Me a Coffee",
-                        subtitle = "Support the development",
+                        title = stringResource(R.string.setting_page_donate_coffee),
+                        subtitle = stringResource(R.string.setting_page_donate_coffee_desc),
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
                         onClick = {
                             context.openUrl("https://buymeacoffee.com/cocolalilal")
@@ -477,12 +477,12 @@ private fun UpdateAvailableBanner(
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Update Available",
+                                text = stringResource(R.string.update_banner_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                             Text(
-                                text = "Version ${updateInfo.version} is available",
+                                text = stringResource(R.string.update_banner_desc, updateInfo.version),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                             )
@@ -498,18 +498,18 @@ private fun UpdateAvailableBanner(
                 if (showUpdateDialog) {
                     AlertDialog(
                         onDismissRequest = { showUpdateDialog = false },
-                        title = { Text("Update to ${updateInfo.version}") },
+                        title = { Text(stringResource(R.string.update_dialog_title, updateInfo.version)) },
                         text = {
                             Column(
                                 modifier = Modifier.verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Text(
-                                    text = "Changelog:",
+                                    text = stringResource(R.string.update_dialog_changelog),
                                     style = MaterialTheme.typography.titleSmall
                                 )
                                 Text(
-                                    text = updateInfo.changelog.ifEmpty { "No changelog available" },
+                                    text = updateInfo.changelog.ifEmpty { stringResource(R.string.update_dialog_no_changelog) },
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -523,12 +523,12 @@ private fun UpdateAvailableBanner(
                                     showUpdateDialog = false
                                 }
                             ) {
-                                Text("Download")
+                                Text(stringResource(R.string.update_dialog_download))
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showUpdateDialog = false }) {
-                                Text("Later")
+                                Text(stringResource(R.string.update_dialog_later))
                             }
                         }
                     )
