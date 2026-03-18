@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 
 import android.app.Application
 import android.util.Log
-import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,20 +13,36 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.Tag
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
-import me.rerere.rikkahub.utils.deleteChatFiles
+import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.*
+import kotlinx.serialization.decodeFromString
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
+
+@Serializable
+data class MemoryOp(
+    val op: String,
+    val id: Int? = null,
+    val content: String? = null
+)
 
 class AssistantDetailVM(
     private val id: String,
@@ -36,19 +51,12 @@ class AssistantDetailVM(
     private val conversationRepository: ConversationRepository,
     private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
-    private val providerManager: me.rerere.ai.provider.ProviderManager,
+    private val providerManager: ProviderManager,
 ) : ViewModel() {
-    private val assistantId = try { Uuid.parse(id) } catch (e: Exception) { Uuid.NIL } // 增加保护
+    private val assistantId = try { Uuid.parse(id) } catch (e: Exception) { Uuid.NIL }
 
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
-
-    val mcpServerConfigs = settingsStore
-        .settingsFlow.map { settings ->
-            settings.mcpServers
-        }.stateIn(
-            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
-        )
 
     val assistant: StateFlow<Assistant> = settingsStore
         .settingsFlow
@@ -58,6 +66,39 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
         )
 
+    val mcpServerConfigs: StateFlow<List<McpServerConfig>> = settingsStore.settingsFlow
+        .map { it.mcpServers }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val tags: StateFlow<List<Tag>> = settingsStore.settingsFlow
+        .map { it.assistantTags }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val hasMemories: StateFlow<Boolean> = memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString())
+        .map { it.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    val hasLorebooks: StateFlow<Boolean> = assistant.map { it.enabledLorebookIds.isNotEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    val episodes: StateFlow<List<ChatEpisodeEntity>> = chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val episodeStats: StateFlow<EpisodeStats> = combine(
+        memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
+        episodes
+    ) { core, episodic ->
+        EpisodeStats(
+            totalEpisodes = episodic.size,
+            averageSignificance = episodic.map { it.significance ?: 0 }.average(),
+            coreMemoryCount = core.size
+        )
+    }.stateIn(viewModelScope, SharingStarted.Lazily, EpisodeStats(0, 0.0, 0))
+
+    // --- 补全 AssistantPromptSubPage 需要的属性 ---
+    val systemPromptTokenCount: StateFlow<Int> = assistant.map { estimateTokens(it.systemPrompt) }
+        .stateIn(viewModelScope, SharingStarted.Lazily, 0)
+
     private val _memorySearchQuery = MutableStateFlow("")
     val memorySearchQuery = _memorySearchQuery.asStateFlow()
 
@@ -65,34 +106,28 @@ class AssistantDetailVM(
         _memorySearchQuery.value = query
     }
 
-    val memories = combine(
+    val memories: StateFlow<List<AssistantMemory>> = combine(
         memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
-        chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString()),
+        episodes,
         _memorySearchQuery
-    ) { coreMemories, episodes, query ->
-        val core = coreMemories
-        val episodic = episodes.map {
+    ) { coreMemories, episodesList, query ->
+        val episodic = episodesList.map {
             AssistantMemory(
-                id = -it.id, // Negative ID to distinguish from core memories
+                id = -it.id,
                 content = it.content,
-                type = 1, // EPISODIC
+                type = 1,
                 hasEmbedding = it.embedding != null,
                 embeddingModelId = it.embeddingModelId,
                 timestamp = it.startTime,
                 significance = it.significance
             )
         }
-        val allMemories = core + episodic
-        if (query.isBlank()) {
-            allMemories
-        } else {
-            allMemories.filter { it.content.contains(query, ignoreCase = true) }
-        }
+        val allMemories = coreMemories + episodic
+        if (query.isBlank()) allMemories else allMemories.filter { it.content.contains(query, ignoreCase = true) }
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
     )
 
-    // Current embedding model ID for this assistant (for detecting model mismatch)
     val currentEmbeddingModelId: StateFlow<String> = combine(
         assistant,
         settings
@@ -102,371 +137,122 @@ class AssistantDetailVM(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = ""
     )
 
-    val episodes = chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
-        .stateIn(
-            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
-        )
+    private val _isOptimizing = MutableStateFlow(false)
+    val isOptimizing = _isOptimizing.asStateFlow()
 
-    val episodeStats = combine(episodes, memories) { episodeList, memoryList ->
-        val totalEpisodes = episodeList.size
-        val avgSig = if (totalEpisodes > 0) {
-            episodeList.sumOf { it.significance }.toDouble() / totalEpisodes
-        } else {
-            0.0
-        }
-        val coreCount = memoryList.count { it.type == 0 } // 0 is CORE
-        EpisodeStats(totalEpisodes, avgSig, coreCount)
-    }.stateIn(viewModelScope, SharingStarted.Lazily, EpisodeStats(0, 0.0, 0))
-
-    val providers = settingsStore
-        .settingsFlow
-        .map { settings ->
-            settings.providers
-        }.stateIn(
-            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
-        )
-
-    val tags = settingsStore
-        .settingsFlow
-        .map { settings ->
-            settings.assistantTags
-        }.stateIn(
-            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
-        )
-
-    fun updateTags(tagIds: List<Uuid>, tags: List<Tag>) {
+    fun optimizeMemories() {
         viewModelScope.launch {
-            // First, update the global tags list
-            val currentSettings = settingsStore.settingsFlow.value
-            settingsStore.update(
-                settings = currentSettings.copy(
-                    assistantTags = tags
-                )
-            )
+            if (_isOptimizing.value) return@launch
+            _isOptimizing.value = true
+            try {
+                val currentSettings = settings.value
+                val currentAssistant = assistant.value
+                val coreMemories = memories.value.filter { it.id > 0 }
 
-            // Then, update this assistant's tags
-            val updatedAssistant = assistant.value.copy(tags = tagIds.toList())
-            val latestSettings = settingsStore.settingsFlow.value
-            settingsStore.update(
-                settings = latestSettings.copy(
-                    assistants = latestSettings.assistants.map {
-                        if (it.id == updatedAssistant.id) updatedAssistant else it
+                if (coreMemories.isEmpty()) {
+                    setSnackbarMessage(context.getString(R.string.memory_optimize_no_change))
+                    return@launch
+                }
+
+                val groups = mutableListOf<List<AssistantMemory>>()
+                val processedIds = mutableSetOf<Int>()
+
+                for (memory in coreMemories) {
+                    if (processedIds.contains(memory.id)) continue
+                    val similar = memoryRepository.retrieveRelevantMemoriesWithScores(
+                        assistantId = assistantId.toString(),
+                        query = memory.content,
+                        limit = 10,
+                        similarityThreshold = 0.7f,
+                        includeCore = true,
+                        includeEpisodes = false
+                    ).map { it.first }.filter { !processedIds.contains(it.id) }
+
+                    if (similar.size > 1) {
+                        groups.add(similar)
+                        processedIds.addAll(similar.map { it.id })
                     }
-                )
-            )
+                }
 
-            Log.d(TAG, "updateTags: ${tagIds.joinToString(",")}")
+                if (groups.isEmpty()) {
+                    setSnackbarMessage(context.getString(R.string.memory_optimize_no_change))
+                    return@launch
+                }
 
-            // Now cleanup unused tags using the fresh state
-            cleanupUnusedTagsInternal()
-        }
-    }
+                val modelId = currentAssistant.summarizerModelId ?: currentAssistant.chatModelId ?: currentSettings.chatModelId
+                val model = currentSettings.findModelById(modelId) ?: error("No model")
+                val providerSetting = model.findProvider(currentSettings.providers) ?: error("No provider")
+                val handler = providerManager.getProviderByType(providerSetting)
 
-    private suspend fun cleanupUnusedTagsInternal() {
-        // Use fresh settings after all updates
-        val settings = settingsStore.settingsFlow.value
-        val validTagIds = settings.assistantTags.map { it.id }.toSet()
+                var totalMerged = 0
+                var totalConflicts = 0
 
-        // 清理 assistant 中的无效 tag id
-        val cleanedAssistants = settings.assistants.map { assistant ->
-            val validTags = assistant.tags.filter { tagId ->
-                validTagIds.contains(tagId)
-            }
-            if (validTags.size != assistant.tags.size) {
-                assistant.copy(tags = validTags)
-            } else {
-                assistant
-            }
-        }
+                for (group in groups) {
+                    val groupText = group.joinToString("\n") { "(ID: ${it.id}): ${it.content}" }
+                    val contextEpisodic = memoryRepository.retrieveRelevantMemories(
+                        assistantId = assistantId.toString(),
+                        query = group.first().content,
+                        limit = 3,
+                        includeCore = false,
+                        includeEpisodes = true
+                    ).joinToString("\n") { "Context: ${it.content}" }
 
-        // 获取清理后的 assistant 中使用的 tag id
-        val usedTagIds = cleanedAssistants.flatMap { it.tags }.toSet()
+                    val prompt = """
+                        You are a memory manager. Optimize this group of related memories:
+                        $groupText
+                        Relevant Context:
+                        $contextEpisodic
+                        Goals:
+                        1. MERGE: Combine highly similar ones.
+                        2. CONFLICT: Keep only latest/most accurate.
+                        Return JSON array of operations:
+                        [{"op": "update", "id": 1, "content": "..."}, {"op": "delete", "id": 2}, {"op": "add", "content": "..."}]
+                    """.trimIndent()
 
-        // 清理未使用的 tags
-        val cleanedTags = settings.assistantTags.filter { tag ->
-            usedTagIds.contains(tag.id)
-        }
+                    val response = handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
+                    val resultText = response.choices.firstOrNull()?.message?.toContentText() ?: ""
+                    val ops = Json { ignoreUnknownKeys = true }.decodeFromString<List<MemoryOp>>(resultText.substringAfter("[").substringBeforeLast("]").let { "[$it]" })
 
-        // 检查是否需要更新
-        val needUpdateAssistants = cleanedAssistants != settings.assistants
-        val needUpdateTags = cleanedTags.size != settings.assistantTags.size
-
-        if (needUpdateAssistants || needUpdateTags) {
-            settingsStore.update(
-                settings = settings.copy(
-                    assistants = cleanedAssistants,
-                    assistantTags = cleanedTags
-                )
-            )
-            Log.d(TAG, "cleanupUnusedTags: removed ${settings.assistantTags.size - cleanedTags.size} unused tags")
-        }
-    }
-
-    fun cleanupUnusedTags() {
-        viewModelScope.launch {
-            cleanupUnusedTagsInternal()
-        }
-    }
-
-    fun update(assistant: Assistant) {
-        viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-            val oldAssistant = currentSettings.assistants.find { it.id == assistant.id }
-            if (oldAssistant != null) {
-                checkAvatarDelete(old = oldAssistant, new = assistant) // 删除旧头像
-                checkBackgroundDelete(old = oldAssistant, new = assistant) // 删除旧背景
-            }
-            settingsStore.update(
-                settings = currentSettings.copy(
-                    assistants = currentSettings.assistants.map {
-                        if (it.id == assistant.id) {
-                            assistant
-                        } else {
-                            it
+                    ops.forEach { op ->
+                        when (op.op) {
+                            "update" -> if (op.id != null && op.id > 0) { memoryRepository.updateContent(op.id, op.content ?: ""); totalConflicts++ }
+                            "delete" -> if (op.id != null && op.id > 0) { memoryRepository.deleteMemory(op.id); totalMerged++ }
+                            "add" -> memoryRepository.addMemory(assistantId.toString(), op.content ?: "")
                         }
-                    })
-            )
-        }
-    }
-
-    fun addMemory(memory: AssistantMemory) {
-        viewModelScope.launch {
-            memoryRepository.addMemory(
-                assistantId = assistantId.toString(),
-                content = memory.content
-            )
-        }
-    }
-
-    fun updateMemory(memory: AssistantMemory) {
-        viewModelScope.launch {
-            if (memory.id < 0) {
-                memoryRepository.updateEpisodeContent(id = -memory.id, content = memory.content)
-            } else {
-                memoryRepository.updateContent(id = memory.id, content = memory.content)
+                    }
+                }
+                setSnackbarMessage(context.getString(R.string.memory_optimize_success, totalMerged, totalConflicts))
+            } catch (e: Exception) {
+                Log.e(TAG, "Optimization failed", e)
+                setSnackbarMessage("Error: ${e.message}")
+            } finally {
+                _isOptimizing.value = false
             }
         }
     }
 
-    fun deleteMemory(memory: AssistantMemory) {
-        viewModelScope.launch {
-            if (memory.id > 0) {
-                memoryRepository.deleteMemory(id = memory.id)
-            }
-        }
-    }
-
+    val providers: StateFlow<List<me.rerere.ai.provider.ProviderSetting>> = settingsStore.settingsFlow.map { it.providers }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    fun update(assistant: Assistant) { viewModelScope.launch { val currentSettings = settingsStore.settingsFlow.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map { if (it.id == assistant.id) assistant else it })) } }
+    fun updateTags(tagIds: List<Uuid>, updatedTags: List<Tag>) { viewModelScope.launch { val currentSettings = settingsStore.settingsFlow.value; val currentAssistant = assistant.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map { if (it.id == currentAssistant.id) it.copy(tags = tagIds) else it }, assistantTags = updatedTags)) } }
+    fun addMemory(memory: AssistantMemory) { viewModelScope.launch { memoryRepository.addMemory(assistantId.toString(), memory.content) } }
+    fun updateMemory(memory: AssistantMemory) { viewModelScope.launch { if (memory.id < 0) memoryRepository.updateEpisodeContent(-memory.id, memory.content) else memoryRepository.updateContent(memory.id, memory.content) } }
+    fun deleteMemory(memory: AssistantMemory) { viewModelScope.launch { if (memory.id > 0) memoryRepository.deleteMemory(memory.id) } }
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage = _snackbarMessage.asStateFlow()
-
-    fun setSnackbarMessage(message: String?) {
-        _snackbarMessage.value = message
-    }
-
-    fun clearSnackbarMessage() {
-        _snackbarMessage.value = null
-    }
-
+    fun setSnackbarMessage(message: String?) { _snackbarMessage.value = message }
+    fun clearSnackbarMessage() { _snackbarMessage.value = null }
     private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
     val embeddingProgress = _embeddingProgress.asStateFlow()
-
-    // Check if any memories need embedding (just checks if embedding exists, cache handles model switching)
-    val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { memories ->
-        memories.any { memory -> !memory.hasEmbedding }
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.Lazily,
-        initialValue = false
-    )
-
+    val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { list -> list.any { !it.hasEmbedding } }.stateIn(viewModelScope, SharingStarted.Lazily, false)
     private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
     val retrievalResults = _retrievalResults.asStateFlow()
-
-    fun testRetrieval(query: String) {
-        viewModelScope.launch {
-            try {
-                val currentAssistant = assistant.value
-                val threshold = if (currentAssistant.ragSimilarityThreshold > 0f) {
-                    currentAssistant.ragSimilarityThreshold
-                } else {
-                    0.0f // Show all for debugging
-                }
-                val limit = if (currentAssistant.ragLimit > 0) {
-                    currentAssistant.ragLimit
-                } else {
-                    10 // Default for debugging
-                }
-
-                val results = memoryRepository.retrieveRelevantMemoriesWithScores(
-                    assistantId = assistantId.toString(),
-                    query = query,
-                    limit = limit,
-                    similarityThreshold = threshold,
-                    includeCore = currentAssistant.ragIncludeCore,
-                    includeEpisodes = currentAssistant.ragIncludeEpisodes
-                )
-                _retrievalResults.value = results
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to test retrieval", e)
-                _snackbarMessage.value = "Retrieval failed: ${e.message}"
-            }
-        }
-    }
-
-    fun clearRetrievalResults() {
-        _retrievalResults.value = emptyList()
-    }
-
-    fun regenerateEmbeddings() {
-        viewModelScope.launch {
-            try {
-                _embeddingProgress.value = EmbeddingProgress(0, 1, true)
-
-                val (success, failure) = memoryRepository.regenerateEmbeddings(
-                    assistantId = assistantId.toString(),
-                    onProgress = { current, total ->
-                        _embeddingProgress.value = EmbeddingProgress(current, total, true)
-                    }
-                )
-
-                _embeddingProgress.value = null
-                if (failure > 0) {
-                    _snackbarMessage.value = context.getString(R.string.embedding_gen_completed, success, failure)
-                } else if (success > 0) {
-                    _snackbarMessage.value = context.getString(R.string.embedding_gen_success, success)
-                } else {
-                    _snackbarMessage.value = context.getString(R.string.embedding_gen_none)
-                }
-                Log.i(TAG, "Regenerated embeddings: $success success, $failure failed")
-            } catch (e: Exception) {
-                _embeddingProgress.value = null
-                _snackbarMessage.value = "Error: ${e.message}"
-                Log.e(TAG, "Failed to regenerate embeddings", e)
-            }
-        }
-    }
-
-    fun consolidateMemories(isFullScan: Boolean) {
-        val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-            .setInputData(
-                androidx.work.workDataOf(
-                    "FULL_SCAN" to isFullScan,
-                    "ASSISTANT_ID" to assistantId.toString()
-                )
-            )
-            .build()
-        androidx.work.WorkManager.getInstance(context).enqueue(request)
-        _snackbarMessage.value = context.getString(R.string.consolidation_started, isFullScan)
-    }
-
-    suspend fun checkAvatarDelete(old: Assistant, new: Assistant) {
-        val oldAvatar = old.avatar
-        if (oldAvatar is Avatar.Image && oldAvatar != new.avatar) {
-            context.deleteChatFiles(listOf(oldAvatar.url.toUri()))
-        }
-    }
-
-    suspend fun checkBackgroundDelete(old: Assistant, new: Assistant) {
-        val oldBackground = old.background
-        val newBackground = new.background
-
-        if (oldBackground != null && oldBackground != newBackground) {
-            try {
-                val oldUri = oldBackground.toUri()
-                if (oldUri.scheme == "content" || oldUri.scheme == "file") {
-                    context.deleteChatFiles(listOf(oldUri))
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to delete background file: $oldBackground", e)
-            }
-        }
-    }
-
-    // Token Estimation Logic
+    fun testRetrieval(query: String) { viewModelScope.launch { val results = memoryRepository.retrieveRelevantMemoriesWithScores(assistantId.toString(), query); _retrievalResults.value = results } }
+    fun regenerateEmbeddings() { viewModelScope.launch { _embeddingProgress.value = EmbeddingProgress(0, 1, true); memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t -> _embeddingProgress.value = EmbeddingProgress(c, t, true) }; _embeddingProgress.value = null } }
+    fun consolidateMemories(isFullScan: Boolean) { val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>().setInputData(androidx.work.workDataOf("FULL_SCAN" to isFullScan, "ASSISTANT_ID" to assistantId.toString())).build(); androidx.work.WorkManager.getInstance(context).enqueue(request) }
     fun estimateTokens(text: String): Int = text.length / 4
-
-    val averageMessageLength = conversationRepository.getAverageMessageLength(assistantId)
-        .stateIn(viewModelScope, SharingStarted.Lazily, 100)
-
-    val averageMemoryLength = memoryRepository.getAverageMemoryLength(assistantId.toString())
-        .stateIn(viewModelScope, SharingStarted.Lazily, 150)
-
-    val systemPromptTokenCount = assistant.map {
-        estimateTokens(it.systemPrompt)
-    }.stateIn(viewModelScope, SharingStarted.Lazily, 0)
-
-    val smartMinTokenUsage = combine(
-        assistant,
-        averageMessageLength,
-        averageMemoryLength
-    ) { assistant, avgMsgLen, avgMemLen ->
-        val sysPrompt = estimateTokens(assistant.systemPrompt)
-
-        // Dynamic estimates based on history
-        val avgMsgTokens = (avgMsgLen / 4).coerceAtLeast(10)
-        val avgMemTokens = (avgMemLen / 4).coerceAtLeast(10)
-
-        val minHistory = avgMsgTokens * 2 // At least 2 messages
-        val minMemory = if (assistant.enableMemory) avgMemTokens * 2 else 0 // At least 2 memories
-        val buffer = 200
-        sysPrompt + minHistory + minMemory + buffer
-    }.stateIn(viewModelScope, SharingStarted.Lazily, 1000)
-
-    val estimatedMemoryCapacity = combine(
-        assistant,
-        smartMinTokenUsage,
-        averageMemoryLength
-    ) { assistant, minUsage, avgMemLen ->
-        val total = assistant.maxTokenUsage
-        val available = (total - minUsage).coerceAtLeast(0)
-        val avgMemTokens = (avgMemLen / 4).coerceAtLeast(10)
-
-        // If RAG is enabled, how many memories can we fit in the remaining space?
-        // This is a rough upper bound for the slider
-        (available / avgMemTokens).coerceAtLeast(5) // Minimum 5
-    }.stateIn(viewModelScope, SharingStarted.Lazily, 10)
-
-    val estimatedAllocation = combine(
-        assistant,
-        averageMessageLength,
-        averageMemoryLength
-    ) { assistant, avgMsgLen, avgMemLen ->
-        val total = assistant.maxTokenUsage
-        val sysPrompt = estimateTokens(assistant.systemPrompt)
-        val remaining = total - sysPrompt
-
-        if (remaining <= 0) {
-            "System prompt consumes all tokens!"
-        } else {
-            val avgMsgTokens = (avgMsgLen / 4).coerceAtLeast(10)
-            val avgMemTokens = (avgMemLen / 4).coerceAtLeast(10)
-
-            // Calculate how many messages OR memories can fit in the remaining space
-            val estHistoryMsgs = remaining / avgMsgTokens
-            val estMemories = remaining / avgMemTokens
-
-            "Est. History: ~$estHistoryMsgs msgs or Memories: ~$estMemories"
-        }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, "Calculating...")
-
-    // Validation for Export UI
-    val hasMemories = combine(memories, episodes) { m, e ->
-        m.isNotEmpty() || e.isNotEmpty()
-    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
-
-    val hasLorebooks = assistant.map {
-        it.enabledLorebookIds.isNotEmpty()
-    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+    val averageMemoryLength = memoryRepository.getAverageMemoryLength(assistantId.toString()).stateIn(viewModelScope, SharingStarted.Lazily, 150)
+    val estimatedMemoryCapacity = assistant.map { (it.maxTokenUsage / 50).coerceAtLeast(10) }.stateIn(viewModelScope, SharingStarted.Lazily, 10)
 }
 
-data class EmbeddingProgress(
-    val current: Int,
-    val total: Int,
-    val isRunning: Boolean
-)
-
-data class EpisodeStats(
-    val totalEpisodes: Int,
-    val averageSignificance: Double,
-    val coreMemoryCount: Int
-)
+data class EmbeddingProgress(val current: Int, val total: Int, val isRunning: Boolean)
+data class EpisodeStats(val totalEpisodes: Int, val averageSignificance: Double, val coreMemoryCount: Int)

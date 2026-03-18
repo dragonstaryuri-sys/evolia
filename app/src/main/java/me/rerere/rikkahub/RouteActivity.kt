@@ -411,7 +411,10 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingUICustomization> { SettingUICustomizationPage() }
                     composable<Screen.SettingFonts> { SettingFontsPage() }
                     composable<Screen.Discover> { DiscoverPage() }
-                    composable<Screen.DiaryList> { DiaryListPage() }
+                    composable<Screen.DiaryList> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.DiaryList>()
+                        DiaryListPage(assistantId = route.assistantId)
+                    }
                 }
                 AppToasterHost(state = toastState)
                 }
@@ -511,5 +514,5 @@ sealed interface Screen {
     data object Discover : Screen
 
     @Serializable
-    data object DiaryList : Screen
+    data class DiaryList(val assistantId: String? = null) : Screen
 }

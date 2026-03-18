@@ -1006,8 +1006,13 @@
   <string name="summarizer_warning">请在模型标签页中选择摘要模型</string>
   <string name="assistant_memory_master_no_new_content">暂无新消息</string>
   <string name="assistant_memory_consolidation_insufficient_data">数据不足</string>
+  <string name="memory_action_optimize">合并与优化</string>
+  <string name="memory_optimizing">AI 正在深度优化记忆...</string>
+  <string name="memory_optimize_success">优化成功：合并了 %1$d 条，解决了 %2$d处冲突。</string>
+  <string name="memory_optimize_no_change">记忆已经非常整洁啦！</string>
+
   <!-- Assistant Context Management Page -->
-<string name="processing_items">处理中： %1$d / %2$项</string>
+<string name="processing_items">处理中： %1$d / %2$d</string>
 <string name="assistant_context_refresh_title">上下文刷新 / 摘要</string>
   <string name="assistant_context_refresh_desc">通过摘要优化上下文</string>
   <string name="assistant_context_auto_summarize_title">自动消息摘要</string>
@@ -1252,11 +1257,22 @@
   <string name="assistant_memory_consolidate_now">立即整合</string>
   <string name="assistant_memory_group_master">记忆档案</string>
   <string name="assistant_memory_enable_master_title">开启记忆档案</string>
-  <string name="assistant_memory_enable_master_desc">使agent对你和你们的关系有总体认知</string>
+  <string name="assistant_memory_enable_master_desc">使智能体对你和你们的关系有总体认知</string>
   <string name="assistant_memory_master_prompt_title">记忆档案生成提示词</string>
   <string name="assistant_memory_master_prompt_desc">AI 维护档案的指令，留空使用默认。</string>
   <string name="assistant_memory_master_content_title">记忆档案内容</string>
   <string name="assistant_memory_master_last_update">最近更新：%s</string>
+
+  <!-- 日记相关 -->
+  <string name="diary_already_generated">今天的日记已经生成过了</string>
+  <string name="diary_generate_failed">生成日记失败: %s</string>
+  <string name="diary_select_time">选择时间</string>
+  <string name="diary_auto_generate_time">自动生成时间</string>
+  <string name="diary_assistant_title_format">%s的日记</string>
+  <string name="diary_settings">日记设置</string>
+  <string name="diary_auto_generate">自动生成日记</string>
+  <string name="diary_auto_generate_time_label">自动生成时间</string>
+
 
 
 </resources>

@@ -43,7 +43,8 @@ fun DiscoverPage() {
                     description = stringResource(R.string.discover_page_diary_desc),
                     icon = { Icon(Icons.Rounded.Book, null, tint = MaterialTheme.colorScheme.primary) },
                     onClick = {
-                        navController.navigate(Screen.DiaryList)
+                        // 修复点：将 Screen.DiaryList 改为 Screen.DiaryList()
+                        navController.navigate(Screen.DiaryList())
                     }
                 )
             }

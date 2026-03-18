@@ -102,6 +102,10 @@ data class Assistant(
     val masterMemoryPrompt: String = "",
     val masterMemoryContent: String = "",
     val lastMasterMemoryUpdate: Long = 0L,
+
+    // Diary Settings
+    val enableAutoDiary: Boolean = false,
+    val autoDiaryTime: String = "23:59",
 )
 
 @Serializable

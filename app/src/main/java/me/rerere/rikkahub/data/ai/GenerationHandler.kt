@@ -118,8 +118,32 @@ class GenerationHandler(
                 // Add memory tools if memory is enabled for this assistant
                 if (assistant.enableMemory) {
                     buildMemoryTools(
+                        assistantId = assistant.id.toString(),
                         onCreation = { content ->
-                            memoryRepo.addMemory(assistant.id.toString(), content)
+                            // 瞬时去重与更新逻辑 (Upsert)
+                            val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
+                                assistantId = assistant.id.toString(),
+                                query = content,
+                                limit = 1,
+                                similarityThreshold = 0.9f,
+                                includeCore = true,
+                                includeEpisodes = false
+                            )
+
+                            val existing = relevant.firstOrNull()
+                            if (existing != null) {
+                                val score = existing.second
+                                val memory = existing.first
+                                if (score > 0.98f) {
+                                    Log.i(TAG, "Near-identical memory (score: $score), skipping creation.")
+                                    memory
+                                } else {
+                                    Log.i(TAG, "High-similarity memory (score: $score), updating existing entry.")
+                                    memoryRepo.updateContent(memory.id, content)
+                                }
+                            } else {
+                                memoryRepo.addMemory(assistant.id.toString(), content)
+                            }
                         },
                         onUpdate = { id, content ->
                             memoryRepo.updateContent(id, content)
@@ -851,13 +875,15 @@ class GenerationHandler(
             )
             messages = messages.handleMessageChunk(chunk = chunk, model = model)
             chunk.usage?.let { usage ->
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex) {
-                        message.copy(
-                            usage = message.usage.merge(usage)
-                        )
-                    } else {
-                        message
+                messages = messages.size.let { _ ->
+                    messages.mapIndexed { index, message ->
+                        if (index == messages.lastIndex) {
+                            message.copy(
+                                usage = message.usage.merge(usage)
+                            )
+                        } else {
+                            message
+                        }
                     }
                 }
             }
@@ -880,6 +906,7 @@ class GenerationHandler(
     }
 
     private fun buildMemoryTools(
+        assistantId: String,
         onCreation: suspend (String) -> AssistantMemory,
         onUpdate: suspend (Int, String) -> AssistantMemory,
         onDelete: suspend (Int) -> Unit

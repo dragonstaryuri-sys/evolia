@@ -1004,6 +1004,10 @@
   <string name="memory_mode_basic_rag_desc">Smart memory retrieval based on conversation context</string>
   <string name="memory_mode_advanced">Advanced</string>
   <string name="memory_mode_advanced_desc">Forms episodic memories with automatic consolidation</string>
+  <string name="memory_action_optimize">Optimize &amp; Merge</string>
+  <string name="memory_optimizing">AI is optimizing memories...</string>
+  <string name="memory_optimize_success">Optimized: %1$d merged, %2$d conflicts resolved.</string>
+  <string name="memory_optimize_no_change">Memories are already clean!</string>
 
   <string name="rag_memory_retrieval">RAG Memory Retrieval</string>
   <string name="rag_memory_retrieval_desc">Smart context-based memory retrieval</string>
@@ -1070,6 +1074,7 @@
   <string name="context_refresh_cleaned">Summarized %d messages</string>
   <string name="context_refresh_last">Last summary: %s</string>
   <string name="context_refresh_never">Never summarized</string>
+  <string name="context_refresh_desc">Compress the conversation into a summary to free up context space</string>
   <string name="context_refresh_no_summarizer">Configure a summarizer model in settings first</string>
   <string name="context_refresh_confirm_title">Summarize Messages?</string>
   <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
@@ -1303,6 +1308,16 @@
   <string name="embedding_gen_completed">Completed: %1$d success, %2$d failed. Check your settings.</string>
   <string name="embedding_gen_success">Successfully generated %d embeddings.</string>
   <string name="embedding_gen_none">No embeddings needed regeneration.</string>
+
+  <!-- Diary Related -->
+  <string name="diary_already_generated">Today\'s diary already exists</string>
+  <string name="diary_generate_failed">Failed to generate diary: %s</string>
+  <string name="diary_select_time">Select Time</string>
+  <string name="diary_auto_generate_time">Auto-generation Time</string>
+  <string name="diary_assistant_title_format">%s\'s Diary</string>
+  <string name="diary_settings">Diary Settings</string>
+  <string name="diary_auto_generate">Auto-generate Diary</string>
+  <string name="diary_auto_generate_time_label">Auto-generate Time</string>
 
 
 </resources>

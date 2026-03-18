@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -27,10 +26,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Psychology
-import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.model.Assistant
-import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.utils.toLocalString
 
 @Composable
@@ -40,9 +37,9 @@ fun AssistantMemoryConsolidationSubPage(
     onUpdate: (Assistant) -> Unit,
     onConsolidate: (Boolean) -> Unit
 ) {
-    val episodes: List<ChatEpisodeEntity> by vm.episodes.collectAsStateWithLifecycle(initialValue = emptyList())
+    val episodes by vm.episodes.collectAsStateWithLifecycle()
     val stats by vm.episodeStats.collectAsStateWithLifecycle()
-    val snackbarMessage: String? by vm.snackbarMessage.collectAsStateWithLifecycle(initialValue = null)
+    val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.padding(16.dp),

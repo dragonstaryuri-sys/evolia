@@ -13,11 +13,13 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.DiaryRepository
 
 class AssistantVM(
     private val settingsStore: SettingsStore,
     private val memoryRepository: MemoryRepository,
     private val conversationRepo: ConversationRepository,
+    private val diaryRepo: DiaryRepository,
     private val appScope: me.rerere.rikkahub.AppScope
 ) : ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
@@ -83,6 +85,7 @@ class AssistantVM(
             kotlinx.coroutines.delay(4000) // 4 seconds to undo
             memoryRepository.deleteMemoriesOfAssistant(assistant.id.toString())
             conversationRepo.deleteConversationOfAssistant(assistant.id)
+            diaryRepo.deleteDiariesOfAssistant(assistant.id.toString())
             deletionJobs.remove(assistant.id)
         }
         deletionJobs[assistant.id] = job

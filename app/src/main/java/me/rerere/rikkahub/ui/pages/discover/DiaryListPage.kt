@@ -1,11 +1,13 @@
 package me.rerere.rikkahub.ui.pages.discover
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,35 +18,58 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import org.koin.androidx.compose.koinViewModel
+import java.util.Locale
 
 @Composable
-fun DiaryListPage(vm: DiaryVM = koinViewModel()) {
-    val diaries by vm.diaries.collectAsStateWithLifecycle()
+fun DiaryListPage(
+    assistantId: String? = null,
+    vm: DiaryVM = koinViewModel()
+) {
+    val navController = LocalNavController.current
+    val assistants by vm.assistants.collectAsStateWithLifecycle()
     val isGenerating by vm.isGenerating.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
     var diaryToDelete by remember { mutableStateOf<AgentDiaryEntity?>(null) }
+    var showSettings by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    val diaries by remember(assistantId) { vm.getDiaries(assistantId) }.collectAsStateWithLifecycle(emptyList())
+    val currentAssistant = remember(assistantId, assistants) {
+        assistants.find { it.id.toString() == assistantId }
+    }
 
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = stringResource(R.string.discover_page_diary_title),
+                title = if (assistantId == null) {
+                    stringResource(R.string.discover_page_diary_title)
+                } else {
+                    stringResource(R.string.diary_assistant_title_format, currentAssistant?.name ?: "")
+                },
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
                 actions = {
-                    if (isGenerating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        IconButton(onClick = { vm.generateTodayDiary(toaster) }) {
-                            Icon(Icons.Rounded.Add, null)
+                    if (assistantId != null) {
+                        if (isGenerating) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            IconButton(onClick = { vm.generateTodayDiary(assistantId, toaster) }) {
+                                Icon(Icons.Rounded.Add, null)
+                            }
+                        }
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Rounded.Settings, null)
                         }
                     }
                 }
@@ -52,25 +77,43 @@ fun DiaryListPage(vm: DiaryVM = koinViewModel()) {
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { padding ->
-        if (diaries.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    text = stringResource(R.string.discover_page_diary_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
+        if (assistantId == null) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = padding + PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(diaries, key = { it.id }) { diary ->
-                    DiaryItem(
-                        diary = diary,
-                        onDelete = { diaryToDelete = diary }
+                items(assistants, key = { it.id }) { assistant ->
+                    AgentDiaryCard(
+                        name = assistant.name,
+                        avatar = assistant.avatar,
+                        onClick = {
+                            navController.navigate(Screen.DiaryList(assistantId = assistant.id.toString()))
+                        }
                     )
+                }
+            }
+        } else {
+            if (diaries.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(R.string.discover_page_diary_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = padding + PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(diaries, key = { it.id }) { diary ->
+                        DiaryItem(
+                            diary = diary,
+                            onDelete = { diaryToDelete = diary }
+                        )
+                    }
                 }
             }
         }
@@ -97,6 +140,47 @@ fun DiaryListPage(vm: DiaryVM = koinViewModel()) {
                 }
             }
         )
+    }
+
+    if (showSettings && assistantId != null && currentAssistant != null) {
+        DiarySettingsDialog(
+            enableAuto = currentAssistant.enableAutoDiary,
+            autoTime = currentAssistant.autoDiaryTime,
+            onDismiss = { showSettings = false },
+            onSave = { enable, time ->
+                vm.updateAssistantDiarySettings(assistantId, enable, time)
+                showSettings = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun AgentDiaryCard(
+    name: String,
+    avatar: me.rerere.rikkahub.core.data.model.Avatar,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UIAvatar(name = name, value = avatar, modifier = Modifier.size(48.dp))
+            Spacer(Modifier.width(16.dp))
+            Text(
+                text = stringResource(R.string.diary_assistant_title_format, name),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 
@@ -140,6 +224,98 @@ private fun DiaryItem(
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DiarySettingsDialog(
+    enableAuto: Boolean,
+    autoTime: String,
+    onDismiss: () -> Unit,
+    onSave: (Boolean, String) -> Unit
+) {
+    var enable by remember { mutableStateOf(enableAuto) }
+    var time by remember { mutableStateOf(autoTime) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    val timeParts = remember(time) { time.split(":").mapNotNull { it.toIntOrNull() }.let { if (it.size == 2) it else listOf(23, 59) } }
+    val timePickerState = rememberTimePickerState(
+        initialHour = timeParts[0],
+        initialMinute = timeParts[1],
+        is24Hour = true
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.diary_settings)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(stringResource(R.string.diary_auto_generate))
+                    Switch(checked = enable, onCheckedChange = { enable = it })
+                }
+                if (enable) {
+                    OutlinedCard(
+                        onClick = { showTimePicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(stringResource(R.string.diary_auto_generate_time_label))
+                            Text(
+                                text = time,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(enable, time) }) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+
+    if (showTimePicker) {
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        time = String.format(Locale.getDefault(), "%02d:%02d", timePickerState.hour, timePickerState.minute)
+                        showTimePicker = false
+                    }
+                ) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.diary_select_time)) },
+            text = {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        )
     }
 }
 

@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.HistoryEdu
+import androidx.compose.material.icons.rounded.CleanHands
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -57,6 +58,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -145,6 +147,8 @@ fun AssistantMemorySettings(
         }
     }
 
+    val isOptimizing by assistantDetailVM.isOptimizing.collectAsStateWithLifecycle()
+
     // Completion Notification Listener
     LaunchedEffect(assistant.lastConsolidationTime) {
         if (assistant.lastConsolidationTime > 0) {
@@ -167,6 +171,25 @@ fun AssistantMemorySettings(
                         progress = { embeddingProgress.current.toFloat() / embeddingProgress.total.coerceAtLeast(1) },
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+            },
+            confirmButton = { }
+        )
+    }
+
+    // Optimization progress dialog
+    if (isOptimizing) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(stringResource(R.string.memory_optimizing)) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(stringResource(R.string.memory_optimizing), style = MaterialTheme.typography.bodyMedium)
                 }
             },
             confirmButton = { }
@@ -423,6 +446,7 @@ fun AssistantMemorySettings(
                     onEditMemory = { memoryDialogState.open(it) },
                     onDeleteMemory = onDeleteMemory,
                     onRegenerateEmbeddings = onRegenerateEmbeddings,
+                    onOptimizeMemories = { assistantDetailVM.optimizeMemories() },
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     memorySearchQuery = memorySearchQuery,
                     onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
@@ -1005,6 +1029,7 @@ private fun ManageMemoriesSection(
     onEditMemory: (AssistantMemory) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit,
     onRegenerateEmbeddings: (() -> Unit)?,
+    onOptimizeMemories: () -> Unit,
     needsEmbeddingRegeneration: Boolean,
     memorySearchQuery: String,
     onSearchQueryChange: (String) -> Unit,
@@ -1070,6 +1095,11 @@ private fun ManageMemoriesSection(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Optimization button
+                IconButton(onClick = onOptimizeMemories) {
+                    Icon(Icons.Rounded.CleanHands, contentDescription = stringResource(R.string.memory_action_optimize))
+                }
+
                 // Sort button
                 Box {
                     IconButton(onClick = { showSortMenu = true }) {

@@ -321,7 +321,23 @@ class ChatService(
                     val searchMode = assistant.searchMode
                     if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) addAll(createSearchTool(settings, searchMode.index))
                     addAll(localTools.getTools(options = assistant.localTools, assistantId = assistant.id, conversationId = conversation.id, userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()?.map { it.url } ?: emptyList()))
-                    mcpManager.getAllAvailableTools().forEach { tool -> add(Tool(name = tool.name, description = tool.description ?: "", parameters = { tool.inputSchema }, execute = { mcpManager.callTool(tool.name, it.jsonObject).truncateLargeJsonText() })) }
+
+                    // 修复工具名称不合法导致的 Google Provider 报错
+                    val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
+                    mcpManager.getAllAvailableTools().forEach { mcpTool ->
+                        val originalName = mcpTool.name
+                        // 处理名称：替换非法字符为下划线，确保以字母或下划线开头
+                        val sanitizedName = originalName.replace(nameRegex, "_").let {
+                            if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
+                        }
+
+                        add(Tool(
+                            name = sanitizedName,
+                            description = mcpTool.description ?: "",
+                            parameters = { mcpTool.inputSchema },
+                            execute = { mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText() }
+                        ))
+                    }
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
