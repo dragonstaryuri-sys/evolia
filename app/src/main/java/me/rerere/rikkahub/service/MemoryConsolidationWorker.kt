@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.LocalDate
+import java.util.Locale
 
 private const val TAG = "MemoryConsolidation"
 
@@ -200,16 +201,10 @@ class MemoryConsolidationWorker(
         val messages = conversation.currentMessages
         val text = messages.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
 
-        val prompt = """
-            Summarize the key events, information, and user preferences from the following conversation.
-            Focus on specific facts that might be useful for future interactions.
-            Keep it concise (1-3 paragraphs).
-
-            Conversation:
-            $text
-
-            Summary:
-        """.trimIndent()
+        val locale = Locale.getDefault().displayName
+        val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+            .replace("{{text}}", text)
+            .replace("{{locale}}", locale)
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = h.generateText(

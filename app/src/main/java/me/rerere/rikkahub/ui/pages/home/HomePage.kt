@@ -16,6 +16,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,7 +44,7 @@ enum class HomeTab {
 
 @Composable
 fun HomePage() {
-    var currentTab by remember { mutableStateOf(HomeTab.CHATS) }
+    var currentTab by rememberSaveable { mutableStateOf(HomeTab.CHATS) }
     val navController = LocalNavController.current
 
     Scaffold(

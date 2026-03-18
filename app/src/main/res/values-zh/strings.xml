@@ -1216,6 +1216,7 @@
   <!-- 记忆操作 -->
   <string name="memory_action_regenerate_embeddings">重新生成嵌入</string>
   <string name="memory_action_add">添加记忆</string>
+  <string name="assistant_prompt_variables_hint">可用变量: %s</string>
 
   <!-- 整合结果 -->
   <string name="consolidation_result_episodes">已整合 %d 个对话片段。 </string>

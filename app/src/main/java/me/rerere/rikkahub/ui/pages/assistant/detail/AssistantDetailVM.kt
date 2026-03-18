@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -30,9 +29,10 @@ import me.rerere.rikkahub.core.data.model.Tag
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
+import me.rerere.rikkahub.service.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
-import kotlinx.serialization.decodeFromString
+import java.util.Locale
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
@@ -95,7 +95,6 @@ class AssistantDetailVM(
         )
     }.stateIn(viewModelScope, SharingStarted.Lazily, EpisodeStats(0, 0.0, 0))
 
-    // --- 补全 AssistantPromptSubPage 需要的属性 ---
     val systemPromptTokenCount: StateFlow<Int> = assistant.map { estimateTokens(it.systemPrompt) }
         .stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
@@ -197,17 +196,10 @@ class AssistantDetailVM(
                         includeEpisodes = true
                     ).joinToString("\n") { "Context: ${it.content}" }
 
-                    val prompt = """
-                        You are a memory manager. Optimize this group of related memories:
-                        $groupText
-                        Relevant Context:
-                        $contextEpisodic
-                        Goals:
-                        1. MERGE: Combine highly similar ones.
-                        2. CONFLICT: Keep only latest/most accurate.
-                        Return JSON array of operations:
-                        [{"op": "update", "id": 1, "content": "..."}, {"op": "delete", "id": 2}, {"op": "add", "content": "..."}]
-                    """.trimIndent()
+                    val prompt = DEFAULT_MEMORY_OPTIMIZATION_PROMPT
+                        .replace("{{groupText}}", groupText)
+                        .replace("{{contextEpisodic}}", contextEpisodic)
+                        .replace("{{locale}}", Locale.getDefault().displayName)
 
                     val response = handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
                     val resultText = response.choices.firstOrNull()?.message?.toContentText() ?: ""

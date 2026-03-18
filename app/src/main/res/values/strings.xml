@@ -1298,6 +1298,7 @@
   <string name="assistant_memory_use_rag_retrieval_title">Vector Retrieval (RAG)</string>
   <string name="assistant_memory_use_rag_retrieval_desc">Use semantic search to find relevant memories</string>
   <string name="assistant_memory_similarity_threshold_title">Similarity Threshold</string>
+  <string name="assistant_prompt_variables_hint">Available variables: %s</string>
   <!-- Consolidation Results -->
   <string name="consolidation_result_episodes">Consolidated %d episodes. </string>
   <string name="consolidation_result_master_updated">Memory Archive updated. </string>

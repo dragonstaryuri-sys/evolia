@@ -1,90 +1,39 @@
 package me.rerere.rikkahub.ui.pages.setting
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavHostController
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountTree
-import androidx.compose.material.icons.rounded.Build
-import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Cloud
-import androidx.compose.material.icons.rounded.CloudUpload
-import androidx.compose.material.icons.rounded.Code
-import androidx.compose.material.icons.rounded.DesktopWindows
-import androidx.compose.material.icons.rounded.Group
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.InvertColors
-import androidx.compose.material.icons.rounded.Public
-import androidx.compose.material.icons.rounded.RecordVoiceOver
-import androidx.compose.material.icons.rounded.Storage
-import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material.icons.rounded.PhoneAndroid
-import androidx.compose.material.icons.rounded.Translate
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
+import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.utils.countChatFiles
-import me.rerere.rikkahub.utils.openUrl
-import me.rerere.rikkahub.utils.plus
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import org.koin.androidx.compose.koinViewModel
+import me.rerere.rikkahub.utils.openUrl
+import me.rerere.rikkahub.utils.UpdateChecker
+import me.rerere.rikkahub.utils.UiState
+import org.koin.compose.koinInject
+import okhttp3.OkHttpClient
 
 @Composable
 fun SettingPage(vm: SettingVM = koinViewModel()) {
@@ -131,8 +80,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             // Update Available Banner
             item {
                 UpdateAvailableBanner(
-                    checkForUpdates = settings.displaySetting.checkForUpdates,
-                    navController = navController
+                    checkForUpdates = settings.displaySetting.checkForUpdates
                 )
             }
 
@@ -151,10 +99,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                 selectedOption = colorMode,
                                 onOptionSelected = {
                                     colorMode = it
-                                    navController.navigate(Screen.Setting) {
-                                        launchSingleTop = true
-                                        popUpTo(Screen.Setting) { inclusive = true }
-                                    }
                                 },
                                 optionToString = {
                                     when (it) {
@@ -297,33 +241,24 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     }
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
-                        subtitle = if (storageState.first == -1) {
-                            stringResource(R.string.calculating)
-                        } else {
-                            stringResource(
-                                R.string.setting_page_chat_storage_desc,
-                                storageState.first,
-                                storageState.second / 1024 / 1024.0
-                            )
-                        },
-                        icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) }
+                        // FIXED: Added .toDouble() to fix IllegalFormatConversionException
+                        subtitle = stringResource(R.string.setting_page_chat_storage_desc, storageState.first, storageState.second.toDouble() / 1024 / 1024),
+                        icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = android.net.Uri.fromParts("package", context.packageName, null)
+                            }
+                            context.startActivity(intent)
+                        }
                     )
                 }
             }
 
-            // About Section
             item {
+                val context = LocalContext.current
                 SettingsGroup(
                     title = stringResource(R.string.setting_page_about)
                 ) {
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_page_about),
-                        subtitle = stringResource(R.string.setting_page_about_desc),
-                        icon = { Icon(Icons.Rounded.Info, null, modifier = Modifier.size(20.dp)) },
-                        onClick = { navController.navigate(Screen.SettingAbout) }
-                    )
-
-                    val context = LocalContext.current
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_donate_coffee),
                         subtitle = stringResource(R.string.setting_page_donate_coffee_desc),
@@ -332,7 +267,17 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             context.openUrl("https://buymeacoffee.com/cocolalilal")
                         }
                     )
+                    SettingGroupItem(
+                        title = stringResource(R.string.about_page_title),
+                        subtitle = stringResource(R.string.setting_page_about_desc),
+                        icon = { Icon(Icons.Rounded.Info, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingAbout) }
+                    )
                 }
+            }
+
+            item {
+                Spacer(modifier = Modifier.padding(16.dp))
             }
         }
     }
@@ -341,200 +286,92 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 private data class LanguageOption(val name: String, val tag: String)
 
 @Composable
-private fun ProviderConfigWarningCard(navController: NavHostController) {
-    Card(
-        onClick = { navController.navigate(Screen.SettingProvider) },
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        ),
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+private fun ProviderConfigWarningCard(navController: androidx.navigation.NavController) {
+    Surface(
+        modifier = Modifier
+            .padding(16.dp)
+            .fillMaxWidth(),
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = MaterialTheme.shapes.medium,
+        onClick = { navController.navigate(Screen.SettingProvider) }
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Rounded.Warning,
-                contentDescription = null,
+                Icons.Rounded.Cloud,
+                null,
                 tint = MaterialTheme.colorScheme.onErrorContainer
             )
-            Column(modifier = Modifier.weight(1f)) {
+            Spacer(Modifier.width(16.dp))
+            Column {
                 Text(
-                    text = stringResource(R.string.setting_page_config_api_title),
-                    style = MaterialTheme.typography.titleSmall,
+                    stringResource(R.string.setting_page_config_api_title),
+                    style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )
                 Text(
-                    text = stringResource(R.string.setting_page_config_api_desc),
+                    stringResource(R.string.setting_page_config_api_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
                 )
             }
-            Icon(
-                imageVector = Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer
-            )
         }
-    }
-}
-
-@Composable
-fun SettingItem(
-    navController: NavHostController,
-    title: @Composable () -> Unit,
-    description: @Composable () -> Unit,
-    icon: @Composable () -> Unit,
-    link: Screen? = null,
-    onClick: () -> Unit = {}
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val haptics = rememberPremiumHaptics()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
-        label = "setting_scale"
-    )
-    val alpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.8f else 1f,
-        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-        label = "setting_alpha"
-    )
-
-    Surface(
-        onClick = {
-            haptics.perform(HapticPattern.Tick)
-            if (link != null) navController.navigate(link)
-            onClick()
-        },
-        interactionSource = interactionSource,
-        modifier = Modifier.graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-            this.alpha = alpha
-        }
-    ) {
-        ListItem(
-            headlineContent = {
-                title()
-            },
-            supportingContent = {
-                description()
-            },
-            leadingContent = {
-                icon()
-            }
-        )
     }
 }
 
 @Composable
 private fun UpdateAvailableBanner(
-    checkForUpdates: Boolean,
-    navController: NavHostController
+    checkForUpdates: Boolean
 ) {
     if (!checkForUpdates) return
 
-    val updateChecker = org.koin.compose.koinInject<me.rerere.rikkahub.utils.UpdateChecker>()
-    // Remember the flow to prevent creating a new one on each recomposition
-    val updateFlow = remember(updateChecker) { updateChecker.checkUpdate() }
-    val updateState by updateFlow.collectAsStateWithLifecycle(initialValue = me.rerere.rikkahub.utils.UiState.Loading)
-    var showUpdateDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val okHttpClient = koinInject<OkHttpClient>()
+    val updateChecker = remember { UpdateChecker(okHttpClient) }
+    val updateFlow = remember(updateChecker) { updateChecker.checkUpdate() }
+    val updateState by updateFlow.collectAsStateWithLifecycle(initialValue = UiState.Loading)
 
-    when (val state = updateState) {
-        is me.rerere.rikkahub.utils.UiState.Success -> {
-            val updateInfo = state.data
-            val currentVersion = me.rerere.rikkahub.BuildConfig.VERSION_NAME
-            val isNewer = me.rerere.rikkahub.utils.Version(updateInfo.version) > me.rerere.rikkahub.utils.Version(currentVersion)
-
-            if (isNewer && updateInfo.downloads.isNotEmpty()) {
-                Card(
-                    onClick = { showUpdateDialog = true },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.update_banner_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Text(
-                                text = stringResource(R.string.update_banner_desc, updateInfo.version),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.Rounded.ChevronRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
+    if (updateState is UiState.Success) {
+        val updateInfo = (updateState as UiState.Success).data
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .fillMaxWidth(),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = MaterialTheme.shapes.medium,
+            onClick = {
+                updateInfo.downloads.firstOrNull()?.let {
+                    context.openUrl(it.url)
                 }
-
-                if (showUpdateDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showUpdateDialog = false },
-                        title = { Text(stringResource(R.string.update_dialog_title, updateInfo.version)) },
-                        text = {
-                            Column(
-                                modifier = Modifier.verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.update_dialog_changelog),
-                                    style = MaterialTheme.typography.titleSmall
-                                )
-                                Text(
-                                    text = updateInfo.changelog.ifEmpty { stringResource(R.string.update_dialog_no_changelog) },
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    updateInfo.downloads.firstOrNull()?.let { download ->
-                                        updateChecker.downloadUpdate(context, download)
-                                    }
-                                    showUpdateDialog = false
-                                }
-                            ) {
-                                Text(stringResource(R.string.update_dialog_download))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showUpdateDialog = false }) {
-                                Text(stringResource(R.string.update_dialog_later))
-                            }
-                        }
+            }
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Rounded.Public,
+                    null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text(
+                        stringResource(R.string.update_banner_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        updateInfo.changelog,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
             }
         }
-        else -> { /* Loading or Error - don't show anything */ }
     }
 }

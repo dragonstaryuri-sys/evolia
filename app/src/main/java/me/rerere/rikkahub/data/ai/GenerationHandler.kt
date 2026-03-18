@@ -109,7 +109,8 @@ class GenerationHandler(
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
-
+        //定义搜索计数器
+        var searchCount = 0
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
@@ -207,6 +208,18 @@ class GenerationHandler(
             val toolCalls = messages.last().getToolCalls()
             if (toolCalls.isEmpty()) {
                 // no tool calls, break
+                break
+            }
+            // 在这里进行搜索次数统计与拦截
+            if (toolCalls.any { it.toolName == "search_web" }) {
+                searchCount++
+                Log.d(TAG, "generateText: 当前搜索次数: $searchCount")
+            }
+
+            // 如果搜索太频繁，强制终止，防止死循环和 Token 爆炸
+            if (searchCount > 3) {
+                Log.w(TAG, "generateText: 搜索次数达到上限，强制停止以保护上下文空间")
+                // 可以在这里给 messages 手动加一条系统提示，告诉 AI 别再搜了（可选）
                 break
             }
             // handle tool calls

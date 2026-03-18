@@ -500,12 +500,13 @@ class ChatService(
             val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()
             if (toSummarize.isEmpty()) return@withContext ContextRefreshResult(false)
             val text = toSummarize.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
-            val tempPrompt = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }.replace("{{new_messages}}", text)
+            val locale = Locale.getDefault().displayName
+            val tempPrompt = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }.replace("{{new_messages}}", text).replace("{{locale}}", locale)
             val tempResp = handler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
             if (tempSum.isNotBlank()) memoryRepository.addMemory(assistant.id.toString(), "Recent: $tempSum", type = MemoryType.EPISODIC)
             val currentSummary = conv.contextSummary
-            val fullPrompt = if (!currentSummary.isNullOrBlank()) assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }.replace("{{previous_summary}}", currentSummary).replace("{{new_messages}}", text) else "Summarize:\n$text"
+            val fullPrompt = if (!currentSummary.isNullOrBlank()) assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }.replace("{{previous_summary}}", currentSummary).replace("{{new_messages}}", text).replace("{{locale}}", locale) else "Summarize:\n$text"
             val fullResp = handler.generateText(provider, listOf(UIMessage.user(fullPrompt)), TextGenerationParams(model, 0.3f))
             val fullSum = fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(false)
             val updated = conv.copy(contextSummary = fullSum, temporarySummaries = conv.temporarySummaries + tempSum, contextSummaryUpToIndex = lastIdx, lastRefreshTime = System.currentTimeMillis())

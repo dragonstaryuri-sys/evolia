@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.service
 
+/**
+ * 助手相关的提示词汇总
+ */
+
 const val DEFAULT_MASTER_MEMORY_PROMPT = """
 # Role: Master Memory Architect
 You are responsible for maintaining a structured "Master Memory File" for the current agent. This file provides a global overview of the entire relationship, user background, and current objectives.
@@ -59,6 +63,7 @@ Create an updated summary that:
 - Incorporates new information from recent messages
 - Keeps the summary under 500 words
 - Focuses on: main topics, key decisions, pending tasks, user preferences
+- Output language: {{locale}}
 
 Updated Summary:
 """
@@ -66,9 +71,38 @@ Updated Summary:
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
 Summarize the following recent exchange briefly. Focus on specific details, facts, or data points discussed in this segment.
 Keep it concise (1-2 paragraphs).
+Output language: {{locale}}
 
 **Recent Exchange:**
 {{new_messages}}
+
+Summary:
+"""
+
+const val DEFAULT_MEMORY_OPTIMIZATION_PROMPT = """
+You are a memory manager. Optimize this group of related memories:
+{{groupText}}
+
+Relevant Context:
+{{contextEpisodic}}
+
+Goals:
+1. MERGE: Combine highly similar ones.
+2. CONFLICT: Keep only latest/most accurate.
+3. LANGUAGE: Output the new content in {{locale}}.
+
+Return JSON array of operations:
+[{"op": "update", "id": 1, "content": "..."}, {"op": "delete", "id": 2}, {"op": "add", "content": "..."}]
+"""
+
+const val DEFAULT_EPISODIC_CONSOLIDATION_PROMPT = """
+Summarize the key events, information, and user preferences from the following conversation.
+Focus on specific facts that might be useful for future interactions.
+Keep it concise (1-3 paragraphs).
+Output language: {{locale}}
+
+Conversation:
+{{text}}
 
 Summary:
 """

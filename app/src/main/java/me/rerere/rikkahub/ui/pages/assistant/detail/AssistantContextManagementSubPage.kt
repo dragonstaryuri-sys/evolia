@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -81,7 +86,6 @@ fun AssistantContextManagementSubPage(
         // ═══════════════════════════════════════════════════════════════════
 
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
-            // Warning banner when message summarization is enabled but no summarizer model is set
             val needsSummarizerWarning = assistant.enableContextRefresh && assistant.summarizerModelId == null
             AnimatedVisibility(
                 visible = needsSummarizerWarning,
@@ -91,7 +95,6 @@ fun AssistantContextManagementSubPage(
                 SummarizerWarningBanner(onClick = onNavigateToModels)
             }
 
-            // 1. Message summarization toggle
             SettingGroupItem(
                 title = stringResource(R.string.assistant_context_refresh_title),
                 subtitle = stringResource(R.string.assistant_context_refresh_desc),
@@ -115,7 +118,6 @@ fun AssistantContextManagementSubPage(
                 }
             )
 
-            // 2. Auto-summarize toggle
             AnimatedVisibility(
                 visible = assistant.enableContextRefresh,
                 enter = fadeIn() + expandVertically(),
@@ -138,7 +140,6 @@ fun AssistantContextManagementSubPage(
                 )
             }
 
-            // 3. History limit slider
             AnimatedVisibility(
                 visible = assistant.enableContextRefresh && assistant.autoRegenerateSummary,
                 enter = fadeIn() + expandVertically(),
@@ -164,7 +165,6 @@ fun AssistantContextManagementSubPage(
                 )
             }
 
-            // 4. Temporary Summaries Limit (Episodic)
             AnimatedVisibility(
                 visible = assistant.enableContextRefresh,
                 enter = fadeIn() + expandVertically(),
@@ -203,7 +203,7 @@ fun AssistantContextManagementSubPage(
                     stringResource(R.string.context_max_search_results, searchSliderValue.roundToInt())
                 },
                 value = searchSliderValue,
-                valueText = "", // Title already shows the value
+                valueText = "",
                 description = stringResource(R.string.context_max_search_results_desc),
                 onValueChange = { searchSliderValue = it },
                 onValueChangeFinished = {
@@ -230,28 +230,94 @@ fun AssistantContextManagementSubPage(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    OutlinedTextField(
-                        value = assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT },
-                        onValueChange = { onUpdate(assistant.copy(fullSummaryPrompt = it)) },
-                        label = { Text(stringResource(R.string.assistant_context_full_summary_prompt_label)) },
-                        placeholder = { Text(stringResource(R.string.assistant_context_full_summary_prompt_desc)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3
-                    )
+                    // Full Summary Prompt
+                    Column {
+                        OutlinedTextField(
+                            value = assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT },
+                            onValueChange = { onUpdate(assistant.copy(fullSummaryPrompt = it)) },
+                            label = { Text(stringResource(R.string.assistant_context_full_summary_prompt_label)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3
+                        )
+                        VariableHintRow(
+                            variables = listOf("{{previous_summary}}", "{{new_messages}}", "{{locale}}"),
+                            onVariableClick = { v ->
+                                onUpdate(assistant.copy(fullSummaryPrompt = assistant.fullSummaryPrompt + v))
+                            }
+                        )
+                    }
 
-                    OutlinedTextField(
-                        value = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT },
-                        onValueChange = { onUpdate(assistant.copy(temporarySummaryPrompt = it)) },
-                        label = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_label)) },
-                        placeholder = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_desc)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3
-                    )
+                    // Temporary Summary Prompt
+                    Column {
+                        OutlinedTextField(
+                            value = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT },
+                            onValueChange = { onUpdate(assistant.copy(temporarySummaryPrompt = it)) },
+                            label = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_label)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            minLines = 3
+                        )
+                        VariableHintRow(
+                            variables = listOf("{{new_messages}}", "{{locale}}"),
+                            onVariableClick = { v ->
+                                onUpdate(assistant.copy(temporarySummaryPrompt = assistant.temporarySummaryPrompt + v))
+                            }
+                        )
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun VariableHintRow(
+    variables: List<String>,
+    onVariableClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.padding(top = 8.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(bottom = 4.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Info,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = stringResource(R.string.assistant_page_available_variables),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            variables.forEach { variable ->
+                AssistChip(
+                    onClick = { onVariableClick(variable) },
+                    label = {
+                        Text(
+                            text = variable,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        labelColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = null,
+                    modifier = Modifier.height(28.dp)
+                )
+            }
+        }
     }
 }
 
