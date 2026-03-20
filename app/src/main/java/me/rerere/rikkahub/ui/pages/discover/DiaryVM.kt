@@ -3,29 +3,24 @@ package me.rerere.rikkahub.ui.pages.discover
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.findModelById
-import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
-import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
+import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.AppToasterState
-import me.rerere.rikkahub.utils.applyPlaceholders
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 class DiaryVM(
     private val app: Application,
     private val settingsStore: SettingsStore,
     private val diaryRepo: DiaryRepository,
-    private val conversationRepo: ConversationRepository,
-    private val generationHandler: GenerationHandler,
 ) : AndroidViewModel(app) {
     val settings = settingsStore.settingsFlow
 
@@ -38,6 +33,8 @@ class DiaryVM(
         diaryRepo.getDiariesByAssistant(assistantId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // 由于生成逻辑移到了 WorkManager，UI 上的加载状态可以根据 WorkInfo 来观察（可选）
+    // 这里暂时保持精简，直接通过通知告知结果
     private val _isGenerating = MutableStateFlow(false)
     val isGenerating = _isGenerating.asStateFlow()
 
@@ -49,83 +46,22 @@ class DiaryVM(
             currentSettings.getCurrentAssistant()
         } ?: return
 
-        val today = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+        // 提交后台任务，带上 isManual=true
+        val workRequest = OneTimeWorkRequestBuilder<DiaryWorker>()
+            .setInputData(workDataOf(
+                "assistantId" to assistant.id.toString(),
+                "isManual" to true
+            ))
+            .addTag("diary_gen")
+            .build()
 
-        viewModelScope.launch {
-            if (_isGenerating.value) return@launch
+        WorkManager.getInstance(app).enqueueUniqueWork(
+            "diary_gen_${assistant.id}",
+            ExistingWorkPolicy.KEEP,
+            workRequest
+        )
 
-            // Check if already generated today
-            val existing = diaryRepo.getDiaryByDate(assistant.id.toString(), today)
-            if (existing != null) {
-                toaster?.show(app.getString(R.string.diary_already_generated), type = ToastType.Info)
-                return@launch
-            }
-
-            _isGenerating.value = true
-            try {
-                // 1. Get today's chat history for this assistant
-                val conversations = conversationRepo.getConversationsOfAssistant(assistant.id).first()
-                val todayConversations = conversations.filter {
-                    val date = java.time.Instant.ofEpochMilli(it.updateAt.toEpochMilli())
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDate()
-                    date == LocalDate.now()
-                }
-
-                if (todayConversations.isEmpty()) {
-                    toaster?.show(app.getString(R.string.discover_page_diary_no_chat_today), type = ToastType.Error)
-                    return@launch
-                }
-
-                val fullContent = todayConversations.joinToString("\n---\n") { conv ->
-                    "Conversation: ${conv.title}\n" + conv.messageNodes.flatMap { node ->
-                        node.messages.map { "${it.role}: ${it.toText()}" }
-                    }.joinToString("\n")
-                }
-
-                // 2. Use AI to generate diary
-                val diaryModelId = assistant.diaryModelId ?: currentSettings.diaryModelId
-                val model = currentSettings.findModelById(diaryModelId)
-                    ?: currentSettings.findModelById(currentSettings.chatModelId)
-                    ?: error("No model available for diary generation")
-
-                val prompt = currentSettings.diaryPrompt.applyPlaceholders(
-                    "content" to fullContent,
-                    "char" to assistant.name,
-                    "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" })
-                )
-
-                var generatedContent = ""
-                generationHandler.generateText(
-                    settings = currentSettings,
-                    model = model,
-                    messages = listOf(UIMessage.user(prompt)),
-                    assistant = assistant
-                ).collect { chunk ->
-                    when (chunk) {
-                        is me.rerere.rikkahub.data.ai.GenerationChunk.Messages -> {
-                            generatedContent = chunk.messages.lastOrNull()?.toText() ?: ""
-                        }
-                    }
-                }
-
-                if (generatedContent.isNotBlank()) {
-                    // 3. Save to DB
-                    val diary = AgentDiaryEntity(
-                        assistantId = assistant.id.toString(),
-                        content = generatedContent,
-                        date = today
-                    )
-                    diaryRepo.insertDiary(diary)
-                    toaster?.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                toaster?.show(app.getString(R.string.diary_generate_failed, e.message), type = ToastType.Error)
-            } finally {
-                _isGenerating.value = false
-            }
-        }
+        toaster?.show(app.getString(R.string.discover_page_diary_generating), type = ToastType.Info)
     }
 
     fun deleteDiary(id: String) {

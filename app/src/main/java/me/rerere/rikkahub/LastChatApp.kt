@@ -24,14 +24,19 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.SpontaneousWorker
+import me.rerere.rikkahub.service.BackupWorker
+import me.rerere.rikkahub.service.DiarySchedulerWorker
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -41,6 +46,7 @@ import com.chaquo.python.android.AndroidPlatform
 private const val TAG = "LastChatApp"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
+const val BACKUP_NOTIFICATION_CHANNEL_ID = "backup_status"
 
 class LastChatApp : Application() {
     override fun onCreate() {
@@ -78,6 +84,19 @@ class LastChatApp : Application() {
             "spontaneous_notification",
             ExistingPeriodicWorkPolicy.UPDATE,
             PeriodicWorkRequestBuilder<SpontaneousWorker>(30, TimeUnit.MINUTES)
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .build()
+        )
+
+        // Schedule Diary Scheduler Worker
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "diary_scheduler",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<DiarySchedulerWorker>(30, TimeUnit.MINUTES)
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -139,6 +158,25 @@ class LastChatApp : Application() {
                 }
             }
         }
+
+        // Auto backup on start
+        get<AppScope>().launch {
+            val settings = get<SettingsStore>().settingsFlow.first { !it.init }
+            if (settings.autoBackupOnStart && settings.webDavConfig.url.isNotBlank()) {
+                Log.i(TAG, "Auto backup on start triggered")
+                WorkManager.getInstance(this@LastChatApp).enqueueUniqueWork(
+                    "auto_backup_on_start",
+                    ExistingWorkPolicy.REPLACE,
+                    OneTimeWorkRequestBuilder<BackupWorker>()
+                        .setConstraints(
+                            Constraints.Builder()
+                                .setRequiredNetworkType(NetworkType.CONNECTED)
+                                .build()
+                        )
+                        .build()
+                )
+            }
+        }
     }
 
     private fun deleteTempFiles() {
@@ -152,6 +190,7 @@ class LastChatApp : Application() {
 
     private fun createNotificationChannel() {
         val notificationManager = NotificationManagerCompat.from(this)
+
         val chatCompletedChannel = NotificationChannelCompat
             .Builder(
                 CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
@@ -161,6 +200,15 @@ class LastChatApp : Application() {
             .setVibrationEnabled(true)
             .build()
         notificationManager.createNotificationChannel(chatCompletedChannel)
+
+        val backupChannel = NotificationChannelCompat
+            .Builder(
+                BACKUP_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_LOW
+            )
+            .setName(getString(R.string.notification_channel_backup))
+            .build()
+        notificationManager.createNotificationChannel(backupChannel)
     }
 
     override fun onTerminate() {

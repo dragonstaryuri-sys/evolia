@@ -66,29 +66,70 @@ class WebdavSync(
         ) { response ->
             LogUtil.i(TAG, "backupToWebDav: $response")
         }
+        // 备份完成后执行清理
+        cleanupOldBackups(webDavConfig)
+    }
+    // 新增清理函数
+    private suspend fun cleanupOldBackups(webDavConfig: WebDavConfig) {
+        try {
+            val maxFiles = webDavConfig.maxBackupFiles
+            if (maxFiles <= 0) return
+
+            // 获取所有备份文件并按时间降序排序（最新的在前）
+            val files = listBackupFiles(webDavConfig).sortedByDescending { it.lastModified }
+
+            if (files.size > maxFiles) {
+                val toDelete = files.drop(maxFiles) // 保留前N个，其余删除
+                LogUtil.i(TAG, "Cleaning up ${toDelete.size} old backups, keeping latest $maxFiles")
+                toDelete.forEach { item ->
+                    deleteWebDavBackupFile(webDavConfig, item)
+                }
+            }
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Failed to cleanup old backups", e)
+        }
     }
 
     suspend fun listBackupFiles(webDavConfig: WebDavConfig): List<WebDavBackupItem> =
         withContext(Dispatchers.IO) {
             val collection = webDavConfig.requireCollection()
             val files = mutableListOf<WebDavBackupItem>()
+            val nameDateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
+
             collection.propfind(
                 depth = 1,
             ) { response, relation ->
-                LogUtil.i(TAG, "listBackupFiles: ${response.properties} ${response.href}")
                 if (relation == DavResponse.HrefRelation.MEMBER) {
                     val displayName = response.properties.filterIsInstance<DisplayName>()
                         .firstOrNull()?.displayName ?: "Unknown"
                     val size = response.properties.filterIsInstance<GetContentLength>()
                         .firstOrNull()?.contentLength ?: 0L
+
+                    // 1. 尝试从服务器属性获取时间
                     val lm = response.properties.filterIsInstance<GetLastModified>()
                         .firstOrNull()?.lastModified
-                    val lastModified: Instant = when (val obj = lm as Any?) {
+                    var lastModified: Instant = when (val obj = lm as Any?) {
                         is Instant -> obj
                         is java.util.Calendar -> obj.toInstant()
                         is java.util.Date -> obj.toInstant()
                         else -> Instant.EPOCH
                     }
+
+                    // 2. 兜底逻辑：如果属性获取失败（1970年），尝试从文件名解析
+                    if (lastModified == Instant.EPOCH || lastModified.toEpochMilli() == 0L) {
+                        try {
+                            // 匹配文件名中的 yyyyMMdd_HHmmss 部分
+                            val regex = Regex("""\d{8}_\d{6}""")
+                            val match = regex.find(displayName)
+                            match?.value?.let { dateStr ->
+                                val localDateTime = LocalDateTime.parse(dateStr, nameDateFormatter)
+                                lastModified = localDateTime.atZone(java.time.ZoneId.systemDefault()).toInstant()
+                            }
+                        } catch (e: Exception) {
+                            LogUtil.e(TAG, "Failed to parse date from filename: $displayName", e)
+                        }
+                    }
+
                     files.add(
                         WebDavBackupItem(
                             href = response.href.toString(),

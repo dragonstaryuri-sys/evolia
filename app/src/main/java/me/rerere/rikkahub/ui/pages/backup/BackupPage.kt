@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -167,12 +168,11 @@ private fun WebDavPage(
     var showRestartDialog by remember { mutableStateOf(false) }
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
     var restoringItemId by remember { mutableStateOf<String?>(null) }
-    var isBackingUp by remember { mutableStateOf(false) }
-    
+
     // Permission handling after restore
     var pendingPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showPermissionDialog by remember { mutableStateOf(false) }
-    
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
@@ -269,42 +269,83 @@ private fun WebDavPage(
                 containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh
             )
         ) {
-            FormItem(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                label = {
-                    Text(stringResource(R.string.backup_page_backup_items))
-                }
-            ) {
-                MultiChoiceSegmentedButtonRow(
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                FormItem(
                     modifier = Modifier.fillMaxWidth(),
+                    label = {
+                        Text(stringResource(R.string.backup_page_backup_items))
+                    }
                 ) {
-                    WebDavConfig.BackupItem.entries.forEachIndexed { index, item ->
-                        SegmentedButton(
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index = index,
-                                count = WebDavConfig.BackupItem.entries.size
-                            ),
-                            onCheckedChange = {
-                                val newItems = if (it) {
-                                    webDavConfig.items + item
-                                } else {
-                                    webDavConfig.items - item
-                                }
-                                updateWebDavConfig(webDavConfig.copy(items = newItems))
-                            },
-                            checked = item in webDavConfig.items
-                        ) {
-                            Text(
-                                when (item) {
-                                    WebDavConfig.BackupItem.DATABASE -> stringResource(R.string.backup_page_chat_records)
-                                    WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
-                                }
-                            )
+                    MultiChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        WebDavConfig.BackupItem.entries.forEachIndexed { index, item ->
+                            SegmentedButton(
+                                shape = SegmentedButtonDefaults.itemShape(
+                                    index = index,
+                                    count = WebDavConfig.BackupItem.entries.size
+                                ),
+                                onCheckedChange = {
+                                    val newItems = if (it) {
+                                        webDavConfig.items + item
+                                    } else {
+                                        webDavConfig.items - item
+                                    }
+                                    updateWebDavConfig(webDavConfig.copy(items = newItems))
+                                },
+                                checked = item in webDavConfig.items
+                            ) {
+                                Text(
+                                    when (item) {
+                                        WebDavConfig.BackupItem.DATABASE -> stringResource(R.string.backup_page_chat_records)
+                                        WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
+
+                ListItem(
+                    modifier = Modifier.fillMaxWidth(),
+                    headlineContent = {
+                        Text(stringResource(R.string.backup_page_auto_backup_on_start))
+                    },
+                    supportingContent = {
+                        Text(stringResource(R.string.backup_page_auto_backup_on_start_desc))
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = settings.autoBackupOnStart,
+                            onCheckedChange = {
+                                vm.updateSettings(settings.copy(autoBackupOnStart = it))
+                            }
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+                // 增加选择保留的备份个数功能
+                if (settings.autoBackupOnStart) {
+                    FormItem(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        label = { Text(stringResource(R.string.backup_page_max_backup_files)) }
+                    ) {
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = webDavConfig.maxBackupFiles.toString(),
+                            onValueChange = { value ->
+                                val newValue = value.filter { it.isDigit() }.toIntOrNull() ?: 1
+                                updateWebDavConfig(webDavConfig.copy(maxBackupFiles = newValue.coerceAtLeast(1)))
+                            },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            ),
+                            suffix = { Text(stringResource(R.string.backup_page_max_backup_files_suffix)) },
+                            singleLine = true
+                        )
+                    }
+                }
+
             }
         }
 
@@ -345,36 +386,16 @@ private fun WebDavPage(
 
             Button(
                 onClick = {
-                    scope.launch {
-                        isBackingUp = true
-                        runCatching {
-                            vm.backup()
-                            vm.loadBackupFileItems()
-                            toaster.show(
-                                context.getString(R.string.backup_page_backup_success),
-                                type = ToastType.Success
-                            )
-                        }.onFailure {
-                            it.printStackTrace()
-                            toaster.show(
-                                it.message ?: context.getString(R.string.backup_page_unknown_error),
-                                type = ToastType.Error
-                            )
-                        }
-                        isBackingUp = false
-                    }
-                },
-                enabled = !isBackingUp
-            ) {
-                if (isBackingUp) {
-                    CircularWavyProgressIndicator(
-                        modifier = Modifier.size(18.dp)
+                    vm.backup()
+                    toaster.show(
+                        context.getString(R.string.backup_page_backup_started_background),
+                        type = ToastType.Success
                     )
-                } else {
-                    Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
                 }
+            ) {
+                Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (isBackingUp) stringResource(R.string.backup_page_backing_up) else stringResource(R.string.backup_page_backup_now))
+                Text(stringResource(R.string.backup_page_backup_now))
             }
         }
     }
@@ -443,7 +464,7 @@ private fun WebDavPage(
                                                 type = ToastType.Success
                                             )
                                             showBackupFiles = false
-                                            
+
                                             // Check for missing permissions after restore
                                             val assistants = vm.settings.value.assistants
                                             val missing = PermissionChecker.getMissingPermissions(context, assistants)
@@ -532,7 +553,7 @@ private fun WebDavPage(
             }
         )
     }
-    
+
     if (showRestartDialog) {
         val result = restoreResult // Capture immutable for checking
         BackupDialog(
@@ -627,11 +648,11 @@ private fun ImportExportPage(
     var showRestartDialog by remember { mutableStateOf(false) }
 
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
-    
+
     // Permission handling after restore
     var pendingPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showPermissionDialog by remember { mutableStateOf(false) }
-    
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
@@ -712,7 +733,7 @@ private fun ImportExportPage(
                         context.getString(R.string.backup_page_restore_success),
                         type = ToastType.Success
                     )
-                    
+
                     // Check for missing permissions after restore
                     val assistants = vm.settings.value.assistants
                     val missing = PermissionChecker.getMissingPermissions(context, assistants)
@@ -864,7 +885,7 @@ private fun ImportExportPage(
             }
         )
     }
-    
+
     // 重启对话框
     if (showRestartDialog) {
         val result = restoreResult // Capture immutable for checking
@@ -885,10 +906,10 @@ private fun BackupDialog(
     AlertDialog(
         onDismissRequest = {}, // Disallow dismissing by clicking outside
         title = { Text(stringResource(R.string.backup_page_restart_app)) },
-        text = { 
+        text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.backup_page_restart_desc))
-                
+
                 result?.let {
                     if (it.sanitization.skippedRows > 0 || it.settingsCleanup.totalIssuesFixed > 0 || it.settingsCleanup.unsupportedZipEntriesBytes > 0) {
                         Card(

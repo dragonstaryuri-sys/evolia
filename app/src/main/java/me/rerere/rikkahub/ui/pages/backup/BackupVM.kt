@@ -1,8 +1,12 @@
 package me.rerere.rikkahub.ui.pages.backup
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
@@ -20,6 +24,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.service.BackupWorker
 import me.rerere.rikkahub.utils.UiState
 import java.io.File
 
@@ -28,6 +33,7 @@ private const val TAG = "BackupVM"
 class BackupVM(
     private val settingsStore: SettingsStore,
     private val webdavSync: WebdavSync,
+    private val context: Context,
 ) : ViewModel() {
     val settings = settingsStore.settingsFlow.stateIn(
         scope = viewModelScope,
@@ -68,8 +74,15 @@ class BackupVM(
         webdavSync.testWebdav(settings.value.webDavConfig)
     }
 
-    suspend fun backup() {
-        webdavSync.backupToWebDav(settings.value.webDavConfig)
+    fun backup() {
+        val workRequest = OneTimeWorkRequestBuilder<BackupWorker>()
+            .addTag("manual_backup")
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "manual_backup",
+            ExistingWorkPolicy.REPLACE,
+            workRequest
+        )
     }
 
     suspend fun restore(item: WebDavBackupItem): WebdavSync.RestoreResult {

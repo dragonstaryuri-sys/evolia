@@ -16,11 +16,15 @@ import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.BackupWorker
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
 import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.service.DiaryWorker
+import me.rerere.rikkahub.service.DiarySchedulerWorker
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.tts.provider.TTSManager
+import org.koin.androidx.workmanager.dsl.workerOf
 import org.koin.dsl.module
 
 val appModule = module {
@@ -61,6 +65,10 @@ val appModule = module {
     single {
         AILoggingManager()
     }
+
+    workerOf(::BackupWorker)
+    workerOf(::DiaryWorker)
+    workerOf(::DiarySchedulerWorker)
 
     single {
         ChatService(

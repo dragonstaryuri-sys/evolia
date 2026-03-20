@@ -58,7 +58,13 @@ val viewModelModule = module {
             settingsStore = get(),
         )
     }
-    viewModelOf(::BackupVM)
+    viewModel<BackupVM> {
+        BackupVM(
+            settingsStore = get(),
+            webdavSync = get(),
+            context = get()
+        )
+    }
     viewModelOf(::ImgGenVM)
     viewModelOf(::DeveloperVM)
     viewModelOf(::MenuVM)

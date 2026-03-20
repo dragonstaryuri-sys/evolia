@@ -103,6 +103,7 @@ class SettingsStore(
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
+        val AUTO_BACKUP_ON_START = booleanPreferencesKey("auto_backup_on_start")
     }
 
     private val dataStore = context.settingsStore
@@ -185,6 +186,7 @@ class SettingsStore(
                 textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
+                autoBackupOnStart = preferences[AUTO_BACKUP_ON_START] ?: false,
             )
         }
         .map {
@@ -309,6 +311,7 @@ class SettingsStore(
             preferences[MODES] = JsonInstant.encodeToString(settingsToSave.modes)
             preferences[LOREBOOKS] = JsonInstant.encodeToString(settingsToSave.lorebooks)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(settingsToSave.textSelectionConfig)
+            preferences[AUTO_BACKUP_ON_START] = settingsToSave.autoBackupOnStart
         }
     }
 
@@ -377,6 +380,7 @@ data class Settings(
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
+    val autoBackupOnStart: Boolean = false,
 ) { companion object { fun dummy() = Settings(init = true) } }
 
 @Serializable data class RpStyleRule(val id: String = Uuid.random().toString(), val pattern: String = "*", val colorHex: String = "#808080", val enabled: Boolean = true)
@@ -394,7 +398,7 @@ data class Settings(
 @Serializable enum class NewChatContentStyle { NONE, TEMPLATES, STATS, ACTIONS }
 @Serializable enum class ProviderViewMode { LIST, GRID }
 @Serializable enum class ChatInputStyle { FLOATING, MINIMAL }
-@Serializable data class WebDavConfig(val url: String = "", val username: String = "", val password: String = "", val path: String = "lastchat_backups", val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES)) { @Serializable enum class BackupItem { DATABASE, FILES } }
+@Serializable data class WebDavConfig(val url: String = "", val username: String = "", val password: String = "", val path: String = "lastchat_backups", val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES), val maxBackupFiles: Int = 3) { @Serializable enum class BackupItem { DATABASE, FILES } }
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 fun Settings.findModelById(uuid: Uuid): Model? = this.providers.findModelById(uuid)
