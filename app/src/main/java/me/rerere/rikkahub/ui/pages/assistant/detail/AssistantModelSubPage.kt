@@ -157,6 +157,38 @@ fun AssistantModelSubPage(
                 }
             }
 
+            // Memory Model (New: Separate from Summarizer)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_model_page_memory_model),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_model_page_memory_model_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ModelSelector(
+                        modelId = assistant.memoryModelId,
+                        providers = providers,
+                        type = ModelType.CHAT,
+                        onSelect = { onUpdate(assistant.copy(memoryModelId = it.id)) },
+                    )
+                }
+            }
+
             // Diary Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),

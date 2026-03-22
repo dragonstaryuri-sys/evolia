@@ -1008,9 +1008,11 @@
   <string name="assistant_memory_consolidation_insufficient_data">数据不足</string>
   <string name="memory_action_optimize">合并与优化</string>
   <string name="memory_optimizing">AI 正在深度优化记忆...</string>
-  <string name="memory_optimize_success">优化成功：合并了 %1$d 条，解决了 %2$d处冲突。</string>
+  <string name="memory_optimize_success">优化成功：合并/更新了 %1$d 条，删除了 %2$d 条冗余片段，新增了 %3$d 条记忆。</string>
   <string name="memory_optimize_no_change">记忆已经非常整洁啦！</string>
-
+  <!-- 模型设置 -->
+  <string name="setting_model_page_memory_model">记忆模型</string>
+  <string name="setting_model_page_memory_model_desc">用于记忆深度优化与长期整合的模型。</string>
   <!-- Assistant Context Management Page -->
 <string name="processing_items">处理中： %1$d / %2$d</string>
 <string name="assistant_context_refresh_title">上下文刷新 / 摘要</string>
@@ -1034,7 +1036,7 @@
   <string name="assistant_model_background_model">后台模型</string>
   <string name="assistant_model_background_model_desc">用于通知与后台任务</string>
   <string name="assistant_model_summarizer_model">摘要模型</string>
-  <string name="assistant_model_summarizer_model_desc">用于记忆摘要与上下文刷新</string>
+  <string name="assistant_model_summarizer_model_desc">用于上下文刷新和消息总结的模型</string>
   <string name="assistant_model_group_generation">生成参数</string>
   <string name="assistant_model_temp_strict">严谨（%s）</string>
   <string name="assistant_model_temp_balanced">均衡（%s）</string>
@@ -1263,6 +1265,9 @@
   <string name="assistant_memory_master_prompt_desc">AI 维护档案的指令，留空使用默认。</string>
   <string name="assistant_memory_master_content_title">记忆档案内容</string>
   <string name="assistant_memory_master_last_update">最近更新：%s</string>
+  <string name="assistant_memory_rag_limit_title">记忆检索数量</string>
+  <string name="assistant_memory_rag_limit_desc">每次对话时搜索并带入的相关记忆条目上限。</string>
+  <string name="assistant_memory_rag_limit_value">%d 条记忆</string>
 
   <!-- 日记相关 -->
   <string name="diary_already_generated">今天的日记已经生成过了</string>

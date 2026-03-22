@@ -81,7 +81,8 @@ val appModule = module {
             templateTransformer = get<TemplateTransformer>(),
             providerManager = get<ProviderManager>(),
             localTools = get(),
-            mcpManager = get<McpManager>()
+            mcpManager = get<McpManager>(),
+            chatEpisodeDAO = get()
         )
     }
 }

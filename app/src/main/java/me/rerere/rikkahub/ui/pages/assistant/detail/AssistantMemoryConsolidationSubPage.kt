@@ -3,13 +3,9 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -26,7 +22,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Psychology
-import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.utils.toLocalString
 
@@ -39,7 +34,6 @@ fun AssistantMemoryConsolidationSubPage(
 ) {
     val episodes by vm.episodes.collectAsStateWithLifecycle()
     val stats by vm.episodeStats.collectAsStateWithLifecycle()
-    val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.padding(16.dp),
@@ -194,23 +188,6 @@ fun AssistantMemoryConsolidationSubPage(
                                     Text("No run recorded yet", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
-                        }
-
-                        Button(
-                            onClick = { onConsolidate(true) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Consolidate All Memories Now")
-                        }
-
-                        if (snackbarMessage != null && snackbarMessage!!.contains("consolidation")) {
-                            Text(
-                                text = snackbarMessage!!,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                         }
                     }
                 }

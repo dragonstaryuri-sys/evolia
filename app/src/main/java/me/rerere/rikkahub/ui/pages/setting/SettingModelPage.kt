@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Memory
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -98,6 +99,14 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
             }
 
             item {
+                DefaultSummarizerModelSetting(settings = settings, vm = vm)
+            }
+
+            item {
+                DefaultMemoryModelSetting(settings = settings, vm = vm)
+            }
+
+            item {
                 DefaultDiaryModelSetting(settings = settings, vm = vm)
             }
 
@@ -114,6 +123,76 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
             }
         }
     }
+}
+
+@Composable
+private fun DefaultSummarizerModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.assistant_model_summarizer_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.assistant_model_summarizer_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.TipsAndUpdates, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.titleModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                titleModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun DefaultMemoryModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.setting_model_page_memory_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_memory_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.Memory, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.memoryModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                memoryModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
 }
 
 @Composable

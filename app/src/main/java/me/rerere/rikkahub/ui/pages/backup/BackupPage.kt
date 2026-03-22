@@ -209,7 +209,7 @@ private fun WebDavPage(
                         modifier = Modifier.fillMaxWidth(),
                         value = webDavConfig.url,
                         onValueChange = { updateWebDavConfig(webDavConfig.copy(url = it.trim())) },
-                       // Placeholder = { Text("https://example.com/dav") },
+                        // Placeholder = { Text("https://example.com/dav") },
                         singleLine = true
                     )
                 }
@@ -557,10 +557,10 @@ private fun WebDavPage(
     if (showRestartDialog) {
         val result = restoreResult // Capture immutable for checking
         BackupDialog(
-             result = result,
-             onConfirm = {
-                 vm.restartApp(context)
-             }
+            result = result,
+            onConfirm = {
+                vm.restartApp(context)
+            }
         )
     }
 }
@@ -890,10 +890,10 @@ private fun ImportExportPage(
     if (showRestartDialog) {
         val result = restoreResult // Capture immutable for checking
         BackupDialog(
-             result = result,
-             onConfirm = {
-                 vm.restartApp(context)
-             }
+            result = result,
+            onConfirm = {
+                vm.restartApp(context)
+            }
         )
     }
 }

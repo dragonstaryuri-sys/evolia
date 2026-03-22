@@ -14,18 +14,7 @@ import androidx.paging.insertSeparators
 import androidx.paging.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
@@ -92,6 +81,9 @@ class ChatVM(
 
     private val _recentlyRestoredNodeIds = MutableStateFlow<Set<Uuid>>(emptySet())
     val recentlyRestoredNodeIds: StateFlow<Set<Uuid>> = _recentlyRestoredNodeIds
+
+    private val _toastFlow = MutableSharedFlow<String>()
+    val toastFlow: SharedFlow<String> = _toastFlow.asSharedFlow()
 
     fun markNodesAsRestored(nodeIds: Set<Uuid>) {
         _recentlyRestoredNodeIds.value = _recentlyRestoredNodeIds.value + nodeIds
@@ -408,13 +400,42 @@ class ChatVM(
     fun updatePinnedStatus(conversation: Conversation) { viewModelScope.launch { conversationRepo.togglePinStatus(conversation.id) } }
     fun updateConversationTitle(conversation: Conversation, title: String) { viewModelScope.launch { conversationRepo.updateConversation(conversation.copy(title = title)) } }
     fun generateTitle(conversation: Conversation, force: Boolean = false) { viewModelScope.launch { val full = conversationRepo.getConversationById(conversation.id) ?: return@launch; chatService.generateTitle(_conversationId, full, force) } }
+
     fun consolidateConversation(conversation: Conversation) {
         viewModelScope.launch {
             conversationRepo.markAsNotConsolidated(conversation.id)
-            val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>().setInputData(androidx.work.workDataOf("FORCE_CONVERSATION_ID" to conversation.id.toString())).build()
-            androidx.work.WorkManager.getInstance(context).enqueue(request)
+            val workManager = androidx.work.WorkManager.getInstance(context)
+            val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
+                .setInputData(androidx.work.workDataOf("FORCE_CONVERSATION_ID" to conversation.id.toString()))
+                .build()
+
+            workManager.enqueue(request)
+
+            workManager.getWorkInfoByIdFlow(request.id).collect { workInfo ->
+                if (workInfo != null) {
+                    when (workInfo.state) {
+                        androidx.work.WorkInfo.State.SUCCEEDED -> {
+                            // 重新从最新的 settings 中获取结果
+                            val updatedSettings = settingsStore.settingsFlow.first()
+                            val result = updatedSettings.assistants
+                                .find { it.id == conversation.assistantId }
+                                ?.lastConsolidationResult ?: "Consolidation Successful"
+                            _toastFlow.emit(result)
+                        }
+                        androidx.work.WorkInfo.State.FAILED -> {
+                            val updatedSettings = settingsStore.settingsFlow.first()
+                            val result = updatedSettings.assistants
+                                .find { it.id == conversation.assistantId }
+                                ?.lastConsolidationResult ?: "Consolidation Failed"
+                            _toastFlow.emit(result)
+                        }
+                        else -> {}
+                    }
+                }
+            }
         }
     }
+
     fun updateConversation(newConversation: Conversation) { viewModelScope.launch { chatService.saveConversation(_conversationId, newConversation) } }
     fun deleteFile(uri: Uri) { appScope.launch { context.deleteChatFiles(listOf(uri)) } }
     suspend fun refreshContext(): ChatService.ContextRefreshResult { return chatService.summarizeAndRefresh(_conversationId) }

@@ -148,16 +148,9 @@ fun AssistantMemorySettings(
     }
 
     val isOptimizing by assistantDetailVM.isOptimizing.collectAsStateWithLifecycle()
+    val isConsolidating by assistantDetailVM.isConsolidating.collectAsStateWithLifecycle()
 
-    // Completion Notification Listener
-    LaunchedEffect(assistant.lastConsolidationTime) {
-        if (assistant.lastConsolidationTime > 0) {
-            // Only show if the result is not the default "Started" message
-            if (assistant.lastConsolidationResult.isNotEmpty()) {
-                assistantDetailVM.setSnackbarMessage(assistant.lastConsolidationResult)
-            }
-        }
-    }
+    // 已经删除了 LaunchedEffect 监听代码
 
     // Embedding progress dialog
     if (embeddingProgress != null && embeddingProgress.isRunning) {
@@ -190,6 +183,25 @@ fun AssistantMemorySettings(
                 ) {
                     CircularProgressIndicator()
                     Text(stringResource(R.string.memory_optimizing), style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = { }
+        )
+    }
+
+    // Consolidation progress dialog
+    if (isConsolidating) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text(stringResource(R.string.loading)) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(stringResource(R.string.context_refresh_loading), style = MaterialTheme.typography.bodyMedium)
                 }
             },
             confirmButton = { }
@@ -389,7 +401,7 @@ fun AssistantMemorySettings(
                     MasterMemoryCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
-                        onConsolidate = { assistantDetailVM.consolidateMemories(true) }
+                        onConsolidate = { assistantDetailVM.runManualConsolidation() }
                     )
                 }
             }
@@ -408,7 +420,7 @@ fun AssistantMemorySettings(
                     ConsolidationSettingsCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
-                        onConsolidate = { assistantDetailVM.consolidateMemories(true) },
+                        onConsolidate = { assistantDetailVM.runManualConsolidation() },
                         showSummarizerWarning = assistant.summarizerModelId == null,
                         onNavigateToModels = onNavigateToModels
                     )

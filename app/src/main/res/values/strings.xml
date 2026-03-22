@@ -1006,8 +1006,11 @@
   <string name="memory_mode_advanced_desc">Forms episodic memories with automatic consolidation</string>
   <string name="memory_action_optimize">Optimize &amp; Merge</string>
   <string name="memory_optimizing">AI is optimizing memories...</string>
-  <string name="memory_optimize_success">Optimized: %1$d merged, %2$d conflicts resolved.</string>
+  <string name="memory_optimize_success">Optimization completed: %1$d entries merged/updated, %2$d redundant fragments deleted, and %3$d new memories added.</string>
   <string name="memory_optimize_no_change">Memories are already clean!</string>
+  <!-- Model Settings -->
+  <string name="setting_model_page_memory_model">Memory Model</string>
+  <string name="setting_model_page_memory_model_desc">Model used for deep memory optimization and long-term consolidation.</string>
 
   <string name="rag_memory_retrieval">RAG Memory Retrieval</string>
   <string name="rag_memory_retrieval_desc">Smart context-based memory retrieval</string>
@@ -1084,7 +1087,7 @@
   <string name="assistant_model_background_model">Background Model</string>
   <string name="assistant_model_background_model_desc">For notifications and background tasks</string>
   <string name="assistant_model_summarizer_model">Summarizer Model</string>
-  <string name="assistant_model_summarizer_model_desc">For memory summarization and context refresh</string>
+  <string name="assistant_model_summarizer_model_desc">Model used for context refresh and message summarization.</string>
   <string name="assistant_model_group_generation">Generation</string>
   <string name="assistant_model_temp_strict">Strict (%s)</string>
   <string name="assistant_model_temp_balanced">Balanced (%s)</string>
@@ -1299,6 +1302,10 @@
   <string name="assistant_memory_use_rag_retrieval_desc">Use semantic search to find relevant memories</string>
   <string name="assistant_memory_similarity_threshold_title">Similarity Threshold</string>
   <string name="assistant_prompt_variables_hint">Available variables: %s</string>
+  <string name="assistant_memory_rag_limit_title">Memory Retrieval Limit</string>
+  <string name="assistant_memory_rag_limit_desc">Maximum number of relevant memories to retrieve for each conversation.</string>
+  <string name="assistant_memory_rag_limit_value">%d memories</string>
+
   <!-- Consolidation Results -->
   <string name="consolidation_result_episodes">Consolidated %d episodes. </string>
   <string name="consolidation_result_master_updated">Memory Archive updated. </string>

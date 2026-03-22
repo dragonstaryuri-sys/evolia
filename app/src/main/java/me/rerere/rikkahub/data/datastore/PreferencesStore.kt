@@ -83,6 +83,7 @@ class SettingsStore(
         val OCR_MODEL = stringPreferencesKey("ocr_model")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
         val EMBEDDING_MODEL = stringPreferencesKey("embedding_model")
+        val MEMORY_MODEL = stringPreferencesKey("memory_model")
         val DIARY_MODEL = stringPreferencesKey("diary_model")
         val DIARY_PROMPT = stringPreferencesKey("diary_prompt")
         val PROVIDERS = stringPreferencesKey("providers")
@@ -137,6 +138,7 @@ class SettingsStore(
                 ocrModelId = preferences[OCR_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
                 embeddingModelId = preferences[EMBEDDING_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
+                memoryModelId = preferences[MEMORY_MODEL]?.let { Uuid.parse(it) } ?: GEMINI_2_5_FLASH_ID,
                 diaryModelId = preferences[DIARY_MODEL]?.let { Uuid.parse(it) } ?: GEMINI_2_5_FLASH_ID,
                 diaryPrompt = preferences[DIARY_PROMPT] ?: DEFAULT_DIARY_PROMPT,
                 assistantId = preferences[SELECT_ASSISTANT]?.let { Uuid.parse(it) }
@@ -291,6 +293,7 @@ class SettingsStore(
             preferences[OCR_MODEL] = settingsToSave.ocrModelId.toString()
             preferences[OCR_PROMPT] = settingsToSave.ocrPrompt
             preferences[EMBEDDING_MODEL] = settingsToSave.embeddingModelId.toString()
+            preferences[MEMORY_MODEL] = settingsToSave.memoryModelId.toString()
             preferences[DIARY_MODEL] = settingsToSave.diaryModelId.toString()
             preferences[DIARY_PROMPT] = settingsToSave.diaryPrompt
             preferences[PROVIDERS] = JsonInstant.encodeToString(migratedSettings.providers)
@@ -360,6 +363,7 @@ data class Settings(
     val ocrModelId: Uuid = Uuid.random(),
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
     val embeddingModelId: Uuid = Uuid.random(),
+    val memoryModelId: Uuid = Uuid.random(),
     val diaryModelId: Uuid = Uuid.random(),
     val diaryPrompt: String = DEFAULT_DIARY_PROMPT,
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,

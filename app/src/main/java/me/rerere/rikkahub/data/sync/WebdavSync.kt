@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
@@ -42,51 +43,98 @@ class WebdavSync(
     private val secretKeyManager: SecretKeyManager,
 ) {
     suspend fun testWebdav(webDavConfig: WebDavConfig) {
-        val davCollection = DavCollection(
-            httpClient = webDavConfig.requireClient(),
-            location = webDavConfig.url.toHttpUrl(),
-        )
-
+        val davCollection = webDavConfig.requireCollection()
         withContext(Dispatchers.IO) {
-            davCollection.propfind(
-                depth = 1,
-            ) { response, relation ->
-                LogUtil.i(TAG, "testWebdav: $response | $relation")
+            try {
+                davCollection.propfind(depth = 1) { response, relation ->
+                    LogUtil.i(TAG, "testWebdav: $response | $relation")
+                }
+            } catch (e: HttpException) {
+                LogUtil.e(TAG, "testWebdav HttpException: code=${e.code}, message=${e.message}", e)
+                val msg = when (e.code) {
+                    401 -> "Unauthorized: Check your WebDAV username and password."
+                    403 -> "Forbidden: Check your permissions or path. Your WebDAV provider might require specific settings for this directory."
+                    404 -> "Not Found: Check your WebDAV URL and path. Ensure the root folder exists."
+                    else -> "WebDAV Test failed with code ${e.code}: ${e.message}"
+                }
+                throw Exception(msg)
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "testWebdav unexpected error", e)
+                throw e
             }
         }
     }
 
     suspend fun backupToWebDav(webDavConfig: WebDavConfig) = withContext(Dispatchers.IO) {
         val file = prepareBackupFile(webDavConfig)
-        val collection = webDavConfig.requireCollection()
-        collection.ensureCollectionExists() // ensure collection exists
-        val target = webDavConfig.requireCollection(file.name)
-        target.put(
-            body = file.asRequestBody(),
-        ) { response ->
-            LogUtil.i(TAG, "backupToWebDav: $response")
+        if (!file.exists() || file.length() == 0L) {
+            LogUtil.e(TAG, "Backup file is empty or missing, skip upload.")
+            return@withContext
         }
-        // 备份完成后执行清理
-        cleanupOldBackups(webDavConfig)
+
+        LogUtil.i(TAG, "Prepared backup file: ${file.name} (${file.length() / 1024} KB)")
+
+        val collection = webDavConfig.requireCollection() // Folder
+        try {
+            collection.ensureCollectionExists()
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Failed to ensure WebDAV collection exists: ${e.message}")
+            throw e
+        }
+
+        val target = webDavConfig.requireCollection(file.name) // Target File URL
+        LogUtil.i(TAG, "Uploading to: ${target.location}")
+
+        try {
+            val mediaType = "application/octet-stream".toMediaTypeOrNull()
+            target.put(
+                body = file.asRequestBody(mediaType),
+            ) { response ->
+                LogUtil.i(TAG, "backupToWebDav response code: ${response.code}")
+                if (!response.isSuccessful) {
+                    val errorBody = try { response.body?.string() } catch (e: Exception) { "could not read body" }
+                    LogUtil.e(TAG, "WebDAV PUT Error Body: $errorBody")
+                    val errorMsg = when (response.code) {
+                        401 -> "Unauthorized: Invalid WebDAV credentials."
+                        403 -> "Forbidden: Permission denied. Check if your WebDAV provider allows file uploads to this path or if your storage quota is full."
+                        413 -> "Payload Too Large: The backup file might be too big for your WebDAV provider."
+                        else -> "WebDAV PUT failed with code ${response.code}: ${response.message}"
+                    }
+                    throw Exception(errorMsg)
+                }
+            }
+            cleanupOldBackups(webDavConfig)
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Failed to upload backup to WebDAV: ${e.message}", e)
+            throw e
+        } finally {
+            if (file.exists()) {
+                file.delete()
+                LogUtil.i(TAG, "Cleaned up local backup file")
+            }
+        }
     }
-    // 新增清理函数
+
     private suspend fun cleanupOldBackups(webDavConfig: WebDavConfig) {
         try {
             val maxFiles = webDavConfig.maxBackupFiles
             if (maxFiles <= 0) return
 
-            // 获取所有备份文件并按时间降序排序（最新的在前）
             val files = listBackupFiles(webDavConfig).sortedByDescending { it.lastModified }
 
             if (files.size > maxFiles) {
-                val toDelete = files.drop(maxFiles) // 保留前N个，其余删除
-                LogUtil.i(TAG, "Cleaning up ${toDelete.size} old backups, keeping latest $maxFiles")
+                val toDelete = files.drop(maxFiles)
+                LogUtil.i(TAG, "Cleaning up ${toDelete.size} old backups")
                 toDelete.forEach { item ->
-                    deleteWebDavBackupFile(webDavConfig, item)
+                    try {
+                        deleteWebDavBackupFile(webDavConfig, item)
+                    } catch (e: Exception) {
+                        LogUtil.e(TAG, "Failed to delete: ${item.displayName}", e)
+                    }
                 }
             }
         } catch (e: Exception) {
-            LogUtil.e(TAG, "Failed to cleanup old backups", e)
+            LogUtil.e(TAG, "Cleanup failed", e)
         }
     }
 
@@ -96,200 +144,136 @@ class WebdavSync(
             val files = mutableListOf<WebDavBackupItem>()
             val nameDateFormatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")
 
-            collection.propfind(
-                depth = 1,
-            ) { response, relation ->
-                if (relation == DavResponse.HrefRelation.MEMBER) {
-                    val displayName = response.properties.filterIsInstance<DisplayName>()
-                        .firstOrNull()?.displayName ?: "Unknown"
-                    val size = response.properties.filterIsInstance<GetContentLength>()
-                        .firstOrNull()?.contentLength ?: 0L
+            try {
+                collection.propfind(depth = 1) { response, relation ->
+                    if (relation == DavResponse.HrefRelation.MEMBER) {
+                        val displayName = response.properties.filterIsInstance<DisplayName>()
+                            .firstOrNull()?.displayName ?: response.href.pathSegments.lastOrNull() ?: "Unknown"
+                        val size = response.properties.filterIsInstance<GetContentLength>()
+                            .firstOrNull()?.contentLength ?: 0L
 
-                    // 1. 尝试从服务器属性获取时间
-                    val lm = response.properties.filterIsInstance<GetLastModified>()
-                        .firstOrNull()?.lastModified
-                    var lastModified: Instant = when (val obj = lm as Any?) {
-                        is Instant -> obj
-                        is java.util.Calendar -> obj.toInstant()
-                        is java.util.Date -> obj.toInstant()
-                        else -> Instant.EPOCH
-                    }
-
-                    // 2. 兜底逻辑：如果属性获取失败（1970年），尝试从文件名解析
-                    if (lastModified == Instant.EPOCH || lastModified.toEpochMilli() == 0L) {
-                        try {
-                            // 匹配文件名中的 yyyyMMdd_HHmmss 部分
-                            val regex = Regex("""\d{8}_\d{6}""")
-                            val match = regex.find(displayName)
-                            match?.value?.let { dateStr ->
-                                val localDateTime = LocalDateTime.parse(dateStr, nameDateFormatter)
-                                lastModified = localDateTime.atZone(java.time.ZoneId.systemDefault()).toInstant()
-                            }
-                        } catch (e: Exception) {
-                            LogUtil.e(TAG, "Failed to parse date from filename: $displayName", e)
+                        val lm = response.properties.filterIsInstance<GetLastModified>()
+                            .firstOrNull()?.lastModified
+                        var lastModified: Instant = when (val obj = lm as Any?) {
+                            is Instant -> obj
+                            is java.util.Calendar -> obj.toInstant()
+                            is java.util.Date -> obj.toInstant()
+                            else -> Instant.EPOCH
                         }
-                    }
 
-                    files.add(
-                        WebDavBackupItem(
-                            href = response.href.toString(),
-                            displayName = displayName,
-                            size = size,
-                            lastModified = lastModified
-                        )
-                    )
+                        if (lastModified == Instant.EPOCH) {
+                            try {
+                                val regex = Regex("""\d{8}_\d{6}""")
+                                val match = regex.find(displayName)
+                                match?.value?.let { dateStr ->
+                                    val localDateTime = LocalDateTime.parse(dateStr, nameDateFormatter)
+                                    lastModified = localDateTime.atZone(java.time.ZoneId.systemDefault()).toInstant()
+                                }
+                            } catch (e: Exception) {}
+                        }
+                        files.add(WebDavBackupItem(response.href.toString(), displayName, size, lastModified))
+                    }
                 }
+            } catch (e: HttpException) {
+                LogUtil.e(TAG, "List failed with HttpException: ${e.code}", e)
+                val msg = when (e.code) {
+                    401 -> "Unauthorized: Check your WebDAV credentials."
+                    403 -> "Forbidden: Check your permissions for the backup folder."
+                    else -> "WebDAV List failed with code ${e.code}: ${e.message}"
+                }
+                throw Exception(msg)
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "List failed", e)
+                throw e
             }
             files
         }
 
     suspend fun restoreFromWebDav(webDavConfig: WebDavConfig, item: WebDavBackupItem): RestoreResult =
         withContext(Dispatchers.IO) {
-            val collection = DavCollection(
-                httpClient = webDavConfig.requireClient(),
-                location = item.href.toHttpUrl(),
-            )
+            val httpClient = webDavConfig.requireClient()
+            val collection = DavCollection(httpClient, item.href.toHttpUrl())
             val backupFile = File(context.cacheDir, item.displayName)
-            if (backupFile.exists()) {
-                backupFile.delete()
-            }
-
-            // 下载备份文件
-            collection.get(
-                accept = "",
-                headers = null
-            ) { response ->
-                if (response.isSuccessful) {
-                    LogUtil.i(
-                        TAG,
-                        "restoreFromWebDav: Downloading ${item.displayName} to ${backupFile.absolutePath}"
-                    )
-                    response.body?.byteStream()?.use { inputStream ->
-                        FileOutputStream(backupFile).use { outputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-                    }
-                } else {
-                    LogUtil.e(
-                        TAG,
-                        "restoreFromWebDav: Failed to download ${item.displayName}, response: $response"
-                    )
-                    throw Exception("Failed to download backup file: ${response.message}")
-                }
-            }
-
-            LogUtil.i(TAG, "restoreFromWebDav: Downloaded ${backupFile.length()} bytes")
+            if (backupFile.exists()) backupFile.delete()
 
             try {
-                // 解压并恢复备份文件
-                restoreFromBackupFile(backupFile, webDavConfig)
-            } finally {
-                // 清理临时文件
-                if (backupFile.exists()) {
-                    backupFile.delete()
-                    LogUtil.i(TAG, "restoreFromWebDav: Cleaned up temporary backup file")
+                collection.get(accept = "", headers = null) { response ->
+                    if (response.isSuccessful) {
+                        response.body?.byteStream()?.use { input ->
+                            FileOutputStream(backupFile).use { input.copyTo(it) }
+                        }
+                    } else {
+                        val errorBody = try { response.body?.string() } catch (e: Exception) { "could not read body" }
+                        LogUtil.e(TAG, "WebDAV GET failed: code=${response.code}, message=${response.message}, body=$errorBody")
+                        val msg = when (response.code) {
+                            401 -> "Unauthorized: Invalid WebDAV credentials."
+                            403 -> "Forbidden: You don't have permission to download this file."
+                            else -> "Download failed with code ${response.code}: ${response.message}"
+                        }
+                        throw Exception(msg)
+                    }
                 }
+
+                restoreFromBackupFile(backupFile, webDavConfig)
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "Restore from WebDAV failed: ${e.message}", e)
+                throw e
+            } finally {
+                if (backupFile.exists()) backupFile.delete()
             }
         }
 
     suspend fun deleteWebDavBackupFile(webDavConfig: WebDavConfig, item: WebDavBackupItem) =
         withContext(Dispatchers.IO) {
-            val collection = DavCollection(
-                httpClient = webDavConfig.requireClient(),
-                location = item.href.toHttpUrl()
-            )
-            collection.delete { response ->
-                LogUtil.i(TAG, "deleteWebDavBackupFile: $response")
+            val collection = DavCollection(webDavConfig.requireClient(), item.href.toHttpUrl())
+            try {
+                collection.delete { response ->
+                    LogUtil.i(TAG, "Delete code: ${response.code}")
+                    if (!response.isSuccessful) {
+                        LogUtil.w(TAG, "WebDAV Delete failed: ${response.code} ${response.message}")
+                        if (response.code == 403) {
+                            throw Exception("Forbidden: Permission denied to delete file.")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "Delete failed for ${item.displayName}", e)
+                throw e
             }
         }
 
     suspend fun restoreFromLocalFile(file: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
-            LogUtil.i(TAG, "restoreFromLocalFile: Starting restore from ${file.absolutePath}")
-
-            if (!file.exists()) {
-                throw Exception("Backup file does not exist")
-            }
-
-            if (!file.canRead()) {
-                throw Exception("Cannot read backup file")
-            }
-
-            try {
-                restoreFromBackupFile(file, webDavConfig)
-            } catch (e: Exception) {
-                LogUtil.e(TAG, "restoreFromLocalFile: Failed to restore from local file", e)
-                throw Exception("Restore failed: ${e.message}")
-            }
+            if (!file.exists()) throw Exception("File not found")
+            restoreFromBackupFile(file, webDavConfig)
         }
 
     suspend fun prepareBackupFile(webDavConfig: WebDavConfig): File = withContext(Dispatchers.IO) {
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-        val backupFile = File(
-            context.cacheDir,
-            "LastChat_backup_$timestamp.zip"
-        )
-        if (backupFile.exists()) {
-            backupFile.delete()
-        }
+        val backupFile = File(context.cacheDir, "Evolia_backup_$timestamp.zip")
 
-        // 创建zip文件并备份数据库
         ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
-            // Populate decrypted secrets for portable backup export
-            val settingsForExport = secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
-            addVirtualFileToZip(
-                zipOut = zipOut,
-                name = "settings.json",
-                content = json.encodeToString(settingsForExport)
-            )
+            val settings = secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
+            addVirtualFileToZip(zipOut, "settings.json", json.encodeToString(settings))
 
-            // 备份数据库
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
-                // 备份主数据库文件
                 val dbFile = context.getDatabasePath("rikka_hub")
-                if (dbFile.exists()) {
-                    addFileToZip(zipOut, dbFile, "rikka_hub.db")
-                }
-
-                // 备份数据库的WAL文件（如果存在）
-                val walFile = File(dbFile.parentFile, "rikka_hub-wal")
-                if (walFile.exists()) {
-                    addFileToZip(zipOut, walFile, "rikka_hub-wal")
-                }
-
-                // 备份数据库的SHM文件（如果存在）
-                val shmFile = File(dbFile.parentFile, "rikka_hub-shm")
-                if (shmFile.exists()) {
-                    addFileToZip(zipOut, shmFile, "rikka_hub-shm")
+                if (dbFile.exists()) addFileToZip(zipOut, dbFile, "rikka_hub.db")
+                listOf("-wal", "-shm").forEach { suffix ->
+                    val extra = File(dbFile.parentFile, dbFile.name + suffix)
+                    if (extra.exists()) addFileToZip(zipOut, extra, dbFile.name + suffix)
                 }
             }
 
-            // 备份聊天文件
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
                 val uploadFolder = File(context.filesDir, "upload")
-                if (uploadFolder.exists() && uploadFolder.isDirectory) {
-                    LogUtil.i(
-                        TAG,
-                        "prepareBackupFile: Backing up files from ${uploadFolder.absolutePath}"
-                    )
-                    uploadFolder.listFiles()?.forEach { file ->
-                        if (file.isFile) {
-                            addFileToZip(zipOut, file, "upload/${file.name}")
-                        }
-                    }
-                } else {
-                    LogUtil.w(
-                        TAG,
-                        "prepareBackupFile: Upload folder does not exist or is not a directory"
-                    )
+                uploadFolder.listFiles()?.filter { it.isFile }?.forEach {
+                    addFileToZip(zipOut, it, "upload/${it.name}")
                 }
             }
         }
-
         backupFile
     }
-
-
 
     data class RestoreResult(
         val sanitization: DatabaseSanitizer.SanitizationResult,
@@ -298,243 +282,125 @@ class WebdavSync(
 
     private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
-            LogUtil.i(TAG, "restoreFromBackupFile: Starting restore from ${backupFile.absolutePath}")
-
-            var unsupportedZipEntriesBytes: Long = 0
-            var settingsCleanupResult = BackupCleanupResult()
-            // Temp directory for extraction
-            val restoreTempDir = File(context.cacheDir, "restore_temp_${System.currentTimeMillis()}")
-            if (!restoreTempDir.exists()) restoreTempDir.mkdirs()
-
-            var sanitizationResult = DatabaseSanitizer.SanitizationResult()
+            var unsupportedBytes: Long = 0
+            var settingsCleanup = BackupCleanupResult()
+            val tempDir = File(context.cacheDir, "restore_${System.currentTimeMillis()}").apply { mkdirs() }
+            var sanitization = DatabaseSanitizer.SanitizationResult()
 
             try {
                 ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
                     var entry: ZipEntry?
                     while (zipIn.nextEntry.also { entry = it } != null) {
-                        entry?.let { zipEntry ->
-                            LogUtil.i(TAG, "restoreFromBackupFile: Processing entry ${zipEntry.name}")
-
-                            when (zipEntry.name) {
-                                "settings.json" -> {
-                                    // 恢复设置
-                                    val settingsJson = zipIn.readBytes().toString(Charsets.UTF_8)
-                                    LogUtil.i(TAG, "restoreFromBackupFile: Restoring settings")
-                                    try {
-                                        val settings = json.decodeFromString<Settings>(settingsJson)
-                                        // Sanitize settings to clean up deprecated/invalid data
-                                        val (cleanedSettings, cleanupResult) = settings.sanitize()
-                                        settingsCleanupResult = cleanupResult
-                                        settingsStore.update(cleanedSettings)
-                                        LogUtil.i(
-                                            TAG,
-                                            "restoreFromBackupFile: Settings restored and sanitized (issues fixed: ${cleanupResult.totalIssuesFixed})"
-                                        )
-                                    } catch (e: Exception) {
-                                        LogUtil.e(
-                                            TAG,
-                                            "restoreFromBackupFile: Failed to restore settings",
-                                            e
-                                        )
-                                        throw Exception("Failed to restore settings: ${e.message}")
-                                    }
+                        entry?.let { ze ->
+                            when {
+                                ze.name == "settings.json" -> {
+                                    val (cleaned, res) = json.decodeFromString<Settings>(zipIn.readBytes().toString(Charsets.UTF_8)).sanitize()
+                                    settingsCleanup = res
+                                    settingsStore.update(cleaned)
                                 }
-
-                                "rikka_hub.db", "rikka_hub-wal", "rikka_hub-shm" -> {
+                                ze.name.startsWith("rikka_hub.db") -> {
                                     if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
-                                        // Extract to temp dir first
-                                        val tempDbFile = File(restoreTempDir, zipEntry.name)
-                                        FileOutputStream(tempDbFile).use { outputStream ->
-                                            zipIn.copyTo(outputStream)
-                                        }
-                                        LogUtil.i(TAG, "Extracted ${zipEntry.name} to temp")
+                                        FileOutputStream(File(tempDir, ze.name)).use { zipIn.copyTo(it) }
                                     }
                                 }
-
-                                else -> {
-                                    // 处理聊天文件
-                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES) && zipEntry.name.startsWith(
-                                            "upload/"
-                                        )
-                                    ) {
-                                        val fileName = zipEntry.name.substringAfter("upload/")
-                                        if (fileName.isNotEmpty()) {
-                                            val uploadFolder = File(context.filesDir, "upload")
-                                            // 确保upload文件夹存在
-                                            if (!uploadFolder.exists()) {
-                                                uploadFolder.mkdirs()
-                                                LogUtil.i(
-                                                    TAG,
-                                                    "restoreFromBackupFile: Created upload directory"
-                                                )
-                                            }
-
-                                            val targetFile = File(uploadFolder, fileName)
-                                            LogUtil.i(
-                                                TAG,
-                                                "restoreFromBackupFile: Restoring file ${zipEntry.name} to ${targetFile.absolutePath}"
-                                            )
-
-                                            try {
-                                                FileOutputStream(targetFile).use { outputStream ->
-                                                    zipIn.copyTo(outputStream)
-                                                }
-                                                LogUtil.i(
-                                                    TAG,
-                                                    "restoreFromBackupFile: Restored ${zipEntry.name} (${targetFile.length()} bytes)"
-                                                )
-                                            } catch (e: Exception) {
-                                                LogUtil.e(
-                                                    TAG,
-                                                    "restoreFromBackupFile: Failed to restore file ${zipEntry.name}",
-                                                    e
-                                                )
-                                                throw Exception("Failed to restore file ${zipEntry.name}: ${e.message}")
-                                            }
-                                        }
-                                    } else {
-                                        LogUtil.i(
-                                            TAG,
-                                            "restoreFromBackupFile: Skipping unsupported entry ${zipEntry.name} (${zipEntry.size} bytes)"
-                                        )
-                                        unsupportedZipEntriesBytes += zipEntry.size
+                                ze.name.startsWith("upload/") -> {
+                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
+                                        val target = File(File(context.filesDir, "upload").apply { mkdirs() }, ze.name.substringAfter("upload/"))
+                                        FileOutputStream(target).use { zipIn.copyTo(it) }
                                     }
                                 }
+                                else -> unsupportedBytes += ze.size
                             }
-
                             zipIn.closeEntry()
                         }
                     }
                 }
 
-                // Sanitize and Restore Database
-                val tempDbFile = File(restoreTempDir, "rikka_hub.db")
-
-                if (tempDbFile.exists()) {
-                    LogUtil.i(TAG, "Starting database sanitization...")
-                    try {
-                         val (cleanDb, result) = DatabaseSanitizer.sanitize(context, tempDbFile)
-                         sanitizationResult = result
-
-                         // Move clean DB to final location
-                         val finalDbFile = context.getDatabasePath("rikka_hub")
-                         if(finalDbFile.exists()) finalDbFile.delete()
-
-                         cleanDb.copyTo(finalDbFile, overwrite = true)
-
-                         val cleanWal = File(cleanDb.path + "-wal")
-                         val cleanShm = File(cleanDb.path + "-shm")
-
-                         if(cleanWal.exists()) {
-                             cleanWal.copyTo(File(finalDbFile.path + "-wal"), overwrite = true)
-                         } else {
-                             File(finalDbFile.path + "-wal").delete()
-                         }
-
-                         if(cleanShm.exists()) {
-                             cleanShm.copyTo(File(finalDbFile.path + "-shm"), overwrite = true)
-                         } else {
-                             File(finalDbFile.path + "-shm").delete()
-                         }
-
-                         LogUtil.i(TAG, "Database restored and sanitized: $sanitizationResult")
-                    } catch (e: Exception) {
-                        LogUtil.e(TAG, "Failed to sanitize database", e)
-                        throw Exception("Database sanitization failed: ${e.message}")
+                val tempDb = File(tempDir, "rikka_hub.db")
+                if (tempDb.exists()) {
+                    val (cleanDb, res) = DatabaseSanitizer.sanitize(context, tempDb)
+                    sanitization = res
+                    val finalDb = context.getDatabasePath("rikka_hub")
+                    cleanDb.copyTo(finalDb, true)
+                    listOf("-wal", "-shm").forEach { s ->
+                        val src = File(cleanDb.path + s); val dest = File(finalDb.path + s)
+                        if (src.exists()) src.copyTo(dest, true) else dest.delete()
                     }
                 }
-
-                LogUtil.i(TAG, "restoreFromBackupFile: Restore completed successfully")
-
-                // Combine cleanup results
-                val totalCleanupResult = settingsCleanupResult.copy(
-                    unsupportedZipEntriesBytes = unsupportedZipEntriesBytes
-                )
-
-                LogUtil.i(TAG, "restoreFromBackupFile: Cleanup summary - skipped ${unsupportedZipEntriesBytes} bytes, fixed ${totalCleanupResult.totalIssuesFixed} issues")
-
-                RestoreResult(
-                    sanitization = sanitizationResult,
-                    settingsCleanup = totalCleanupResult
-                )
+                RestoreResult(sanitization, settingsCleanup.copy(unsupportedZipEntriesBytes = unsupportedBytes))
             } finally {
-                // Cleanup temp dir
-                restoreTempDir.deleteRecursively()
+                tempDir.deleteRecursively()
             }
         }
-
 }
 
-private fun addFileToZip(zipOut: ZipOutputStream, file: File, entryName: String) {
-    FileInputStream(file).use { fis ->
-        val zipEntry = ZipEntry(entryName)
-        zipOut.putNextEntry(zipEntry)
-        fis.copyTo(zipOut)
-        zipOut.closeEntry()
-        LogUtil.d(TAG, "addFileToZip: Added $entryName (${file.length()} bytes) to zip")
+private fun addFileToZip(zipOut: ZipOutputStream, file: File, name: String) {
+    try {
+        FileInputStream(file).use { fis ->
+            zipOut.putNextEntry(ZipEntry(name))
+            fis.copyTo(zipOut)
+            zipOut.closeEntry()
+        }
+    } catch (e: Exception) {
+        LogUtil.e("DataSync", "Zip fail: $name", e)
     }
 }
 
 private fun addVirtualFileToZip(zipOut: ZipOutputStream, name: String, content: String) {
-    val zipEntry = ZipEntry(name)
-    zipOut.putNextEntry(zipEntry)
+    zipOut.putNextEntry(ZipEntry(name))
     zipOut.write(content.toByteArray())
     zipOut.closeEntry()
-    LogUtil.i(TAG, "addVirtualFileToZip: $name （${content.length} bytes）")
 }
 
 private fun WebDavConfig.requireClient(): OkHttpClient {
-    val authHandler = BasicDigestAuthHandler(
-        domain = null,
-        username = this.username,
-        password = this.password
-    )
-    val okHttpClient = OkHttpClient.Builder()
+    val auth = BasicDigestAuthHandler(null, username, password)
+    return OkHttpClient.Builder()
         .followRedirects(false)
-        .authenticator(authHandler)
-        .addNetworkInterceptor(authHandler)
-        .writeTimeout(5, TimeUnit.MINUTES)
+        .authenticator(auth)
+        .addNetworkInterceptor(auth)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.MINUTES)
+        .writeTimeout(10, TimeUnit.MINUTES)
         .build()
-    return okHttpClient
 }
 
 private fun WebDavConfig.requireCollection(path: String? = null): DavCollection {
-    val location = buildString {
-        append(this@requireCollection.url.trimEnd('/'))
-        append("/")
+    val baseUrl = this.url.trimEnd('/')
+    val urlStr = buildString {
+        append(baseUrl)
         if (this@requireCollection.path.isNotBlank()) {
-            append(this@requireCollection.path.trim('/'))
-            append("/")
+            append("/").append(this@requireCollection.path.trim('/'))
         }
         if (path != null) {
-            append(path.trim('/'))
+            append("/").append(path.trim('/'))
+        } else {
+            append("/") // Ensure directory ends with slash
         }
-    }.toHttpUrl()
-    val davCollection = DavCollection(
-        httpClient = this.requireClient(),
-        location = location,
-    )
-    return davCollection
+    }
+    return DavCollection(this.requireClient(), urlStr.toHttpUrl())
 }
 
 private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatchers.IO) {
     try {
-        propfind(depth = 0) { response, relation ->
-            LogUtil.i(TAG, "ensureCollectionExists: $response $relation")
-        }
+        propfind(depth = 0) { _, _ -> }
     } catch (e: HttpException) {
         if (e.code == 404) {
-            LogUtil.i(TAG, "ensureCollectionExists: ${this@ensureCollectionExists.location}")
-            mkCol(null) { res ->
-                LogUtil.i(TAG, "ensureCollectionExists: $res")
+            LogUtil.i("DataSync", "Collection not found (404), attempting to create: $location")
+            mkCol(null) { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = try { response.body?.string() } catch (ex: Exception) { null }
+                    LogUtil.e("DataSync", "mkCol failed: code=${response.code}, message=${response.message}, body=$errorBody")
+                    if (response.code == 403) {
+                        throw Exception("Forbidden (403): Failed to create directory. Please check if your account has permissions or if the path is valid.")
+                    }
+                    throw Exception("Failed to create WebDAV collection: ${response.code} ${response.message}")
+                }
             }
+        } else if (e.code == 403) {
+            LogUtil.e("DataSync", "WebDAV Access Forbidden (403) on PROPFIND: $location")
+            throw Exception("Forbidden (403): Access denied. Check your credentials and permissions. Some providers require manual folder creation.")
         } else throw e
     }
 }
 
-data class WebDavBackupItem(
-    val href: String,
-    val displayName: String,
-    val size: Long,
-    val lastModified: Instant,
-)
+data class WebDavBackupItem(val href: String, val displayName: String, val size: Long, val lastModified: Instant)

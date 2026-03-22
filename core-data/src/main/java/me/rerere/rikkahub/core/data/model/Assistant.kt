@@ -44,6 +44,7 @@ data class Assistant(
     val maxTokenUsage: Int = 81920,
     val contextPriority: ContextPriority = ContextPriority.BALANCED,
     val summarizerModelId: Uuid? = null,
+    val memoryModelId: Uuid? = null,
     val diaryModelId: Uuid? = null,
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,

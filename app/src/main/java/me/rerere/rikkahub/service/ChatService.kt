@@ -49,8 +49,9 @@ import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.common.JsonInstantPretty
+import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
-import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
@@ -114,6 +115,7 @@ class ChatService(
     private val providerManager: ProviderManager,
     private val localTools: LocalTools,
     val mcpManager: McpManager,
+    private val chatEpisodeDAO: ChatEpisodeDAO,
 ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -134,6 +136,8 @@ class ChatService(
     val generationDoneFlow: SharedFlow<Uuid> = _generationDoneFlow.asSharedFlow()
     private val _isForeground = MutableStateFlow(false)
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
+
+    private var lastConversationId: Uuid? = null
 
     private val lifecycleObserver = LifecycleEventObserver { _, event ->
         when (event) {
@@ -199,6 +203,14 @@ class ChatService(
     }
 
     suspend fun initializeConversation(conversationId: Uuid) {
+        // 当切换会话时，尝试对上一个会话进行片段记忆归档
+        lastConversationId?.let { oldId ->
+            if (oldId != conversationId) {
+                appScope.launch { archiveConversation(oldId) }
+            }
+        }
+        lastConversationId = conversationId
+
         val conversation = conversationRepo.getConversationById(conversationId)
         if (conversation != null) {
             updateConversation(conversationId, conversation)
@@ -208,6 +220,67 @@ class ChatService(
             val newConversation = Conversation.ofId(id = conversationId, assistantId = assistant.id)
                 .updateCurrentMessages(assistant.presetMessages)
             updateConversation(conversationId, newConversation)
+        }
+    }
+
+    /**
+     * 将会话存档为唯一的片段记忆 (1:1 映射)
+     * @param force 如果为 true，则无视消息数量限制，立即更新记忆
+     */
+    suspend fun archiveConversation(conversationId: Uuid, force: Boolean = false) {
+        if (temporaryConversations.contains(conversationId)) return
+
+        try {
+            val conv = conversationRepo.getConversationById(conversationId) ?: return
+            val messages = conv.currentMessages
+            if (messages.size < 4 && !force) return
+
+            val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
+
+            // 如果已存在记忆，检查是否满足更新条件（新消息数量 > 4）
+            if (existingEpisode != null && !force) {
+                // 利用 significance 暂存上次归档时的消息数
+                val lastArchivedCount = existingEpisode.significance
+                if (messages.size - lastArchivedCount < 4) {
+                    return
+                }
+            }
+
+            val settings = settingsStore.settingsFlow.first()
+            val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
+            if (!assistant.enableMemoryConsolidation && !force) return
+
+            val modelId = assistant.summarizerModelId ?: assistant.chatModelId ?: settings.chatModelId
+            val model = settings.findModelById(modelId) ?: return
+            val provider = model.findProvider(settings.providers) ?: return
+            val handler = providerManager.getProviderByType(provider)
+
+            // 生成会话总体摘要
+            val text = messages.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
+            val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+                .replace("{{text}}", text)
+                .replace("{{locale}}", Locale.getDefault().displayName)
+
+            val providerSetting = provider as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+            val resp = providerSetting.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f))
+            val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+
+            if (summary.isNotBlank()) {
+                val episode = ChatEpisodeEntity(
+                    id = existingEpisode?.id ?: 0, // 替换旧的或新建
+                    assistantId = assistant.id.toString(),
+                    conversationId = conversationId.toString(),
+                    content = summary,
+                    startTime = conv.createAt.toEpochMilli(),
+                    endTime = conv.updateAt.toEpochMilli(),
+                    significance = messages.size, // 关键：记录当前消息总数
+                    lastAccessedAt = System.currentTimeMillis()
+                )
+                chatEpisodeDAO.insertEpisode(episode)
+                Log.i(TAG, "Archived/Updated episodic memory for conversation $conversationId")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to archive conversation $conversationId", e)
         }
     }
 
@@ -307,7 +380,7 @@ class ChatService(
                     if (assistant.useRagMemoryRetrieval) {
                         val lastUserMsg = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
                         if (lastUserMsg.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(assistantId = settings.assistantId.toString(), query = lastUserMsg, limit = 50, similarityThreshold = assistant.ragSimilarityThreshold, includeCore = assistant.ragIncludeCore, includeEpisodes = assistant.ragIncludeEpisodes)
+                            val results = memoryRepository.retrieveRelevantMemories(assistantId = settings.assistantId.toString(), query = lastUserMsg, limit = assistant.ragLimit, similarityThreshold = assistant.ragSimilarityThreshold, includeCore = assistant.ragIncludeCore, includeEpisodes = assistant.ragIncludeEpisodes)
                             if (settings.enableRagLogging) results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
                             results
                         } else memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
@@ -322,7 +395,7 @@ class ChatService(
                     if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) addAll(createSearchTool(settings, searchMode.index))
                     addAll(localTools.getTools(options = assistant.localTools, assistantId = assistant.id, conversationId = conversation.id, userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()?.map { it.url } ?: emptyList()))
 
-                    // 修复工具名称不合法导致的 Google Provider 报错
+                    // MCP Tools
                     val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
                     mcpManager.getAllAvailableTools().forEach { mcpTool ->
                         val originalName = mcpTool.name
@@ -416,7 +489,7 @@ class ChatService(
             val provider = model.findProvider(settings.providers) ?: return
             val content = conversation.currentMessages.truncate(conversation.truncateIndex).joinToString("\n\n") { it.summaryAsText() }
             if (content.isBlank()) return
-            val result = providerManager.getProviderByType(provider).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 0f))
+            val result = (providerManager.getProviderByType(provider) as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 0f))
             saveConversation(conversationId, conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""))
         }
     }
@@ -426,7 +499,7 @@ class ChatService(
             val settings = settingsStore.settingsFlow.first()
             val model = settings.findModelById(settings.suggestionModelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
-            val result = providerManager.getProviderByType(provider).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 0f))
+            val result = (providerManager.getProviderByType(provider) as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 0f))
             val suggestions = result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
             saveConversation(conversationId, conversation.copy(chatSuggestions = suggestions))
         }
@@ -504,7 +577,10 @@ class ChatService(
             val tempPrompt = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }.replace("{{new_messages}}", text).replace("{{locale}}", locale)
             val tempResp = handler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
+
+            // 保留：上下文摘要存入片段记忆数据库
             if (tempSum.isNotBlank()) memoryRepository.addMemory(assistant.id.toString(), "Recent: $tempSum", type = MemoryType.EPISODIC)
+
             val currentSummary = conv.contextSummary
             val fullPrompt = if (!currentSummary.isNullOrBlank()) assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }.replace("{{previous_summary}}", currentSummary).replace("{{new_messages}}", text).replace("{{locale}}", locale) else "Summarize:\n$text"
             val fullResp = handler.generateText(provider, listOf(UIMessage.user(fullPrompt)), TextGenerationParams(model, 0.3f))

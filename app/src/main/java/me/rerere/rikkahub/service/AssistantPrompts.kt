@@ -80,24 +80,40 @@ Summary:
 """
 
 const val DEFAULT_MEMORY_OPTIMIZATION_PROMPT = """
-You are a memory manager. Optimize this group of related memories:
+You are a Memory Architect. Your goal is to simplify and structure a group of related memories.
+
+**Memories to Process (ID and Content):**
 {{groupText}}
 
-Relevant Context:
-{{contextEpisodic}}
+**Instruction:**
+1. **THEMATIC MERGE**: If multiple memories talk about the same TOPIC, merge them into a single, comprehensive record.
+2. **CLEANUP REDUNDANCY**: If you merge multiple memories, you MUST keep ONE ID (using "update") and explicitly list ALL OTHER IDs for deletion (using "delete").
+3. **RESOLVE CONFLICTS**: If information is contradictory, prioritize the most recent or logical one.
+4. **PRESERVE KEY INFO**: Do NOT lose specific details (e.g., names, dates, amounts, events) during merging.
+5. **LANGUAGE**: Output the new content in {{locale}}.
+6. **FORMAT CONSTRAINT**: In the "content" field of the JSON, provide ONLY the text string. DO NOT wrap the content in another JSON object or include ID/Content labels inside the string.
+7. **JSON SYNTAX (CRITICAL)**:
+    - IDs must be numbers (e.g., 123 or -456).
+    - DO NOT add trailing quotes to numbers (e.g., NEVER do `"id": -133"`).
+    - Ensure all strings are properly escaped.
 
-Goals:
-1. MERGE: Combine highly similar ones.
-2. CONFLICT: Keep only latest/most accurate.
-3. LANGUAGE: Output the new content in {{locale}}.
-
-Return JSON array of operations:
-[{"op": "update", "id": 1, "content": "..."}, {"op": "delete", "id": 2}, {"op": "add", "content": "..."}]
+**Mandatory Output Format:**
+Return ONLY a JSON array of operations. Every ID provided in the list above MUST be accounted for either in an "update" or "delete" operation.
+Example1: If merging IDs 1, 2, and 3:
+[
+  {"op": "update", "id": 1, "content": "Merged text..."},
+  {"op": "delete", "id": 2}
+]
+Example2: If merging IDs -1 and -2:
+[
+  {"op": "update", "id": -1, "content": "Merged text..."},
+  {"op": "delete", "id": -2}
+]
 """
 
 const val DEFAULT_EPISODIC_CONSOLIDATION_PROMPT = """
 Summarize the key events, information, and user preferences from the following conversation.
-Focus on specific facts that might be useful for future interactions.
+Focus on specific facts that might be useful for future interactions.No explanation.
 Keep it concise (1-3 paragraphs).
 Output language: {{locale}}
 

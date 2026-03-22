@@ -86,6 +86,34 @@ fun AssistantContextManagementSubPage(
         // ═══════════════════════════════════════════════════════════════════
 
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
+            // 历史消息上限 (始终显示)
+            val historyLimit = assistant.maxHistoryMessages ?: 0
+            var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
+
+            SliderSettingCard(
+                title = if (sliderValue.roundToInt() == 0) {
+                    stringResource(R.string.context_max_messages_unlimited)
+                } else {
+                    stringResource(R.string.assistant_context_history_limit_title)
+                },
+                value = sliderValue,
+                valueText = if (sliderValue.roundToInt() == 0) "" else stringResource(R.string.assistant_context_history_limit_value, sliderValue.roundToInt()),
+                description = if (assistant.enableContextRefresh && assistant.autoRegenerateSummary) {
+                    stringResource(R.string.assistant_context_history_limit_desc)
+                } else {
+                    stringResource(R.string.context_max_messages_desc)
+                },
+                onValueChange = { sliderValue = it },
+                onValueChangeFinished = {
+                    val newValue = sliderValue.roundToInt()
+                    onUpdate(assistant.copy(
+                        maxHistoryMessages = if (newValue == 0) null else newValue
+                    ))
+                },
+                valueRange = 0f..100f,
+                steps = 99
+            )
+
             val needsSummarizerWarning = assistant.enableContextRefresh && assistant.summarizerModelId == null
             AnimatedVisibility(
                 visible = needsSummarizerWarning,
@@ -141,31 +169,6 @@ fun AssistantContextManagementSubPage(
             }
 
             AnimatedVisibility(
-                visible = assistant.enableContextRefresh && assistant.autoRegenerateSummary,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                val historyLimit = assistant.maxHistoryMessages ?: 10
-                var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
-
-                SliderSettingCard(
-                    title = stringResource(R.string.assistant_context_history_limit_title),
-                    value = sliderValue,
-                    valueText = stringResource(R.string.assistant_context_history_limit_value, sliderValue.roundToInt()),
-                    description = stringResource(R.string.assistant_context_history_limit_desc),
-                    onValueChange = { sliderValue = it },
-                    onValueChangeFinished = {
-                        val newValue = sliderValue.roundToInt()
-                        onUpdate(assistant.copy(
-                            maxHistoryMessages = if (newValue <= 1) 10 else newValue
-                        ))
-                    },
-                    valueRange = 5f..100f,
-                    steps = 94
-                )
-            }
-
-            AnimatedVisibility(
                 visible = assistant.enableContextRefresh,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
@@ -185,6 +188,34 @@ fun AssistantContextManagementSubPage(
                     },
                     valueRange = 0f..20f,
                     steps = 20
+                )
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // MEMORY RETRIEVAL
+        // ═══════════════════════════════════════════════════════════════════
+        AnimatedVisibility(
+            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            SettingsGroup(title = stringResource(R.string.assistant_memory_group_settings)) {
+                val ragLimit = assistant.ragLimit
+                var ragSliderValue by remember(ragLimit) { mutableFloatStateOf(ragLimit.toFloat()) }
+
+                SliderSettingCard(
+                    title = stringResource(R.string.assistant_memory_rag_limit_title),
+                    value = ragSliderValue,
+                    valueText = stringResource(R.string.assistant_memory_rag_limit_value, ragSliderValue.roundToInt()),
+                    description = stringResource(R.string.assistant_memory_rag_limit_desc),
+                    onValueChange = { ragSliderValue = it },
+                    onValueChangeFinished = {
+                        val newValue = ragSliderValue.roundToInt()
+                        onUpdate(assistant.copy(ragLimit = newValue))
+                    },
+                    valueRange = 1f..50f,
+                    steps = 49
                 )
             }
         }

@@ -21,6 +21,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.LocalDate
 import java.util.Locale
+import kotlin.uuid.Uuid
 
 private const val TAG = "MemoryConsolidation"
 
@@ -34,11 +35,26 @@ class MemoryConsolidationWorker(
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
 
     override suspend fun doWork(): Result {
-        val isFullScan = inputData.getBoolean("FULL_SCAN", false)
+        val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
         val assistantId = inputData.getString("ASSISTANT_ID")
-        Log.i(TAG, "Starting memory consolidation (Full Scan: $isFullScan, Target: $assistantId)")
+
+        Log.i(TAG, "Starting memory consolidation (Force: $forceConversationId, Target Assistant: $assistantId)")
 
         try {
+            if (forceConversationId != null) {
+                val convId = Uuid.parse(forceConversationId)
+                val conv = conversationRepository.getConversationById(convId)
+                if (conv == null) {
+                    Log.e(TAG, "Conversation not found: $forceConversationId")
+                    return Result.failure()
+                }
+                val settings = settingsStore.settingsFlow.first()
+                val assistant = settings.assistants.find { it.id == conv.assistantId } ?: return Result.failure()
+
+                val success = manualConsolidate(assistant, conv)
+                return if (success) Result.success() else Result.failure()
+            }
+
             val settings = settingsStore.settingsFlow.first()
             val assistants = if (assistantId != null) {
                 settings.assistants.filter { it.id.toString() == assistantId }
@@ -52,7 +68,7 @@ class MemoryConsolidationWorker(
             }
 
             for (assistant in assistants) {
-                consolidateAssistantMemories(assistant, isFullScan)
+                consolidateAssistantMemories(assistant, false)
             }
 
             return Result.success()
@@ -62,25 +78,95 @@ class MemoryConsolidationWorker(
         }
     }
 
+    private suspend fun manualConsolidate(assistant: Assistant, conv: Conversation): Boolean {
+        val settings = settingsStore.settingsFlow.first()
+        val messageCount = conv.currentMessages.size
+        val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
+
+        // 校验：新消息达到4条
+        if (existingEpisode != null) {
+            if (messageCount - existingEpisode.significance < 4) {
+                updateLastResult(assistant.id, applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data))
+                return false
+            }
+        } else if (messageCount < 4) {
+            updateLastResult(assistant.id, applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data))
+            return false
+        }
+
+        // 使用 memoryModelId 进行整合
+        val modelId = assistant.memoryModelId ?: settings.memoryModelId
+        val model = settings.findModelById(modelId) ?: return false
+        val providerSetting = model.findProvider(settings.providers) ?: return false
+        val handler = providerManager.getProviderByType(providerSetting)
+
+        return try {
+            val summary = generateConversationSummary(handler, providerSetting, model, conv)
+            if (summary.isNotBlank()) {
+                val episode = ChatEpisodeEntity(
+                    id = existingEpisode?.id ?: 0,
+                    assistantId = assistant.id.toString(),
+                    conversationId = conv.id.toString(),
+                    content = summary,
+                    startTime = conv.createAt.toEpochMilli(),
+                    endTime = conv.updateAt.toEpochMilli(),
+                    significance = messageCount,
+                    lastAccessedAt = System.currentTimeMillis()
+                )
+                chatEpisodeDAO.insertEpisode(episode)
+                conversationRepository.markAsConsolidated(conv.id)
+                updateLastResult(assistant.id, "Consolidation Successful")
+                true
+            } else {
+                updateLastResult(assistant.id, "Consolidation Failed: Empty Summary")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Manual consolidation failed", e)
+            updateLastResult(assistant.id, "Consolidation Failed: ${e.message}")
+            false
+        }
+    }
+
+    private suspend fun updateLastResult(assistantId: Uuid, result: String) {
+        val settings = settingsStore.settingsFlow.first()
+        val updated = settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == assistantId) it.copy(lastConsolidationResult = result, lastConsolidationTime = System.currentTimeMillis())
+                else it
+            }
+        )
+        settingsStore.update(updated)
+    }
+
     private suspend fun consolidateAssistantMemories(assistant: Assistant, isFullScan: Boolean) {
         val currentSettings = settingsStore.settingsFlow.first()
         val currentAssistant = currentSettings.assistants.find { it.id == assistant.id } ?: assistant
 
         val conversations = conversationRepository.getConversationsOfAssistant(currentAssistant.id).first()
 
-        // 1. Process Episodic Memories (Consolidation Track A)
+        // 1. Process Episodic Memories
         val toConsolidateEpisodes = conversations.filter { conv ->
             if (!currentAssistant.enableMemoryConsolidation) return@filter false
-            if (conv.isConsolidated) return@filter false
-            if (conv.currentMessages.size < 4) return@filter false
-            if (isFullScan) return@filter true
+
+            val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
+            val messageCount = conv.currentMessages.size
+
+            if (existingEpisode != null) {
+                if (messageCount - existingEpisode.significance < 4) return@filter false
+            } else {
+                if (messageCount < 4) return@filter false
+            }
 
             val delayMillis = currentAssistant.consolidationDelayMinutes * 60 * 1000L
             val timeSinceUpdate = System.currentTimeMillis() - conv.updateAt.toEpochMilli()
             timeSinceUpdate >= delayMillis
         }
 
-        val modelId = currentAssistant.summarizerModelId ?: currentSettings.chatModelId
+        if (toConsolidateEpisodes.isEmpty()) return
+
+        // 使用 memoryModelId 进行整合
+        val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
         val model = currentSettings.findModelById(modelId) ?: return
         val providerSetting = model.findProvider(currentSettings.providers) ?: return
         val handler = providerManager.getProviderByType(providerSetting)
@@ -90,13 +176,15 @@ class MemoryConsolidationWorker(
             try {
                 val summary = generateConversationSummary(handler, providerSetting, model, conv)
                 if (summary.isNotBlank()) {
+                    val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
                     val episode = ChatEpisodeEntity(
+                        id = existingEpisode?.id ?: 0,
                         assistantId = currentAssistant.id.toString(),
                         conversationId = conv.id.toString(),
                         content = summary,
                         startTime = conv.createAt.toEpochMilli(),
                         endTime = conv.updateAt.toEpochMilli(),
-                        significance = 5,
+                        significance = conv.currentMessages.size,
                         lastAccessedAt = System.currentTimeMillis()
                     )
                     chatEpisodeDAO.insertEpisode(episode)
@@ -108,16 +196,15 @@ class MemoryConsolidationWorker(
             }
         }
 
-        // 2. Process Master Memory (Archive Track B)
+        // 2. Process Master Memory
         var updatedMasterContent: String? = null
-        var masterMemorySkipReason: String? = null
         if (currentAssistant.enableMasterMemory) {
             val newConversations = conversations.filter {
-                it.updateAt.toEpochMilli() > currentAssistant.lastMasterMemoryUpdate && it.currentMessages.size >= 2
+                it.updateAt.toEpochMilli() > currentAssistant.lastMasterMemoryUpdate &&
+                    it.currentMessages.size >= 4
             }.sortedBy { it.updateAt }
 
-            if (newConversations.isNotEmpty() || isFullScan) {
-                Log.i(TAG, "Updating Master Memory for ${currentAssistant.name}")
+            if (newConversations.isNotEmpty()) {
                 try {
                     val contextParts = mutableListOf<String>()
                     for (conv in newConversations) {
@@ -125,7 +212,7 @@ class MemoryConsolidationWorker(
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
-                            val messagesText = conv.currentMessages.takeLast(10).joinToString("\n") {
+                            val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
                                 "${it.role}: ${it.toText().take(300)}"
                             }
                             contextParts.add("Recent Messages:\n$messagesText")
@@ -134,61 +221,37 @@ class MemoryConsolidationWorker(
 
                     val recentContext = contextParts.joinToString("\n\n---\n\n")
 
-                    if (recentContext.isNotBlank() || isFullScan) {
+                    if (recentContext.isNotBlank()) {
                         updatedMasterContent = updateMasterMemory(
                             handler, providerSetting, model,
                             currentAssistant.masterMemoryContent,
                             recentContext,
                             currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
                         )
-                    } else {
-                        masterMemorySkipReason = applicationContext.getString(R.string.assistant_memory_master_no_new_content)
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Master Memory", e)
                 }
-            } else {
-                masterMemorySkipReason = applicationContext.getString(R.string.assistant_memory_master_no_new_content)
             }
         }
 
-        // 3. Finalize and Update Settings
+        // 3. Finalize
         val finalSettings = settingsStore.settingsFlow.first()
         val now = System.currentTimeMillis()
-
-        val resultDesc = buildString {
-            if (episodicSuccessCount > 0) {
-                append("Consolidated $episodicSuccessCount episodes. ")
-            } else if (currentAssistant.enableMemoryConsolidation && toConsolidateEpisodes.isEmpty()) {
-                append(applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data))
-                append(" ")
-            }
-
-            if (updatedMasterContent != null) {
-                append("Master Memory updated. ")
-            } else if (currentAssistant.enableMasterMemory && masterMemorySkipReason != null) {
-                append(masterMemorySkipReason)
-                append(" ")
-            }
-
-            if (isEmpty()) append("Scan complete, no new items.")
-        }.trim()
 
         val updatedSettings = finalSettings.copy(
             assistants = finalSettings.assistants.map {
                 if (it.id == currentAssistant.id) {
                     it.copy(
                         lastConsolidationTime = now,
-                        lastConsolidationResult = resultDesc,
+                        lastConsolidationResult = if (episodicSuccessCount > 0) "Consolidated $episodicSuccessCount items automatically" else it.lastConsolidationResult,
                         masterMemoryContent = updatedMasterContent ?: it.masterMemoryContent,
                         lastMasterMemoryUpdate = if (updatedMasterContent != null) now else it.lastMasterMemoryUpdate
                     )
                 } else it
             }
         )
-
         settingsStore.update(updatedSettings)
-        Log.i(TAG, "Updated consolidation stats for ${currentAssistant.name}: $resultDesc")
     }
 
     @Suppress("UNCHECKED_CAST")

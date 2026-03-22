@@ -186,8 +186,18 @@ data class UIMessage(
 
     fun getToolResults() = parts.filterIsInstance<UIMessagePart.ToolResult>()
 
+    /**
+     * 判断此消息是否应该被发送给 AI 模型。
+     * 只有包含实际有效内容的消息才会被上传，排除纯内部推理过程或完全空的消息。
+     */
     fun isValidToUpload() = parts.any {
-        it !is UIMessagePart.Reasoning
+        (it is UIMessagePart.Text && it.text.isNotBlank()) ||
+        it is UIMessagePart.Image ||
+        it is UIMessagePart.ToolCall ||
+        it is UIMessagePart.ToolResult ||
+        it is UIMessagePart.Document ||
+        it is UIMessagePart.Video ||
+        it is UIMessagePart.Audio
     }
 
     inline fun <reified P : UIMessagePart> hasPart(): Boolean {
@@ -328,8 +338,7 @@ fun List<UIMessage>.truncate(index: Int): List<UIMessage> {
 fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
     if (size <= 0 || this.size <= size) return this
 
-    val startIndex = this.size - size
-    var adjustedStartIndex = startIndex
+    var adjustedStartIndex = this.size - size
 
     // 循环往前查找，直到满足所有依赖条件
     var needsAdjustment = true
@@ -344,10 +353,10 @@ fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
 
         val currentMessage = this[adjustedStartIndex]
 
-        // 如果当前消息包含tool result，往前查找对应的tool call
-        if (currentMessage.getToolResults().isNotEmpty()) {
+        // 依赖 1: 如果当前消息包含 tool result，往前查找对应的 assistant tool call
+        if (currentMessage.role == MessageRole.TOOL || currentMessage.getToolResults().isNotEmpty()) {
             for (i in adjustedStartIndex - 1 downTo 0) {
-                if (this[i].getToolCalls().isNotEmpty()) {
+                if (this[i].role == MessageRole.ASSISTANT && this[i].getToolCalls().isNotEmpty()) {
                     adjustedStartIndex = i
                     needsAdjustment = true
                     break
@@ -355,8 +364,8 @@ fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
             }
         }
 
-        // 如果当前消息包含tool call，往前查找对应的用户消息
-        if (currentMessage.getToolCalls().isNotEmpty()) {
+        // 依赖 2: 如果当前消息包含 assistant tool call，往前查找对应的用户消息
+        if (adjustedStartIndex >= 0 && this[adjustedStartIndex].getToolCalls().isNotEmpty()) {
             for (i in adjustedStartIndex - 1 downTo 0) {
                 if (this[i].role == MessageRole.USER) {
                     adjustedStartIndex = i
@@ -367,7 +376,15 @@ fun List<UIMessage>.limitContext(size: Int): List<UIMessage> {
         }
     }
 
-    return this.subList(adjustedStartIndex, this.size)
+    // 最终安全检查：如果裁剪后的列表仍然以 TOOL 角色开头，DeepSeek 会报 400。
+    // 这通常发生在历史太短，连对应的 Assistant Call 都没有的情况。
+    // 这种情况下，我们必须丢弃开头的孤立 TOOL 消息，直到找到正常的起始点。
+    var result = this.subList(adjustedStartIndex, this.size)
+    while (result.isNotEmpty() && (result.first().role == MessageRole.TOOL || result.first().getToolResults().isNotEmpty())) {
+        result = result.drop(1)
+    }
+
+    return result
 }
 
 @Serializable

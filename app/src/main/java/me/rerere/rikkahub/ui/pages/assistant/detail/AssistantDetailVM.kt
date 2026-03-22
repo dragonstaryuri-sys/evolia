@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
@@ -30,15 +31,18 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.service.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
+import me.rerere.rikkahub.service.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+import me.rerere.rikkahub.service.DEFAULT_MASTER_MEMORY_PROMPT
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.util.Locale
+import java.time.LocalDate
 import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
 
-@Serializable
-data class MemoryOp(
+// 移除 @Serializable，手动定义一个普通的类用于逻辑处理
+data class AssistantMemoryOp(
     val op: String,
     val id: Int? = null,
     val content: String? = null
@@ -139,6 +143,105 @@ class AssistantDetailVM(
     private val _isOptimizing = MutableStateFlow(false)
     val isOptimizing = _isOptimizing.asStateFlow()
 
+    private val _isConsolidating = MutableStateFlow(false)
+    val isConsolidating = _isConsolidating.asStateFlow()
+
+    private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
+    val embeddingProgress = _embeddingProgress.asStateFlow()
+
+    fun runManualConsolidation() {
+        viewModelScope.launch {
+            if (_isConsolidating.value) return@launch
+            _isConsolidating.value = true
+            try {
+                val currentSettings = settings.value
+                val currentAssistant = assistant.value
+                val conversations = conversationRepository.getConversationsOfAssistant(currentAssistant.id).first()
+
+                // 1. Process Episodic Memories
+                val toConsolidateEpisodes = conversations.filter { conv ->
+                    !conv.isConsolidated && conv.currentMessages.size >= 4
+                }
+
+                // 使用 memoryModelId 进行整合
+                val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
+                val model = currentSettings.findModelById(modelId) ?: error("No model found")
+                val providerSetting = model.findProvider(currentSettings.providers) ?: error("No provider found")
+                val handler = providerManager.getProviderByType(providerSetting)
+
+                var episodicSuccessCount = 0
+                for (conv in toConsolidateEpisodes) {
+                    val summary = generateConversationSummary(handler, providerSetting, model, conv)
+                    if (summary.isNotBlank()) {
+                        val episode = ChatEpisodeEntity(
+                            assistantId = currentAssistant.id.toString(),
+                            conversationId = conv.id.toString(),
+                            content = summary,
+                            startTime = conv.createAt.toEpochMilli(),
+                            endTime = conv.updateAt.toEpochMilli(),
+                            significance = 5,
+                            lastAccessedAt = System.currentTimeMillis()
+                        )
+                        chatEpisodeDAO.insertEpisode(episode)
+                        conversationRepository.markAsConsolidated(conv.id)
+                        episodicSuccessCount++
+                    }
+                }
+
+                // 2. Process Master Memory
+                var updatedMasterContent: String? = null
+                if (currentAssistant.enableMasterMemory) {
+                    val contextParts = mutableListOf<String>()
+                    for (conv in conversations.filter { it.currentMessages.size >= 2 }) {
+                        val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
+                        if (!summary.isNullOrBlank()) {
+                            contextParts.add("Conversation Summary: $summary")
+                        } else {
+                            contextParts.add("Recent Messages:\n${conv.currentMessages.takeLast(20).joinToString("\n") { "${it.role}: ${it.toText().take(300)}" }}")
+                        }
+                    }
+                    val recentContext = contextParts.joinToString("\n\n---\n\n")
+                    if (recentContext.isNotBlank()) {
+                        updatedMasterContent = updateMasterMemory(
+                            handler, providerSetting, model,
+                            currentAssistant.masterMemoryContent,
+                            recentContext,
+                            currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
+                        )
+                    }
+                }
+
+                // 3. Finalize
+                val now = System.currentTimeMillis()
+                val resultDesc = buildString {
+                    if (episodicSuccessCount > 0) append("Consolidated $episodicSuccessCount episodes. ")
+                    if (updatedMasterContent != null) append("Master Memory updated. ")
+                    if (isEmpty()) append("No new items to consolidate.")
+                }.trim()
+
+                val updatedSettings = currentSettings.copy(
+                    assistants = currentSettings.assistants.map {
+                        if (it.id == currentAssistant.id) {
+                            it.copy(
+                                lastConsolidationTime = now,
+                                lastConsolidationResult = resultDesc,
+                                masterMemoryContent = updatedMasterContent ?: it.masterMemoryContent,
+                                lastMasterMemoryUpdate = if (updatedMasterContent != null) now else it.lastMasterMemoryUpdate
+                            )
+                        } else it
+                    }
+                )
+                settingsStore.update(updatedSettings)
+                setSnackbarMessage(resultDesc)
+            } catch (e: Exception) {
+                Log.e(TAG, "Consolidation failed", e)
+                setSnackbarMessage("Error: ${e.message}")
+            } finally {
+                _isConsolidating.value = false
+            }
+        }
+    }
+
     fun optimizeMemories() {
         viewModelScope.launch {
             if (_isOptimizing.value) return@launch
@@ -146,80 +249,234 @@ class AssistantDetailVM(
             try {
                 val currentSettings = settings.value
                 val currentAssistant = assistant.value
-                val coreMemories = memories.value.filter { it.id > 0 }
+                val allMemories = memories.value
 
-                if (coreMemories.isEmpty()) {
+                val coreMemories = allMemories.filter { it.id > 0 }
+                val episodicMemories = allMemories.filter { it.id < 0 }
+
+                if (coreMemories.isEmpty() && episodicMemories.isEmpty()) {
                     setSnackbarMessage(context.getString(R.string.memory_optimize_no_change))
                     return@launch
                 }
 
-                val groups = mutableListOf<List<AssistantMemory>>()
-                val processedIds = mutableSetOf<Int>()
-
-                for (memory in coreMemories) {
-                    if (processedIds.contains(memory.id)) continue
-                    val similar = memoryRepository.retrieveRelevantMemoriesWithScores(
-                        assistantId = assistantId.toString(),
-                        query = memory.content,
-                        limit = 10,
-                        similarityThreshold = 0.7f,
-                        includeCore = true,
-                        includeEpisodes = false
-                    ).map { it.first }.filter { !processedIds.contains(it.id) }
-
-                    if (similar.size > 1) {
-                        groups.add(similar)
-                        processedIds.addAll(similar.map { it.id })
-                    }
-                }
-
-                if (groups.isEmpty()) {
-                    setSnackbarMessage(context.getString(R.string.memory_optimize_no_change))
-                    return@launch
-                }
-
-                val modelId = currentAssistant.summarizerModelId ?: currentAssistant.chatModelId ?: currentSettings.chatModelId
+                // 使用 memoryModelId 进行优化
+                val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
                 val model = currentSettings.findModelById(modelId) ?: error("No model")
                 val providerSetting = model.findProvider(currentSettings.providers) ?: error("No provider")
                 val handler = providerManager.getProviderByType(providerSetting)
 
-                var totalMerged = 0
-                var totalConflicts = 0
+                var totalUpdated = 0
+                var totalDeleted = 0
+                var totalAdded = 0
 
-                for (group in groups) {
-                    val groupText = group.joinToString("\n") { "(ID: ${it.id}): ${it.content}" }
-                    val contextEpisodic = memoryRepository.retrieveRelevantMemories(
-                        assistantId = assistantId.toString(),
-                        query = group.first().content,
-                        limit = 3,
-                        includeCore = false,
-                        includeEpisodes = true
-                    ).joinToString("\n") { "Context: ${it.content}" }
-
-                    val prompt = DEFAULT_MEMORY_OPTIMIZATION_PROMPT
-                        .replace("{{groupText}}", groupText)
-                        .replace("{{contextEpisodic}}", contextEpisodic)
-                        .replace("{{locale}}", Locale.getDefault().displayName)
-
-                    val response = handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
-                    val resultText = response.choices.firstOrNull()?.message?.toContentText() ?: ""
-                    val ops = Json { ignoreUnknownKeys = true }.decodeFromString<List<MemoryOp>>(resultText.substringAfter("[").substringBeforeLast("]").let { "[$it]" })
-
-                    ops.forEach { op ->
-                        when (op.op) {
-                            "update" -> if (op.id != null && op.id > 0) { memoryRepository.updateContent(op.id, op.content ?: ""); totalConflicts++ }
-                            "delete" -> if (op.id != null && op.id > 0) { memoryRepository.deleteMemory(op.id); totalMerged++ }
-                            "add" -> memoryRepository.addMemory(assistantId.toString(), op.content ?: "")
-                        }
+                // 1. Optimize Core Memories
+                if (coreMemories.isNotEmpty()) {
+                    val coreGroups = findSimilarGroups(coreMemories, true)
+                    for (group in coreGroups) {
+                        val result = processOptimizationGroup(handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>, providerSetting, model, group, null)
+                        totalUpdated += result.updated
+                        totalDeleted += result.deleted
+                        totalAdded += result.added
                     }
                 }
-                setSnackbarMessage(context.getString(R.string.memory_optimize_success, totalMerged, totalConflicts))
+
+                // 2. Optimize Episodic Memories
+                if (episodicMemories.isNotEmpty()) {
+                    val episodicGroups = findSimilarGroups(episodicMemories, false)
+                    for (group in episodicGroups) {
+                        val result = processOptimizationGroup(handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>, providerSetting, model, group, null)
+                        totalUpdated += result.updated
+                        totalDeleted += result.deleted
+                        totalAdded += result.added
+                    }
+                }
+
+                setSnackbarMessage(context.getString(R.string.memory_optimize_success, totalUpdated, totalDeleted, totalAdded))
+
+                // 自动启动一次 Embedding 向量化
+                _embeddingProgress.value = EmbeddingProgress(0, 1, true)
+                memoryRepository.regenerateEmbeddings(assistantId.toString()) { current, total ->
+                    _embeddingProgress.value = EmbeddingProgress(current, total, true)
+                }
+                _embeddingProgress.value = null
             } catch (e: Exception) {
                 Log.e(TAG, "Optimization failed", e)
                 setSnackbarMessage("Error: ${e.message}")
             } finally {
                 _isOptimizing.value = false
+                _embeddingProgress.value = null
             }
+        }
+    }
+
+    private suspend fun generateConversationSummary(
+        handler: me.rerere.ai.provider.Provider<*>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        conversation: me.rerere.rikkahub.core.data.model.Conversation
+    ): String {
+        val text = conversation.currentMessages.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
+        val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+            .replace("{{text}}", text)
+            .replace("{{locale}}", Locale.getDefault().displayName)
+        val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+        val resp = h.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model = model, temperature = 0.3f, topP = 0f))
+        return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+    }
+
+    private suspend fun updateMasterMemory(
+        handler: me.rerere.ai.provider.Provider<*>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        existingArchive: String,
+        newContext: String,
+        systemPrompt: String
+    ): String {
+        val inputPrompt = "Current Date: ${LocalDate.now()}\n\n# Existing Memory Archive:\n${existingArchive.ifBlank { "(Empty)" }}\n\n# New Conversation Context:\n$newContext\n\nPlease provide the fully updated Memory Archive incorporating all relevant new information."
+        val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+        val resp = h.generateText(providerSetting, listOf(UIMessage.system(systemPrompt), UIMessage.user(inputPrompt)), TextGenerationParams(model = model, temperature = 0.2f, topP = 0f))
+        return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+    }
+
+    private suspend fun findSimilarGroups(
+        memList: List<AssistantMemory>,
+        isCore: Boolean
+    ): List<List<AssistantMemory>> {
+        val groups = mutableListOf<List<AssistantMemory>>()
+        val processedIds = mutableSetOf<Int>()
+
+        for (memory in memList) {
+            if (processedIds.contains(memory.id)) continue
+            val similar = memoryRepository.retrieveRelevantMemoriesWithScores(
+                assistantId = assistantId.toString(),
+                query = memory.content,
+                limit = 15,
+                similarityThreshold = 0.6f,
+                includeCore = isCore,
+                includeEpisodes = !isCore
+            ).map { it.first }.filter { m ->
+                val idMatch = if (isCore) m.id > 0 else m.id < 0
+                idMatch && !processedIds.contains(m.id)
+            }
+
+            if (similar.size > 1) {
+                groups.add(similar)
+                processedIds.addAll(similar.map { it.id })
+            }
+        }
+        return groups
+    }
+
+    private data class OptimizationResult(val updated: Int, val deleted: Int, val added: Int)
+
+    private suspend fun processOptimizationGroup(
+        handler: me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        group: List<AssistantMemory>,
+        contextEpisodic: String?
+    ): OptimizationResult {
+        var updated = 0
+        var deleted = 0
+        var added = 0
+
+        val groupIds = group.map { it.id }
+        val groupText = group.joinToString("\n") { "(ID: ${it.id}): ${it.content}" }
+        Log.i(TAG, ">>> [Memory Optimization] Sending Similarity Group (IDs: $groupIds) to AI")
+
+        val prompt = DEFAULT_MEMORY_OPTIMIZATION_PROMPT
+            .replace("{{groupText}}", groupText)
+            .replace("{{locale}}", Locale.getDefault().displayName)
+
+        try {
+            val response = handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
+            val resultText = response.choices.firstOrNull()?.message?.toContentText() ?: ""
+            Log.i(TAG, "<<< [Memory Optimization] AI Raw Response:\n$resultText")
+
+            var jsonString = if (resultText.contains("[") && resultText.contains("]")) {
+                resultText.substring(resultText.indexOf("["), resultText.lastIndexOf("]") + 1)
+            } else resultText
+
+            // 尝试修复 AI 常见的 JSON 语法错误（如 "id": -133"）
+            jsonString = jsonString
+                .replace(Regex("""("id":\s*)(-?\d+)\""""), "$1$2") // 修复 "id": -133" -> "id": -133
+                .replace(Regex("""("id":\s*)"(-?\d+)""""), "$1$2") // 修复 "id": "-133 -> "id": -133
+
+            // 完全手动解析，绝对不使用 decodeFromString<List<MemoryOp>>
+            val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+            // 防御层 2：解析尝试，失败则记录日志并跳过
+            val root = try {
+                json.parseToJsonElement(jsonString)
+            } catch (e: Exception) {
+                Log.w(TAG, "!!! [Memory Optimization] 不能识别 AI 返回内容的格式 (可能存在语法错误)。跳过此组优化。错误: ${e.message}")
+                return OptimizationResult(0, 0, 0)
+            }
+
+            if (root !is JsonArray) {
+                Log.w(TAG, "!!! [Memory Optimization] AI 返回的不是有效的 JSON 数组。跳过。")
+                return OptimizationResult(0, 0, 0)
+            }
+
+            // 防御层 3：预处理所有操作，格式校验通过后再执行数据库操作
+            val opsToExecute = mutableListOf<Triple<String, Int?, String?>>()
+            root.forEach { element ->
+                if (element !is JsonObject) return@forEach
+                val op = element["op"]?.jsonPrimitive?.contentOrNull ?: ""
+                val id = element["id"]?.jsonPrimitive?.intOrNull
+                // 手动探测 content 字段
+                val contentElement = element["content"]
+                val contentString = when {
+                    contentElement == null || contentElement is JsonNull -> null
+                    contentElement is JsonPrimitive -> contentElement.contentOrNull
+                    contentElement is JsonObject -> {
+                        // 兼容 AI 抽风返回的嵌套结构 {"ID": -133, "Content": "..."}
+                        contentElement["content"]?.jsonPrimitive?.contentOrNull
+                            ?: contentElement["Content"]?.jsonPrimitive?.contentOrNull
+                            ?: contentElement.toString()
+                    }
+                    else -> contentElement.toString()
+                }
+
+                when (op) {
+                    "update" -> if (id != null) {
+                        if (id > 0) {
+                            memoryRepository.updateContent(id, contentString ?: "")
+                        } else {
+                            memoryRepository.updateEpisodeContent(-id, contentString ?: "")
+                        }
+                        updated++
+                        Log.i(TAG, "Executed [UPDATE] on ID: $id")
+                    }
+                    "delete" -> if (id != null) {
+                        // 严格校验：只删除本次分组内的记忆
+                        if (groupIds.contains(id)) {
+                            deleteMemoryById(id)
+                            deleted++
+                            Log.i(TAG, "Executed [DELETE] on ID: $id")
+                        } else {
+                            Log.w(TAG, "!!! [PROTECTED] AI tried to delete ID $id NOT in group. Bypassing.")
+                        }
+                    }
+                    "add" -> {
+                        memoryRepository.addMemory(assistantId.toString(), contentString ?: "")
+                        added++
+                        Log.i(TAG, "Executed [ADD] new memory")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Group optimization failed", e)
+        }
+
+        return OptimizationResult(updated, deleted, added)
+    }
+
+    private suspend fun deleteMemoryById(id: Int) {
+        if (id > 0) {
+            memoryRepository.deleteMemory(id)
+        } else {
+            chatEpisodeDAO.deleteEpisode(-id)
         }
     }
 
@@ -228,13 +485,11 @@ class AssistantDetailVM(
     fun updateTags(tagIds: List<Uuid>, updatedTags: List<Tag>) { viewModelScope.launch { val currentSettings = settingsStore.settingsFlow.value; val currentAssistant = assistant.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map { if (it.id == currentAssistant.id) it.copy(tags = tagIds) else it }, assistantTags = updatedTags)) } }
     fun addMemory(memory: AssistantMemory) { viewModelScope.launch { memoryRepository.addMemory(assistantId.toString(), memory.content) } }
     fun updateMemory(memory: AssistantMemory) { viewModelScope.launch { if (memory.id < 0) memoryRepository.updateEpisodeContent(-memory.id, memory.content) else memoryRepository.updateContent(memory.id, memory.content) } }
-    fun deleteMemory(memory: AssistantMemory) { viewModelScope.launch { if (memory.id > 0) memoryRepository.deleteMemory(memory.id) } }
+    fun deleteMemory(memory: AssistantMemory) { viewModelScope.launch { deleteMemoryById(memory.id) } }
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage = _snackbarMessage.asStateFlow()
     fun setSnackbarMessage(message: String?) { _snackbarMessage.value = message }
     fun clearSnackbarMessage() { _snackbarMessage.value = null }
-    private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
-    val embeddingProgress = _embeddingProgress.asStateFlow()
     val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { list -> list.any { !it.hasEmbedding } }.stateIn(viewModelScope, SharingStarted.Lazily, false)
     private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
     val retrievalResults = _retrievalResults.asStateFlow()

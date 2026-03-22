@@ -240,7 +240,7 @@ fun ColumnScope.ConversationList(
                             onConsolidate = onConsolidate,
                             onPin = onPin,
                             showUnconsolidatedDot = showUnconsolidatedDot,
-                            showConsolidateOption = showConsolidateOption,
+                            showConsolidateOption = true,
                             modifier = Modifier.animateItem(
                                 fadeInSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
                                 fadeOutSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
@@ -524,7 +524,7 @@ private fun ConversationItem(
                     }
                 )
 
-                if (showConsolidateOption && !conversation.isConsolidated) {
+                if (showConsolidateOption) {
                     DropdownMenuItem(
                         text = {
                             Text(stringResource(id = R.string.chat_page_consolidate))

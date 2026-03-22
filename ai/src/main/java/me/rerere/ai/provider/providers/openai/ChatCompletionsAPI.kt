@@ -274,8 +274,8 @@ class ChatCompletionsAPI(
             }
 
             // open router适配
-            if(host == "openrouter.ai") {
-                if(params.model.outputModalities.contains(Modality.IMAGE)) {
+            if (host == "openrouter.ai") {
+                if (params.model.outputModalities.contains(Modality.IMAGE)) {
                     put("modalities", buildJsonArray {
                         add("image")
                         add("text")
@@ -323,7 +323,7 @@ class ChatCompletionsAPI(
                     "api.siliconflow.cn" -> {
                         // https://docs.siliconflow.cn/cn/userguide/capabilities/reasoning#3-1-api-%E5%8F%82%E6%95%B0
                         val modelId = params.model.modelId
-                        if(modelId.contains("DeepSeek-V3.1") || modelId.contains("GLM-4.5") || modelId.contains("Qwen3-8B")) {
+                        if (modelId.contains("DeepSeek-V3.1") || modelId.contains("GLM-4.5") || modelId.contains("Qwen3-8B")) {
                             put("enable_thinking", level.isEnabled)
                         }
                     }
@@ -338,7 +338,7 @@ class ChatCompletionsAPI(
                         // OpenAI 官方
                         // 文档中，只支持 "low", "medium", "high"
                         if (level != ReasoningLevel.AUTO) {
-                            put("reasoning_effort", if(level.effort == "minimal") "low" else level.effort)
+                            put("reasoning_effort", if (level.effort == "minimal") "low" else level.effort)
                         }
                     }
                 }
@@ -372,72 +372,70 @@ class ChatCompletionsAPI(
 
     private fun buildMessages(messages: List<UIMessage>, host: String) = buildJsonArray {
         messages
-            .filter {
-                it.isValidToUpload()
-            }
-            .forEachIndexed { index, message ->
+            .filter { it.isValidToUpload() }
+            .forEach { message ->
                 if (message.role == MessageRole.TOOL) {
                     message.getToolResults().forEach { result ->
                         add(buildJsonObject {
                             put("role", "tool")
                             put("name", result.toolName)
                             put("tool_call_id", result.toolCallId)
-                            // Zhipu AI requires content to be a JSON object, not a string
-                            if (host == "open.bigmodel.cn") {
-                                put("content", result.content)
-                            } else {
-                                put("content", json.encodeToString(result.content))
-                            }
+                            put("content", json.encodeToString(result.content))
                         })
                     }
-                    return@forEachIndexed
+                    return@forEach
                 }
                 add(buildJsonObject {
                     // role
                     put("role", JsonPrimitive(message.role.name.lowercase()))
+                    val toolCalls = message.getToolCalls()
 
                     // content
-                    if (message.parts.isOnlyTextPart()) {
-                        // 如果只是纯文本，直接赋值给content
-                        put(
-                            "content",
-                            message.parts.filterIsInstance<UIMessagePart.Text>().first().text
-                        )
-                    } else {
-                        // 否则，使用parts构建
-                        putJsonArray("content") {
-                            message.parts.forEach { part ->
-                                when (part) {
-                                    is UIMessagePart.Text -> {
-                                        add(buildJsonObject {
-                                            put("type", "text")
-                                            put("text", part.text)
-                                        })
-                                    }
+                    val textParts = message.parts.filterIsInstance<UIMessagePart.Text>()
+                        .filter { it.text.isNotBlank() }
+                    val imageParts = message.parts.filterIsInstance<UIMessagePart.Image>()
 
-                                    is UIMessagePart.Image -> {
-                                        add(buildJsonObject {
+                    when {
+                        // 1. 只有单文本，直接发字符串 (最通用)
+                        textParts.size == 1 && imageParts.isEmpty() -> {
+                            put("content", textParts.first().text)
+                        }
+                        // 2. 无可见内容 (例如只有思维链或工具调用)
+                        textParts.isEmpty() && imageParts.isEmpty() -> {
+                            // 重要：DeepSeek 规范，有 tool_calls 时 content 必须为 null
+                            if (toolCalls.isNotEmpty()) {
+                                put("content", JsonPrimitive(null as String?))
+                            } else {
+                                put("content", "")
+                            }
+                        }
+                        // 3. 多模态或复杂内容，发数组
+                        else -> {
+                            putJsonArray("content") {
+                                message.parts.forEach { part ->
+                                    when (part) {
+                                        is UIMessagePart.Text -> {
+                                            if (part.text.isNotBlank()) {
+                                                add(buildJsonObject {
+                                                    put("type", "text")
+                                                    put("text", part.text)
+                                                })
+                                            }
+                                        }
+                                        is UIMessagePart.Image -> {
                                             part.encodeBase64().onSuccess {
-                                                put("type", "image_url")
-                                                put("image_url", buildJsonObject {
-                                                    put("url", it)
+                                                add(buildJsonObject {
+                                                    put("type", "image_url")
+                                                    put("image_url", buildJsonObject { put("url", it) })
                                                 })
                                             }.onFailure {
-                                                it.printStackTrace()
-                                                println("encode image failed: ${part.url}")
-
-                                                put("type", "text")
-                                                put("text", "")
+                                                add(buildJsonObject {
+                                                    put("type", "text")
+                                                    put("text", "")
+                                                })
                                             }
-                                        })
-                                    }
-
-                                    else -> {
-                                        Log.w(
-                                            TAG,
-                                            "buildMessages: message part not supported: $part"
-                                        )
-                                        // DO NOTHING
+                                        }
+                                        else -> {}
                                     }
                                 }
                             }
@@ -445,22 +443,20 @@ class ChatCompletionsAPI(
                     }
 
                     // tool_calls
-                    message.getToolCalls()
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { toolCalls ->
-                            put("tool_calls", buildJsonArray {
-                                toolCalls.forEach { toolCall ->
-                                    add(buildJsonObject {
-                                        put("id", toolCall.toolCallId)
-                                        put("type", "function")
-                                        put("function", buildJsonObject {
-                                            put("name", toolCall.toolName)
-                                            put("arguments", toolCall.arguments)
-                                        })
+                    if (toolCalls.isNotEmpty()) {
+                        put("tool_calls", buildJsonArray {
+                            toolCalls.forEach { toolCall ->
+                                add(buildJsonObject {
+                                    put("id", toolCall.toolCallId)
+                                    put("type", "function")
+                                    put("function", buildJsonObject {
+                                        put("name", toolCall.toolName)
+                                        put("arguments", toolCall.arguments)
                                     })
-                                }
-                            })
-                        }
+                                })
+                            }
+                        })
+                    }
                 })
             }
     }
@@ -510,7 +506,8 @@ class ChatCompletionsAPI(
                     val imageObject = image.jsonObjectOrNull ?: return@forEach
                     val type = imageObject["type"]?.jsonPrimitive?.contentOrNull ?: return@forEach
                     if (type != "image_url") return@forEach
-                    val url = imageObject["image_url"]?.jsonObjectOrNull?.get("url")?.jsonPrimitive?.contentOrNull ?: return@forEach
+                    val url = imageObject["image_url"]?.jsonObjectOrNull?.get("url")?.jsonPrimitive?.contentOrNull
+                        ?: return@forEach
                     require(url.startsWith("data:image")) { "Only data uri is supported" }
                     add(UIMessagePart.Image(url.substringAfter("data:image/png;base64,")))
                 }
