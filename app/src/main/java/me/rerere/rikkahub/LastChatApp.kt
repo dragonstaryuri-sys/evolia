@@ -18,6 +18,7 @@ import me.rerere.rikkahub.di.appModule
 import me.rerere.rikkahub.di.dataSourceModule
 import me.rerere.rikkahub.di.repositoryModule
 import me.rerere.rikkahub.di.viewModelModule
+import me.rerere.rikkahub.discover.di.discoverModule
 import me.rerere.rikkahub.utils.DatabaseUtil
 import org.koin.android.ext.android.get
 import org.koin.android.ext.koin.androidContext
@@ -55,7 +56,7 @@ class LastChatApp : Application() {
             androidLogger()
             androidContext(this@LastChatApp)
             workManagerFactory()
-            modules(appModule, viewModelModule, dataSourceModule, repositoryModule)
+            modules(appModule, viewModelModule, dataSourceModule, repositoryModule, discoverModule)
         }
         this.createNotificationChannel()
 

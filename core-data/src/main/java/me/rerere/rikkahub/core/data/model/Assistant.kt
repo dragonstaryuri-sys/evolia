@@ -90,6 +90,7 @@ data class Assistant(
     val maxTemporarySummariesToInclude: Int = 3,
     val fullSummaryPrompt: String = "",
     val temporarySummaryPrompt: String = "",
+    val enableScheduleAccess: Boolean = true,
 
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="discover_schedule_title">Today\'s Schedule</string>
+  <string name="discover_schedule_count">(%1$d)</string>
+  <string name="discover_schedule_no_tasks">No schedules yet</string>
+  <string name="discover_schedule_high_priority">High Priority</string>
+  <string name="discover_schedule_all_tasks">Full Schedule List</string>
+  <string name="discover_schedule_add_task">Add Schedule</string>
+  <string name="discover_schedule_input_hint">Enter</string>
+  <string name="discover_schedule_completed">Completed</string>
+  <string name="discover_schedule_remind_me">Remind Me</string>
+  <string name="discover_schedule_permission_title">Enable Notification Reminders</string>
+  <string name="discover_schedule_permission_desc">To never miss important schedules, please allow Evolia to send reminder notifications. I\'ll gently remind you~</string>
+  <string name="discover_schedule_complete_cheer">Great job! Keep it up!</string>
+</resources>

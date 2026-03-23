@@ -143,7 +143,7 @@
   <string name="backup_page_backup_items">Backup Items</string>
   <string name="backup_page_backup_now">Backup Now</string>
   <string name="backup_page_backup_success">Backup Success</string>
-  <string name="backup_page_chat_records">Chat Records</string>
+  <string name="backup_page_chat_records">Core data(chat records/diary...)</string>
   <string name="backup_page_connection_failed">Connection Failed: %s</string>
   <string name="backup_page_connection_success">Connection Success</string>
   <string name="backup_page_delete">Delete</string>
@@ -1338,5 +1338,19 @@
   <string name="backup_notification_error_desc">An error occurred in the background backup task, retry will be attempted later</string>
   <string name="backup_page_max_backup_files">Max Backups to Keep</string>
   <string name="backup_page_max_backup_files_suffix">pcs</string>
+  <string name="schedule_title">Smart Schedule</string>
+  <string name="schedule_today_progress">Today\'s Progress</string>
+  <string name="schedule_unfinished_tasks">%d tasks remaining</string>
+  <string name="schedule_no_tasks">No tasks for today</string>
+  <string name="schedule_all_done">Excellent! All tasks completed</string>
+  <string name="schedule_add_task">Add Task</string>
+  <!-- Title displayed on the Discover page -->
+  <string name="discover_page_schedule">Schedule Management</string>
+  <!-- Description displayed on the Discover page -->
+  <string name="discover_page_schedule_desc">Manage your daily tasks and goals</string>
+
+  <!-- Option name displayed on the Backup page -->
+  <string name="backup_page_schedule">Schedule Data</string>
+
 
 </resources>

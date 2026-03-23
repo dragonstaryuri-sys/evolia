@@ -128,7 +128,7 @@ fun HighlightCodeBlock(
     val context = LocalContext.current
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
-    
+
     // Get code font from settings
     val codeFontFamily = me.rerere.rikkahub.ui.theme.rememberFontFamilyFromConfig(effectiveDisplay.fontSettings.codeFont)
 
@@ -258,10 +258,10 @@ fun HighlightCodeBlock(
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary
                 )
-                
+
                 // Spacer to push icons to the right
                 Spacer(modifier = Modifier.weight(1f))
-                
+
                 // Right side: Action icons (always visible) + chevron
                 // Copy icon
                 IconButton(
@@ -279,7 +279,7 @@ fun HighlightCodeBlock(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 // Download icon
                 IconButton(
                     onClick = {
@@ -297,7 +297,7 @@ fun HighlightCodeBlock(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                
+
                 // Play icon (HTML only)
                 if (language.lowercase() == "html") {
                     IconButton(
@@ -314,7 +314,7 @@ fun HighlightCodeBlock(
                         )
                     }
                 }
-                
+
                 // Expand/collapse chevron
                 Icon(
                     imageVector = if (expandState.expanded) {
@@ -331,7 +331,7 @@ fun HighlightCodeBlock(
             // Code content with fade gradients (only when expanded)
             if (expandState.expanded) {
                 val textStyle = LocalTextStyle.current.merge(style)
-                
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -462,8 +462,12 @@ fun rememberHighlightCodeVisualTransformation(
     val highlighter = LocalHighlighter.current
     val darkMode = LocalDarkMode.current
     val colorPalette = if (darkMode) AtomOneDarkPalette else AtomOneLightPalette
-    
-    val highlighted by produceState<AnnotatedString?>(initialValue = null, code, language, darkMode) {
+
+    val highlighted by produceState<AnnotatedString?>(initialValue = null, code, language, darkMode, highlighter) {
+        if (highlighter == null) {
+            value = AnnotatedString(code)
+            return@produceState
+        }
         try {
             val tokens = highlighter.highlight(code, language)
             value = buildAnnotatedString {

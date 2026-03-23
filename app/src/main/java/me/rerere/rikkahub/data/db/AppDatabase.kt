@@ -19,6 +19,7 @@ import me.rerere.rikkahub.core.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.core.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.core.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.core.data.db.dao.AgentDiaryDAO
+import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
@@ -26,6 +27,7 @@ import me.rerere.rikkahub.core.data.db.entity.EmbeddingCacheEntity
 import me.rerere.rikkahub.core.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
+import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.json.JsonArray
@@ -45,9 +47,10 @@ import kotlinx.serialization.json.put
         ChatEpisodeEntity::class,
         EmbeddingCacheEntity::class,
         DailyActivityEntity::class,
-        AgentDiaryEntity::class
+        AgentDiaryEntity::class,
+        ScheduleEntity::class
     ],
-    version = 24,
+    version = 25,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -68,6 +71,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 20, to = 21),
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 23, to = 24),
+        AutoMigration(from = 24, to = 25),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -85,6 +89,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dailyActivityDao(): DailyActivityDAO
 
     abstract fun agentDiaryDao(): AgentDiaryDAO
+
+    abstract fun scheduleDao(): ScheduleDAO
 
     companion object {
         const val TAG = "AppDatabase"

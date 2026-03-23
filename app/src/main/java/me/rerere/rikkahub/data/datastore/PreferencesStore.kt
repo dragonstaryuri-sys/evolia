@@ -3,11 +3,8 @@ package me.rerere.rikkahub.data.datastore
 import android.content.Context
 import android.util.Log
 import androidx.datastore.core.IOException
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
-import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.pebbletemplates.pebble.PebbleEngine
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +41,9 @@ import me.rerere.tts.provider.TTSProviderSetting
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import kotlin.uuid.Uuid
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 
 private const val TAG = "PreferencesStore"
 
@@ -402,7 +402,7 @@ data class Settings(
 @Serializable enum class NewChatContentStyle { NONE, TEMPLATES, STATS, ACTIONS }
 @Serializable enum class ProviderViewMode { LIST, GRID }
 @Serializable enum class ChatInputStyle { FLOATING, MINIMAL }
-@Serializable data class WebDavConfig(val url: String = "", val username: String = "", val password: String = "", val path: String = "lastchat_backups", val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES), val maxBackupFiles: Int = 3) { @Serializable enum class BackupItem { DATABASE, FILES } }
+@Serializable data class WebDavConfig(val url: String = "", val username: String = "", val password: String = "", val path: String = "evolia_backups", val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES), val maxBackupFiles: Int = 3) { @Serializable enum class BackupItem { DATABASE, FILES} }
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 fun Settings.findModelById(uuid: Uuid): Model? = this.providers.findModelById(uuid)

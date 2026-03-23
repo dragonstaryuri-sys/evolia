@@ -16,4 +16,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("python_engine")
     data object PythonEngine : LocalToolOption()
+
+    @Serializable
+    @SerialName("schedule_management")
+    data object ScheduleManagement : LocalToolOption()
 }

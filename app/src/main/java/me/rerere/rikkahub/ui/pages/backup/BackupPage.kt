@@ -75,6 +75,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.WebDavConfig
+import me.rerere.rikkahub.data.datastore.WebDavConfig.BackupItem.*
 import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -297,8 +298,8 @@ private fun WebDavPage(
                             ) {
                                 Text(
                                     when (item) {
-                                        WebDavConfig.BackupItem.DATABASE -> stringResource(R.string.backup_page_chat_records)
-                                        WebDavConfig.BackupItem.FILES -> stringResource(R.string.backup_page_files)
+                                        DATABASE -> stringResource(R.string.backup_page_chat_records)
+                                        FILES -> stringResource(R.string.backup_page_files)
                                     }
                                 )
                             }

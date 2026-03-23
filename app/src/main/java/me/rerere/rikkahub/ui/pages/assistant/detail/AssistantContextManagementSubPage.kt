@@ -5,37 +5,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Book
-import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -82,11 +59,37 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
+        // SCHEDULE MANAGEMENT (New!)
+        // ═══════════════════════════════════════════════════════════════════
+        SettingsGroup(title = "日程管理") {
+            SettingGroupItem(
+                title = "允许读取/写入日程",
+                subtitle = "开启后，该智能体可以查看你的今日安排并协助你创建新日程",
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.CalendarToday,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.enableScheduleAccess,
+                        onCheckedChange = { enabled ->
+                            onUpdate(assistant.copy(enableScheduleAccess = enabled))
+                        }
+                    )
+                },
+                onClick = {
+                    onUpdate(assistant.copy(enableScheduleAccess = !assistant.enableScheduleAccess))
+                }
+            )
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
         // MESSAGE HISTORY & SUMMARIZATION
         // ═══════════════════════════════════════════════════════════════════
-
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
-            // 历史消息上限 (始终显示)
             val historyLimit = assistant.maxHistoryMessages ?: 0
             var sliderValue by remember(historyLimit) { mutableFloatStateOf(historyLimit.toFloat()) }
 
@@ -220,8 +223,9 @@ fun AssistantContextManagementSubPage(
             }
         }
 
+        // ... 后续部分保持不变 ...
         // ═══════════════════════════════════════════════════════════════════
-        // SEARCH RESULTS
+        // SEARCH RESULTS & CUSTOM PROMPTS
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_search_results_title)) {
             val maxSearchResults = assistant.maxSearchResultsRetained ?: 0

@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 
-val LocalHighlighter = compositionLocalOf<Highlighter> { error("No Highlighter provided") }
+val LocalHighlighter = compositionLocalOf<Highlighter?> { null }
 
 private const val MAX_CODE_LENGTH = 4096
 
@@ -50,13 +50,17 @@ fun HighlightText(
 
     val updatedCode by rememberUpdatedState(code)
     val updatedLanguage by rememberUpdatedState(language)
-    LaunchedEffect(Unit) {
-        snapshotFlow { updatedCode to updatedLanguage }.collect {
-            tokens = if (updatedCode.length <= MAX_CODE_LENGTH) {
-                highlighter.highlight(updatedCode, updatedLanguage)
+    LaunchedEffect(highlighter) {
+        snapshotFlow { updatedCode to updatedLanguage }.collect { (code, lang) ->
+            tokens = if (highlighter != null && code.length <= MAX_CODE_LENGTH) {
+                try {
+                    highlighter.highlight(code, lang)
+                } catch (e: Exception) {
+                    listOf(HighlightToken.Plain(content = code))
+                }
             } else {
                 listOf(
-                    HighlightToken.Plain(content = updatedCode)
+                    HighlightToken.Plain(content = code)
                 )
             }
             annotatedString = buildAnnotatedString {

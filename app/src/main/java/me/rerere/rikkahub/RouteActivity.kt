@@ -87,6 +87,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
+import me.rerere.rikkahub.discover.ui.ScheduleScreen
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
@@ -415,6 +416,9 @@ class RouteActivity : AppCompatActivity() {
                         val route = backStackEntry.toRoute<Screen.DiaryList>()
                         DiaryListPage(assistantId = route.assistantId)
                     }
+                    composable<Screen.Schedule> {
+                        ScheduleScreen(onBack = { navBackStack.popBackStack() })
+                    }
                 }
                 AppToasterHost(state = toastState)
                 }
@@ -515,4 +519,7 @@ sealed interface Screen {
 
     @Serializable
     data class DiaryList(val assistantId: String? = null) : Screen
+
+    @Serializable
+    data object Schedule : Screen
 }
