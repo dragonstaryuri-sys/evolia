@@ -197,11 +197,13 @@ class WebdavSync(
             if (backupFile.exists()) backupFile.delete()
 
             try {
+                LogUtil.i(TAG, "Downloading backup from WebDAV: ${item.displayName}")
                 collection.get(accept = "", headers = null) { response ->
                     if (response.isSuccessful) {
                         response.body?.byteStream()?.use { input ->
                             FileOutputStream(backupFile).use { input.copyTo(it) }
                         }
+                        LogUtil.i(TAG, "Download successful, size: ${backupFile.length()} bytes")
                     } else {
                         val errorBody = try { response.body?.string() } catch (e: Exception) { "could not read body" }
                         LogUtil.e(TAG, "WebDAV GET failed: code=${response.code}, message=${response.message}, body=$errorBody")
@@ -245,6 +247,7 @@ class WebdavSync(
     suspend fun restoreFromLocalFile(file: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
             if (!file.exists()) throw Exception("File not found")
+            LogUtil.i(TAG, "Restoring from local file: ${file.absolutePath}")
             restoreFromBackupFile(file, webDavConfig)
         }
 
@@ -252,23 +255,35 @@ class WebdavSync(
         val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
         val backupFile = File(context.cacheDir, "Evolia_backup_$timestamp.zip")
 
+        LogUtil.i(TAG, "Creating backup file: ${backupFile.name}")
         ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
             val settings = secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
             addVirtualFileToZip(zipOut, "settings.json", json.encodeToString(settings))
+            LogUtil.i(TAG, "Added settings.json to backup")
 
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
                 val dbFile = context.getDatabasePath("rikka_hub")
-                if (dbFile.exists()) addFileToZip(zipOut, dbFile, "rikka_hub.db")
+                if (dbFile.exists()) {
+                    // 统一命名为 rikka_hub 开头，不带 .db 后缀以免混淆
+                    addFileToZip(zipOut, dbFile, "rikka_hub")
+                    LogUtil.i(TAG, "Added rikka_hub to backup")
+                }
                 listOf("-wal", "-shm").forEach { suffix ->
                     val extra = File(dbFile.parentFile, dbFile.name + suffix)
-                    if (extra.exists()) addFileToZip(zipOut, extra, dbFile.name + suffix)
+                    if (extra.exists()) {
+                        addFileToZip(zipOut, extra, "rikka_hub" + suffix)
+                        LogUtil.i(TAG, "Added ${"rikka_hub" + suffix} to backup")
+                    }
                 }
             }
 
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
                 val uploadFolder = File(context.filesDir, "upload")
-                uploadFolder.listFiles()?.filter { it.isFile }?.forEach {
+                val files = uploadFolder.listFiles()?.filter { it.isFile }
+                LogUtil.i(TAG, "Found ${files?.size ?: 0} files in upload folder")
+                files?.forEach {
                     addFileToZip(zipOut, it, "upload/${it.name}")
+                    LogUtil.d(TAG, "Added file to backup: ${it.name}")
                 }
             }
         }
@@ -282,6 +297,7 @@ class WebdavSync(
 
     private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
+            LogUtil.i(TAG, "Starting restore from backup file. Size: ${backupFile.length()} bytes")
             var unsupportedBytes: Long = 0
             var settingsCleanup = BackupCleanupResult()
             val tempDir = File(context.cacheDir, "restore_${System.currentTimeMillis()}").apply { mkdirs() }
@@ -292,42 +308,74 @@ class WebdavSync(
                     var entry: ZipEntry?
                     while (zipIn.nextEntry.also { entry = it } != null) {
                         entry?.let { ze ->
+                            LogUtil.i(TAG, "Extracting zip entry: ${ze.name}")
                             when {
                                 ze.name == "settings.json" -> {
-                                    val (cleaned, res) = json.decodeFromString<Settings>(zipIn.readBytes().toString(Charsets.UTF_8)).sanitize()
+                                    val content = zipIn.readBytes().toString(Charsets.UTF_8)
+                                    val (cleaned, res) = json.decodeFromString<Settings>(content).sanitize()
                                     settingsCleanup = res
                                     settingsStore.update(cleaned)
+                                    LogUtil.i(TAG, "Settings restored. Cleanup results: $res")
                                 }
-                                ze.name.startsWith("rikka_hub.db") -> {
+                                ze.name.startsWith("rikka_hub") -> { // 只要以 rikka_hub 开头都提取，包括带有 .db 后缀的旧版本
                                     if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
-                                        FileOutputStream(File(tempDir, ze.name)).use { zipIn.copyTo(it) }
+                                        val targetFile = File(tempDir, ze.name)
+                                        FileOutputStream(targetFile).use { zipIn.copyTo(it) }
+                                        LogUtil.i(TAG, "Database component extracted: ${ze.name}")
                                     }
                                 }
                                 ze.name.startsWith("upload/") -> {
                                     if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
                                         val target = File(File(context.filesDir, "upload").apply { mkdirs() }, ze.name.substringAfter("upload/"))
                                         FileOutputStream(target).use { zipIn.copyTo(it) }
+                                        LogUtil.d(TAG, "File extracted: ${ze.name}")
                                     }
                                 }
-                                else -> unsupportedBytes += ze.size
+                                else -> {
+                                    LogUtil.w(TAG, "Unsupported entry in backup: ${ze.name}")
+                                    unsupportedBytes += ze.size
+                                }
                             }
                             zipIn.closeEntry()
                         }
                     }
                 }
 
-                val tempDb = File(tempDir, "rikka_hub.db")
+                // 尝试查找主数据库文件，可能是 rikka_hub 或 rikka_hub.db
+                val tempDb = File(tempDir, "rikka_hub").let { if (it.exists()) it else File(tempDir, "rikka_hub.db") }
+
                 if (tempDb.exists()) {
+                    LogUtil.i(TAG, "Temporary database found at ${tempDb.name}, starting sanitization")
+
+                    // 关键：确保同目录下的日志文件名与 tempDb 匹配，这样 SQLite 才能正确打开
+                    val baseName = tempDb.name
+                    listOf("-wal", "-shm").forEach { suffix ->
+                        val logFile = File(tempDir, "rikka_hub$suffix") // 之前版本可能存的名字
+                        if (logFile.exists() && logFile.name != baseName + suffix) {
+                            logFile.renameTo(File(tempDir, baseName + suffix))
+                        }
+                    }
+
                     val (cleanDb, res) = DatabaseSanitizer.sanitize(context, tempDb)
                     sanitization = res
+
                     val finalDb = context.getDatabasePath("rikka_hub")
                     cleanDb.copyTo(finalDb, true)
+                    LogUtil.i(TAG, "Final database moved to: ${finalDb.absolutePath}")
+
+                    // 恢复后清理掉 finalDb 可能存在的旧日志文件
                     listOf("-wal", "-shm").forEach { s ->
-                        val src = File(cleanDb.path + s); val dest = File(finalDb.path + s)
-                        if (src.exists()) src.copyTo(dest, true) else dest.delete()
+                        val dest = File(finalDb.path + s)
+                        if (dest.exists()) dest.delete()
                     }
+                } else {
+                    LogUtil.w(TAG, "No rikka_hub database found in the backup ZIP entries")
                 }
+                LogUtil.i(TAG, "Restore process completed successfully.")
                 RestoreResult(sanitization, settingsCleanup.copy(unsupportedZipEntriesBytes = unsupportedBytes))
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "Error during restore process", e)
+                throw e
             } finally {
                 tempDir.deleteRecursively()
             }

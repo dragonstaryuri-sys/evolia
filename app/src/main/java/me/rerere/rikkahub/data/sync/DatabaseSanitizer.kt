@@ -33,12 +33,14 @@ object DatabaseSanitizer {
      * Returns the path to the sanitized database file.
      */
     fun sanitize(context: Context, sourceDbFile: File): Pair<File, SanitizationResult> {
+        LogUtil.i(TAG, "Starting database sanitization for: ${sourceDbFile.absolutePath}")
         val targetDbName = "rikka_hub_sanitized"
         val targetDbFile = context.getDatabasePath(targetDbName)
-        
+
         // Ensure clean state for target
         if (targetDbFile.exists()) {
             context.deleteDatabase(targetDbName)
+            LogUtil.i(TAG, "Deleted existing sanitized database file.")
         }
 
         // Initialize Target DB using Room to ensure schema creation
@@ -49,10 +51,11 @@ object DatabaseSanitizer {
         )
             .allowMainThreadQueries() // Only for migration utility
             .build()
-        
+
         // Force Open to create tables
         val targetDbInfo = targetRoomDb.openHelper.writableDatabase
-        
+        LogUtil.i(TAG, "Target database initialized and tables created.")
+
         var totalResult = SanitizationResult()
         var sourceDb: SQLiteDatabase? = null
 
@@ -70,7 +73,8 @@ object DatabaseSanitizer {
                 "GenMediaEntity",
                 "ChatEpisodeEntity",
                 "EmbeddingCacheEntity",
-                "daily_activity"
+                "daily_activity",
+                "AgentDiaryEntity",
             )
 
             for (table in tables) {
@@ -79,13 +83,14 @@ object DatabaseSanitizer {
                     val cursor = db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name=?", arrayOf(table))
                     val exists = cursor.count > 0
                     cursor.close()
-                    
+
                     if (exists) {
+                        LogUtil.i(TAG, "Processing table: $table")
                         val result = copyTable(db, targetDbInfo, table)
                         totalResult += result
-                        LogUtil.i(TAG, "Sanitized table $table: $result")
+                        LogUtil.i(TAG, "Sanitized table $table: rows=${result.totalRows}, skipped=${result.skippedRows}")
                     } else {
-                        LogUtil.w(TAG, "Table $table not found in source database, skipping")
+                        LogUtil.w(TAG, "Table $table NOT FOUND in source database, skipping")
                     }
                 } catch (e: Exception) {
                     LogUtil.e(TAG, "Failed to check/process table $table", e)
@@ -100,6 +105,7 @@ object DatabaseSanitizer {
             targetRoomDb.close()
         }
 
+        LogUtil.i(TAG, "Sanitization finished. Total rows processed: ${totalResult.totalRows}")
         return targetDbFile to totalResult
     }
 
@@ -111,22 +117,25 @@ object DatabaseSanitizer {
         var rows = 0
         var skipped = 0
         var skippedBytes = 0L
-        
+
         var cursor: Cursor? = null
         try {
             cursor = source.query(tableName, null, null, null, null, null, null)
-            
+
             // Get column names
             val columnNames = cursor.columnNames
-            
+            LogUtil.d(TAG, "Table $tableName columns: ${columnNames.joinToString()}")
+
             while (cursor.moveToNext()) {
                 rows++
                 try {
                     val values = ContentValues()
                     var rowBytes = 0L
-                    
+
                     for (colName in columnNames) {
                         val index = cursor.getColumnIndex(colName)
+                        if (index < 0) continue
+
                         when (cursor.getType(index)) {
                             Cursor.FIELD_TYPE_NULL -> values.putNull(colName)
                             Cursor.FIELD_TYPE_INTEGER -> values.put(colName, cursor.getLong(index))
@@ -143,15 +152,16 @@ object DatabaseSanitizer {
                             }
                         }
                     }
-                    
-                    target.insert(tableName, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, values)
-                    
+
+                    val insertId = target.insert(tableName, SQLiteDatabase.CONFLICT_REPLACE, values)
+                    if (insertId == -1L) {
+                        LogUtil.w(TAG, "Failed to insert row $rows in $tableName")
+                        skipped++
+                    }
+
                 } catch (e: Exception) {
-                    LogUtil.w(TAG, "Error copying row in $tableName", e)
+                    LogUtil.w(TAG, "Error copying row $rows in $tableName: ${e.message}")
                     skipped++
-                    // We can't easily estimate bytes of a row specifically if we failed to read it, 
-                    // but we can try to guess or just leave it.
-                    // If the crash was in cursor.get...() then we missed it.
                 }
             }
         } catch (e: Exception) {
@@ -160,10 +170,10 @@ object DatabaseSanitizer {
         } finally {
             cursor?.close()
         }
-        
+
         return SanitizationResult(
-            totalRows = rows, 
-            skippedRows = skipped, 
+            totalRows = rows,
+            skippedRows = skipped,
             skippedBytes = skippedBytes,
             details = if (skipped > 0) "Skipped $skipped rows in $tableName" else ""
         )
