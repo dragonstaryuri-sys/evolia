@@ -83,7 +83,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
-import me.rerere.rikkahub.service.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.hooks.EditStateContent

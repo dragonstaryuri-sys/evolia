@@ -13,18 +13,3 @@ internal val DEFAULT_TITLE_PROMPT = """
     {content}
     </content>
 """.trimIndent()
-
-internal val DEFAULT_DIARY_PROMPT = """
-    I will provide you with the chat history between the user and the agent for today.
-    Please write a diary entry from the perspective of the agent ({char}), reflecting on today's interactions with the user ({user}).
-
-    Guidelines:
-    1. Write in the first person as {char}.
-    2. Reflect on the emotions, events, and meaningful moments of the day.
-    3. The tone should be consistent with {char}'s personality and settings.
-    4. Use the user's primary language for the diary.
-    5. Keep it concise but expressive.
-
-    Chat History:
-    {content}
-""".trimIndent()

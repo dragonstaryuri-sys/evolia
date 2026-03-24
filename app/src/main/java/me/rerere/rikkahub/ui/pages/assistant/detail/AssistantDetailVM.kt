@@ -30,9 +30,9 @@ import me.rerere.rikkahub.core.data.model.Tag
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
-import me.rerere.rikkahub.service.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
-import me.rerere.rikkahub.service.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-import me.rerere.rikkahub.service.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.util.Locale

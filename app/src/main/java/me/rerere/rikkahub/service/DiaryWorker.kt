@@ -32,6 +32,9 @@ import kotlin.uuid.Uuid
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
+import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DIARY_UPDATE_CONTINUATION_PROMPT
 
 private const val TAG = "DiaryWorker"
 

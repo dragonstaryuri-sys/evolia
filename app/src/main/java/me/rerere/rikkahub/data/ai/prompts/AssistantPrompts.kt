@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.service
+package me.rerere.rikkahub.data.ai.prompts
 
 /**
  * 助手相关的提示词汇总
@@ -136,7 +136,6 @@ const val DIARY_UPDATE_CONTINUATION_PROMPT = """
 You are the assistant {{char}}.
 Below is the diary entry you previously wrote for today:
 {{previous_diary}}
----
 
 New interactive messages have just been generated. Please continue the diary entry based on these new interactions.
 Instructions:
@@ -153,4 +152,19 @@ const val DIARY_TIME_REFERENCE_PROMPT = """
 Message start time: {{start_time}}
 Message end time: {{end_time}}
 Diary generation triggered at: {{trigger_time}}
+"""
+
+const val DEFAULT_DIARY_PROMPT = """
+    I will provide you with the chat history between the user and the agent for today.
+    Please write a diary entry from the perspective of the agent ({char}), reflecting on today's interactions with the user ({user}).
+
+    Guidelines:
+    1. Write in the first person as {char}.
+    2. Reflect on the emotions, events, and meaningful moments of the day.
+    3. The tone should be consistent with {char}'s personality and settings.
+    4. Use the user's primary language for the diary.
+    5. Keep it concise but expressive.
+
+    Chat History:
+    {content}
 """
