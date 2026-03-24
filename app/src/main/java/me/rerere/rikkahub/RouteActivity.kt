@@ -174,9 +174,11 @@ class RouteActivity : AppCompatActivity() {
                     val assistantId = Uuid.parse(intentAssistantId)
                     settingsStore.updateAssistant(assistantId)
                     settingsStore.markAssistantUsed(assistantId)
-                    navStack?.navigate(Screen.Chat(Uuid.random().toString())) {
+                    // 修改点：先重置到首页，确保返回时回到列表
+                    navStack?.navigate(Screen.Home) {
                         popUpTo(0) { inclusive = true }
                     }
+                    navStack?.navigate(Screen.Chat(Uuid.random().toString()))
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -285,9 +287,11 @@ class RouteActivity : AppCompatActivity() {
                     val assistantId = Uuid.parse(assistantIdStr)
                     settingsStore.updateAssistant(assistantId)
                     settingsStore.markAssistantUsed(assistantId)
-                    navStack?.navigate(Screen.Chat(Uuid.random().toString())) {
+                    // 修改点：先重置到首页，确保返回时回到列表
+                    navStack?.navigate(Screen.Home) {
                         popUpTo(0) { inclusive = true }
                     }
+                    navStack?.navigate(Screen.Chat(Uuid.random().toString()))
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
