@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.sync
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import me.rerere.rikkahub.utils.LogUtil
 import at.bitfire.dav4jvm.BasicDigestAuthHandler
 import at.bitfire.dav4jvm.DavCollection
@@ -177,8 +178,9 @@ class WebdavSync(
             } catch (e: HttpException) {
                 LogUtil.e(TAG, "List failed with HttpException: ${e.code}", e)
                 val msg = when (e.code) {
-                    401 -> "Unauthorized: Check your WebDAV credentials."
-                    403 -> "Forbidden: Check your permissions for the backup folder."
+                    401 -> "Unauthorized: Check your WebDAV username and password."
+                    403 -> "Forbidden: Check your permissions or path. Your WebDAV provider might require specific settings for this directory."
+                    404 -> "Not Found: Check your WebDAV URL and path. Ensure the root folder exists."
                     else -> "WebDAV List failed with code ${e.code}: ${e.message}"
                 }
                 throw Exception(msg)
@@ -256,6 +258,20 @@ class WebdavSync(
         val backupFile = File(context.cacheDir, "Evolia_backup_$timestamp.zip")
 
         LogUtil.i(TAG, "Creating backup file: ${backupFile.name}")
+
+        // 【关键修复】：在备份前强制执行 CHECKPOINT，刷入所有 WAL 数据
+        if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
+            val dbPath = context.getDatabasePath("rikka_hub").absolutePath
+            try {
+                SQLiteDatabase.openDatabase(dbPath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                    db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { it.moveToFirst() }
+                    LogUtil.i(TAG, "Database checkpoint successful before backup")
+                }
+            } catch (e: Exception) {
+                LogUtil.w(TAG, "Failed to checkpoint database: ${e.message}")
+            }
+        }
+
         ZipOutputStream(FileOutputStream(backupFile)).use { zipOut ->
             val settings = secretKeyManager.populateSecretsForExport(settingsStore.settingsFlow.value)
             addVirtualFileToZip(zipOut, "settings.json", json.encodeToString(settings))
