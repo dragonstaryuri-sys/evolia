@@ -400,7 +400,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             onConfirm = { m, l ->
                  scope.launch {
                      val assistant = if (res.exportV1 != null) {
-                         AssistantExportImport.finalizeLastChatImport(res.exportV1, context, m, l)
+                         AssistantExportImport.finalizeEvoliaImport(res.exportV1, context, m, l)
                      } else {
                          res.assistant
                      }

@@ -235,7 +235,7 @@ fun AssistantDetailPage(
                                         } else {
                                             scope.launch {
                                                 try {
-                                                    val content = AssistantExportImport.exportToLastChatBundle(
+                                                    val content = AssistantExportImport.exportToEvoliaBundle(
                                                         assistant = assistant,
                                                         context = context,
                                                         includeMemories = false,
@@ -455,7 +455,7 @@ fun AssistantDetailPage(
                 showExportOptionsDialog = false
                 scope.launch {
                     try {
-                        val content = AssistantExportImport.exportToLastChatBundle(
+                        val content = AssistantExportImport.exportToEvoliaBundle(
                             assistant = assistant,
                             context = context,
                             includeMemories = includeMemories,

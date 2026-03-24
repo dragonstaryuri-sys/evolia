@@ -294,12 +294,18 @@ class WebdavSync(
             }
 
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
-                val uploadFolder = File(context.filesDir, "upload")
-                val files = uploadFolder.listFiles()?.filter { it.isFile }
-                LogUtil.i(TAG, "Found ${files?.size ?: 0} files in upload folder")
-                files?.forEach {
-                    addFileToZip(zipOut, it, "upload/${it.name}")
-                    LogUtil.d(TAG, "Added file to backup: ${it.name}")
+                // 备份文件目录
+                val foldersToBackup = listOf("upload", "avatars", "lorebook_attachments")
+                foldersToBackup.forEach { folderName ->
+                    val folder = File(context.filesDir, folderName)
+                    if (folder.exists() && folder.isDirectory) {
+                        val files = folder.listFiles()?.filter { it.isFile }
+                        LogUtil.i(TAG, "Found ${files?.size ?: 0} files in $folderName folder")
+                        files?.forEach {
+                            addFileToZip(zipOut, it, "$folderName/${it.name}")
+                            LogUtil.d(TAG, "Added file to backup: $folderName/${it.name}")
+                        }
+                    }
                 }
             }
         }
@@ -340,10 +346,14 @@ class WebdavSync(
                                         LogUtil.i(TAG, "Database component extracted: ${ze.name}")
                                     }
                                 }
-                                ze.name.startsWith("upload/") -> {
+                                ze.name.contains("/") -> {
+                                    // 处理子目录文件 (upload/, avatars/, lorebook_attachments/)
                                     if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
-                                        val target = File(File(context.filesDir, "upload").apply { mkdirs() }, ze.name.substringAfter("upload/"))
-                                        FileOutputStream(target).use { zipIn.copyTo(it) }
+                                        val folderName = ze.name.substringBefore("/")
+                                        val fileName = ze.name.substringAfter("/")
+                                        val targetFolder = File(context.filesDir, folderName).apply { mkdirs() }
+                                        val targetFile = File(targetFolder, fileName)
+                                        FileOutputStream(targetFile).use { zipIn.copyTo(it) }
                                         LogUtil.d(TAG, "File extracted: ${ze.name}")
                                     }
                                 }

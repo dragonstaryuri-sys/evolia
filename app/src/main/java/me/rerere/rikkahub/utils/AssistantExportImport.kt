@@ -35,7 +35,7 @@ import me.rerere.rikkahub.core.data.model.AssistantMemory
 @Serializable
 data class AssistantExportV1(
     val version: Int = 1,
-    val format: String = "lastchat_assistant",
+    val format: String = "Evolia_assistant", // Changed from lastchat_assistant
     val assistant: Assistant,
     // Bundled assets
     val avatarContent: String? = null, // Base64 encoded avatar image
@@ -59,10 +59,10 @@ object AssistantExportImport : KoinComponent {
     }
 
     /**
-     * Export an Assistant to LastChat Bundle JSON format.
+     * Export an Assistant to Evolia Bundle JSON format.
      * Includes all settings, avatar image, and enabled lorebooks.
      */
-    suspend fun exportToLastChatBundle(
+    suspend fun exportToEvoliaBundle(
         assistant: Assistant,
         context: Context,
         includeMemories: Boolean,
@@ -98,7 +98,7 @@ object AssistantExportImport : KoinComponent {
 
                 LorebookExportV2(
                     version = 2,
-                    format = "lastchat",
+                    format = "Evolia", // Changed from lastchat
                     lorebook = lorebook,
                     entryAttachments = entryAttachments
                 )
@@ -143,18 +143,18 @@ object AssistantExportImport : KoinComponent {
     }
 
     /**
-     * Import an Assistant from LastChat Bundle JSON format.
+     * Import an Assistant from Evolia Bundle JSON format.
      */
-    suspend fun importFromLastChatBundle(jsonContent: String, context: Context): Assistant {
+    suspend fun importFromEvoliaBundle(jsonContent: String, context: Context): Assistant {
         val export = json.decodeFromString<AssistantExportV1>(jsonContent)
-        return finalizeLastChatImport(export, context, true, true)
+        return finalizeEvoliaImport(export, context, true, true)
     }
 
     /**
      * Finalize the import from a parsed ExportV1 object.
      * Restores files, memories, and lorebooks based on flags.
      */
-    suspend fun finalizeLastChatImport(
+    suspend fun finalizeEvoliaImport(
         export: AssistantExportV1,
         context: Context,
         importMemories: Boolean,
@@ -271,7 +271,7 @@ object AssistantExportImport : KoinComponent {
         val characterBook = if (mergedTavernEntries.isNotEmpty()) {
             TavernCharacterBook(
                 name = "Bundled Lore",
-                description = "Merged lorebooks from LastChat",
+                description = "Merged lorebooks from Evolia", // Changed from LastChat
                 entries = mergedTavernEntries
             )
         } else {
@@ -336,7 +336,7 @@ object AssistantExportImport : KoinComponent {
         return when (format) {
             "card_v2" -> "${baseName}_card_v2.json"
             "card_v2_png" -> "${baseName}_card.png"
-            else -> "${baseName}_bundle.json" // LastChat format
+            else -> "${baseName}_Evolia.json" // Evolia format
         }
     }
 
@@ -553,7 +553,7 @@ object AssistantExportImport : KoinComponent {
 
         data class Configurable(
             val assistant: Assistant,
-            val exportV1: AssistantExportV1?, // Null if not LastChat Bundle
+            val exportV1: AssistantExportV1?, // Null if not Bundle
             val hasMemories: Boolean,
             val hasLorebooks: Boolean,
             val missingModels: List<String> // List of missing model IDs (names for display)
@@ -597,9 +597,10 @@ object AssistantExportImport : KoinComponent {
 
             // Determine JSON format and deserialize
             try {
-                if (jsonContent.contains("\"format\": \"lastchat_assistant\"") || jsonContent.contains("\"format\":\"lastchat_assistant\"")) {
+                if (jsonContent.contains("\"format\": \"Evolia_assistant\"") || jsonContent.contains("\"format\":\"Evolia_assistant\"") ||
+                    jsonContent.contains("\"format\": \"lastchat_assistant\"") || jsonContent.contains("\"format\":\"lastchat_assistant\"")) {
                     val export = json.decodeFromString<AssistantExportV1>(jsonContent)
-                    // LastChat Bundle
+                    // Evolia/LastChat Bundle
                     return ImportResult.Configurable(
                         assistant = export.assistant,
                         exportV1 = export,
@@ -852,10 +853,10 @@ object AssistantExportImport : KoinComponent {
         val scenario = jsonObj["scenario"]?.jsonPrimitive?.contentOrNull
             ?: jsonObj["world_scenario"]?.jsonPrimitive?.contentOrNull
             ?: ""
-        val firstMes = jsonObj["first_mes"]?.jsonPrimitive?.contentOrNull
+        val first_mes = jsonObj["first_mes"]?.jsonPrimitive?.contentOrNull
             ?: jsonObj["char_greeting"]?.jsonPrimitive?.contentOrNull
             ?: ""
-        val mesExample = jsonObj["mes_example"]?.jsonPrimitive?.contentOrNull
+        val mes_example = jsonObj["mes_example"]?.jsonPrimitive?.contentOrNull
             ?: jsonObj["example_dialogue"]?.jsonPrimitive?.contentOrNull
             ?: ""
 
@@ -869,14 +870,14 @@ object AssistantExportImport : KoinComponent {
         if (scenario.isNotBlank()) {
             systemPromptBuilder.append("Scenario:\n$scenario\n\n")
         }
-        if (mesExample.isNotBlank()) {
-            systemPromptBuilder.append("Examples:\n$mesExample\n\n")
+        if (mes_example.isNotBlank()) {
+            systemPromptBuilder.append("Examples:\n$mes_example\n\n")
         }
 
-        val presetMessages = if (firstMes.isNotBlank()) {
+        val presetMessages = if (first_mes.isNotBlank()) {
             listOf(me.rerere.ai.ui.UIMessage(
                 role = me.rerere.ai.core.MessageRole.ASSISTANT,
-                parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = firstMes))
+                parts = listOf(me.rerere.ai.ui.UIMessagePart.Text(text = first_mes))
             ))
         } else {
             emptyList()
