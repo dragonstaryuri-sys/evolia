@@ -822,7 +822,7 @@
 <string name="minimal_input_lorebooks">设定集</string>
 <string name="minimal_input_search_desc">在网页上搜索信息</string>
 <string name="minimal_input_modes">模式</string>
-<string name="minimal_input_thinking_desc">思考更久，获得更好的回答</string>
+<string name="minimal_input_thinking_desc">调节思考强度</string>
 <string name="minimal_input_search">搜索</string>
 <string name="minimal_input_photos">照片</string>
 <string name="minimal_input_files">文件</string>

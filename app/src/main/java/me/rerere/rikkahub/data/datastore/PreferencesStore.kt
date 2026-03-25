@@ -72,6 +72,8 @@ class SettingsStore(
         val ENABLE_WEB_SEARCH = booleanPreferencesKey("enable_web_search")
         val FAVORITE_MODELS = stringPreferencesKey("favorite_models")
         val SELECT_MODEL = stringPreferencesKey("chat_model")
+        val BACKGROUND_MODEL = stringPreferencesKey("background_model")
+        val SUMMARIZER_MODEL = stringPreferencesKey("summarizer_model")
         val TITLE_MODEL = stringPreferencesKey("title_model")
         val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
@@ -123,6 +125,10 @@ class SettingsStore(
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
                 chatModelId = preferences[SELECT_MODEL]?.let { Uuid.parse(it) }
+                    ?: GEMINI_2_5_FLASH_ID,
+                backgroundModelId = preferences[BACKGROUND_MODEL]?.let { Uuid.parse(it) }
+                    ?: GEMINI_2_5_FLASH_ID,
+                summarizerModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
                 titleModelId = preferences[TITLE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
@@ -282,6 +288,8 @@ class SettingsStore(
             preferences[ENABLE_WEB_SEARCH] = settingsToSave.enableWebSearch
             preferences[FAVORITE_MODELS] = JsonInstant.encodeToString(settingsToSave.favoriteModels)
             preferences[SELECT_MODEL] = settingsToSave.chatModelId.toString()
+            preferences[BACKGROUND_MODEL] = settingsToSave.backgroundModelId.toString()
+            preferences[SUMMARIZER_MODEL] = settingsToSave.summarizerModelId.toString()
             preferences[TITLE_MODEL] = settingsToSave.titleModelId.toString()
             preferences[TRANSLATE_MODEL] = settingsToSave.translateModeId.toString()
             preferences[SUGGESTION_MODEL] = settingsToSave.suggestionModelId.toString()
@@ -352,6 +360,8 @@ data class Settings(
     val enableWebSearch: Boolean = false,
     val favoriteModels: List<Uuid> = emptyList(),
     val chatModelId: Uuid = Uuid.random(),
+    val backgroundModelId: Uuid = Uuid.random(),
+    val summarizerModelId: Uuid = Uuid.random(),
     val titleModelId: Uuid = Uuid.random(),
     val imageGenerationModelId: Uuid = Uuid.random(),
     val titlePrompt: String = DEFAULT_TITLE_PROMPT,

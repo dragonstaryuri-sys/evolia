@@ -51,6 +51,8 @@ import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Wallpaper
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -90,39 +92,114 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
             contentPadding = contentPadding + PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // --- Core Conversation Group ---
             item {
                 DefaultChatModelSetting(settings = settings, vm = vm)
             }
-
             item {
-                DefaultTitleModelSetting(settings = settings, vm = vm)
+                DefaultBackgroundModelSetting(settings = settings, vm = vm)
             }
-
             item {
                 DefaultSummarizerModelSetting(settings = settings, vm = vm)
             }
-
             item {
                 DefaultMemoryModelSetting(settings = settings, vm = vm)
             }
-
             item {
                 DefaultDiaryModelSetting(settings = settings, vm = vm)
             }
 
+            // --- Secondary Features Group ---
+            item {
+                DefaultImageGenerationModelSetting(settings = settings, vm = vm)
+            }
+            item {
+                DefaultTitleModelSetting(settings = settings, vm = vm)
+            }
+            item {
+                DefaultTranslationModelSetting(settings = settings, vm = vm)
+            }
             item {
                 DefaultSuggestionModelSetting(settings = settings, vm = vm)
             }
-
-            item {
-                DefaultOcrModelSetting(settings = settings, vm = vm)
-            }
-
             item {
                 DefaultEmbeddingModelSetting(settings = settings, vm = vm)
             }
+            item {
+                DefaultOcrModelSetting(settings = settings, vm = vm)
+            }
         }
     }
+}
+
+@Composable
+private fun DefaultChatModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        icon = {
+            Icon(Icons.AutoMirrored.Rounded.Chat, null)
+        },
+        title = {
+            Text(stringResource(R.string.setting_model_page_chat_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_chat_model_desc))
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.chatModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                chatModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun DefaultBackgroundModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        icon = {
+            Icon(Icons.Rounded.Wallpaper, null)
+        },
+        title = {
+            Text(stringResource(R.string.assistant_model_background_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.assistant_model_background_model_desc))
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.backgroundModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                backgroundModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
 }
 
 @Composable
@@ -143,12 +220,12 @@ private fun DefaultSummarizerModelSetting(
         actions = {
             Box(modifier = Modifier.weight(1f)) {
                 ModelSelector(
-                    modelId = settings.titleModelId,
+                    modelId = settings.summarizerModelId,
                     type = ModelType.CHAT,
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
-                                titleModelId = it.id
+                                summarizerModelId = it.id
                             )
                         )
                     },
@@ -275,6 +352,133 @@ private fun DefaultDiaryModelSetting(
                             vm.updateSettings(
                                 settings.copy(
                                     diaryPrompt = DEFAULT_DIARY_PROMPT
+                                )
+                            )
+                        }
+                    ) {
+                        Text(stringResource(R.string.setting_model_page_reset_to_default))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultImageGenerationModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.imggen_page_model_selection), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.imggen_page_model_selection_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.Image, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.imageGenerationModelId,
+                    type = ModelType.IMAGE,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                imageGenerationModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun DefaultTitleModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    var showModal by remember { mutableStateOf(false) }
+    ModelFeatureCard(
+        title = {
+            Text(stringResource(R.string.setting_model_page_title_model), maxLines = 1)
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_title_model_desc))
+        },
+        icon = {
+            Icon(Icons.Rounded.Title, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.titleModelId,
+                    type = ModelType.CHAT,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                titleModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+            IconButton(
+                onClick = {
+                    showModal = true
+                }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
+            }
+        }
+    )
+
+    if (showModal) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showModal = false
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FormItem(
+                    label = {
+                        Text(stringResource(R.string.setting_model_page_prompt))
+                    },
+                    description = {
+                        Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
+                    }
+                ) {
+                    OutlinedTextField(
+                        value = settings.titlePrompt,
+                        onValueChange = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    titlePrompt = it
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 8
+                    )
+                    TextButton(
+                        onClick = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    titlePrompt = DEFAULT_TITLE_PROMPT
                                 )
                             )
                         }
@@ -476,133 +680,6 @@ private fun DefaultSuggestionModelSetting(
             }
         }
     }
-}
-
-@Composable
-private fun DefaultTitleModelSetting(
-    settings: Settings,
-    vm: SettingVM
-) {
-    var showModal by remember { mutableStateOf(false) }
-    ModelFeatureCard(
-        title = {
-            Text(stringResource(R.string.setting_model_page_title_model), maxLines = 1)
-        },
-        description = {
-            Text(stringResource(R.string.setting_model_page_title_model_desc))
-        },
-        icon = {
-            Icon(Icons.Rounded.Title, null)
-        },
-        actions = {
-            Box(modifier = Modifier.weight(1f)) {
-                ModelSelector(
-                    modelId = settings.titleModelId,
-                    type = ModelType.CHAT,
-                    onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
-                                titleModelId = it.id
-                            )
-                        )
-                    },
-                    providers = settings.providers,
-                    modifier = Modifier.wrapContentWidth()
-                )
-            }
-            IconButton(
-                onClick = {
-                    showModal = true
-                }
-            ) {
-                Icon(Icons.Rounded.Settings, null)
-            }
-        }
-    )
-
-    if (showModal) {
-        ModalBottomSheet(
-            onDismissRequest = {
-                showModal = false
-            },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FormItem(
-                    label = {
-                        Text(stringResource(R.string.setting_model_page_prompt))
-                    },
-                    description = {
-                        Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
-                    }
-                ) {
-                    OutlinedTextField(
-                        value = settings.titlePrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    titlePrompt = it
-                                )
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 8
-                    )
-                    TextButton(
-                        onClick = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    titlePrompt = DEFAULT_TITLE_PROMPT
-                                )
-                            )
-                        }
-                    ) {
-                        Text(stringResource(R.string.setting_model_page_reset_to_default))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DefaultChatModelSetting(
-    settings: Settings,
-    vm: SettingVM
-) {
-    ModelFeatureCard(
-        icon = {
-            Icon(Icons.AutoMirrored.Rounded.Chat, null)
-        },
-        title = {
-            Text(stringResource(R.string.setting_model_page_chat_model), maxLines = 1)
-        },
-        description = {
-            Text(stringResource(R.string.setting_model_page_chat_model_desc))
-        },
-        actions = {
-            Box(modifier = Modifier.weight(1f)) {
-                ModelSelector(
-                    modelId = settings.chatModelId,
-                    type = ModelType.CHAT,
-                    onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
-                                chatModelId = it.id
-                            )
-                        )
-                    },
-                    providers = settings.providers,
-                    modifier = Modifier.wrapContentWidth()
-                )
-            }
-        }
-    )
 }
 
 @Composable
