@@ -1010,6 +1010,7 @@
   <string name="memory_optimizing">AI 正在深度优化记忆...</string>
   <string name="memory_optimize_success">优化成功：合并/更新了 %1$d 条，删除了 %2$d 条冗余片段，新增了 %3$d 条记忆。</string>
   <string name="memory_optimize_no_change">记忆已经非常整洁啦！</string>
+
   <!-- 模型设置 -->
   <string name="setting_model_page_memory_model">记忆模型</string>
   <string name="setting_model_page_memory_model_desc">用于记忆深度优化与长期整合的模型。</string>
@@ -1278,7 +1279,7 @@
   <string name="diary_settings">日记设置</string>
   <string name="diary_auto_generate">自动生成日记</string>
   <string name="diary_auto_generate_time_label">自动生成时间</string>
-  <string name="diary_no_new_messages">暂无足够的新消息</string>
+  <string name="diary_no_new_messages">TA现在不想写日记...</string>
   <!-- 数据备份页面新增 -->
   <string name="backup_page_auto_backup_on_start">启动时自动备份</string>
   <string name="backup_page_auto_backup_on_start_desc">每次进入应用时自动执行 WebDAV 备份任务。</string>

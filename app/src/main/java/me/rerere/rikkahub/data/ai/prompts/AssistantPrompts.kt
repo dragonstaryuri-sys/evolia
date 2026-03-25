@@ -132,21 +132,6 @@ Based on your character setting and these memories, please write a diary entry. 
 Output language: {{locale}}
 """
 
-const val DIARY_UPDATE_CONTINUATION_PROMPT = """
-You are the assistant {{char}}.
-Below is the diary entry you previously wrote for today:
-{{previous_diary}}
-
-New interactive messages have just been generated. Please continue the diary entry based on these new interactions.
-Instructions:
-- Do not repeat the previous diary content.
-- Start writing the new part directly as a continuation of the previous diary.
-- Output language: {{locale}}
-
-New Interaction Content:
-{{new_messages}}
-"""
-
 const val DIARY_TIME_REFERENCE_PROMPT = """
 [Time Reference]
 Message start time: {{start_time}}

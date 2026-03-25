@@ -30,4 +30,8 @@ class DiaryRepository(
     suspend fun deleteDiariesOfAssistant(assistantId: String) {
         agentDiaryDao.deleteDiariesByAssistant(assistantId)
     }
+
+    suspend fun getLastDiaryOfAssistant(assistantId: String): AgentDiaryEntity? {
+        return agentDiaryDao.getLastDiaryOfAssistant(assistantId)
+    }
 }

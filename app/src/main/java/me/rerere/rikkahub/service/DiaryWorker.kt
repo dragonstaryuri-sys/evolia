@@ -34,7 +34,6 @@ import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DIARY_UPDATE_CONTINUATION_PROMPT
 
 private const val TAG = "DiaryWorker"
 
@@ -70,7 +69,15 @@ class DiaryWorker(
             }
 
             val todayStr = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-            val lastDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
+            // 先检查今天有没有日记
+            val todayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
+            if (todayDiary != null) {
+                if (isManual) {
+                    showSimpleNotification(applicationContext.getString(R.string.diary_no_new_messages))
+                }
+                return Result.success()
+            }
+            val lastDiary = diaryRepo.getLastDiaryOfAssistant(assistant.id.toString())
 
             // 确定未处理消息的时间起点：如果有旧日记，从旧日记创建时间开始；否则从今天凌晨开始
             val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
@@ -91,37 +98,35 @@ class DiaryWorker(
 
             // 2. 逻辑分支判断
             val finalPrompt: String = if (newMessages.isEmpty()) {
+                // 分支 A: 没有任何新消息
                 if (isManual) {
-                    // 手动点击且新消息不足
                     showSimpleNotification(applicationContext.getString(R.string.diary_no_new_messages))
                     return Result.success()
                 } else {
-                    // 自动执行且无新消息
-                    if (lastDiary != null) {
-                        // 已存在当日日记且无新消息：不生成 (防止重复生成无对话日记)
-                        return Result.success()
-                    } else {
-                        // 当日不存在日记且无新消息：从核心记忆或片段记忆获取 3 段信息
-                        val memories = memoryRepo.getCombinedMemoriesFlow(assistant.id.toString()).first()
-                        val selectedMemories = if (memories.isNotEmpty()) {
-                            memories.shuffled().take(3).joinToString("\n") { "- ${it.content}" }
-                        } else {
-                            "No significant memories found yet."
-                        }
+                    // 自动触发且无历史日记时，才从记忆里抠点东西写
+                    if (lastDiary != null) return Result.success() // 已经有历史了，没新话就不强求写了
 
-                        DIARY_NO_INTERACTION_PROMPT.applyPlaceholders(
-                            "char" to assistant.name,
-                            "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
-                            "memories" to selectedMemories,
-                            "locale" to locale
-                        )
+                    val memories = memoryRepo.getCombinedMemoriesFlow(assistant.id.toString()).first()
+                    val selectedMemories = if (memories.isNotEmpty()) {
+                        memories.shuffled().take(3).joinToString("\n") { "- ${it.content}" }
+                    } else {
+                        "No significant memories found yet."
                     }
+
+                    DIARY_NO_INTERACTION_PROMPT.applyPlaceholders(
+                        "char" to assistant.name,
+                        "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
+                        "memories" to selectedMemories,
+                        "locale" to locale
+                    )
                 }
             } else {
-                // 有新消息：准备生成或续写内容
+                // 分支 B: 有新消息。直接生成一篇新日记。
+                // 不再判断 lastDiary != null 来决定是否用 ContinuationPrompt，统一用 standard prompt
+                val chatContent = newMessages.joinToString("\n") { "${it.role}: ${it.toText()}" }
+
                 val firstMsgTime = formatTimestamp(newMessages.first().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
                 val lastMsgTime = formatTimestamp(newMessages.last().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
-                val chatContent = newMessages.joinToString("\n") { "${it.role}: ${it.toText()}" }
 
                 val timeRef = "\n\n" + DIARY_TIME_REFERENCE_PROMPT.applyPlaceholders(
                     "start_time" to firstMsgTime,
@@ -129,23 +134,13 @@ class DiaryWorker(
                     "trigger_time" to triggerTime
                 )
 
-                if (lastDiary != null) {
-                    // 续写逻辑
-                    DIARY_UPDATE_CONTINUATION_PROMPT.applyPlaceholders(
-                        "char" to assistant.name,
-                        "previous_diary" to lastDiary.content,
-                        "new_messages" to chatContent,
-                        "locale" to locale
-                    ) + timeRef
-                } else {
-                    // 今日首篇日记
-                    currentSettings.diaryPrompt.applyPlaceholders(
-                        "content" to chatContent,
-                        "char" to assistant.name,
-                        "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
-                        "locale" to locale
-                    ) + timeRef
-                }
+                // 无论历史上是否有日记，由于“今天”还没写，所以这就是今天的第一篇，使用标准 Prompt
+                currentSettings.diaryPrompt.applyPlaceholders(
+                    "content" to chatContent,
+                    "char" to assistant.name,
+                    "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
+                    "locale" to locale
+                ) + timeRef
             }
 
             // 3. AI 生成过程
@@ -168,18 +163,12 @@ class DiaryWorker(
 
             // 4. 保存或合并结果
             if (generatedContent.isNotBlank()) {
-                val finalContent = if (lastDiary != null) {
-                    "${lastDiary.content}\n\n---\n\n$generatedContent"
-                } else {
-                    generatedContent
-                }
-
                 val diary = AgentDiaryEntity(
-                    id = lastDiary?.id ?: Uuid.random().toString(),
+                    id = Uuid.random().toString(), // 开启新篇章
                     assistantId = assistant.id.toString(),
-                    content = finalContent,
+                    content = generatedContent, // 不再拼接
                     date = todayStr,
-                    createdAt = System.currentTimeMillis() // 更新处理时间点，用于下次增量判断
+                    createdAt = System.currentTimeMillis()
                 )
                 diaryRepo.insertDiary(diary)
                 showSuccessNotification(assistant.name)

@@ -26,4 +26,7 @@ interface AgentDiaryDAO {
 
     @Query("DELETE FROM AgentDiaryEntity WHERE assistant_id = :assistantId")
     suspend fun deleteDiariesByAssistant(assistantId: String)
+
+    @Query("SELECT * FROM AgentDiaryEntity WHERE assistant_id = :assistantId ORDER BY created_at DESC LIMIT 1")
+    suspend fun getLastDiaryOfAssistant(assistantId: String): AgentDiaryEntity?
 }

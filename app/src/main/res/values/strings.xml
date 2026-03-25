@@ -1326,7 +1326,7 @@
   <string name="diary_settings">Diary Settings</string>
   <string name="diary_auto_generate">Auto-generate Diary</string>
   <string name="diary_auto_generate_time_label">Auto-generate Time</string>
-  <string name="diary_no_new_messages">No enough message</string>
+  <string name="diary_no_new_messages">He/She don\'t feel like writing a diary right now.</string>
   <!-- Back Up -->
   <string name="backup_page_auto_backup_on_start">Auto Backup on Launch</string>
   <string name="backup_page_auto_backup_on_start_desc">Automatically perform WebDAV backup task each time the app is opened.</string>
