@@ -43,8 +43,8 @@ fun navigateToChatPage(
             searchQuery = searchQuery,
         ),
     ) {
-        popUpTo(0) {
-            inclusive = true
+        popUpTo<Screen.Home> {
+            inclusive = false
         }
         launchSingleTop = true
     }
