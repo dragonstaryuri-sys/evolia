@@ -3,17 +3,21 @@ package me.rerere.rikkahub.discover.ui
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,6 +33,7 @@ fun ScheduleScreen(
 ) {
     val pendingSchedules by viewModel.allPendingSchedules.collectAsState()
     val completedSchedules by viewModel.allCompletedSchedules.collectAsState()
+    val haptic = LocalHapticFeedback.current
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAddDialog by remember { mutableStateOf(false) }
@@ -45,7 +50,10 @@ fun ScheduleScreen(
                 LargeTopAppBar(
                     title = { Text(stringResource(R.string.discover_schedule_all_tasks)) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onBack()
+                        }) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
                         }
                     },
@@ -60,7 +68,10 @@ fun ScheduleScreen(
                     tabs.forEachIndexed { index, title ->
                         Tab(
                             selected = selectedTabIndex == index,
-                            onClick = { selectedTabIndex = index },
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                selectedTabIndex = index
+                            },
                             text = { Text(title) }
                         )
                     }
@@ -68,19 +79,29 @@ fun ScheduleScreen(
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
+            FloatingActionButton(
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    showAddDialog = true
+                },
+                shape = CircleShape // 使用标准圆形
+            ) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
             }
         }
     ) { padding ->
         val displaySchedules = if (selectedTabIndex == 0) pendingSchedules else completedSchedules
 
+        val groupedSchedules = remember(displaySchedules) {
+            displaySchedules.groupBy { it.difficulty }
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (displaySchedules.isEmpty()) {
                 item {
@@ -95,12 +116,24 @@ fun ScheduleScreen(
                     }
                 }
             } else {
-                items(displaySchedules, key = { it.id }) { schedule ->
-                    ScheduleItem(
-                        schedule = schedule,
-                        onToggle = { viewModel.toggleComplete(schedule) },
-                        onDelete = { viewModel.deleteSchedule(schedule.id) }
-                    )
+                listOf(0, 1, 2).forEach { diff ->
+                    val items = groupedSchedules[diff] ?: emptyList()
+                    if (items.isNotEmpty()) {
+                        item(key = "diff_$diff") {
+                            DifficultyGroup(
+                                difficulty = diff,
+                                schedules = items,
+                                onToggle = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    viewModel.toggleComplete(it)
+                                },
+                                onDelete = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.deleteSchedule(it.id)
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -118,26 +151,65 @@ fun ScheduleScreen(
 }
 
 @Composable
+private fun DifficultyGroup(
+    difficulty: Int,
+    schedules: List<ScheduleEntity>,
+    onToggle: (ScheduleEntity) -> Unit,
+    onDelete: (ScheduleEntity) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large, // 使用 M3 标准大圆角
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = when(difficulty) {
+                    2 -> stringResource(R.string.schedule_difficulty_2)
+                    1 -> stringResource(R.string.schedule_difficulty_1)
+                    else -> stringResource(R.string.schedule_difficulty_0)
+                },
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                schedules.forEach { schedule ->
+                    ScheduleItem(
+                        schedule = schedule,
+                        onToggle = { onToggle(schedule) },
+                        onDelete = { onDelete(schedule) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ScheduleItem(
     schedule: ScheduleEntity,
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = if (schedule.isCompleted) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.medium, // 使用 M3 标准中圆角
+        color = if (schedule.isCompleted) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
         onClick = onToggle
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
                 checked = schedule.isCompleted,
                 onCheckedChange = { onToggle() }
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     text = schedule.title,
@@ -147,7 +219,6 @@ private fun ScheduleItem(
                     )
                 )
 
-                // 属性标签展示
                 Row(
                     modifier = Modifier.padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -175,27 +246,10 @@ private fun ScheduleItem(
                             else -> MaterialTheme.colorScheme.secondaryContainer
                         }
                     )
-                    PropertyTag(
-                        text = when(schedule.difficulty) {
-                            2 -> stringResource(R.string.schedule_difficulty_2)
-                            1 -> stringResource(R.string.schedule_difficulty_1)
-                            else -> stringResource(R.string.schedule_difficulty_0)
-                        },
-                        containerColor = MaterialTheme.colorScheme.outlineVariant
-                    )
-                }
-
-                if (schedule.content.isNotEmpty()) {
-                    Text(
-                        text = schedule.content,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
                 }
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
             }
         }
     }
@@ -222,12 +276,13 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, In
     var priority by remember { mutableIntStateOf(1) }
     var urgency by remember { mutableIntStateOf(1) }
     var difficulty by remember { mutableIntStateOf(1) }
+    val haptic = LocalHapticFeedback.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.discover_schedule_add_task)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -235,14 +290,56 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, In
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 简单的优先级选择器
-                Text(stringResource(R.string.schedule_priority_1) + ": " +
-                    when(priority) { 2 -> stringResource(R.string.schedule_priority_2) 1 -> stringResource(R.string.schedule_priority_1) else -> stringResource(R.string.schedule_priority_0) })
-                Slider(value = priority.toFloat(), onValueChange = { priority = it.toInt() }, valueRange = 0f..2f, steps = 1)
+                Column {
+                    Text(
+                        text = stringResource(R.string.schedule_priority) + ": " +
+                            when(priority) { 2 -> stringResource(R.string.schedule_priority_2) 1 -> stringResource(R.string.schedule_priority_1) else -> stringResource(R.string.schedule_priority_0) },
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Slider(
+                        value = priority.Labor(),
+                        onValueChange = {
+                            if (it.toInt() != priority) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            priority = it.toInt()
+                        },
+                        valueRange = 0f..2f,
+                        steps = 1
+                    )
+                }
 
-                Text(stringResource(R.string.schedule_urgency) + ": " +
-                    when(urgency) { 2 -> stringResource(R.string.schedule_urgency_2) 1 -> stringResource(R.string.schedule_urgency_1) else -> stringResource(R.string.schedule_urgency_0) })
-                Slider(value = urgency.toFloat(), onValueChange = { urgency = it.toInt() }, valueRange = 0f..2f, steps = 1)
+                Column {
+                    Text(
+                        text = stringResource(R.string.schedule_urgency) + ": " +
+                            when(urgency) { 2 -> stringResource(R.string.schedule_urgency_2) 1 -> stringResource(R.string.schedule_urgency_1) else -> stringResource(R.string.schedule_urgency_0) },
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Slider(
+                        value = urgency.toFloat(),
+                        onValueChange = {
+                            if (it.toInt() != urgency) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            urgency = it.toInt()
+                        },
+                        valueRange = 0f..2f,
+                        steps = 1
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = stringResource(R.string.schedule_difficulty) + ": " +
+                            when(difficulty) { 2 -> stringResource(R.string.schedule_difficulty_2) 1 -> stringResource(R.string.schedule_difficulty_1) else -> stringResource(R.string.schedule_difficulty_0) },
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Slider(
+                        value = difficulty.toFloat(),
+                        onValueChange = {
+                            if (it.toInt() != difficulty) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            difficulty = it.toInt()
+                        },
+                        valueRange = 0f..2f,
+                        steps = 1
+                    )
+                }
             }
         },
         confirmButton = {
@@ -251,9 +348,15 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, In
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onDismiss()
+            }) {
                 Text(stringResource(android.R.string.cancel))
             }
         }
     )
 }
+
+// 辅助扩展：修复 Float 转换小问题
+private fun Int.Labor(): Float = this.toFloat()

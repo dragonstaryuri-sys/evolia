@@ -29,4 +29,5 @@
   <string name="schedule_difficulty_0">Simple</string>
   <string name="schedule_difficulty_1">Normal</string>
   <string name="schedule_difficulty_2">Not Simple</string>
+  <string name="schedule_priority">Importance</string>
 </resources>
