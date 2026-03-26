@@ -12,10 +12,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.discover.R
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import org.koin.androidx.compose.koinViewModel
@@ -107,8 +109,8 @@ fun ScheduleScreen(
     if (showAddDialog) {
         AddScheduleDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { title ->
-                viewModel.addSchedule(title)
+            onConfirm = { title, priority, urgency, difficulty ->
+                viewModel.addSchedule(title, priority = priority, urgency = urgency, difficulty = difficulty)
                 showAddDialog = false
             }
         )
@@ -144,11 +146,51 @@ private fun ScheduleItem(
                         textDecoration = if (schedule.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
                     )
                 )
+
+                // 属性标签展示
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    PropertyTag(
+                        text = when(schedule.priority) {
+                            2 -> stringResource(R.string.schedule_priority_2)
+                            1 -> stringResource(R.string.schedule_priority_1)
+                            else -> stringResource(R.string.schedule_priority_0)
+                        },
+                        containerColor = when(schedule.priority) {
+                            2 -> MaterialTheme.colorScheme.errorContainer
+                            1 -> MaterialTheme.colorScheme.primaryContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    )
+                    PropertyTag(
+                        text = when(schedule.urgency) {
+                            2 -> stringResource(R.string.schedule_urgency_2)
+                            1 -> stringResource(R.string.schedule_urgency_1)
+                            else -> stringResource(R.string.schedule_urgency_0)
+                        },
+                        containerColor = when(schedule.urgency) {
+                            2 -> MaterialTheme.colorScheme.tertiaryContainer
+                            else -> MaterialTheme.colorScheme.secondaryContainer
+                        }
+                    )
+                    PropertyTag(
+                        text = when(schedule.difficulty) {
+                            2 -> stringResource(R.string.schedule_difficulty_2)
+                            1 -> stringResource(R.string.schedule_difficulty_1)
+                            else -> stringResource(R.string.schedule_difficulty_0)
+                        },
+                        containerColor = MaterialTheme.colorScheme.outlineVariant
+                    )
+                }
+
                 if (schedule.content.isNotEmpty()) {
                     Text(
                         text = schedule.content,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
@@ -160,21 +202,51 @@ private fun ScheduleItem(
 }
 
 @Composable
-private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
+private fun PropertyTag(text: String, containerColor: Color) {
+    Surface(
+        color = containerColor,
+        shape = MaterialTheme.shapes.extraSmall,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, Int, Int) -> Unit) {
+    var title by remember { mutableStateOf("") }
+    var priority by remember { mutableIntStateOf(1) }
+    var urgency by remember { mutableIntStateOf(1) }
+    var difficulty by remember { mutableIntStateOf(1) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.discover_schedule_add_task)) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text(stringResource(R.string.discover_schedule_input_hint)) },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    placeholder = { Text(stringResource(R.string.discover_schedule_input_hint)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // 简单的优先级选择器
+                Text(stringResource(R.string.schedule_priority_1) + ": " +
+                    when(priority) { 2 -> stringResource(R.string.schedule_priority_2) 1 -> stringResource(R.string.schedule_priority_1) else -> stringResource(R.string.schedule_priority_0) })
+                Slider(value = priority.toFloat(), onValueChange = { priority = it.toInt() }, valueRange = 0f..2f, steps = 1)
+
+                Text(stringResource(R.string.schedule_urgency) + ": " +
+                    when(urgency) { 2 -> stringResource(R.string.schedule_urgency_2) 1 -> stringResource(R.string.schedule_urgency_1) else -> stringResource(R.string.schedule_urgency_0) })
+                Slider(value = urgency.toFloat(), onValueChange = { urgency = it.toInt() }, valueRange = 0f..2f, steps = 1)
+            }
         },
         confirmButton = {
-            Button(onClick = { if (text.isNotBlank()) onConfirm(text) }) {
+            Button(onClick = { if (title.isNotBlank()) onConfirm(title, priority, urgency, difficulty) }) {
                 Text(stringResource(android.R.string.ok))
             }
         },

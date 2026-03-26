@@ -377,7 +377,15 @@ class LocalTools(
                             })
                             put("priority", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Priority (0-3, 0 is normal, higher is more important)")
+                                put("description", "Priority (0: Not Important, 1: Normal, 2: Important)")
+                            })
+                            put("urgency", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Urgency (0: Not Urgent, 1: Normal, 2: Very Urgent)")
+                            })
+                            put("difficulty", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Difficulty (0: Simple, 1: Normal, 2: Not Simple)")
                             })
                         },
                         required = listOf("title")
@@ -386,13 +394,17 @@ class LocalTools(
                 execute = {
                     val title = it.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: ""
                     val content = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val priority = it.jsonObject["priority"]?.jsonPrimitive?.intOrNull ?: 0
+                    val priority = it.jsonObject["priority"]?.jsonPrimitive?.intOrNull ?: 1
+                    val urgency = it.jsonObject["urgency"]?.jsonPrimitive?.intOrNull ?: 1
+                    val difficulty = it.jsonObject["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
                     try {
                         scheduleRepository.addSchedule(
                             ScheduleEntity(
                                 title = title,
                                 content = content,
                                 priority = priority,
+                                urgency = urgency,
+                                difficulty = difficulty,
                                 startTime = System.currentTimeMillis()
                             )
                         )
@@ -416,12 +428,74 @@ class LocalTools(
                                     put("title", s.title)
                                     put("content", s.content)
                                     put("priority", s.priority)
+                                    put("urgency", s.urgency)
+                                    put("difficulty", s.difficulty)
                                     put("is_completed", s.isCompleted)
                                 }
                             }))
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "Failed to list schedules") }
+                    }
+                }
+            ),
+            Tool(
+                name = "edit_schedule",
+                description = "Edit an existing schedule/task.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("id", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "The ID of the schedule to edit")
+                            })
+                            put("title", buildJsonObject {
+                                put("type", "string")
+                            })
+                            put("content", buildJsonObject {
+                                put("type", "string")
+                            })
+                            put("priority", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "0: Not Important, 1: Normal, 2: Important")
+                            })
+                            put("urgency", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "0: Not Urgent, 1: Normal, 2: Very Urgent")
+                            })
+                            put("difficulty", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "0: Simple, 1: Normal, 2: Not Simple")
+                            })
+                        },
+                        required = listOf("id")
+                    )
+                },
+                execute = {
+                    val id = it.jsonObject["id"]?.jsonPrimitive?.longOrNull ?: -1L
+                    try {
+                        val schedule = scheduleRepository.getScheduleById(id)
+                        if (schedule != null) {
+                            val newTitle = it.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: schedule.title
+                            val newContent = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: schedule.content
+                            val newPriority = it.jsonObject["priority"]?.jsonPrimitive?.intOrNull ?: schedule.priority
+                            val newUrgency = it.jsonObject["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
+                            val newDifficulty = it.jsonObject["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
+
+                            scheduleRepository.updateSchedule(schedule.copy(
+                                title = newTitle,
+                                content = newContent,
+                                priority = newPriority,
+                                urgency = newUrgency,
+                                difficulty = newDifficulty,
+                                updatedAt = System.currentTimeMillis()
+                            ))
+                            buildJsonObject { put("success", true) }
+                        } else {
+                            buildJsonObject { put("error", "Schedule not found") }
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed to edit schedule") }
                     }
                 }
             ),

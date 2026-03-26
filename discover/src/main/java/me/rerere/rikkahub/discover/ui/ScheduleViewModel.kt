@@ -45,13 +45,22 @@ class ScheduleViewModel(
         }
     }
 
-    fun addSchedule(title: String, content: String = "", priority: Int = 0, startTime: Long = System.currentTimeMillis()) {
+    fun addSchedule(
+        title: String,
+        content: String = "",
+        priority: Int = 1,
+        urgency: Int = 1,
+        difficulty: Int = 1,
+        startTime: Long = System.currentTimeMillis()
+    ) {
         viewModelScope.launch {
             repository.addSchedule(
                 ScheduleEntity(
                     title = title,
                     content = content,
                     priority = priority,
+                    urgency = urgency,
+                    difficulty = difficulty,
                     startTime = startTime
                 )
             )

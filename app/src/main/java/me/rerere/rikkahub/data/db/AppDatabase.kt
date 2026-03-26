@@ -50,7 +50,7 @@ import kotlinx.serialization.json.put
         AgentDiaryEntity::class,
         ScheduleEntity::class
     ],
-    version = 25,
+    version = 26,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -72,6 +72,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 23, to = 24),
         AutoMigration(from = 24, to = 25),
+        // 25->26 is manual migration below
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -94,6 +95,14 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: adding urgency and difficulty to schedules table")
+                db.execSQL("ALTER TABLE schedules ADD COLUMN urgency INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE schedules ADD COLUMN difficulty INTEGER NOT NULL DEFAULT 1")
+            }
+        }
 
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {

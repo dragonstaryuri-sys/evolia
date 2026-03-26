@@ -20,8 +20,12 @@ data class ScheduleEntity(
     val endTime: Long? = null,
     @ColumnInfo(name = "reminder_time")
     val reminderTime: Long? = null,
-    @ColumnInfo(name = "priority")
-    val priority: Int = 0, // 0: Normal, 1: High
+    @ColumnInfo(name = "priority",defaultValue = "1")
+    val priority: Int = 0, // 0: Not Important, 1: Normal, 2: Important
+    @ColumnInfo(name = "urgency",defaultValue = "1")
+    val urgency: Int = 1, // 0: Not Urgent, 1: Normal, 2: Very Urgent
+    @ColumnInfo(name = "difficulty",defaultValue = "1")
+    val difficulty: Int = 0, // 0: Simple, 1: Normal, 2: Not Simple
     @ColumnInfo(name = "is_completed")
     val isCompleted: Boolean = false,
     @ColumnInfo(name = "category")

@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 25,
-    "identityHash": "6a1c6f23bb3813c17ae30a86b1b97f5f",
+    "version": 26,
+    "identityHash": "ec19804a0972a7fcfaf873a80873eb93",
     "entities": [
       {
         "tableName": "ConversationEntity",
@@ -469,7 +469,7 @@
       },
       {
         "tableName": "schedules",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `content` TEXT NOT NULL, `start_time` INTEGER NOT NULL, `end_time` INTEGER, `reminder_time` INTEGER, `priority` INTEGER NOT NULL, `urgency` INTEGER NOT NULL, `difficulty` INTEGER NOT NULL, `is_completed` INTEGER NOT NULL, `category` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `content` TEXT NOT NULL, `start_time` INTEGER NOT NULL, `end_time` INTEGER, `reminder_time` INTEGER, `priority` INTEGER NOT NULL DEFAULT 1, `urgency` INTEGER NOT NULL DEFAULT 1, `difficulty` INTEGER NOT NULL DEFAULT 1, `is_completed` INTEGER NOT NULL, `category` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -509,19 +509,22 @@
             "fieldPath": "priority",
             "columnName": "priority",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "1"
           },
           {
             "fieldPath": "urgency",
             "columnName": "urgency",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "1"
           },
           {
             "fieldPath": "difficulty",
             "columnName": "difficulty",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "1"
           },
           {
             "fieldPath": "isCompleted",
@@ -558,7 +561,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6a1c6f23bb3813c17ae30a86b1b97f5f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ec19804a0972a7fcfaf873a80873eb93')"
     ]
   }
 }

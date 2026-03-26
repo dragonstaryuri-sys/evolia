@@ -15,4 +15,18 @@
   <string name="discover_schedule_status_pending">Pending</string>
   <string name="discover_schedule_status_completed">Completed</string>
   <string name="discover_schedule_no_completed_tasks">No completed tasks</string>
+
+  <string name="schedule_priority_0">Not Important</string>
+  <string name="schedule_priority_1">Normal</string>
+  <string name="schedule_priority_2">Important</string>
+
+  <string name="schedule_urgency">Urgency</string>
+  <string name="schedule_urgency_0">Not Urgent</string>
+  <string name="schedule_urgency_1">Normal</string>
+  <string name="schedule_urgency_2">Very Urgent</string>
+
+  <string name="schedule_difficulty">Difficulty</string>
+  <string name="schedule_difficulty_0">Simple</string>
+  <string name="schedule_difficulty_1">Normal</string>
+  <string name="schedule_difficulty_2">Not Simple</string>
 </resources>

@@ -15,4 +15,18 @@
     <string name="discover_schedule_status_pending">待处理</string>
     <string name="discover_schedule_status_completed">已完成</string>
     <string name="discover_schedule_no_completed_tasks">一个都没做呢</string>
+
+    <string name="schedule_priority_0">不重要</string>
+    <string name="schedule_priority_1">一般</string>
+    <string name="schedule_priority_2">重要</string>
+
+    <string name="schedule_urgency">紧急程度</string>
+    <string name="schedule_urgency_0">不急</string>
+    <string name="schedule_urgency_1">一般</string>
+    <string name="schedule_urgency_2">很急</string>
+
+    <string name="schedule_difficulty">困难程度</string>
+    <string name="schedule_difficulty_0">简单</string>
+    <string name="schedule_difficulty_1">一般</string>
+    <string name="schedule_difficulty_2">不简单</string>
 </resources>

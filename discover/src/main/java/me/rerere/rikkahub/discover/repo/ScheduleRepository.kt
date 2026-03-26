@@ -31,9 +31,11 @@ class ScheduleRepository(
     fun getAllPending(): Flow<List<ScheduleEntity>> = scheduleDAO.getAllPending()
 
     /**
-     * 获取所有已完成事项 (按更新时间/完成时间降序)
+     * 获取所有已完成事项 (按完成时间降序)
      */
     fun getAllCompleted(): Flow<List<ScheduleEntity>> = scheduleDAO.getAllCompleted()
+
+    suspend fun getScheduleById(id: Long): ScheduleEntity? = scheduleDAO.getScheduleById(id)
 
     fun getTodayUnfinishedCount(): Flow<Int> {
         val (start, end) = getTodayRange()
