@@ -12,4 +12,7 @@
     <string name="discover_schedule_permission_title">开启通知提醒</string>
     <string name="discover_schedule_permission_desc">为了不错过重要日程，请允许Evolia发送提醒通知，我会很温柔地提醒你的～</string>
     <string name="discover_schedule_complete_cheer">做得太棒了！继续加油哦！</string>
+    <string name="discover_schedule_status_pending">待处理</string>
+    <string name="discover_schedule_status_completed">已完成</string>
+    <string name="discover_schedule_no_completed_tasks">一个都没做呢</string>
 </resources>

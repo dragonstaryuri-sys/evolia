@@ -17,6 +17,24 @@ class ScheduleRepository(
         return scheduleDAO.getSchedulesForDay(start, end)
     }
 
+    /**
+     * 获取所有待办事项和当日已完成事项 (用于智能体)
+     */
+    fun getPendingAndTodayCompleted(): Flow<List<ScheduleEntity>> {
+        val (start, _) = getTodayRange()
+        return scheduleDAO.getPendingAndTodayCompleted(start)
+    }
+
+    /**
+     * 获取所有待办事项 (按创建时间降序)
+     */
+    fun getAllPending(): Flow<List<ScheduleEntity>> = scheduleDAO.getAllPending()
+
+    /**
+     * 获取所有已完成事项 (按更新时间/完成时间降序)
+     */
+    fun getAllCompleted(): Flow<List<ScheduleEntity>> = scheduleDAO.getAllCompleted()
+
     fun getTodayUnfinishedCount(): Flow<Int> {
         val (start, end) = getTodayRange()
         return scheduleDAO.getUnfinishedCountForDay(start, end)

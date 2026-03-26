@@ -14,8 +14,16 @@ class ScheduleViewModel(
     private val repository: ScheduleRepository
 ) : ViewModel() {
 
-    // 今日所有日程
+    // 今日所有日程 (用于发现页卡片展示)
     val todaySchedules: StateFlow<List<ScheduleEntity>> = repository.getTodaySchedules()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 所有待办事项 (按创建时间降序)
+    val allPendingSchedules: StateFlow<List<ScheduleEntity>> = repository.getAllPending()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 所有已完成事项 (按完成时间降序)
+    val allCompletedSchedules: StateFlow<List<ScheduleEntity>> = repository.getAllCompleted()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // 今日进度 (0.0 - 1.0)

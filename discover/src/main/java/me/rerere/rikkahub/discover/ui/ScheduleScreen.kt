@@ -5,10 +5,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,23 +25,45 @@ fun ScheduleScreen(
     onBack: () -> Unit,
     viewModel: ScheduleViewModel = koinViewModel()
 ) {
-    val schedules by viewModel.todaySchedules.collectAsState()
+    val pendingSchedules by viewModel.allPendingSchedules.collectAsState()
+    val completedSchedules by viewModel.allCompletedSchedules.collectAsState()
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAddDialog by remember { mutableStateOf(false) }
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    val tabs = listOf(
+        stringResource(R.string.discover_schedule_status_pending),
+        stringResource(R.string.discover_schedule_status_completed)
+    )
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.discover_schedule_all_tasks)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        // 这里可以替换为通用的返回图标
-                        Icon(Icons.Rounded.Event, contentDescription = null)
+            Column {
+                LargeTopAppBar(
+                    title = { Text(stringResource(R.string.discover_schedule_all_tasks)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                        }
+                    },
+                    scrollBehavior = scrollBehavior
+                )
+                TabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    divider = {}
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabIndex = index },
+                            text = { Text(title) }
+                        )
                     }
-                },
-                scrollBehavior = scrollBehavior
-            )
+                }
+            }
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
@@ -50,6 +71,8 @@ fun ScheduleScreen(
             }
         }
     ) { padding ->
+        val displaySchedules = if (selectedTabIndex == 0) pendingSchedules else completedSchedules
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -57,14 +80,20 @@ fun ScheduleScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (schedules.isEmpty()) {
+            if (displaySchedules.isEmpty()) {
                 item {
                     Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(stringResource(R.string.discover_schedule_no_tasks), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = if (selectedTabIndex == 0)
+                                stringResource(R.string.discover_schedule_no_tasks)
+                            else
+                                stringResource(R.string.discover_schedule_no_completed_tasks),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             } else {
-                items(schedules, key = { it.id }) { schedule ->
+                items(displaySchedules, key = { it.id }) { schedule ->
                     ScheduleItem(
                         schedule = schedule,
                         onToggle = { viewModel.toggleComplete(schedule) },

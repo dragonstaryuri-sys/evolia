@@ -363,7 +363,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "add_schedule",
-                description = "Add a new schedule/task for today.",
+                description = "Add a new schedule/task/to-do.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -403,12 +403,12 @@ class LocalTools(
                 }
             ),
             Tool(
-                name = "list_today_schedules",
-                description = "List all schedules/tasks for today.",
+                name = "list_schedules",
+                description = "List all pending schedules/tasks and those completed today.",
                 parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
                 execute = {
                     try {
-                        val schedules = scheduleRepository.getTodaySchedules().first()
+                        val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
                         buildJsonObject {
                             put("schedules", JsonArray(schedules.map { s ->
                                 buildJsonObject {
@@ -442,7 +442,7 @@ class LocalTools(
                 execute = {
                     val id = it.jsonObject["id"]?.jsonPrimitive?.longOrNull ?: -1L
                     try {
-                        val schedules = scheduleRepository.getTodaySchedules().first()
+                        val schedules = scheduleRepository.getAllSchedules().first()
                         val schedule = schedules.find { s -> s.id == id }
                         if (schedule != null) {
                             scheduleRepository.toggleComplete(schedule)

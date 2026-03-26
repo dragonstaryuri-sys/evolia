@@ -12,4 +12,7 @@
   <string name="discover_schedule_permission_title">Enable Notification Reminders</string>
   <string name="discover_schedule_permission_desc">To never miss important schedules, please allow Evolia to send reminder notifications. I\'ll gently remind you~</string>
   <string name="discover_schedule_complete_cheer">Great job! Keep it up!</string>
+  <string name="discover_schedule_status_pending">Pending</string>
+  <string name="discover_schedule_status_completed">Completed</string>
+  <string name="discover_schedule_no_completed_tasks">No completed tasks</string>
 </resources>
