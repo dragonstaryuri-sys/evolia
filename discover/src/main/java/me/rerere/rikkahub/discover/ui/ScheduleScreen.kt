@@ -84,7 +84,7 @@ fun ScheduleScreen(
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     showAddDialog = true
                 },
-                shape = CircleShape // 使用标准圆形
+                shape = CircleShape
             ) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
             }
@@ -92,8 +92,14 @@ fun ScheduleScreen(
     ) { padding ->
         val displaySchedules = if (selectedTabIndex == 0) pendingSchedules else completedSchedules
 
+        // 先按难度分组，再在组内按优先级和紧急程度排序
         val groupedSchedules = remember(displaySchedules) {
-            displaySchedules.groupBy { it.difficulty }
+            displaySchedules.groupBy { it.difficulty }.mapValues { (_, list) ->
+                list.sortedWith(
+                    compareByDescending<ScheduleEntity> { it.priority }
+                        .thenByDescending { it.urgency }
+                )
+            }
         }
 
         LazyColumn(
@@ -159,7 +165,7 @@ private fun DifficultyGroup(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large, // 使用 M3 标准大圆角
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
@@ -195,10 +201,17 @@ private fun ScheduleItem(
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
+    // 根据优先级确定色彩
+    val itemBaseColor = when (schedule.priority) {
+        2 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)    // 红 (重要)
+        1 -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)  // 蓝 (普通)
+        else -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f) // 绿 (不重要)
+    }
+
     Surface(
-        shape = MaterialTheme.shapes.medium, // 使用 M3 标准中圆角
+        shape = MaterialTheme.shapes.medium,
         color = if (schedule.isCompleted) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        else itemBaseColor,
         onClick = onToggle
     ) {
         Row(
@@ -223,6 +236,7 @@ private fun ScheduleItem(
                     modifier = Modifier.padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // 优先级标签 (色彩跟随容器)
                     PropertyTag(
                         text = when(schedule.priority) {
                             2 -> stringResource(R.string.schedule_priority_2)
@@ -230,21 +244,19 @@ private fun ScheduleItem(
                             else -> stringResource(R.string.schedule_priority_0)
                         },
                         containerColor = when(schedule.priority) {
-                            2 -> MaterialTheme.colorScheme.errorContainer
-                            1 -> MaterialTheme.colorScheme.primaryContainer
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        }
+                            2 -> MaterialTheme.colorScheme.error
+                            1 -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.tertiary
+                        }.copy(alpha = 0.1f)
                     )
+                    // 紧急度标签
                     PropertyTag(
                         text = when(schedule.urgency) {
                             2 -> stringResource(R.string.schedule_urgency_2)
                             1 -> stringResource(R.string.schedule_urgency_1)
                             else -> stringResource(R.string.schedule_urgency_0)
                         },
-                        containerColor = when(schedule.urgency) {
-                            2 -> MaterialTheme.colorScheme.tertiaryContainer
-                            else -> MaterialTheme.colorScheme.secondaryContainer
-                        }
+                        containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
                     )
                 }
             }
@@ -297,7 +309,7 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, In
                         style = MaterialTheme.typography.labelMedium
                     )
                     Slider(
-                        value = priority.Labor(),
+                        value = priority.toFloat(),
                         onValueChange = {
                             if (it.toInt() != priority) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             priority = it.toInt()
@@ -357,6 +369,3 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, In
         }
     )
 }
-
-// 辅助扩展：修复 Float 转换小问题
-private fun Int.Labor(): Float = this.toFloat()
