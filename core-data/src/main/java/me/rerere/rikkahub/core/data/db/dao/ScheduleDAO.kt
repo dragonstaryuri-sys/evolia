@@ -42,4 +42,7 @@ interface ScheduleDAO {
 
     @Query("SELECT COUNT(*) FROM schedules WHERE start_time >= :startOfDay AND start_time < :endOfDay AND is_completed = 0")
     fun getUnfinishedCountForDay(startOfDay: Long, endOfDay: Long): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM schedules WHERE is_completed = 0")
+    fun getUnfinishedCount(): Flow<Int>
 }

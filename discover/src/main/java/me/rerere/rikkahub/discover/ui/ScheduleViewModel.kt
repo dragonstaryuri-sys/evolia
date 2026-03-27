@@ -43,8 +43,8 @@ class ScheduleViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
 
     // 未完成数量
-    val unfinishedCount: StateFlow<Int> = repository.getTodayUnfinishedCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val unfinishedCount: StateFlow<Int> = repository.getUnfinishedCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000),0)
 
     fun toggleComplete(schedule: ScheduleEntity) {
         viewModelScope.launch {

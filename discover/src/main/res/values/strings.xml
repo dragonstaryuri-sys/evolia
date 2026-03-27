@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="discover_schedule_title">Today\'s Schedule</string>
+  <string name="discover_schedule_title">To-do</string>
   <string name="discover_schedule_count">(%1$d)</string>
   <string name="discover_schedule_no_tasks">No schedules yet</string>
   <string name="discover_schedule_high_priority">High Priority</string>

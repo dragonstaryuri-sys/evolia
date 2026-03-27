@@ -10,8 +10,6 @@ class ScheduleRepository(
 ) {
     fun getAllSchedules(): Flow<List<ScheduleEntity>> = scheduleDAO.getAllSchedules()
 
-    fun getActiveSchedules(): Flow<List<ScheduleEntity>> = scheduleDAO.getActiveSchedules()
-
     fun getTodaySchedules(): Flow<List<ScheduleEntity>> {
         val (start, end) = getTodayRange()
         return scheduleDAO.getSchedulesForDay(start, end)
@@ -66,4 +64,7 @@ class ScheduleRepository(
         val end = calendar.timeInMillis
         return start to end
     }
+
+    // 获取全局未完成事项的总数
+    fun getUnfinishedCount(): Flow<Int> = scheduleDAO.getUnfinishedCount()
 }
