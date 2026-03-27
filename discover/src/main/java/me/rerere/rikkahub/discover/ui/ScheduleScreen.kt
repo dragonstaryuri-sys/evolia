@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.discover.R
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
+import me.rerere.rikkahub.common.ui.components.ExpandableCard // 引用 common 里的组件
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -92,7 +93,6 @@ fun ScheduleScreen(
     ) { padding ->
         val displaySchedules = if (selectedTabIndex == 0) pendingSchedules else completedSchedules
 
-        // 先按难度分组，再在组内按优先级和紧急程度排序
         val groupedSchedules = remember(displaySchedules) {
             displaySchedules.groupBy { it.difficulty }.mapValues { (_, list) ->
                 list.sortedWith(
@@ -163,34 +163,23 @@ private fun DifficultyGroup(
     onToggle: (ScheduleEntity) -> Unit,
     onDelete: (ScheduleEntity) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = when(difficulty) {
-                    2 -> stringResource(R.string.schedule_difficulty_2)
-                    1 -> stringResource(R.string.schedule_difficulty_1)
-                    else -> stringResource(R.string.schedule_difficulty_0)
-                },
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
+    val title = when(difficulty) {
+        2 -> stringResource(R.string.schedule_difficulty_2)
+        1 -> stringResource(R.string.schedule_difficulty_1)
+        else -> stringResource(R.string.schedule_difficulty_0)
+    }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                schedules.forEach { schedule ->
-                    ScheduleItem(
-                        schedule = schedule,
-                        onToggle = { onToggle(schedule) },
-                        onDelete = { onDelete(schedule) }
-                    )
-                }
-            }
+    // 调用 common 模块中的折叠组件
+    ExpandableCard(
+        title = title,
+        initiallyExpanded = true
+    ) {
+        schedules.forEach { schedule ->
+            ScheduleItem(
+                schedule = schedule,
+                onToggle = { onToggle(schedule) },
+                onDelete = { onDelete(schedule) }
+            )
         }
     }
 }
@@ -201,11 +190,10 @@ private fun ScheduleItem(
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
-    // 根据优先级确定色彩
     val itemBaseColor = when (schedule.priority) {
-        2 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)    // 红 (重要)
-        1 -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)  // 蓝 (普通)
-        else -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f) // 绿 (不重要)
+        2 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        1 -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+        else -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f)
     }
 
     Surface(
@@ -236,7 +224,6 @@ private fun ScheduleItem(
                     modifier = Modifier.padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // 优先级标签 (色彩跟随容器)
                     PropertyTag(
                         text = when(schedule.priority) {
                             2 -> stringResource(R.string.schedule_priority_2)
@@ -249,7 +236,6 @@ private fun ScheduleItem(
                             else -> MaterialTheme.colorScheme.tertiary
                         }.copy(alpha = 0.1f)
                     )
-                    // 紧急度标签
                     PropertyTag(
                         text = when(schedule.urgency) {
                             2 -> stringResource(R.string.schedule_urgency_2)
