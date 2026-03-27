@@ -34,7 +34,7 @@ fun DiscoverPage() {
     val scheduleViewModel: ScheduleViewModel = koinViewModel()
     val progress by scheduleViewModel.todayProgress.collectAsState()
     val unfinishedCount by scheduleViewModel.unfinishedCount.collectAsState()
-    val schedules by scheduleViewModel.todaySchedules.collectAsState()
+    val allPendingSchedules by scheduleViewModel.allPendingSchedules.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection)) {
         OneUITopAppBar(
@@ -52,7 +52,7 @@ fun DiscoverPage() {
                 ScheduleCard(
                     progress = progress,
                     unfinishedCount = unfinishedCount,
-                    recentTasks = schedules,
+                    recentTasks = allPendingSchedules, // 这里改为传入所有待办列表（已排好序）
                     onClick = {
                         // 使用类型安全的路由进行导航
                         navController.navigate(Screen.Schedule)
