@@ -20,4 +20,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("schedule_management")
     data object ScheduleManagement : LocalToolOption()
+
+    @Serializable
+    @SerialName("email_service")
+    data object EmailService : LocalToolOption()
 }

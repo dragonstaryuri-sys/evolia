@@ -184,6 +184,25 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
+
+            // Email Service
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_email_service_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_email_service_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.EmailService),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.EmailService
+                            } else {
+                                assistant.localTools - LocalToolOption.EmailService
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
         }
 
         // ═══════════════════════════════════════════════════════════════════

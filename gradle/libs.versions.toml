@@ -61,8 +61,10 @@ ktor = "3.4.1"
 glance = "1.1.1"
 chaquopy = "15.0.1"
 security-crypto = "1.1.0-alpha06"
+android-mail = "1.6.8"
 
 [libraries]
+android-mail = { module = "com.sun.mail:android-mail", version.ref = "android-mail" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
 androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraCore" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

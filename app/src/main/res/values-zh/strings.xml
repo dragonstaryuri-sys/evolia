@@ -1297,4 +1297,21 @@
   <string name="discover_page_schedule_desc">管理你的每日任务与目标</string>
   <!-- 备份页面显示的选项名称 -->
   <string name="backup_page_schedule">日程数据</string>
+
+  <!-- 邮件服务设置 -->
+  <string name="setting_page_email_service">邮件服务</string>
+  <string name="setting_page_email_service_desc">配置 QQ 邮箱以实现收发邮件功能</string>
+  <string name="setting_email_page_title">邮件服务设置</string>
+  <string name="setting_email_page_enable">启用邮件工具</string>
+  <string name="setting_email_page_enable_desc">允许 AI 助手通过你的 QQ 邮箱收发邮件</string>
+  <string name="setting_email_page_account">QQ 邮箱账号</string>
+  <string name="setting_email_page_auth_code">授权码</string>
+  <string name="setting_email_page_auth_code_hint">请输入 16 位授权码</string>
+  <string name="setting_email_page_test_button">测试连接</string>
+  <string name="setting_email_page_testing">正在尝试连接...</string>
+  <string name="setting_email_page_test_success">连接成功！收发功能均正常。</string>
+  <string name="setting_email_page_test_failed">连接失败：%s</string>
+  <string name="setting_email_page_auth_code_help">如何获取授权码？\n1. 登录电脑版 QQ 邮箱\n2. 进入 设置 -> 账号\n3. 找到 POP3/IMAP/SMTP 服务并开启\n4. 点击“生成授权码”</string>
+  <string name="assistant_page_local_tools_email_service_title">邮件服务</string>
+  <string name="assistant_page_local_tools_email_service_desc">允许TA收发邮件</string>
 </resources>

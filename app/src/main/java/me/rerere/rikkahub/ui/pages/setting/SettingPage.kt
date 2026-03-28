@@ -209,6 +209,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
 
                     SettingGroupItem(
+                        title = stringResource(R.string.setting_page_email_service),
+                        subtitle = stringResource(R.string.setting_page_email_service_desc),
+                        icon = { Icon(Icons.Rounded.Email, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingEmail) }
+                    )
+
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_page_mcp),
                         subtitle = stringResource(R.string.setting_page_mcp_desc),
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },

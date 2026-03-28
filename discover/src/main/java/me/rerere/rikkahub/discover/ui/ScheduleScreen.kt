@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.discover.ui
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -38,7 +39,7 @@ fun ScheduleScreen(
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showAddDialog by remember { mutableStateOf(false) }
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
+    var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf(
         stringResource(R.string.discover_schedule_status_pending),
         stringResource(R.string.discover_schedule_status_completed)
@@ -190,17 +191,24 @@ private fun ScheduleItem(
     onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
+    // 重新定义背景色：高优先级更红，中优先级更蓝，低优先级更灰
     val itemBaseColor = when (schedule.priority) {
-        2 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
-        1 -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-        else -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f)
+        2 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+        1 -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
 
     Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = if (schedule.isCompleted) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        else itemBaseColor,
-        onClick = onToggle
+        shape = MaterialTheme.shapes.large,
+        color = if (schedule.isCompleted) {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+        } else {
+            itemBaseColor
+        },
+        onClick = onToggle,
+        border = if (!schedule.isCompleted && schedule.priority == 2) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
+        } else null
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -217,7 +225,8 @@ private fun ScheduleItem(
                     style = MaterialTheme.typography.bodyLarge.copy(
                         fontWeight = FontWeight.Medium,
                         textDecoration = if (schedule.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
-                    )
+                    ),
+                    color = if (schedule.isCompleted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                 )
 
                 Row(
@@ -233,8 +242,13 @@ private fun ScheduleItem(
                         containerColor = when(schedule.priority) {
                             2 -> MaterialTheme.colorScheme.error
                             1 -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.tertiary
-                        }.copy(alpha = 0.1f)
+                            else -> MaterialTheme.colorScheme.outline
+                        }.copy(alpha = 0.12f),
+                        contentColor = when(schedule.priority) {
+                            2 -> MaterialTheme.colorScheme.error
+                            1 -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                     PropertyTag(
                         text = when(schedule.urgency) {
@@ -242,28 +256,36 @@ private fun ScheduleItem(
                             1 -> stringResource(R.string.schedule_urgency_1)
                             else -> stringResource(R.string.schedule_urgency_0)
                         },
-                        containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+                        containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f),
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
             }
         }
     }
 }
 
 @Composable
-private fun PropertyTag(text: String, containerColor: Color) {
+private fun PropertyTag(
+    text: String,
+    containerColor: Color,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface
+) {
     Surface(
         color = containerColor,
         shape = MaterialTheme.shapes.extraSmall,
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-            color = MaterialTheme.colorScheme.onSurface
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            ),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            color = contentColor
         )
     }
 }
@@ -271,9 +293,9 @@ private fun PropertyTag(text: String, containerColor: Color) {
 @Composable
 private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, Int, Int) -> Unit) {
     var title by remember { mutableStateOf("") }
-    var priority by remember { mutableIntStateOf(1) }
-    var urgency by remember { mutableIntStateOf(1) }
-    var difficulty by remember { mutableIntStateOf(1) }
+    var priority by remember { mutableStateOf(1) }
+    var urgency by remember { mutableStateOf(1) }
+    var difficulty by remember { mutableStateOf(1) }
     val haptic = LocalHapticFeedback.current
 
     AlertDialog(

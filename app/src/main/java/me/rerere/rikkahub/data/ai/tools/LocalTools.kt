@@ -24,10 +24,20 @@ import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.intOrNull
+import java.util.Properties
+import javax.mail.*
+import javax.mail.internet.InternetAddress
+import javax.mail.internet.MimeMessage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
 
 class LocalTools(
     private val context: Context,
-    private val scheduleRepository: ScheduleRepository
+    private val scheduleRepository: ScheduleRepository,
+    private val settingsStore: SettingsStore,
+    private val secretKeyManager: SecretKeyManager
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -556,12 +566,188 @@ class LocalTools(
         )
     }
 
+    fun getEmailTools(): List<Tool> {
+        return listOf(
+            Tool(
+                name = "qq_email_service",
+                description = "A service to send or fetch emails using QQ mailbox",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("action", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Operation type: send to send email, fetch to receive emails")
+                                put("enum", JsonArray(listOf(JsonPrimitive("send"), JsonPrimitive("fetch"))))
+                            })
+                            put("to", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Recipient email address, required when action=send")
+                            })
+                            put("subject", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Email title, required when action=send")
+                            })
+                            put("content", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Email body content, required when action=send")
+                            })
+                            put("limit", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Number of emails to fetch, min 1, max 3, default 1, used when action=fetch")
+                            })
+                        },
+                        required = listOf("action")
+                    )
+                },
+                execute = {
+                    val settings = settingsStore.settingsFlow.value
+                    val emailAccount = settings.emailConfig.account
+                    val authCode = secretKeyManager.getEmailPassword("")
+
+                    if (!settings.emailConfig.enabled || emailAccount.isBlank() || authCode.isBlank()) {
+                        return@Tool buildJsonObject { put("error", "Email service is not configured or disabled.") }
+                    }
+
+                    val json = it.jsonObject
+                    val action = json["action"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                    withContext(Dispatchers.IO) {
+                        try {
+                            when (action) {
+                                "send" -> {
+                                    val to = json["to"]?.jsonPrimitive?.contentOrNull ?: ""
+                                    val subject = json["subject"]?.jsonPrimitive?.contentOrNull ?: ""
+                                    val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
+
+                                    sendQQEmail(emailAccount, authCode, to, subject, content)
+
+                                    buildJsonObject { put("success", true); put("message", "Email sent to $to") }
+                                }
+                                "fetch" -> {
+                                    val limit = (json["limit"]?.jsonPrimitive?.intOrNull ?: 1).coerceIn(1, 3)
+                                    val emails = fetchQQEmails(emailAccount, authCode, limit)
+
+                                    buildJsonObject {
+                                        put("success", true)
+                                        put("emails", JsonArray(emails.map { mail ->
+                                            buildJsonObject {
+                                                put("subject", mail.subject)
+                                                put("from", mail.from)
+                                                put("date", mail.date)
+                                                put("content", mail.content)
+                                            }
+                                        }))
+                                    }
+                                }
+                                else -> buildJsonObject { put("error", "Unknown action") }
+                            }
+                        } catch (e: Exception) {
+                            buildJsonObject { put("error", e.message ?: "Email operation failed") }
+                        }
+                    }
+                }
+            )
+        )
+    }
+
+    private fun sendQQEmail(account: String, authCode: String, to: String, subject: String, content: String) {
+        val props = Properties().apply {
+            put("mail.smtp.host", "smtp.qq.com")
+            put("mail.smtp.port", "465")
+            put("mail.smtp.auth", "true")
+            put("mail.smtp.ssl.enable", "true")
+            put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory")
+        }
+
+        val session = Session.getInstance(props, object : Authenticator() {
+            override fun getPasswordAuthentication(): PasswordAuthentication {
+                return PasswordAuthentication(account, authCode)
+            }
+        })
+
+        val message = MimeMessage(session).apply {
+            setFrom(InternetAddress(account))
+            setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
+            setSubject(subject)
+            setText(content)
+        }
+
+        Transport.send(message)
+    }
+
+    private fun fetchQQEmails(account: String, authCode: String, limit: Int): List<MailData> {
+        val props = Properties().apply {
+            put("mail.store.protocol", "imaps")
+            put("mail.imaps.host", "imap.qq.com")
+            put("mail.imaps.port", "993")
+            put("mail.imaps.ssl.enable", "true")
+        }
+
+        val session = Session.getInstance(props)
+        val store = session.getStore("imaps")
+        store.connect(account, authCode)
+
+        val inbox = store.getFolder("INBOX")
+        inbox.open(Folder.READ_ONLY)
+
+        val messages = inbox.messages
+        val result = mutableListOf<MailData>()
+
+        // Fetch last N messages
+        val start = (messages.size - limit).coerceAtLeast(0)
+        for (i in messages.size - 1 downTo start) {
+            val msg = messages[i]
+            result.add(
+                MailData(
+                    subject = msg.subject ?: "(No Subject)",
+                    from = msg.from?.joinToString { it.toString() } ?: "Unknown",
+                    date = msg.sentDate?.toString() ?: "Unknown",
+                    content = getTextFromMessage(msg)
+                )
+            )
+        }
+
+        inbox.close(false)
+        store.close()
+        return result
+    }
+
+    private fun getTextFromMessage(message: Message): String {
+        return when {
+            message.isMimeType("text/plain") -> message.content.toString()
+            message.isMimeType("multipart/*") -> {
+                val multipart = message.content as Multipart
+                var result = ""
+                for (i in 0 until multipart.count) {
+                    val bodyPart = multipart.getBodyPart(i)
+                    if (bodyPart.isMimeType("text/plain")) {
+                        return bodyPart.content.toString() // 优先返回纯文本
+                    } else if (bodyPart.isMimeType("text/html")) {
+                        // 如果没找到纯文本，退而求其次拿 HTML 并简单过滤
+                        val html = bodyPart.content.toString()
+                        result = android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
+                    }
+                }
+                result
+            }
+            else -> message.content.toString()
+        }
+    }
+
+    data class MailData(
+        val subject: String,
+        val from: String,
+        val date: String,
+        val content: String
+    )
+
     fun getTools(options: List<LocalToolOption>, assistantId: Uuid, conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
         if (options.contains(LocalToolOption.DeviceControl)) tools.addAll(getDeviceControlTools(assistantId, conversationId))
         if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
         if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools())
+        if (options.contains(LocalToolOption.EmailService)) tools.addAll(getEmailTools())
         return tools
     }
 }

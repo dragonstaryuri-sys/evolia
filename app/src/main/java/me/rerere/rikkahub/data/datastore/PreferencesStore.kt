@@ -99,6 +99,7 @@ class SettingsStore(
         val SEARCH_SELECTED = intPreferencesKey("search_selected")
         val MCP_SERVERS = stringPreferencesKey("mcp_servers")
         val WEBDAV_CONFIG = stringPreferencesKey("webdav_config")
+        val EMAIL_CONFIG = stringPreferencesKey("email_config")
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
         val CONSOLIDATION_WORKER_INTERVAL = intPreferencesKey("consolidation_worker_interval")
@@ -178,6 +179,9 @@ class SettingsStore(
                 webDavConfig = preferences[WEBDAV_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: WebDavConfig(),
+                emailConfig = preferences[EMAIL_CONFIG]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: EmailConfig(),
                 ttsProviders = preferences[TTS_PROVIDERS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -315,6 +319,7 @@ class SettingsStore(
             preferences[SEARCH_SELECTED] = settingsToSave.searchServiceSelected.coerceIn(0, settingsToSave.searchServices.size - 1)
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(settingsToSave.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
+            preferences[EMAIL_CONFIG] = JsonInstant.encodeToString(migratedSettings.emailConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.ttsProviders)
             settingsToSave.selectedTTSProviderId.let { preferences[SELECTED_TTS_PROVIDER] = it.toString() }
             preferences[CONSOLIDATION_WORKER_INTERVAL] = settingsToSave.consolidationWorkerIntervalMinutes
@@ -387,6 +392,7 @@ data class Settings(
     val searchServiceSelected: Int = 0,
     val mcpServers: List<McpServerConfig> = emptyList(),
     val webDavConfig: WebDavConfig = WebDavConfig(),
+    val emailConfig: EmailConfig = EmailConfig(),
     val ttsProviders: List<TTSProviderSetting> = emptyList(),
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val consolidationWorkerIntervalMinutes: Int = 15,
@@ -413,6 +419,7 @@ data class Settings(
 @Serializable enum class ProviderViewMode { LIST, GRID }
 @Serializable enum class ChatInputStyle { FLOATING, MINIMAL }
 @Serializable data class WebDavConfig(val url: String = "", val username: String = "", val password: String = "", val path: String = "evolia_backups", val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES), val maxBackupFiles: Int = 3) { @Serializable enum class BackupItem { DATABASE, FILES} }
+@Serializable data class EmailConfig(val account: String = "", val password: String = "", val enabled: Boolean = false)
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 fun Settings.findModelById(uuid: Uuid): Model? = this.providers.findModelById(uuid)

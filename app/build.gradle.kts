@@ -42,6 +42,21 @@ android {
             // 设置为 true 配合 extractNativeLibs=true，确保 .so 文件被解压到磁盘
             useLegacyPackaging = true
         }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/NOTICE.md"
+            excludes += "META-INF/LICENSE.md"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/DEPENDENCIES"
+
+            // JavaMail needs these
+            merges += "META-INF/mailcap"
+            merges += "META-INF/javamail.providers"
+            merges += "META-INF/javamail.default.providers"
+            merges += "META-INF/javamail.default.address.map"
+            merges += "META-INF/javamail.address.map"
+        }
     }
 
     splits {
@@ -344,6 +359,9 @@ dependencies {
     // Glance (Widgets)
     implementation(libs.androidx.glance)
     implementation(libs.androidx.glance.material3)
+
+    // JavaMail for Android
+    implementation(libs.android.mail)
 
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)

@@ -7,11 +7,12 @@ import kotlin.uuid.Uuid
 /**
  * Manages secrets for providers and other sensitive data.
  * Handles migration from plaintext DataStore to encrypted SecureStore.
- * 
+ *
  * Key naming conventions:
  * - Provider API key: "provider_apikey_{providerId}"
  * - Provider private key (Vertex AI): "provider_privatekey_{providerId}"
  * - WebDAV password: "webdav_password"
+ * - Email password: "email_password"
  */
 class SecretKeyManager(
     private val secureStore: SecureStore
@@ -21,6 +22,7 @@ class SecretKeyManager(
         private const val PROVIDER_PRIVATEKEY_PREFIX = "provider_privatekey_"
         private const val TTS_PROVIDER_APIKEY_PREFIX = "tts_provider_apikey_"
         private const val WEBDAV_PASSWORD_KEY = "webdav_password"
+        private const val EMAIL_PASSWORD_KEY = "email_password"
     }
 
     // ========== Provider API Key Management ==========
@@ -108,20 +110,34 @@ class SecretKeyManager(
         }
     }
 
+    // ========== Email Password Management ==========
+
+    fun getEmailPassword(plaintextFallback: String): String {
+        return secureStore.getSecret(EMAIL_PASSWORD_KEY) ?: plaintextFallback
+    }
+
+    fun setEmailPassword(password: String) {
+        if (password.isNotBlank()) {
+            secureStore.putSecret(EMAIL_PASSWORD_KEY, password)
+        } else {
+            secureStore.removeSecret(EMAIL_PASSWORD_KEY)
+        }
+    }
+
     // ========== Migration Logic ==========
 
     /**
      * Migrate secrets from plaintext Settings to SecureStore.
      * Returns updated Settings with credentials cleared (moved to SecureStore).
-     * 
+     *
      * This should be called once when settings are loaded to ensure migration.
      */
     fun migrateSecretsFromSettings(settings: Settings): Settings {
         var migrated = false
-        
+
         // Migrate provider API keys
         val migratedProviders = settings.providers.map { provider ->
-            migrateProviderSecrets(provider).also { 
+            migrateProviderSecrets(provider).also {
                 if (it != provider) migrated = true
             }
         }
@@ -135,6 +151,15 @@ class SecretKeyManager(
             settings.webDavConfig
         }
 
+        // Migrate Email password
+        val migratedEmail = if (settings.emailConfig.password.isNotBlank()) {
+            setEmailPassword(settings.emailConfig.password)
+            migrated = true
+            settings.emailConfig.copy(password = "")
+        } else {
+            settings.emailConfig
+        }
+
         // Migrate TTS provider API keys
         val migratedTtsProviders = settings.ttsProviders.map { provider ->
             migrateTtsProviderSecrets(provider).also {
@@ -146,6 +171,7 @@ class SecretKeyManager(
             settings.copy(
                 providers = migratedProviders,
                 webDavConfig = migratedWebDav,
+                emailConfig = migratedEmail,
                 ttsProviders = migratedTtsProviders
             )
         } else {
@@ -157,14 +183,14 @@ class SecretKeyManager(
      * Handle explicit secret deletions.
      * When a user clears a secret field (changes from non-empty to empty),
      * we need to remove it from SecureStore so it doesn't get re-populated.
-     * 
+     *
      * This should be called BEFORE migrateSecretsFromSettings() in the update flow.
      */
     fun handleExplicitSecretDeletions(oldSettings: Settings, newSettings: Settings) {
         // Handle provider secrets (API keys and private keys)
         for (newProvider in newSettings.providers) {
             val oldProvider = oldSettings.providers.find { it.id == newProvider.id } ?: continue
-            
+
             when {
                 oldProvider is ProviderSetting.OpenAI && newProvider is ProviderSetting.OpenAI -> {
                     // Check if API key was explicitly cleared
@@ -191,7 +217,7 @@ class SecretKeyManager(
         // Handle TTS provider secrets
         for (newTtsProvider in newSettings.ttsProviders) {
             val oldTtsProvider = oldSettings.ttsProviders.find { it.id == newTtsProvider.id } ?: continue
-            
+
             val oldKey = when (oldTtsProvider) {
                 is TTSProviderSetting.OpenAI -> oldTtsProvider.apiKey
                 is TTSProviderSetting.Gemini -> oldTtsProvider.apiKey
@@ -206,16 +232,22 @@ class SecretKeyManager(
                 is TTSProviderSetting.ElevenLabs -> newTtsProvider.apiKey
                 is TTSProviderSetting.SystemTTS -> ""
             }
-            
+
             if (oldKey.isNotBlank() && newKey.isBlank()) {
                 setTtsApiKey(newTtsProvider.id, "")
             }
         }
 
         // Handle WebDAV password
-        if (oldSettings.webDavConfig.password.isNotBlank() && 
+        if (oldSettings.webDavConfig.password.isNotBlank() &&
             newSettings.webDavConfig.password.isBlank()) {
             setWebDavPassword("")
+        }
+
+        // Handle Email password
+        if (oldSettings.emailConfig.password.isNotBlank() &&
+            newSettings.emailConfig.password.isBlank()) {
+            setEmailPassword("")
         }
     }
 
@@ -301,6 +333,10 @@ class SecretKeyManager(
             password = getWebDavPassword(settings.webDavConfig.password)
         )
 
+        val emailWithPassword = settings.emailConfig.copy(
+            password = getEmailPassword(settings.emailConfig.password)
+        )
+
         val ttsProvidersWithSecrets = settings.ttsProviders.map { provider ->
             populateTtsProviderSecrets(provider)
         }
@@ -308,6 +344,7 @@ class SecretKeyManager(
         return settings.copy(
             providers = providersWithSecrets,
             webDavConfig = webDavWithPassword,
+            emailConfig = emailWithPassword,
             ttsProviders = ttsProvidersWithSecrets
         )
     }

@@ -35,7 +35,7 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get())
+        LocalTools(get(), get(), get(), get())
     }
 
     single {

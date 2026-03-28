@@ -1352,5 +1352,20 @@
   <!-- Option name displayed on the Backup page -->
   <string name="backup_page_schedule">Schedule Data</string>
 
-
+  <!-- Email Service Settings -->
+  <string name="setting_page_email_service">Email Service</string>
+  <string name="setting_page_email_service_desc">Configure QQ Mail to enable sending and receiving emails</string>
+  <string name="setting_email_page_title">Email Service Settings</string>
+  <string name="setting_email_page_enable">Enable Email Tool</string>
+  <string name="setting_email_page_enable_desc">Allow the AI assistant to send and receive emails via your QQ Mail</string>
+  <string name="setting_email_page_account">QQ Mail Account</string>
+  <string name="setting_email_page_auth_code">Authorization Code</string>
+  <string name="setting_email_page_auth_code_hint">Please enter the 16-digit authorization code</string>
+  <string name="setting_email_page_test_button">Test Connection</string>
+  <string name="setting_email_page_testing">Connecting...</string>
+  <string name="setting_email_page_test_success">Connected successfully! Sending and receiving functions are working properly.</string>
+  <string name="setting_email_page_test_failed">Connection failed: %s</string>
+  <string name="setting_email_page_auth_code_help">How to get the authorization code?\n1. Log in to the PC version of QQ Mail\n2. Go to Settings > Account\n3. Find and enable POP3/IMAP/SMTP service\n4. Click "Generate Authorization Code"</string>
+  <string name="assistant_page_local_tools_email_service_title">Mail Service</string>
+  <string name="assistant_page_local_tools_email_service_desc">Allow AI to send and receive emails</string>
 </resources>
