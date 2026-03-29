@@ -264,6 +264,25 @@ fun AssistantToolsSubPage(
                     }
                 )
             }
+            val automationEnabled = assistant.localTools.contains(LocalToolOption.AgentAutomation)
+            SettingGroupItem(
+                title = stringResource(R.string.agent_automation_title),
+                subtitle = stringResource(R.string.agent_automation_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = automationEnabled,
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.AgentAutomation
+                            } else {
+                                assistant.localTools - LocalToolOption.AgentAutomation
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+
         }
 
         // ═══════════════════════════════════════════════════════════════════

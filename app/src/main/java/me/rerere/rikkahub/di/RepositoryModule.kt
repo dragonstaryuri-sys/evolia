@@ -7,6 +7,9 @@ import me.rerere.rikkahub.core.data.db.repository.GenMediaRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import org.koin.dsl.module
+import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
+import me.rerere.rikkahub.discover.repo.ScheduleRepository
+import org.koin.dsl.module
 
 val repositoryModule = module {
     single {
@@ -31,5 +34,11 @@ val repositoryModule = module {
 
     single {
         DiaryRepository(get())
+    }
+    single {
+        ScheduleRepository(scheduleDAO = get())
+    }
+    single {
+        AgentTaskRepository(agentTaskDAO = get())
     }
 }

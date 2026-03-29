@@ -69,8 +69,6 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import me.rerere.rikkahub.utils.AssistantExportImport
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
-import me.rerere.rikkahub.core.data.model.Tag
 
 
 // Sub-routes within assistant detail
@@ -437,9 +435,15 @@ fun AssistantDetailPage(
             composable(AssistantDetailRoutes.ADVANCED) {
                 AssistantAdvancedSubPage(
                     assistant = assistant,
-                    onUpdate = { onUpdate(it) }
+                    onUpdate = { onUpdate(it) },
+                    onNavigateToAgentTasks = { navController.navigate("agent_tasks") }
                 )
             }
+            // Agent Task
+            composable("agent_tasks") {
+                AssistantAgentTaskPage(assistantId = id)
+            }
+
         }
     }
 

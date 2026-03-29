@@ -24,4 +24,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("email_service")
     data object EmailService : LocalToolOption()
+
+    @Serializable
+    @SerialName("agent_automation")
+    data object AgentAutomation : LocalToolOption()
 }

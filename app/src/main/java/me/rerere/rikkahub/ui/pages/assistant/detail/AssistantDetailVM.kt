@@ -29,6 +29,8 @@ import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.Tag
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
+import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
@@ -41,7 +43,6 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "AssistantDetailVM"
 
-// 移除 @Serializable，手动定义一个普通的类用于逻辑处理
 data class AssistantMemoryOp(
     val op: String,
     val id: Int? = null,
@@ -56,6 +57,7 @@ class AssistantDetailVM(
     private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val providerManager: ProviderManager,
+    private val agentTaskRepository: AgentTaskRepository
 ) : ViewModel() {
     private val assistantId = try { Uuid.parse(id) } catch (e: Exception) { Uuid.NIL }
 
@@ -69,6 +71,17 @@ class AssistantDetailVM(
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
         )
+
+    // Agent Tasks logic
+    val agentTasks: StateFlow<List<AgentTaskEntity>> = agentTaskRepository
+        .getTasksByAssistant(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    fun deleteAgentTask(task: AgentTaskEntity) {
+        viewModelScope.launch {
+            agentTaskRepository.deleteTask(task)
+        }
+    }
 
     val mcpServerConfigs: StateFlow<List<McpServerConfig>> = settingsStore.settingsFlow
         .map { it.mcpServers }
@@ -158,12 +171,10 @@ class AssistantDetailVM(
                 val currentAssistant = assistant.value
                 val conversations = conversationRepository.getConversationsOfAssistant(currentAssistant.id).first()
 
-                // 1. Process Episodic Memories
                 val toConsolidateEpisodes = conversations.filter { conv ->
                     !conv.isConsolidated && conv.currentMessages.size >= 4
                 }
 
-                // 使用 memoryModelId 进行整合
                 val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
                 val model = currentSettings.findModelById(modelId) ?: error("No model found")
                 val providerSetting = model.findProvider(currentSettings.providers) ?: error("No provider found")
@@ -188,7 +199,6 @@ class AssistantDetailVM(
                     }
                 }
 
-                // 2. Process Master Memory
                 var updatedMasterContent: String? = null
                 if (currentAssistant.enableMasterMemory) {
                     val contextParts = mutableListOf<String>()
@@ -211,7 +221,6 @@ class AssistantDetailVM(
                     }
                 }
 
-                // 3. Finalize
                 val now = System.currentTimeMillis()
                 val resultDesc = buildString {
                     if (episodicSuccessCount > 0) append("Consolidated $episodicSuccessCount episodes. ")
@@ -259,7 +268,6 @@ class AssistantDetailVM(
                     return@launch
                 }
 
-                // 使用 memoryModelId 进行优化
                 val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
                 val model = currentSettings.findModelById(modelId) ?: error("No model")
                 val providerSetting = model.findProvider(currentSettings.providers) ?: error("No provider")
@@ -269,7 +277,6 @@ class AssistantDetailVM(
                 var totalDeleted = 0
                 var totalAdded = 0
 
-                // 1. Optimize Core Memories
                 if (coreMemories.isNotEmpty()) {
                     val coreGroups = findSimilarGroups(coreMemories, true)
                     for (group in coreGroups) {
@@ -280,7 +287,6 @@ class AssistantDetailVM(
                     }
                 }
 
-                // 2. Optimize Episodic Memories
                 if (episodicMemories.isNotEmpty()) {
                     val episodicGroups = findSimilarGroups(episodicMemories, false)
                     for (group in episodicGroups) {
@@ -293,7 +299,6 @@ class AssistantDetailVM(
 
                 setSnackbarMessage(context.getString(R.string.memory_optimize_success, totalUpdated, totalDeleted, totalAdded))
 
-                // 自动启动一次 Embedding 向量化
                 _embeddingProgress.value = EmbeddingProgress(0, 1, true)
                 memoryRepository.regenerateEmbeddings(assistantId.toString()) { current, total ->
                     _embeddingProgress.value = EmbeddingProgress(current, total, true)
@@ -397,15 +402,12 @@ class AssistantDetailVM(
                 resultText.substring(resultText.indexOf("["), resultText.lastIndexOf("]") + 1)
             } else resultText
 
-            // 尝试修复 AI 常见的 JSON 语法错误（如 "id": -133"）
             jsonString = jsonString
-                .replace(Regex("""("id":\s*)(-?\d+)\""""), "$1$2") // 修复 "id": -133" -> "id": -133
-                .replace(Regex("""("id":\s*)"(-?\d+)""""), "$1$2") // 修复 "id": "-133 -> "id": -133
+                .replace(Regex("""("id":\s*)(-?\d+)\""""), "$1$2")
+                .replace(Regex("""("id":\s*)"(-?\d+)""""), "$1$2")
 
-            // 完全手动解析，绝对不使用 decodeFromString<List<MemoryOp>>
             val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
-            // 防御层 2：解析尝试，失败则记录日志并跳过
             val root = try {
                 json.parseToJsonElement(jsonString)
             } catch (e: Exception) {
@@ -418,19 +420,15 @@ class AssistantDetailVM(
                 return OptimizationResult(0, 0, 0)
             }
 
-            // 防御层 3：预处理所有操作，格式校验通过后再执行数据库操作
-            val opsToExecute = mutableListOf<Triple<String, Int?, String?>>()
             root.forEach { element ->
                 if (element !is JsonObject) return@forEach
                 val op = element["op"]?.jsonPrimitive?.contentOrNull ?: ""
                 val id = element["id"]?.jsonPrimitive?.intOrNull
-                // 手动探测 content 字段
                 val contentElement = element["content"]
                 val contentString = when {
                     contentElement == null || contentElement is JsonNull -> null
                     contentElement is JsonPrimitive -> contentElement.contentOrNull
                     contentElement is JsonObject -> {
-                        // 兼容 AI 抽风返回的嵌套结构 {"ID": -133, "Content": "..."}
                         contentElement["content"]?.jsonPrimitive?.contentOrNull
                             ?: contentElement["Content"]?.jsonPrimitive?.contentOrNull
                             ?: contentElement.toString()
@@ -449,7 +447,6 @@ class AssistantDetailVM(
                         Log.i(TAG, "Executed [UPDATE] on ID: $id")
                     }
                     "delete" -> if (id != null) {
-                        // 严格校验：只删除本次分组内的记忆
                         if (groupIds.contains(id)) {
                             deleteMemoryById(id)
                             deleted++

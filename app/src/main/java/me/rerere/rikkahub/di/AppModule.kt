@@ -20,11 +20,13 @@ import me.rerere.rikkahub.service.BackupWorker
 import me.rerere.rikkahub.utils.EmojiData
 import me.rerere.rikkahub.utils.EmojiUtils
 import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.service.AgentTaskScheduler
 import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.service.DiarySchedulerWorker
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.tts.provider.TTSManager
 import org.koin.androidx.workmanager.dsl.workerOf
+import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
 val appModule = module {
@@ -35,7 +37,14 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get())
+        LocalTools(
+            context = get(),
+            scheduleRepository = get(),
+            settingsStore = get(),
+            secretKeyManager = get(),
+            agentTaskRepository = get(), // 新增
+            agentTaskScheduler = get()   // 新增
+        )
     }
 
     single {
@@ -66,23 +75,15 @@ val appModule = module {
         AILoggingManager()
     }
 
+    single {
+        AgentTaskScheduler(context = get())
+    }
+
+    singleOf(::ChatService)
+
     workerOf(::BackupWorker)
     workerOf(::DiaryWorker)
     workerOf(::DiarySchedulerWorker)
 
-    single {
-        ChatService(
-            context = get(),
-            appScope = get(),
-            settingsStore = get<SettingsStore>(),
-            conversationRepo = get<ConversationRepository>(),
-            memoryRepository = get<MemoryRepository>(),
-            generationHandler = get<GenerationHandler>(),
-            templateTransformer = get<TemplateTransformer>(),
-            providerManager = get<ProviderManager>(),
-            localTools = get(),
-            mcpManager = get<McpManager>(),
-            chatEpisodeDAO = get()
-        )
-    }
+
 }

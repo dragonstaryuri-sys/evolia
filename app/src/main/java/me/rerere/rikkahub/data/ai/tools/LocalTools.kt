@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import android.content.Context
+import android.content.Intent
+import android.provider.AlarmClock
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
 import kotlinx.serialization.SerialName
@@ -16,8 +18,6 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import kotlin.uuid.Uuid
-import me.rerere.rikkahub.RouteActivity
-import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
@@ -32,12 +32,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
+import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
+import me.rerere.rikkahub.service.AgentTaskScheduler
+import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 
 class LocalTools(
     private val context: Context,
     private val scheduleRepository: ScheduleRepository,
     private val settingsStore: SettingsStore,
-    private val secretKeyManager: SecretKeyManager
+    private val secretKeyManager: SecretKeyManager,
+    private val agentTaskRepository: AgentTaskRepository,
+    private val agentTaskScheduler: AgentTaskScheduler
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -290,7 +295,7 @@ class LocalTools(
                         properties = buildJsonObject {
                             put("url", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The file URL")
+                                put("description", "File URL")
                             })
                             put("filename", buildJsonObject {
                                 put("type", "string")
@@ -328,42 +333,72 @@ class LocalTools(
     fun getDeviceControlTools(assistantId: Uuid, conversationId: Uuid): List<Tool> {
         return listOf(
             Tool(
-                name = "send_notification",
-                description = "Send a notification to the user",
+                name = "device_alarm_timer_manager",
+                description = "Manage alarms and timers on the device. Action 'set_alarm' requires 'hour' and 'minutes'. Action 'set_timer' requires 'seconds'.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
-                            put("title", buildJsonObject { put("type", "string") })
-                            put("content", buildJsonObject { put("type", "string") })
+                            put("action", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Action to perform: set_alarm or set_timer")
+                                put("enum", JsonArray(listOf(JsonPrimitive("set_alarm"), JsonPrimitive("set_timer"))))
+                            })
+                            put("hour", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Alarm hour (0-23)")
+                            })
+                            put("minutes", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Alarm minutes (0-59)")
+                            })
+                            put("seconds", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Timer duration in seconds")
+                            })
+                            put("label", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Label for the alarm or timer")
+                            })
                         },
-                        required = listOf("title", "content")
+                        required = listOf("action")
                     )
                 },
                 execute = {
-                    val title = it.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: "Notification"
-                    val content = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
-
-                    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                    val channelId = "assistant_notification"
-                    val channel = android.app.NotificationChannel(channelId, "Assistant", android.app.NotificationManager.IMPORTANCE_DEFAULT)
-                    notificationManager.createNotificationChannel(channel)
-
-                    val intent = android.content.Intent(context, RouteActivity::class.java).apply {
-                        flags = android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        putExtra("conversationId", conversationId.toString())
+                    val json = it.jsonObject
+                    val action = json["action"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        when (action) {
+                            "set_alarm" -> {
+                                val hour = json["hour"]?.jsonPrimitive?.intOrNull ?: 0
+                                val minutes = json["minutes"]?.jsonPrimitive?.intOrNull ?: 0
+                                val label = json["label"]?.jsonPrimitive?.contentOrNull ?: "Assistant Alarm"
+                                val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                                    putExtra(AlarmClock.EXTRA_HOUR, hour)
+                                    putExtra(AlarmClock.EXTRA_MINUTES, minutes)
+                                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                                buildJsonObject { put("success", true); put("message", "Alarm set for $hour:$minutes") }
+                            }
+                            "set_timer" -> {
+                                val seconds = json["seconds"]?.jsonPrimitive?.intOrNull ?: 0
+                                val label = json["label"]?.jsonPrimitive?.contentOrNull ?: "Assistant Timer"
+                                val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+                                    putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+                                    putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                                    putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                                buildJsonObject { put("success", true); put("message", "Timer set for $seconds seconds") }
+                            }
+                            else -> buildJsonObject { put("error", "Unknown action") }
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Operation failed") }
                     }
-                    val pendingIntent = android.app.PendingIntent.getActivity(context, conversationId.hashCode(), intent, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
-
-                    val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                        .setSmallIcon(R.drawable.ic_notification)
-                        .setContentTitle(title)
-                        .setContentText(content)
-                        .setContentIntent(pendingIntent)
-                        .setAutoCancel(true)
-                        .build()
-
-                    notificationManager.notify(System.currentTimeMillis().toInt(), notification)
-                    buildJsonObject { put("status", "success") }
                 }
             )
         )
@@ -373,7 +408,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "schedule_manager",
-                description = "Manage schedules/tasks. Supported actions: add, list, edit, toggle, delete.",
+                description = "Manage user's schedules/tasks. Supported actions: add, list, edit, toggle, delete.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -508,7 +543,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "qq_email_service",
-                description = "A service to send or fetch emails using QQ mailbox",
+                description = "Send or fetch emails using QQ mailbox.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -543,7 +578,7 @@ class LocalTools(
                     val authCode = secretKeyManager.getEmailPassword("")
 
                     if (!settings.emailConfig.enabled || emailAccount.isBlank() || authCode.isBlank()) {
-                        return@Tool buildJsonObject { put("error", "Email service is not configured or disabled.") }
+                        return@Tool buildJsonObject { put("error", "Email service not configured.") }
                     }
 
                     val json = it.jsonObject
@@ -602,14 +637,12 @@ class LocalTools(
                 return PasswordAuthentication(account, authCode)
             }
         })
-
         val message = MimeMessage(session).apply {
             setFrom(InternetAddress(account))
             setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
             setSubject(subject)
             setText(content)
         }
-
         Transport.send(message)
     }
 
@@ -620,18 +653,13 @@ class LocalTools(
             put("mail.imaps.port", "993")
             put("mail.imaps.ssl.enable", "true")
         }
-
         val session = Session.getInstance(props)
         val store = session.getStore("imaps")
         store.connect(account, authCode)
-
         val inbox = store.getFolder("INBOX")
         inbox.open(Folder.READ_ONLY)
-
         val messages = inbox.messages
         val result = mutableListOf<MailData>()
-
-        // Fetch last N messages
         val start = (messages.size - limit).coerceAtLeast(0)
         for (i in messages.size - 1 downTo start) {
             val msg = messages[i]
@@ -661,7 +689,6 @@ class LocalTools(
                     if (bodyPart.isMimeType("text/plain")) {
                         return bodyPart.content.toString() // 优先返回纯文本
                     } else if (bodyPart.isMimeType("text/html")) {
-                        // 如果没找到纯文本，退而求其次拿 HTML 并简单过滤
                         val html = bodyPart.content.toString()
                         result = android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_LEGACY).toString()
                     }
@@ -672,12 +699,151 @@ class LocalTools(
         }
     }
 
-    data class MailData(
-        val subject: String,
-        val from: String,
-        val date: String,
-        val content: String
-    )
+    data class MailData(val subject: String, val from: String, val date: String, val content: String)
+
+    fun getAgentTaskTools(assistantId: Uuid): List<Tool> {
+        return listOf(
+            Tool(
+                name = "agent_task_manager",
+                description = "Manage automation tasks (EMAIL, NOTIFICATION, DIARY). Supports scheduling future actions. Use 'instruction' for dynamic content generation at execution time.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("action", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Action to perform: add, list, delete, edit")
+                                put("enum", JsonArray(listOf(JsonPrimitive("add"), JsonPrimitive("list"), JsonPrimitive("delete"), JsonPrimitive("edit"))))
+                            })
+                            put("task_id", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Required for 'delete' and 'edit'")
+                            })
+                            put("task_type", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Type of task: EMAIL, NOTIFICATION, DIARY (required for 'add')")
+                            })
+                            put("scheduled_time", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Timestamp in ms when the task should run (required for 'add')")
+                            })
+                            put("repeat_interval", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Optional repeat interval in milliseconds (e.g., 86400000 for daily)")
+                            })
+                            put("content", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Static text content. Use this if you want the exact same message every time.")
+                            })
+                            put("instruction", buildJsonObject {
+                                put("type", "string")
+                                put("description", "[RECOMMENDED] Dynamic generation instruction. Use this to have AI generate content based on current context at execution time.")
+                            })
+                            put("target", buildJsonObject {
+                                put("type", "string")
+                                put("description", "EMAIL: recipient address; NOTIFICATION: title.")
+                            })
+                            put("subject", buildJsonObject {
+                                put("type", "string")
+                                put("description", "EMAIL: subject line.")
+                            })
+                        },
+                        required = listOf("action")
+                    )
+                },
+                execute = {
+                    val json = it.jsonObject
+                    val action = json["action"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        when (action) {
+                            "add" -> {
+                                val type = json["task_type"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val time = json["scheduled_time"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val taskData = buildJsonObject {
+                                    json["content"]?.let { put("content", it) }
+                                    json["instruction"]?.let { put("instruction", it) }
+                                    json["target"]?.let { target ->
+                                        if (type == "EMAIL") put("to", target)
+                                        else if (type == "NOTIFICATION") put("title", target)
+                                    }
+                                    json["subject"]?.let { put("subject", it) }
+                                }.toString()
+
+                                val entity = AgentTaskEntity(assistantId = assistantId.toString(), taskType = type, taskData = taskData, scheduledTime = time, repeatInterval = repeat)
+                                val id = agentTaskRepository.addTask(entity)
+                                agentTaskScheduler.scheduleTask(entity.copy(id = id))
+                                buildJsonObject { put("success", true); put("task_id", id) }
+                            }
+                            "list" -> {
+                                val tasks = agentTaskRepository.getTasksByAssistant(assistantId.toString()).first()
+                                buildJsonObject {
+                                    put("tasks", JsonArray(tasks.map { t ->
+                                        buildJsonObject {
+                                            put("id", t.id); put("type", t.taskType); put("scheduled_time", t.scheduledTime); put("repeat_interval", t.repeatInterval); put("is_executed", t.isExecuted)
+                                        }
+                                    }))
+                                }
+                            }
+                            "edit" -> {
+                                val id = json["task_id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                val task = agentTaskRepository.getTaskById(id)
+                                if (task != null) {
+                                    val type = json["task_type"]?.jsonPrimitive?.contentOrNull ?: task.taskType
+                                    val time = json["scheduled_time"]?.jsonPrimitive?.longOrNull ?: task.scheduledTime
+                                    val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: task.repeatInterval
+
+                                    val oldData = try {
+                                        kotlinx.serialization.json.Json.parseToJsonElement(task.taskData).jsonObject
+                                    } catch (e: Exception) {
+                                        buildJsonObject { }
+                                    }
+
+                                    val taskData = buildJsonObject {
+                                        // Use new value if provided, else keep old
+                                        put("content", json["content"] ?: oldData["content"] ?: JsonPrimitive(""))
+                                        put("instruction", json["instruction"] ?: oldData["instruction"] ?: JsonPrimitive(""))
+
+                                        val target = json["target"]?.jsonPrimitive?.contentOrNull
+                                        if (target != null) {
+                                            if (type == "EMAIL") put("to", target)
+                                            else if (type == "NOTIFICATION") put("title", target)
+                                        } else {
+                                            // Keep old target
+                                            if (task.taskType == "EMAIL") put("to", oldData["to"] ?: JsonPrimitive(""))
+                                            else if (task.taskType == "NOTIFICATION") put("title", oldData["title"] ?: JsonPrimitive(""))
+                                        }
+
+                                        put("subject", json["subject"] ?: oldData["subject"] ?: JsonPrimitive(""))
+                                    }.toString()
+
+                                    val updatedTask = task.copy(taskType = type, taskData = taskData, scheduledTime = time, repeatInterval = repeat, isExecuted = false)
+                                    agentTaskRepository.updateTask(updatedTask)
+                                    agentTaskScheduler.scheduleTask(updatedTask)
+                                    buildJsonObject { put("success", true) }
+                                } else {
+                                    buildJsonObject { put("error", "Task not found") }
+                                }
+                            }
+                            "delete" -> {
+                                val id = json["task_id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                val task = agentTaskRepository.getTaskById(id)
+                                if (task != null) {
+                                    agentTaskRepository.deleteTask(task)
+                                    agentTaskScheduler.cancelTask(id)
+                                    buildJsonObject { put("success", true) }
+                                } else {
+                                    buildJsonObject { put("error", "Task not found") }
+                                }
+                            }
+                            else -> buildJsonObject { put("error", "Unknown action") }
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Task operation failed") }
+                    }
+                }
+            )
+        )
+    }
 
     fun getTools(options: List<LocalToolOption>, assistantId: Uuid, conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
         val tools = mutableListOf<Tool>()
@@ -685,6 +851,7 @@ class LocalTools(
         if (options.contains(LocalToolOption.DeviceControl)) tools.addAll(getDeviceControlTools(assistantId, conversationId))
         if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
         if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools())
+        if (options.contains(LocalToolOption.AgentAutomation)) tools.addAll(getAgentTaskTools(assistantId))
         if (options.contains(LocalToolOption.EmailService)) tools.addAll(getEmailTools())
         return tools
     }

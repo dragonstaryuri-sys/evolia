@@ -18,6 +18,7 @@ import org.koin.dsl.module
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
@@ -50,6 +51,7 @@ val viewModelModule = module {
             context = get(),
             chatEpisodeDAO = get<ChatEpisodeDAO>(),
             providerManager = get(),
+            agentTaskRepository = get<AgentTaskRepository>()
         )
     }
     viewModel<ShareHandlerVM> {

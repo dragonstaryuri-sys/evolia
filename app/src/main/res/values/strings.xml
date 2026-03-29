@@ -1371,4 +1371,19 @@
   <string name="assistant_page_local_tools_email_service_desc">Allow AI to send and receive emails</string>
   <string name="assistant_tools_email_not_configured_warning">Email Service Not Configured</string>
   <string name="assistant_tools_email_not_configured_warning_desc">No email account or authorization code detected. The email tool will not work. Tap to configure.</string>
+  <!-- Scheduled Tasks -->
+  <string name="agent_task_manager">Scheduled Task Management</string>
+  <string name="agent_task_empty">No scheduled tasks yet</string>
+  <string name="agent_task_type_email">Scheduled Email</string>
+  <string name="agent_task_type_notification">Scheduled Reminder</string>
+  <string name="agent_task_type_diary">Scheduled Diary</string>
+  <string name="agent_task_scheduled_at">Scheduled for: %s</string>
+  <string name="agent_task_executed">Executed</string>
+  <string name="agent_task_pending">Pending</string>
+  <string name="agent_task_delete_confirm">Are you sure you want to cancel and delete this scheduled task?</string>
+  <string name="agent_automation_title">Agent Automation</string>
+  <string name="agent_automation_desc">Allow the assistant to set scheduled tasks (such as sending emails and keeping diaries).</string>
+  <string name="agent_task_manager_desc">All Scheduled Tasks</string>
+
+
 </resources>

@@ -20,6 +20,7 @@ import me.rerere.rikkahub.core.data.db.dao.GenMediaDAO
 import me.rerere.rikkahub.core.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.core.data.db.dao.AgentDiaryDAO
 import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
+import me.rerere.rikkahub.core.data.db.dao.AgentTaskDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
@@ -28,6 +29,7 @@ import me.rerere.rikkahub.core.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
+import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.json.JsonArray
@@ -48,9 +50,10 @@ import kotlinx.serialization.json.put
         EmbeddingCacheEntity::class,
         DailyActivityEntity::class,
         AgentDiaryEntity::class,
-        ScheduleEntity::class
+        ScheduleEntity::class,
+        AgentTaskEntity::class
     ],
-    version = 26,
+    version = 27,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -73,6 +76,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 23, to = 24),
         AutoMigration(from = 24, to = 25),
         // 25->26 is manual migration below
+        // 26->27 is manual migration below
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -93,8 +97,29 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun scheduleDao(): ScheduleDAO
 
+    abstract fun agentTaskDao(): AgentTaskDAO
+
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.i(TAG, "migrate: creating agent_tasks table")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `agent_tasks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `task_type` TEXT NOT NULL,
+                        `task_data` TEXT NOT NULL,
+                        `scheduled_time` INTEGER NOT NULL,
+                        `is_executed` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
 
         val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {

@@ -31,19 +31,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
-import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 /**
  * Advanced tab - Notifications and custom request settings.
- * Designed with cohesive SettingsGroup pattern.
  */
 @Composable
 fun AssistantAdvancedSubPage(
     assistant: Assistant,
-    onUpdate: (Assistant) -> Unit
+    onUpdate: (Assistant) -> Unit,
+    onNavigateToAgentTasks: () -> Unit
 ) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -59,10 +58,22 @@ fun AssistantAdvancedSubPage(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         // ═══════════════════════════════════════════════════════════════════
+        // AUTOMATION GROUP
+        // ═══════════════════════════════════════════════════════════════════
+        SettingsGroup(title = stringResource(R.string.agent_automation_title)) {
+            SettingGroupItem(
+                title = stringResource(R.string.agent_task_manager),
+                subtitle = stringResource(R.string.agent_task_manager_desc),
+                onClick = {
+                    onNavigateToAgentTasks()
+                }
+            )
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
         // NOTIFICATIONS GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_advanced_group_spontaneous)) {
-            // Enable toggle
             SettingGroupItem(
                 title = stringResource(R.string.assistant_advanced_enable_spontaneous_title),
                 subtitle = stringResource(R.string.assistant_advanced_enable_spontaneous_desc),
@@ -84,14 +95,12 @@ fun AssistantAdvancedSubPage(
                 }
             )
 
-            // Settings (only when enabled)
             AnimatedVisibility(
                 visible = assistant.enableSpontaneous,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Active Hours
                     SettingGroupItem(
                         title = stringResource(R.string.assistant_advanced_active_hours_title),
                         subtitle = stringResource(R.string.assistant_advanced_active_hours_desc),
@@ -123,7 +132,6 @@ fun AssistantAdvancedSubPage(
                         }
                     )
 
-                    // Frequency
                     SettingGroupItem(
                         title = stringResource(R.string.assistant_advanced_frequency_title),
                         subtitle = stringResource(R.string.assistant_advanced_frequency_desc),
@@ -149,7 +157,6 @@ fun AssistantAdvancedSubPage(
         // CUSTOM REQUEST GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_advanced_group_custom_request)) {
-            // Custom Headers - component has its own title
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (LocalDarkMode.current)
@@ -166,7 +173,6 @@ fun AssistantAdvancedSubPage(
                 }
             }
 
-            // Custom Bodies - component has its own title
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (LocalDarkMode.current)
