@@ -85,6 +85,22 @@ LastChat is designed to be a "fidget toy".
 -   **Sync:** Operations (add/update/delete) must synchronize both stores.
 -   **Retrieval:** Always prefer existing entity embeddings over re-computation.
 
+### Memory & Context Management
+
+#### 1. Episodic Memory (Consolidation/Archive)
+- **Mechanism**: Summarizes an entire conversation into a single `ChatEpisodeEntity` for long-term RAG retrieval.
+- **Mapping**: Maintains a **1:1 relationship** between a Conversation and its Episode. Subsequent consolidations will **overwrite** the previous summary with the latest comprehensive one.
+- **Triggers**:
+    - **Automatic**: Triggered when switching to a different conversation, provided there are at least 4 new messages since the last archive.
+    - **Manual**: Triggered via "Consolidate" in the chat drawer (force update, ignoring message count thresholds).
+- **Storage**: Persisted in `ChatEpisodeEntity` and synced to `EmbeddingCacheDAO` for vector search.
+
+#### 2. Context Refresh (Auto-Summarization)
+- **Mechanism**: Compresses older messages within the current conversation into a `contextSummary` string to free up the model's context window.
+- **Retention**: Always keeps the **last 5 messages** as raw context to maintain immediate conversational flow.
+- **Trigger**: Automatically checked after every AI response. Execution depends on `maxHistoryMessages` settings.
+- **Purpose**: Short-term context optimization (Token Economy).
+
 ## 6. Testing & Operations
 -   **Unit Tests:** Place in `src/test`. Cover parsing and logic.
 -   **Instrumented Tests:** Place in `src/androidTest`. Cover flows.

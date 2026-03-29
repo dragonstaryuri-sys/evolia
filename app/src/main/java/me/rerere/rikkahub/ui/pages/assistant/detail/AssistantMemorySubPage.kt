@@ -275,7 +275,17 @@ fun AssistantMemorySettings(
                     trailing = {
                         HapticSwitch(
                             checked = assistant.enableMemory,
-                            onCheckedChange = { onUpdateAssistant(assistant.copy(enableMemory = it)) }
+                            onCheckedChange = { enabled ->
+                                if (!enabled) {
+                                    // 当启用记忆功能关闭时，联动关闭记忆档案 (Master Memory)
+                                    onUpdateAssistant(assistant.copy(
+                                        enableMemory = false,
+                                        enableMasterMemory = false
+                                    ))
+                                } else {
+                                    onUpdateAssistant(assistant.copy(enableMemory = true))
+                                }
+                            }
                         )
                     }
                 )
