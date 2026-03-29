@@ -372,18 +372,33 @@ class LocalTools(
     fun getScheduleTools(): List<Tool> {
         return listOf(
             Tool(
-                name = "add_schedule",
-                description = "Add a new schedule/task/to-do.",
+                name = "schedule_manager",
+                description = "Manage schedules/tasks. Supported actions: add, list, edit, toggle, delete.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
+                            put("action", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Action to perform: add (new task), list (get all), edit (modify existing), toggle (complete status), delete (remove)")
+                                put("enum", JsonArray(listOf(
+                                    JsonPrimitive("add"),
+                                    JsonPrimitive("list"),
+                                    JsonPrimitive("edit"),
+                                    JsonPrimitive("toggle"),
+                                    JsonPrimitive("delete")
+                                )))
+                            })
+                            put("id", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Schedule ID, required for edit, toggle, and delete")
+                            })
                             put("title", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The title of the schedule")
+                                put("description", "The title of the schedule, required for 'add'")
                             })
                             put("content", buildJsonObject {
                                 put("type", "string")
-                                put("description", "More details about the schedule")
+                                put("description", "Details about the schedule")
                             })
                             put("priority", buildJsonObject {
                                 put("type", "integer")
@@ -398,168 +413,91 @@ class LocalTools(
                                 put("description", "Difficulty (0: Simple, 1: Normal, 2: Not Simple)")
                             })
                         },
-                        required = listOf("title")
+                        required = listOf("action")
                     )
                 },
                 execute = {
-                    val title = it.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val priority = it.jsonObject["priority"]?.jsonPrimitive?.intOrNull ?: 1
-                    val urgency = it.jsonObject["urgency"]?.jsonPrimitive?.intOrNull ?: 1
-                    val difficulty = it.jsonObject["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
+                    val json = it.jsonObject
+                    val action = json["action"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
-                        scheduleRepository.addSchedule(
-                            ScheduleEntity(
-                                title = title,
-                                content = content,
-                                priority = priority,
-                                urgency = urgency,
-                                difficulty = difficulty,
-                                startTime = System.currentTimeMillis()
-                            )
-                        )
-                        buildJsonObject { put("success", true) }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to add schedule") }
-                    }
-                }
-            ),
-            Tool(
-                name = "list_schedules",
-                description = "List all pending schedules/tasks and those completed today.",
-                parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
-                execute = {
-                    try {
-                        val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
-                        buildJsonObject {
-                            put("schedules", JsonArray(schedules.map { s ->
+                        when (action) {
+                            "add" -> {
+                                val title = json["title"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val priority = json["priority"]?.jsonPrimitive?.intOrNull ?: 1
+                                val urgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: 1
+                                val difficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
+                                scheduleRepository.addSchedule(
+                                    ScheduleEntity(
+                                        title = title,
+                                        content = content,
+                                        priority = priority,
+                                        urgency = urgency,
+                                        difficulty = difficulty,
+                                        startTime = System.currentTimeMillis()
+                                    )
+                                )
+                                buildJsonObject { put("success", true) }
+                            }
+                            "list" -> {
+                                val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
                                 buildJsonObject {
-                                    put("id", s.id)
-                                    put("title", s.title)
-                                    put("content", s.content)
-                                    put("priority", s.priority)
-                                    put("urgency", s.urgency)
-                                    put("difficulty", s.difficulty)
-                                    put("is_completed", s.isCompleted)
+                                    put("schedules", JsonArray(schedules.map { s ->
+                                        buildJsonObject {
+                                            put("id", s.id)
+                                            put("title", s.title)
+                                            put("content", s.content)
+                                            put("priority", s.priority)
+                                            put("urgency", s.urgency)
+                                            put("difficulty", s.difficulty)
+                                            put("is_completed", s.isCompleted)
+                                        }
+                                    }))
                                 }
-                            }))
-                        }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to list schedules") }
-                    }
-                }
-            ),
-            Tool(
-                name = "edit_schedule",
-                description = "Edit an existing schedule/task.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("id", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "The ID of the schedule to edit")
-                            })
-                            put("title", buildJsonObject {
-                                put("type", "string")
-                            })
-                            put("content", buildJsonObject {
-                                put("type", "string")
-                            })
-                            put("priority", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "0: Not Important, 1: Normal, 2: Important")
-                            })
-                            put("urgency", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "0: Not Urgent, 1: Normal, 2: Very Urgent")
-                            })
-                            put("difficulty", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "0: Simple, 1: Normal, 2: Not Simple")
-                            })
-                        },
-                        required = listOf("id")
-                    )
-                },
-                execute = {
-                    val id = it.jsonObject["id"]?.jsonPrimitive?.longOrNull ?: -1L
-                    try {
-                        val schedule = scheduleRepository.getScheduleById(id)
-                        if (schedule != null) {
-                            val newTitle = it.jsonObject["title"]?.jsonPrimitive?.contentOrNull ?: schedule.title
-                            val newContent = it.jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: schedule.content
-                            val newPriority = it.jsonObject["priority"]?.jsonPrimitive?.intOrNull ?: schedule.priority
-                            val newUrgency = it.jsonObject["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
-                            val newDifficulty = it.jsonObject["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
+                            }
+                            "edit" -> {
+                                val id = json["id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                val schedule = scheduleRepository.getScheduleById(id)
+                                if (schedule != null) {
+                                    val newTitle = json["title"]?.jsonPrimitive?.contentOrNull ?: schedule.title
+                                    val newContent = json["content"]?.jsonPrimitive?.contentOrNull ?: schedule.content
+                                    val newPriority = json["priority"]?.jsonPrimitive?.intOrNull ?: schedule.priority
+                                    val newUrgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
+                                    val newDifficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
 
-                            scheduleRepository.updateSchedule(schedule.copy(
-                                title = newTitle,
-                                content = newContent,
-                                priority = newPriority,
-                                urgency = newUrgency,
-                                difficulty = newDifficulty,
-                                updatedAt = System.currentTimeMillis()
-                            ))
-                            buildJsonObject { put("success", true) }
-                        } else {
-                            buildJsonObject { put("error", "Schedule not found") }
+                                    scheduleRepository.updateSchedule(schedule.copy(
+                                        title = newTitle,
+                                        content = newContent,
+                                        priority = newPriority,
+                                        urgency = newUrgency,
+                                        difficulty = newDifficulty,
+                                        updatedAt = System.currentTimeMillis()
+                                    ))
+                                    buildJsonObject { put("success", true) }
+                                } else {
+                                    buildJsonObject { put("error", "Schedule not found") }
+                                }
+                            }
+                            "toggle" -> {
+                                val id = json["id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                val schedules = scheduleRepository.getAllSchedules().first()
+                                val schedule = schedules.find { s -> s.id == id }
+                                if (schedule != null) {
+                                    scheduleRepository.toggleComplete(schedule)
+                                    buildJsonObject { put("success", true) }
+                                } else {
+                                    buildJsonObject { put("error", "Schedule not found") }
+                                }
+                            }
+                            "delete" -> {
+                                val id = json["id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                scheduleRepository.deleteSchedule(id)
+                                buildJsonObject { put("success", true) }
+                            }
+                            else -> buildJsonObject { put("error", "Unknown action: $action") }
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to edit schedule") }
-                    }
-                }
-            ),
-            Tool(
-                name = "update_schedule_status",
-                description = "Toggle the completion status of a schedule.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("id", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "The ID of the schedule to toggle")
-                            })
-                        },
-                        required = listOf("id")
-                    )
-                },
-                execute = {
-                    val id = it.jsonObject["id"]?.jsonPrimitive?.longOrNull ?: -1L
-                    try {
-                        val schedules = scheduleRepository.getAllSchedules().first()
-                        val schedule = schedules.find { s -> s.id == id }
-                        if (schedule != null) {
-                            scheduleRepository.toggleComplete(schedule)
-                            buildJsonObject { put("success", true) }
-                        } else {
-                            buildJsonObject { put("error", "Schedule not found") }
-                        }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to update schedule") }
-                    }
-                }
-            ),
-            Tool(
-                name = "delete_schedule",
-                description = "Delete a schedule by its ID.",
-                parameters = {
-                    InputSchema.Obj(
-                        properties = buildJsonObject {
-                            put("id", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "The ID of the schedule to delete")
-                            })
-                        },
-                        required = listOf("id")
-                    )
-                },
-                execute = {
-                    val id = it.jsonObject["id"]?.jsonPrimitive?.longOrNull ?: -1L
-                    try {
-                        scheduleRepository.deleteSchedule(id)
-                        buildJsonObject { put("success", true) }
-                    } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to delete schedule") }
+                        buildJsonObject { put("error", e.message ?: "Schedule operation failed") }
                     }
                 }
             )
