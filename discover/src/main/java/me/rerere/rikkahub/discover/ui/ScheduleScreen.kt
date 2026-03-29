@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -94,12 +95,16 @@ fun ScheduleScreen(
     ) { padding ->
         val displaySchedules = if (selectedTabIndex == 0) pendingSchedules else completedSchedules
 
-        val groupedSchedules = remember(displaySchedules) {
-            displaySchedules.groupBy { it.difficulty }.mapValues { (_, list) ->
-                list.sortedWith(
-                    compareByDescending<ScheduleEntity> { it.priority }
-                        .thenByDescending { it.urgency }
-                )
+        val groupedSchedules = remember(displaySchedules, selectedTabIndex) {
+            if (selectedTabIndex == 0) {
+                displaySchedules.groupBy { it.difficulty }.mapValues { (_, list) ->
+                    list.sortedWith(
+                        compareByDescending<ScheduleEntity> { it.priority }
+                            .thenByDescending { it.urgency }
+                    )
+                }
+            } else {
+                emptyMap()
             }
         }
 
@@ -122,7 +127,8 @@ fun ScheduleScreen(
                         )
                     }
                 }
-            } else {
+            } else if (selectedTabIndex == 0) {
+                // 待办列表：按难度分组
                 listOf(0, 1, 2).forEach { diff ->
                     val items = groupedSchedules[diff] ?: emptyList()
                     if (items.isNotEmpty()) {
@@ -141,6 +147,21 @@ fun ScheduleScreen(
                             )
                         }
                     }
+                }
+            } else {
+                // 已完成列表：不分组，直接按时间降序（ViewModel 已排好序）
+                items(displaySchedules, key = { it.id }) { schedule ->
+                    ScheduleItem(
+                        schedule = schedule,
+                        onToggle = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.toggleComplete(schedule)
+                        },
+                        onDelete = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.deleteSchedule(schedule.id)
+                        }
+                    )
                 }
             }
         }
