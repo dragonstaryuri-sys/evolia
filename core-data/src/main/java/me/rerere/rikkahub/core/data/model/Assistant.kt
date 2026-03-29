@@ -46,6 +46,7 @@ data class Assistant(
     val summarizerModelId: Uuid? = null,
     val memoryModelId: Uuid? = null,
     val diaryModelId: Uuid? = null,
+    val suggestionModelId: Uuid? = null,
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useRagMemoryRetrieval: Boolean = true,

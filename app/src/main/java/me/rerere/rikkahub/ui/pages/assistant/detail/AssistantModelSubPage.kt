@@ -220,6 +220,39 @@ fun AssistantModelSubPage(
                     )
                 }
             }
+
+            // Suggestion Model
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.setting_model_page_suggestion_model),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.setting_model_page_suggestion_model_desc),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ModelSelector(
+                        modelId = assistant.suggestionModelId,
+                        providers = providers,
+                        type = ModelType.CHAT,
+                        onSelect = { onUpdate(assistant.copy(suggestionModelId = it.id)) },
+                        allowClear = true,
+                    )
+                }
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════
