@@ -20,6 +20,7 @@ import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 @Composable
 fun ScheduleCard(
     progress: Float,
+    completedCount: Int,
     unfinishedCount: Int,
     recentTasks: List<ScheduleEntity>,
     onClick: () -> Unit
@@ -59,8 +60,8 @@ fun ScheduleCard(
                         strokeCap = StrokeCap.Round
                     )
                     Text(
-                        text = "${(progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                        text = completedCount.toString(),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
             }

@@ -258,8 +258,24 @@ class ChatCompletionsAPI(
             put("messages", buildMessages(messages, host))
 
             if (isModelAllowTemperature(params.model)) {
-                if (params.temperature != null) put("temperature", params.temperature)
-                if (params.topP != null) put("top_p", params.topP)
+                if (params.temperature != null) {
+                    // 智谱 AI 强制要求范围在 (0.0, 1.0) 之间
+                    val safeTemperature = if (host == "open.bigmodel.cn") {
+                        params.temperature.coerceIn(0.01f, 0.99f)
+                    } else {
+                        params.temperature
+                    }
+                    put("temperature", safeTemperature)
+                }
+                if (params.topP != null) {
+                    // 智谱 AI 强制要求范围在 (0.0, 1.0) 之间
+                    val safeTopP = if (host == "open.bigmodel.cn") {
+                        params.topP.coerceIn(0.01f, 0.99f)
+                    } else {
+                        params.topP
+                    }
+                    put("top_p", safeTopP)
+                }
             }
             if (params.maxTokens != null) put("max_tokens", params.maxTokens)
 

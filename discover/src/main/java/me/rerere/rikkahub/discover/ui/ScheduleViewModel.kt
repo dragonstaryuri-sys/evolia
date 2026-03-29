@@ -29,8 +29,11 @@ class ScheduleViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 所有已完成事项
+    // 所有已完成事项: 按照更新时间（完成时间）降序排列
     val allCompletedSchedules: StateFlow<List<ScheduleEntity>> = repository.getAllCompleted()
+        .map { list ->
+            list.sortedByDescending { it.updatedAt }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // 今日进度 (0.0 - 1.0)
@@ -41,6 +44,11 @@ class ScheduleViewModel(
             completed.toFloat() / list.size
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
+
+    // 今日已完成数量
+    val todayCompletedCount: StateFlow<Int> = todaySchedules.map { list ->
+        list.count { it.isCompleted }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // 未完成数量
     val unfinishedCount: StateFlow<Int> = repository.getUnfinishedCount()

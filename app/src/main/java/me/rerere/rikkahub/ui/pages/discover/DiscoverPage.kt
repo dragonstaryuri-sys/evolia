@@ -33,6 +33,7 @@ fun DiscoverPage() {
     // 获取日程 ViewModel
     val scheduleViewModel: ScheduleViewModel = koinViewModel()
     val progress by scheduleViewModel.todayProgress.collectAsState()
+    val completedCount by scheduleViewModel.todayCompletedCount.collectAsState()
     val unfinishedCount by scheduleViewModel.unfinishedCount.collectAsState()
     val allPendingSchedules by scheduleViewModel.allPendingSchedules.collectAsState()
 
@@ -51,6 +52,7 @@ fun DiscoverPage() {
             item {
                 ScheduleCard(
                     progress = progress,
+                    completedCount = completedCount,
                     unfinishedCount = unfinishedCount,
                     recentTasks = allPendingSchedules, // 这里改为传入所有待办列表（已排好序）
                     onClick = {
