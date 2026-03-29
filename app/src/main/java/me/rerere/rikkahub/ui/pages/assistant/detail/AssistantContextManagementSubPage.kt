@@ -59,34 +59,6 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // SCHEDULE MANAGEMENT (New!)
-        // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "日程管理") {
-            SettingGroupItem(
-                title = "允许读取/写入日程",
-                subtitle = "开启后，该智能体可以查看你的今日安排并协助你创建新日程",
-                icon = {
-                    Icon(
-                        imageVector = Icons.Rounded.CalendarToday,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                },
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.enableScheduleAccess,
-                        onCheckedChange = { enabled ->
-                            onUpdate(assistant.copy(enableScheduleAccess = enabled))
-                        }
-                    )
-                },
-                onClick = {
-                    onUpdate(assistant.copy(enableScheduleAccess = !assistant.enableScheduleAccess))
-                }
-            )
-        }
-
-        // ═══════════════════════════════════════════════════════════════════
         // MESSAGE HISTORY & SUMMARIZATION
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
@@ -223,7 +195,6 @@ fun AssistantContextManagementSubPage(
             }
         }
 
-        // ... 后续部分保持不变 ...
         // ═══════════════════════════════════════════════════════════════════
         // SEARCH RESULTS & CUSTOM PROMPTS
         // ═══════════════════════════════════════════════════════════════════

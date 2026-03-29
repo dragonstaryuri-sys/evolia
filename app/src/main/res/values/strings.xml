@@ -1344,6 +1344,7 @@
   <string name="schedule_no_tasks">No tasks for today</string>
   <string name="schedule_all_done">Excellent! All tasks completed</string>
   <string name="schedule_add_task">Add Task</string>
+  <string name="schedule_button_tip">Allow the agent to read and write your schedule. When enabled, it can view your today\'s arrangements and assist you in creating new schedules.</string>
   <!-- Title displayed on the Discover page -->
   <string name="discover_page_schedule">Schedule Management</string>
   <!-- Description displayed on the Discover page -->

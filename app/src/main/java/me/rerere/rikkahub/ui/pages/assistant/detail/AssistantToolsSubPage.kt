@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.runtime.Composable
@@ -24,6 +28,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ai.McpPickerButton
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
@@ -116,6 +121,34 @@ fun AssistantToolsSubPage(
         }
 
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
+            // Schedule Management
+            SettingGroupItem(
+                title = stringResource(R.string.discover_page_schedule),
+                subtitle = stringResource(R.string.schedule_button_tip),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.ScheduleManagement),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.ScheduleManagement
+                            } else {
+                                assistant.localTools - LocalToolOption.ScheduleManagement
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                },
+                onClick = {
+                    val enabled = !assistant.localTools.contains(LocalToolOption.ScheduleManagement)
+                    val newLocalTools = if (enabled) {
+                        assistant.localTools + LocalToolOption.ScheduleManagement
+                    } else {
+                        assistant.localTools - LocalToolOption.ScheduleManagement
+                    }
+                    onUpdate(assistant.copy(localTools = newLocalTools))
+                }
+            )
+
             // JavaScript Engine
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),

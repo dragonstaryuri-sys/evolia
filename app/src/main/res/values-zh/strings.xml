@@ -1297,6 +1297,7 @@
   <string name="discover_page_schedule_desc">管理你的每日任务与目标</string>
   <!-- 备份页面显示的选项名称 -->
   <string name="backup_page_schedule">日程数据</string>
+  <string name="schedule_button_tip">允许智能体读取和写入你的日程。开启后，它可以查看你的今日安排并协助你创建新日程。</string>
 
   <!-- 邮件服务设置 -->
   <string name="setting_page_email_service">邮件服务</string>
