@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import kotlinx.coroutines.flow.first
@@ -15,14 +16,15 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.ai.core.MessageRole
-import me.rerere.rikkahub.utils.applyPlaceholders
+import me.rerere.rikkahub.core.data.model.Assistant
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import java.util.Locale
+import java.time.Instant
+
+private const val TAG = "SpontaneousWorker"
 
 class SpontaneousWorker(
     appContext: Context,
@@ -36,152 +38,180 @@ class SpontaneousWorker(
 
     override suspend fun doWork(): Result {
         return try {
-            val settings = settingsStore.settingsFlow.first()
-            val assistant = settings.getCurrentAssistant()
+            val initialSettings = settingsStore.settingsFlow.first()
+            val eligibleAssistantIds = initialSettings.assistants
+                .filter { it.enableSpontaneous }
+                .map { it.id }
 
-            // Check if enabled
-            if (!assistant.enableSpontaneous) return Result.success()
-
-            // Check time window
-            val currentHour = java.time.LocalTime.now().hour
-            if (currentHour < assistant.notificationStartHour || currentHour >= assistant.notificationEndHour) {
-                return Result.success() // Outside notification hours
+            if (eligibleAssistantIds.isEmpty()) {
+                return Result.success()
             }
 
-            // Check frequency
-            val timeSinceLastNotification = System.currentTimeMillis() - assistant.lastNotificationTime
-            val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
-            if (timeSinceLastNotification < minIntervalMs) {
-                return Result.success() // Too soon since last notification
-            }
+            for (assistantId in eligibleAssistantIds) {
+                try {
+                    // Fetch fresh settings for each assistant to ensure lastNotificationTime is up-to-date
+                    val currentSettings = settingsStore.settingsFlow.first()
+                    val assistant = currentSettings.assistants.find { it.id == assistantId } ?: continue
 
-            // Get latest conversation
-            val conversations = conversationRepository.getRecentConversations(assistant.id, 1)
-            val conversation = conversations.firstOrNull() ?: return Result.success()
-
-            // Don't spam: check if last message was recent (e.g., within 24 hours) but not TOO recent (e.g., > 30 mins)
-            // This logic can be refined. For now, let's just run.
-
-            val modelId = assistant.backgroundModelId ?: assistant.chatModelId ?: settings.chatModelId
-            val model = settings.findModelById(modelId)
-                ?: return Result.success()
-            val provider = model.findProvider(settings.providers) ?: return Result.success()
-            val providerHandler = providerManager.getProviderByType(provider)
-
-            val oneDayMs = 24 * 60 * 60 * 1000L
-            val lastNotificationInfo = if (
-                assistant.lastNotificationContent.isNotBlank() &&
-                (System.currentTimeMillis() - assistant.lastNotificationTime < oneDayMs)
-            ) {
-                "\n\nYou last sent a notification: \"${assistant.lastNotificationContent}\". Don't repeat yourself or be redundant."
-            } else ""
-
-            // RAG Retrieval
-            val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: "User status"
-            val memories = memoryRepository.retrieveRelevantMemories(
-                assistantId = assistant.id.toString(),
-                query = lastUserMessage,
-                limit = 5
-            )
-            val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
-
-            val customPrompt = assistant.spontaneousPrompt.ifBlank {
-                """
-                You are ${assistant.name}. You are running in the background to check in on the user. Be casual and friendly.
-
-                Recent chat history:
-                {{history}}
-
-                Relevant Memories:
-                {{memories}}
-                $lastNotificationInfo
-
-                Do you want to send a spontaneous notification to the user right now?
-                Consider the context. Only send if:
-                - It's genuinely helpful or relevant
-                - You have a good reason (explain it in the "reason" field)
-                - It's not repetitive or annoying
-
-                Output JSON format:
-                {
-                    "send": true/false,
-                    "reason": "Why you want to send this notification",
-                    "title": "Notification Title",
-                    "content": "Notification Content"
+                    processAssistant(currentSettings, assistant)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing assistant $assistantId", e)
                 }
-                """.trimIndent()
-            }
-
-            val history = conversation.currentMessages.takeLast(5).joinToString("\n") { "${it.role}: ${it.toText()}" }
-            val prompt = customPrompt
-                .replace("{{history}}", history)
-                .replace("{{memories}}", memoryContext)
-
-            val result = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.7f,
-                    thinkingBudget = 0
-                )
-            )
-
-            val responseText = result.choices.firstOrNull()?.message?.toContentText() ?: return Result.failure()
-
-            // Parse JSON (simple parsing, assuming model follows instruction)
-            try {
-                val jsonStart = responseText.indexOf("{")
-                val jsonEnd = responseText.lastIndexOf("}")
-                if (jsonStart != -1 && jsonEnd != -1) {
-                    val jsonStr = responseText.substring(jsonStart, jsonEnd + 1)
-                    val json = Json.parseToJsonElement(jsonStr).jsonObject
-
-                    val send = json["send"]?.jsonPrimitive?.booleanOrNull ?: false
-                    if (send) {
-                        val title = json["title"]?.jsonPrimitive?.contentOrNull ?: assistant.name
-                        val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val reason = json["reason"]?.jsonPrimitive?.contentOrNull ?: "No reason provided"
-
-                        if (content.isNotBlank()) {
-                            sendNotification(title, content, conversation.id)
-
-                            // Update assistant's last notification info (Full Reset)
-                            val updatedAssistant = assistant.copy(
-                                lastNotificationTime = System.currentTimeMillis(),
-                                lastNotificationContent = content
-                            )
-                            val updatedSettings = settings.copy(
-                                assistants = settings.assistants.map {
-                                    if (it.id == assistant.id) updatedAssistant else it
-                                }
-                            )
-                            settingsStore.update(updatedSettings)
-                        }
-                    } else {
-                        // AI declined to send. Apply "Half Delay" logic.
-                        // We set the last time to (Now - Interval/2), so we only wait half the interval from now.
-                        val halfIntervalMs = minIntervalMs / 2
-                        val updatedAssistant = assistant.copy(
-                            lastNotificationTime = System.currentTimeMillis() - halfIntervalMs
-                        )
-                        val updatedSettings = settings.copy(
-                            assistants = settings.assistants.map {
-                                if (it.id == assistant.id) updatedAssistant else it
-                            }
-                        )
-                        settingsStore.update(updatedSettings)
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
 
             Result.success()
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Global error in SpontaneousWorker", e)
             Result.failure()
         }
+    }
+
+    private suspend fun processAssistant(settings: me.rerere.rikkahub.data.datastore.Settings, assistant: Assistant) {
+        // Check time window
+        val currentHour = java.time.LocalTime.now().hour
+        if (currentHour < assistant.notificationStartHour || currentHour >= assistant.notificationEndHour) {
+            return
+        }
+
+        // Check frequency
+        val timeSinceLastNotification = System.currentTimeMillis() - assistant.lastNotificationTime
+        val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
+        if (timeSinceLastNotification < minIntervalMs) {
+            return
+        }
+
+        // Get latest conversation for THIS assistant
+        val conversations = conversationRepository.getRecentConversations(assistant.id, 1)
+        val conversation = conversations.firstOrNull() ?: return
+
+        val modelId = assistant.backgroundModelId ?: assistant.chatModelId ?: settings.chatModelId
+        val model = settings.findModelById(modelId) ?: return
+        val provider = model.findProvider(settings.providers) ?: return
+        val providerHandler = providerManager.getProviderByType(provider)
+
+        // Calculate context info
+        val lastUpdateTime = conversation.updateAt
+        val timeDiffMillis = System.currentTimeMillis() - lastUpdateTime.toEpochMilli()
+        val timeDiffHours = timeDiffMillis / (1000 * 60 * 60)
+        val timeDiffMinutes = timeDiffMillis / (1000 * 60)
+
+        // RAG Retrieval
+        val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: "User status"
+        val memories = memoryRepository.retrieveRelevantMemories(
+            assistantId = assistant.id.toString(),
+            query = lastUserMessage,
+            limit = 5
+        )
+        val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
+        val history = conversation.currentMessages.takeLast(4).joinToString("\n") { "${it.role}: ${it.toText()}" }
+
+        val customPrompt = assistant.spontaneousPrompt.ifBlank {
+            """
+            You are ${assistant.name}. You are checking in on the user because they haven't messaged you for a while.
+
+            [Persona/System Prompt]
+            ${assistant.systemPrompt}
+
+            [Context]
+            - It has been $timeDiffHours hours ($timeDiffMinutes minutes) since the last message in this conversation.
+            - Recent chat history (last 4 messages):
+            {{history}}
+
+            [Relevant Memories]
+            {{memories}}
+
+            [Task]
+            Based on your persona and the context, do you want to send a spontaneous message to the user?
+            - If YES: Formulate a natural, concise message as if you're reaching out in the chat.
+            - If NO: Explain why.
+
+            [Output Format (Strict JSON)]
+            {
+                "send": true/false,
+                "reason": "Why you decided to (not) send",
+                "content": "The message text to send to the chat",
+                "title": "Notification title (usually your name)"
+            }
+            """.trimIndent()
+        }
+
+        val prompt = customPrompt
+            .replace("{{history}}", history)
+            .replace("{{memories}}", memoryContext)
+
+        val result = providerHandler.generateText(
+            providerSetting = provider,
+            messages = listOf(UIMessage.user(prompt)),
+            params = TextGenerationParams(
+                model = model,
+                temperature = 0.7f,
+                thinkingBudget = 0
+            )
+        )
+
+        val responseText = result.choices.firstOrNull()?.message?.toContentText() ?: return
+
+        try {
+            val jsonStart = responseText.indexOf("{")
+            val jsonEnd = responseText.lastIndexOf("}")
+            if (jsonStart != -1 && jsonEnd != -1) {
+                val jsonStr = responseText.substring(jsonStart, jsonEnd + 1)
+                val json = Json.parseToJsonElement(jsonStr).jsonObject
+
+                val send = json["send"]?.jsonPrimitive?.booleanOrNull ?: false
+                val reason = json["reason"]?.jsonPrimitive?.contentOrNull ?: "No reason"
+
+                Log.d(TAG, "Assistant ${assistant.name} decision: send=$send, reason=$reason")
+
+                if (send) {
+                    val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val title = json["title"]?.jsonPrimitive?.contentOrNull ?: assistant.name
+
+                    if (content.isNotBlank()) {
+                        // 1. Add message to database
+                        val newMessage = UIMessage.assistant(content).copy(modelId = model.id)
+                        val updatedConversation = conversation.updateCurrentMessages(
+                            conversation.currentMessages + newMessage
+                        ).copy(updateAt = Instant.now())
+
+                        conversationRepository.updateConversation(updatedConversation)
+
+                        // 2. Send notification
+                        sendNotification(title, content, conversation.id)
+
+                        // 3. Update assistant state
+                        updateAssistantState(assistant, content, false)
+                    }
+                } else {
+                    // AI declined. Apply Half-Delay.
+                    updateAssistantState(assistant, "", true)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse AI response for ${assistant.name}", e)
+        }
+    }
+
+    private suspend fun updateAssistantState(assistant: Assistant, content: String, isHalfDelay: Boolean) {
+        val settings = settingsStore.settingsFlow.first()
+        val newTime = if (isHalfDelay) {
+            val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
+            System.currentTimeMillis() - (minIntervalMs / 2)
+        } else {
+            System.currentTimeMillis()
+        }
+
+        val updatedAssistant = assistant.copy(
+            lastNotificationTime = newTime,
+            lastNotificationContent = if (content.isNotBlank()) content else assistant.lastNotificationContent
+        )
+
+        val updatedSettings = settings.copy(
+            assistants = settings.assistants.map {
+                if (it.id == assistant.id) updatedAssistant else it
+            }
+        )
+        settingsStore.update(updatedSettings)
     }
 
     private fun sendNotification(title: String, content: String, conversationId: kotlin.uuid.Uuid) {
@@ -194,7 +224,6 @@ class SpontaneousWorker(
         )
         notificationManager.createNotificationChannel(channel)
 
-        // Create pending intent to open the conversation when notification is clicked
         val intent = android.content.Intent(applicationContext, me.rerere.rikkahub.RouteActivity::class.java).apply {
             flags = android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("conversationId", conversationId.toString())
