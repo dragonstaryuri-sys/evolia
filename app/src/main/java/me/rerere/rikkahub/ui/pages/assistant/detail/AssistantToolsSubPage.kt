@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,16 +26,20 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
+import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ai.McpPickerButton
 import me.rerere.rikkahub.ui.components.ui.Select
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.search.SearchServiceOptions
+import org.koin.compose.koinInject
 
 /**
  * Tools & Search tab - Combined search, local tools, and MCP settings.
@@ -47,6 +53,8 @@ fun AssistantToolsSubPage(
     mcpServerConfigs: List<McpServerConfig>
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val navController = LocalNavController.current
+    val secretKeyManager = koinInject<SecretKeyManager>()
 
     Column(
         modifier = Modifier
@@ -219,12 +227,13 @@ fun AssistantToolsSubPage(
             )
 
             // Email Service
+            val emailEnabled = assistant.localTools.contains(LocalToolOption.EmailService)
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_local_tools_email_service_title),
                 subtitle = stringResource(R.string.assistant_page_local_tools_email_service_desc),
                 trailing = {
                     HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.EmailService),
+                        checked = emailEnabled,
                         onCheckedChange = { enabled ->
                             val newLocalTools = if (enabled) {
                                 assistant.localTools + LocalToolOption.EmailService
@@ -236,6 +245,25 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
+
+            // 警告提示：如果开启了邮件工具但没配置全局账号/授权码
+            val isEmailConfigured = settings.emailConfig.account.isNotBlank() && secretKeyManager.getEmailPassword("").isNotBlank()
+            AnimatedVisibility(visible = emailEnabled && !isEmailConfigured) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_tools_email_not_configured_warning),
+                    subtitle = stringResource(R.string.assistant_tools_email_not_configured_warning_desc),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    },
+                    onClick = {
+                        navController.navigate(Screen.SettingEmail)
+                    }
+                )
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════

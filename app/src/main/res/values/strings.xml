@@ -1369,4 +1369,6 @@
   <string name="setting_email_page_auth_code_help">How to get the authorization code?\n1. Log in to the PC version of QQ Mail\n2. Go to Settings > Account\n3. Find and enable POP3/IMAP/SMTP service\n4. Click "Generate Authorization Code"</string>
   <string name="assistant_page_local_tools_email_service_title">Mail Service</string>
   <string name="assistant_page_local_tools_email_service_desc">Allow AI to send and receive emails</string>
+  <string name="assistant_tools_email_not_configured_warning">Email Service Not Configured</string>
+  <string name="assistant_tools_email_not_configured_warning_desc">No email account or authorization code detected. The email tool will not work. Tap to configure.</string>
 </resources>

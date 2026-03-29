@@ -59,116 +59,94 @@ fun SettingEmailPage(vm: SettingVM = koinViewModel()) {
             contentPadding = innerPadding
         ) {
             item {
-                SettingsGroup(title = stringResource(R.string.setting_page_basic_settings)) {
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_email_page_enable),
-                        subtitle = stringResource(R.string.setting_email_page_enable_desc),
-                        icon = { Icon(Icons.Rounded.Email, null) },
-                        trailing = {
-                            Switch(
-                                checked = settings.emailConfig.enabled,
-                                onCheckedChange = {
-                                    vm.updateSettings(settings.copy(
-                                        emailConfig = settings.emailConfig.copy(enabled = it)
-                                    ))
-                                }
-                            )
-                        }
+                Column(modifier = Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = account,
+                        onValueChange = {
+                            account = it
+                            vm.updateSettings(settings.copy(
+                                emailConfig = settings.emailConfig.copy(account = it)
+                            ))
+                        },
+                        label = { Text(stringResource(R.string.setting_email_page_account)) },
+                        placeholder = { Text("example@qq.com") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        singleLine = true
                     )
-                }
-            }
 
-            item {
-                AnimatedVisibility(visible = settings.emailConfig.enabled) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        OutlinedTextField(
-                            value = account,
-                            onValueChange = {
-                                account = it
-                                vm.updateSettings(settings.copy(
-                                    emailConfig = settings.emailConfig.copy(account = it)
-                                ))
-                            },
-                            label = { Text(stringResource(R.string.setting_email_page_account)) },
-                            placeholder = { Text("example@qq.com") },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                            singleLine = true
-                        )
+                    Spacer(modifier = Modifier.height(16.dp))
 
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = {
+                            password = it
+                            secretKeyManager.setEmailPassword(it)
+                        },
+                        label = { Text(stringResource(R.string.setting_email_page_auth_code)) },
+                        placeholder = { Text(stringResource(R.string.setting_email_page_auth_code_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = {
+                            testing = true
+                            testResult = null
+                            scope.launch {
+                                val result = testEmailConnection(account, password)
+                                testing = false
+                                testResult = result
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !testing && account.isNotBlank() && password.isNotBlank()
+                    ) {
+                        if (testing) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.setting_email_page_testing))
+                        } else {
+                            Icon(Icons.AutoMirrored.Rounded.Send, null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.setting_email_page_test_button))
+                        }
+                    }
+
+                    testResult?.let { result ->
                         Spacer(modifier = Modifier.height(16.dp))
-
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = {
-                                password = it
-                                secretKeyManager.setEmailPassword(it)
-                            },
-                            label = { Text(stringResource(R.string.setting_email_page_auth_code)) },
-                            placeholder = { Text(stringResource(R.string.setting_email_page_auth_code_hint)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            singleLine = true
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        Button(
-                            onClick = {
-                                testing = true
-                                testResult = null
-                                scope.launch {
-                                    val result = testEmailConnection(account, password)
-                                    testing = false
-                                    testResult = result
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !testing && account.isNotBlank() && password.isNotBlank()
-                        ) {
-                            if (testing) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(stringResource(R.string.setting_email_page_testing))
+                        val color = if (result.isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        Text(
+                            text = if (result.isSuccess) {
+                                stringResource(R.string.setting_email_page_test_success)
                             } else {
-                                Icon(Icons.AutoMirrored.Rounded.Send, null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(stringResource(R.string.setting_email_page_test_button))
-                            }
-                        }
+                                stringResource(R.string.setting_email_page_test_failed, result.exceptionOrNull()?.message ?: "Unknown error")
+                            },
+                            color = color,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
 
-                        testResult?.let { result ->
-                            Spacer(modifier = Modifier.height(16.dp))
-                            val color = if (result.isSuccess) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                            Text(
-                                text = if (result.isSuccess) {
-                                    stringResource(R.string.setting_email_page_test_success)
-                                } else {
-                                    stringResource(R.string.setting_email_page_test_failed, result.exceptionOrNull()?.message ?: "Unknown error")
-                                },
-                                color = color,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
+                    Spacer(modifier = Modifier.height(32.dp))
 
-                        Spacer(modifier = Modifier.height(32.dp))
-
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            shape = MaterialTheme.shapes.medium
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.Top
                         ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Icon(Icons.AutoMirrored.Rounded.HelpOutline, null, tint = MaterialTheme.colorScheme.primary)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = stringResource(R.string.setting_email_page_auth_code_help),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
+                            Icon(Icons.AutoMirrored.Rounded.HelpOutline, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = stringResource(R.string.setting_email_page_auth_code_help),
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }
