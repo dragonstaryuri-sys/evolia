@@ -1337,5 +1337,7 @@
   <string name="assistant_context_priority_chat">优先聊天记录</string>
   <string name="assistant_context_priority_memory">优先记忆片段</string>
   <string name="assistant_context_priority_balanced">平衡分配 (推荐)</string>
-
+  <!-- Tips -->
+  <string name="notification_chat_generating">正在生成回复...</string>
+  <string name="notification_channel_chat_generation">聊天生成</string>
 </resources>

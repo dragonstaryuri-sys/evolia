@@ -152,6 +152,17 @@ class ChatService(
 
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
+
+        // 自动管理前台服务状态
+        appScope.launch {
+            generationJobs.collect { jobs ->
+                if (jobs.isNotEmpty()) {
+                    ChatForegroundService.start(context)
+                } else {
+                    ChatForegroundService.stop(context)
+                }
+            }
+        }
     }
 
     fun cleanup() = runCatching {

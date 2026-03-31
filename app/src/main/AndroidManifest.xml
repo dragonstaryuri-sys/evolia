@@ -12,6 +12,8 @@
   <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
   <uses-permission android:name="android.permission.VIBRATE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
   <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
 
   <uses-feature
@@ -104,6 +106,11 @@
             <action android:name="android.service.notification.NotificationListenerService" />
         </intent-filter>
     </service>
+
+    <service
+        android:name=".service.ChatForegroundService"
+        android:foregroundServiceType="dataSync"
+        android:exported="false" />
 
     <provider
       android:name="androidx.core.content.FileProvider"

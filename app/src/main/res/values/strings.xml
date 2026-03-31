@@ -1391,5 +1391,7 @@
   <string name="assistant_context_priority_chat">Prioritize Chat History</string>
   <string name="assistant_context_priority_memory">Prioritize Memory Fragments</string>
   <string name="assistant_context_priority_balanced">Balanced Allocation (Recommended)</string>
-
+  <!-- Tips -->
+  <string name="notification_chat_generating">Chat is generating...</string>
+  <string name="notification_channel_chat_generation">Chat Generation</string>
 </resources>
