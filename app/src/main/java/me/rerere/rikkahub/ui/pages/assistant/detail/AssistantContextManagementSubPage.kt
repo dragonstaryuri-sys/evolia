@@ -196,7 +196,7 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // SEARCH RESULTS & CUSTOM PROMPTS
+        // SEARCH RESULTS
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_search_results_title)) {
             val maxSearchResults = assistant.maxSearchResultsRetained ?: 0
@@ -222,6 +222,7 @@ fun AssistantContextManagementSubPage(
                 steps = 49
             )
         }
+
 
         // ═══════════════════════════════════════════════════════════════════
         // CUSTOM PROMPTS
@@ -302,9 +303,9 @@ private fun VariableHintRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        FlowRow(
+        androidx.compose.foundation.layout.FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             variables.forEach { variable ->
                 AssistChip(

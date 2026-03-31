@@ -1384,6 +1384,12 @@
   <string name="agent_automation_title">Agent Automation</string>
   <string name="agent_automation_desc">Allow the assistant to set scheduled tasks (such as sending emails and keeping diaries).</string>
   <string name="agent_task_manager_desc">All Scheduled Tasks</string>
-
+  <!-- Assistant Context Priority -->
+  <string name="assistant_context_priority_group">Advanced Context Settings</string>
+  <string name="assistant_context_priority_title">Content Priority</string>
+  <string name="assistant_context_priority_desc">Determines which content is retained first when context space (tokens) is insufficient. Prioritizing chat history preserves more conversation details, while prioritizing memory fragments retains more retrieved background knowledge.</string>
+  <string name="assistant_context_priority_chat">Prioritize Chat History</string>
+  <string name="assistant_context_priority_memory">Prioritize Memory Fragments</string>
+  <string name="assistant_context_priority_balanced">Balanced Allocation (Recommended)</string>
 
 </resources>

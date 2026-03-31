@@ -1330,5 +1330,12 @@
   <string name="agent_automation_title">智能体自动化</string>
   <string name="agent_automation_desc">允许助手设置定时任务（如发邮件、记日记）</string>
   <string name="agent_task_manager_desc">所有定时任务</string>
+  <!-- Assistant Context Priority -->
+  <string name="assistant_context_priority_group">高级上下文设置</string>
+  <string name="assistant_context_priority_title">内容优先级</string>
+  <string name="assistant_context_priority_desc">当上下文空间（Token）不足时，决定优先保留哪部分内容。优先历史记录会保留更多对话细节，优先记忆片段则能保留更多检索到的背景知识。</string>
+  <string name="assistant_context_priority_chat">优先聊天记录</string>
+  <string name="assistant_context_priority_memory">优先记忆片段</string>
+  <string name="assistant_context_priority_balanced">平衡分配 (推荐)</string>
 
 </resources>

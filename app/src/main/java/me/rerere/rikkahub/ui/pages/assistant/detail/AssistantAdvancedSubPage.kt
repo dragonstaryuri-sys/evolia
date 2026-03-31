@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PriorityHigh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -34,6 +37,7 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.core.data.model.ContextPriority
 
 /**
  * Advanced tab - Notifications and custom request settings.
@@ -188,6 +192,41 @@ fun AssistantAdvancedSubPage(
                     )
                 }
             }
+        }
+        // ═══════════════════════════════════════════════════════════════════
+        // ADVANCED CONTEXT SETTINGS
+        // ═══════════════════════════════════════════════════════════════════
+        SettingsGroup(title = stringResource(R.string.assistant_context_priority_group)) {
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_context_priority_title),
+                subtitle = when (assistant.contextPriority) {
+                    ContextPriority.CHAT_HISTORY -> stringResource(R.string.assistant_context_priority_chat)
+                    ContextPriority.MEMORIES -> stringResource(R.string.assistant_context_priority_memory)
+                    ContextPriority.BALANCED -> stringResource(R.string.assistant_context_priority_balanced)
+                },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.PriorityHigh,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                onClick = {
+                    val nextPriority = when (assistant.contextPriority) {
+                        ContextPriority.BALANCED -> ContextPriority.CHAT_HISTORY
+                        ContextPriority.CHAT_HISTORY -> ContextPriority.MEMORIES
+                        ContextPriority.MEMORIES -> ContextPriority.BALANCED
+                    }
+                    onUpdate(assistant.copy(contextPriority = nextPriority))
+                }
+            )
+
+            Text(
+                text = stringResource(R.string.assistant_context_priority_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
         }
     }
 }
