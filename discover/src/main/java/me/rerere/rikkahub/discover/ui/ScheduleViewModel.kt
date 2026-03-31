@@ -60,25 +60,13 @@ class ScheduleViewModel(
         }
     }
 
-    fun addSchedule(
-        title: String,
-        content: String = "",
-        priority: Int = 1,
-        urgency: Int = 1,
-        difficulty: Int = 1,
-        startTime: Long = System.currentTimeMillis()
-    ) {
+    fun saveSchedule(schedule: ScheduleEntity) {
         viewModelScope.launch {
-            repository.addSchedule(
-                ScheduleEntity(
-                    title = title,
-                    content = content,
-                    priority = priority,
-                    urgency = urgency,
-                    difficulty = difficulty,
-                    startTime = startTime
-                )
-            )
+            if (schedule.id == 0L) {
+                repository.addSchedule(schedule)
+            } else {
+                repository.updateSchedule(schedule.copy(updatedAt = System.currentTimeMillis()))
+            }
         }
     }
 

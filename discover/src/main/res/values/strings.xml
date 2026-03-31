@@ -6,7 +6,9 @@
   <string name="discover_schedule_high_priority">High Priority</string>
   <string name="discover_schedule_all_tasks">Full Schedule List</string>
   <string name="discover_schedule_add_task">Add Schedule</string>
-  <string name="discover_schedule_input_hint">Enter</string>
+  <string name="discover_schedule_edit_task">Edit Schedule</string>
+  <string name="discover_schedule_input_hint">Enter title</string>
+  <string name="discover_schedule_content_hint">Enter description (optional)</string>
   <string name="discover_schedule_completed">Completed</string>
   <string name="discover_schedule_remind_me">Remind Me</string>
   <string name="discover_schedule_permission_title">Enable Notification Reminders</string>
@@ -30,4 +32,11 @@
   <string name="schedule_difficulty_1">Normal</string>
   <string name="schedule_difficulty_2">Not Simple</string>
   <string name="schedule_priority">Importance</string>
+
+  <string name="schedule_content">Content</string>
+  <string name="schedule_start_time">Start Time</string>
+  <string name="schedule_end_time">End Time</string>
+  <string name="schedule_reminder_time">Reminder Time</string>
+  <string name="schedule_none">None</string>
 </resources>
+

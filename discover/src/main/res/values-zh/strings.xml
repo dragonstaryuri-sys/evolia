@@ -1,34 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="discover_schedule_title">待完成事项</string>
-    <string name="discover_schedule_count">(%1$d)</string>
-    <string name="discover_schedule_no_tasks">暂时没有日程哦</string>
-    <string name="discover_schedule_high_priority">高优先级</string>
-    <string name="discover_schedule_all_tasks">全日程列表</string>
-    <string name="discover_schedule_add_task">添加日程</string>
-    <string name="discover_schedule_input_hint">请输入</string>
-    <string name="discover_schedule_completed">已完成</string>
-    <string name="discover_schedule_remind_me">提醒我</string>
-    <string name="discover_schedule_permission_title">开启通知提醒</string>
-    <string name="discover_schedule_permission_desc">为了不错过重要日程，请允许Evolia发送提醒通知，我会很温柔地提醒你的～</string>
-    <string name="discover_schedule_complete_cheer">做得太棒了！继续加油哦！</string>
-    <string name="discover_schedule_status_pending">待处理</string>
-    <string name="discover_schedule_status_completed">已完成</string>
-    <string name="discover_schedule_no_completed_tasks">一个都没做呢</string>
+  <string name="discover_schedule_title">待完成事项</string>
+  <string name="discover_schedule_count">(%1$d)</string>
+  <string name="discover_schedule_no_tasks">暂时没有日程哦</string>
+  <string name="discover_schedule_high_priority">高优先级</string>
+  <string name="discover_schedule_all_tasks">全日程列表</string>
+  <string name="discover_schedule_add_task">添加日程</string>
+  <string name="discover_schedule_input_hint">请输入</string>
+  <string name="discover_schedule_completed">已完成</string>
+  <string name="discover_schedule_remind_me">提醒我</string>
+  <string name="discover_schedule_permission_title">开启通知提醒</string>
+  <string name="discover_schedule_permission_desc">为了不错过重要日程，请允许Evolia发送提醒通知，我会很温柔地提醒你的～</string>
+  <string name="discover_schedule_complete_cheer">做得太棒了！继续加油哦！</string>
+  <string name="discover_schedule_status_pending">待处理</string>
+  <string name="discover_schedule_status_completed">已完成</string>
+  <string name="discover_schedule_no_completed_tasks">一个都没做呢</string>
 
-    <string name="schedule_priority_0">不重要</string>
-    <string name="schedule_priority_1">一般</string>
-    <string name="schedule_priority_2">重要</string>
+  <string name="schedule_priority_0">不重要</string>
+  <string name="schedule_priority_1">一般</string>
+  <string name="schedule_priority_2">重要</string>
 
-    <string name="schedule_urgency">紧急程度</string>
-    <string name="schedule_urgency_0">不急</string>
-    <string name="schedule_urgency_1">一般</string>
-    <string name="schedule_urgency_2">很急</string>
+  <string name="schedule_urgency">紧急程度</string>
+  <string name="schedule_urgency_0">不急</string>
+  <string name="schedule_urgency_1">一般</string>
+  <string name="schedule_urgency_2">很急</string>
 
-    <string name="schedule_difficulty">难度</string>
-    <string name="schedule_difficulty_0">简单</string>
-    <string name="schedule_difficulty_1">一般</string>
-    <string name="schedule_difficulty_2">不简单</string>
-
+  <string name="schedule_difficulty">难度</string>
+  <string name="schedule_difficulty_0">简单</string>
+  <string name="schedule_difficulty_1">一般</string>
+  <string name="schedule_difficulty_2">不简单</string>
   <string name="schedule_priority">重要度</string>
+  <string name="discover_schedule_edit_task">编辑日程</string>
+  <string name="discover_schedule_content_hint">输入备注（可选）</string>
+  <string name="schedule_content">内容</string>
+  <string name="schedule_start_time">开始时间</string>
+  <string name="schedule_end_time">结束时间</string>
+  <string name="schedule_reminder_time">提醒时间</string>
+  <string name="schedule_none">无</string>
 </resources>

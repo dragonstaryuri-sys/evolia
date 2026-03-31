@@ -1,21 +1,25 @@
 package me.rerere.rikkahub.discover.ui
 
-import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -26,9 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.discover.R
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
-import me.rerere.rikkahub.common.ui.components.ExpandableCard // 引用 common 里的组件
+import me.rerere.rikkahub.common.ui.components.ExpandableCard
 import org.koin.androidx.compose.koinViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScheduleScreen(
     onBack: () -> Unit,
@@ -39,8 +46,10 @@ fun ScheduleScreen(
     val haptic = LocalHapticFeedback.current
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    var showAddDialog by remember { mutableStateOf(false) }
-    var selectedTabIndex by remember { mutableStateOf(0) }
+    var editingSchedule by remember { mutableStateOf<ScheduleEntity?>(null) }
+    var showEditDialog by remember { mutableStateOf(false) }
+
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
     val tabs = listOf(
         stringResource(R.string.discover_schedule_status_pending),
         stringResource(R.string.discover_schedule_status_completed)
@@ -62,7 +71,7 @@ fun ScheduleScreen(
                     },
                     scrollBehavior = scrollBehavior
                 )
-                TabRow(
+                SecondaryTabRow(
                     selectedTabIndex = selectedTabIndex,
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.primary,
@@ -85,7 +94,8 @@ fun ScheduleScreen(
             FloatingActionButton(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    showAddDialog = true
+                    editingSchedule = null
+                    showEditDialog = true
                 },
                 shape = CircleShape
             ) {
@@ -128,7 +138,6 @@ fun ScheduleScreen(
                     }
                 }
             } else if (selectedTabIndex == 0) {
-                // 待办列表：按难度分组
                 listOf(0, 1, 2).forEach { diff ->
                     val items = groupedSchedules[diff] ?: emptyList()
                     if (items.isNotEmpty()) {
@@ -140,6 +149,10 @@ fun ScheduleScreen(
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     viewModel.toggleComplete(it)
                                 },
+                                onClick = {
+                                    editingSchedule = it
+                                    showEditDialog = true
+                                },
                                 onDelete = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     viewModel.deleteSchedule(it.id)
@@ -149,13 +162,16 @@ fun ScheduleScreen(
                     }
                 }
             } else {
-                // 已完成列表：不分组，直接按时间降序（ViewModel 已排好序）
                 items(displaySchedules, key = { it.id }) { schedule ->
                     ScheduleItem(
                         schedule = schedule,
                         onToggle = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             viewModel.toggleComplete(schedule)
+                        },
+                        onClick = {
+                            editingSchedule = schedule
+                            showEditDialog = true
                         },
                         onDelete = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -167,12 +183,13 @@ fun ScheduleScreen(
         }
     }
 
-    if (showAddDialog) {
-        AddScheduleDialog(
-            onDismiss = { showAddDialog = false },
-            onConfirm = { title, priority, urgency, difficulty ->
-                viewModel.addSchedule(title, priority = priority, urgency = urgency, difficulty = difficulty)
-                showAddDialog = false
+    if (showEditDialog) {
+        ScheduleEditDialog(
+            initialSchedule = editingSchedule,
+            onDismiss = { showEditDialog = false },
+            onSave = { schedule ->
+                viewModel.saveSchedule(schedule)
+                showEditDialog = false
             }
         )
     }
@@ -183,6 +200,7 @@ private fun DifficultyGroup(
     difficulty: Int,
     schedules: List<ScheduleEntity>,
     onToggle: (ScheduleEntity) -> Unit,
+    onClick: (ScheduleEntity) -> Unit,
     onDelete: (ScheduleEntity) -> Unit
 ) {
     val title = when(difficulty) {
@@ -191,7 +209,6 @@ private fun DifficultyGroup(
         else -> stringResource(R.string.schedule_difficulty_0)
     }
 
-    // 调用 common 模块中的折叠组件
     ExpandableCard(
         title = title,
         initiallyExpanded = true
@@ -200,6 +217,7 @@ private fun DifficultyGroup(
             ScheduleItem(
                 schedule = schedule,
                 onToggle = { onToggle(schedule) },
+                onClick = { onClick(schedule) },
                 onDelete = { onDelete(schedule) }
             )
         }
@@ -210,9 +228,9 @@ private fun DifficultyGroup(
 private fun ScheduleItem(
     schedule: ScheduleEntity,
     onToggle: () -> Unit,
+    onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    // 重新定义背景色：高优先级更红，中优先级更蓝，低优先级更灰
     val itemBaseColor = when (schedule.priority) {
         2 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
         1 -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -226,7 +244,7 @@ private fun ScheduleItem(
         } else {
             itemBaseColor
         },
-        onClick = onToggle,
+        onClick = onClick,
         border = if (!schedule.isCompleted && schedule.priority == 2) {
             BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f))
         } else null
@@ -252,7 +270,8 @@ private fun ScheduleItem(
 
                 Row(
                     modifier = Modifier.padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     PropertyTag(
                         text = when(schedule.priority) {
@@ -311,90 +330,250 @@ private fun PropertyTag(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddScheduleDialog(onDismiss: () -> Unit, onConfirm: (String, Int, Int, Int) -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var priority by remember { mutableStateOf(1) }
-    var urgency by remember { mutableStateOf(1) }
-    var difficulty by remember { mutableStateOf(1) }
+private fun ScheduleEditDialog(
+    initialSchedule: ScheduleEntity?,
+    onDismiss: () -> Unit,
+    onSave: (ScheduleEntity) -> Unit
+) {
+    var title by remember { mutableStateOf(initialSchedule?.title ?: "") }
+    // 保持 content 状态但不再 UI 中显示，用于静默保留历史数据
+    val content by remember { mutableStateOf(initialSchedule?.content ?: "") }
+    var priority by remember { mutableIntStateOf(initialSchedule?.priority ?: 1) }
+    var urgency by remember { mutableIntStateOf(initialSchedule?.urgency ?: 1) }
+    var difficulty by remember { mutableIntStateOf(initialSchedule?.difficulty ?: 1) }
+
+    var startTime by remember { mutableLongStateOf(initialSchedule?.startTime ?: System.currentTimeMillis()) }
+    var endTime by remember { mutableStateOf(initialSchedule?.endTime) }
+    var reminderTime by remember { mutableStateOf(initialSchedule?.reminderTime) }
+
     val haptic = LocalHapticFeedback.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.discover_schedule_add_task)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    placeholder = { Text(stringResource(R.string.discover_schedule_input_hint)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Column {
-                    Text(
-                        text = stringResource(R.string.schedule_priority) + ": " +
-                            when(priority) { 2 -> stringResource(R.string.schedule_priority_2) 1 -> stringResource(R.string.schedule_priority_1) else -> stringResource(R.string.schedule_priority_0) },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Slider(
-                        value = priority.toFloat(),
-                        onValueChange = {
-                            if (it.toInt() != priority) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            priority = it.toInt()
-                        },
-                        valueRange = 0f..2f,
-                        steps = 1
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = stringResource(R.string.schedule_urgency) + ": " +
-                            when(urgency) { 2 -> stringResource(R.string.schedule_urgency_2) 1 -> stringResource(R.string.schedule_urgency_1) else -> stringResource(R.string.schedule_urgency_0) },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Slider(
-                        value = urgency.toFloat(),
-                        onValueChange = {
-                            if (it.toInt() != urgency) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            urgency = it.toInt()
-                        },
-                        valueRange = 0f..2f,
-                        steps = 1
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = stringResource(R.string.schedule_difficulty) + ": " +
-                            when(difficulty) { 2 -> stringResource(R.string.schedule_difficulty_2) 1 -> stringResource(R.string.schedule_difficulty_1) else -> stringResource(R.string.schedule_difficulty_0) },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                    Slider(
-                        value = difficulty.toFloat(),
-                        onValueChange = {
-                            if (it.toInt() != difficulty) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            difficulty = it.toInt()
-                        },
-                        valueRange = 0f..2f,
-                        steps = 1
-                    )
-                }
-            }
-        },
         confirmButton = {
-            Button(onClick = { if (title.isNotBlank()) onConfirm(title, priority, urgency, difficulty) }) {
+            Button(
+                onClick = {
+                    if (title.isNotBlank()) {
+                        val schedule = (initialSchedule ?: ScheduleEntity(
+                            title = title,
+                            startTime = startTime
+                        )).copy(
+                            title = title,
+                            content = content, // 静默保存原有 content
+                            priority = priority,
+                            urgency = urgency,
+                            difficulty = difficulty,
+                            startTime = startTime,
+                            endTime = endTime,
+                            reminderTime = reminderTime,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        onSave(schedule)
+                    }
+                },
+                enabled = title.isNotBlank()
+            ) {
                 Text(stringResource(android.R.string.ok))
             }
         },
         dismissButton = {
-            TextButton(onClick = {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onDismiss()
-            }) {
+            TextButton(onClick = onDismiss) {
                 Text(stringResource(android.R.string.cancel))
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Title
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text(stringResource(R.string.discover_schedule_input_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                // 详细描述 (Content) 已移除，以节省空间并弃用该功能
+
+                // Compact Property Selectors
+                PropertySelector(
+                    label = stringResource(R.string.schedule_priority),
+                    value = priority,
+                    onValueChange = { priority = it },
+                    haptic = haptic,
+                    labelProvider = {
+                        when(it) {
+                            2 -> stringResource(R.string.schedule_priority_2)
+                            1 -> stringResource(R.string.schedule_priority_1)
+                            else -> stringResource(R.string.schedule_priority_0)
+                        }
+                    }
+                )
+
+                PropertySelector(
+                    label = stringResource(R.string.schedule_urgency),
+                    value = urgency,
+                    onValueChange = { urgency = it },
+                    haptic = haptic,
+                    labelProvider = {
+                        when(it) {
+                            2 -> stringResource(R.string.schedule_urgency_2)
+                            1 -> stringResource(R.string.schedule_urgency_1)
+                            else -> stringResource(R.string.schedule_urgency_0)
+                        }
+                    }
+                )
+
+                PropertySelector(
+                    label = stringResource(R.string.schedule_difficulty),
+                    value = difficulty,
+                    onValueChange = { difficulty = it },
+                    haptic = haptic,
+                    labelProvider = {
+                        when(it) {
+                            2 -> stringResource(R.string.schedule_difficulty_2)
+                            1 -> stringResource(R.string.schedule_difficulty_1)
+                            else -> stringResource(R.string.schedule_difficulty_0)
+                        }
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+                // Time Pickers
+                TimeSelector(
+                    label = stringResource(R.string.schedule_start_time),
+                    time = startTime,
+                    icon = Icons.Rounded.Timer,
+                    onTimeSelected = { it?.let { startTime = it } }
+                )
+
+                TimeSelector(
+                    label = stringResource(R.string.schedule_end_time),
+                    time = endTime,
+                    icon = Icons.Rounded.CalendarMonth,
+                    onTimeSelected = { endTime = it },
+                    allowClear = true
+                )
+
+                TimeSelector(
+                    label = stringResource(R.string.schedule_reminder_time),
+                    time = reminderTime,
+                    icon = Icons.Rounded.Notifications,
+                    onTimeSelected = { reminderTime = it },
+                    allowClear = true
+                )
             }
         }
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PropertySelector(
+    label: String,
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    labelProvider: @Composable (Int) -> String
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            listOf(0, 1, 2).forEach { index ->
+                SegmentedButton(
+                    selected = value == index,
+                    onClick = {
+                        if (value != index) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onValueChange(index)
+                        }
+                    },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = 3),
+                    label = {
+                        Text(
+                            text = labelProvider(index),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeSelector(
+    label: String,
+    time: Long?,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onTimeSelected: (Long?) -> Unit,
+    allowClear: Boolean = false
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val dateFormatter = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
+
+    fun showPickers() {
+        val calendar = Calendar.getInstance().apply {
+            time?.let { this.timeInMillis = it }
+        }
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                calendar.set(Calendar.YEAR, year)
+                calendar.set(Calendar.MONTH, month)
+                calendar.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+
+                android.app.TimePickerDialog(
+                    context,
+                    { _, hourOfDay, minute ->
+                        calendar.set(Calendar.HOUR_OF_DAY, hourOfDay)
+                        calendar.set(Calendar.MINUTE, minute)
+                        onTimeSelected(calendar.timeInMillis)
+                    },
+                    calendar.get(Calendar.HOUR_OF_DAY),
+                    calendar.get(Calendar.MINUTE),
+                    true
+                ).show()
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { showPickers() }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = time?.let { dateFormatter.format(Date(it)) } ?: stringResource(R.string.schedule_none),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        if (allowClear && time != null) {
+            IconButton(onClick = { onTimeSelected(null) }) {
+                Icon(Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
 }
