@@ -444,8 +444,8 @@ class LocalTools(
                                 put("description", "Difficulty (0: Simple, 1: Normal, 2: Not Simple)")
                             })
                             put("end_time", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Unix timestamp in milliseconds.Deadline for the schedule. Fill in only if provided by the user")
+                                put("type", "string")
+                                put("description", "Deadline, please use ISO 8601 format (e.g., 2023-10-27T10:00:00).Fill in only if provided by the user")
                             })
                         },
                         required = listOf("action")
@@ -461,7 +461,12 @@ class LocalTools(
                                 val priority = json["priority"]?.jsonPrimitive?.intOrNull ?: 1
                                 val urgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: 1
                                 val difficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
-                                val endTime = json["end_time"]?.jsonPrimitive?.longOrNull
+                                val endTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
+                                val endTime = endTimeStr?.let {
+                                    runCatching {
+                                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault()).parse(it)?.time
+                                    }.getOrNull()
+                                }
                                 scheduleRepository.addSchedule(
                                     ScheduleEntity(
                                         title = title,
@@ -477,6 +482,7 @@ class LocalTools(
                             }
                             "list" -> {
                                 val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
+                                val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
                                 buildJsonObject {
                                     put("schedules", JsonArray(schedules.map { s ->
                                         buildJsonObject {
@@ -485,8 +491,8 @@ class LocalTools(
                                             put("priority", s.priority)
                                             put("urgency", s.urgency)
                                             put("difficulty", s.difficulty)
-                                            put("start_time", s.startTime)
-                                            s.endTime?.let { put("end_time", it) }
+                                            put("start_time", df.format(java.util.Date(s.startTime)))
+                                            s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
                                             put("is_completed", s.isCompleted)
                                         }
                                     }))
@@ -500,15 +506,20 @@ class LocalTools(
                                     val newPriority = json["priority"]?.jsonPrimitive?.intOrNull ?: schedule.priority
                                     val newUrgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
                                     val newDifficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
-                                    val newStartTime = json["start_time"]?.jsonPrimitive?.longOrNull ?: schedule.startTime
-                                    val newEndTime = json["end_time"]?.jsonPrimitive?.longOrNull ?: schedule.endTime
+                                    val newEndTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
+                                    val newEndTime = if (newEndTimeStr != null) {
+                                        runCatching {
+                                            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault()).parse(newEndTimeStr)?.time
+                                        }.getOrNull() ?: schedule.endTime
+                                    } else {
+                                        schedule.endTime
+                                    }
 
                                     scheduleRepository.updateSchedule(schedule.copy(
                                         title = newTitle,
                                         priority = newPriority,
                                         urgency = newUrgency,
                                         difficulty = newDifficulty,
-                                        startTime = newStartTime,
                                         endTime = newEndTime,
                                         updatedAt = System.currentTimeMillis()
                                     ))
