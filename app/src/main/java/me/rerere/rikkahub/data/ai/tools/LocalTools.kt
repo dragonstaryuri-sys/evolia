@@ -431,10 +431,6 @@ class LocalTools(
                                 put("type", "string")
                                 put("description", "The title of the schedule, required for 'add'")
                             })
-                            put("content", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Details about the schedule")
-                            })
                             put("priority", buildJsonObject {
                                 put("type", "integer")
                                 put("description", "Priority (0: Not Important, 1: Normal, 2: Important)")
@@ -447,6 +443,10 @@ class LocalTools(
                                 put("type", "integer")
                                 put("description", "Difficulty (0: Simple, 1: Normal, 2: Not Simple)")
                             })
+                            put("end_time", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Unix timestamp in milliseconds.Deadline for the schedule. Fill in only if provided by the user")
+                            })
                         },
                         required = listOf("action")
                     )
@@ -458,18 +458,19 @@ class LocalTools(
                         when (action) {
                             "add" -> {
                                 val title = json["title"]?.jsonPrimitive?.contentOrNull ?: ""
-                                val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
                                 val priority = json["priority"]?.jsonPrimitive?.intOrNull ?: 1
                                 val urgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: 1
                                 val difficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
+                                val endTime = json["end_time"]?.jsonPrimitive?.longOrNull
                                 scheduleRepository.addSchedule(
                                     ScheduleEntity(
                                         title = title,
-                                        content = content,
+                                        content = "",
                                         priority = priority,
                                         urgency = urgency,
                                         difficulty = difficulty,
-                                        startTime = System.currentTimeMillis()
+                                        startTime = System.currentTimeMillis(),
+                                        endTime = endTime
                                     )
                                 )
                                 buildJsonObject { put("success", true) }
@@ -481,10 +482,11 @@ class LocalTools(
                                         buildJsonObject {
                                             put("id", s.id)
                                             put("title", s.title)
-                                            put("content", s.content)
                                             put("priority", s.priority)
                                             put("urgency", s.urgency)
                                             put("difficulty", s.difficulty)
+                                            put("start_time", s.startTime)
+                                            s.endTime?.let { put("end_time", it) }
                                             put("is_completed", s.isCompleted)
                                         }
                                     }))
@@ -495,17 +497,19 @@ class LocalTools(
                                 val schedule = scheduleRepository.getScheduleById(id)
                                 if (schedule != null) {
                                     val newTitle = json["title"]?.jsonPrimitive?.contentOrNull ?: schedule.title
-                                    val newContent = json["content"]?.jsonPrimitive?.contentOrNull ?: schedule.content
                                     val newPriority = json["priority"]?.jsonPrimitive?.intOrNull ?: schedule.priority
                                     val newUrgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
                                     val newDifficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
+                                    val newStartTime = json["start_time"]?.jsonPrimitive?.longOrNull ?: schedule.startTime
+                                    val newEndTime = json["end_time"]?.jsonPrimitive?.longOrNull ?: schedule.endTime
 
                                     scheduleRepository.updateSchedule(schedule.copy(
                                         title = newTitle,
-                                        content = newContent,
                                         priority = newPriority,
                                         urgency = newUrgency,
                                         difficulty = newDifficulty,
+                                        startTime = newStartTime,
+                                        endTime = newEndTime,
                                         updatedAt = System.currentTimeMillis()
                                     ))
                                     buildJsonObject { put("success", true) }
