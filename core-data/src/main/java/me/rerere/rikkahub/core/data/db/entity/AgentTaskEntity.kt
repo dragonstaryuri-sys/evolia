@@ -20,7 +20,7 @@ data class AgentTaskEntity(
     val scheduledTime: Long, // Timestamp
     @ColumnInfo(name = "repeat_interval", defaultValue = "0")
     val repeatInterval: Long = 0, // 0 means no repeat, else interval in ms
-    @ColumnInfo(name = "is_executed")
+    @ColumnInfo(name = "is_executed", defaultValue = "0")
     val isExecuted: Boolean = false,
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis()

@@ -209,7 +209,6 @@ class ChatService(
                 // 初始化/获取监控会话
                 initializeConversation(AGENT_MONITOR_CONVERSATION_ID)
                 val currentConv = getConversationFlow(AGENT_MONITOR_CONVERSATION_ID).value
-
                 // 构造消息节点并保存
                 val newNode = UIMessage(
                     role = MessageRole.USER,
@@ -219,10 +218,10 @@ class ChatService(
                     messageNodes = currentConv.messageNodes + newNode,
                     // 核心：将会话的 assistantId 设为任务原本的 assistantId
                     // 这样 handleMessageComplete 触发时，就会加载它的人格、记忆和工具
-                    assistantId = originalAssistantId
+                    assistantId = Uuid.parse("00000000-0000-0000-0000-000000000001")
                 )
                 saveConversation(AGENT_MONITOR_CONVERSATION_ID, updatedConv)
-                handleMessageComplete(AGENT_MONITOR_CONVERSATION_ID)
+                handleMessageComplete(AGENT_MONITOR_CONVERSATION_ID, assistantOverride = originalAssistant)
 
             } catch (e: Exception) {
                 Log.e(TAG, "后台任务执行失败", e)
@@ -413,17 +412,14 @@ class ChatService(
         job.invokeOnCompletion { setGenerationJob(conversationId, null); appScope.launch { delay(500); checkAllConversationsReferences() } }
     }
 
-    private suspend fun handleMessageComplete(conversationId: Uuid, messageRange: ClosedRange<Int>? = null) {
+    private suspend fun handleMessageComplete(
+        conversationId: Uuid,
+        messageRange: ClosedRange<Int>? = null,
+        assistantOverride: me.rerere.rikkahub.core.data.model.Assistant? = null // 新增：允许传入覆盖的智能体
+    ) {
         val settings = settingsStore.settingsFlow.first()
-        val conversation = getConversationFlow(conversationId).value
-        // 1. 根据会话绑定的 assistantId 找到对应的智能体对象
-        val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
-        // 2. 根据该智能体的配置找到对应的模型
-        val modelId = assistant.chatModelId ?: settings.chatModelId
-        val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return
-        var firstTokenTime: Long? = null
-
         runCatching {
+
             val conversation = getConversationFlow(conversationId).value
             updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
             // 核心改造：不再盲目使用 settings.getCurrentAssistant()
@@ -452,8 +448,8 @@ class ChatService(
                             val results = memoryRepository.retrieveRelevantMemories(assistantId = assistant.id.toString(), query = lastUserMsg, limit = assistant.ragLimit, similarityThreshold = assistant.ragSimilarityThreshold, includeCore = assistant.ragIncludeCore, includeEpisodes = assistant.ragIncludeEpisodes)
                             if (settings.enableRagLogging) results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
                             results
-                        } else memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
-                    } else memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())
+                        } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                    } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                 } else emptyList(),
                 inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
                 outputTransformers = outputTransformers,
