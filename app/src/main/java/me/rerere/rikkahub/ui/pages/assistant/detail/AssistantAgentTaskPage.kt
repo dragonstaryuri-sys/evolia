@@ -23,6 +23,10 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import java.text.SimpleDateFormat
 import java.util.*
+import me.rerere.rikkahub.common.JsonInstant
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +76,16 @@ private fun AgentTaskItem(task: AgentTaskEntity, onDelete: (AgentTaskEntity) -> 
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    // 安全解析 task_data 以获取自定义名称
+    val taskName = remember(task.taskData) {
+        runCatching {
+            JsonInstant.parseToJsonElement(task.taskData)
+                .jsonObject["task_name"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+        }.getOrNull()
+    }
+
     val icon = when (task.taskType) {
         "EMAIL" -> Icons.Rounded.Email
         "NOTIFICATION" -> Icons.Rounded.Notifications
@@ -85,6 +99,9 @@ private fun AgentTaskItem(task: AgentTaskEntity, onDelete: (AgentTaskEntity) -> 
         "DIARY" -> stringResource(R.string.agent_task_type_diary)
         else -> task.taskType
     }
+
+    // 优先显示自定义名称，如果没有则显示任务类型
+    val displayTitle = if (!taskName.isNullOrBlank()) taskName else typeText
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -103,7 +120,7 @@ private fun AgentTaskItem(task: AgentTaskEntity, onDelete: (AgentTaskEntity) -> 
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = typeText,
+                    text = displayTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
