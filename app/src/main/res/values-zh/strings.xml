@@ -1282,7 +1282,7 @@
   <string name="diary_no_new_messages">TA现在不想写日记...</string>
   <!-- 数据备份页面新增 -->
   <string name="backup_page_auto_backup_on_start">启动时自动备份</string>
-  <string name="backup_page_auto_backup_on_start_desc">每次进入应用时自动执行 WebDAV 备份任务。</string>
+  <string name="backup_page_auto_backup_on_start_desc">每日首次启动app时，自动进行webdav备份</string>
   <string name="backup_page_backup_started_background">备份任务已在后台启动</string>
   <string name="notification_channel_backup">数据备份</string>
   <string name="backup_notification_success_title">备份成功</string>

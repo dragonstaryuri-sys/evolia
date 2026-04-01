@@ -43,6 +43,9 @@ import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 private const val TAG = "LastChatApp"
 
@@ -162,20 +165,30 @@ class LastChatApp : Application() {
 
         // Auto backup on start
         get<AppScope>().launch {
-            val settings = get<SettingsStore>().settingsFlow.first { !it.init }
+            val settingsStore = get<SettingsStore>()
+            val settings = settingsStore.settingsFlow.first { !it.init }
             if (settings.autoBackupOnStart && settings.webDavConfig.url.isNotBlank()) {
-                Log.i(TAG, "Auto backup on start triggered")
-                WorkManager.getInstance(this@LastChatApp).enqueueUniqueWork(
-                    "auto_backup_on_start",
-                    ExistingWorkPolicy.REPLACE,
-                    OneTimeWorkRequestBuilder<BackupWorker>()
-                        .setConstraints(
-                            Constraints.Builder()
-                                .setRequiredNetworkType(NetworkType.CONNECTED)
-                                .build()
-                        )
-                        .build()
-                )
+                val lastBackupTime = settings.lastAutoBackupTime
+                val lastBackupDate = Instant.ofEpochMilli(lastBackupTime).atZone(ZoneId.systemDefault()).toLocalDate()
+                val today = LocalDate.now()
+
+                if (lastBackupDate.isBefore(today)) {
+                    Log.i(TAG, "Auto backup on start triggered")
+                    WorkManager.getInstance(this@LastChatApp).enqueueUniqueWork(
+                        "auto_backup_on_start",
+                        ExistingWorkPolicy.REPLACE,
+                        OneTimeWorkRequestBuilder<BackupWorker>()
+                            .setConstraints(
+                                Constraints.Builder()
+                                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                                    .build()
+                            )
+                            .build()
+                    )
+                    settingsStore.update(settings.copy(lastAutoBackupTime = System.currentTimeMillis()))
+                } else {
+                    Log.i(TAG, "Auto backup on start skipped (already backed up today)")
+                }
             }
         }
     }

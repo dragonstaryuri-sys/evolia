@@ -43,6 +43,7 @@ import org.koin.core.component.get
 import kotlin.uuid.Uuid
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 private const val TAG = "PreferencesStore"
@@ -108,6 +109,7 @@ class SettingsStore(
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
         val AUTO_BACKUP_ON_START = booleanPreferencesKey("auto_backup_on_start")
+        val LAST_AUTO_BACKUP_TIME = longPreferencesKey("last_auto_backup_time")
     }
 
     private val dataStore = context.settingsStore
@@ -199,6 +201,7 @@ class SettingsStore(
                     JsonInstant.decodeFromString(it)
                 } ?: TextSelectionConfig(),
                 autoBackupOnStart = preferences[AUTO_BACKUP_ON_START] ?: false,
+                lastAutoBackupTime = preferences[LAST_AUTO_BACKUP_TIME] ?: 0L,
             )
         }
         .map {
@@ -328,6 +331,7 @@ class SettingsStore(
             preferences[LOREBOOKS] = JsonInstant.encodeToString(settingsToSave.lorebooks)
             preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(settingsToSave.textSelectionConfig)
             preferences[AUTO_BACKUP_ON_START] = settingsToSave.autoBackupOnStart
+            preferences[LAST_AUTO_BACKUP_TIME] = settingsToSave.lastAutoBackupTime
         }
     }
 
@@ -401,6 +405,7 @@ data class Settings(
     val lorebooks: List<Lorebook> = emptyList(),
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val autoBackupOnStart: Boolean = false,
+    val lastAutoBackupTime: Long = 0L,
 ) { companion object { fun dummy() = Settings(init = true) } }
 
 @Serializable data class RpStyleRule(val id: String = Uuid.random().toString(), val pattern: String = "*", val colorHex: String = "#808080", val enabled: Boolean = true)
