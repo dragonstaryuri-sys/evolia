@@ -18,6 +18,8 @@ data class AgentTaskEntity(
     val taskData: String, // JSON payload
     @ColumnInfo(name = "scheduled_time")
     val scheduledTime: Long, // Timestamp
+    @ColumnInfo(name = "end_time")
+    val endTime: Long? = null,
     @ColumnInfo(name = "repeat_interval", defaultValue = "0")
     val repeatInterval: Long = 0, // 0 means no repeat, else interval in ms
     @ColumnInfo(name = "is_executed")
