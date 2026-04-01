@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 27,
-    "identityHash": "4f8851bbeaa4e097ec0efece288e331f",
+    "identityHash": "2ae242832ff0f5795ab2724a239750df",
     "entities": [
       {
         "tableName": "ConversationEntity",
@@ -560,7 +560,7 @@
       },
       {
         "tableName": "agent_tasks",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assistant_id` TEXT NOT NULL, `task_type` TEXT NOT NULL, `task_data` TEXT NOT NULL, `scheduled_time` INTEGER NOT NULL, `repeat_interval` INTEGER NOT NULL DEFAULT 0, `is_executed` INTEGER NOT NULL, `created_at` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assistant_id` TEXT NOT NULL, `task_type` TEXT NOT NULL, `task_data` TEXT NOT NULL, `scheduled_time` INTEGER NOT NULL, `end_time` INTEGER, `repeat_interval` INTEGER NOT NULL DEFAULT 0, `is_executed` INTEGER NOT NULL DEFAULT 0, `created_at` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -593,6 +593,11 @@
             "notNull": true
           },
           {
+            "fieldPath": "endTime",
+            "columnName": "end_time",
+            "affinity": "INTEGER"
+          },
+          {
             "fieldPath": "repeatInterval",
             "columnName": "repeat_interval",
             "affinity": "INTEGER",
@@ -603,7 +608,8 @@
             "fieldPath": "isExecuted",
             "columnName": "is_executed",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "createdAt",
@@ -622,7 +628,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4f8851bbeaa4e097ec0efece288e331f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2ae242832ff0f5795ab2724a239750df')"
     ]
   }
 }

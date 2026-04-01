@@ -113,6 +113,8 @@ abstract class AppDatabase : RoomDatabase() {
                         `task_type` TEXT NOT NULL,
                         `task_data` TEXT NOT NULL,
                         `scheduled_time` INTEGER NOT NULL,
+                        `end_time` INTEGER,
+                        `repeat_interval` INTEGER NOT NULL DEFAULT 0,
                         `is_executed` INTEGER NOT NULL DEFAULT 0,
                         `created_at` INTEGER NOT NULL
                     )
@@ -123,9 +125,35 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                Log.i(TAG, "migrate: adding urgency and difficulty to schedules table")
-                db.execSQL("ALTER TABLE schedules ADD COLUMN urgency INTEGER NOT NULL DEFAULT 1")
-                db.execSQL("ALTER TABLE schedules ADD COLUMN difficulty INTEGER NOT NULL DEFAULT 1")
+                Log.i(TAG, "migrate: updating schedules table")
+                // Recreate the table to support the new default value for priority and add urgency/difficulty
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `schedules_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `start_time` INTEGER NOT NULL,
+                        `end_time` INTEGER,
+                        `reminder_time` INTEGER,
+                        `priority` INTEGER NOT NULL DEFAULT 1,
+                        `urgency` INTEGER NOT NULL DEFAULT 1,
+                        `difficulty` INTEGER NOT NULL DEFAULT 1,
+                        `is_completed` INTEGER NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `schedules_new` (id, title, content, start_time, end_time, reminder_time, priority, is_completed, category, created_at, updated_at)
+                    SELECT id, title, content, start_time, end_time, reminder_time, priority, is_completed, category, created_at, updated_at FROM schedules
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE schedules")
+                db.execSQL("ALTER TABLE schedules_new RENAME TO schedules")
             }
         }
 
