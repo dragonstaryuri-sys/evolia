@@ -87,6 +87,9 @@ import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 
 private const val TAG = "ChatService"
 
@@ -127,7 +130,8 @@ class ChatService(
         val tokensSaved: Int = 0,
         val errorMessage: String? = null
     )
-
+    // 监控智能体的固定会话 ID
+    private val AGENT_MONITOR_CONVERSATION_ID = Uuid.parse("00000000-0000-0000-0000-000000000001")
     private val conversations = ConcurrentHashMap<Uuid, MutableStateFlow<Conversation>>()
     private val conversationReferences = ConcurrentHashMap<Uuid, Int>()
     private val temporaryConversations = ConcurrentHashMap.newKeySet<Uuid>()
@@ -182,6 +186,47 @@ class ChatService(
         appScope.launch {
             delay(500)
             checkAllConversationsReferences()
+        }
+    }
+    suspend fun executeAgentTask(task: me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity) {
+        val data = me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(task.taskData) as? JsonObject ?: return
+        val instruction = data["instruction"]?.jsonPrimitive?.contentOrNull ?: return
+
+        // 获取该任务原本所属的智能体名字
+        val settings = settingsStore.settingsFlow.first()
+        val originalAssistantId = Uuid.parse(task.assistantId)
+        val originalAssistant = settings.getAssistantById(originalAssistantId)
+        val assistantName = originalAssistant?.name ?: "未知智能体"
+
+        // 1. 在监控会话中发送一条带标记的消息
+        val monitorMsg = "【定时任务触发 - $assistantName】\n$instruction"
+
+        // 启动后台生成逻辑
+        appScope.launch {
+            try {
+                // 这里我们需要模拟 sendMessage 的逻辑，但目标是监控会话
+                // 并且我们要确保使用的是任务原本所属 Assistant 的配置（模型、工具等）
+                // 初始化/获取监控会话
+                initializeConversation(AGENT_MONITOR_CONVERSATION_ID)
+                val currentConv = getConversationFlow(AGENT_MONITOR_CONVERSATION_ID).value
+
+                // 构造消息节点并保存
+                val newNode = UIMessage(
+                    role = MessageRole.USER,
+                    parts = listOf(UIMessagePart.Text(monitorMsg))
+                ).toMessageNode()
+                val updatedConv = currentConv.copy(
+                    messageNodes = currentConv.messageNodes + newNode,
+                    // 核心：将会话的 assistantId 设为任务原本的 assistantId
+                    // 这样 handleMessageComplete 触发时，就会加载它的人格、记忆和工具
+                    assistantId = originalAssistantId
+                )
+                saveConversation(AGENT_MONITOR_CONVERSATION_ID, updatedConv)
+                handleMessageComplete(AGENT_MONITOR_CONVERSATION_ID)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "后台任务执行失败", e)
+            }
         }
     }
 
@@ -370,14 +415,24 @@ class ChatService(
 
     private suspend fun handleMessageComplete(conversationId: Uuid, messageRange: ClosedRange<Int>? = null) {
         val settings = settingsStore.settingsFlow.first()
-        val model = settings.getCurrentChatModel() ?: return
+        val conversation = getConversationFlow(conversationId).value
+        // 1. 根据会话绑定的 assistantId 找到对应的智能体对象
+        val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+        // 2. 根据该智能体的配置找到对应的模型
+        val modelId = assistant.chatModelId ?: settings.chatModelId
+        val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return
         var firstTokenTime: Long? = null
 
         runCatching {
             val conversation = getConversationFlow(conversationId).value
             updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
-            val assistant = settings.getCurrentAssistant()
-
+            // 核心改造：不再盲目使用 settings.getCurrentAssistant()
+            // 而是根据当前会话绑定的 assistantId 去查找
+            val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+            // 根据该 Assistant 的配置选择模型
+            val modelId = assistant.chatModelId ?: settings.chatModelId
+            val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return@runCatching
+            var firstTokenTime: Long? = null
             if (!model.abilities.contains(ModelAbility.TOOL)) {
                 val hasExternalTools = (assistant.searchMode !is AssistantSearchMode.Off) || mcpManager.getAllAvailableTools().isNotEmpty()
                 if (hasExternalTools) _errorFlow.emit(IllegalStateException(context.getString(R.string.tools_warning)))
@@ -394,7 +449,7 @@ class ChatService(
                     if (assistant.useRagMemoryRetrieval) {
                         val lastUserMsg = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
                         if (lastUserMsg.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(assistantId = settings.assistantId.toString(), query = lastUserMsg, limit = assistant.ragLimit, similarityThreshold = assistant.ragSimilarityThreshold, includeCore = assistant.ragIncludeCore, includeEpisodes = assistant.ragIncludeEpisodes)
+                            val results = memoryRepository.retrieveRelevantMemories(assistantId = assistant.id.toString(), query = lastUserMsg, limit = assistant.ragLimit, similarityThreshold = assistant.ragSimilarityThreshold, includeCore = assistant.ragIncludeCore, includeEpisodes = assistant.ragIncludeEpisodes)
                             if (settings.enableRagLogging) results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
                             results
                         } else memoryRepository.getMemoriesOfAssistant(settings.assistantId.toString())

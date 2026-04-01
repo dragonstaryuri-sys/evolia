@@ -74,12 +74,14 @@ import androidx.compose.material.icons.rounded.PowerOff
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.OutlinedButton
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
@@ -111,6 +113,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.AssistantExportImport
 import kotlinx.coroutines.launch
 import androidx.compose.material.icons.rounded.Upload
+import me.rerere.rikkahub.utils.navigateToChatPage
 
 
 @Composable
@@ -155,6 +158,14 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 
     // Filter assistants by both search query and tags
     val filteredAssistants = remember(settings.assistants, searchQuery, selectedTagIds) {
+        val monitorId = Uuid.parse("00000000-0000-0000-0000-000000000001")
+        val monitorAssistant = Assistant(
+            id = monitorId,
+            name = "Agent 任务执行监控",
+            systemPrompt = "此智能体用于监控所有后台定时任务的执行轨迹，不支持用户手动发消息。",
+            avatar = Avatar.Dummy
+        )
+
         var result = settings.assistants
 
         // Filter by search query
@@ -169,6 +180,11 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             result = result.filter { assistant ->
                 assistant.tags.containsAll(selectedTagIds)
             }
+        }
+
+        // Always prepend monitor assistant if it matches search
+        if (searchQuery.isBlank() || "Agent 任务执行监控".contains(searchQuery, ignoreCase = true)) {
+            result = listOf(monitorAssistant) + result
         }
 
         result
@@ -263,9 +279,6 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             val density = androidx.compose.ui.platform.LocalDensity.current
             val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
-            // Check if delete is allowed (more than 1 assistant)
-            val canDelete = settings.assistants.size > 1
-
             // Reset neighborsUnlocked when offset returns to 0
             if (dragOffset == 0f && neighborsUnlocked) {
                 neighborsUnlocked = false
@@ -282,6 +295,8 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 state = lazyListState,
             ) {
                 itemsIndexed(filteredAssistants, key = { _, assistant -> assistant.id }) { index, assistant ->
+                    val isMonitor = assistant.id.toString() == "00000000-0000-0000-0000-000000000001"
+
                     val position = when {
                         filteredAssistants.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
@@ -321,7 +336,9 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         state = reorderableState,
                         key = assistant.id
                     ) { isDragging ->
-                        // Key on canDelete to force complete PhysicsSwipeToDelete recreation when list size changes
+                        // Check if delete is allowed (more than 1 real assistant, or always false for monitor)
+                        val canDelete = !isMonitor && settings.assistants.size > 1
+
                         androidx.compose.runtime.key(canDelete) {
                             PhysicsSwipeToDelete(
                                 position = position,
@@ -360,13 +377,17 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                 memories = memories,
                                 haptics = haptics,
                                 onClick = {
-                                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                                    if (isMonitor) {
+                                        navigateToChatPage(navController, chatId = assistant.id)
+                                    } else {
+                                        navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
+                                    }
                                 },
                                 onCopy = {
-                                    vm.copyAssistant(assistant)
+                                    if (!isMonitor) vm.copyAssistant(assistant)
                                 },
                                 dragHandle = {
-                                    if (!isFiltering) {
+                                    if (!isFiltering && !isMonitor) {
                                         IconButton(
                                             onClick = {},
                                             modifier = Modifier.longPressDraggableHandle(
@@ -514,6 +535,8 @@ private fun AssistantItemContent(
     onCopy: () -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
+    val isMonitor = assistant.id.toString() == "00000000-0000-0000-0000-000000000001"
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -527,13 +550,31 @@ private fun AssistantItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        UIAvatar(
-            name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-            value = assistant.avatar,
-            modifier = Modifier
-                .size(40.dp)
-                .heroAnimation(key = "assistant_avatar_${assistant.id}")
-        )
+        if (isMonitor) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50))
+                    .heroAnimation(key = "assistant_avatar_${assistant.id}"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Terminal,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        } else {
+            UIAvatar(
+                name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
+                value = assistant.avatar,
+                modifier = Modifier
+                    .size(40.dp)
+                    .heroAnimation(key = "assistant_avatar_${assistant.id}")
+            )
+        }
+
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Center,
@@ -544,8 +585,17 @@ private fun AssistantItemContent(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+
+            if (isMonitor) {
+                Text(
+                    text = "系统任务监控室",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+
             // Only show tag row when there are tags or memory
-            val hasContent = assistant.enableMemory || assistant.tags.isNotEmpty()
+            val hasContent = !isMonitor && (assistant.enableMemory || assistant.tags.isNotEmpty())
             if (hasContent) {
                 Spacer(modifier = Modifier.height(8.dp))
                 // Non-interactive tag row with fixed height - fades to card background at right edge
@@ -598,17 +648,21 @@ private fun AssistantItemContent(
                 }
             }
         }
-        // Copy button only
-        Icon(
-            imageVector = Icons.Rounded.ContentCopy,
-            contentDescription = stringResource(R.string.assistant_page_clone),
-            modifier = Modifier
-                .onClick {
-                    onCopy()
-                }
-                .size(20.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
-        )
+
+        if (!isMonitor) {
+            // Copy button only for real assistants
+            Icon(
+                imageVector = Icons.Rounded.ContentCopy,
+                contentDescription = stringResource(R.string.assistant_page_clone),
+                modifier = Modifier
+                    .onClick {
+                        onCopy()
+                    }
+                    .size(20.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+            )
+        }
+
         dragHandle()
     }
 }

@@ -38,6 +38,7 @@ class AgentTaskWorker(
     private val settingsStore: SettingsStore by inject()
     private val secretKeyManager: SecretKeyManager by inject()
     private val agentTaskScheduler: AgentTaskScheduler by inject()
+    private val chatService: ChatService by inject()
 
     override suspend fun doWork(): Result {
         val taskId = inputData.getLong("taskId", -1L)
@@ -53,6 +54,11 @@ class AgentTaskWorker(
                 ?: return Result.failure()
 
             val success = when (task.taskType) {
+                "AGENT_TASK" -> {
+                    // NEW: Execute as a self-triggered instruction
+                    chatService.executeAgentTask(task)
+                    true
+                }
                 "NOTIFICATION" -> {
                     val title = data["title"]?.jsonPrimitive?.contentOrNull ?: "Notification"
                     val content = data["content"]?.jsonPrimitive?.contentOrNull ?: ""
