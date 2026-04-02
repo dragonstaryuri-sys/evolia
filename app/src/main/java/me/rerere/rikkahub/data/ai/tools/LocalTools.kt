@@ -492,11 +492,15 @@ class LocalTools(
                                 val urgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: 1
                                 val difficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
                                 val endTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
-                                val endTime = endTimeStr?.let {
+                                val endTime = if (endTimeStr != null) {
                                     runCatching {
-                                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault()).parse(it)?.time
-                                    }.getOrNull()
-                                }
+                                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(endTimeStr)?.time
+                                    }.getOrNull() ?: return@Tool buildJsonObject {
+                                        put("success", false)
+                                        put("error", "Invalid end_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                    }
+                                } else null
+
                                 scheduleRepository.addSchedule(
                                     ScheduleEntity(
                                         title = title,
@@ -539,8 +543,11 @@ class LocalTools(
                                     val newEndTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
                                     val newEndTime = if (newEndTimeStr != null) {
                                         runCatching {
-                                            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault()).parse(newEndTimeStr)?.time
-                                        }.getOrNull() ?: schedule.endTime
+                                            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(newEndTimeStr)?.time
+                                        }.getOrNull() ?: return@Tool buildJsonObject {
+                                            put("success", false)
+                                            put("error", "Invalid end_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                        }
                                     } else {
                                         schedule.endTime
                                     }
@@ -756,8 +763,32 @@ class LocalTools(
                         properties = buildJsonObject {
                             put("action", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Action to perform: add, list, delete")
-                                put("enum", JsonArray(listOf(JsonPrimitive("add"), JsonPrimitive("list"), JsonPrimitive("delete"))))
+                                put("description", "Action to perform: add, list, delete, edit")
+                                put("enum", JsonArray(listOf(JsonPrimitive("add"), JsonPrimitive("list"), JsonPrimitive("delete"), JsonPrimitive("edit"))))
+                            })
+                            put("task_id", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Required for 'delete' and 'edit'")
+                            })
+                            put("task_name", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Custom name for this task to help the user identify it in the task manager.")
+                            })
+                            put("task_type", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Type of task: EMAIL, NOTIFICATION, DIARY (required for 'add')")
+                            })
+                            put("scheduled_time", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Scheduled time in ISO 8601 format (e.g., 2023-10-27T10:00:00). Required for 'add'.")
+                            })
+                            put("repeat_interval", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Optional repeat interval in milliseconds (e.g., 86400000 for daily)")
+                            })
+                            put("content", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Static text content. Use this if you want the exact same message every time.")
                             })
                             put("instruction", buildJsonObject {
                                 put("type", "string")
@@ -785,19 +816,37 @@ class LocalTools(
                     try {
                         when (action) {
                             "add" -> {
-                                val instruction = json["instruction"]?.jsonPrimitive?.contentOrNull ?: ""
-                                val time = json["scheduled_time"]?.jsonPrimitive?.longOrNull ?: 0L
-                                val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val type = json["task_type"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val timeStr = json["scheduled_time"]?.jsonPrimitive?.contentOrNull
+                                val time = if (timeStr != null) {
+                                    runCatching {
+                                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(timeStr)?.time
+                                    }.getOrNull() ?: return@Tool buildJsonObject {
+                                        put("success", false)
+                                        put("error", "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                    }
+                                } else return@Tool buildJsonObject {
+                                    put("success", false)
+                                    put("error", "scheduled_time is required for 'add'")
+                                }
 
-                                val taskDataStr = buildJsonObject {
-                                    put("instruction", instruction)
+                                val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val taskData = buildJsonObject {
+                                    json["task_name"]?.let { put("task_name", it) }
+                                    json["content"]?.let { put("content", it) }
+                                    json["instruction"]?.let { put("instruction", it) }
+                                    json["target"]?.let { target ->
+                                        if (type == "EMAIL") put("to", target)
+                                        else if (type == "NOTIFICATION") put("title", target)
+                                    }
+                                    json["subject"]?.let { put("subject", it) }
                                 }.toString()
 
                                 // 将变量名 entity 改为 newTaskEntity 以避免潜在冲突
                                 val newTaskEntity = AgentTaskEntity(
                                     assistantId = assistantId.toString(),
                                     taskType = "AGENT_TASK",
-                                    taskData = taskDataStr,
+                                    taskData = taskData,
                                     scheduledTime = time,
                                     repeatInterval = repeat
                                 )
@@ -809,12 +858,74 @@ class LocalTools(
                             }
                             "list" -> {
                                 val tasks = agentTaskRepository.getTasksByAssistant(assistantId.toString()).first()
+                                val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
                                 buildJsonObject {
                                     put("tasks", JsonArray(tasks.map { t ->
+                                        val data = try {
+                                            kotlinx.serialization.json.Json.parseToJsonElement(t.taskData).jsonObject
+                                        } catch (e: Exception) {
+                                            buildJsonObject { }
+                                        }
                                         buildJsonObject {
-                                            put("id", t.id); put("type", t.taskType); put("scheduled_time", t.scheduledTime); put("is_executed", t.isExecuted); put("data", t.taskData)
+                                            put("id", t.id)
+                                            put("task_name", data["task_name"] ?: JsonPrimitive(t.taskType))
+                                            put("type", t.taskType)
+                                            put("scheduled_time", df.format(java.util.Date(t.scheduledTime)))
+                                            put("repeat_interval", t.repeatInterval)
+                                            put("is_executed", t.isExecuted)
                                         }
                                     }))
+                                }
+                            }
+                            "edit" -> {
+                                val id = json["task_id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                val task = agentTaskRepository.getTaskById(id)
+                                if (task != null) {
+                                    val type = json["task_type"]?.jsonPrimitive?.contentOrNull ?: task.taskType
+                                    val timeStr = json["scheduled_time"]?.jsonPrimitive?.contentOrNull
+                                    val time = if (timeStr != null) {
+                                        runCatching {
+                                            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(timeStr)?.time
+                                        }.getOrNull() ?: return@Tool buildJsonObject {
+                                            put("success", false)
+                                            put("error", "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                        }
+                                    } else {
+                                        task.scheduledTime
+                                    }
+                                    val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: task.repeatInterval
+
+                                    val oldData = try {
+                                        kotlinx.serialization.json.Json.parseToJsonElement(task.taskData).jsonObject
+                                    } catch (e: Exception) {
+                                        buildJsonObject { }
+                                    }
+
+                                    val taskData = buildJsonObject {
+                                        // Use new value if provided, else keep old
+                                        put("task_name", json["task_name"] ?: oldData["task_name"] ?: JsonPrimitive(""))
+                                        put("content", json["content"] ?: oldData["content"] ?: JsonPrimitive(""))
+                                        put("instruction", json["instruction"] ?: oldData["instruction"] ?: JsonPrimitive(""))
+
+                                        val target = json["target"]?.jsonPrimitive?.contentOrNull
+                                        if (target != null) {
+                                            if (type == "EMAIL") put("to", target)
+                                            else if (type == "NOTIFICATION") put("title", target)
+                                        } else {
+                                            // Keep old target
+                                            if (task.taskType == "EMAIL") put("to", oldData["to"] ?: JsonPrimitive(""))
+                                            else if (task.taskType == "NOTIFICATION") put("title", oldData["title"] ?: JsonPrimitive(""))
+                                        }
+
+                                        put("subject", json["subject"] ?: oldData["subject"] ?: JsonPrimitive(""))
+                                    }.toString()
+
+                                    val updatedTask = task.copy(taskType = type, taskData = taskData, scheduledTime = time, repeatInterval = repeat, isExecuted = false)
+                                    agentTaskRepository.updateTask(updatedTask)
+                                    agentTaskScheduler.scheduleTask(updatedTask)
+                                    buildJsonObject { put("success", true) }
+                                } else {
+                                    buildJsonObject { put("error", "Task not found") }
                                 }
                             }
                             "delete" -> {

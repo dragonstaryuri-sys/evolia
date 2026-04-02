@@ -1329,7 +1329,7 @@
   <string name="diary_no_new_messages">He/She don\'t feel like writing a diary right now.</string>
   <!-- Back Up -->
   <string name="backup_page_auto_backup_on_start">Auto Backup on Launch</string>
-  <string name="backup_page_auto_backup_on_start_desc">Automatically perform WebDAV backup task each time the app is opened.</string>
+  <string name="backup_page_auto_backup_on_start_desc">Automatically back up via WebDAV when the app is launched for the first time each day.</string>
   <string name="backup_page_backup_started_background">Backup task started in background</string>
   <string name="notification_channel_backup">Data Backup</string>
   <string name="backup_notification_success_title">Backup Successful</string>
