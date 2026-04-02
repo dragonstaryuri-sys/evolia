@@ -776,7 +776,7 @@ class LocalTools(
                             })
                             put("task_type", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Type of task: EMAIL, NOTIFICATION, DIARY (required for 'add')")
+                                put("description", "Type of task: EMAIL, NOTIFICATION, OTHERS(required for 'add')")
                             })
                             put("scheduled_time", buildJsonObject {
                                 put("type", "string")
@@ -784,23 +784,11 @@ class LocalTools(
                             })
                             put("repeat_interval", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Optional repeat interval in milliseconds (e.g., 86400000 for daily)")
-                            })
-                            put("content", buildJsonObject {
-                                put("type", "string")
-                                put("description", "Static text content. Use this if you want the exact same message every time.")
+                                put("description", "Optional repeat interval in milliseconds (e.g., 86400000 for daily,604800000 for a week)")
                             })
                             put("instruction", buildJsonObject {
                                 put("type", "string")
                                 put("description", "Instruction for your future self. e.g., 'Check if it will rain tomorrow in Tokyo, and if so, send an email to boss@example.com'.")
-                            })
-                            put("scheduled_time", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Timestamp (ms) when you want to receive this instruction.")
-                            })
-                            put("repeat_interval", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Optional repeat interval in ms (e.g. 86400000 for daily). 0 means once.")
                             })
                             put("task_id", buildJsonObject {
                                 put("type", "integer")
@@ -833,7 +821,6 @@ class LocalTools(
                                 val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: 0L
                                 val taskData = buildJsonObject {
                                     json["task_name"]?.let { put("task_name", it) }
-                                    json["content"]?.let { put("content", it) }
                                     json["instruction"]?.let { put("instruction", it) }
                                     json["target"]?.let { target ->
                                         if (type == "EMAIL") put("to", target)
@@ -904,7 +891,6 @@ class LocalTools(
                                     val taskData = buildJsonObject {
                                         // Use new value if provided, else keep old
                                         put("task_name", json["task_name"] ?: oldData["task_name"] ?: JsonPrimitive(""))
-                                        put("content", json["content"] ?: oldData["content"] ?: JsonPrimitive(""))
                                         put("instruction", json["instruction"] ?: oldData["instruction"] ?: JsonPrimitive(""))
 
                                         val target = json["target"]?.jsonPrimitive?.contentOrNull
