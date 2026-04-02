@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.discover.R
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import me.rerere.rikkahub.common.ui.components.ExpandableCard
+import me.rerere.rikkahub.common.PowerUtils
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -43,6 +46,7 @@ fun ScheduleScreen(
 ) {
     val pendingSchedules by viewModel.allPendingSchedules.collectAsState()
     val completedSchedules by viewModel.allCompletedSchedules.collectAsState()
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -54,6 +58,11 @@ fun ScheduleScreen(
         stringResource(R.string.discover_schedule_status_pending),
         stringResource(R.string.discover_schedule_status_completed)
     )
+
+    // 检查电池优化状态
+    var isIgnoringBatteryOptimizations by remember {
+        mutableStateOf(PowerUtils.isIgnoringBatteryOptimizations(context))
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -125,6 +134,17 @@ fun ScheduleScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 优化建议卡片
+            if (selectedTabIndex == 0 && !isIgnoringBatteryOptimizations) {
+                item {
+                    OptimizationCard(
+                        onAction = {
+                            PowerUtils.requestIgnoreBatteryOptimizations(context)
+                        }
+                    )
+                }
+            }
+
             if (displaySchedules.isEmpty()) {
                 item {
                     Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
@@ -192,6 +212,51 @@ fun ScheduleScreen(
                 showEditDialog = false
             }
         )
+    }
+
+    // 当从设置返回时刷新状态
+    LaunchedEffect(Unit) {
+        isIgnoringBatteryOptimizations = PowerUtils.isIgnoringBatteryOptimizations(context)
+    }
+}
+
+@Composable
+private fun OptimizationCard(onAction: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        ),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.auto_task_optimization_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.auto_task_optimization_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = onAction,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.auto_task_optimization_action),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
     }
 }
 

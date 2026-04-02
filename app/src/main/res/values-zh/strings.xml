@@ -1339,5 +1339,6 @@
   <string name="assistant_context_priority_balanced">平衡分配 (推荐)</string>
   <!-- Tips -->
   <string name="notification_chat_generating">正在生成回复...</string>
-  <string name="notification_channel_chat_generation">聊天生成</string>
+  <string name="notification_channel_chat_generation">对话生成</string>
+
 </resources>

@@ -93,6 +93,7 @@ import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
+import me.rerere.rikkahub.service.AgentTaskScheduler
 import kotlin.uuid.Uuid
 
 private const val TAG = "RouteActivity"
@@ -110,6 +111,7 @@ class RouteActivity : AppCompatActivity() {
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
+    private val agentTaskScheduler by inject<AgentTaskScheduler>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
@@ -120,6 +122,10 @@ class RouteActivity : AppCompatActivity() {
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         disableNavigationBarContrast()
         super.onCreate(savedInstanceState)
+
+        // 启动自动任务心跳闹钟，并立即检查是否有过期任务
+        agentTaskScheduler.setupHeartbeatAlarm()
+        agentTaskScheduler.checkAndRescheduleOverdueTasks()
 
         val intentAssistantId = intent?.getStringExtra("assistantId")
         val intentConversationId = intent?.getStringExtra("conversationId")

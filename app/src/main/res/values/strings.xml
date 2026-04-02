@@ -1394,4 +1394,5 @@
   <!-- Tips -->
   <string name="notification_chat_generating">Chat is generating...</string>
   <string name="notification_channel_chat_generation">Chat Generation</string>
+
 </resources>

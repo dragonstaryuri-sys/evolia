@@ -38,5 +38,9 @@
   <string name="schedule_end_time">End Time</string>
   <string name="schedule_reminder_time">Reminder Time</string>
   <string name="schedule_none">None</string>
+
+  <string name="auto_task_optimization_title">Automatic Task Optimization</string>
+  <string name="auto_task_optimization_desc">If scheduled tasks (such as automatic diary) fail to run on time, please enable the app\'s "Auto-start" permission and disable "Battery Optimization".</string>
+  <string name="auto_task_optimization_action">Go to Settings</string>
 </resources>
 
