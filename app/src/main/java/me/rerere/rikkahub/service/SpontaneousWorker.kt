@@ -122,7 +122,7 @@ class SpontaneousWorker(
 
             [Task]
             Based on your persona and the context, do you want to send a spontaneous message to the user?
-            - If YES: Formulate a natural, concise message as if you're reaching out in the chat.
+            - If YES: Formulate a natural, concise message as if you're reaching out in the chat.Keep it simple.
             - If NO: Explain why.
 
             [Output Format (Strict JSON)]

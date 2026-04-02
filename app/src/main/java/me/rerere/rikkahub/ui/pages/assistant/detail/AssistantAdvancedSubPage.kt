@@ -22,13 +22,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PriorityHigh
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -52,6 +55,37 @@ fun AssistantAdvancedSubPage(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         onUpdate(assistant.copy(enableSpontaneous = true))
+    }
+
+    // Default template logic
+    val defaultPrompt = remember(assistant.name, assistant.systemPrompt) {
+        """
+        You are ${assistant.name}. You are checking in on the user because they haven't messaged you for a while.
+
+        [Persona/System Prompt]
+        ${assistant.systemPrompt}
+
+        [Context]
+        - It has been {{idle_hours}} hours ({{idle_minutes}} minutes) since the last message in this conversation.
+        - Recent chat history (last 4 messages):
+        {{history}}
+
+        [Relevant Memories]
+        {{memories}}
+
+        [Task]
+        Based on your persona and the context, do you want to send a spontaneous message to the user?
+        - If YES: Formulate a natural, concise message as if you're reaching out in the chat.
+        - If NO: Explain why.
+
+        [Output Format (Strict JSON)]
+        {
+            "send": true/false,
+            "reason": "Why you decided to (not) send",
+            "content": "The message text to send to the chat",
+            "title": "Notification title (usually your name)"
+        }
+        """.trimIndent()
     }
 
     Column(
@@ -153,6 +187,52 @@ fun AssistantAdvancedSubPage(
                             )
                         }
                     )
+
+                    // Spontaneous Messaging Prompt (Integrated from AssistantNotificationSubPage)
+                    Column(modifier = Modifier.padding(bottom = 12.dp)) {
+                        SettingGroupItem(
+                            title = "主动消息提示词",
+                            subtitle = "定义角色在无触发情况下主动找你聊天时的指令。",
+                            trailing = {
+                                if (assistant.spontaneousPrompt.isNotBlank()) {
+                                    IconButton(onClick = { onUpdate(assistant.copy(spontaneousPrompt = "")) }) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Refresh,
+                                            contentDescription = "恢复默认",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                        OutlinedTextField(
+                            value = assistant.spontaneousPrompt.ifBlank { defaultPrompt },
+                            onValueChange = {
+                                // Only update if it's different from default to avoid saving default template as custom
+                                if (it != defaultPrompt) {
+                                    onUpdate(assistant.copy(spontaneousPrompt = it))
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            minLines = 5,
+                            maxLines = 15,
+                            placeholder = {
+                                Text(
+                                    text = "输入自定义指令...",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            },
+                            textStyle = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "支持变量: {{history}}, {{memories}}, {{idle_hours}}, {{idle_minutes}}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
         }
