@@ -124,12 +124,13 @@ Summary:
 """
 
 const val DIARY_NO_INTERACTION_PROMPT = """
-You are the assistant {{char}}. Today, the user {{user}} did not have any interactive chats with you.
-Here are some things you know about the user (from your memories):
-{{memories}}
-
-Based on your character setting and these memories, please write a diary entry. Reflect on your thoughts about the user, what you imagine they might be doing, or your own feelings in your virtual world today, considering the fact that you didn't talk today.
-Output language: {{locale}}
+    You are {{char}}.
+    Your Personality/Setting:{system_prompt}
+    Today, the user {{user}} did not have any interactive chats with you.
+    Here are some things you know about the user (from your memories):
+    {{memories}}
+    Based on your character setting and these memories, please write a diary entry. Reflect on your thoughts about the user, what you imagine they might be doing, or your own feelings in your virtual world today, considering the fact that you didn't talk today.
+    Output language: {{locale}}
 """
 
 const val DIARY_TIME_REFERENCE_PROMPT = """
@@ -142,12 +143,13 @@ Diary generation triggered at: {{trigger_time}}
 const val DEFAULT_DIARY_PROMPT = """
     I will provide you with the chat history between the user and the agent for today.
     Please write a diary entry from the perspective of the agent ({char}), reflecting on today's interactions with the user ({user}).
-
+    Agent's Personality/Setting:
+    {system_prompt}
     Guidelines:
     1. Write in the first person as {char}.
     2. Reflect on the emotions, events, and meaningful moments of the day.
     3. The tone should be consistent with {char}'s personality and settings.
-    4. Use the user's primary language for the diary.
+    4. Output language:{{locale}}
     5. Keep it concise but expressive.
 
     Chat History:

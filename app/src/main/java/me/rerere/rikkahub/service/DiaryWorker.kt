@@ -35,6 +35,7 @@ import androidx.core.app.ActivityCompat
 import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
 
+
 private const val TAG = "DiaryWorker"
 
 class DiaryWorker(
@@ -117,6 +118,7 @@ class DiaryWorker(
                         "char" to assistant.name,
                         "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
                         "memories" to selectedMemories,
+                        "system_prompt" to assistant.systemPrompt,
                         "locale" to locale
                     )
                 }
@@ -139,6 +141,7 @@ class DiaryWorker(
                     "content" to chatContent,
                     "char" to assistant.name,
                     "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
+                    "system_prompt" to assistant.systemPrompt,
                     "locale" to locale
                 ) + timeRef
             }
