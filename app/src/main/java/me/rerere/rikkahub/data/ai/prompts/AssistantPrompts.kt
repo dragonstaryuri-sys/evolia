@@ -151,6 +151,7 @@ const val DEFAULT_DIARY_PROMPT = """
     3. The tone should be consistent with {char}'s personality and settings.
     4. Output language:{{locale}}
     5. Keep it concise but expressive.
+    6. No extra explanation, only diary output.
 
     Chat History:
     {content}

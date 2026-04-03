@@ -70,12 +70,12 @@ class DiaryVM(
         }
     }
 
-    fun updateAssistantDiarySettings(assistantId: String, enableAuto: Boolean, autoTime: String) {
+    fun updateAssistantDiarySettings(assistantId: String, enableAuto: Boolean) {
         viewModelScope.launch {
             val currentSettings = settings.value
             val updatedAssistants = currentSettings.assistants.map {
                 if (it.id.toString() == assistantId) {
-                    it.copy(enableAutoDiary = enableAuto, autoDiaryTime = autoTime)
+                    it.copy(enableAutoDiary = enableAuto)
                 } else {
                     it
                 }

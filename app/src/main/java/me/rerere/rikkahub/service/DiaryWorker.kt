@@ -34,6 +34,7 @@ import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
 
 
 private const val TAG = "DiaryWorker"
@@ -136,8 +137,8 @@ class DiaryWorker(
                     "trigger_time" to triggerTime
                 )
 
-                // 无论历史上是否有日记，由于“今天”还没写，所以这就是今天的第一篇，使用标准 Prompt
-                currentSettings.diaryPrompt.applyPlaceholders(
+                // 使用系统默认提示词
+                DEFAULT_DIARY_PROMPT.applyPlaceholders(
                     "content" to chatContent,
                     "char" to assistant.name,
                     "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),

@@ -277,7 +277,6 @@ private fun DefaultDiaryModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
-    var showModal by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(stringResource(R.string.setting_model_page_diary_model), maxLines = 1)
@@ -304,64 +303,8 @@ private fun DefaultDiaryModelSetting(
                     modifier = Modifier.wrapContentWidth()
                 )
             }
-            IconButton(
-                onClick = {
-                    showModal = true
-                }
-            ) {
-                Icon(Icons.Rounded.Settings, null)
-            }
         }
     )
-
-    if (showModal) {
-        ModalBottomSheet(
-            onDismissRequest = {
-                showModal = false
-            },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FormItem(
-                    label = {
-                        Text(stringResource(R.string.setting_model_page_diary_prompt))
-                    },
-                    description = {
-                        Text(stringResource(R.string.setting_model_page_diary_prompt_desc))
-                    }
-                ) {
-                    OutlinedTextField(
-                        value = settings.diaryPrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    diaryPrompt = it
-                                )
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 8
-                    )
-                    TextButton(
-                        onClick = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    diaryPrompt = DEFAULT_DIARY_PROMPT
-                                )
-                            )
-                        }
-                    ) {
-                        Text(stringResource(R.string.setting_model_page_reset_to_default))
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

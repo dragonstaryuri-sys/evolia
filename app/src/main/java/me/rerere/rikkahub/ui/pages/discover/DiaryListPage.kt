@@ -163,10 +163,9 @@ fun DiaryListPage(
     if (showSettings && assistantId != null && currentAssistant != null) {
         DiarySettingsDialog(
             enableAuto = currentAssistant.enableAutoDiary,
-            autoTime = currentAssistant.autoDiaryTime,
             onDismiss = { showSettings = false },
-            onSave = { enable, time ->
-                vm.updateAssistantDiarySettings(assistantId, enable, time)
+            onSave = { enable ->
+                vm.updateAssistantDiarySettings(assistantId, enable)
                 showSettings = false
             }
         )
@@ -261,24 +260,13 @@ private fun DiaryItem(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DiarySettingsDialog(
     enableAuto: Boolean,
-    autoTime: String,
     onDismiss: () -> Unit,
-    onSave: (Boolean, String) -> Unit
+    onSave: (Boolean) -> Unit
 ) {
     var enable by remember { mutableStateOf(enableAuto) }
-    var time by remember { mutableStateOf(autoTime) }
-    var showTimePicker by remember { mutableStateOf(false) }
-
-    val timeParts = remember(time) { time.split(":").mapNotNull { it.toIntOrNull() }.let { if (it.size == 2) it else listOf(23, 59) } }
-    val timePickerState = rememberTimePickerState(
-        initialHour = timeParts[0],
-        initialMinute = timeParts[1],
-        is24Hour = true
-    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -293,30 +281,10 @@ private fun DiarySettingsDialog(
                     Text(stringResource(R.string.diary_auto_generate))
                     Switch(checked = enable, onCheckedChange = { enable = it })
                 }
-                if (enable) {
-                    OutlinedCard(
-                        onClick = { showTimePicker = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(stringResource(R.string.diary_auto_generate_time_label))
-                            Text(
-                                text = time,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(enable, time) }) {
+            TextButton(onClick = { onSave(enable) }) {
                 Text(stringResource(R.string.save))
             }
         },
@@ -326,31 +294,6 @@ private fun DiarySettingsDialog(
             }
         }
     )
-
-    if (showTimePicker) {
-        AlertDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        time = String.format(Locale.getDefault(), "%02d:%02d", timePickerState.hour, timePickerState.minute)
-                        showTimePicker = false
-                    }
-                ) { Text(stringResource(R.string.confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-            title = { Text(stringResource(R.string.diary_select_time)) },
-            text = {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    TimePicker(state = timePickerState)
-                }
-            }
-        )
-    }
 }
 
 private operator fun PaddingValues.plus(other: PaddingValues): PaddingValues = PaddingValues(
