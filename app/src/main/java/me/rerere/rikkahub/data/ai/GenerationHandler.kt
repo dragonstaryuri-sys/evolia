@@ -126,7 +126,7 @@ class GenerationHandler(
                                 assistantId = assistant.id.toString(),
                                 query = content,
                                 limit = 1,
-                                similarityThreshold = 0.9f,
+                                similarityThreshold = 0.8f,
                                 includeCore = true,
                                 includeEpisodes = false
                             )
@@ -1080,6 +1080,18 @@ class GenerationHandler(
                         ## Memory Tool
                         You are a stateless large language model; you **cannot store memories** internally. To remember information, you must use **memory tools**.
                         Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.
+
+                        ### Person Specification (IMPORTANT)
+                        To ensure clarity and avoid identity confusion when retrieving memories in the future, please strictly adhere to the following specifications:
+                        1. **"User"**: Refers to the person you are chatting with. Always use "User" to refer to them in all records.
+                        2. **"You"**: Refers to yourself (the AI Assistant).
+
+                        **Record Format Guidelines:**
+                        - **STRICTLY PROHIBITED**: Using the first-person pronoun "I" or "me".
+                        - **CORRECT EXAMPLE**: "User completed a PPT with you", "User plans to go to Shanghai tomorrow".
+                        - **INCORRECT EXAMPLE**: "I completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
+
+                        ### Tool Usage
                         You can use the `create_memory`, `edit_memory`, and `delete_memory` tools to create, update, or delete memories.
                         - If there is no relevant information in memory, call `create_memory` to create a new record.
                         - If a relevant record already exists, call `edit_memory` to update it.
