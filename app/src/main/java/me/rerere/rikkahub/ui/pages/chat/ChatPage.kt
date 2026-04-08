@@ -31,6 +31,8 @@ import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessagePart
@@ -118,9 +120,17 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     }
 
     val chatListState = rememberLazyListState()
-    LaunchedEffect(vm) {
-        if(!vm.chatListInitialized) {
-            chatListState.scrollToItem(chatListState.layoutInfo.totalItemsCount)
+    LaunchedEffect(isConversationLoaded) {
+        if (isConversationLoaded && !vm.chatListInitialized) {
+            // 等待直到列表至少有一个 Item
+            snapshotFlow { chatListState.layoutInfo.totalItemsCount }
+                .filter { it > 0 }
+                .first()
+
+            // 增加一个小延迟，确保长列表的初次绘制和测量完成
+            delay(150)
+
+            chatListState.scrollToItem(chatListState.layoutInfo.totalItemsCount - 1)
             vm.chatListInitialized = true
         }
     }

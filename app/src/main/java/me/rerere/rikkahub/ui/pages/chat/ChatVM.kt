@@ -60,10 +60,6 @@ class ChatVM(
     val isConversationLoaded: StateFlow<Boolean> = _isConversationLoaded
 
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
-        .onEach {
-            // Any emission from the service means we've successfully connected to the data stream
-            _isConversationLoaded.value = true
-        }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
 
     var chatListInitialized by mutableStateOf(false)
@@ -97,6 +93,8 @@ class ChatVM(
         chatService.addConversationReference(_conversationId)
         viewModelScope.launch {
             chatService.initializeConversation(_conversationId)
+            // 确保数据库加载完成后再标记为已加载
+            _isConversationLoaded.value = true
         }
         // Move I/O to IO Dispatcher
         viewModelScope.launch(Dispatchers.IO) {
