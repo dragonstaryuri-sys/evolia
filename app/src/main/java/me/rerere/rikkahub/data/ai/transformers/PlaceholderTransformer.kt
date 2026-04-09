@@ -59,6 +59,10 @@ fun buildPlaceholders(block: PlaceholderBuilder.() -> Unit): Map<String, Placeho
 }
 
 object DefaultPlaceholderProvider : PlaceholderProvider {
+    private var lastLocationCache: android.location.Location? = null
+    private var lastAddressCache: String? = null
+    private const val LOCATION_UPDATE_THRESHOLD = 50.0f
+
     override val placeholders: Map<String, PlaceholderInfo> = buildPlaceholders {
         placeholder("cur_date", { Text(stringResource(R.string.placeholder_current_date)) }) {
             LocalDate.now().toDateString()
@@ -72,13 +76,9 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
             LocalDateTime.now().toDateTimeString()
         }
 
-
-
         placeholder("model_name", { Text(stringResource(R.string.placeholder_model_name)) }) {
             it.model.displayName
         }
-
-
 
         placeholder("timezone", { Text(stringResource(R.string.placeholder_timezone)) }) {
             TimeZone.getDefault().displayName
@@ -96,8 +96,6 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
             it.context.batteryLevel().toString()
         }
 
-
-
         placeholder("char", { Text(stringResource(R.string.placeholder_char)) }) {
             it.assistant.name.ifBlank { "assistant" }
         }
@@ -106,63 +104,66 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
             it.settingsStore.settingsFlow.value.displaySetting.userNickname.ifBlank { "user" }
         }
 
+        placeholder("location", { Text("Location") }) { ctx ->
+            val context = ctx.context
+            val hasCoarse = androidx.core.app.ActivityCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
+            val hasFine = androidx.core.app.ActivityCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
+            if (hasCoarse || hasFine) {
+                try {
+                    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
 
+                    @android.annotation.SuppressLint("MissingPermission")
+                    val location = locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                        ?: if (hasFine) {
+                            locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+                        } else null
 
-
-
-        placeholder("location", { Text("Location") }) {
-            if (androidx.core.app.ActivityCompat.checkSelfPermission(
-                    it.context,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                val locationManager = it.context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
-                val location = locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
-                    ?: locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
-
-                location?.let { loc ->
-                    try {
-                        val geocoder = android.location.Geocoder(it.context, Locale.getDefault())
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                            // For Android 13+, Geocoder is async, but we need sync here for the placeholder.
-                            // This is a limitation of the current synchronous placeholder architecture.
-                            // We'll try a best-effort approach or stick to the deprecated sync method for now
-                            // as we are in a background thread context usually (or should be).
-                            // However, since this might run on main thread in UI, we should be careful.
-                            // Given the constraints, we will use the synchronous getFromLocation for now,
-                            // acknowledging it might block slightly.
-                            @Suppress("DEPRECATION")
-                            val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
-                            val address = addresses?.firstOrNull()
-                            if (address != null) {
-                                "${address.getAddressLine(0)}"
-                            } else {
-                                "${loc.latitude},${loc.longitude}"
-                            }
-                        } else {
-                            @Suppress("DEPRECATION")
-                            val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
-                            val address = addresses?.firstOrNull()
-                            if (address != null) {
-                                "${address.getAddressLine(0)}"
-                            } else {
-                                "${loc.latitude},${loc.longitude}"
+                    location?.let { loc ->
+                        // 50米距离缓存逻辑
+                        val lastLoc = lastLocationCache
+                        val cachedAddr = lastAddressCache
+                        if (lastLoc != null && cachedAddr != null) {
+                            if (loc.distanceTo(lastLoc) < LOCATION_UPDATE_THRESHOLD) {
+                                return@placeholder cachedAddr
                             }
                         }
-                    } catch (e: Exception) {
-                        "${loc.latitude},${loc.longitude}"
-                    }
-                } ?: "unknown"
+
+                        try {
+                            val geocoder = android.location.Geocoder(context, Locale.getDefault())
+                            @Suppress("DEPRECATION")
+                            val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+                            val address = addresses?.firstOrNull()
+
+                            val result = if (address != null) {
+                                address.getAddressLine(0)
+                            } else {
+                                "${loc.latitude},${loc.longitude}"
+                            }
+
+                            // 更新缓存
+                            lastLocationCache = loc
+                            lastAddressCache = result
+
+                            result
+                        } catch (e: Exception) {
+                            "${loc.latitude},${loc.longitude}"
+                        }
+                    } ?: "unknown"
+                } catch (e: SecurityException) {
+                    "[Location Permission Denied]"
+                }
             } else {
-                "[Location unavailable - grant location permission in Settings > Apps > LastChat]"
+                "[Location unavailable - grant location permission in Settings]"
             }
         }
-
-
-
-
     }
 
     private fun Temporal.toDateString() = DateTimeFormatter
@@ -216,14 +217,14 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
     ): String {
         var result = text
 
-        val ctx = PlaceholderCtx(
+        val placeholderCtx = PlaceholderCtx(
             context = ctx.context,
             settingsStore = settingsStore,
             model = ctx.model,
             assistant = ctx.assistant
         )
         defaultProvider.placeholders.forEach { (key, placeholderInfo) ->
-            val value = placeholderInfo.resolver(ctx)
+            val value = placeholderInfo.resolver(placeholderCtx)
             result = result
                 .replace(oldValue = "{{$key}}", newValue = value, ignoreCase = true)
                 .replace(oldValue = "{$key}", newValue = value, ignoreCase = true)
