@@ -74,7 +74,8 @@ class SpontaneousWorker(
         }
 
         // Check frequency
-        val timeSinceLastNotification = System.currentTimeMillis() - assistant.lastNotificationTime
+        val now = System.currentTimeMillis()
+        val timeSinceLastNotification = now - assistant.lastNotificationTime
         val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
         if (timeSinceLastNotification < minIntervalMs) {
             return
@@ -84,16 +85,23 @@ class SpontaneousWorker(
         val conversations = conversationRepository.getRecentConversations(assistant.id, 1)
         val conversation = conversations.firstOrNull() ?: return
 
+        // 优化点：检查对话最后活跃时间
+        // 如果用户刚刚才聊过天（或者AI刚回复过），不应该立刻触发主动消息
+        val lastUpdateTime = conversation.updateAt
+        val timeSinceLastActivity = now - lastUpdateTime.toEpochMilli()
+        if (timeSinceLastActivity < minIntervalMs) {
+            Log.d(TAG, "Assistant ${assistant.name} skipped: recent activity detected (${timeSinceLastActivity / 60000} mins ago)")
+            return
+        }
+
         val modelId = assistant.backgroundModelId ?: assistant.chatModelId ?: settings.chatModelId
         val model = settings.findModelById(modelId) ?: return
         val provider = model.findProvider(settings.providers) ?: return
         val providerHandler = providerManager.getProviderByType(provider)
 
         // Calculate context info
-        val lastUpdateTime = conversation.updateAt
-        val timeDiffMillis = System.currentTimeMillis() - lastUpdateTime.toEpochMilli()
-        val timeDiffHours = timeDiffMillis / (1000 * 60 * 60)
-        val timeDiffMinutes = timeDiffMillis / (1000 * 60)
+        val timeDiffHours = timeSinceLastActivity / (1000 * 60 * 60)
+        val timeDiffMinutes = timeSinceLastActivity / (1000 * 60)
 
         // RAG Retrieval
         val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: "User status"
