@@ -47,17 +47,16 @@ import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 @Composable
 fun rememberLocalTools(): LocalTools {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext as Application
-    val scheduleRepository = koinInject<ScheduleRepository>() // 新增这一行
+    val scheduleRepository = koinInject<ScheduleRepository>()
     val settingsStore = koinInject<SettingsStore>()
     val agentTaskRepository = koinInject<AgentTaskRepository>()
     val agentTaskScheduler = koinInject<AgentTaskScheduler>()
     val secretKeyManager = koinInject<SecretKeyManager>()
 
-    // 这里的参数顺序要和 class LocalTools 构造函数一致
     return remember {
         LocalTools(
             context,
-            scheduleRepository, // 传入这个参数
+            scheduleRepository,
             settingsStore,
             secretKeyManager,
             agentTaskRepository,
@@ -795,7 +794,7 @@ class LocalTools(
                                 put("description", "Required for 'delete'.")
                             })
                         },
-                        required = listOf("action")
+                        required = listOf("action","task_type")
                     )
                 },
                 execute = {
@@ -829,17 +828,16 @@ class LocalTools(
                                     json["subject"]?.let { put("subject", it) }
                                 }.toString()
 
-                                // 将变量名 entity 改为 newTaskEntity 以避免潜在冲突
-                                val newTaskEntity = AgentTaskEntity(
+                                val entity = AgentTaskEntity(
                                     assistantId = assistantId.toString(),
                                     taskType = "AGENT_TASK",
                                     taskData = taskData,
                                     scheduledTime = time,
                                     repeatInterval = repeat
                                 )
-                                val newId = agentTaskRepository.addTask(newTaskEntity)
-                                // 确保这里传入的是 entity 副本
-                                agentTaskScheduler.scheduleTask(newTaskEntity.copy(id = newId))
+                                val newId = agentTaskRepository.addTask(entity)
+                                // FIX: pass copy with new ID to scheduler
+                                agentTaskScheduler.scheduleTask(entity.copy(id = newId))
 
                                 buildJsonObject { put("success", true); put("task_id", newId) }
                             }
@@ -889,7 +887,6 @@ class LocalTools(
                                     }
 
                                     val taskData = buildJsonObject {
-                                        // Use new value if provided, else keep old
                                         put("task_name", json["task_name"] ?: oldData["task_name"] ?: JsonPrimitive(""))
                                         put("instruction", json["instruction"] ?: oldData["instruction"] ?: JsonPrimitive(""))
 
@@ -898,7 +895,6 @@ class LocalTools(
                                             if (type == "EMAIL") put("to", target)
                                             else if (type == "NOTIFICATION") put("title", target)
                                         } else {
-                                            // Keep old target
                                             if (task.taskType == "EMAIL") put("to", oldData["to"] ?: JsonPrimitive(""))
                                             else if (task.taskType == "NOTIFICATION") put("title", oldData["title"] ?: JsonPrimitive(""))
                                         }

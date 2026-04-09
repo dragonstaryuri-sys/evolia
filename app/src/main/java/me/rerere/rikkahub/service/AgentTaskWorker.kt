@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -21,12 +22,13 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import me.rerere.common.android.Logging
 import java.util.*
 import javax.mail.*
 import javax.mail.internet.InternetAddress
 import javax.mail.internet.MimeMessage
 import java.text.SimpleDateFormat
+
+private const val TAG = "AgentTaskWorker"
 
 class AgentTaskWorker(
     context: Context,
@@ -42,26 +44,41 @@ class AgentTaskWorker(
 
     override suspend fun doWork(): Result {
         val taskId = inputData.getLong("taskId", -1L)
-        if (taskId == -1L) return Result.failure()
+        if (taskId == -1L) {
+            Log.e(TAG, "Worker failed: No taskId provided in input data")
+            return Result.failure()
+        }
 
         return try {
-            val task = agentTaskRepository.getTaskById(taskId) ?: return Result.failure()
-            if (task.isExecuted) return Result.success()
+            val task = agentTaskRepository.getTaskById(taskId)
+            if (task == null) {
+                Log.e(TAG, "Worker failed: Task with ID $taskId not found in database")
+                return Result.failure()
+            }
 
-            Logging.log("AgentTaskWorker", "Executing task ${task.id} of type ${task.taskType}")
+            if (task.isExecuted) {
+                Log.d(TAG, "Task $taskId already executed, skipping.")
+                return Result.success()
+            }
+
+            Log.d(TAG, "Executing task ${task.id} of type [${task.taskType}]")
 
             val data = JsonInstant.parseToJsonElement(task.taskData) as? JsonObject
-                ?: return Result.failure()
+            if (data == null) {
+                Log.e(TAG, "Task $taskId has invalid JSON data: ${task.taskData}")
+                return Result.failure()
+            }
 
             val success = when (task.taskType) {
                 "AGENT_TASK" -> {
-                    // NEW: Execute as a self-triggered instruction
+                    Log.d(TAG, "Running AGENT_TASK via ChatService")
                     chatService.executeAgentTask(task)
                     true
                 }
                 "NOTIFICATION" -> {
                     val title = data["title"]?.jsonPrimitive?.contentOrNull ?: "Notification"
                     val content = data["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                    Log.d(TAG, "Sending notification: $title")
                     sendNotification(title, content)
                     true
                 }
@@ -69,6 +86,7 @@ class AgentTaskWorker(
                     val to = data["to"]?.jsonPrimitive?.contentOrNull ?: ""
                     val subject = data["subject"]?.jsonPrimitive?.contentOrNull ?: ""
                     val content = data["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                    Log.d(TAG, "Sending email to: $to")
                     sendEmail(to, subject, content)
                 }
                 "DIARY" -> {
@@ -81,14 +99,19 @@ class AgentTaskWorker(
                             date = date
                         )
                     )
+                    Log.d(TAG, "Saved diary entry for $date")
                     true
                 }
-                else -> false
+                else -> {
+                    Log.w(TAG, "Unknown task type: [${task.taskType}] for task $taskId")
+                    false
+                }
             }
 
             if (success) {
                 // Mark current task as executed
                 agentTaskRepository.updateTask(task.copy(isExecuted = true))
+                Log.d(TAG, "Task ${task.id} marked as executed.")
 
                 // Handle repeating tasks
                 if (task.repeatInterval > 0) {
@@ -101,16 +124,18 @@ class AgentTaskWorker(
                     )
                     val newId = agentTaskRepository.addTask(nextTask)
                     agentTaskScheduler.scheduleTask(nextTask.copy(id = newId))
-                    Logging.log("AgentTaskWorker", "Scheduled next repeat task: $newId at $nextTime")
+                    Log.d(TAG, "Scheduled next repeat task: $newId at $nextTime")
                 }
 
                 Result.success()
             } else {
-                Result.retry()
+                Log.w(TAG, "Task execution failed (success=false), worker will NOT retry to avoid loops if type is unknown")
+                // 如果是类型未知导致的失败，不要重试，直接标记为失败或结束，避免死循环
+                Result.failure()
             }
         } catch (e: Exception) {
-            e.printStackTrace()
-            Result.failure()
+            Log.e(TAG, "Exception during task $taskId execution: ${e.message}", e)
+            Result.retry()
         }
     }
 
@@ -142,31 +167,37 @@ class AgentTaskWorker(
         val authCode = secretKeyManager.getEmailPassword("")
 
         if (!settings.emailConfig.enabled || emailAccount.isBlank() || authCode.isBlank()) {
+            Log.w(TAG, "Email not sent: Email service is disabled or not configured.")
             return false
         }
 
-        val props = Properties().apply {
-            put("mail.smtp.host", "smtp.qq.com")
-            put("mail.smtp.port", "465")
-            put("mail.smtp.auth", "true")
-            put("mail.smtp.ssl.enable", "true")
-            put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory")
-        }
-
-        val session = Session.getInstance(props, object : Authenticator() {
-            override fun getPasswordAuthentication(): PasswordAuthentication {
-                return PasswordAuthentication(emailAccount, authCode)
+        return try {
+            val props = Properties().apply {
+                put("mail.smtp.host", "smtp.qq.com")
+                put("mail.smtp.port", "465")
+                put("mail.smtp.auth", "true")
+                put("mail.smtp.ssl.enable", "true")
+                put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory")
             }
-        })
 
-        val message = MimeMessage(session).apply {
-            setFrom(InternetAddress(emailAccount))
-            setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
-            setSubject(subject)
-            setText(content)
+            val session = Session.getInstance(props, object : Authenticator() {
+                override fun getPasswordAuthentication(): PasswordAuthentication {
+                    return PasswordAuthentication(emailAccount, authCode)
+                }
+            })
+
+            val message = MimeMessage(session).apply {
+                setFrom(InternetAddress(emailAccount))
+                setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
+                setSubject(subject)
+                setText(content)
+            }
+
+            Transport.send(message)
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send email", e)
+            false
         }
-
-        Transport.send(message)
-        return true
     }
 }

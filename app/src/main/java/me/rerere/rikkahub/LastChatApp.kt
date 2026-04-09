@@ -38,6 +38,7 @@ import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.SpontaneousWorker
 import me.rerere.rikkahub.service.BackupWorker
 import me.rerere.rikkahub.service.DiarySchedulerWorker
+import me.rerere.rikkahub.service.AgentTaskScheduler
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -55,6 +56,8 @@ const val BACKUP_NOTIFICATION_CHANNEL_ID = "backup_status"
 class LastChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "Application onCreate started!") // 原生日志测试
+
         startKoin {
             androidLogger()
             androidContext(this@LastChatApp)
@@ -81,6 +84,17 @@ class LastChatApp : Application() {
             })
             setDefaultsAsync(R.xml.remote_config_defaults)
             fetchAndActivate()
+        }
+
+        // NEW: Initialize Agent Task Scheduler and Heartbeat
+        try {
+            Log.d(TAG, "Initializing AgentTaskScheduler...")
+            val agentTaskScheduler: AgentTaskScheduler = get()
+            agentTaskScheduler.setupHeartbeatAlarm()
+            agentTaskScheduler.checkAndRescheduleOverdueTasks()
+            Log.d(TAG, "AgentTaskScheduler initialized successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize AgentTaskScheduler", e)
         }
 
         // Schedule Spontaneous Worker

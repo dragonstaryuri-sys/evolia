@@ -5,24 +5,21 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.work.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.firstOrNull
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import java.util.concurrent.TimeUnit
-import me.rerere.common.android.Logging
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+
+private const val TAG = "AgentTaskScheduler"
 
 class AgentTaskScheduler(private val context: Context) : KoinComponent {
     private val agentTaskRepository: AgentTaskRepository by inject()
 
-    /**
-     * Schedule a specific task using WorkManager
-     */
     fun scheduleTask(task: AgentTaskEntity) {
         val delay = task.scheduledTime - System.currentTimeMillis()
         val initialDelay = if (delay < 0) 0L else delay
@@ -44,71 +41,92 @@ class AgentTaskScheduler(private val context: Context) : KoinComponent {
             workRequest
         )
 
-        Logging.log("AgentTaskScheduler", "Scheduled task ${task.id} with delay $initialDelay ms")
+        Log.d(TAG, "Scheduled task ${task.id} (Type: ${task.taskType}) with delay $initialDelay ms")
     }
 
     fun cancelTask(taskId: Long) {
         WorkManager.getInstance(context).cancelUniqueWork("agent_task_$taskId")
     }
 
-    /**
-     * Check for overdue tasks and reschedule them immediately.
-     * This is useful for app launch or heartbeat triggers.
-     */
     fun checkAndRescheduleOverdueTasks() {
-        val scope = CoroutineScope(Dispatchers.IO)
+        Log.d(TAG, "checkAndRescheduleOverdueTasks() called from thread: ${Thread.currentThread().name}")
+
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         scope.launch {
             try {
+                Log.d(TAG, "Coroutine started: Checking for overdue tasks...")
+
+                // 设置 5 秒超时，防止 Flow 永久挂起
+                val allTasks = withTimeoutOrNull(5000) {
+                    Log.d(TAG, "Fetching tasks from repository...")
+                    agentTaskRepository.getAllTasks().firstOrNull()
+                } ?: run {
+                    Log.w(TAG, "Database query timed out or returned null!")
+                    emptyList<AgentTaskEntity>()
+                }
+
+                Log.d(TAG, "Total tasks found in DB: ${allTasks.size}")
+
                 val currentTime = System.currentTimeMillis()
-                val allTasks = agentTaskRepository.getAllTasks().first()
                 val pendingTasks = allTasks.filter {
                     !it.isExecuted && it.scheduledTime <= currentTime
                 }
 
                 if (pendingTasks.isNotEmpty()) {
-                    Logging.log("AgentTaskScheduler", "Found ${pendingTasks.size} overdue tasks on check, rescheduling...")
+                    Log.d(TAG, "Found ${pendingTasks.size} overdue tasks, rescheduling now...")
                     pendingTasks.forEach { task ->
                         scheduleTask(task)
                     }
+                } else {
+                    Log.d(TAG, "No overdue tasks need rescheduling.")
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (e: CancellationException) {
+                Log.w(TAG, "Task check was cancelled")
+            } catch (t: Throwable) {
+                Log.e(TAG, "CRITICAL ERROR in checkAndRescheduleOverdueTasks: ${t.message}", t)
             }
         }
     }
 
-    /**
-     * Set up a heartbeat alarm to check for overdue tasks every 30 minutes.
-     */
     fun setupHeartbeatAlarm() {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, AgentTaskReceiver::class.java).apply {
             action = "me.rerere.rikkahub.ACTION_CHECK_TASKS"
         }
 
-        val pendingIntent = PendingIntent.getBroadcast(
+        val existingIntent = PendingIntent.getBroadcast(
             context,
             999,
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            PendingIntent.FLAG_NO_CREATE or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
-        // 30 minutes interval
-        val triggerAt = System.currentTimeMillis() + 30 * 60 * 1000L
+        if (existingIntent == null) {
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                999,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+            )
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAt,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            val triggerAt = System.currentTimeMillis() + 30 * 60 * 1000L
+
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAt,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                }
+                Log.d(TAG, "Heartbeat alarm scheduled for +30min")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to setup heartbeat alarm", e)
             }
-            Logging.log("AgentTaskScheduler", "Heartbeat alarm scheduled for 30 minutes later")
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } else {
+            Log.d(TAG, "Heartbeat alarm already active.")
         }
     }
 }

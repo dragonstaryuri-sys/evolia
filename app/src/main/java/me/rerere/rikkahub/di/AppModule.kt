@@ -23,6 +23,7 @@ import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.service.AgentTaskScheduler
 import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.service.DiarySchedulerWorker
+import me.rerere.rikkahub.service.AgentTaskWorker
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.tts.provider.TTSManager
 import org.koin.androidx.workmanager.dsl.workerOf
@@ -42,8 +43,8 @@ val appModule = module {
             scheduleRepository = get(),
             settingsStore = get(),
             secretKeyManager = get(),
-            agentTaskRepository = get(), // 新增
-            agentTaskScheduler = get()   // 新增
+            agentTaskRepository = get(),
+            agentTaskScheduler = get()
         )
     }
 
@@ -84,6 +85,7 @@ val appModule = module {
     workerOf(::BackupWorker)
     workerOf(::DiaryWorker)
     workerOf(::DiarySchedulerWorker)
+    workerOf(::AgentTaskWorker) // 新增：注册自动化任务 Worker
 
 
 }
