@@ -56,7 +56,7 @@ const val BACKUP_NOTIFICATION_CHANNEL_ID = "backup_status"
 class LastChatApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Application onCreate started!") // 原生日志测试
+        Log.d(TAG, "Application onCreate started!")
 
         startKoin {
             androidLogger()
@@ -66,18 +66,13 @@ class LastChatApp : Application() {
         }
         this.createNotificationChannel()
 
-        // Initialize Python runtime (Chaquopy)
         if (!Python.isStarted()) {
             Python.start(AndroidPlatform(this))
         }
 
-        // set cursor window size
         DatabaseUtil.setCursorWindowSize(16 * 1024 * 1024)
-
-        // delete temp files
         deleteTempFiles()
 
-        // Init remote config
         get<FirebaseRemoteConfig>().apply {
             setConfigSettingsAsync(remoteConfigSettings {
                 minimumFetchIntervalInSeconds = 1800
@@ -86,18 +81,14 @@ class LastChatApp : Application() {
             fetchAndActivate()
         }
 
-        // NEW: Initialize Agent Task Scheduler and Heartbeat
         try {
-            Log.d(TAG, "Initializing AgentTaskScheduler...")
             val agentTaskScheduler: AgentTaskScheduler = get()
             agentTaskScheduler.setupHeartbeatAlarm()
             agentTaskScheduler.checkAndRescheduleOverdueTasks()
-            Log.d(TAG, "AgentTaskScheduler initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize AgentTaskScheduler", e)
         }
 
-        // Schedule Spontaneous Worker
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "spontaneous_notification",
             ExistingPeriodicWorkPolicy.UPDATE,
@@ -110,10 +101,10 @@ class LastChatApp : Application() {
                 .build()
         )
 
-        // Schedule Diary Scheduler Worker
+        // 修改点：将 UPDATE 改为 REPLACE，确保逻辑变更后任务被重置并执行
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "diary_scheduler",
-            ExistingPeriodicWorkPolicy.UPDATE,
+            ExistingPeriodicWorkPolicy.REPLACE,
             PeriodicWorkRequestBuilder<DiarySchedulerWorker>(30, TimeUnit.MINUTES)
                 .setConstraints(
                     Constraints.Builder()
@@ -123,7 +114,6 @@ class LastChatApp : Application() {
                 .build()
         )
 
-        // Schedule Memory Consolidation Worker dynamically
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
                 .map { it.consolidationWorkerIntervalMinutes to it.consolidationRequiresDeviceIdle }
@@ -148,7 +138,6 @@ class LastChatApp : Application() {
                 }
         }
 
-        // Update app shortcuts when recently used assistants change
         val appShortcutManager = me.rerere.rikkahub.utils.AppShortcutManager(this)
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
@@ -161,8 +150,6 @@ class LastChatApp : Application() {
                 }
         }
 
-        // One-time migration: populate DailyActivityEntity from existing conversation dates
-        // This preserves existing streaks when upgrading to the new persistent activity tracking
         get<AppScope>().launch(Dispatchers.IO) {
             val prefs = getSharedPreferences("app_migrations", MODE_PRIVATE)
             if (!prefs.getBoolean("daily_activity_migrated_v1", false)) {
@@ -170,14 +157,12 @@ class LastChatApp : Application() {
                     val conversationRepo = get<me.rerere.rikkahub.core.data.repository.ConversationRepository>()
                     conversationRepo.migrateConversationDatesToActivity()
                     prefs.edit().putBoolean("daily_activity_migrated_v1", true).apply()
-                    Log.d(TAG, "Daily activity migration completed successfully")
                 } catch (e: Exception) {
                     Log.e(TAG, "Daily activity migration failed", e)
                 }
             }
         }
 
-        // Auto backup on start
         get<AppScope>().launch {
             val settingsStore = get<SettingsStore>()
             val settings = settingsStore.settingsFlow.first { !it.init }
@@ -187,7 +172,6 @@ class LastChatApp : Application() {
                 val today = LocalDate.now()
 
                 if (lastBackupDate.isBefore(today)) {
-                    Log.i(TAG, "Auto backup on start triggered")
                     WorkManager.getInstance(this@LastChatApp).enqueueUniqueWork(
                         "auto_backup_on_start",
                         ExistingWorkPolicy.REPLACE,
@@ -200,8 +184,6 @@ class LastChatApp : Application() {
                             .build()
                     )
                     settingsStore.update(settings.copy(lastAutoBackupTime = System.currentTimeMillis()))
-                } else {
-                    Log.i(TAG, "Auto backup on start skipped (already backed up today)")
                 }
             }
         }

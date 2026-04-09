@@ -28,6 +28,7 @@ class DiarySchedulerWorker(
     private val diaryRepo: DiaryRepository by inject()
 
     override suspend fun doWork(): Result {
+        Log.i(TAG, "DiarySchedulerWorker.doWork() started at ${LocalTime.now()}")
         return try {
             val settings = settingsStore.settingsFlow.first { !it.init }
             val now = LocalTime.now()
@@ -36,12 +37,16 @@ class DiarySchedulerWorker(
             val todayStr = today.format(DateTimeFormatter.ISO_LOCAL_DATE)
             val yesterdayStr = today.minusDays(1).format(DateTimeFormatter.ISO_LOCAL_DATE)
 
+            Log.d(TAG, "Checking ${settings.assistants.size} assistants for auto-diary...")
+
             settings.assistants.forEach { assistant ->
                 if (assistant.enableAutoDiary) {
                     try {
-                        val scheduledTime = LocalTime.parse(assistant.autoDiaryTime)
+                        val timeStr = assistant.autoDiaryTime.takeIf { it.isNotBlank() } ?: "06:00"
+                        val scheduledTime = LocalTime.parse(timeStr)
+                        Log.d(TAG, "Assistant: ${assistant.name}, Scheduled: $timeStr, Current: ${now}")
 
-                        // 检查今天是否已经有日记了，如果有则跳过
+                        // 检查今天是否已经有日记了
                         val todayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
                         if (todayDiary == null) {
 
@@ -51,9 +56,6 @@ class DiarySchedulerWorker(
                             val yesterdayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), yesterdayStr)
                             val isMissedPrevious = yesterdayDiary == null
 
-                            // 触发条件：
-                            // 1. 到了今天的预定时间
-                            // 2. 或者发现昨天（或之前）漏写了，提前触发今天的，把断档补上
                             if (isPastScheduledTime || isMissedPrevious) {
                                 if (isMissedPrevious && !isPastScheduledTime) {
                                     Log.i(TAG, "Gap detected: Triggering today's diary early for assistant: ${assistant.name} to cover previous days.")
@@ -62,11 +64,17 @@ class DiarySchedulerWorker(
                                 }
 
                                 enqueueDiaryWork(assistant.id.toString(), todayStr)
+                            } else {
+                                Log.d(TAG, "Today's diary for ${assistant.name} is not yet due (Scheduled at $timeStr)")
                             }
+                        } else {
+                            Log.d(TAG, "Today's diary for ${assistant.name} already exists.")
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to check diary for assistant ${assistant.name}", e)
                     }
+                } else {
+                    Log.d(TAG, "Auto-diary is disabled for assistant: ${assistant.name}")
                 }
             }
             Result.success()
@@ -78,6 +86,7 @@ class DiarySchedulerWorker(
 
     private fun enqueueDiaryWork(assistantId: String, targetDate: String) {
         val workName = "auto_diary_${assistantId}_${targetDate}"
+        Log.i(TAG, "Enqueuing DiaryWorker: $workName")
         val workRequest = OneTimeWorkRequestBuilder<DiaryWorker>()
             .setInputData(workDataOf(
                 "assistantId" to assistantId,
