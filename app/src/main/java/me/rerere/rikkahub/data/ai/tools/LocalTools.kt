@@ -794,7 +794,7 @@ class LocalTools(
                                 put("description", "Required for 'delete'.")
                             })
                         },
-                        required = listOf("action","task_type")
+                        required = listOf("action", "task_type")
                     )
                 },
                 execute = {
@@ -803,7 +803,9 @@ class LocalTools(
                     try {
                         when (action) {
                             "add" -> {
-                                val type = json["task_type"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val typeFromAi = json["task_type"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val finalType = if (typeFromAi == "OTHERS" || typeFromAi.isBlank()) "AGENT_TASK" else typeFromAi
+
                                 val timeStr = json["scheduled_time"]?.jsonPrimitive?.contentOrNull
                                 val time = if (timeStr != null) {
                                     runCatching {
@@ -822,15 +824,15 @@ class LocalTools(
                                     json["task_name"]?.let { put("task_name", it) }
                                     json["instruction"]?.let { put("instruction", it) }
                                     json["target"]?.let { target ->
-                                        if (type == "EMAIL") put("to", target)
-                                        else if (type == "NOTIFICATION") put("title", target)
+                                        if (finalType == "EMAIL") put("to", target)
+                                        else if (finalType == "NOTIFICATION") put("title", target)
                                     }
                                     json["subject"]?.let { put("subject", it) }
                                 }.toString()
 
                                 val entity = AgentTaskEntity(
                                     assistantId = assistantId.toString(),
-                                    taskType = "AGENT_TASK",
+                                    taskType = finalType,
                                     taskData = taskData,
                                     scheduledTime = time,
                                     repeatInterval = repeat
@@ -866,7 +868,9 @@ class LocalTools(
                                 val id = json["task_id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 val task = agentTaskRepository.getTaskById(id)
                                 if (task != null) {
-                                    val type = json["task_type"]?.jsonPrimitive?.contentOrNull ?: task.taskType
+                                    val typeFromAi = json["task_type"]?.jsonPrimitive?.contentOrNull ?: task.taskType
+                                    val finalType = if (typeFromAi == "OTHERS" || typeFromAi.isBlank()) "AGENT_TASK" else typeFromAi
+
                                     val timeStr = json["scheduled_time"]?.jsonPrimitive?.contentOrNull
                                     val time = if (timeStr != null) {
                                         runCatching {
@@ -892,8 +896,8 @@ class LocalTools(
 
                                         val target = json["target"]?.jsonPrimitive?.contentOrNull
                                         if (target != null) {
-                                            if (type == "EMAIL") put("to", target)
-                                            else if (type == "NOTIFICATION") put("title", target)
+                                            if (finalType == "EMAIL") put("to", target)
+                                            else if (finalType == "NOTIFICATION") put("title", target)
                                         } else {
                                             if (task.taskType == "EMAIL") put("to", oldData["to"] ?: JsonPrimitive(""))
                                             else if (task.taskType == "NOTIFICATION") put("title", oldData["title"] ?: JsonPrimitive(""))
@@ -902,7 +906,7 @@ class LocalTools(
                                         put("subject", json["subject"] ?: oldData["subject"] ?: JsonPrimitive(""))
                                     }.toString()
 
-                                    val updatedTask = task.copy(taskType = type, taskData = taskData, scheduledTime = time, repeatInterval = repeat, isExecuted = false)
+                                    val updatedTask = task.copy(taskType = finalType, taskData = taskData, scheduledTime = time, repeatInterval = repeat, isExecuted = false)
                                     agentTaskRepository.updateTask(updatedTask)
                                     agentTaskScheduler.scheduleTask(updatedTask)
                                     buildJsonObject { put("success", true) }
