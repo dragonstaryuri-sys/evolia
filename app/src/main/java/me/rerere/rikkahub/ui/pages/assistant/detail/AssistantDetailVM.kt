@@ -225,7 +225,7 @@ class AssistantDetailVM(
                 val resultDesc = buildString {
                     if (episodicSuccessCount > 0) append("Consolidated $episodicSuccessCount episodes. ")
                     if (updatedMasterContent != null) append("Master Memory updated. ")
-                    if (isEmpty()) append("No new items to consolidate.")
+                    if (length == 0) append("No new items to consolidate.")
                 }.trim()
 
                 val updatedSettings = currentSettings.copy(

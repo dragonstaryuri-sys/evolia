@@ -42,7 +42,9 @@ data class Conversation(
             return images + documents + videos + audios
         }
 
-    val currentMessages get(): List<UIMessage> = messageNodes.map { it.messages[it.selectIndex] }
+    val currentMessages get(): List<UIMessage> = messageNodes.map { node ->
+        node.messages.getOrNull(node.selectIndex) ?: node.messages.lastOrNull() ?: UIMessage.system("Error: Message missing")
+    }
 
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? = messageNodes.firstOrNull { it.messages.contains(message) }
     fun getMessageNodeByMessageId(messageId: Uuid): MessageNode? = messageNodes.firstOrNull { it.messages.any { it.id == messageId } }
