@@ -159,7 +159,7 @@ class OpenAIProvider(
         }
 
         val resultPath = if (is4sApi && providerSetting.balanceOption.resultPath == "data.total_usage") {
-            "quota"
+            "data.quota"
         } else {
             providerSetting.balanceOption.resultPath
         }

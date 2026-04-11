@@ -27,4 +27,16 @@ val DEFAULT_PROVIDERS = listOf(
             resultPath = "data.total_credits - data.total_usage",
         )
     ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("77777777-4444-4444-4444-444444444444"),
+        name = "deepseek",
+        baseUrl = "https://api.deepseek.com/v1",
+        apiKey = "",
+        builtIn = true,
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/balance",
+            resultPath = "balance_infos[0].total_balance",
+        )
+    ),
 )

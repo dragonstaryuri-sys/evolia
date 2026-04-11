@@ -302,6 +302,17 @@ val PROVIDER_PRESETS = listOf(
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://open.bigmodel.cn/api/paas/v4"
     ),
+    ProviderPreset(
+        name = "4sapi",
+        description = "High-quality aggregated AI service",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://4sapi.com/v1",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "https://4sapi.com/api/user/self",
+            resultPath = "quota"
+        )
+    ),
 )
 
 /**

@@ -31,7 +31,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 /**
  * UNIFIED Provider Icon - Use this everywhere a provider icon is needed.
  * Takes the whole ProviderSetting object to ensure consistent display.
- * 
+ *
  * Priority:
  * 1. Custom icon (user-selected)
  * 2. Local pattern matching
@@ -53,7 +53,7 @@ fun ProviderIcon(
         is ProviderSetting.Google -> provider.baseUrl
         is ProviderSetting.Claude -> provider.baseUrl
     }
-    
+
     // Derive provider slug from name for LobeHub lookup
     val providerSlug = remember(provider.name) {
         getProviderSlugFromName(provider.name) ?: provider.name.lowercase().replace(" ", "-").replace("_", "-")
@@ -64,7 +64,7 @@ fun ProviderIcon(
     } else {
         contentColor.copy(alpha = 0.38f)
     }
-    
+
     AutoAIIconWithUrl(
         name = provider.name,
         customIconUri = provider.customIconUri,
@@ -82,7 +82,7 @@ fun ProviderIcon(
 /**
  * UNIFIED Model Icon - Use this everywhere a model icon is needed.
  * Takes the whole Model object and its parent provider to ensure consistent display.
- * 
+ *
  * Priority:
  * 1. Custom icon (user-selected)
  * 2. Direct icon URL from API
@@ -106,7 +106,7 @@ fun ModelIcon(
         is ProviderSetting.Claude -> provider.baseUrl
         null -> null
     }
-    
+
     AutoAIIconWithUrl(
         name = model.displayName.ifBlank { model.modelId },
         iconUrl = model.iconUrl,
@@ -134,16 +134,20 @@ private fun AIIcon(
 ) {
     val context = LocalContext.current
     val model = remember(path, contentColor, context) {
-        ImageRequest.Builder(context)
+        val builder = ImageRequest.Builder(context)
             .data("file:///android_asset/icons/$path")
-            .css(
+
+        // 只有 SVG 才应用颜色填充逻辑，PNG 保持原色
+        if (path.endsWith(".svg", ignoreCase = true)) {
+            builder.css(
                 """
                 svg {
                   fill: ${contentColor.toCssHex()};
                 }
             """.trimIndent()
             )
-            .build()
+        }
+        builder.build()
     }
     Surface(
         modifier = modifier.size(24.dp),
@@ -200,7 +204,7 @@ fun AutoProviderIcon(
     padding: Dp = 4.dp,
 ) {
     val darkMode = LocalDarkMode.current
-    
+
     // Priority 1: Local pattern matching
     val localPath = remember(name) { computeAIIconByName(name) }
     if (localPath != null) {
@@ -214,9 +218,9 @@ fun AutoProviderIcon(
         )
         return
     }
-    
+
     // Priority 2: LobeHub CDN - try known slug first, then derive from name
-    val providerSlug = remember(name) { 
+    val providerSlug = remember(name) {
         getProviderSlugFromName(name) ?: name.lowercase().replace(" ", "-").replace("_", "-")
     }
     val lobeHubUrls = getLobeHubIconUrls(providerSlug, darkMode)
@@ -261,7 +265,7 @@ private fun ProviderFaviconFallback(
             "https://favicone.com/$host"
         }
     }
-    
+
     if (faviconUrl != null) {
         RemoteIcon(
             url = faviconUrl,
@@ -327,23 +331,23 @@ private fun getProviderSlugFromName(name: String): String? {
 
 /**
  * AI Icon that uses a layered fallback strategy based on provider type:
- * 
+ *
  * For OpenRouter providers (openrouter.ai):
  * 1. Direct icon URL (if provided by API)
  * 2. LobeHub CDN via provider slug (colored → monochrome fallback)
  * 3. Local pattern matching (for known patterns)
  * 4. Text avatar (final fallback)
- * 
+ *
  * For OpenAI providers (api.openai.com):
  * 1. Direct icon URL (if provided by API)
  * 2. Local pattern matching (for known patterns)
  * 3. OpenAI logo (fallback)
- * 
+ *
  * For Google providers:
  * 1. Direct icon URL (if provided by API)
  * 2. Local pattern matching (for known patterns)
  * 3. Google logo (fallback)
- * 
+ *
  * For other providers:
  * 1. Direct icon URL (if provided by API)
  * 2. Local pattern matching (for known patterns)
@@ -364,7 +368,7 @@ fun AutoAIIconWithUrl(
     padding: Dp = 4.dp,
 ) {
     val darkMode = LocalDarkMode.current
-    
+
     // Priority 0: User-selected custom icon (highest priority)
     if (!customIconUri.isNullOrBlank()) {
         // Handle LobeHub icons theme switching if relevant
@@ -392,11 +396,11 @@ fun AutoAIIconWithUrl(
         }
         return
     }
-    
+
     // Determine provider type based on base URL
     val isOpenRouterProvider = providerBaseUrl?.contains("openrouter.ai") == true
     val isOpenAIProvider = providerBaseUrl?.contains("api.openai.com") == true
-    
+
     // Priority 1: Direct icon URL from API
     if (!iconUrl.isNullOrBlank()) {
         RemoteIcon(
@@ -410,7 +414,7 @@ fun AutoAIIconWithUrl(
         )
         return
     }
-    
+
     // Priority 2: LobeHub CDN via provider slug (for any provider with a slug)
     // Skip CDN for models that already have good local icons
     if (!providerSlug.isNullOrBlank() && !hasGoodLocalIcon(name)) {
@@ -438,7 +442,7 @@ fun AutoAIIconWithUrl(
         )
         return
     }
-    
+
     // Priority 3: Local pattern matching
     val localPath = remember(name) { computeAIIconByName(name) }
     if (localPath != null) {
@@ -452,7 +456,7 @@ fun AutoAIIconWithUrl(
         )
         return
     }
-    
+
     // Priority 4: Provider-specific fallbacks
     when {
         isOpenAIProvider -> {
@@ -523,7 +527,7 @@ private data class IconUrlPair(
 /**
  * Get LobeHub CDN icon URLs from provider slug
  * Returns primary theme-appropriate URL and fallback to opposite theme
- * 
+ *
  * LobeHub structure:
  * - /dark/{slug}.png - dark icons (for dark backgrounds)
  * - /light/{slug}.png - light icons (for light backgrounds)
@@ -533,7 +537,7 @@ private fun getLobeHubIconUrls(providerSlug: String, darkMode: Boolean): IconUrl
     val normalizedSlug = providerSlug.lowercase()
         .replace(" ", "-")
         .replace("_", "-")
-    
+
     // Map some common provider slugs to their LobeHub equivalents
     val slug = when (normalizedSlug.replace("-", "")) {
         "metallama" -> "meta"
@@ -542,12 +546,12 @@ private fun getLobeHubIconUrls(providerSlug: String, darkMode: Boolean): IconUrl
         "moonshotai" -> "moonshot"
         else -> normalizedSlug
     }
-    
+
     // For dark mode: use dark icons (light colored icons visible on dark bg)
     // For light mode: use light icons (dark colored icons visible on light bg)
     val primaryTheme = if (darkMode) "dark" else "light"
     val fallbackTheme = if (darkMode) "light" else "dark"
-    
+
     // npmmirror CDN with correct path format
     return IconUrlPair(
         coloredUrl = "https://registry.npmmirror.com/@lobehub/icons-static-png/latest/files/$primaryTheme/$slug.png",
@@ -557,13 +561,13 @@ private fun getLobeHubIconUrls(providerSlug: String, darkMode: Boolean): IconUrl
 
 /**
  * Composable that loads a remote icon with persistent local storage.
- * 
+ *
  * Flow:
  * 1. Check if icon exists in local storage (instant load)
  * 2. If not, show loading placeholder while downloading
  * 3. Download and save to local storage
  * 4. Display from local storage
- * 
+ *
  * Fallback chain: localIcon -> url -> fallbackUrl -> fallback composable
  */
 @Composable
@@ -580,25 +584,25 @@ private fun RemoteIcon(
 ) {
     val context = LocalContext.current
     val okHttpClient = remember { org.koin.java.KoinJavaComponent.get<okhttp3.OkHttpClient>(okhttp3.OkHttpClient::class.java) }
-    val iconManager = remember(context) { 
+    val iconManager = remember(context) {
         me.rerere.rikkahub.utils.IconStorageManager.getInstance(context, okHttpClient)
     }
     val darkMode = LocalDarkMode.current
-    
+
     // Generate icon key if not provided
     val effectiveKey = iconKey ?: remember(url, darkMode) {
         // Use URL hash as key if no specific key provided
         "url_${url.hashCode()}_${if (darkMode) "dark" else "light"}"
     }
-    
+
     // Check local storage first
-    var localUri by remember(effectiveKey) { 
-        mutableStateOf(iconManager.getLocalIconUri(effectiveKey)) 
+    var localUri by remember(effectiveKey) {
+        mutableStateOf(iconManager.getLocalIconUri(effectiveKey))
     }
     var isDownloading by remember(effectiveKey) { mutableStateOf(false) }
     var downloadFailed by remember(effectiveKey) { mutableStateOf(false) }
     var fallbackFailed by remember(url, fallbackUrl) { mutableStateOf(false) }
-    
+
     // If we have a local icon, use it directly (instant!)
     if (localUri != null) {
         Surface(
@@ -614,7 +618,7 @@ private fun RemoteIcon(
         }
         return
     }
-    
+
     // If download failed and we have a fallback URL, try it
     if (downloadFailed && fallbackUrl != null && !fallbackFailed) {
         // Try fallback URL and also try to save it
@@ -626,7 +630,7 @@ private fun RemoteIcon(
                 fallbackFailed = true
             }
         }
-        
+
         // Show fallback URL while downloading
         Surface(
             modifier = modifier.size(24.dp),
@@ -642,13 +646,13 @@ private fun RemoteIcon(
         }
         return
     }
-    
+
     // If both primary and fallback failed, use the fallback composable
     if (downloadFailed && (fallbackUrl == null || fallbackFailed) && fallback != null) {
         fallback()
         return
     }
-    
+
     // Start download if not already downloading
     if (!isDownloading && !downloadFailed) {
         androidx.compose.runtime.LaunchedEffect(url) {
@@ -662,7 +666,7 @@ private fun RemoteIcon(
             isDownloading = false
         }
     }
-    
+
     // Show loading state while downloading (use remote URL with Coil cache as temporary display)
     Surface(
         modifier = modifier.size(24.dp),
@@ -692,12 +696,12 @@ private fun computeAIIconByName(name: String): String? {
     ICON_CACHE[name]?.let { return it }
 
     val lowerName = name.lowercase()
-    
+
     // OpenRouter model ID parsing: extract provider and model from "provider/model" format
     val hasSlash = lowerName.contains("/")
     val providerPart = if (hasSlash) lowerName.substringBefore("/") else null
     val modelPart = if (hasSlash) lowerName.substringAfter("/") else null
-    
+
     // First, try to match against model name (this is more specific and should take priority)
     // For OpenRouter: "anthropic/claude-3" should show Claude icon, not Anthropic
     val modelIcon = modelPart?.let { matchModelPattern(it) }
@@ -705,18 +709,18 @@ private fun computeAIIconByName(name: String): String? {
         ICON_CACHE[name] = modelIcon
         return modelIcon
     }
-    
+
     // Then, try to match against provider
     val providerIcon = providerPart?.let { matchProviderPattern(it) }
     if (providerIcon != null) {
         ICON_CACHE[name] = providerIcon
         return providerIcon
     }
-    
+
     // Finally, try to match the full name
     val fullNameIcon = matchModelPattern(lowerName) ?: matchProviderPattern(lowerName)
     fullNameIcon?.let { ICON_CACHE[name] = it }
-    
+
     return fullNameIcon
 }
 
@@ -740,7 +744,7 @@ private fun matchProviderPattern(providerName: String): String? {
         providerName == "together" -> "openrouter.svg"
         providerName == "fireworks" -> "openrouter.svg"
         providerName == "openrouter" -> "openrouter.svg"
-        
+
         // Additional OpenRouter providers - use generic or related icons
         providerName == "nousresearch" -> "openrouter.svg"
         providerName == "cognitivecomputations" -> "openrouter.svg"
@@ -759,11 +763,12 @@ private fun matchProviderPattern(providerName: String): String? {
         providerName == "mancer" -> "openrouter.svg"
         providerName == "lynn" -> "openrouter.svg"
         providerName == "pygmalionai" -> "openrouter.svg"
-        
+        providerName == "4sapi" -> "xinglian4sapi.png"
+
         // Fallback patterns using contains for partial matches
         providerName.contains("llama") -> "meta-color.svg"
         providerName.contains("qwen") -> "qwen-color.svg"
-        
+
         else -> null
     }
 }
@@ -855,6 +860,7 @@ private fun matchIconPattern(searchName: String): String? {
         PATTERN_GROQ.containsMatchIn(searchName) -> "groq.svg"
         PATTERN_TOKENPONY.containsMatchIn(searchName) -> "tokenpony.svg"
         PATTERN_LING.containsMatchIn(searchName) -> "ling.png"
+        PATTERN_SAPI.containsMatchIn(searchName) -> "xinglian4sapi.png"
         // Search providers
         PATTERN_SEARCH_LINKUP.containsMatchIn(searchName) -> "linkup.png"
         PATTERN_SEARCH_BING.containsMatchIn(searchName) -> "bing.png"
@@ -909,6 +915,7 @@ private val PATTERN_VERCEL = Regex("vercel")
 private val PATTERN_GROQ = Regex("groq")
 private val PATTERN_TOKENPONY = Regex("tokenpony|小马算力")
 private val PATTERN_LING = Regex("ling|ring|百灵")
+private val PATTERN_SAPI = Regex("4sapi")
 
 private val PATTERN_SEARCH_LINKUP = Regex("linkup")
 private val PATTERN_SEARCH_BING = Regex("bing")
@@ -954,4 +961,3 @@ fun SiliconFlowPowerByIcon(modifier: Modifier = Modifier) {
         AsyncImage(model = R.drawable.siliconflow_dark, contentDescription = null, modifier = modifier)
     }
 }
-
