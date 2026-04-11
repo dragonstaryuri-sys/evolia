@@ -606,7 +606,7 @@ class GenerationHandler(
         }
 
         // Minimums
-        val minChatHistory = 2.coerceAtMost(chatHistoryCandidates.size)
+        val minChatHistory = 4.coerceAtMost(chatHistoryCandidates.size)
         val minMemories = if (assistant.enableMemory) 1.coerceAtMost(effectiveMemoriesCandidates.size) else 0
 
         // Add minimums first

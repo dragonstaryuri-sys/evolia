@@ -111,7 +111,7 @@ class SpontaneousWorker(
             limit = 5
         )
         val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
-        val history = conversation.currentMessages.takeLast(4).joinToString("\n") { "${it.role}: ${it.toText()}" }
+        val history = conversation.currentMessages.takeLast(6).joinToString("\n") { "${it.role}: ${it.toText()}" }
 
         val customPrompt = assistant.spontaneousPrompt.ifBlank {
             """
@@ -120,17 +120,17 @@ class SpontaneousWorker(
             [Persona/System Prompt]
             ${assistant.systemPrompt}
 
+            [Master Memory]
+            ${assistant.masterMemoryContent}
+
             [Context]
             - It has been $timeDiffHours hours ($timeDiffMinutes minutes) since the last message in this conversation.
             - Recent chat history (last 4 messages):
             {{history}}
 
-            [Relevant Memories]
-            {{memories}}
-
             [Task]
-            Based on your persona and the context, do you want to send a spontaneous message to the user?
-            - If YES: Formulate a natural, concise message as if you're reaching out in the chat.Keep it simple.
+            Based on your persona, master memory, and the context, do you want to send a spontaneous message to the user?
+            - If YES: Formulate a natural, concise message as if you're reaching out in the chat. Keep it simple.
             - If NO: Explain why.
 
             [Output Format (Strict JSON)]
