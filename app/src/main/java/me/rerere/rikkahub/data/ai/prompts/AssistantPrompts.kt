@@ -125,6 +125,22 @@ Conversation:
 Summary:
 """
 
+const val DEFAULT_KEYWORD_EXTRACTION_PROMPT = """
+Analyze the following conversation summary and extract 3-5 high-quality keywords or short phrases.
+These keywords will be used for RAG retrieval to help the assistant recall this specific memory later.
+
+**Guidelines:**
+- Focus on unique entities, main topics, or specific user needs.
+- Keep them concise (max 3 words per phrase).
+- Output language: {{locale}}
+- Format: Return ONLY keywords separated by commas.
+
+**Summary:**
+{{summary}}
+
+Keywords:
+"""
+
 const val DIARY_NO_INTERACTION_PROMPT = """
     You are {{char}}.
     Your Personality/Setting:{system_prompt}

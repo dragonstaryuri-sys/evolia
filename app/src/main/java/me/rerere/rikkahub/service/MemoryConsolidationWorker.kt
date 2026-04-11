@@ -16,6 +16,7 @@ import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -86,7 +87,6 @@ class MemoryConsolidationWorker(
         val messageCount = conv.currentMessages.size
         val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
 
-        // 校验：新消息达到4条
         if (existingEpisode != null) {
             if (messageCount - existingEpisode.significance < 4) {
                 updateLastResult(assistant.id, applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data))
@@ -97,34 +97,47 @@ class MemoryConsolidationWorker(
             return false
         }
 
-        // 使用 memoryModelId 进行整合
         val modelId = assistant.memoryModelId ?: settings.memoryModelId
         val model = settings.findModelById(modelId) ?: return false
         val providerSetting = model.findProvider(settings.providers) ?: return false
         val handler = providerManager.getProviderByType(providerSetting)
 
         return try {
-            val newMessages = if (existingEpisode != null) {
-                conv.currentMessages.drop(existingEpisode.significance)
+            val episodeSignificance = existingEpisode?.significance ?: 0
+            val summarySignificance = if (conv.contextSummary != null) conv.contextSummaryUpToIndex + 1 else 0
+
+            val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
+                conv.contextSummary to summarySignificance
             } else {
-                conv.currentMessages
+                existingEpisode?.content to episodeSignificance
             }
 
-            val summary = generateConversationSummary(
-                handler = handler,
-                providerSetting = providerSetting,
-                model = model,
-                assistantName = assistant.name,
-                previousSummary = existingEpisode?.content,
-                messages = newMessages
-            )
+            val newMessages = conv.currentMessages.drop(skipCount)
+
+            val summary = if (newMessages.isEmpty() && baseSummary != null) {
+                baseSummary
+            } else {
+                generateConversationSummary(
+                    handler = handler,
+                    providerSetting = providerSetting,
+                    model = model,
+                    assistantName = assistant.name,
+                    previousSummary = baseSummary,
+                    messages = newMessages,
+                    temporarySummaries = conv.temporarySummaries
+                )
+            }
 
             if (summary.isNotBlank()) {
+                // Step 1: Extract keywords for the summary
+                val keywords = extractKeywords(handler, providerSetting, model, summary)
+
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conv.id.toString(),
                     content = summary,
+                    keywords = keywords,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
                     significance = messageCount,
@@ -162,7 +175,6 @@ class MemoryConsolidationWorker(
 
         val conversations = conversationRepository.getConversationsOfAssistant(currentAssistant.id).first()
 
-        // 1. Process Episodic Memories
         val toConsolidateEpisodes = conversations.filter { conv ->
             if (!currentAssistant.enableMemoryConsolidation) return@filter false
 
@@ -182,7 +194,6 @@ class MemoryConsolidationWorker(
 
         if (toConsolidateEpisodes.isEmpty()) return
 
-        // 使用 memoryModelId 进行整合
         val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
         val model = currentSettings.findModelById(modelId) ?: return
         val providerSetting = model.findProvider(currentSettings.providers) ?: return
@@ -192,27 +203,42 @@ class MemoryConsolidationWorker(
         for (conv in toConsolidateEpisodes) {
             try {
                 val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
-                val newMessages = if (existingEpisode != null) {
-                    conv.currentMessages.drop(existingEpisode.significance)
+
+                val episodeSignificance = existingEpisode?.significance ?: 0
+                val summarySignificance = if (conv.contextSummary != null) conv.contextSummaryUpToIndex + 1 else 0
+
+                val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
+                    conv.contextSummary to summarySignificance
                 } else {
-                    conv.currentMessages
+                    existingEpisode?.content to episodeSignificance
                 }
 
-                val summary = generateConversationSummary(
-                    handler = handler,
-                    providerSetting = providerSetting,
-                    model = model,
-                    assistantName = currentAssistant.name,
-                    previousSummary = existingEpisode?.content,
-                    messages = newMessages
-                )
+                val newMessages = conv.currentMessages.drop(skipCount)
+
+                val summary = if (newMessages.isEmpty() && baseSummary != null) {
+                    baseSummary
+                } else {
+                    generateConversationSummary(
+                        handler = handler,
+                        providerSetting = providerSetting,
+                        model = model,
+                        assistantName = currentAssistant.name,
+                        previousSummary = baseSummary,
+                        messages = newMessages,
+                        temporarySummaries = conv.temporarySummaries
+                    )
+                }
 
                 if (summary.isNotBlank()) {
+                    // Step 1: Extract keywords for the summary
+                    val keywords = extractKeywords(handler, providerSetting, model, summary)
+
                     val episode = ChatEpisodeEntity(
                         id = existingEpisode?.id ?: 0,
                         assistantId = currentAssistant.id.toString(),
                         conversationId = conv.id.toString(),
                         content = summary,
+                        keywords = keywords,
                         startTime = conv.createAt.toEpochMilli(),
                         endTime = conv.updateAt.toEpochMilli(),
                         significance = conv.currentMessages.size,
@@ -227,7 +253,6 @@ class MemoryConsolidationWorker(
             }
         }
 
-        // 2. Process Master Memory
         var updatedMasterContent: String? = null
         if (currentAssistant.enableMasterMemory) {
             val newConversations = conversations.filter {
@@ -266,7 +291,6 @@ class MemoryConsolidationWorker(
             }
         }
 
-        // 3. Finalize
         val finalSettings = settingsStore.settingsFlow.first()
         val now = System.currentTimeMillis()
 
@@ -292,21 +316,25 @@ class MemoryConsolidationWorker(
         model: me.rerere.ai.provider.Model,
         assistantName: String,
         previousSummary: String?,
-        messages: List<UIMessage>
+        messages: List<UIMessage>,
+        temporarySummaries: List<String> = emptyList()
     ): String {
-        // 限制单条消息最大长度为 5000 字符，并只取最近 100 条消息，防止单次请求过载
         val messagesText = messages.takeLast(100).joinToString("\n") { "${it.role}: ${it.toText().take(5000)}" }
+        val detailText = if (temporarySummaries.isNotEmpty()) {
+            "\n### Tactical Details from Recent Segments:\n" + temporarySummaries.joinToString("\n") { "- $it" }
+        } else ""
+
         val locale = Locale.getDefault().displayName
 
         val prompt = if (previousSummary != null) {
             DEFAULT_FULL_SUMMARY_PROMPT
-                .replace("{{previous_summary}}", previousSummary)
+                .replace("{{previous_summary}}", previousSummary + detailText)
                 .replace("{{new_messages}}", messagesText)
                 .replace("{{locale}}", locale)
                 .replace("{{char}}", assistantName)
         } else {
             DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-                .replace("{{text}}", messagesText)
+                .replace("{{text}}", detailText + "\n" + messagesText)
                 .replace("{{locale}}", locale)
                 .replace("{{char}}", assistantName)
         }
@@ -320,6 +348,32 @@ class MemoryConsolidationWorker(
                 temperature = 0.3f,
                 topP = 0f,
                 maxTokens = 1024
+            )
+        )
+        return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private suspend fun extractKeywords(
+        handler: me.rerere.ai.provider.Provider<*>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        summary: String
+    ): String {
+        val locale = Locale.getDefault().displayName
+        val prompt = DEFAULT_KEYWORD_EXTRACTION_PROMPT
+            .replace("{{summary}}", summary)
+            .replace("{{locale}}", locale)
+
+        val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+        val resp = h.generateText(
+            providerSetting,
+            listOf(UIMessage.user(prompt)),
+            TextGenerationParams(
+                model = model,
+                temperature = 0.3f,
+                topP = 0f,
+                maxTokens = 256
             )
         )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""

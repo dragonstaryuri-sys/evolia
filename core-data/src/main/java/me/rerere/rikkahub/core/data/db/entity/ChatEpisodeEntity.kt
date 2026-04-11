@@ -18,6 +18,8 @@ data class ChatEpisodeEntity(
     val assistantId: String,
     @ColumnInfo("content")
     val content: String, // Summary of the episode
+    @ColumnInfo("keywords")
+    val keywords: String? = null, // Extracted keywords for better RAG matching
     @ColumnInfo("embedding")
     val embedding: String? = null,
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")
