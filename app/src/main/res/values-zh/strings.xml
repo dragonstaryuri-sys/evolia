@@ -1341,5 +1341,7 @@
   <!-- Tips -->
   <string name="notification_chat_generating">正在生成回复...</string>
   <string name="notification_channel_chat_generation">对话生成</string>
+  <string name="setting_provider_page_balance_authorize_key">余额查询授权码 (Authorize Key)</string>
+  <string name="setting_provider_page_balance_user_id">用户 ID (User ID)</string>
 
 </resources>

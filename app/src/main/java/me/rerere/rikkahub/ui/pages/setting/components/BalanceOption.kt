@@ -5,13 +5,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,20 +23,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.Refresh
 import me.rerere.ai.provider.BalanceOption
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.common.http.isJsonExprValid
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS
-import androidx.compose.ui.text.font.FontFamily
 
-private val ApiPathRegex = Regex("""^/[^ \t\n\r]*$""")
+private val ApiPathRegex = Regex("""^/[^ \t\n\r]*$|^http.*$""")
 
 @Composable
 fun SettingProviderBalanceOption(
@@ -98,6 +95,27 @@ fun SettingProviderBalanceOption(
                     modifier = Modifier.fillMaxWidth(),
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
                 )
+
+                // 专门为 4sapi 等需要特殊授权码的平台准备的输入框
+                OutlinedTextField(
+                    value = balanceOption.authorizeKey,
+                    onValueChange = { onEdit(balanceOption.copy(authorizeKey = it)) },
+                    label = { Text(stringResource(R.string.setting_provider_page_balance_authorize_key)) },
+                    placeholder = { Text("Authorize Key (Optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                )
+
+                // User ID 输入框
+                OutlinedTextField(
+                    value = balanceOption.userId,
+                    onValueChange = { onEdit(balanceOption.copy(userId = it)) },
+                    label = { Text(stringResource(R.string.setting_provider_page_balance_user_id)) },
+                    placeholder = { Text("User ID (Optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+                )
+
                 IconButton(
                     onClick = {
                         val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }

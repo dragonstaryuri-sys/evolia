@@ -1395,5 +1395,7 @@
   <!-- Tips -->
   <string name="notification_chat_generating">Chat is generating...</string>
   <string name="notification_channel_chat_generation">Chat Generation</string>
+  <string name="setting_provider_page_balance_authorize_key">Authorize Key</string>
+  <string name="setting_provider_page_balance_user_id">User ID</string>
 
 </resources>

@@ -47,14 +47,14 @@ class OpenAIProvider(
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
         withContext(Dispatchers.IO) {
             val key = keyRoulette.next(providerSetting.apiKey)
-            
+
             // Fetch regular models
             val regularModels = fetchModelsFromUrl(
                 url = "${providerSetting.baseUrl}/models",
                 key = key,
                 providerSetting = providerSetting
             )
-            
+
             // For OpenRouter, also fetch embedding models using output_modalities filter
             // OpenRouter's /models endpoint doesn't return embedding models by default
             val isOpenRouter = providerSetting.baseUrl.contains("openrouter.ai", ignoreCase = true)
@@ -68,14 +68,14 @@ class OpenAIProvider(
             } else {
                 emptyList()
             }
-            
+
             // Combine and deduplicate by model ID
             val allModels = (regularModels + embeddingModels)
                 .distinctBy { it.modelId }
-            
+
             allModels
         }
-    
+
     private suspend fun fetchModelsFromUrl(
         url: String,
         key: String,
@@ -115,20 +115,20 @@ class OpenAIProvider(
             val outputModalities = architecture?.get("output_modalities")?.jsonArray
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 ?: emptyList()
-            
+
             val isEmbedding = forceEmbeddingType ||
                 id.contains("embed", ignoreCase = true) ||
                 modality?.contains("embedding", ignoreCase = true) == true ||
                 outputModalities.any { it.contains("embedding", ignoreCase = true) }
-            
+
             // Extract icon URL if available (some APIs provide this)
             val iconUrl = modelObj["icon"]?.jsonPrimitive?.contentOrNull
                 ?: architecture?.get("icon")?.jsonPrimitive?.contentOrNull
-            
+
             // Extract provider slug from model ID (e.g., "anthropic/claude-3.5" -> "anthropic")
             // Used for LobeHub CDN icon lookup
             val providerSlug = if (id.contains("/")) id.substringBefore("/") else null
-            
+
             Model(
                 modelId = id,
                 displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull ?: id,
@@ -141,17 +141,51 @@ class OpenAIProvider(
     }
 
     override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(Dispatchers.IO) {
-        val key = keyRoulette.next(providerSetting.apiKey)
-        val url = if (providerSetting.balanceOption.apiPath.startsWith("http")) {
-            providerSetting.balanceOption.apiPath
+        // 1. 确定授权 Key
+        val key = if (providerSetting.balanceOption.authorizeKey.isNotBlank()) {
+            providerSetting.balanceOption.authorizeKey
         } else {
-            "${providerSetting.baseUrl}${providerSetting.balanceOption.apiPath}"
+            keyRoulette.next(providerSetting.apiKey)
         }
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $key")
-            .get()
-            .build()
+
+        // 识别是否为 4sapi
+        val is4sApi = providerSetting.baseUrl.contains("4sapi.com", ignoreCase = true)
+
+        // 智能默认值：如果是 4sapi 且用户没有修改过默认路径，则自动使用 4sapi 的地址和解析规则
+        val apiPath = if (is4sApi && providerSetting.balanceOption.apiPath == "/credits") {
+            "https://4sapi.com/api/user/self"
+        } else {
+            providerSetting.balanceOption.apiPath
+        }
+
+        val resultPath = if (is4sApi && providerSetting.balanceOption.resultPath == "data.total_usage") {
+            "quota"
+        } else {
+            providerSetting.balanceOption.resultPath
+        }
+
+        val url = if (apiPath.startsWith("http")) {
+            apiPath
+        } else {
+            "${providerSetting.baseUrl}$apiPath"
+        }
+
+        val requestBuilder = Request.Builder().url(url).get()
+
+        // 2. 处理 Authorization Header (始终带有 Bearer 前缀)
+        val finalAuthValue = if (key.startsWith("Bearer ", ignoreCase = true)) {
+            key
+        } else {
+            "Bearer $key"
+        }
+        requestBuilder.addHeader("Authorization", finalAuthValue)
+
+        // 3. 处理 New-Api-User Header (User ID)
+        if (providerSetting.balanceOption.userId.isNotBlank()) {
+            requestBuilder.addHeader("New-Api-User", providerSetting.balanceOption.userId)
+        }
+
+        val request = requestBuilder.build()
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
         if (!response.isSuccessful) {
             error("Failed to get balance: ${response.code} ${response.body?.string()}")
@@ -159,10 +193,16 @@ class OpenAIProvider(
 
         val bodyStr = response.body.string()
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-        val value = bodyJson.getByKey(providerSetting.balanceOption.resultPath)
-        val digitalValue = value.toFloatOrNull()
+        val value = bodyJson.getByKey(resultPath)
+
+        val digitalValue = value.toDoubleOrNull()
         if(digitalValue != null) {
-            "%.2f".format(digitalValue)
+            val finalValue = if (is4sApi && resultPath.contains("quota")) {
+                digitalValue * 0.000002
+            } else {
+                digitalValue
+            }
+            "%.2f".format(finalValue)
         } else {
             value
         }

@@ -27,6 +27,8 @@ data class BalanceOption(
     val enabled: Boolean = false, // 是否开启余额获取功能
     val apiPath: String = "/credits", // 余额获取API路径
     val resultPath: String = "data.total_usage", // 余额获取JSON路径
+    val authorizeKey: String = "", // 余额获取授权Key (可选)
+    val userId: String = "", // 用户ID (可选)
 )
 
 @Serializable
@@ -144,8 +146,8 @@ sealed class ProviderSetting {
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
         @Transient override val builtIn: Boolean = false,
-        @Transient override val description: @Composable (() -> Unit) = {},
-        @Transient override val shortDescription: @Composable (() -> Unit) = {},
+        @Transient override val description: @Composable() () -> Unit = {},
+        @Transient override val shortDescription: @Composable() () -> Unit = {},
         var apiKey: String = "",
         var baseUrl: String = "https://generativelanguage.googleapis.com/v1beta", // only for google AI
         var vertexAI: Boolean = false,

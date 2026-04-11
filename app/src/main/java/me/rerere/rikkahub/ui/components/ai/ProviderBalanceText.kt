@@ -3,7 +3,8 @@ package me.rerere.rikkahub.ui.components.ai
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MonetizationOn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
@@ -16,8 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.MonetizationOn
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.utils.toDp
@@ -50,8 +49,8 @@ fun ProviderBalanceText(
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified
 ) {
-    if (!providerSetting.balanceOption.enabled || providerSetting !is ProviderSetting.OpenAI) {
-        // Balance option is disabled or provider is not OpenAI type
+    // 移除 providerSetting !is ProviderSetting.OpenAI 的限制
+    if (!providerSetting.balanceOption.enabled) {
         return
     }
 
