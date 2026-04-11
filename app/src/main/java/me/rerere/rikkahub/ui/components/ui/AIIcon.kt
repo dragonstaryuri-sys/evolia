@@ -137,8 +137,9 @@ private fun AIIcon(
         val builder = ImageRequest.Builder(context)
             .data("file:///android_asset/icons/$path")
 
-        // 只有 SVG 才应用颜色填充逻辑，PNG 保持原色
-        if (path.endsWith(".svg", ignoreCase = true)) {
+        // 只有 SVG 且不包含 "-color" 的图标才应用颜色填充逻辑
+        // PNG 保持原色，带彩色标记的 SVG 也保持原色
+        if (path.endsWith(".svg", ignoreCase = true) && !path.contains("-color")) {
             builder.css(
                 """
                 svg {
@@ -513,7 +514,8 @@ private fun hasGoodLocalIcon(name: String): Boolean {
            lowerName.contains("gemma") ||
            lowerName.contains("grok") ||
            lowerName.contains("openai") ||
-           lowerName.contains("google")
+           lowerName.contains("google") ||
+           lowerName.contains("silicon")
 }
 
 /**
@@ -765,6 +767,7 @@ private fun matchProviderPattern(providerName: String): String? {
         providerName == "pygmalionai" -> "openrouter.svg"
         providerName == "4sapi" -> "xinglian4sapi.png"
         providerName == "volcengine" -> "volcengine-color.svg"
+        providerName == "siliconflow" || providerName.contains("silicon") || providerName.contains("硅基") -> "siliconflow.svg"
 
         // Fallback patterns using contains for partial matches
         providerName.contains("llama") -> "meta-color.svg"
@@ -861,8 +864,10 @@ private fun matchIconPattern(searchName: String): String? {
         PATTERN_GROQ.containsMatchIn(searchName) -> "groq.svg"
         PATTERN_TOKENPONY.containsMatchIn(searchName) -> "tokenpony.svg"
         PATTERN_LING.containsMatchIn(searchName) -> "ling.png"
+
+        PATTERN_VOLCENGINE.containsMatchIn(searchName) -> "volcengine-color.svg"
         PATTERN_SAPI.containsMatchIn(searchName) -> "xinglian4sapi.png"
-        PATTERN_SAPI.containsMatchIn(searchName) -> "volcengine-color.svg"
+
         // Search providers
         PATTERN_SEARCH_LINKUP.containsMatchIn(searchName) -> "linkup.png"
         PATTERN_SEARCH_BING.containsMatchIn(searchName) -> "bing.png"
@@ -888,7 +893,6 @@ private val PATTERN_QWEN = Regex("qwen|qwq|qvq")
 private val PATTERN_DOUBAO = Regex("doubao")
 private val PATTERN_OPENROUTER = Regex("openrouter")
 private val PATTERN_ZHIPU = Regex("zhipu|智谱|glm")
-private val PATTERN_VOLCENGINE = Regex("火山引擎|volcengine|VolcEngine")
 private val PATTERN_MISTRAL = Regex("mistral")
 private val PATTERN_META = Regex("meta\\b|(?<!o)llama")
 private val PATTERN_HUNYUAN = Regex("hunyuan|tencent")
@@ -919,6 +923,7 @@ private val PATTERN_GROQ = Regex("groq")
 private val PATTERN_TOKENPONY = Regex("tokenpony|小马算力")
 private val PATTERN_LING = Regex("ling|ring|百灵")
 private val PATTERN_SAPI = Regex("4sapi")
+private val PATTERN_VOLCENGINE = Regex("volcengine|火山")
 
 private val PATTERN_SEARCH_LINKUP = Regex("linkup")
 private val PATTERN_SEARCH_BING = Regex("bing")
