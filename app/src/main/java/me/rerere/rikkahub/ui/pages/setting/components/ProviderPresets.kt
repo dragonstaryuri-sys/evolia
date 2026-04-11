@@ -53,6 +53,45 @@ val PROVIDER_PRESETS = listOf(
         )
     ),
     ProviderPreset(
+        name = "DeepSeek",
+        description = "DeepSeek",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://api.deepseek.com",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/balance",
+            resultPath = "balance_infos[0].total_balance"
+        )
+    ),
+    ProviderPreset(
+        name = "SiliconFlow",
+        description = "硅基流动，提供各大国内模型接口",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://api.siliconflow.cn/v1",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/info",
+            resultPath = "data.balance"
+        )
+    ),
+    ProviderPreset(
+        name = "VolcEngine",
+        description = "火山引擎，字节跳动 AI 平台，豆包系列模型",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://ark.cn-beijing.volces.com/api/v3"
+    ),
+    ProviderPreset(
+        name = "4sapi",
+        description = "高品质聚合 AI 服务商",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://4sapi.com/v1",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "https://4sapi.com/api/user/self",
+            resultPath = "data.quota"
+        )
+    ),
+    ProviderPreset(
         name = "Ollama",
         description = "Cloud LLMs hosted by Ollama",
         type = ProviderSetting.OpenAI::class,
@@ -70,17 +109,6 @@ val PROVIDER_PRESETS = listOf(
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://api.groq.com/openai/v1",
         useResponseApi = true // Groq supports OpenAI Responses API
-    ),
-    ProviderPreset(
-        name = "DeepSeek",
-        description = "Strong reasoning and coding AI",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://api.deepseek.com",
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "/user/balance",
-            resultPath = "balance_infos[0].total_balance"
-        )
     ),
     ProviderPreset(
         name = "Together AI",
@@ -157,17 +185,6 @@ val PROVIDER_PRESETS = listOf(
         description = "High-performance model inference",
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://api.hyperbolic.xyz/v1"
-    ),
-    ProviderPreset(
-        name = "SiliconFlow",
-        description = "Leading Chinese AI provider",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://api.siliconflow.cn/v1",
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "/user/info",
-            resultPath = "data.balance"
-        )
     ),
     ProviderPreset(
         name = "AI21",
@@ -301,17 +318,6 @@ val PROVIDER_PRESETS = listOf(
         description = "GLM models with vision, tools, and reasoning",
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://open.bigmodel.cn/api/paas/v4"
-    ),
-    ProviderPreset(
-        name = "4sapi",
-        description = "High-quality aggregated AI service",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://4sapi.com/v1",
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "https://4sapi.com/api/user/self",
-            resultPath = "quota"
-        )
     ),
 )
 

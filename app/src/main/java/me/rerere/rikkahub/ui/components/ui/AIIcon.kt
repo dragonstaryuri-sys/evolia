@@ -764,6 +764,7 @@ private fun matchProviderPattern(providerName: String): String? {
         providerName == "lynn" -> "openrouter.svg"
         providerName == "pygmalionai" -> "openrouter.svg"
         providerName == "4sapi" -> "xinglian4sapi.png"
+        providerName == "volcengine" -> "volcengine-color.svg"
 
         // Fallback patterns using contains for partial matches
         providerName.contains("llama") -> "meta-color.svg"
@@ -861,6 +862,7 @@ private fun matchIconPattern(searchName: String): String? {
         PATTERN_TOKENPONY.containsMatchIn(searchName) -> "tokenpony.svg"
         PATTERN_LING.containsMatchIn(searchName) -> "ling.png"
         PATTERN_SAPI.containsMatchIn(searchName) -> "xinglian4sapi.png"
+        PATTERN_SAPI.containsMatchIn(searchName) -> "volcengine-color.svg"
         // Search providers
         PATTERN_SEARCH_LINKUP.containsMatchIn(searchName) -> "linkup.png"
         PATTERN_SEARCH_BING.containsMatchIn(searchName) -> "bing.png"
@@ -886,6 +888,7 @@ private val PATTERN_QWEN = Regex("qwen|qwq|qvq")
 private val PATTERN_DOUBAO = Regex("doubao")
 private val PATTERN_OPENROUTER = Regex("openrouter")
 private val PATTERN_ZHIPU = Regex("zhipu|智谱|glm")
+private val PATTERN_VOLCENGINE = Regex("火山引擎|volcengine|VolcEngine")
 private val PATTERN_MISTRAL = Regex("mistral")
 private val PATTERN_META = Regex("meta\\b|(?<!o)llama")
 private val PATTERN_HUNYUAN = Regex("hunyuan|tencent")
