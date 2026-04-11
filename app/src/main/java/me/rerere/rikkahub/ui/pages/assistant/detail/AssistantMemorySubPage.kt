@@ -411,7 +411,7 @@ fun AssistantMemorySettings(
                     MasterMemoryCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
-                        onConsolidate = { assistantDetailVM.runManualConsolidation() }
+                        onConsolidate = { assistantDetailVM.runManualConsolidation(consolidateEpisodes = false, updateMaster = true) }
                     )
                 }
             }
@@ -430,7 +430,7 @@ fun AssistantMemorySettings(
                     ConsolidationSettingsCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
-                        onConsolidate = { assistantDetailVM.runManualConsolidation() },
+                        onConsolidate = { assistantDetailVM.runManualConsolidation(consolidateEpisodes = true, updateMaster = false) },
                         showSummarizerWarning = assistant.summarizerModelId == null,
                         onNavigateToModels = onNavigateToModels
                     )
@@ -826,7 +826,7 @@ private fun MasterMemoryCard(
                         ) {
                             Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.assistant_memory_consolidate_now))
+                            Text(stringResource(R.string.assistant_memory_update_masterfile))
                         }
                     }
                 }

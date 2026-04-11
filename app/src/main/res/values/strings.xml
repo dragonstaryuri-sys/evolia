@@ -1268,6 +1268,7 @@
   <string name="assistant_memory_consolidation_delay_value">%d minutes</string>
   <string name="assistant_memory_last_consolidation">Last run: %s</string>
   <string name="assistant_memory_consolidation_result">Result: %s</string>
+  <string name="assistant_memory_update_masterfile">Update master file</string>
   <string name="assistant_memory_consolidate_now">Consolidate Now</string>
   <string name="assistant_memory_group_master">Memory Archive (Master File)</string>
   <string name="assistant_memory_enable_master_title">Enable Master File</string>

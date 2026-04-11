@@ -1258,7 +1258,8 @@
   <string name="assistant_memory_consolidation_delay_value">%d 分钟</string>
   <string name="assistant_memory_last_consolidation">最近运行：%s</string>
   <string name="assistant_memory_consolidation_result">结果：%s</string>
-  <string name="assistant_memory_consolidate_now">立即整合</string>
+  <string name="assistant_memory_consolidate_now">整合对话</string>
+  <string name="assistant_memory_update_masterfile">更新记忆档案</string>
   <string name="assistant_memory_group_master">记忆档案</string>
   <string name="assistant_memory_enable_master_title">开启记忆档案</string>
   <string name="assistant_memory_enable_master_desc">使智能体对你和你们的关系有总体认知</string>

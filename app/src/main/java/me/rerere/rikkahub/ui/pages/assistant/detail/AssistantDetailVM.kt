@@ -162,7 +162,10 @@ class AssistantDetailVM(
     private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
     val embeddingProgress = _embeddingProgress.asStateFlow()
 
-    fun runManualConsolidation() {
+    fun runManualConsolidation(
+        consolidateEpisodes: Boolean = true,
+        updateMaster: Boolean = true
+    ) {
         viewModelScope.launch {
             if (_isConsolidating.value) return@launch
             _isConsolidating.value = true
@@ -171,36 +174,37 @@ class AssistantDetailVM(
                 val currentAssistant = assistant.value
                 val conversations = conversationRepository.getConversationsOfAssistant(currentAssistant.id).first()
 
-                val toConsolidateEpisodes = conversations.filter { conv ->
-                    !conv.isConsolidated && conv.currentMessages.size >= 4
-                }
-
                 val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
                 val model = currentSettings.findModelById(modelId) ?: error("No model found")
                 val providerSetting = model.findProvider(currentSettings.providers) ?: error("No provider found")
                 val handler = providerManager.getProviderByType(providerSetting)
 
                 var episodicSuccessCount = 0
-                for (conv in toConsolidateEpisodes) {
-                    val summary = generateConversationSummary(handler, providerSetting, model, conv)
-                    if (summary.isNotBlank()) {
-                        val episode = ChatEpisodeEntity(
-                            assistantId = currentAssistant.id.toString(),
-                            conversationId = conv.id.toString(),
-                            content = summary,
-                            startTime = conv.createAt.toEpochMilli(),
-                            endTime = conv.updateAt.toEpochMilli(),
-                            significance = 5,
-                            lastAccessedAt = System.currentTimeMillis()
-                        )
-                        chatEpisodeDAO.insertEpisode(episode)
-                        conversationRepository.markAsConsolidated(conv.id)
-                        episodicSuccessCount++
+                if (consolidateEpisodes) {
+                    val toConsolidateEpisodes = conversations.filter { conv ->
+                        !conv.isConsolidated && conv.currentMessages.size >= 4
+                    }
+                    for (conv in toConsolidateEpisodes) {
+                        val summary = generateConversationSummary(handler, providerSetting, model, conv)
+                        if (summary.isNotBlank()) {
+                            val episode = ChatEpisodeEntity(
+                                assistantId = currentAssistant.id.toString(),
+                                conversationId = conv.id.toString(),
+                                content = summary,
+                                startTime = conv.createAt.toEpochMilli(),
+                                endTime = conv.updateAt.toEpochMilli(),
+                                significance = 5,
+                                lastAccessedAt = System.currentTimeMillis()
+                            )
+                            chatEpisodeDAO.insertEpisode(episode)
+                            conversationRepository.markAsConsolidated(conv.id)
+                            episodicSuccessCount++
+                        }
                     }
                 }
 
                 var updatedMasterContent: String? = null
-                if (currentAssistant.enableMasterMemory) {
+                if (updateMaster && currentAssistant.enableMasterMemory) {
                     val contextParts = mutableListOf<String>()
                     for (conv in conversations.filter { it.currentMessages.size >= 2 }) {
                         val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
