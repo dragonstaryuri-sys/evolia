@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.yield
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
@@ -40,6 +42,7 @@ import kotlinx.serialization.json.*
 import java.util.Locale
 import java.time.LocalDate
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.CancellationException
 
 private const val TAG = "AssistantDetailVM"
 
@@ -162,12 +165,14 @@ class AssistantDetailVM(
     private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
     val embeddingProgress = _embeddingProgress.asStateFlow()
 
+    private var consolidationJob: Job? = null
+
     fun runManualConsolidation(
         consolidateEpisodes: Boolean = true,
         updateMaster: Boolean = true
     ) {
-        viewModelScope.launch {
-            if (_isConsolidating.value) return@launch
+        if (_isConsolidating.value) return
+        consolidationJob = viewModelScope.launch {
             _isConsolidating.value = true
             try {
                 val currentSettings = settings.value
@@ -185,6 +190,7 @@ class AssistantDetailVM(
                         !conv.isConsolidated && conv.currentMessages.size >= 4
                     }
                     for (conv in toConsolidateEpisodes) {
+                        yield() // 响应取消
                         val summary = generateConversationSummary(handler, providerSetting, model, conv)
                         if (summary.isNotBlank()) {
                             val episode = ChatEpisodeEntity(
@@ -205,6 +211,7 @@ class AssistantDetailVM(
 
                 var updatedMasterContent: String? = null
                 if (updateMaster && currentAssistant.enableMasterMemory) {
+                    yield() // 响应取消
                     val contextParts = mutableListOf<String>()
                     for (conv in conversations.filter { it.currentMessages.size >= 2 }) {
                         val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
@@ -247,12 +254,19 @@ class AssistantDetailVM(
                 settingsStore.update(updatedSettings)
                 setSnackbarMessage(resultDesc)
             } catch (e: Exception) {
-                Log.e(TAG, "Consolidation failed", e)
-                setSnackbarMessage("Error: ${e.message}")
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Consolidation failed", e)
+                    setSnackbarMessage("Error: ${e.message}")
+                }
             } finally {
                 _isConsolidating.value = false
+                consolidationJob = null
             }
         }
+    }
+
+    fun cancelConsolidation() {
+        consolidationJob?.cancel()
     }
 
     fun optimizeMemories() {

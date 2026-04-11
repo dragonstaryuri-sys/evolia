@@ -192,7 +192,7 @@ fun AssistantMemorySettings(
     // Consolidation progress dialog
     if (isConsolidating) {
         AlertDialog(
-            onDismissRequest = { },
+            onDismissRequest = { assistantDetailVM.cancelConsolidation() },
             title = { Text(stringResource(R.string.loading)) },
             text = {
                 Column(
@@ -204,7 +204,12 @@ fun AssistantMemorySettings(
                     Text(stringResource(R.string.context_refresh_loading), style = MaterialTheme.typography.bodyMedium)
                 }
             },
-            confirmButton = { }
+            confirmButton = { },
+            dismissButton = {
+                TextButton(onClick = { assistantDetailVM.cancelConsolidation() }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
         )
     }
 
