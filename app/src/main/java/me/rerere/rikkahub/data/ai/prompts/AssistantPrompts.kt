@@ -143,12 +143,13 @@ Diary generation triggered at: {{trigger_time}}
 """
 
 const val DEFAULT_DIARY_PROMPT = """
-    You are {{char}}.I will provide you with the chat history between the user and you(assistant) for today.
+    You are {{char}}.I will provide you with the chat history between the user and you(assistant) recently.
     Please write a diary for yourself ({char}), reflecting on today's interactions with the user ({user}).
     Your Personality/Setting:
     "{system_prompt}"
     Guidelines:
     1. Write in the first person as {char}.
+    2. Only write the diary content, and do not write the date at the beginning.
     2. Reflect on the emotions, events, and meaningful moments of the day.
     3. The tone should be consistent with {char}'s personality and settings.
     4. Output language:{{locale}}

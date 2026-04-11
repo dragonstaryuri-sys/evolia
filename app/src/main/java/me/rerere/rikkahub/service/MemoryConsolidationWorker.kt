@@ -15,6 +15,7 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -103,7 +104,21 @@ class MemoryConsolidationWorker(
         val handler = providerManager.getProviderByType(providerSetting)
 
         return try {
-            val summary = generateConversationSummary(handler, providerSetting, model, conv)
+            val newMessages = if (existingEpisode != null) {
+                conv.currentMessages.drop(existingEpisode.significance)
+            } else {
+                conv.currentMessages
+            }
+
+            val summary = generateConversationSummary(
+                handler = handler,
+                providerSetting = providerSetting,
+                model = model,
+                assistantName = assistant.name,
+                previousSummary = existingEpisode?.content,
+                messages = newMessages
+            )
+
             if (summary.isNotBlank()) {
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
@@ -176,9 +191,23 @@ class MemoryConsolidationWorker(
         var episodicSuccessCount = 0
         for (conv in toConsolidateEpisodes) {
             try {
-                val summary = generateConversationSummary(handler, providerSetting, model, conv)
+                val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
+                val newMessages = if (existingEpisode != null) {
+                    conv.currentMessages.drop(existingEpisode.significance)
+                } else {
+                    conv.currentMessages
+                }
+
+                val summary = generateConversationSummary(
+                    handler = handler,
+                    providerSetting = providerSetting,
+                    model = model,
+                    assistantName = currentAssistant.name,
+                    previousSummary = existingEpisode?.content,
+                    messages = newMessages
+                )
+
                 if (summary.isNotBlank()) {
-                    val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
                     val episode = ChatEpisodeEntity(
                         id = existingEpisode?.id ?: 0,
                         assistantId = currentAssistant.id.toString(),
@@ -215,7 +244,7 @@ class MemoryConsolidationWorker(
                             contextParts.add("Conversation Summary: $summary")
                         } else {
                             val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
-                                "${it.role}: ${it.toText().take(300)}"
+                                "${it.role}: ${it.toText().take(1000)}"
                             }
                             contextParts.add("Recent Messages:\n$messagesText")
                         }
@@ -261,21 +290,37 @@ class MemoryConsolidationWorker(
         handler: me.rerere.ai.provider.Provider<*>,
         providerSetting: me.rerere.ai.provider.ProviderSetting,
         model: me.rerere.ai.provider.Model,
-        conversation: Conversation
+        assistantName: String,
+        previousSummary: String?,
+        messages: List<UIMessage>
     ): String {
-        val messages = conversation.currentMessages
-        val text = messages.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
-
+        // 限制单条消息最大长度为 5000 字符，并只取最近 100 条消息，防止单次请求过载
+        val messagesText = messages.takeLast(100).joinToString("\n") { "${it.role}: ${it.toText().take(5000)}" }
         val locale = Locale.getDefault().displayName
-        val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-            .replace("{{text}}", text)
-            .replace("{{locale}}", locale)
+
+        val prompt = if (previousSummary != null) {
+            DEFAULT_FULL_SUMMARY_PROMPT
+                .replace("{{previous_summary}}", previousSummary)
+                .replace("{{new_messages}}", messagesText)
+                .replace("{{locale}}", locale)
+                .replace("{{char}}", assistantName)
+        } else {
+            DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+                .replace("{{text}}", messagesText)
+                .replace("{{locale}}", locale)
+                .replace("{{char}}", assistantName)
+        }
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = h.generateText(
             providerSetting,
             listOf(UIMessage.user(prompt)),
-            TextGenerationParams(model = model, temperature = 0.3f, topP = 0f)
+            TextGenerationParams(
+                model = model,
+                temperature = 0.3f,
+                topP = 0f,
+                maxTokens = 1024
+            )
         )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
@@ -308,7 +353,12 @@ class MemoryConsolidationWorker(
                 UIMessage.system(systemPrompt),
                 UIMessage.user(inputPrompt)
             ),
-            TextGenerationParams(model = model, temperature = 0.2f, topP = 0f)
+            TextGenerationParams(
+                model = model,
+                temperature = 0.2f,
+                topP = 0f,
+                maxTokens = 2048
+            )
         )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }

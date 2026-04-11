@@ -34,6 +34,8 @@ import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import org.koin.androidx.compose.koinViewModel
+import java.time.LocalDate
+import java.time.format.TextStyle
 import java.util.Locale
 
 @Composable
@@ -207,6 +209,16 @@ private fun DiaryItem(
     onDelete: () -> Unit,
     onCopy: () -> Unit
 ) {
+    val displayDate = remember(diary.date) {
+        try {
+            val date = LocalDate.parse(diary.date)
+            val dayOfWeek = date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
+            "${diary.date} ($dayOfWeek)"
+        } catch (e: Exception) {
+            diary.date
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -221,7 +233,7 @@ private fun DiaryItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = diary.date,
+                    text = displayDate,
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold
