@@ -162,7 +162,7 @@ class GenerationHandler(
                                 properties = buildJsonObject {
                                     put("episode_id", buildJsonObject {
                                         put("type", "integer")
-                                        put("description", "The ID of the episodic memory (use the absolute value if the ID is negative in prompt).")
+                                        put("description", "The ID of the episodic memory.")
                                     })
                                 },
                                 required = listOf("episode_id")
@@ -557,24 +557,38 @@ class GenerationHandler(
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
             val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
                 val today = java.time.LocalDate.now()
-                val recentConversations = conversationRepo.getRecentConversations(
-                    assistantId = assistant.id,
-                    limit = 3,
-                ).filter {
-                    java.time.LocalDateTime.ofInstant(it.updateAt, java.time.ZoneId.systemDefault()).toLocalDate() == today
-                }
-                recentConversations.map { conversation ->
-                    AssistantMemory(
-                        id = -1,
-                        content = "Participated in conversation: ${conversation.title}",
-                        type = 1,
-                        timestamp = conversation.updateAt.toEpochMilli()
+                val zoneId = java.time.ZoneId.systemDefault()
+
+                // 获取该助手下最近的一个情节记忆（Episode）
+                val lastEpisode = memoryRepo.getEpisodeEntitiesOfAssistant(assistant.id.toString()).firstOrNull()
+
+                // 判定该摘要是否属于今天
+                val isFromToday = lastEpisode?.let {
+                    val episodeDate = java.time.Instant.ofEpochMilli(it.endTime)
+                        .atZone(zoneId)
+                        .toLocalDate()
+                    episodeDate == today
+                } ?: false
+
+                if (isFromToday && lastEpisode != null) {
+                    listOf(
+                        AssistantMemory(
+                            id = -1, // 特殊 ID 标记为“近期增强”
+                            content = "Last conversation summary: ${lastEpisode.content}",
+                            type = 1, // EPISODIC
+                            timestamp = lastEpisode.endTime
+                        )
                     )
+                } else {
+                    emptyList() // 确保分支返回类型一致
                 }
             } else {
                 emptyList()
             }
-            (memories + recentChatMemories).distinctBy { it.content } // Avoid duplicates
+
+            // 合并 RAG 检索结果与近期参考。
+            // 使用 distinctBy 防止同一条摘要在两个来源中重复出现，节省 Token 并提高理解效率。
+            (memories + recentChatMemories).distinctBy { it.content }
         } else {
             emptyList()
         }
@@ -736,9 +750,12 @@ class GenerationHandler(
 
         val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
             val reason = when {
-                memory.id == -1 -> "Recent episode boost"  // Recent chat reference
-                assistant.useRagMemoryRetrieval -> "Contextually relevant"  // RAG mode
-                else -> "Always included"  // Basic mode
+                // ID 为 -1 表示这是来自“今天其他会话标题”的参考记忆
+                memory.id == -1 -> "Recent episode boost"
+                // 如果开启了 RAG 检索，则说明是语义匹配成功的记忆
+                assistant.useRagMemoryRetrieval -> "Contextually relevant"
+                // 基础层级的默认包含记忆
+                else -> "Always included"
             }
             UsedMemory(
                 memoryId = memory.id,
@@ -1041,12 +1058,8 @@ class GenerationHandler(
                     if (!memoriesInGroup.isNullOrEmpty()) {
                         append("#### $group\n")
                         memoriesInGroup.sortedByDescending { it.timestamp }.forEach { memory ->
-                            // 在注入 Prompt 时带上关键词
-                            if (!memory.keywords.isNullOrBlank()) {
-                                append("- [Keywords: ${memory.keywords}] ${memory.content}\n")
-                            } else {
-                                append("- ${memory.content}\n")
-                            }
+                            // 修正：注入 ID，以便 AI 调用细节下钻工具
+                            append("- [ID: ${memory.id}] ${memory.content}\n")
                         }
                     }
                 }

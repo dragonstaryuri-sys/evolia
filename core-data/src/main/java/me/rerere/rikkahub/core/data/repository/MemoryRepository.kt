@@ -2,9 +2,6 @@ package me.rerere.rikkahub.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.combine
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.dao.EmbeddingCacheDAO
 import me.rerere.rikkahub.core.data.db.dao.MemoryDAO
@@ -18,7 +15,6 @@ import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.ai.rag.VectorEngine
-import kotlin.math.sqrt
 
 class MemoryRepository(
     private val memoryDAO: MemoryDAO,
