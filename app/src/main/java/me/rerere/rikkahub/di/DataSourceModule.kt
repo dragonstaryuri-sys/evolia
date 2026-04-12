@@ -118,7 +118,8 @@ val dataSourceModule = module {
             conversationRepo = get(),
             aiLoggingManager = get(),
             embeddingService = get(),
-            chatSegmentDAO = get()
+            chatSegmentDAO = get(),
+            appScope = get()
         )
     }
 

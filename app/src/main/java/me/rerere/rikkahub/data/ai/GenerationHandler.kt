@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
+import androidx.activity.result.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -36,6 +37,8 @@ import me.rerere.ai.ui.UsedMode
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
+import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
@@ -62,8 +65,10 @@ import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
 import kotlin.uuid.Uuid
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.coroutines.launch
 
-private const val TAG = "GenerationHandler"
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -83,6 +88,7 @@ sealed interface GenerationChunk {
 }
 
 class GenerationHandler(
+    private val TAG: String = "GenerationHandler",
     private val context: Context,
     private val providerManager: ProviderManager,
     private val json: Json,
@@ -91,6 +97,7 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: EmbeddingService,
     private val chatSegmentDAO: ChatSegmentDAO, // 新增：用于下钻详情
+    private val appScope: AppScope, // 新增这一行
 ) {
     fun generateText(
         settings: Settings,
@@ -188,14 +195,41 @@ class GenerationHandler(
 
                                 // 向量化查询并寻找 Top 2 最相关的段落
                                 val resultSegments = if (query.isNotBlank() && segments.size > 2) {
-                                    val queryVector = embeddingService.embed(query)
-                                    segments.map { segment ->
-                                        // 假设实体已增加 embedding: List<Float>? 字段
-                                        val score = segment.embedding?.let { cosineSimilarity(it, queryVector) } ?: 0f
-                                        segment to score
-                                    }.sortedByDescending { it.second }
-                                        .take(2)
-                                        .map { it.first }
+                                    val queryVector = try {
+                                        embeddingService.embed(query, assistant.id.toString())
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                    if (queryVector != null) {
+                                        segments.map { segment ->
+                                            // 解析存储为 JSON 字符串的向量，如果为空则现场补全
+                                            val segmentEmbedding = segment.embedding?.let {
+                                                runCatching { JsonInstant.decodeFromString<List<Float>>(it) }.getOrNull()
+                                            }?: run {
+                                                // 延迟嵌入逻辑：调用接口生成向量
+                                                val newEmb = try {
+                                                    embeddingService.embed(segment.content, assistant.id.toString())
+                                                } catch (e: Exception) {
+                                                    null
+                                                }
+                                                // 异步回写到数据库，不阻塞本次查询
+                                                if (newEmb != null) {
+                                                    appScope.launch {
+                                                        chatSegmentDAO.insertSegment(
+                                                            segment.copy(embedding = JsonInstant.encodeToString(newEmb))
+                                                        )
+                                                    }
+                                                }
+                                                newEmb
+                                            }
+                                            val score = segmentEmbedding?.let { cosineSimilarity(it, queryVector) } ?: 0f
+                                            segment to score
+                                        }.sortedByDescending { it.second }
+                                            .take(2)
+                                            .map { it.first }
+                                    } else {
+                                        segments.take(2)
+                                    }
                                 } else {
                                     // 如果段落很少，直接返回
                                     segments.take(2)
@@ -428,7 +462,7 @@ class GenerationHandler(
             try {
                 val queryText = recentMessagesForScan.takeLast(3).joinToString("\n")
                 if (queryText.isNotBlank()) {
-                    embeddingService.embed(queryText)
+                    embeddingService.embed(queryText, assistant.id.toString())
                 } else null
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to compute query embedding for RAG", e)

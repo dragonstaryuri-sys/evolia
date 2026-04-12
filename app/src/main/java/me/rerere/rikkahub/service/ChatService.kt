@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -48,7 +49,9 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
+import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.JsonInstantPretty
+import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
@@ -65,6 +68,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
@@ -123,6 +127,7 @@ class ChatService(
     private val localTools: LocalTools,
     val mcpManager: McpManager,
     private val chatEpisodeDAO: ChatEpisodeDAO,
+    private val embeddingService: EmbeddingService, // 注入 EmbeddingService
 ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -283,7 +288,7 @@ class ChatService(
     }
 
     /**
-     * 将会话存档为唯一的片段记忆 (1:1 映射)
+     * 将会话存档为唯一的情节记忆 (1:1 映射)
      * @param force 如果为 true，则无视消息数量限制，立即更新记忆
      */
     @Suppress("UNCHECKED_CAST")
@@ -315,6 +320,12 @@ class ChatService(
             val provider = model.findProvider(settings.providers) ?: return
             val handler = providerManager.getProviderByType(provider)
 
+            // 选取后台模型用于提取关键词
+            val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
+            val backgroundModel = settings.findModelById(backgroundModelId) ?: model
+            val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
+            val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
+
             // 生成会话总体摘要
             val text = messages.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
             val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
@@ -326,18 +337,38 @@ class ChatService(
             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
             if (summary.isNotBlank()) {
+                // 提取关键词
+                val keywords = extractKeywords(
+                    handler = backgroundHandler,
+                    providerSetting = backgroundProvider,
+                    model = backgroundModel,
+                    summary = summary
+                )
+
+                // 生成向量
+                val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $summary" else summary
+                val embeddingResult = try {
+                    embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate embedding for archived episode", e)
+                    null
+                }
+
                 val episode = ChatEpisodeEntity(
-                    id = existingEpisode?.id ?: 0, // 替换旧的或新建
+                    id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conversationId.toString(),
                     content = summary,
+                    keywords = keywords,
+                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                    embeddingModelId = embeddingResult?.modelId,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
-                    significance = messages.size, // 关键：记录当前消息总数
+                    significance = messages.size,
                     lastAccessedAt = System.currentTimeMillis()
                 )
                 chatEpisodeDAO.insertEpisode(episode)
-                Log.i(TAG, "Archived/Updated episodic memory for conversation $conversationId")
+                Log.i(TAG, "Archived/Updated episodic memory (L2) for conversation $conversationId (Keywords: ${keywords.take(20)}...)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to archive conversation $conversationId", e)
@@ -639,6 +670,13 @@ class ChatService(
             val model = settings.findModelById(modelId) ?: return@withContext ContextRefreshResult(false)
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)
+
+            // 选取后台模型用于提取关键词
+            val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
+            val backgroundModel = settings.findModelById(backgroundModelId) ?: model
+            val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
+            val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
+
             val lastIdx = (messages.size - 5).coerceAtLeast(0)
             val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
             val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()
@@ -661,17 +699,36 @@ class ChatService(
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
-            // 核心变更：不再直接存入 RAG (MemoryType.EPISODIC)，而是存入 L1 层 (chat_segments)
+            // 生成片段摘要后提取关键词并生成向量
             if (tempSum.isNotBlank()) {
+                // 提取关键词 (L1)
+                val keywords = extractKeywords(
+                    handler = backgroundHandler,
+                    providerSetting = backgroundProvider,
+                    model = backgroundModel,
+                    summary = tempSum
+                )
+
+                // 生成向量
+                val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $tempSum" else tempSum
+                val embedding = try {
+                    embeddingService.embed(effectiveContent, assistant.id.toString())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate embedding for segment", e)
+                    null
+                }
+
                 val segment = ChatSegmentEntity(
                     assistantId = assistant.id.toString(),
                     conversationId = id.toString(),
                     content = tempSum,
+                    keywords = keywords, // 保存关键词
                     startMessageIndex = startIdx,
-                    endMessageIndex = lastIdx
+                    endMessageIndex = lastIdx,
+                    embedding = embedding?.let { JsonInstant.encodeToString(it) }
                 )
                 memoryRepository.saveSegment(segment)
-                Log.i(TAG, "Persistent segment (L1) saved for conversation $id: $startIdx to $lastIdx")
+                Log.i(TAG, "Persistent segment (L1) saved for conversation $id: $startIdx to $lastIdx (Keywords: ${keywords.take(20)}...)")
             }
 
             val currentSummary = conv.contextSummary
@@ -703,6 +760,40 @@ class ChatService(
             updateConversation(id, updated)
             ContextRefreshResult(true, fullSum, toSummarize.size)
         } catch (e: Exception) { ContextRefreshResult(false, errorMessage = e.message) }
+    }
+
+    /**
+     * 提取关键词逻辑（同步自 MemoryConsolidationWorker）
+     */
+    @Suppress("UNCHECKED_CAST")
+    private suspend fun extractKeywords(
+        handler: me.rerere.ai.provider.Provider<*>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        summary: String
+    ): String {
+        return try {
+            val locale = Locale.getDefault().displayName
+            val prompt = DEFAULT_KEYWORD_EXTRACTION_PROMPT
+                .replace("{{summary}}", summary)
+                .replace("{{locale}}", locale)
+
+            val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+            val resp = h.generateText(
+                providerSetting = providerSetting,
+                messages = listOf(UIMessage.user(prompt)),
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                    topP = 0f,
+                    maxTokens = 256
+                )
+            )
+            resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract keywords", e)
+            ""
+        }
     }
 
     suspend fun saveConversation(id: Uuid, conversation: Conversation) {

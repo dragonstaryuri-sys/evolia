@@ -34,5 +34,5 @@ data class ChatSegmentEntity(
     @ColumnInfo("timestamp")
     val timestamp: Long = System.currentTimeMillis(),
     @ColumnInfo("embedding")
-    val embedding: List<Float>? = null // 新增：向量字段，用于 L1 层细节下钻检索
+    val embedding: String? = null // 修改为 String? 类型，存储 JSON 化的向量
 )

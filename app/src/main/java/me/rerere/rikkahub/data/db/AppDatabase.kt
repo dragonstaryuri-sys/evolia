@@ -34,6 +34,8 @@ import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.common.JsonInstant
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -56,7 +58,7 @@ import kotlinx.serialization.json.put
         AgentTaskEntity::class,
         ChatSegmentEntity::class
     ],
-    version = 28,
+    version = 29,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -76,7 +78,8 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 23, to = 24),
         AutoMigration(from = 24, to = 25),
-        AutoMigration(from = 27, to = 28), // 增加对 L1 片段表的自动迁移
+        AutoMigration(from = 27, to = 28),
+        AutoMigration(from = 28, to = 29),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
