@@ -70,7 +70,7 @@ Updated Summary:
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
-You are {{char}}.Briefly summarize the following recent exchange from your perspective as the assistant.
+You are the assistant,{{char}}.Briefly summarize the following recent exchange from your perspective.
 Focus on specific details, facts, your emotion, your thought or your observations about the user's needs in this segment.
 Keep it concise (1-2 paragraphs).
 Output language: {{locale}}
@@ -114,7 +114,7 @@ Example2: If merging IDs -1 and -2:
 """
 
 const val DEFAULT_EPISODIC_CONSOLIDATION_PROMPT = """
-You are the assistant({{char}}).Summarize the following recent exchange from your perspective as the assistant.
+You are the assistant,{{char}}.Summarize the following recent exchange from your perspective as the assistant.
 Focus on specific details, facts, your emotion, your thought or your observations about the user that might be useful for future interactions.No explanation.
 Keep it concise (1-3 paragraphs).
 Output language: {{locale}}

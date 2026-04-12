@@ -28,6 +28,9 @@ import org.koin.core.component.inject
 import java.time.LocalDate
 import java.util.Locale
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.core.data.ai.EmbeddingService
+import me.rerere.rikkahub.common.JsonInstant
+import kotlinx.serialization.encodeToString
 
 private const val TAG = "MemoryConsolidation"
 
@@ -41,6 +44,7 @@ class MemoryConsolidationWorker(
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
     private val chatSegmentDAO: ChatSegmentDAO by inject()
     private val memoryRepository: MemoryRepository by inject()
+    private val embeddingService: EmbeddingService by inject()
 
     override suspend fun doWork(): Result {
         val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
@@ -141,12 +145,27 @@ class MemoryConsolidationWorker(
                     summary = summary
                 )
 
+                // 生成向量（补充逻辑）
+                val effectiveContent = if (keywords.isNotBlank()) {
+                    "Keywords: $keywords\nContent: $summary"
+                } else {
+                    summary
+                }
+                val embeddingResult = try {
+                    embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to generate embedding", e)
+                    null
+                }
+
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conv.id.toString(),
                     content = summary,
                     keywords = keywords,
+                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                    embeddingModelId = embeddingResult?.modelId,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
                     significance = messageCount,
@@ -235,12 +254,27 @@ class MemoryConsolidationWorker(
                         summary = summary
                     )
 
+                    // 生成向量（补充逻辑）
+                    val effectiveContent = if (keywords.isNotBlank()) {
+                        "Keywords: $keywords\nContent: $summary"
+                    } else {
+                        summary
+                    }
+                    val embeddingResult = try {
+                        embeddingService.embedWithModelId(effectiveContent, currentAssistant.id.toString())
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to generate embedding", e)
+                        null
+                    }
+
                     val episode = ChatEpisodeEntity(
                         id = existingEpisode?.id ?: 0,
                         assistantId = currentAssistant.id.toString(),
                         conversationId = conv.id.toString(),
                         content = summary,
                         keywords = keywords,
+                        embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                        embeddingModelId = embeddingResult?.modelId,
                         startTime = conv.createAt.toEpochMilli(),
                         endTime = conv.updateAt.toEpochMilli(),
                         significance = conv.currentMessages.size,

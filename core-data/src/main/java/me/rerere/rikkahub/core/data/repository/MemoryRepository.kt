@@ -213,20 +213,39 @@ class MemoryRepository(
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
         val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistant(assistantId) else emptyList()
 
+        // Core Memory Scoring (Normal Vector Search)
         val memoryScores = memories.mapNotNull { memory ->
             val embedding = getOrCreateEmbedding(memory.id, memory.type, memory.content, null, assistantId, memory.embedding, memory.embeddingModelId) ?: return@mapNotNull null
             val similarity = VectorEngine.cosineSimilarity(queryEmbedding, embedding)
-            val score = similarity * 1.05f
+            val score = similarity * 1.05f // Slight boost for core memories
             if (score >= similarityThreshold) Triple(memory, score, true) else null
         }
 
+        // Episodic Memory Scoring (Hybrid Search: Keywords + Vector + Recency)
+        val queryLower = query.lowercase()
         val episodeScores = episodes.mapNotNull { episode ->
+            // 1. Vector Similarity
             val embedding = getOrCreateEmbedding(episode.id, MemoryType.EPISODIC, episode.content, episode.keywords, assistantId, episode.embedding, episode.embeddingModelId) ?: return@mapNotNull null
             val similarity = VectorEngine.cosineSimilarity(queryEmbedding, embedding)
+
+            // 2. Keyword Match Score (High Priority)
+            var keywordMatchScore = 0f
+            if (!episode.keywords.isNullOrBlank()) {
+                val keywordsList = episode.keywords.split(",").map { it.trim().lowercase() }
+                val matchCount = keywordsList.count { it.isNotEmpty() && (queryLower.contains(it) || it.contains(queryLower)) }
+                if (matchCount > 0) {
+                    keywordMatchScore = (matchCount.toFloat() / keywordsList.size).coerceAtMost(1.0f)
+                }
+            }
+
+            // 3. Recency Score
             val ageInMillis = System.currentTimeMillis() - episode.startTime
             val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
             val recency = (1.0 / (1.0 + (ageInDays / 7.0))).toFloat()
-            val score = (similarity * 0.7f) + (recency * 0.3f)
+
+            // Hybrid Weighted Score: 50% Keywords, 30% Similarity, 20% Recency
+            val score = (keywordMatchScore * 0.5f) + (similarity * 0.3f) + (recency * 0.2f)
+
             if (score >= similarityThreshold) Triple(episode, score, false) else null
         }
 
