@@ -153,38 +153,65 @@ class GenerationHandler(
                         }
                     ).let(this::addAll)
 
-                    // 新增：细节下钻工具
-                    add(Tool(
-                        name = "retrieve_memory_details",
-                        description = "Retrieve high-resolution tactical details or specific segments for a given episodic memory ID. Use this when the summary is too vague.",
-                        parameters = {
-                            InputSchema.Obj(
-                                properties = buildJsonObject {
-                                    put("episode_id", buildJsonObject {
-                                        put("type", "integer")
-                                        put("description", "The ID of the episodic memory.")
-                                    })
-                                },
-                                required = listOf("episode_id")
-                            )
-                        },
-                        execute = {
-                            val params = it.jsonObject
-                            val id = kotlin.math.abs(params["episode_id"]?.jsonPrimitive?.intOrNull ?: 0)
-                            val episode = memoryRepo.getEpisodeEntitiesOfAssistant(assistant.id.toString()).find { it.id == id }
-                            val segments = episode?.conversationId?.let { convId ->
-                                chatSegmentDAO.getSegmentsByConversation(convId)
-                            } ?: emptyList()
+                    // 细节下钻工具：升级为基于向量的 RAG 检索
+                    add(
+                        Tool(
+                            name = "retrieve_memory_details",
+                            description = "Retrieve high-resolution tactical details or specific segments for a given episodic memory ID using semantic search. Use this when the summary is too vague.",
+                            parameters = {
+                                InputSchema.Obj(
+                                    properties = buildJsonObject {
+                                        put("episode_id", buildJsonObject {
+                                            put("type", "integer")
+                                            put("description", "The ID of the episodic memory.")
+                                        })
+                                        put("query", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "The specific topic or question to search for within this memory's details.")
+                                        })
+                                    },
+                                    required = listOf("episode_id", "query")
+                                )
+                            },
+                            execute = { params ->
+                                val id = kotlin.math.abs(params.jsonObject["episode_id"]?.jsonPrimitive?.intOrNull ?: 0)
+                                val query = params.jsonObject["query"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                            buildJsonObject {
-                                put("episode_id", JsonPrimitive(id))
-                                put("segments_found", JsonPrimitive(segments.size))
-                                put("details", JsonPrimitive(segments.joinToString("\n---\n") {
-                                    "Segment [${it.startMessageIndex}-${it.endMessageIndex}]: ${it.content}"
-                                }.ifBlank { "No detailed segments found for this memory." }))
+                                val episode = memoryRepo.getEpisodeEntitiesOfAssistant(assistant.id.toString()).find { it.id == id }
+                                val segments = episode?.conversationId?.let { convId ->
+                                    chatSegmentDAO.getSegmentsByConversation(convId)
+                                } ?: emptyList()
+
+                                if (segments.isEmpty()) {
+                                    return@Tool buildJsonObject { put("error", JsonPrimitive("No detailed segments found.")) }
+                                }
+
+                                // 向量化查询并寻找 Top 2 最相关的段落
+                                val resultSegments = if (query.isNotBlank() && segments.size > 2) {
+                                    val queryVector = embeddingService.embed(query)
+                                    segments.map { segment ->
+                                        // 假设实体已增加 embedding: List<Float>? 字段
+                                        val score = segment.embedding?.let { cosineSimilarity(it, queryVector) } ?: 0f
+                                        segment to score
+                                    }.sortedByDescending { it.second }
+                                        .take(2)
+                                        .map { it.first }
+                                } else {
+                                    // 如果段落很少，直接返回
+                                    segments.take(2)
+                                }
+
+                                buildJsonObject {
+                                    put("episode_id", JsonPrimitive(id))
+                                    put("query_used", JsonPrimitive(query))
+                                    put("segments_found", JsonPrimitive(resultSegments.size))
+                                    put("details", JsonPrimitive(resultSegments.joinToString("\n---\n") {
+                                        "Segment ID [${it.id}]: ${it.content}"
+                                    }))
+                                }
                             }
-                        }
-                    ))
+                        )
+                    )
                 }
                 addAll(tools)
             }
@@ -330,21 +357,6 @@ class GenerationHandler(
 
         val maxTokens = assistant.maxTokenUsage
         var currentTokens = 0
-
-        // Cosine similarity
-        fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
-            if (a.size != b.size) return 0f
-            var dotProduct = 0f
-            var normA = 0f
-            var normB = 0f
-            for (i in a.indices) {
-                dotProduct += a[i] * b[i]
-                normA += a[i] * a[i]
-                normB += b[i] * b[i]
-            }
-            val denominator = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
-            return if (denominator == 0f) 0f else dotProduct / denominator
-        }
 
         fun getLorebookEntryActivationReason(entry: LorebookEntry, recentMessages: List<String>, queryEmbedding: List<Float>? = null): String? {
             if (!entry.enabled) return null
@@ -1025,7 +1037,7 @@ class GenerationHandler(
         val episodicMemories = memories.filter { it.type == 1 } // EPISODIC
 
         return buildString {
-            append("## Memories\n").append("These are memories that you can reference. If a memory summary is too brief and you need specific tactical details (like code blocks, exact quotes, or step-by-step logic), please call `retrieve_memory_details(episode_id)`.\n")
+            append("## Memories\n").append("These are memories that you can reference. If a memory summary is too brief and you need specific tactical details (like code blocks, exact quotes, or step-by-step logic), please call `retrieve_memory_details(episode_id, query)`.\n")
             if (coreMemories.isNotEmpty()) {
                 append("### Core Memories\n")
                 coreMemories.forEach { memory ->
@@ -1193,5 +1205,19 @@ class GenerationHandler(
         // Couldn't find complete object, return empty
         Log.w(TAG, "Could not extract valid JSON object from: $trimmed")
         return "{}"
+    }
+
+    private fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
+        if (a.size != b.size) return 0f
+        var dotProduct = 0f
+        var normA = 0f
+        var normB = 0f
+        for (i in a.indices) {
+            dotProduct += a[i] * b[i]
+            normA += a[i] * a[i]
+            normB += b[i] * b[i]
+        }
+        val denominator = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
+        return if (denominator == 0f) 0f else dotProduct / denominator
     }
 }

@@ -32,5 +32,7 @@ data class ChatSegmentEntity(
     @ColumnInfo("end_index")
     val endMessageIndex: Int,   // 对应对话中的结束消息索引
     @ColumnInfo("timestamp")
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    @ColumnInfo("embedding")
+    val embedding: List<Float>? = null // 新增：向量字段，用于 L1 层细节下钻检索
 )
