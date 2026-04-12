@@ -407,7 +407,11 @@ class ChatVM(
                 .setInputData(androidx.work.workDataOf("FORCE_CONVERSATION_ID" to conversation.id.toString()))
                 .build()
 
-            workManager.enqueue(request)
+            workManager.enqueueUniqueWork(
+                "consolidate_${conversation.id}",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
 
             workManager.getWorkInfoByIdFlow(request.id).collect { workInfo ->
                 if (workInfo != null) {

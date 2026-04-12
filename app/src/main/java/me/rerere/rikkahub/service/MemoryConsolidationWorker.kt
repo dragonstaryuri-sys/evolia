@@ -46,6 +46,14 @@ class MemoryConsolidationWorker(
     private val memoryRepository: MemoryRepository by inject()
     private val embeddingService: EmbeddingService by inject()
 
+    companion object {
+        // 全局静态锁，防止同一个会话同时被多个 Worker 处理
+        private val processingConversations = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+        private fun tryLock(convId: String): Boolean = processingConversations.add(convId)
+        private fun unlock(convId: String) { processingConversations.remove(convId) }
+    }
+
     override suspend fun doWork(): Result {
         val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
         val assistantIdString = inputData.getString("ASSISTANT_ID")
@@ -54,19 +62,27 @@ class MemoryConsolidationWorker(
 
         try {
             if (forceConversationId != null) {
-                val convId = Uuid.parse(forceConversationId)
-                val conv = conversationRepository.getConversationById(convId)
-
-                if (conv == null) {
-                    Log.e(TAG, "Conversation not found: $forceConversationId")
-                    return Result.failure()
+                if (!tryLock(forceConversationId)) {
+                    Log.i(TAG, "Conversation $forceConversationId is already being processed, skipping.")
+                    return Result.success()
                 }
+                try {
+                    val convId = Uuid.parse(forceConversationId)
+                    val conv = conversationRepository.getConversationById(convId)
 
-                val settings = settingsStore.settingsFlow.first()
-                val assistant = settings.assistants.find { it.id == conv.assistantId } ?: return Result.failure()
+                    if (conv == null) {
+                        Log.e(TAG, "Conversation not found: $forceConversationId")
+                        return Result.failure()
+                    }
 
-                val success = manualConsolidate(assistant, conv)
-                return if (success) Result.success() else Result.failure()
+                    val settings = settingsStore.settingsFlow.first()
+                    val assistant = settings.assistants.find { it.id == conv.assistantId } ?: return Result.failure()
+
+                    val success = manualConsolidate(assistant, conv)
+                    return if (success) Result.success() else Result.failure()
+                } finally {
+                    unlock(forceConversationId)
+                }
             }
 
             val settings = settingsStore.settingsFlow.first()
@@ -234,8 +250,13 @@ class MemoryConsolidationWorker(
 
         var episodicSuccessCount = 0
         for (conv in toConsolidateEpisodes) {
+            val convIdString = conv.id.toString()
+            if (!tryLock(convIdString)) {
+                Log.i(TAG, "Conversation $convIdString is already being processed by another worker, skipping.")
+                continue
+            }
             try {
-                val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
+                val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(convIdString)
 
                 val summary = generateRollingSummary(
                     handler = memoryHandler,
@@ -270,7 +291,7 @@ class MemoryConsolidationWorker(
                     val episode = ChatEpisodeEntity(
                         id = existingEpisode?.id ?: 0,
                         assistantId = currentAssistant.id.toString(),
-                        conversationId = conv.id.toString(),
+                        conversationId = convIdString,
                         content = summary,
                         keywords = keywords,
                         embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
@@ -287,6 +308,8 @@ class MemoryConsolidationWorker(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to consolidate conversation ${conv.id} to episode", e)
+            } finally {
+                unlock(convIdString)
             }
         }
 
