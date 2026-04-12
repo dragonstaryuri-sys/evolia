@@ -10,10 +10,12 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
@@ -37,21 +39,25 @@ class MemoryConsolidationWorker(
     private val settingsStore: SettingsStore by inject()
     private val providerManager: ProviderManager by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
+    private val chatSegmentDAO: ChatSegmentDAO by inject()
+    private val memoryRepository: MemoryRepository by inject()
 
     override suspend fun doWork(): Result {
         val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
-        val assistantId = inputData.getString("ASSISTANT_ID")
+        val assistantIdString = inputData.getString("ASSISTANT_ID")
 
-        Log.i(TAG, "Starting memory consolidation (Force: $forceConversationId, Target Assistant: $assistantId)")
+        Log.i(TAG, "Starting memory consolidation (Force: $forceConversationId, Assistant: $assistantIdString)")
 
         try {
             if (forceConversationId != null) {
                 val convId = Uuid.parse(forceConversationId)
                 val conv = conversationRepository.getConversationById(convId)
+
                 if (conv == null) {
                     Log.e(TAG, "Conversation not found: $forceConversationId")
                     return Result.failure()
                 }
+
                 val settings = settingsStore.settingsFlow.first()
                 val assistant = settings.assistants.find { it.id == conv.assistantId } ?: return Result.failure()
 
@@ -60,8 +66,8 @@ class MemoryConsolidationWorker(
             }
 
             val settings = settingsStore.settingsFlow.first()
-            val assistants = if (assistantId != null) {
-                settings.assistants.filter { it.id.toString() == assistantId }
+            val assistants = if (assistantIdString != null) {
+                settings.assistants.filter { it.id.toString() == assistantIdString }
             } else {
                 settings.assistants.filter { it.enableMemoryConsolidation || it.enableMasterMemory }
             }
@@ -87,50 +93,53 @@ class MemoryConsolidationWorker(
         val messageCount = conv.currentMessages.size
         val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
 
+        // 校验：新消息达到阈值 (4条)
         if (existingEpisode != null) {
-            if (messageCount - existingEpisode.significance < 4) {
-                updateLastResult(assistant.id, applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data))
+            val increment = messageCount - existingEpisode.significance
+            if (increment < 4) {
+                updateLastResult(
+                    assistantId = assistant.id,
+                    result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data)
+                )
                 return false
             }
         } else if (messageCount < 4) {
-            updateLastResult(assistant.id, applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data))
+            updateLastResult(
+                assistantId = assistant.id,
+                result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data)
+            )
             return false
         }
 
-        val modelId = assistant.memoryModelId ?: settings.memoryModelId
-        val model = settings.findModelById(modelId) ?: return false
-        val providerSetting = model.findProvider(settings.providers) ?: return false
-        val handler = providerManager.getProviderByType(providerSetting)
+        val memoryModelId = assistant.memoryModelId ?: settings.memoryModelId
+        val memoryModel = settings.findModelById(memoryModelId) ?: return false
+        val memoryProvider = memoryModel.findProvider(settings.providers) ?: return false
+        val memoryHandler = providerManager.getProviderByType(memoryProvider)
+
+        val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
+        val backgroundModel = settings.findModelById(backgroundModelId) ?: memoryModel
+        val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: memoryProvider
+        val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
 
         return try {
-            val episodeSignificance = existingEpisode?.significance ?: 0
-            val summarySignificance = if (conv.contextSummary != null) conv.contextSummaryUpToIndex + 1 else 0
-
-            val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
-                conv.contextSummary to summarySignificance
-            } else {
-                existingEpisode?.content to episodeSignificance
-            }
-
-            val newMessages = conv.currentMessages.drop(skipCount)
-
-            val summary = if (newMessages.isEmpty() && baseSummary != null) {
-                baseSummary
-            } else {
-                generateConversationSummary(
-                    handler = handler,
-                    providerSetting = providerSetting,
-                    model = model,
-                    assistantName = assistant.name,
-                    previousSummary = baseSummary,
-                    messages = newMessages,
-                    temporarySummaries = conv.temporarySummaries
-                )
-            }
+            // 执行增量滚动式总结
+            val summary = generateRollingSummary(
+                handler = memoryHandler,
+                providerSetting = memoryProvider,
+                model = memoryModel,
+                assistant = assistant,
+                conv = conv,
+                existingEpisode = existingEpisode
+            )
 
             if (summary.isNotBlank()) {
-                // Step 1: Extract keywords for the summary
-                val keywords = extractKeywords(handler, providerSetting, model, summary)
+                // 提取关键词（使用后台模型）
+                val keywords = extractKeywords(
+                    handler = backgroundHandler,
+                    providerSetting = backgroundProvider,
+                    model = backgroundModel,
+                    summary = summary
+                )
 
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
@@ -143,30 +152,30 @@ class MemoryConsolidationWorker(
                     significance = messageCount,
                     lastAccessedAt = System.currentTimeMillis()
                 )
+
                 chatEpisodeDAO.insertEpisode(episode)
                 conversationRepository.markAsConsolidated(conv.id)
-                updateLastResult(assistant.id, "Consolidation Successful")
+
+                updateLastResult(
+                    assistantId = assistant.id,
+                    result = "Consolidation Successful"
+                )
                 true
             } else {
-                updateLastResult(assistant.id, "Consolidation Failed: Empty Summary")
+                updateLastResult(
+                    assistantId = assistant.id,
+                    result = "Consolidation Failed: Empty Summary"
+                )
                 false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Manual consolidation failed", e)
-            updateLastResult(assistant.id, "Consolidation Failed: ${e.message}")
+            updateLastResult(
+                assistantId = assistant.id,
+                result = "Consolidation Failed: ${e.message}"
+            )
             false
         }
-    }
-
-    private suspend fun updateLastResult(assistantId: Uuid, result: String) {
-        val settings = settingsStore.settingsFlow.first()
-        val updated = settings.copy(
-            assistants = settings.assistants.map {
-                if (it.id == assistantId) it.copy(lastConsolidationResult = result, lastConsolidationTime = System.currentTimeMillis())
-                else it
-            }
-        )
-        settingsStore.update(updated)
     }
 
     private suspend fun consolidateAssistantMemories(assistant: Assistant, isFullScan: Boolean) {
@@ -194,44 +203,37 @@ class MemoryConsolidationWorker(
 
         if (toConsolidateEpisodes.isEmpty()) return
 
-        val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
-        val model = currentSettings.findModelById(modelId) ?: return
-        val providerSetting = model.findProvider(currentSettings.providers) ?: return
-        val handler = providerManager.getProviderByType(providerSetting)
+        val memoryModelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
+        val memoryModel = currentSettings.findModelById(memoryModelId) ?: return
+        val memoryProvider = memoryModel.findProvider(currentSettings.providers) ?: return
+        val memoryHandler = providerManager.getProviderByType(memoryProvider)
+
+        val backgroundModelId = currentAssistant.backgroundModelId ?: currentSettings.backgroundModelId
+        val backgroundModel = currentSettings.findModelById(backgroundModelId) ?: memoryModel
+        val backgroundProvider = backgroundModel.findProvider(currentSettings.providers) ?: memoryProvider
+        val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
 
         var episodicSuccessCount = 0
         for (conv in toConsolidateEpisodes) {
             try {
                 val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
 
-                val episodeSignificance = existingEpisode?.significance ?: 0
-                val summarySignificance = if (conv.contextSummary != null) conv.contextSummaryUpToIndex + 1 else 0
-
-                val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
-                    conv.contextSummary to summarySignificance
-                } else {
-                    existingEpisode?.content to episodeSignificance
-                }
-
-                val newMessages = conv.currentMessages.drop(skipCount)
-
-                val summary = if (newMessages.isEmpty() && baseSummary != null) {
-                    baseSummary
-                } else {
-                    generateConversationSummary(
-                        handler = handler,
-                        providerSetting = providerSetting,
-                        model = model,
-                        assistantName = currentAssistant.name,
-                        previousSummary = baseSummary,
-                        messages = newMessages,
-                        temporarySummaries = conv.temporarySummaries
-                    )
-                }
+                val summary = generateRollingSummary(
+                    handler = memoryHandler,
+                    providerSetting = memoryProvider,
+                    model = memoryModel,
+                    assistant = currentAssistant,
+                    conv = conv,
+                    existingEpisode = existingEpisode
+                )
 
                 if (summary.isNotBlank()) {
-                    // Step 1: Extract keywords for the summary
-                    val keywords = extractKeywords(handler, providerSetting, model, summary)
+                    val keywords = extractKeywords(
+                        handler = backgroundHandler,
+                        providerSetting = backgroundProvider,
+                        model = backgroundModel,
+                        summary = summary
+                    )
 
                     val episode = ChatEpisodeEntity(
                         id = existingEpisode?.id ?: 0,
@@ -244,6 +246,7 @@ class MemoryConsolidationWorker(
                         significance = conv.currentMessages.size,
                         lastAccessedAt = System.currentTimeMillis()
                     )
+
                     chatEpisodeDAO.insertEpisode(episode)
                     conversationRepository.markAsConsolidated(conv.id)
                     episodicSuccessCount++
@@ -253,11 +256,12 @@ class MemoryConsolidationWorker(
             }
         }
 
+        // --- Process Master Memory ---
         var updatedMasterContent: String? = null
         if (currentAssistant.enableMasterMemory) {
             val newConversations = conversations.filter {
-                it.updateAt.toEpochMilli() > currentAssistant.lastMasterMemoryUpdate &&
-                    it.currentMessages.size >= 4
+                val updateTime = it.updateAt.toEpochMilli()
+                updateTime > currentAssistant.lastMasterMemoryUpdate && it.currentMessages.size >= 4
             }.sortedBy { it.updateAt }
 
             if (newConversations.isNotEmpty()) {
@@ -279,10 +283,12 @@ class MemoryConsolidationWorker(
 
                     if (recentContext.isNotBlank()) {
                         updatedMasterContent = updateMasterMemory(
-                            handler, providerSetting, model,
-                            currentAssistant.masterMemoryContent,
-                            recentContext,
-                            currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
+                            handler = memoryHandler,
+                            providerSetting = memoryProvider,
+                            model = memoryModel,
+                            existingArchive = currentAssistant.masterMemoryContent,
+                            newContext = recentContext,
+                            systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
                         )
                     }
                 } catch (e: Exception) {
@@ -291,22 +297,92 @@ class MemoryConsolidationWorker(
             }
         }
 
+        // --- Finalize Result Update ---
         val finalSettings = settingsStore.settingsFlow.first()
         val now = System.currentTimeMillis()
 
         val updatedSettings = finalSettings.copy(
-            assistants = finalSettings.assistants.map {
-                if (it.id == currentAssistant.id) {
-                    it.copy(
+            assistants = finalSettings.assistants.map { assistantItem ->
+                if (currentAssistant.id == assistantItem.id) {
+                    assistantItem.copy(
                         lastConsolidationTime = now,
-                        lastConsolidationResult = if (episodicSuccessCount > 0) "Consolidated $episodicSuccessCount items automatically" else it.lastConsolidationResult,
-                        masterMemoryContent = updatedMasterContent ?: it.masterMemoryContent,
-                        lastMasterMemoryUpdate = if (updatedMasterContent != null) now else it.lastMasterMemoryUpdate
+                        lastConsolidationResult = if (episodicSuccessCount > 0) {
+                            "Consolidated $episodicSuccessCount items automatically"
+                        } else {
+                            assistantItem.lastConsolidationResult
+                        },
+                        masterMemoryContent = updatedMasterContent ?: assistantItem.masterMemoryContent,
+                        lastMasterMemoryUpdate = if (updatedMasterContent != null) {
+                            now
+                        } else {
+                            assistantItem.lastMasterMemoryUpdate
+                        }
                     )
-                } else it
+                } else {
+                    assistantItem
+                }
             }
         )
         settingsStore.update(updatedSettings)
+    }
+
+    private suspend fun generateRollingSummary(
+        handler: me.rerere.ai.provider.Provider<*>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        assistant: Assistant,
+        conv: Conversation,
+        existingEpisode: ChatEpisodeEntity?
+    ): String {
+        // 1. 获取进度
+        val episodeSignificance = existingEpisode?.significance ?: 0
+        val summarySignificance = if (conv.contextSummary != null) {
+            conv.contextSummaryUpToIndex + 1
+        } else {
+            0
+        }
+
+        // 2. 选取最佳基准
+        val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
+            conv.contextSummary to summarySignificance
+        } else {
+            existingEpisode?.content to episodeSignificance
+        }
+
+        val newMessages = conv.currentMessages.drop(skipCount)
+
+        return if (newMessages.isEmpty() && baseSummary != null) {
+            Log.i(TAG, "generateRollingSummary: No new messages, reusing base summary.")
+            baseSummary
+        } else {
+            Log.i(TAG, "generateRollingSummary: Rolling summary from index $skipCount.")
+            generateConversationSummary(
+                handler = handler,
+                providerSetting = providerSetting,
+                model = model,
+                assistantName = assistant.name,
+                previousSummary = baseSummary,
+                messages = newMessages,
+                temporarySummaries = conv.temporarySummaries
+            )
+        }
+    }
+
+    private suspend fun updateLastResult(assistantId: Uuid, result: String) {
+        val settings = settingsStore.settingsFlow.first()
+        val updated = settings.copy(
+            assistants = settings.assistants.map { assistantItem ->
+                if (assistantItem.id == assistantId) {
+                    assistantItem.copy(
+                        lastConsolidationTime = System.currentTimeMillis(),
+                        lastConsolidationResult = result
+                    )
+                } else {
+                    assistantItem
+                }
+            }
+        )
+        settingsStore.update(updated)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -319,9 +395,13 @@ class MemoryConsolidationWorker(
         messages: List<UIMessage>,
         temporarySummaries: List<String> = emptyList()
     ): String {
-        val messagesText = messages.takeLast(100).joinToString("\n") { "${it.role}: ${it.toText().take(5000)}" }
+        val messagesText = messages.takeLast(100).joinToString("\n") {
+            "${it.role}: ${it.toText().take(5000)}"
+        }
+
         val detailText = if (temporarySummaries.isNotEmpty()) {
-            "\n### Tactical Details from Recent Segments:\n" + temporarySummaries.joinToString("\n") { "- $it" }
+            "\n### Tactical Details from Recent Segments:\n" +
+                temporarySummaries.joinToString("\n") { "- $it" }
         } else ""
 
         val locale = Locale.getDefault().displayName
@@ -341,9 +421,9 @@ class MemoryConsolidationWorker(
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = h.generateText(
-            providerSetting,
-            listOf(UIMessage.user(prompt)),
-            TextGenerationParams(
+            providerSetting = providerSetting,
+            messages = listOf(UIMessage.user(prompt)),
+            params = TextGenerationParams(
                 model = model,
                 temperature = 0.3f,
                 topP = 0f,
@@ -367,9 +447,9 @@ class MemoryConsolidationWorker(
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = h.generateText(
-            providerSetting,
-            listOf(UIMessage.user(prompt)),
-            TextGenerationParams(
+            providerSetting = providerSetting,
+            messages = listOf(UIMessage.user(prompt)),
+            params = TextGenerationParams(
                 model = model,
                 temperature = 0.3f,
                 topP = 0f,
@@ -402,12 +482,12 @@ class MemoryConsolidationWorker(
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = h.generateText(
-            providerSetting,
-            listOf(
+            providerSetting = providerSetting,
+            messages = listOf(
                 UIMessage.system(systemPrompt),
                 UIMessage.user(inputPrompt)
             ),
-            TextGenerationParams(
+            params = TextGenerationParams(
                 model = model,
                 temperature = 0.2f,
                 topP = 0f,

@@ -52,6 +52,7 @@ import me.rerere.rikkahub.common.JsonInstantPretty
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
+import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
@@ -285,6 +286,7 @@ class ChatService(
      * 将会话存档为唯一的片段记忆 (1:1 映射)
      * @param force 如果为 true，则无视消息数量限制，立即更新记忆
      */
+    @Suppress("UNCHECKED_CAST")
     suspend fun archiveConversation(conversationId: Uuid, force: Boolean = false) {
         if (temporaryConversations.contains(conversationId)) return
 
@@ -319,8 +321,8 @@ class ChatService(
                 .replace("{{text}}", text)
                 .replace("{{locale}}", Locale.getDefault().displayName)
 
-            val providerSetting = provider as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-            val resp = providerSetting.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f))
+            val providerHandler = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+            val resp = providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f))
             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
             if (summary.isNotBlank()) {
@@ -424,7 +426,7 @@ class ChatService(
             updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
             // 核心改造：不再盲目使用 settings.getCurrentAssistant()
             // 而是根据当前会话绑定的 assistantId 去查找
-            val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+            val assistant = assistantOverride ?: settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
             // 根据该 Assistant 的配置选择模型
             val modelId = assistant.chatModelId ?: settings.chatModelId
             val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return@runCatching
@@ -617,7 +619,7 @@ class ChatService(
     }
 
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
-        val assistant = settings.getCurrentAssistant()
+        val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableContextRefresh || !assistant.autoRegenerateSummary) return
         val max = assistant.maxHistoryMessages ?: return
         val count = if (conv.contextSummaryUpToIndex >= 0) (conv.currentMessages.size - conv.contextSummaryUpToIndex - 1 - 4).coerceAtLeast(0) else (conv.currentMessages.size - 4).coerceAtLeast(0)
@@ -627,9 +629,11 @@ class ChatService(
     suspend fun summarizeAndRefresh(id: Uuid): ContextRefreshResult = withContext(Dispatchers.IO) {
         try {
             val settings = settingsStore.settingsFlow.first()
-            val assistant = settings.getCurrentAssistant()
             val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(false, errorMessage = "Not found")
+
+            val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
             val messages = conv.currentMessages
+
             if (messages.isEmpty()) return@withContext ContextRefreshResult(false)
             val modelId = assistant.summarizerModelId ?: assistant.chatModelId ?: settings.chatModelId
             val model = settings.findModelById(modelId) ?: return@withContext ContextRefreshResult(false)
@@ -638,21 +642,63 @@ class ChatService(
             val lastIdx = (messages.size - 5).coerceAtLeast(0)
             val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
             val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()
-            if (toSummarize.isEmpty()) return@withContext ContextRefreshResult(false)
-            val text = toSummarize.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
+
+            if (toSummarize.isEmpty()) {
+                return@withContext ContextRefreshResult(false)
+            }
+
+            val text = toSummarize.joinToString("\n") {
+                "${it.role}: ${it.toText().take(500)}"
+            }
             val locale = Locale.getDefault().displayName
-            val tempPrompt = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }.replace("{{new_messages}}", text).replace("{{locale}}", locale)
-            val tempResp = handler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
+
+            val tempPrompt = assistant.temporarySummaryPrompt
+                .ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }
+                .replace("{{new_messages}}", text)
+                .replace("{{locale}}", locale)
+
+            val providerHandler = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+            val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
-            // 保留：上下文摘要存入片段记忆数据库
-            if (tempSum.isNotBlank()) memoryRepository.addMemory(assistant.id.toString(), "Recent: $tempSum", type = MemoryType.EPISODIC)
+            // 核心变更：不再直接存入 RAG (MemoryType.EPISODIC)，而是存入 L1 层 (chat_segments)
+            if (tempSum.isNotBlank()) {
+                val segment = ChatSegmentEntity(
+                    assistantId = assistant.id.toString(),
+                    conversationId = id.toString(),
+                    content = tempSum,
+                    startMessageIndex = startIdx,
+                    endMessageIndex = lastIdx
+                )
+                memoryRepository.saveSegment(segment)
+                Log.i(TAG, "Persistent segment (L1) saved for conversation $id: $startIdx to $lastIdx")
+            }
 
             val currentSummary = conv.contextSummary
-            val fullPrompt = if (!currentSummary.isNullOrBlank()) assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }.replace("{{previous_summary}}", currentSummary).replace("{{new_messages}}", text).replace("{{locale}}", locale) else "Summarize:\n$text"
-            val fullResp = handler.generateText(provider, listOf(UIMessage.user(fullPrompt)), TextGenerationParams(model, 0.3f))
+            val fullPrompt = if (!currentSummary.isNullOrBlank()) {
+                assistant.fullSummaryPrompt
+                    .ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }
+                    .replace("{{previous_summary}}", currentSummary)
+                    .replace("{{new_messages}}", text)
+                    .replace("{{locale}}", locale)
+            } else {
+                "Summarize the following chat history:\n$text"
+            }
+
+            val fullResp = handler.generateText(
+                providerSetting = provider,
+                messages = listOf(UIMessage.user(fullPrompt)),
+                params = TextGenerationParams(model, 0.3f)
+            )
             val fullSum = fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(false)
-            val updated = conv.copy(contextSummary = fullSum, temporarySummaries = conv.temporarySummaries + tempSum, contextSummaryUpToIndex = lastIdx, lastRefreshTime = System.currentTimeMillis())
+
+            val updated = conv.copy(
+                contextSummary = fullSum,
+                temporarySummaries = conv.temporarySummaries + tempSum,
+                contextSummaryUpToIndex = lastIdx,
+                lastRefreshTime = System.currentTimeMillis()
+            )
+
             conversationRepo.updateConversation(updated)
             updateConversation(id, updated)
             ContextRefreshResult(true, fullSum, toSummarize.size)

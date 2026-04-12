@@ -21,6 +21,7 @@ import me.rerere.rikkahub.core.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.core.data.db.dao.AgentDiaryDAO
 import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
 import me.rerere.rikkahub.core.data.db.dao.AgentTaskDAO
+import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
@@ -30,6 +31,7 @@ import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
+import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.json.JsonArray
@@ -51,9 +53,10 @@ import kotlinx.serialization.json.put
         DailyActivityEntity::class,
         AgentDiaryEntity::class,
         ScheduleEntity::class,
-        AgentTaskEntity::class
+        AgentTaskEntity::class,
+        ChatSegmentEntity::class
     ],
-    version = 27,
+    version = 28,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -64,9 +67,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 8, to = 9, spec = Migration_8_9::class),
         AutoMigration(from = 9, to = 10),
         AutoMigration(from = 10, to = 11),
-        // 11->12 was manual migration in companion object
         AutoMigration(from = 13, to = 14),
-        // 14->16 is manual migration
         AutoMigration(from = 16, to = 17),
         AutoMigration(from = 17, to = 18),
         AutoMigration(from = 18, to = 19),
@@ -75,8 +76,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 23, to = 24),
         AutoMigration(from = 24, to = 25),
-        // 25->26 is manual migration below
-        // 26->27 is manual migration below
+        AutoMigration(from = 27, to = 28), // 增加对 L1 片段表的自动迁移
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -98,6 +98,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun scheduleDao(): ScheduleDAO
 
     abstract fun agentTaskDao(): AgentTaskDAO
+
+    abstract fun chatSegmentDao(): ChatSegmentDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -126,7 +128,6 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: updating schedules table")
-                // Recreate the table to support the new default value for priority and add urgency/difficulty
                 db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS `schedules_new` (
@@ -160,13 +161,11 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 11 to 12")
-                // Add columns to MemoryEntity
                 db.execSQL("ALTER TABLE MemoryEntity ADD COLUMN embedding TEXT")
                 db.execSQL("ALTER TABLE MemoryEntity ADD COLUMN type INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE MemoryEntity ADD COLUMN last_accessed_at INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE MemoryEntity ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
 
-                // Create ChatEpisodeEntity table
                 db.execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS `ChatEpisodeEntity` (
@@ -185,12 +184,10 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.i(TAG, "migrate: start migrate from 12 to 13")
-                // Check if table exists before altering
                 val cursor = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='ChatEpisodeEntity'")
                 val tableExists = cursor.count > 0
                 cursor.close()
                 if (tableExists) {
-                    // Check if column already exists
                     val columnCursor = db.query("PRAGMA table_info(ChatEpisodeEntity)")
                     var hasColumn = false
                     while (columnCursor.moveToNext()) {

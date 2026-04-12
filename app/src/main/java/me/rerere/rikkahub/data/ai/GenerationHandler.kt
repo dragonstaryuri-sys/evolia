@@ -58,6 +58,7 @@ import me.rerere.rikkahub.core.data.model.ModeAttachmentType
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
+import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.utils.applyPlaceholders
 import java.util.Locale
 import kotlin.uuid.Uuid
@@ -89,6 +90,7 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: EmbeddingService,
+    private val chatSegmentDAO: ChatSegmentDAO, // 新增：用于下钻详情
 ) {
     fun generateText(
         settings: Settings,
@@ -109,19 +111,16 @@ class GenerationHandler(
         val providerImpl = providerManager.getProviderByType(provider)
 
         var messages: List<UIMessage> = messages
-        //定义搜索计数器
         var searchCount = 0
         for (stepIndex in 0 until maxSteps) {
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
-                // Add memory tools if memory is enabled for this assistant
                 if (assistant.enableMemory) {
                     buildMemoryTools(
                         assistantId = assistant.id.toString(),
                         onCreation = { content ->
-                            // 瞬时去重与更新逻辑 (Upsert)
                             val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
                                 assistantId = assistant.id.toString(),
                                 query = content,
@@ -153,6 +152,39 @@ class GenerationHandler(
                             memoryRepo.deleteMemory(id)
                         }
                     ).let(this::addAll)
+
+                    // 新增：细节下钻工具
+                    add(Tool(
+                        name = "retrieve_memory_details",
+                        description = "Retrieve high-resolution tactical details or specific segments for a given episodic memory ID. Use this when the summary is too vague.",
+                        parameters = {
+                            InputSchema.Obj(
+                                properties = buildJsonObject {
+                                    put("episode_id", buildJsonObject {
+                                        put("type", "integer")
+                                        put("description", "The ID of the episodic memory (use the absolute value if the ID is negative in prompt).")
+                                    })
+                                },
+                                required = listOf("episode_id")
+                            )
+                        },
+                        execute = {
+                            val params = it.jsonObject
+                            val id = kotlin.math.abs(params["episode_id"]?.jsonPrimitive?.intOrNull ?: 0)
+                            val episode = memoryRepo.getEpisodeEntitiesOfAssistant(assistant.id.toString()).find { it.id == id }
+                            val segments = episode?.conversationId?.let { convId ->
+                                chatSegmentDAO.getSegmentsByConversation(convId)
+                            } ?: emptyList()
+
+                            buildJsonObject {
+                                put("episode_id", JsonPrimitive(id))
+                                put("segments_found", JsonPrimitive(segments.size))
+                                put("details", JsonPrimitive(segments.joinToString("\n---\n") {
+                                    "Segment [${it.startMessageIndex}-${it.endMessageIndex}]: ${it.content}"
+                                }.ifBlank { "No detailed segments found for this memory." }))
+                            }
+                        }
+                    ))
                 }
                 addAll(tools)
             }
@@ -207,22 +239,18 @@ class GenerationHandler(
 
             val toolCalls = messages.last().getToolCalls()
             if (toolCalls.isEmpty()) {
-                // no tool calls, break
                 break
             }
-            // 在这里进行搜索次数统计与拦截
             if (toolCalls.any { it.toolName == "search_web" }) {
                 searchCount++
                 Log.d(TAG, "generateText: 当前搜索次数: $searchCount")
             }
 
-            // 如果搜索太频繁，强制终止，防止死循环和 Token 爆炸
             if (searchCount > 3) {
                 Log.w(TAG, "generateText: 搜索次数达到上限，强制停止以保护上下文空间")
                 // 可以在这里给 messages 手动加一条系统提示，告诉 AI 别再搜了（可选）
                 break
             }
-            // handle tool calls
             val results = arrayListOf<UIMessagePart.ToolResult>()
             toolCalls.forEach { toolCall ->
                 runCatching {
@@ -296,14 +324,14 @@ class GenerationHandler(
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList()
     ): BuildMessagesResult {
-        // Token estimator (rough estimate: 4 chars per token)
+        // Token estimator
         fun estimateTokens(text: String) = text.length / 4
         fun estimateTokens(message: UIMessage) = estimateTokens(message.toText())
 
         val maxTokens = assistant.maxTokenUsage
         var currentTokens = 0
 
-        // Cosine similarity for RAG matching
+        // Cosine similarity
         fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {
             if (a.size != b.size) return 0f
             var dotProduct = 0f
@@ -318,7 +346,6 @@ class GenerationHandler(
             return if (denominator == 0f) 0f else dotProduct / denominator
         }
 
-        // Helper to check if and why lorebook entry activated
         fun getLorebookEntryActivationReason(entry: LorebookEntry, recentMessages: List<String>, queryEmbedding: List<Float>? = null): String? {
             if (!entry.enabled) return null
             return when (entry.activationType) {
@@ -328,28 +355,16 @@ class GenerationHandler(
                     val matchingKeyword = entry.keywords.firstOrNull { keyword ->
                         if (entry.useRegex) {
                             try {
-                                val regex = if (entry.caseSensitive) {
-                                    Regex(keyword)
-                                } else {
-                                    Regex(keyword, RegexOption.IGNORE_CASE)
-                                }
+                                val regex = if (entry.caseSensitive) Regex(keyword) else Regex(keyword, RegexOption.IGNORE_CASE)
                                 regex.containsMatchIn(searchText)
-                            } catch (e: Exception) {
-                                Log.w(TAG, "Invalid regex in lorebook entry: $keyword", e)
-                                false
-                            }
+                            } catch (e: Exception) { false }
                         } else {
-                            if (entry.caseSensitive) {
-                                searchText.contains(keyword)
-                            } else {
-                                searchText.contains(keyword, ignoreCase = true)
-                            }
+                            if (entry.caseSensitive) searchText.contains(keyword) else searchText.contains(keyword, ignoreCase = true)
                         }
                     }
                     if (matchingKeyword != null) "Keyword: $matchingKeyword" else null
                 }
                 LorebookActivationType.RAG -> {
-                    // RAG activation uses embedding similarity
                     val entryEmbedding = entry.embedding
                     if (entryEmbedding == null || entryEmbedding.isEmpty()) {
                         Log.d(TAG, "RAG entry '${entry.name}' has no embedding, skipping")
@@ -376,17 +391,9 @@ class GenerationHandler(
             }
         }
 
-        // Get recent message text for lorebook keyword scanning
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
+        val enabledModes = if (enabledModeIds.isNotEmpty()) settings.modes.filter { enabledModeIds.contains(it.id) } else settings.modes.filter { it.defaultEnabled }
 
-        // Collect enabled modes - use per-conversation enabledModeIds if provided, otherwise fall back to defaultEnabled
-        val enabledModes = if (enabledModeIds.isNotEmpty()) {
-            settings.modes.filter { enabledModeIds.contains(it.id) }
-        } else {
-            settings.modes.filter { it.defaultEnabled }
-        }
-
-        // Build UsedMode list for UI display
         val usedModesList = enabledModes.mapIndexed { index, mode ->
             val reason = if (enabledModeIds.contains(mode.id)) {
                 "Activated by user"
@@ -402,14 +409,9 @@ class GenerationHandler(
             )
         }
 
-        // Check if any lorebook entries use RAG activation
-        val lorebooksForAssistant = settings.lorebooks
-            .filter { it.enabled && assistant.enabledLorebookIds.contains(it.id) }
-        val hasRagEntries = lorebooksForAssistant.any { lorebook ->
-            lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled }
-        }
+        val lorebooksForAssistant = settings.lorebooks.filter { it.enabled && assistant.enabledLorebookIds.contains(it.id) }
+        val hasRagEntries = lorebooksForAssistant.any { lorebook -> lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled } }
 
-        // Compute query embedding only if there are RAG entries
         val queryEmbedding: List<Float>? = if (hasRagEntries) {
             try {
                 val queryText = recentMessagesForScan.takeLast(3).joinToString("\n")
@@ -422,8 +424,6 @@ class GenerationHandler(
             }
         } else null
 
-        // Collect activated lorebook entries from enabled lorebooks assigned to this assistant
-        // Also track UsedLorebookEntry info for the UI display
         data class ActivatedEntryWithLorebook(val lorebook: Lorebook, val entry: LorebookEntry, val entryIndex: Int, val reason: String)
         val activatedEntriesWithLorebook = lorebooksForAssistant
             .flatMap { lorebook ->
@@ -436,7 +436,6 @@ class GenerationHandler(
             }
         val activatedEntries = activatedEntriesWithLorebook.map { it.entry }
 
-        // Build UsedLorebookEntry list for UI display
         val usedLorebookEntriesList = activatedEntriesWithLorebook.mapIndexed { priority, activated ->
             // Serialize cover Avatar to JSON string for UI display
             val coverJson = activated.lorebook.cover?.let { cover ->
@@ -458,16 +457,26 @@ class GenerationHandler(
             )
         }
 
-        // Group injections by position
         val beforeSystemModes = enabledModes.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemModes = enabledModes.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
         val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
-        // 1. Base System Prompt (BEFORE_SYSTEM modes/entries + System + Learning + AFTER_SYSTEM modes/entries + Tools)
         val baseSystemPromptBuilder = StringBuilder()
 
-        // BEFORE_SYSTEM injections
+        // 1. Core personality - MUST be first
+        if (assistant.systemPrompt.isNotBlank()) {
+            baseSystemPromptBuilder.append(assistant.systemPrompt)
+            baseSystemPromptBuilder.appendLine("\n")
+        }
+
+        // 2. Learning mode (legacy - still supported)
+        if (assistant.learningMode) {
+            baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
+            baseSystemPromptBuilder.appendLine("\n")
+        }
+
+        // 3. BEFORE_SYSTEM injections
         beforeSystemModes.forEach { mode ->
             baseSystemPromptBuilder.append(mode.prompt)
             baseSystemPromptBuilder.appendLine()
@@ -477,26 +486,14 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine()
         }
 
-        // Master Memory (Before System Prompt)
+        // 4. Memory Archive
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
             baseSystemPromptBuilder.append("## Memory Archive\n")
             baseSystemPromptBuilder.append(assistant.masterMemoryContent)
             baseSystemPromptBuilder.append("\n\n")
         }
 
-        // Original system prompt
-        if (assistant.systemPrompt.isNotBlank()) {
-            baseSystemPromptBuilder.append(assistant.systemPrompt)
-        }
-
-        // Learning mode (legacy - still supported)
-        if (assistant.learningMode) {
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
-            baseSystemPromptBuilder.appendLine()
-        }
-
-        // AFTER_SYSTEM injections
+        // 5. AFTER_SYSTEM injections
         afterSystemModes.forEach { mode ->
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(mode.prompt)
@@ -506,24 +503,14 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(entry.prompt)
         }
 
-        // Tool prompts
-        tools.forEach { tool ->
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(tool.systemPrompt(model, messages))
-        }
+        tools.forEach { baseSystemPromptBuilder.appendLine().append(it.systemPrompt(model, messages)) }
 
-        // Context Summaries
-        if (!contextSummary.isNullOrBlank()) {
-            baseSystemPromptBuilder.append("\n\n## Overall Conversation Summary\n")
-            baseSystemPromptBuilder.append(contextSummary)
-        }
+        if (!contextSummary.isNullOrBlank()) baseSystemPromptBuilder.append("\n\n## Overall Conversation Summary\n").append(contextSummary)
 
         val tempSummaries = temporarySummaries.takeLast(assistant.maxTemporarySummariesToInclude)
         if (tempSummaries.isNotEmpty()) {
             baseSystemPromptBuilder.append("\n\n## Recent Context Highlights\n")
-            tempSummaries.forEachIndexed { index, s ->
-                baseSystemPromptBuilder.append("${index + 1}. $s\n")
-            }
+            tempSummaries.forEachIndexed { index, s -> baseSystemPromptBuilder.append("${index + 1}. $s\n") }
         }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
@@ -548,7 +535,6 @@ class GenerationHandler(
 
                 // Keep only the last N search results
                 val indicesToPrune = searchResultIndices.dropLast(maxSearches).toSet()
-
                 if (indicesToPrune.isNotEmpty()) {
                     historyLimitedMessages.mapIndexed { index, msg ->
                         if (index in indicesToPrune) {
@@ -566,10 +552,8 @@ class GenerationHandler(
             } else historyLimitedMessages
         } ?: historyLimitedMessages
 
-        // Chat History (reverse order to prioritize recent)
         val chatHistoryCandidates = searchPrunedMessages.truncate(truncateIndex).reversed()
 
-        // Memories (Prepare effective memories including recent chats if enabled)
         val effectiveMemoriesCandidates = if (assistant.enableMemory) {
             val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
                 val today = java.time.LocalDate.now()
@@ -595,21 +579,17 @@ class GenerationHandler(
             emptyList()
         }
 
-        // 3. Allocation Logic
         val selectedMessages = mutableListOf<UIMessage>()
         val selectedMemories = mutableListOf<AssistantMemory>()
-
         val remainingTokens = maxTokens - currentTokens
         if (remainingTokens <= 0) {
             // Edge case: System prompt too large. Just return minimums.
             Log.w(TAG, "buildMessages: System prompt exceeds max tokens!")
         }
 
-        // Minimums
         val minChatHistory = 4.coerceAtMost(chatHistoryCandidates.size)
         val minMemories = if (assistant.enableMemory) 1.coerceAtMost(effectiveMemoriesCandidates.size) else 0
 
-        // Add minimums first
         var usedTokens = 0
 
         // Add min chat history
@@ -624,12 +604,10 @@ class GenerationHandler(
             usedTokens += estimateTokens(it.content)
         }
 
-        // Distribute remaining tokens
         var availableTokens = remainingTokens - usedTokens
         if (availableTokens > 0) {
             val remainingChatHistory = chatHistoryCandidates.drop(minChatHistory)
             val remainingMemories = effectiveMemoriesCandidates.drop(minMemories)
-
             when (assistant.contextPriority) {
                 ContextPriority.CHAT_HISTORY -> {
                     // Prioritize Chat History
@@ -666,11 +644,7 @@ class GenerationHandler(
                     }
                 }
                 ContextPriority.BALANCED -> {
-                    // Balanced (e.g. 50/50 split of remaining, or round-robin)
-                    // Simple round-robin approach
-                    var msgIndex = 0
-                    var memIndex = 0
-                    var addedSomething = true
+                    var msgIndex = 0; var memIndex = 0; var addedSomething = true
                     while (addedSomething && availableTokens > 0) {
                         addedSomething = false
                         // Try add message
@@ -759,7 +733,7 @@ class GenerationHandler(
             // Restore chat history order
             addAll(selectedMessages.sortedBy { messages.indexOf(it) })
         }
-        // Build UsedMemory list for UI display
+
         val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
             val reason = when {
                 memory.id == -1 -> "Recent episode boost"  // Recent chat reference
@@ -768,7 +742,12 @@ class GenerationHandler(
             }
             UsedMemory(
                 memoryId = memory.id,
-                memoryContent = memory.content.take(50) + if (memory.content.length > 50) "..." else "",
+                // 显示时带上关键词
+                memoryContent = buildString {
+                    if (!memory.keywords.isNullOrBlank()) append("[${memory.keywords}] ")
+                    append(memory.content.take(50))
+                    if (memory.content.length > 50) append("...")
+                },
                 memoryType = memory.type,
                 priority = selectedMemories.size - index,  // Higher priority for earlier memories
                 activationReason = reason
@@ -859,7 +838,6 @@ class GenerationHandler(
                 }
                 onUpdateMessages(messages)
             }
-            // Attach all context sources to the last assistant message after streaming completes
             if (hasContextSources) {
                 messages = messages.mapIndexed { index, message ->
                     if (index == messages.lastIndex && message.role == CoreMessageRole.ASSISTANT) {
@@ -966,8 +944,7 @@ class GenerationHandler(
             execute = {
                 val params = it.jsonObject
                 val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
-                val content =
-                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
                 val before = memoryRepo.getMemoryById(id)
                 val updated = onUpdate(id, content)
                 buildJsonObject {
@@ -1031,16 +1008,13 @@ class GenerationHandler(
         val episodicMemories = memories.filter { it.type == 1 } // EPISODIC
 
         return buildString {
-            append("## Memories\n")
-            append("These are memories that you can reference in the future conversations.\n")
-
+            append("## Memories\n").append("These are memories that you can reference. If a memory summary is too brief and you need specific tactical details (like code blocks, exact quotes, or step-by-step logic), please call `retrieve_memory_details(episode_id)`.\n")
             if (coreMemories.isNotEmpty()) {
                 append("### Core Memories\n")
                 coreMemories.forEach { memory ->
                     append("- [ID: ${memory.id}] ${memory.content}\n")
                 }
             }
-
             if (episodicMemories.isNotEmpty()) {
                 append("### Episodic Memories\n")
 
@@ -1067,12 +1041,16 @@ class GenerationHandler(
                     if (!memoriesInGroup.isNullOrEmpty()) {
                         append("#### $group\n")
                         memoriesInGroup.sortedByDescending { it.timestamp }.forEach { memory ->
-                            append("- ${memory.content}\n")
+                            // 在注入 Prompt 时带上关键词
+                            if (!memory.keywords.isNullOrBlank()) {
+                                append("- [Keywords: ${memory.keywords}] ${memory.content}\n")
+                            } else {
+                                append("- ${memory.content}\n")
+                            }
                         }
                     }
                 }
             }
-
             if (model.abilities.contains(ModelAbility.TOOL)) {
                 append(
                     """
@@ -1092,10 +1070,11 @@ class GenerationHandler(
                         - **INCORRECT EXAMPLE**: "I completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
 
                         ### Tool Usage
-                        You can use the `create_memory`, `edit_memory`, and `delete_memory` tools to create, update, or delete memories.
+                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory_details` tools to create, update, delete or search and retrieve memories.
                         - If there is no relevant information in memory, call `create_memory` to create a new record.
                         - If a relevant record already exists, call `edit_memory` to update it.
                         - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
+                        - `retrieve_memory_details` for Episodic Memories: Call this when a summary is insufficient and you need to \"deep dive\" into that specific conversation's segments."
                         **Note:** You can only edit or delete **Core Memories** (which have an ID). Episodic Memories are read-only context.
 
                         **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
@@ -1117,13 +1096,9 @@ class GenerationHandler(
         onStreamUpdate: (suspend (String) -> Unit)? = null
     ): Flow<String> = flow {
         val modelId = modelIdOverride ?: settings.translateModeId
-        val model = settings.providers.findModelById(modelId)
-            ?: error("Translation model not found")
-        val provider = model.findProvider(settings.providers)
-            ?: error("Translation provider not found")
-
+        val model = settings.providers.findModelById(modelId) ?: error("Translation model not found")
+        val provider = model.findProvider(settings.providers) ?: error("Translation provider not found")
         val providerHandler = providerManager.getProviderByType(provider)
-
         if (!ModelRegistry.QWEN_MT.match(model.modelId)) {
             // Use regular translation with prompt
             val prompt = settings.translatePrompt.applyPlaceholders(
@@ -1144,14 +1119,9 @@ class GenerationHandler(
             ).collect { chunk ->
                 messages = messages.handleMessageChunk(chunk)
                 translatedText = messages.lastOrNull()?.toContentText() ?: ""
-
-                if (translatedText.isNotBlank()) {
-                    onStreamUpdate?.invoke(translatedText)
-                    emit(translatedText)
-                }
+                if (translatedText.isNotBlank()) { onStreamUpdate?.invoke(translatedText); emit(translatedText) }
             }
         } else {
-            // Use Qwen MT model with special translation options
             val messages = listOf(UIMessage.user(sourceText))
             val chunk = providerHandler.generateText(
                 providerSetting = provider,
@@ -1183,19 +1153,10 @@ class GenerationHandler(
         }
     }.flowOn(Dispatchers.IO)
 
-    /**
-     * Attempts to sanitize malformed JSON from streamed tool call arguments.
-     * Handles cases where the model outputs content after a valid JSON object.
-     */
     private fun sanitizeToolCallArguments(arguments: String): String {
         if (arguments.isBlank()) return "{}"
         val trimmed = arguments.trim()
-
-        // Find the first complete JSON object
-        var braceCount = 0
-        var inString = false
-        var escape = false
-
+        var braceCount = 0; var inString = false; var escape = false
         for ((index, char) in trimmed.withIndex()) {
             if (escape) {
                 escape = false

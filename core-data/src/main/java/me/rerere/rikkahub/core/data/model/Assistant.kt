@@ -122,6 +122,7 @@ data class QuickMessage(
 data class AssistantMemory(
     val id: Int,
     val content: String = "",
+    val keywords: String? = null, // 新增：关键词字段
     val type: Int = 0,
     val hasEmbedding: Boolean = false,
     val embeddingModelId: String? = null,

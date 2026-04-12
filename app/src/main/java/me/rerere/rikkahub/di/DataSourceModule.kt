@@ -103,6 +103,10 @@ val dataSourceModule = module {
         get<AppDatabase>().agentTaskDao()
     }
 
+    single {
+        get<AppDatabase>().chatSegmentDao()
+    }
+
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single {
@@ -113,7 +117,8 @@ val dataSourceModule = module {
             memoryRepo = get(),
             conversationRepo = get(),
             aiLoggingManager = get(),
-            embeddingService = get()
+            embeddingService = get(),
+            chatSegmentDAO = get()
         )
     }
 
