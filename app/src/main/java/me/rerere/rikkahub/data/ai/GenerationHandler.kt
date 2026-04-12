@@ -1029,7 +1029,8 @@ class GenerationHandler(
             if (coreMemories.isNotEmpty()) {
                 append("### Core Memories\n")
                 coreMemories.forEach { memory ->
-                    append("- [ID: ${memory.id}] ${memory.content}\n")
+                    // core memories don't need ID display in prompt
+                    append("- ${memory.content}\n")
                 }
             }
             if (episodicMemories.isNotEmpty()) {
@@ -1075,15 +1076,15 @@ class GenerationHandler(
                         ### Person Specification (IMPORTANT)
                         To ensure clarity and avoid identity confusion when retrieving memories in the future, please strictly adhere to the following specifications:
                         1. **"User"**: Refers to the person you are chatting with. Always use "User" to refer to them in all records.
-                        2. **"You"**: Refers to yourself (the AI Assistant).
+                        2. **"I"**: Refers to yourself (the AI Assistant).
 
                         **Record Format Guidelines:**
                         - **STRICTLY PROHIBITED**: Using the first-person pronoun "I" or "me".
-                        - **CORRECT EXAMPLE**: "User completed a PPT with you", "User plans to go to Shanghai tomorrow".
-                        - **INCORRECT EXAMPLE**: "I completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
+                        - **CORRECT EXAMPLE**: "User completed a PPT with me", "User plans to go to Shanghai tomorrow".
+                        - **INCORRECT EXAMPLE**: "You completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
 
                         ### Tool Usage
-                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory_details` tools to create, update, delete or search and retrieve memories.
+                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory_details` tools to create, update, delete or \"deep dive\" into that specific conversation's  memories.
                         - If there is no relevant information in memory, call `create_memory` to create a new record.
                         - If a relevant record already exists, call `edit_memory` to update it.
                         - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
@@ -1094,7 +1095,8 @@ class GenerationHandler(
                         During chats, act like a personal secretary and **proactively** record user-related information, including but not limited to:
                         - Name/Nickname
                         - Age/Gender/Hobbies
-                        - Plans/To-do items
+                        - Plans
+                        - User's target
                     """.trimIndent()
                 )
             }
