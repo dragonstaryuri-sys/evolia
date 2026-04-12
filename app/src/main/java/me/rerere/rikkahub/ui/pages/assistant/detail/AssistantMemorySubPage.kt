@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+import android.content.ClipData
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -68,18 +69,21 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.rerere.ai.provider.Model
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
@@ -149,8 +153,6 @@ fun AssistantMemorySettings(
 
     val isOptimizing by assistantDetailVM.isOptimizing.collectAsStateWithLifecycle()
     val isConsolidating by assistantDetailVM.isConsolidating.collectAsStateWithLifecycle()
-
-    // 已经删除了 LaunchedEffect 监听代码
 
     // Embedding progress dialog
     if (embeddingProgress != null && embeddingProgress.isRunning) {
@@ -306,10 +308,8 @@ fun AssistantMemorySettings(
                     MemorySettingsItem(
                         title = stringResource(R.string.assistant_page_recent_chats),
                         subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
-                        // RAG toggle is always visible below when memory is on, so this is always MIDDLE
                         position = "MIDDLE",
                         trailing = {
-                            // Use 0.75f alpha for disabled state - subtle but visible
                             val toggleAlpha by animateFloatAsState(
                                 targetValue = if (isLockedByConsolidation) 0.75f else 1f,
                                 animationSpec = spring(stiffness = 300f),
@@ -723,6 +723,36 @@ private fun MasterMemoryCard(
     onUpdateAssistant: (Assistant) -> Unit,
     onConsolidate: () -> Unit
 ) {
+    var showBackupDialog by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text(stringResource(R.string.master_memory_backup_title)) },
+            text = { Text(stringResource(R.string.master_memory_backup_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBackupDialog = false
+                    if (assistant.masterMemoryContent.isNotBlank()) {
+                        scope.launch {
+                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Master Memory", assistant.masterMemoryContent)))
+                        }
+                    }
+                    onConsolidate()
+                }) {
+                    Text(stringResource(R.string.master_memory_backup_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupDialog = false }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -826,7 +856,13 @@ private fun MasterMemoryCard(
                 ) {
                     Box(modifier = Modifier.padding(16.dp)) {
                         Button(
-                            onClick = onConsolidate,
+                            onClick = {
+                                if (assistant.masterMemoryContent.isNotBlank()) {
+                                    showBackupDialog = true
+                                } else {
+                                    onConsolidate()
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
@@ -1054,12 +1090,12 @@ private fun ManageMemoriesSection(
     assistant: Assistant,
     onAddMemory: () -> Unit,
     onEditMemory: (AssistantMemory) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit,
     onRegenerateEmbeddings: (() -> Unit)?,
     onOptimizeMemories: () -> Unit,
     needsEmbeddingRegeneration: Boolean,
     memorySearchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
     currentEmbeddingModelId: String,
     showMemoryTypes: Boolean,
     initialMemoryTab: Int? = null,

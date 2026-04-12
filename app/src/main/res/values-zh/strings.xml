@@ -1344,4 +1344,9 @@
   <string name="setting_provider_page_balance_authorize_key">余额查询授权码 (Authorize Key)</string>
   <string name="setting_provider_page_balance_user_id">用户 ID (User ID)</string>
 
+  <!-- 记忆档案备份提示 -->
+  <string name="master_memory_backup_title">复制当前档案</string>
+  <string name="master_memory_backup_message">更新记忆档案可能因 AI 生成异常导致旧内容丢失。建议先将当前内容备份至剪贴板，是否继续？</string>
+  <string name="master_memory_backup_confirm">确认备份并更新</string>
+
 </resources>

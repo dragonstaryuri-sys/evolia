@@ -1397,5 +1397,9 @@
   <string name="notification_channel_chat_generation">Chat Generation</string>
   <string name="setting_provider_page_balance_authorize_key">Authorize Key</string>
   <string name="setting_provider_page_balance_user_id">User ID</string>
+  <string name="master_memory_backup_title">Copy Current Profile</string>
+  <string name="master_memory_backup_message">Updating the memory profile may cause old content to be lost due to AI generation anomalies. It is recommended to back up the current content to the clipboard first. Do you want to continue?</string>
+  <string name="master_memory_backup_confirm">Confirm Backup and Update</string>
+
 
 </resources>
