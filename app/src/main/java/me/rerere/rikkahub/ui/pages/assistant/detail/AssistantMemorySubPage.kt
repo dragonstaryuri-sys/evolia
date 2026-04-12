@@ -1336,13 +1336,13 @@ private fun MemoryItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Show type and embedding badges only when needed
-                val showBadges = showType || (useRagMemoryRetrieval && !memory.hasEmbedding)
-                AnimatedVisibility(
-                    visible = showBadges,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
+                // Time and Badges Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Left side: Badges
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1374,6 +1374,18 @@ private fun MemoryItem(
                                 )
                             }
                         }
+                    }
+
+                    // Right side: Timestamp
+                    if (memory.timestamp > 0) {
+                        Text(
+                            text = java.time.Instant.ofEpochMilli(memory.timestamp)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toLocalDateTime()
+                                .toLocalString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
                     }
                 }
 
