@@ -63,7 +63,7 @@ Create an updated summary that:
 - Preserves important context from the previous summary
 - Incorporates new information from recent messages
 - Keeps the summary under 500 words
-- Focuses on: main topics, key decisions, pending tasks, user preferences
+- Focuses on: main topics, key decisions, user preferences,your emotion chain
 - Output language: {{locale}}
 
 Updated Summary:

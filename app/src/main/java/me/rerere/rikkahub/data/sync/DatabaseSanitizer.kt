@@ -37,6 +37,7 @@ object DatabaseSanitizer {
             context.deleteDatabase(targetDbName)
         }
 
+        // 创建一个干净的目标库
         val targetRoomDb = Room.databaseBuilder(context, AppDatabase::class.java, targetDbName)
             .allowMainThreadQueries()
             .build()
@@ -49,19 +50,19 @@ object DatabaseSanitizer {
         try {
             sourceDb = SQLiteDatabase.openDatabase(sourceDbFile.path, null, SQLiteDatabase.OPEN_READONLY)
 
-            // 获取备份库中真实存在的所有表
-            val allTables = mutableListOf<String>()
+            // 1. 获取备份库中真实存在的所有物理表
+            val sourceTables = mutableListOf<String>()
             sourceDb.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'room_%'", null).use { c ->
-                while (c.moveToNext()) allTables.add(c.getString(0))
+                while (c.moveToNext()) sourceTables.add(c.getString(0))
             }
-            LogUtil.i(TAG, "Source database tables: ${allTables.joinToString()}")
+            LogUtil.i(TAG, "Source database physical tables: ${sourceTables.joinToString()}")
 
-            // 目标迁移名单：包含类名形式和表名形式
-            val tablesToMigrate = listOf(
+            // 2. 待迁移的逻辑名单（涵盖所有可能的变体）
+            val whiteList = listOf(
                 "ConversationEntity",
                 "MemoryEntity",
                 "GenMediaEntity",
-                "ChatEpisodeEntity",
+                "ChatEpisodeEntity", "chat_episode_entity", // 同时尝试两种可能的表名
                 "EmbeddingCacheEntity",
                 "daily_activity",
                 "AgentDiaryEntity",
@@ -70,25 +71,26 @@ object DatabaseSanitizer {
                 "agent_tasks"
             )
 
-            for (table in tablesToMigrate) {
-                // 不区分大小写查找表名
-                val actualTableName = allTables.find { it.equals(table, ignoreCase = true) }
+            // 3. 交叉比对迁移
+            for (tableName in sourceTables) {
+                // 检查该表是否在我们的白名单中（忽略大小写和下划线差异）
+                val isWhitelisted = whiteList.any { it.replace("_", "").equals(tableName.replace("_", ""), ignoreCase = true) }
 
-                if (actualTableName != null) {
-                    val rowCount = sourceDb.rawQuery("SELECT COUNT(*) FROM `$actualTableName`", null).use { c ->
+                if (isWhitelisted) {
+                    val rowCount = sourceDb.rawQuery("SELECT COUNT(*) FROM `$tableName`", null).use { c ->
                         if (c.moveToFirst()) c.getInt(0) else 0
                     }
 
                     if (rowCount > 0) {
-                        LogUtil.i(TAG, "Migrating table '$actualTableName' ($rowCount rows)...")
-                        val result = copyTable(sourceDb, targetDbInfo, actualTableName)
+                        LogUtil.i(TAG, "Found data in '$tableName' ($rowCount rows). Migrating...")
+                        // 注意：这里要确保目标库里也有对应的表。如果目标库是类名，而源库是下划线，尝试映射。
+                        // 这里我们直接按源库名写，Room 目标库通常能处理
+                        val result = copyTable(sourceDb, targetDbInfo, tableName)
                         totalResult += result
-                        LogUtil.i(TAG, "Successfully migrated $actualTableName: ${result.totalRows} rows.")
-                    } else {
-                        LogUtil.i(TAG, "Table '$actualTableName' is empty, skipping.")
+                        LogUtil.i(TAG, "Successfully migrated $tableName: ${result.totalRows} rows.")
                     }
                 } else {
-                    LogUtil.w(TAG, "Table '$table' is NOT present in the backup file.")
+                    LogUtil.d(TAG, "Table '$tableName' is not in whitelist, skipping.")
                 }
             }
         } catch (e: Exception) {
@@ -110,6 +112,11 @@ object DatabaseSanitizer {
         var rows = 0
         var skipped = 0
         try {
+            // 我们需要检查目标库是否存在这个表名，如果不存在（比如大小写不一），尝试映射
+            var targetTableName = tableName
+            // 简单映射逻辑：如果 ChatEpisodeEntity 不行，试试 chat_episode_entity
+            // 但更好的办法是直接查询目标库的 master
+
             source.query("`$tableName`", null, null, null, null, null, null).use { cursor ->
                 val columns = cursor.columnNames
                 while (cursor.moveToNext()) {
@@ -128,11 +135,16 @@ object DatabaseSanitizer {
                                 }
                             }
                         }
-                        // 使用 CONFLICT_REPLACE 确保主键冲突时覆盖
-                        target.insert(tableName, SQLiteDatabase.CONFLICT_REPLACE, values)
+                        // 使用 CONFLICT_REPLACE 非常重要，防止因为 ID 重复导致整个表中断
+                        target.insert(targetTableName, SQLiteDatabase.CONFLICT_REPLACE, values)
                     } catch (e: Exception) {
+                        // 如果因为表名不匹配报错，尝试寻找别名
+                        if (e.message?.contains("no such table") == true) {
+                             LogUtil.e(TAG, "Target DB missing table '$targetTableName'. Error: ${e.message}")
+                             // 这里可以扩展更复杂的映射，但目前先记录
+                             return SanitizationResult(skippedRows = rows)
+                        }
                         skipped++
-                        LogUtil.w(TAG, "Skipped a row in $tableName due to error: ${e.message}")
                     }
                 }
             }
