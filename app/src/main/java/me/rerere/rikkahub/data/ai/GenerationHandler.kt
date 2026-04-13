@@ -132,7 +132,7 @@ class GenerationHandler(
 
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
-                if (assistant.enableMemory) {
+                if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
                     buildMemoryTools(
                         assistantId = assistant.id.toString(),
                         onCreation = { content ->
@@ -640,7 +640,7 @@ class GenerationHandler(
 
         val chatHistoryCandidates = searchPrunedMessages.truncate(truncateIndex).reversed()
 
-        val effectiveMemoriesCandidates = if (assistant.enableMemory) {
+        val effectiveMemoriesCandidates = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
             val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
                 val today = java.time.LocalDate.now()
                 val zoneId = java.time.ZoneId.systemDefault()
@@ -688,7 +688,7 @@ class GenerationHandler(
         }
 
         val minChatHistory = 4.coerceAtMost(chatHistoryCandidates.size)
-        val minMemories = if (assistant.enableMemory) 1.coerceAtMost(effectiveMemoriesCandidates.size) else 0
+        val minMemories = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) 1.coerceAtMost(effectiveMemoriesCandidates.size) else 0
 
         var usedTokens = 0
 

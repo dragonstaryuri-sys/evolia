@@ -28,6 +28,7 @@ data class AssistantUISettings(
 
 @Serializable
 enum class MemoryRetrievalMode {
+    OFF,      // 新增：完全禁用检索
     SEMANTIC,
     KEYWORD,
     HYBRID
@@ -57,7 +58,7 @@ data class Assistant(
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useRagMemoryRetrieval: Boolean = true,
-    val memoryRetrievalMode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID, // 新增：检索模式
+    val memoryRetrievalMode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID,
     val ragSimilarityThreshold: Float = 0.45f,
     val ragLimit: Int = 5,
     val enableRecentChatsReference: Boolean = false,

@@ -28,7 +28,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 
 @Composable
 fun AssistantRagMemorySubPage(
@@ -78,6 +82,49 @@ fun AssistantRagMemorySubPage(
         }
 
         if (assistant.useRagMemoryRetrieval) {
+            // Retrieval Mode Selection
+            Card(
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                colors = CardDefaults.cardColors(
+                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Retrieval Mode",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "Choose how memories are searched. Semantic uses LLM embeddings, Keyword uses local text matching.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    val options = listOf(
+                        MemoryRetrievalMode.SEMANTIC to "Semantic",
+                        MemoryRetrievalMode.KEYWORD to "Keyword",
+                        MemoryRetrievalMode.HYBRID to "Hybrid"
+                    )
+
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        options.forEachIndexed { index, (mode, label) ->
+                            SegmentedButton(
+                                selected = assistant.memoryRetrievalMode == mode,
+                                onClick = { onUpdateAssistant(assistant.copy(memoryRetrievalMode = mode)) },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size)
+                            ) {
+                                Text(label)
+                            }
+                        }
+                    }
+                }
+            }
+
             // RAG Similarity Threshold
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
@@ -313,6 +360,14 @@ private fun MemoryDebugger(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                                if (!memory.keywords.isNullOrBlank()) {
+                                    Text(
+                                        text = "Keywords: ${memory.keywords}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
                             }
                         }
                     }

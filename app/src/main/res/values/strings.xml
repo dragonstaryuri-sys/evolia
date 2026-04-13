@@ -1407,4 +1407,17 @@
   <string name="regenerate_confirm">Regenerate</string>
   <string name="error_select_model_first">Please select a model first</string>
 
+  <string name="memory_retrieval_strategy_title">Retrieval Strategy</string>
+  <string name="memory_retrieval_strategy_desc">How the assistant searches for relevant memories.</string>
+  <string name="memory_mode_disabled">Disabled (No Memories)</string>
+  <string name="memory_mode_hybrid">Hybrid (Recommended)</string>
+  <string name="memory_mode_hybrid_desc">Combines keyword and semantic search for optimal results.</string>
+  <string name="memory_mode_keyword">Keyword Only (Local)</string>
+  <string name="memory_mode_keyword_desc">Fast, offline matching using local text analysis.</string>
+  <string name="memory_mode_semantic">Semantic (Vector RAG)</string>
+  <string name="memory_mode_semantic_desc">Uses AI embeddings to understand context and meaning.</string>
+
+  <string name="rag_retrieval_scope">Retrieval Scope</string>
+  <string name="rag_include_core">Include Core Memories</string>
+  <string name="rag_include_episodic">Include Episodic Memories</string>
 </resources>

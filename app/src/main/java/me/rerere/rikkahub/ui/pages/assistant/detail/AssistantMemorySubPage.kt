@@ -44,6 +44,8 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.HistoryEdu
 import androidx.compose.material.icons.rounded.CleanHands
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -87,6 +89,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
@@ -104,7 +107,14 @@ private fun getMemoryMode(assistant: Assistant): MemoryMode {
     return when {
         !assistant.enableMemory -> MemoryMode.OFF
         assistant.enableMemoryConsolidation -> MemoryMode.ADVANCED
-        assistant.useRagMemoryRetrieval -> MemoryMode.BASIC_RAG
+        assistant.useRagMemoryRetrieval -> {
+            when(assistant.memoryRetrievalMode) {
+                MemoryRetrievalMode.HYBRID -> MemoryMode.HYBRID
+                MemoryRetrievalMode.KEYWORD -> MemoryMode.KEYWORD
+                MemoryRetrievalMode.SEMANTIC -> MemoryMode.SEMANTIC
+                MemoryRetrievalMode.OFF -> MemoryMode.BASIC
+            }
+        }
         assistant.enableRecentChatsReference -> MemoryMode.BASIC_RECENT
         else -> MemoryMode.BASIC
     }
@@ -114,7 +124,9 @@ private enum class MemoryMode(val displayNameRes: Int, val descriptionRes: Int) 
     OFF(R.string.memory_mode_off, R.string.memory_mode_off_desc),
     BASIC(R.string.memory_mode_basic, R.string.memory_mode_basic_desc),
     BASIC_RECENT(R.string.memory_mode_basic_recent, R.string.memory_mode_basic_recent_desc),
-    BASIC_RAG(R.string.memory_mode_basic_rag, R.string.memory_mode_basic_rag_desc),
+    SEMANTIC(R.string.memory_mode_basic_rag, R.string.memory_mode_basic_rag_desc),
+    KEYWORD(R.string.memory_mode_keyword, R.string.memory_mode_keyword_desc),
+    HYBRID(R.string.memory_mode_hybrid, R.string.memory_mode_hybrid_desc),
     ADVANCED(R.string.memory_mode_advanced, R.string.memory_mode_advanced_desc)
 }
 
@@ -274,7 +286,7 @@ fun AssistantMemorySettings(
                 modifier = Modifier.clip(RoundedCornerShape(24.dp)),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Master Toggle - Enable Memory (always visible)
+                // Master Toggle - Enable Memory
                 MemorySettingsItem(
                     title = stringResource(R.string.assistant_memory_enable_title),
                     subtitle = stringResource(R.string.assistant_memory_enable_desc),
@@ -284,7 +296,6 @@ fun AssistantMemorySettings(
                             checked = assistant.enableMemory,
                             onCheckedChange = { enabled ->
                                 if (!enabled) {
-                                    // 当启用记忆功能关闭时，联动关闭记忆档案 (Master Memory)
                                     onUpdateAssistant(assistant.copy(
                                         enableMemory = false,
                                         enableMasterMemory = false
@@ -297,7 +308,84 @@ fun AssistantMemorySettings(
                     }
                 )
 
-                // Recent Chats Toggle (when memory enabled)
+                // 🌟 Retrieval Strategy Picker (Replaces old RAG Switch)
+                AnimatedVisibility(
+                    visible = assistant.enableMemory,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    var showStrategyMenu by remember { mutableStateOf(false) }
+                    val currentStrategyLabel = when {
+                        !assistant.useRagMemoryRetrieval -> stringResource(R.string.memory_mode_off)
+                        else -> when(assistant.memoryRetrievalMode) {
+                            MemoryRetrievalMode.HYBRID -> stringResource(R.string.memory_mode_hybrid)
+                            MemoryRetrievalMode.KEYWORD -> stringResource(R.string.memory_mode_keyword)
+                            MemoryRetrievalMode.SEMANTIC -> stringResource(R.string.memory_mode_semantic)
+                            MemoryRetrievalMode.OFF -> stringResource(R.string.memory_mode_off)
+                        }
+                    }
+
+                    MemorySettingsItem(
+                        title = stringResource(R.string.memory_retrieval_strategy_title),
+                        subtitle = stringResource(R.string.memory_retrieval_strategy_desc),
+                        position = "MIDDLE",
+                        onClick = { showStrategyMenu = true },
+                        trailing = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = currentStrategyLabel,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(Icons.Rounded.ArrowDropDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                                DropdownMenu(
+                                    expanded = showStrategyMenu,
+                                    onDismissRequest = { showStrategyMenu = false }
+                                ) {
+                                    // Option: Off
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.memory_mode_off)) },
+                                        onClick = {
+                                            showStrategyMenu = false
+                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = false, enableMemoryConsolidation = false))
+                                        },
+                                        leadingIcon = { if(!assistant.useRagMemoryRetrieval) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
+                                    )
+                                    // Option: Hybrid
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.memory_mode_hybrid)) },
+                                        onClick = {
+                                            showStrategyMenu = false
+                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.HYBRID))
+                                        },
+                                        leadingIcon = { if(assistant.useRagMemoryRetrieval && assistant.memoryRetrievalMode == MemoryRetrievalMode.HYBRID) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
+                                    )
+                                    // Option: Keyword
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.memory_mode_keyword)) },
+                                        onClick = {
+                                            showStrategyMenu = false
+                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.KEYWORD))
+                                        },
+                                        leadingIcon = { if(assistant.useRagMemoryRetrieval && assistant.memoryRetrievalMode == MemoryRetrievalMode.KEYWORD) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
+                                    )
+                                    // Option: Semantic
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.memory_mode_semantic)) },
+                                        onClick = {
+                                            showStrategyMenu = false
+                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.SEMANTIC))
+                                        },
+                                        leadingIcon = { if(assistant.useRagMemoryRetrieval && assistant.memoryRetrievalMode == MemoryRetrievalMode.SEMANTIC) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
+
+                // Recent Chats Toggle
                 AnimatedVisibility(
                     visible = assistant.enableMemory,
                     enter = fadeIn() + expandVertically(),
@@ -330,35 +418,7 @@ fun AssistantMemorySettings(
                     )
                 }
 
-                // RAG Toggle (when memory enabled)
-                AnimatedVisibility(
-                    visible = assistant.enableMemory,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    MemorySettingsItem(
-                        title = stringResource(R.string.assistant_memory_use_rag_retrieval_title),
-                        subtitle = stringResource(R.string.assistant_memory_use_rag_retrieval_desc),
-                        position = if (!assistant.useRagMemoryRetrieval) "LAST" else "MIDDLE",
-                        trailing = {
-                            HapticSwitch(
-                                checked = assistant.useRagMemoryRetrieval,
-                                onCheckedChange = { enabled ->
-                                    if (!enabled) {
-                                        onUpdateAssistant(assistant.copy(
-                                            useRagMemoryRetrieval = false,
-                                            enableMemoryConsolidation = false
-                                        ))
-                                    } else {
-                                        onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true))
-                                    }
-                                }
-                            )
-                        }
-                    )
-                }
-
-                // Memory Consolidation Toggle (requires RAG)
+                // Memory Consolidation Toggle (requires Retrieval enabled)
                 AnimatedVisibility(
                     visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
                     enter = fadeIn() + expandVertically(),
@@ -390,7 +450,7 @@ fun AssistantMemorySettings(
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // RAG SETTINGS (when RAG is enabled)
+            // RAG SETTINGS (when any retrieval is enabled)
             // ═══════════════════════════════════════════════════════════════════
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
@@ -404,7 +464,7 @@ fun AssistantMemorySettings(
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // MASTER MEMORY (Memory Archive)
+            // MASTER MEMORY
             // ═══════════════════════════════════════════════════════════════════
             AnimatedVisibility(
                 visible = assistant.enableMemory,
@@ -422,7 +482,7 @@ fun AssistantMemorySettings(
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // CONSOLIDATION SETTINGS (when consolidation is enabled)
+            // CONSOLIDATION SETTINGS
             // ═══════════════════════════════════════════════════════════════════
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
@@ -444,7 +504,7 @@ fun AssistantMemorySettings(
 
 
             // ═══════════════════════════════════════════════════════════════════
-            // MEMORY STATISTICS (when memory is enabled)
+            // MEMORY STATISTICS
             // ═══════════════════════════════════════════════════════════════════
             AnimatedVisibility(
                 visible = assistant.enableMemory,
@@ -459,7 +519,7 @@ fun AssistantMemorySettings(
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // MANAGE MEMORIES (when memory is enabled)
+            // MANAGE MEMORIES
             // ═══════════════════════════════════════════════════════════════════
             AnimatedVisibility(
                 visible = assistant.enableMemory,
@@ -471,12 +531,12 @@ fun AssistantMemorySettings(
                     assistant = assistant,
                     onAddMemory = { memoryDialogState.open(AssistantMemory(0, "")) },
                     onEditMemory = { memoryDialogState.open(it) },
+                    onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
                     onDeleteMemory = onDeleteMemory,
                     onRegenerateEmbeddings = onRegenerateEmbeddings,
                     onOptimizeMemories = { assistantDetailVM.optimizeMemories() },
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     memorySearchQuery = memorySearchQuery,
-                    onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
                     currentEmbeddingModelId = currentEmbeddingModelId,
                     showMemoryTypes = assistant.enableMemoryConsolidation,
                     initialMemoryTab = initialMemoryTab,
@@ -485,7 +545,7 @@ fun AssistantMemorySettings(
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // MEMORY DEBUGGER (RAG only)
+            // MEMORY DEBUGGER
             // ═══════════════════════════════════════════════════════════════════
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
@@ -675,43 +735,79 @@ private fun RagSettingsCard(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Similarity Threshold
+        // Similarity Threshold (Only relevant for Semantic/Hybrid)
+        AnimatedVisibility(visible = assistant.memoryRetrievalMode != MemoryRetrievalMode.KEYWORD) {
+            Surface(
+                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    var threshold by remember(assistant.ragSimilarityThreshold) {
+                        mutableFloatStateOf(assistant.ragSimilarityThreshold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(stringResource(R.string.assistant_memory_similarity_threshold_title), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = String.format("%.2f", threshold),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Slider(
+                        value = threshold,
+                        onValueChange = { newValue ->
+                            threshold = newValue
+                            onUpdateAssistant(assistant.copy(ragSimilarityThreshold = newValue))
+                        },
+                        valueRange = 0f..1f,
+                        steps = 19,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(stringResource(R.string.similarity_all) + " (0.0)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.similarity_exact) + " (1.0)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+
+        // Advanced RAG Settings (Retrieval Scope)
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(24.dp)
+            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                var threshold by remember(assistant.ragSimilarityThreshold) {
-                    mutableFloatStateOf(assistant.ragSimilarityThreshold)
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(stringResource(R.string.assistant_memory_similarity_threshold_title), style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        text = String.format("%.2f", threshold),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Slider(
-                    value = threshold,
-                    onValueChange = { newValue ->
-                        threshold = newValue
-                        onUpdateAssistant(assistant.copy(ragSimilarityThreshold = newValue))
-                    },
-                    valueRange = 0f..1f,
-                    steps = 19,
-                    modifier = Modifier.padding(top = 8.dp)
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.rag_retrieval_scope),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(stringResource(R.string.similarity_all) + " (0.0)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(stringResource(R.string.similarity_exact) + " (1.0)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+
+                FormItem(
+                    label = { Text(stringResource(R.string.rag_include_core)) },
+                    tail = {
+                        HapticSwitch(
+                            checked = assistant.ragIncludeCore,
+                            onCheckedChange = { onUpdateAssistant(assistant.copy(ragIncludeCore = it)) }
+                        )
+                    }
+                )
+
+                FormItem(
+                    label = { Text(stringResource(R.string.rag_include_episodic)) },
+                    tail = {
+                        HapticSwitch(
+                            checked = assistant.ragIncludeEpisodes,
+                            onCheckedChange = { onUpdateAssistant(assistant.copy(ragIncludeEpisodes = it)) }
+                        )
+                    }
+                )
             }
         }
     }
@@ -1039,7 +1135,7 @@ private fun MemoryStatisticsCard(
                     )
                 }
 
-                // Show embeddings when RAG is enabled
+                // Show embeddings when any retrieval is enabled
                 AnimatedVisibility(visible = assistant.useRagMemoryRetrieval) {
                     StatItem(
                         value = withEmbeddings.toString(),
@@ -1534,6 +1630,43 @@ private fun MemoryDebugger(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FormItem(
+    label: @Composable () -> Unit,
+    description: (@Composable () -> Unit)? = null,
+    tail: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Box {
+                val style = MaterialTheme.typography.titleMedium
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.material3.LocalTextStyle provides style
+                ) {
+                    label()
+                }
+            }
+            if (description != null) {
+                Box(modifier = Modifier.padding(top = 2.dp)) {
+                    val style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.material3.LocalTextStyle provides style
+                    ) {
+                        description()
+                    }
+                }
+            }
+        }
+        if (tail != null) {
+            tail()
         }
     }
 }

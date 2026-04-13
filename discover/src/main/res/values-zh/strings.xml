@@ -44,9 +44,4 @@
 
   <string name="assistant_enable_time_sense">时间观念</string>
   <string name="assistant_enable_time_sense_desc">让ai感知当前时间和回复间隔，有助于提升对话的真实感。</string>
-
-  <string name="regenerate_title">重新生成消息</string>
-  <string name="regenerate_description">此消息包含工具调用或多个步骤。重新生成将替换整个响应，且无法恢复到之前的版本。确定要继续吗？</string>
-  <string name="regenerate_confirm">重新生成</string>
-  <string name="error_select_model_first">请先选择一个模型</string>
 </resources>

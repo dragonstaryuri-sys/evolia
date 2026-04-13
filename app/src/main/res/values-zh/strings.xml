@@ -969,10 +969,10 @@
   <string name="memory_mode_off_desc">记忆功能已禁用</string>
   <string name="memory_mode_basic">基础</string>
   <string name="memory_mode_basic_desc">每次对话都会发送所有记忆给模型</string>
-  <string name="memory_mode_basic_recent">基础 + 最近聊天</string>
-  <string name="memory_mode_basic_recent_desc">添加最近对话的标题和时间戳</string>
-  <string name="memory_mode_basic_rag">基础 + RAG</string>
-  <string name="memory_mode_basic_rag_desc">根据对话上下文进行智能记忆检索</string>
+  <string name="memory_mode_basic_recent">仅基础上下文（不推荐）</string>
+  <string name="memory_mode_basic_recent_desc">不使用记忆检索功能，相当于有记忆但对话时不允许使用</string>
+  <string name="memory_mode_basic_rag">RAG</string>
+  <string name="memory_mode_basic_rag_desc">智能记忆检索</string>
   <string name="memory_mode_advanced">高级</string>
   <string name="memory_mode_advanced_desc">自动整合形成片段记忆</string>
   <string name="rag_memory_retrieval">RAG 记忆检索</string>
@@ -1226,7 +1226,7 @@
   <string name="consolidation_result_master_updated">记忆档案已更新。 </string>
   <string name="consolidation_result_no_new_items">扫描完成，无新增内容。</string>
   <string name="consolidation_started">记忆整合已开始 (全量扫描: %b)</string>
-  <string name="assistant_memory_enable_consolidation_desc">定期总结对话并生成场景记忆</string>
+  <string name="assistant_memory_enable_consolidation_desc">定期回忆每个会话，形成对每个会话的记忆片段</string>
   <string name="assistant_memory_consolidation_delay_title">整合延迟时间</string>
 
   <!-- 嵌入生成 -->
@@ -1235,7 +1235,7 @@
   <string name="embedding_gen_none">无需重新生成嵌入。</string>
   <string name="generating_embeddings">生成向量</string>
   <string name="assistant_memory_group_consolidation">整合</string>
-  <string name="assistant_memory_enable_consolidation_title">自动整合</string>
+  <string name="assistant_memory_enable_consolidation_title">自动化记忆</string>
 
   <!-- Assistant Context Page -->
   <string name="assistant_memory_master_never_updated">从未更新</string>
@@ -1251,7 +1251,7 @@
   <!-- Memory Actions -->
   <string name="assistant_memory_group_settings">记忆设置</string>
   <string name="assistant_memory_enable_title">启用记忆功能</string>
-  <string name="assistant_memory_enable_desc">允许角色通过RAG记住过往对话内容</string>
+  <string name="assistant_memory_enable_desc">允许TA记住过往对话内容</string>
   <string name="assistant_memory_use_rag_retrieval_title">向量检索（RAG）</string>
   <string name="assistant_memory_use_rag_retrieval_desc">使用语义搜索查找相关记忆</string>
   <string name="assistant_memory_similarity_threshold_title">相似度阈值</string>
@@ -1262,7 +1262,7 @@
   <string name="assistant_memory_update_masterfile">更新记忆档案</string>
   <string name="assistant_memory_group_master">记忆档案</string>
   <string name="assistant_memory_enable_master_title">开启记忆档案</string>
-  <string name="assistant_memory_enable_master_desc">使智能体对你和你们的关系有总体认知</string>
+  <string name="assistant_memory_enable_master_desc">让TA对你和你们的关系有总体认知</string>
   <string name="assistant_memory_master_prompt_title">记忆档案生成提示词</string>
   <string name="assistant_memory_master_prompt_desc">AI 维护档案的指令，留空使用默认。</string>
   <string name="assistant_memory_master_content_title">记忆档案内容</string>
@@ -1349,7 +1349,17 @@
   <string name="master_memory_backup_message">更新记忆档案可能因 AI 生成异常导致旧内容丢失。建议先将当前内容备份至剪贴板，是否继续？</string>
   <string name="master_memory_backup_confirm">确认备份并更新</string>
   <!-- 本地工具: 时间观念 -->
-  <string name="local_tool_time_sense">时间观念</string>
-  <string name="local_tool_time_sense_desc">让智能体感知当前时间以及距离上一条回复的时间间隔，提升对话逻辑性。</string>
+  <string name="memory_retrieval_strategy_title">检索策略</string>
+  <string name="memory_retrieval_strategy_desc">ai如何搜索相关的记忆片段。</string>
+  <string name="memory_mode_disabled">禁用</string>
+  <string name="memory_mode_hybrid">混合模式 (推荐)</string>
+  <string name="memory_mode_hybrid_desc">结合关键词和语义搜索，以获得最佳检索效果。</string>
+  <string name="memory_mode_keyword">仅关键词 (本地)</string>
+  <string name="memory_mode_keyword_desc">使用本地文本分析进行快速离线匹配。</string>
+  <string name="memory_mode_semantic">语义模式 (向量 RAG)</string>
+  <string name="memory_mode_semantic_desc">使用 AI 向量嵌入来理解上下文和深层含义。</string>
 
+  <string name="rag_retrieval_scope">检索范围</string>
+  <string name="rag_include_core">核心记忆</string>
+  <string name="rag_include_episodic">片段记忆</string>
 </resources>

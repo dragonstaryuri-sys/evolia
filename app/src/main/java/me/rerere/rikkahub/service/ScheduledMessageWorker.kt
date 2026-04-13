@@ -52,11 +52,13 @@ class ScheduledMessageWorker(
             // RAG Retrieval
             val lastUserMessage = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
             val memories = if (lastUserMessage.isNotBlank()) {
-                memoryRepository.retrieveRelevantMemories(
+                // 修改点：调用新方法，传入检索模式并映射结果
+                memoryRepository.retrieveRelevantMemoriesWithScores(
                     assistantId = assistant.id.toString(),
                     query = lastUserMessage,
-                    limit = 5
-                )
+                    limit = assistant.ragLimit,
+                    mode = assistant.memoryRetrievalMode
+                ).map { it.first }
             } else {
                 emptyList()
             }

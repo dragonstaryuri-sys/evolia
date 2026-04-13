@@ -32,6 +32,7 @@ import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.encodeToString
+import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 
 private const val TAG = "MemoryConsolidation"
 
@@ -154,17 +155,23 @@ class MemoryConsolidationWorker(
             )
 
             if (summary.isNotBlank()) {
-                // 提取关键词
-                val keywords = extractKeywords(
+                // 1. AI 提取关键词 (使用背景模型)
+                val aiKeywords = extractKeywords(
                     handler = background.handler,
                     providerSetting = background.provider,
                     model = background.model,
                     summary = summary
                 )
 
+                // 2. 本地算法提取关键词
+                val localKeywords = KeywordExtractor.extract(summary)
+
+                // 3. 合并关键词并去重
+                val mergedKeywords = mergeKeywords(aiKeywords, localKeywords)
+
                 // 生成向量（补充逻辑）
-                val effectiveContent = if (keywords.isNotBlank()) {
-                    "Keywords: $keywords\nContent: $summary"
+                val effectiveContent = if (mergedKeywords.isNotBlank()) {
+                    "Keywords: $mergedKeywords\nContent: $summary"
                 } else {
                     summary
                 }
@@ -180,7 +187,7 @@ class MemoryConsolidationWorker(
                     assistantId = assistant.id.toString(),
                     conversationId = conv.id.toString(),
                     content = summary,
-                    keywords = keywords,
+                    keywords = mergedKeywords,
                     embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
                     embeddingModelId = embeddingResult?.modelId,
                     startTime = conv.createAt.toEpochMilli(),
@@ -264,16 +271,23 @@ class MemoryConsolidationWorker(
                 )
 
                 if (summary.isNotBlank()) {
-                    val keywords = extractKeywords(
+                    // 1. AI 提取关键词
+                    val aiKeywords = extractKeywords(
                         handler = background.handler,
                         providerSetting = background.provider,
                         model = background.model,
                         summary = summary
                     )
 
+                    // 2. 本地提取关键词
+                    val localKeywords = KeywordExtractor.extract(summary)
+
+                    // 3. 合并
+                    val mergedKeywords = mergeKeywords(aiKeywords, localKeywords)
+
                     // 生成向量（补充逻辑）
-                    val effectiveContent = if (keywords.isNotBlank()) {
-                        "Keywords: $keywords\nContent: $summary"
+                    val effectiveContent = if (mergedKeywords.isNotBlank()) {
+                        "Keywords: $mergedKeywords\nContent: $summary"
                     } else {
                         summary
                     }
@@ -289,7 +303,7 @@ class MemoryConsolidationWorker(
                         assistantId = currentAssistant.id.toString(),
                         conversationId = convIdString,
                         content = summary,
-                        keywords = keywords,
+                        keywords = mergedKeywords,
                         embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
                         embeddingModelId = embeddingResult?.modelId,
                         startTime = conv.createAt.toEpochMilli(),
@@ -518,6 +532,12 @@ class MemoryConsolidationWorker(
             )
         )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+    }
+
+    private fun mergeKeywords(ai: String, local: String): String {
+        val aiList = ai.split(Regex("[,，、；;]")).map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        val localList = local.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        return (aiList + localList).distinct().joinToString(",")
     }
 
     @Suppress("UNCHECKED_CAST")

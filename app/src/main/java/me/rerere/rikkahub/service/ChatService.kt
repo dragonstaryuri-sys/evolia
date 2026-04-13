@@ -59,6 +59,7 @@ import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
@@ -475,13 +476,26 @@ class ChatService(
                 model = model,
                 messages = conversation.currentMessages.let { if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it },
                 assistant = assistant,
-                memories = if (assistant.enableMemory && !temporaryConversations.contains(conversationId)) {
+                memories = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(conversationId)) {
                     if (assistant.useRagMemoryRetrieval) {
                         val lastUserMsg = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
                         if (lastUserMsg.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemories(assistantId = assistant.id.toString(), query = lastUserMsg, limit = assistant.ragLimit, similarityThreshold = assistant.ragSimilarityThreshold, includeCore = assistant.ragIncludeCore, includeEpisodes = assistant.ragIncludeEpisodes)
-                            if (settings.enableRagLogging) results.forEach { Log.d("RAG", " - [${it.type}] ${it.content.take(50)}...") }
-                            results
+                            val results = memoryRepository.retrieveRelevantMemoriesWithScores(
+                                assistantId = assistant.id.toString(),
+                                query = lastUserMsg,
+                                limit = assistant.ragLimit,
+                                similarityThreshold = assistant.ragSimilarityThreshold,
+                                includeCore = assistant.ragIncludeCore,
+                                includeEpisodes = assistant.ragIncludeEpisodes,
+                                mode = assistant.memoryRetrievalMode // 传入助手设置的检索模式
+                            )
+                            val memories = results.map { it.first }
+                            if (settings.enableRagLogging) {
+                                results.forEach { (mem, score) ->
+                                    Log.d("RAG", " - [${mem.type}] (Score: ${String.format("%.4f", score)}) ${mem.content.take(50)}...")
+                                }
+                            }
+                            memories
                         } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                     } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                 } else emptyList(),
@@ -652,6 +666,7 @@ class ChatService(
 
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
+        if (!assistant.enableMemory) return
         if (!assistant.enableContextRefresh || !assistant.autoRegenerateSummary) return
         val max = assistant.maxHistoryMessages ?: return
         val count = if (conv.contextSummaryUpToIndex >= 0) (conv.currentMessages.size - conv.contextSummaryUpToIndex - 1 - 4).coerceAtLeast(0) else (conv.currentMessages.size - 4).coerceAtLeast(0)
