@@ -315,7 +315,8 @@ class ChatService(
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
             if (!assistant.enableMemoryConsolidation && !force) return
 
-            val modelId = assistant.summarizerModelId ?: assistant.chatModelId ?: settings.chatModelId
+            // 修改：情节记忆归档优先使用 summarizerModelId
+            val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
             val handler = providerManager.getProviderByType(provider)
@@ -666,7 +667,8 @@ class ChatService(
             val messages = conv.currentMessages
 
             if (messages.isEmpty()) return@withContext ContextRefreshResult(false)
-            val modelId = assistant.summarizerModelId ?: assistant.chatModelId ?: settings.chatModelId
+            // 修改：上下文摘要 (L1) 优先使用 summarizerModelId
+            val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId) ?: return@withContext ContextRefreshResult(false)
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)

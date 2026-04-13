@@ -1013,7 +1013,7 @@
 
   <!-- 模型设置 -->
   <string name="setting_model_page_memory_model">记忆模型</string>
-  <string name="setting_model_page_memory_model_desc">用于记忆深度优化与长期整合的模型。</string>
+  <string name="setting_model_page_memory_model_desc">用于记忆优化与加强的模型，建议选择有推理能力的模型</string>
   <!-- Assistant Context Management Page -->
 <string name="processing_items">处理中： %1$d / %2$d</string>
 <string name="assistant_context_refresh_title">上下文刷新 / 摘要</string>
@@ -1037,7 +1037,7 @@
   <string name="assistant_model_background_model">后台模型</string>
   <string name="assistant_model_background_model_desc">用于通知与后台任务</string>
   <string name="assistant_model_summarizer_model">摘要模型</string>
-  <string name="assistant_model_summarizer_model_desc">用于上下文刷新和消息总结的模型</string>
+  <string name="assistant_model_summarizer_model_desc">用于消息总结的模型</string>
   <string name="assistant_model_group_generation">生成参数</string>
   <string name="assistant_model_temp_strict">严谨（%s）</string>
   <string name="assistant_model_temp_balanced">均衡（%s）</string>

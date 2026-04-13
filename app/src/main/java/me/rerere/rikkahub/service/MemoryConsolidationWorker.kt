@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -45,6 +46,12 @@ class MemoryConsolidationWorker(
     private val chatSegmentDAO: ChatSegmentDAO by inject()
     private val memoryRepository: MemoryRepository by inject()
     private val embeddingService: EmbeddingService by inject()
+
+    private class ResolvedModel(
+        val handler: me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>,
+        val provider: me.rerere.ai.provider.ProviderSetting,
+        val model: me.rerere.ai.provider.Model
+    )
 
     companion object {
         // 全局静态锁，防止同一个会话同时被多个 Worker 处理
@@ -131,33 +138,27 @@ class MemoryConsolidationWorker(
             return false
         }
 
-        val memoryModelId = assistant.memoryModelId ?: settings.memoryModelId
-        val memoryModel = settings.findModelById(memoryModelId) ?: return false
-        val memoryProvider = memoryModel.findProvider(settings.providers) ?: return false
-        val memoryHandler = providerManager.getProviderByType(memoryProvider)
-
-        val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
-        val backgroundModel = settings.findModelById(backgroundModelId) ?: memoryModel
-        val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: memoryProvider
-        val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
+        // 修改：情节记忆使用 summarizerModelId
+        val summarizer = resolveModel(assistant.summarizerModelId ?: settings.summarizerModelId, settings) ?: return false
+        val background = resolveModel(assistant.backgroundModelId ?: settings.backgroundModelId, settings) ?: summarizer
 
         return try {
             // 执行增量滚动式总结
             val summary = generateRollingSummary(
-                handler = memoryHandler,
-                providerSetting = memoryProvider,
-                model = memoryModel,
+                handler = summarizer.handler,
+                providerSetting = summarizer.provider,
+                model = summarizer.model,
                 assistant = assistant,
                 conv = conv,
                 existingEpisode = existingEpisode
             )
 
             if (summary.isNotBlank()) {
-                // 提取关键词（使用后台模型）
+                // 提取关键词
                 val keywords = extractKeywords(
-                    handler = backgroundHandler,
-                    providerSetting = backgroundProvider,
-                    model = backgroundModel,
+                    handler = background.handler,
+                    providerSetting = background.provider,
+                    model = background.model,
                     summary = summary
                 )
 
@@ -236,17 +237,12 @@ class MemoryConsolidationWorker(
             timeSinceUpdate >= delayMillis
         }
 
-        if (toConsolidateEpisodes.isEmpty()) return
+        // 1. 解析情节记忆 (L2) 模型
+        val summarizer = resolveModel(currentAssistant.summarizerModelId ?: currentSettings.summarizerModelId, currentSettings) ?: return
+        val background = resolveModel(currentAssistant.backgroundModelId ?: currentSettings.backgroundModelId, currentSettings) ?: summarizer
 
-        val memoryModelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
-        val memoryModel = currentSettings.findModelById(memoryModelId) ?: return
-        val memoryProvider = memoryModel.findProvider(currentSettings.providers) ?: return
-        val memoryHandler = providerManager.getProviderByType(memoryProvider)
-
-        val backgroundModelId = currentAssistant.backgroundModelId ?: currentSettings.backgroundModelId
-        val backgroundModel = currentSettings.findModelById(backgroundModelId) ?: memoryModel
-        val backgroundProvider = backgroundModel.findProvider(currentSettings.providers) ?: memoryProvider
-        val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
+        // 2. 解析大师记忆 (L3) 模型
+        val memory = resolveModel(currentAssistant.memoryModelId ?: currentSettings.memoryModelId, currentSettings) ?: summarizer
 
         var episodicSuccessCount = 0
         for (conv in toConsolidateEpisodes) {
@@ -259,9 +255,9 @@ class MemoryConsolidationWorker(
                 val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(convIdString)
 
                 val summary = generateRollingSummary(
-                    handler = memoryHandler,
-                    providerSetting = memoryProvider,
-                    model = memoryModel,
+                    handler = summarizer.handler,
+                    providerSetting = summarizer.provider,
+                    model = summarizer.model,
                     assistant = currentAssistant,
                     conv = conv,
                     existingEpisode = existingEpisode
@@ -269,9 +265,9 @@ class MemoryConsolidationWorker(
 
                 if (summary.isNotBlank()) {
                     val keywords = extractKeywords(
-                        handler = backgroundHandler,
-                        providerSetting = backgroundProvider,
-                        model = backgroundModel,
+                        handler = background.handler,
+                        providerSetting = background.provider,
+                        model = background.model,
                         summary = summary
                     )
 
@@ -340,9 +336,9 @@ class MemoryConsolidationWorker(
 
                     if (recentContext.isNotBlank()) {
                         updatedMasterContent = updateMasterMemory(
-                            handler = memoryHandler,
-                            providerSetting = memoryProvider,
-                            model = memoryModel,
+                            handler = memory.handler,
+                            providerSetting = memory.provider,
+                            model = memory.model,
                             existingArchive = currentAssistant.masterMemoryContent,
                             newContext = recentContext,
                             systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
@@ -381,6 +377,14 @@ class MemoryConsolidationWorker(
             }
         )
         settingsStore.update(updatedSettings)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun resolveModel(modelId: Uuid, settings: Settings): ResolvedModel? {
+        val model = settings.findModelById(modelId) ?: return null
+        val providerSetting = model.findProvider(settings.providers) ?: return null
+        val handler = providerManager.getProviderByType(providerSetting) as? me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting> ?: return null
+        return ResolvedModel(handler, providerSetting, model)
     }
 
     private suspend fun generateRollingSummary(
