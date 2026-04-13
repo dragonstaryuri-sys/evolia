@@ -1159,8 +1159,11 @@ private fun ManageMemoriesSection(
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 // Optimization button
-                IconButton(onClick = onOptimizeMemories) {
-                    Icon(Icons.Rounded.CleanHands, contentDescription = stringResource(R.string.memory_action_optimize))
+                // Only show optimization button for core memories
+                if (selectedTab == 0) {
+                    IconButton(onClick = onOptimizeMemories) {
+                        Icon(Icons.Rounded.CleanHands, contentDescription = stringResource(R.string.memory_action_optimize))
+                    }
                 }
 
                 // Sort button

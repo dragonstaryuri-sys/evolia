@@ -1402,6 +1402,9 @@
   <string name="master_memory_backup_confirm">Confirm Backup and Update</string>
   <string name="local_tool_time_sense">Time Awareness</string>
   <string name="local_tool_time_sense_desc">Let the agent perceive the current time and response intervals to help enhance the realism of the conversation.</string>
-
+  <string name="regenerate_title">Regenerate Message</string>
+  <string name="regenerate_description">This message contains tool calls or multiple steps. Regenerating will replace the entire response and cannot be restored to the previous version. Are you sure you want to continue?</string>
+  <string name="regenerate_confirm">Regenerate</string>
+  <string name="error_select_model_first">Please select a model first</string>
 
 </resources>

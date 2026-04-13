@@ -481,9 +481,9 @@ private fun ChatPageContent(
                             showRegenerateConfirmDialog = false
                             pendingRegenerateMessage = null
                         },
-                        title = { Text("Regenerate Message") },
+                        title = { Text(stringResource(R.string.regenerate_title))},
                         text = {
-                            Text("This message contains tool calls or multiple steps. Regenerating will replace the entire response and you won't be able to go back to the previous version. Are you sure you want to continue?")
+                            Text(stringResource(R.string.regenerate_description))
                         },
                         confirmButton = {
                             TextButton(
@@ -494,13 +494,13 @@ private fun ChatPageContent(
                                     showRegenerateConfirmDialog = false
                                     pendingRegenerateMessage = null
                                 }
-                            ) { Text("Regenerate") }
+                            ) { Text(stringResource(R.string.regenerate_confirm)) }
                         },
                         dismissButton = {
                             TextButton(onClick = {
                                 showRegenerateConfirmDialog = false
                                 pendingRegenerateMessage = null
-                            }) { Text("Cancel") }
+                            }) { Text(stringResource(R.string.cancel)) }
                         }
                     )
                 }

@@ -279,9 +279,8 @@ class AssistantDetailVM(
                 val allMemories = memories.value
 
                 val coreMemories = allMemories.filter { it.id > 0 }
-                val episodicMemories = allMemories.filter { it.id < 0 }
 
-                if (coreMemories.isEmpty() && episodicMemories.isEmpty()) {
+                if (coreMemories.isEmpty()) {
                     setSnackbarMessage(context.getString(R.string.memory_optimize_no_change))
                     return@launch
                 }
@@ -298,16 +297,6 @@ class AssistantDetailVM(
                 if (coreMemories.isNotEmpty()) {
                     val coreGroups = findSimilarGroups(coreMemories, true)
                     for (group in coreGroups) {
-                        val result = processOptimizationGroup(handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>, providerSetting, model, group, null)
-                        totalUpdated += result.updated
-                        totalDeleted += result.deleted
-                        totalAdded += result.added
-                    }
-                }
-
-                if (episodicMemories.isNotEmpty()) {
-                    val episodicGroups = findSimilarGroups(episodicMemories, false)
-                    for (group in episodicGroups) {
                         val result = processOptimizationGroup(handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>, providerSetting, model, group, null)
                         totalUpdated += result.updated
                         totalDeleted += result.deleted
