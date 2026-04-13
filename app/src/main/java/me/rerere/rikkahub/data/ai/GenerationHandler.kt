@@ -627,7 +627,7 @@ class GenerationHandler(
                 }.getOrNull()
             } ?: ""
 
-            baseSystemPromptBuilder.insert(0, "## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n")
+            baseSystemPromptBuilder.insert(0, "## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n Fabricating time will result in punishment.")
         }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
@@ -1007,13 +1007,22 @@ class GenerationHandler(
         val coreMemories = memories.filter { it.type == 0 } // CORE
         val episodicMemories = memories.filter { it.type == 1 } // EPISODIC
 
+        fun formatMemoryDate(timestamp: Long): String {
+            if (timestamp <= 0) return "Unknown Date"
+            return Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+                .toString()
+        }
+
         return buildString {
             append("## Memories\n").append("These are memories that you can reference. If a memory summary is too brief and you need specific tactical details (like code blocks, exact quotes, or step-by-step logic), please call `retrieve_memory_details(episode_id, query)`.\n")
             if (coreMemories.isNotEmpty()) {
                 append("### Core Memories\n")
                 coreMemories.forEach { memory ->
+                    val dateStr = formatMemoryDate(memory.timestamp)
                     // core memories don't need ID display in prompt
-                    append("- ${memory.content}\n")
+                    append("- [Date: $dateStr] ${memory.content}\n")
                 }
             }
             if (episodicMemories.isNotEmpty()) {
@@ -1042,8 +1051,9 @@ class GenerationHandler(
                     if (!memoriesInGroup.isNullOrEmpty()) {
                         append("#### $group\n")
                         memoriesInGroup.sortedByDescending { it.timestamp }.forEach { memory ->
+                            val dateStr = formatMemoryDate(memory.timestamp)
                             // 修正：注入 ID，以便 AI 调用细节下钻工具
-                            append("- [ID: ${memory.id}] ${memory.content}\n")
+                            append("- [ID: ${memory.id}, Date: $dateStr] ${memory.content}\n")
                         }
                     }
                 }
