@@ -58,6 +58,7 @@ import me.rerere.rikkahub.core.data.model.LorebookActivationType
 import me.rerere.rikkahub.core.data.model.LorebookEntry
 import me.rerere.rikkahub.core.data.model.ModeAttachmentType
 import me.rerere.rikkahub.core.data.model.LocalToolOption
+import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
@@ -141,7 +142,8 @@ class GenerationHandler(
                                 limit = 1,
                                 similarityThreshold = 0.8f,
                                 includeCore = true,
-                                includeEpisodes = false
+                                includeEpisodes = false,
+                                mode = assistant.memoryRetrievalMode
                             )
 
                             val existing = relevant.firstOrNull()
@@ -192,54 +194,21 @@ class GenerationHandler(
                                 val query = params.jsonObject["query"]?.jsonPrimitive?.contentOrNull ?: ""
 
                                 val episode = memoryRepo.getEpisodeEntitiesOfAssistant(assistant.id.toString()).find { it.id == id }
-                                val segments = episode?.conversationId?.let { convId ->
-                                    chatSegmentDAO.getSegmentsByConversation(convId)
-                                } ?: emptyList()
-
-                                if (segments.isEmpty()) {
-                                    return@Tool buildJsonObject { put("error", JsonPrimitive("No detailed segments found.")) }
+                                val conversationId = episode?.conversationId
+                                if (conversationId == null) {
+                                     return@Tool buildJsonObject { put("error", JsonPrimitive("No detailed segments found.")) }
                                 }
 
-                                // 向量化查询并寻找 Top 2 最相关的段落
-                                val resultSegments = if (query.isNotBlank() && segments.size > 2) {
-                                    val queryVector = try {
-                                        embeddingService.embed(query, assistant.id.toString())
-                                    } catch (e: Exception) {
-                                        null
-                                    }
-                                    if (queryVector != null) {
-                                        segments.map { segment ->
-                                            // 解析存储为 JSON 字符串的向量，如果为空则现场补全
-                                            val segmentEmbedding = segment.embedding?.let {
-                                                runCatching { JsonInstant.decodeFromString<List<Float>>(it) }.getOrNull()
-                                            }?: run {
-                                                // 延迟嵌入逻辑：调用接口生成向量
-                                                val newEmb = try {
-                                                    embeddingService.embed(segment.content, assistant.id.toString())
-                                                } catch (e: Exception) {
-                                                    null
-                                                }
-                                                // 异步回写到数据库，不阻塞本次查询
-                                                if (newEmb != null) {
-                                                    appScope.launch {
-                                                        chatSegmentDAO.insertSegment(
-                                                            segment.copy(embedding = JsonInstant.encodeToString(newEmb))
-                                                        )
-                                                    }
-                                                }
-                                                newEmb
-                                            }
-                                            val score = segmentEmbedding?.let { cosineSimilarity(it, queryVector) } ?: 0f
-                                            segment to score
-                                        }.sortedByDescending { it.second }
-                                            .take(2)
-                                            .map { it.first }
-                                    } else {
-                                        segments.take(2)
-                                    }
-                                } else {
-                                    // 如果段落很少，直接返回
-                                    segments.take(2)
+                                val resultSegments = memoryRepo.retrieveRelevantSegments(
+                                    assistantId = assistant.id.toString(),
+                                    conversationId = conversationId,
+                                    query = query,
+                                    limit = 2,
+                                    mode = assistant.memoryRetrievalMode
+                                )
+
+                                if (resultSegments.isEmpty()) {
+                                    return@Tool buildJsonObject { put("error", JsonPrimitive("No detailed segments found.")) }
                                 }
 
                                 buildJsonObject {

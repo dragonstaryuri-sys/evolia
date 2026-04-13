@@ -6,12 +6,14 @@ import androidx.room.PrimaryKey
 
 @Entity
 data class MemoryEntity(
-    @PrimaryKey(true)
+    @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     @ColumnInfo("assistant_id")
     val assistantId: String,
     @ColumnInfo("content")
     val content: String = "",
+    @ColumnInfo("keywords")
+    val keywords: String? = null, // 新增：支持核心记忆关键词检索
     @ColumnInfo("embedding")
     val embedding: String? = null, // JSON string of float array
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")

@@ -12,6 +12,7 @@ import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.AssistantMemory
+import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.ai.rag.VectorEngine
@@ -33,12 +34,63 @@ class MemoryRepository(
         return chatSegmentDAO.getSegmentsByConversation(conversationId)
     }
 
+    /**
+     * 针对 L1 Segment 的混合检索
+     */
+    suspend fun retrieveRelevantSegments(
+        assistantId: String,
+        conversationId: String,
+        query: String,
+        limit: Int = 2,
+        mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID
+    ): List<ChatSegmentEntity> {
+        val segments = chatSegmentDAO.getSegmentsByConversation(conversationId)
+        if (segments.isEmpty()) return emptyList()
+
+        val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
+            try { embeddingService.embed(query, assistantId) } catch (e: Exception) { null }
+        } else null
+
+        val scoredSegments = segments.map { segment ->
+            var score = 0f
+
+            // 1. Keyword Score
+            val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
+                calculateKeywordScore(query, segment.keywords)
+            } else 0f
+
+            // 2. Vector Similarity
+            val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
+                val segmentEmbedding = segment.embedding?.let {
+                    runCatching { JsonInstant.decodeFromString<List<Float>>(it) }.getOrNull()
+                } ?: run {
+                    val newEmb = try { embeddingService.embed(segment.content, assistantId) } catch (e: Exception) { null }
+                    if (newEmb != null) {
+                        chatSegmentDAO.insertSegment(segment.copy(embedding = JsonInstant.encodeToString(newEmb)))
+                    }
+                    newEmb
+                }
+                segmentEmbedding?.let { VectorEngine.cosineSimilarity(it, queryEmbedding) } ?: 0f
+            } else 0f
+
+            score = when(mode) {
+                MemoryRetrievalMode.SEMANTIC -> similarity
+                MemoryRetrievalMode.KEYWORD -> keywordScore
+                MemoryRetrievalMode.HYBRID -> (keywordScore * 0.6f) + (similarity * 0.4f)
+            }
+
+            segment to score
+        }
+
+        return scoredSegments.sortedByDescending { it.second }.take(limit).map { it.first }
+    }
+
     // --- Core Memory Methods ---
 
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
             .map { entities ->
-                entities.map { AssistantMemory(it.id, it.content, null, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+                entities.map { AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
             }
 
     fun getCombinedMemoriesFlow(assistantId: String): Flow<List<AssistantMemory>> =
@@ -47,7 +99,7 @@ class MemoryRepository(
             chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId)
         ) { memories, episodes ->
             val coreMemories = memories.map {
-                AssistantMemory(it.id, it.content, null, it.type, it.embedding != null, it.embeddingModelId, it.createdAt)
+                AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt)
             }
             val episodicMemories = episodes.map {
                 AssistantMemory(-it.id, it.content, it.keywords, MemoryType.EPISODIC, it.embedding != null, it.embeddingModelId, it.startTime, it.significance)
@@ -65,7 +117,7 @@ class MemoryRepository(
 
     suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
         return memoryDAO.getMemoriesOfAssistant(assistantId)
-            .map { AssistantMemory(it.id, it.content, null, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+            .map { AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
     }
 
     suspend fun getMemoryById(id: Int): AssistantMemory? {
@@ -73,7 +125,7 @@ class MemoryRepository(
         return AssistantMemory(
             id = memory.id,
             content = memory.content,
-            keywords = null,
+            keywords = memory.keywords,
             type = memory.type,
             hasEmbedding = memory.embedding != null,
             embeddingModelId = memory.embeddingModelId,
@@ -151,7 +203,7 @@ class MemoryRepository(
         val newMemory = memory.copy(content = content, embedding = null)
         memoryDAO.updateMemory(newMemory)
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
-        return AssistantMemory(newMemory.id, newMemory.content, null, newMemory.type, false, null, newMemory.createdAt)
+        return AssistantMemory(newMemory.id, newMemory.content, newMemory.keywords, newMemory.type, false, null, newMemory.createdAt)
     }
 
     suspend fun updateEpisodeContent(id: Int, content: String): AssistantMemory {
@@ -162,17 +214,20 @@ class MemoryRepository(
         return AssistantMemory(-newEpisode.id, newEpisode.content, newEpisode.keywords, MemoryType.EPISODIC, false, null, newEpisode.startTime, newEpisode.significance)
     }
 
-    suspend fun addMemory(assistantId: String, content: String, type: Int = MemoryType.CORE): AssistantMemory {
-        val embeddingResult = try {
-            embeddingService.embedWithModelId(content, assistantId)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
+    suspend fun addMemory(assistantId: String, content: String, type: Int = MemoryType.CORE, keywords: String? = null): AssistantMemory {
+        val embeddingResult = if (type == MemoryType.CORE) {
+             try {
+                embeddingService.embedWithModelId(content, assistantId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        } else null
 
         val entity = MemoryEntity(
             assistantId = assistantId,
             content = content,
+            keywords = keywords,
             embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
             embeddingModelId = embeddingResult?.modelId,
             type = type,
@@ -188,7 +243,7 @@ class MemoryRepository(
             )
         }
 
-        return AssistantMemory(id.toInt(), content, null, type, embeddingResult != null, embeddingResult?.modelId)
+        return AssistantMemory(id.toInt(), content, keywords, type, embeddingResult != null, embeddingResult?.modelId)
     }
 
     suspend fun deleteMemory(id: Int) {
@@ -196,51 +251,72 @@ class MemoryRepository(
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.CORE)
     }
 
-    suspend fun retrieveRelevantMemoriesWithScores(assistantId: String, query: String, limit: Int = 5, similarityThreshold: Float = 0.5f): List<Pair<AssistantMemory, Float>> {
-        return retrieveRelevantMemoriesWithScores(assistantId, query, limit, similarityThreshold, true, true)
+    private fun calculateKeywordScore(query: String, keywords: String?): Float {
+        if (keywords.isNullOrBlank()) return 0f
+        val queryLower = query.lowercase()
+        val keywordsList = keywords.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        if (keywordsList.isEmpty()) return 0f
+        val matchCount = keywordsList.count { queryLower.contains(it) || it.contains(queryLower) }
+        return (matchCount.toFloat() / keywordsList.size).coerceAtMost(1.0f)
     }
 
-    suspend fun retrieveRelevantMemories(assistantId: String, query: String, limit: Int = 5, similarityThreshold: Float = 0.5f, includeCore: Boolean = true, includeEpisodes: Boolean = true): List<AssistantMemory> {
-        return retrieveRelevantMemoriesWithScores(assistantId, query, limit, similarityThreshold, includeCore, includeEpisodes).map { it.first }
-    }
+    suspend fun retrieveRelevantMemoriesWithScores(
+        assistantId: String,
+        query: String,
+        limit: Int = 5,
+        similarityThreshold: Float = 0.5f,
+        includeCore: Boolean = true,
+        includeEpisodes: Boolean = true,
+        mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID
+    ): List<Pair<AssistantMemory, Float>> {
+        val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
+            try { embeddingService.embed(query, assistantId) } catch (e: Exception) { null }
+        } else null
 
-    suspend fun retrieveRelevantMemoriesWithScores(assistantId: String, query: String, limit: Int = 5, similarityThreshold: Float = 0.5f, includeCore: Boolean = true, includeEpisodes: Boolean = true): List<Pair<AssistantMemory, Float>> {
-        val queryEmbedding = try { embeddingService.embed(query, assistantId) } catch (e: Exception) { return emptyList() }
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
         val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistant(assistantId) else emptyList()
 
-        // Core Memory Scoring (Normal Vector Search)
+        // Core Memory Scoring
         val memoryScores = memories.mapNotNull { memory ->
-            val embedding = getOrCreateEmbedding(memory.id, memory.type, memory.content, null, assistantId, memory.embedding, memory.embeddingModelId) ?: return@mapNotNull null
-            val similarity = VectorEngine.cosineSimilarity(queryEmbedding, embedding)
-            val score = similarity * 1.05f // Slight boost for core memories
+            val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
+                calculateKeywordScore(query, memory.keywords)
+            } else 0f
+
+            val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
+                val embedding = getOrCreateEmbedding(memory.id, memory.type, memory.content, memory.keywords, assistantId, memory.embedding, memory.embeddingModelId)
+                embedding?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
+            } else 0f
+
+            val score = when(mode) {
+                MemoryRetrievalMode.SEMANTIC -> similarity * 1.05f
+                MemoryRetrievalMode.KEYWORD -> keywordScore
+                MemoryRetrievalMode.HYBRID -> (keywordScore * 0.5f) + (similarity * 0.5f)
+            }
+
             if (score >= similarityThreshold) Triple(memory, score, true) else null
         }
 
-        // Episodic Memory Scoring (Hybrid Search: Keywords + Vector + Recency)
-        val queryLower = query.lowercase()
+        // Episodic Memory Scoring
         val episodeScores = episodes.mapNotNull { episode ->
-            // 1. Vector Similarity
-            val embedding = getOrCreateEmbedding(episode.id, MemoryType.EPISODIC, episode.content, episode.keywords, assistantId, episode.embedding, episode.embeddingModelId) ?: return@mapNotNull null
-            val similarity = VectorEngine.cosineSimilarity(queryEmbedding, embedding)
+            val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
+                calculateKeywordScore(query, episode.keywords)
+            } else 0f
 
-            // 2. Keyword Match Score (High Priority)
-            var keywordMatchScore = 0f
-            if (!episode.keywords.isNullOrBlank()) {
-                val keywordsList = episode.keywords.split(",").map { it.trim().lowercase() }
-                val matchCount = keywordsList.count { it.isNotEmpty() && (queryLower.contains(it) || it.contains(queryLower)) }
-                if (matchCount > 0) {
-                    keywordMatchScore = (matchCount.toFloat() / keywordsList.size).coerceAtMost(1.0f)
-                }
-            }
+            val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
+                val embedding = getOrCreateEmbedding(episode.id, MemoryType.EPISODIC, episode.content, episode.keywords, assistantId, episode.embedding, episode.embeddingModelId)
+                embedding?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
+            } else 0f
 
-            // 3. Recency Score
+            // Recency Score
             val ageInMillis = System.currentTimeMillis() - episode.startTime
             val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
             val recency = (1.0 / (1.0 + (ageInDays / 7.0))).toFloat()
 
-            // Hybrid Weighted Score: 50% Keywords, 30% Similarity, 20% Recency
-            val score = (keywordMatchScore * 0.5f) + (similarity * 0.3f) + (recency * 0.2f)
+            val score = when(mode) {
+                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.8f) + (recency * 0.2f)
+                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.8f) + (recency * 0.2f)
+                MemoryRetrievalMode.HYBRID -> (keywordScore * 0.5f) + (similarity * 0.3f) + (recency * 0.2f)
+            }
 
             if (score >= similarityThreshold) Triple(episode, score, false) else null
         }
@@ -256,7 +332,7 @@ class MemoryRepository(
             val score = triple.second
             if (triple.third) {
                 val m = item as MemoryEntity
-                AssistantMemory(m.id, m.content, null, m.type, true, m.embeddingModelId, m.createdAt) to score
+                AssistantMemory(m.id, m.content, m.keywords, m.type, true, m.embeddingModelId, m.createdAt) to score
             } else {
                 val e = item as ChatEpisodeEntity
                 AssistantMemory(-e.id, e.content, e.keywords, MemoryType.EPISODIC, true, e.embeddingModelId, e.startTime, e.significance) to score

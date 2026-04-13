@@ -27,6 +27,13 @@ data class AssistantUISettings(
 )
 
 @Serializable
+enum class MemoryRetrievalMode {
+    SEMANTIC,
+    KEYWORD,
+    HYBRID
+}
+
+@Serializable
 data class Assistant(
     val id: Uuid = Uuid.random(),
     val chatModelId: Uuid? = null,
@@ -50,6 +57,7 @@ data class Assistant(
     val streamOutput: Boolean = true,
     val enableMemory: Boolean = false,
     val useRagMemoryRetrieval: Boolean = true,
+    val memoryRetrievalMode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID, // 新增：检索模式
     val ragSimilarityThreshold: Float = 0.45f,
     val ragLimit: Int = 5,
     val enableRecentChatsReference: Boolean = false,
@@ -122,7 +130,7 @@ data class QuickMessage(
 data class AssistantMemory(
     val id: Int,
     val content: String = "",
-    val keywords: String? = null, // 新增：关键词字段
+    val keywords: String? = null,
     val type: Int = 0,
     val hasEmbedding: Boolean = false,
     val embeddingModelId: String? = null,
