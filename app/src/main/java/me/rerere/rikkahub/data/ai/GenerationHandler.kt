@@ -73,6 +73,8 @@ import java.time.format.DateTimeFormatter
 import java.time.ZoneId
 import java.time.Duration
 import java.time.Instant
+import java.time.DayOfWeek
+import java.time.format.TextStyle
 
 
 /**
@@ -567,11 +569,38 @@ class GenerationHandler(
         // Time Sense Injection
         if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
             val now = LocalDateTime.now()
-            val timeStr = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+
+            // 计算节日逻辑
+            val month = now.monthValue
+            val day = now.dayOfMonth
+            val holiday = when {
+                month == 1 && day == 1 -> "New Year's Day"
+                month == 3 && day == 8 -> "Women's Day"
+                month == 3 && day == 12 -> "Arbor Day"
+                month == 4 && (day in 4..6) -> "Qingming Festival"
+                month == 5 && day == 1 -> "Labour Day"
+                month == 5 && day == 4 -> "Youth Day"
+                month == 6 && day == 1 -> "Children's Day"
+                month == 7 && day == 1 -> "CPC Founding Day"
+                month == 8 && day == 1 -> "Army Day"
+                month == 9 && day == 10 -> "Teachers' Day"
+                month == 11 && day == 8 -> "Journalists' Day"
+                month == 12 && day == 25 -> "Christmas"
+                else -> null
+            }
+
+            // 计算详细日期信息
+            val dayOfWeek = now.dayOfWeek
+            val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+            // 如果是节日，则优先显示节日名称，否则显示工作日/休息日
+            val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "restday" else "workday"
+            val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            val timeStr = "$dayName.($dayType), $formattedTime"
+
             val lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT }
             val intervalInfo = lastAiMessage?.let {
                 // 改用 java.time 进行间隔计算，避开 kotlinx-datetime 的兼容性问题
-                try {
+                runCatching {
                     @Suppress("DEPRECATION")
                     val prevJavaDateTime = LocalDateTime.of(
                         it.createdAt.year,
@@ -595,7 +624,7 @@ class GenerationHandler(
                         else -> "${sign}${absSeconds / 86400}d"
                     }
                     ", Interval since your last reply: $formatted"
-                } catch (e: Exception) { "" }
+                }.getOrNull()
             } ?: ""
 
             baseSystemPromptBuilder.insert(0, "## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n")
@@ -867,140 +896,6 @@ class GenerationHandler(
         )
     }
 
-    private suspend fun generateInternal(
-        assistant: Assistant,
-        settings: Settings,
-        messages: List<UIMessage>,
-        onUpdateMessages: suspend (List<UIMessage>) -> Unit,
-        transformers: List<MessageTransformer>,
-        model: Model,
-        providerImpl: Provider<ProviderSetting>,
-        provider: ProviderSetting,
-        tools: List<Tool>,
-        memories: List<AssistantMemory>,
-        truncateIndex: Int,
-        stream: Boolean,
-        enabledModeIds: Set<Uuid> = emptySet(),
-        contextSummary: String? = null,
-        temporarySummaries: List<String> = emptyList()
-    ) {
-        val buildResult = buildMessages(
-            assistant = assistant,
-            settings = settings,
-            messages = messages,
-            model = model,
-            tools = tools,
-            memories = memories,
-            truncateIndex = truncateIndex,
-            enabledModeIds = enabledModeIds,
-            contextSummary = contextSummary,
-            temporarySummaries = temporarySummaries
-        )
-        val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
-        val usedLorebookEntries = buildResult.activatedLorebookEntries
-        val usedModes = buildResult.usedModes
-        val usedMemories = buildResult.usedMemories
-        val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
-
-        var messages: List<UIMessage> = messages
-        val params = TextGenerationParams(
-            model = model,
-            temperature = assistant.temperature,
-            topP = assistant.topP,
-            maxTokens = assistant.maxTokens,
-            tools = tools,
-            thinkingBudget = assistant.thinkingBudget,
-            customHeaders = buildList {
-                addAll(assistant.customHeaders)
-                addAll(model.customHeaders)
-            },
-            customBody = buildList {
-                addAll(assistant.customBodies)
-                addAll(model.customBodies)
-            }
-        )
-        if (stream) {
-            aiLoggingManager.addLog(AILogging.Generation(
-                params = params,
-                messages = messages,
-                providerSetting = provider,
-                stream = true
-            ))
-            providerImpl.streamText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params
-            ).collect {
-                messages = messages.handleMessageChunk(chunk = it, model = model)
-                it.usage?.let { usage ->
-                    messages = messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
-                        }
-                    }
-                }
-                onUpdateMessages(messages)
-            }
-            if (hasContextSources) {
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == CoreMessageRole.ASSISTANT) {
-                        message.copy(
-                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
-                            usedModes = usedModes.ifEmpty { null },
-                            usedMemories = usedMemories.ifEmpty { null }
-                        )
-                    } else {
-                        message
-                    }
-                }
-                onUpdateMessages(messages)
-            }
-        } else {
-            aiLoggingManager.addLog(AILogging.Generation(
-                params = params,
-                messages = messages,
-                providerSetting = provider,
-                stream = false
-            ))
-            val chunk = providerImpl.generateText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params,
-            )
-            messages = messages.handleMessageChunk(chunk = chunk, model = model)
-            chunk.usage?.let { usage ->
-                messages = messages.size.let { _ ->
-                    messages.mapIndexed { index, message ->
-                        if (index == messages.lastIndex) {
-                            message.copy(
-                                usage = message.usage.merge(usage)
-                            )
-                        } else {
-                            message
-                        }
-                    }
-                }
-            }
-            // Attach all context sources to the last assistant message
-            if (hasContextSources) {
-                messages = messages.mapIndexed { index, message ->
-                    if (index == messages.lastIndex && message.role == CoreMessageRole.ASSISTANT) {
-                        message.copy(
-                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
-                            usedModes = usedModes.ifEmpty { null },
-                            usedMemories = usedMemories.ifEmpty { null }
-                        )
-                    } else {
-                        message
-                    }
-                }
-            }
-            onUpdateMessages(messages)
-        }
-    }
-
     private fun buildMemoryTools(
         assistantId: String,
         onCreation: suspend (String) -> AssistantMemory,
@@ -1188,6 +1083,140 @@ class GenerationHandler(
                     """.trimIndent()
                 )
             }
+        }
+    }
+
+    private suspend fun generateInternal(
+        assistant: Assistant,
+        settings: Settings,
+        messages: List<UIMessage>,
+        onUpdateMessages: suspend (List<UIMessage>) -> Unit,
+        transformers: List<MessageTransformer>,
+        model: Model,
+        providerImpl: Provider<ProviderSetting>,
+        provider: ProviderSetting,
+        tools: List<Tool>,
+        memories: List<AssistantMemory>,
+        truncateIndex: Int,
+        stream: Boolean,
+        enabledModeIds: Set<Uuid> = emptySet(),
+        contextSummary: String? = null,
+        temporarySummaries: List<String> = emptyList()
+    ) {
+        val buildResult = buildMessages(
+            assistant = assistant,
+            settings = settings,
+            messages = messages,
+            model = model,
+            tools = tools,
+            memories = memories,
+            truncateIndex = truncateIndex,
+            enabledModeIds = enabledModeIds,
+            contextSummary = contextSummary,
+            temporarySummaries = temporarySummaries
+        )
+        val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
+        val usedLorebookEntries = buildResult.activatedLorebookEntries
+        val usedModes = buildResult.usedModes
+        val usedMemories = buildResult.usedMemories
+        val hasContextSources = usedLorebookEntries.isNotEmpty() || usedModes.isNotEmpty() || usedMemories.isNotEmpty()
+
+        var messages: List<UIMessage> = messages
+        val params = TextGenerationParams(
+            model = model,
+            temperature = assistant.temperature,
+            topP = assistant.topP,
+            maxTokens = assistant.maxTokens,
+            tools = tools,
+            thinkingBudget = assistant.thinkingBudget,
+            customHeaders = buildList {
+                addAll(assistant.customHeaders)
+                addAll(model.customHeaders)
+            },
+            customBody = buildList {
+                addAll(assistant.customBodies)
+                addAll(model.customBodies)
+            }
+        )
+        if (stream) {
+            aiLoggingManager.addLog(AILogging.Generation(
+                params = params,
+                messages = messages,
+                providerSetting = provider,
+                stream = true
+            ))
+            providerImpl.streamText(
+                providerSetting = provider,
+                messages = internalMessages,
+                params = params
+            ).collect {
+                messages = messages.handleMessageChunk(chunk = it, model = model)
+                it.usage?.let { usage ->
+                    messages = messages.mapIndexed { index, message ->
+                        if (index == messages.lastIndex) {
+                            message.copy(usage = message.usage.merge(usage))
+                        } else {
+                            message
+                        }
+                    }
+                }
+                onUpdateMessages(messages)
+            }
+            if (hasContextSources) {
+                messages = messages.mapIndexed { index, message ->
+                    if (index == messages.lastIndex && message.role == CoreMessageRole.ASSISTANT) {
+                        message.copy(
+                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
+                            usedModes = usedModes.ifEmpty { null },
+                            usedMemories = usedMemories.ifEmpty { null }
+                        )
+                    } else {
+                        message
+                    }
+                }
+                onUpdateMessages(messages)
+            }
+        } else {
+            aiLoggingManager.addLog(AILogging.Generation(
+                params = params,
+                messages = messages,
+                providerSetting = provider,
+                stream = false
+            ))
+            val chunk = providerImpl.generateText(
+                providerSetting = provider,
+                messages = internalMessages,
+                params = params,
+            )
+            messages = messages.handleMessageChunk(chunk = chunk, model = model)
+            chunk.usage?.let { usage ->
+                messages = messages.size.let { _ ->
+                    messages.mapIndexed { index, message ->
+                        if (index == messages.lastIndex) {
+                            message.copy(
+                                usage = message.usage.merge(usage)
+                            )
+                        } else {
+                            message
+                        }
+                    }
+                }
+            }
+            // Attach all context sources to the last assistant message
+            if (hasContextSources) {
+                messages = messages.mapIndexed { index, message ->
+                    if (index == messages.lastIndex && message.role == CoreMessageRole.ASSISTANT) {
+                        message.copy(
+                            usedLorebookEntries = usedLorebookEntries.ifEmpty { null },
+                            usedModes = usedModes.ifEmpty { null },
+                            usedMemories = usedMemories.ifEmpty { null }
+                        )
+                    } else {
+                        message
+                    }
+                }
+            }
+            onUpdateMessages(messages)
         }
     }
 
