@@ -41,4 +41,8 @@
   <string name="auto_task_optimization_title">自动任务运行优化</string>
   <string name="auto_task_optimization_desc">如果发现定时任务（如自动日记）没有按时执行，请确保已开启应用的“自启动”权限并关闭“电池优化”。</string>
   <string name="auto_task_optimization_action">去设置</string>
+
+  <string name="assistant_enable_time_sense">时间观念</string>
+  <string name="assistant_enable_time_sense_desc">让ai感知当前时间和回复间隔，有助于提升对话的真实感。</string>
+
 </resources>

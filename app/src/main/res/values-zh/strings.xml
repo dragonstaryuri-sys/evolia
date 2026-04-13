@@ -260,7 +260,7 @@
 <string name="imggen_page_generation_count">生成数量</string>
 <string name="imggen_page_generation_count_desc">每次生成的图片数量</string>
 <string name="imggen_page_image_saved_success">图片已保存到相册</string>
-<string name="imggen_page_model_selection">模型选择</string>
+<string name="imggen_page_model_selection">图片生成模型</string>
 <string name="imggen_page_model_selection_desc">选择用于图片生成的AI模型</string>
 <string name="imggen_page_no_generated_images">暂无生成的图片</string>
 <string name="imggen_page_prompt_placeholder">描述您想要生成的图片...</string>
@@ -1348,5 +1348,8 @@
   <string name="master_memory_backup_title">复制当前档案</string>
   <string name="master_memory_backup_message">更新记忆档案可能因 AI 生成异常导致旧内容丢失。建议先将当前内容备份至剪贴板，是否继续？</string>
   <string name="master_memory_backup_confirm">确认备份并更新</string>
+  <!-- 本地工具: 时间观念 -->
+  <string name="local_tool_time_sense">时间观念</string>
+  <string name="local_tool_time_sense_desc">让智能体感知当前时间以及距离上一条回复的时间间隔，提升对话逻辑性。</string>
 
 </resources>

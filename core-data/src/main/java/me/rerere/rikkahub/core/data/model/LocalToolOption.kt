@@ -28,4 +28,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("agent_automation")
     data object AgentAutomation : LocalToolOption()
+
+    @Serializable
+    @SerialName("time_sense")
+    data object TimeSense : LocalToolOption()
 }

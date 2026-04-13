@@ -42,5 +42,7 @@
   <string name="auto_task_optimization_title">Automatic Task Optimization</string>
   <string name="auto_task_optimization_desc">If scheduled tasks (such as automatic diary) fail to run on time, please enable the app\'s "Auto-start" permission and disable "Battery Optimization".</string>
   <string name="auto_task_optimization_action">Go to Settings</string>
+  <string name="assistant_enable_time_sense">Time Awareness</string>
+  <string name="assistant_enable_time_sense_desc">Let the agent perceive the current time and response intervals to help enhance the realism of the conversation.</string>
 </resources>
 

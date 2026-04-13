@@ -129,6 +129,25 @@ fun AssistantToolsSubPage(
         }
 
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
+            // Time Sense
+            SettingGroupItem(
+                title = stringResource(R.string.local_tool_time_sense),
+                subtitle = stringResource(R.string.local_tool_time_sense_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.TimeSense),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.TimeSense
+                            } else {
+                                assistant.localTools - LocalToolOption.TimeSense
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+
             // Schedule Management
             SettingGroupItem(
                 title = stringResource(R.string.discover_page_schedule),

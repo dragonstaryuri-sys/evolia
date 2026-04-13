@@ -1400,6 +1400,8 @@
   <string name="master_memory_backup_title">Copy Current Profile</string>
   <string name="master_memory_backup_message">Updating the memory profile may cause old content to be lost due to AI generation anomalies. It is recommended to back up the current content to the clipboard first. Do you want to continue?</string>
   <string name="master_memory_backup_confirm">Confirm Backup and Update</string>
+  <string name="local_tool_time_sense">Time Awareness</string>
+  <string name="local_tool_time_sense_desc">Let the agent perceive the current time and response intervals to help enhance the realism of the conversation.</string>
 
 
 </resources>

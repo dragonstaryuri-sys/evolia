@@ -2,7 +2,6 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
-import androidx.activity.result.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -58,6 +57,7 @@ import me.rerere.rikkahub.core.data.model.Lorebook
 import me.rerere.rikkahub.core.data.model.LorebookActivationType
 import me.rerere.rikkahub.core.data.model.LorebookEntry
 import me.rerere.rikkahub.core.data.model.ModeAttachmentType
+import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
@@ -68,6 +68,11 @@ import kotlin.uuid.Uuid
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.launch
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.ZoneId
+import java.time.Duration
+import java.time.Instant
 
 
 /**
@@ -557,6 +562,43 @@ class GenerationHandler(
         if (tempSummaries.isNotEmpty()) {
             baseSystemPromptBuilder.append("\n\n## Recent Context Highlights\n")
             tempSummaries.forEachIndexed { index, s -> baseSystemPromptBuilder.append("${index + 1}. $s\n") }
+        }
+
+        // Time Sense Injection
+        if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
+            val now = LocalDateTime.now()
+            val timeStr = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            val lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT }
+            val intervalInfo = lastAiMessage?.let {
+                // 改用 java.time 进行间隔计算，避开 kotlinx-datetime 的兼容性问题
+                try {
+                    @Suppress("DEPRECATION")
+                    val prevJavaDateTime = LocalDateTime.of(
+                        it.createdAt.year,
+                        it.createdAt.monthNumber,
+                        it.createdAt.dayOfMonth,
+                        it.createdAt.hour,
+                        it.createdAt.minute,
+                        it.createdAt.second,
+                        it.createdAt.nanosecond
+                    )
+                    val prevInstant = prevJavaDateTime.atZone(ZoneId.systemDefault()).toInstant()
+                    val currentInstant = Instant.now()
+                    val duration = Duration.between(prevInstant, currentInstant)
+                    val seconds = duration.seconds
+                    val absSeconds = kotlin.math.abs(seconds)
+                    val sign = if (seconds >= 0) "+" else "-"
+                    val formatted = when {
+                        absSeconds < 60 -> "${sign}${absSeconds}s"
+                        absSeconds < 3600 -> "${sign}${absSeconds / 60}m"
+                        absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
+                        else -> "${sign}${absSeconds / 86400}d"
+                    }
+                    ", Interval since your last reply: $formatted"
+                } catch (e: Exception) { "" }
+            } ?: ""
+
+            baseSystemPromptBuilder.insert(0, "## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n")
         }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
