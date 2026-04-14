@@ -267,7 +267,10 @@ class MemoryRepository(
         val keywordsList = keywords.split(Regex("[,，、\\s]")).map { it.trim().lowercase() }.filter { it.isNotBlank() }
         if (keywordsList.isEmpty()) return 0f
         val matchCount = keywordsList.count { queryLower.contains(it) || it.contains(queryLower) }
-        return (matchCount.toFloat() / keywordsList.size).coerceAtMost(1.0f)
+        if (matchCount == 0) return 0f
+        val baseScore = 0.2f
+        val bonusScore = (matchCount.toFloat() / keywordsList.size) * 0.8f
+        return (baseScore + bonusScore).coerceAtMost(1.0f)
     }
 
     suspend fun retrieveRelevantMemoriesWithScores(
@@ -289,8 +292,14 @@ class MemoryRepository(
 
         // Core Memory Scoring
         val memoryScores = memories.mapNotNull { memory ->
+            val effectiveKeywords = if (memory.keywords.isNullOrBlank()) {
+                val local = KeywordExtractor.extract(memory.content)
+                // 顺便更新数据库，下次就不用现场分词了
+                memoryDAO.updateMemory(memory.copy(keywords = local))
+                local
+            } else memory.keywords
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
-                calculateKeywordScore(query, memory.keywords)
+                calculateKeywordScore(query, effectiveKeywords)
             } else 0f
 
             val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
@@ -313,8 +322,13 @@ class MemoryRepository(
 
         // Episodic Memory Scoring
         val episodeScores = episodes.mapNotNull { episode ->
+            val effectiveKeywords = if (episode.keywords.isNullOrBlank()) {
+                val local = KeywordExtractor.extract(episode.content)
+                chatEpisodeDAO.insertEpisode(episode.copy(keywords = local))
+                local
+            } else episode.keywords
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
-                calculateKeywordScore(query, episode.keywords)
+                calculateKeywordScore(query, effectiveKeywords)
             } else 0f
 
             val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {

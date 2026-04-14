@@ -757,7 +757,7 @@ private fun RagSettingsCard(
 
                 // 2. Similarity Threshold (Only relevant for Semantic/Hybrid)
                 AnimatedVisibility(
-                    visible = assistant.memoryRetrievalMode != MemoryRetrievalMode.KEYWORD,
+                    visible = true, // 始终显示，因为在关键词模式下该阈值同样生效
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {

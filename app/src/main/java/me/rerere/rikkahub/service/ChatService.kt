@@ -96,6 +96,7 @@ import kotlin.uuid.Uuid
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
+import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 
 private const val TAG = "ChatService"
 
@@ -339,13 +340,16 @@ class ChatService(
             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
             if (summary.isNotBlank()) {
-                // 提取关键词
-                val keywords = extractKeywords(
+                // 修改后
+                val aiKeywords = extractKeywords(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
                     model = backgroundModel,
                     summary = summary
                 )
+                val localKeywords = KeywordExtractor.extract(summary) // 使用本地算法
+                val keywords = mergeKeywords(aiKeywords, localKeywords) // 合并
+
 
                 // 生成向量
                 val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $summary" else summary
@@ -718,13 +722,15 @@ class ChatService(
 
             // 生成片段摘要后提取关键词并生成向量
             if (tempSum.isNotBlank()) {
-                // 提取关键词 (L1)
-                val keywords = extractKeywords(
+                // 修改后
+                val aiKeywords = extractKeywords(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
                     model = backgroundModel,
                     summary = tempSum
                 )
+                val localKeywords = KeywordExtractor.extract(tempSum)
+                val keywords = mergeKeywords(aiKeywords, localKeywords)
 
                 // 生成向量
                 val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $tempSum" else tempSum
@@ -811,6 +817,12 @@ class ChatService(
             Log.e(TAG, "Failed to extract keywords", e)
             ""
         }
+    }
+
+    private fun mergeKeywords(ai: String, local: String): String {
+        val aiList = ai.split(Regex("[,，、；;]")).map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        val localList = local.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        return (aiList + localList).distinct().joinToString(",")
     }
 
     suspend fun saveConversation(id: Uuid, conversation: Conversation) {
