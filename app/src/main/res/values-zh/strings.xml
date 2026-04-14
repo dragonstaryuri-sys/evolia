@@ -1363,4 +1363,5 @@
   <string name="rag_include_core">核心记忆</string>
   <string name="rag_include_episodic">片段记忆</string>
   <string name="rag_limit_title">最大检索数量 (Top K)</string>
+  <string name="rag_keyword_threshold_title">匹配精度阈值</string>
 </resources>

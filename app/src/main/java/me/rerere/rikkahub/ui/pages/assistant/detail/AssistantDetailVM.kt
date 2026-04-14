@@ -362,7 +362,7 @@ class AssistantDetailVM(
             val similar = memoryRepository.retrieveRelevantMemoriesWithScores(
                 assistantId = assistantId.toString(),
                 query = memory.content,
-                limit = 15,
+                limit = assistant.value.ragLimit,
                 similarityThreshold = 0.6f,
                 includeCore = isCore,
                 includeEpisodes = !isCore

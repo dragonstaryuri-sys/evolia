@@ -1420,5 +1420,6 @@
   <string name="rag_retrieval_scope">Retrieval Scope</string>
   <string name="rag_include_core">Include Core Memories</string>
   <string name="rag_include_episodic">Include Episodic Memories</string>
-  <string name="rag_limit_title">Maximum retrieval quantity (Top K)</string>
+  <string name="rag_limit_title">Max Retrieval Results (Top K)</string>
+  <string name="rag_keyword_threshold_title">Match Precision Threshold</string>
 </resources>
