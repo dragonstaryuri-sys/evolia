@@ -1362,4 +1362,5 @@
   <string name="rag_retrieval_scope">检索范围</string>
   <string name="rag_include_core">核心记忆</string>
   <string name="rag_include_episodic">片段记忆</string>
+  <string name="rag_limit_title">最大检索数量 (Top K)</string>
 </resources>

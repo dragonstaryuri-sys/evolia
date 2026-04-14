@@ -735,12 +735,26 @@ private fun RagSettingsCard(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+
         // Similarity Threshold (Only relevant for Semantic/Hybrid)
         AnimatedVisibility(visible = assistant.memoryRetrievalMode != MemoryRetrievalMode.KEYWORD) {
             Surface(
                 color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
             ) {
+                //  1. 返回数量设置 (Top K) - 所有模式都需要
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(stringResource(R.string.rag_limit_title), style = MaterialTheme.typography.titleMedium)
+                        Text(text = assistant.ragLimit.toString(), color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = assistant.ragLimit.toFloat(),
+                        onValueChange = { onUpdateAssistant(assistant.copy(ragLimit = it.toInt())) },
+                        valueRange = 1f..10f,
+                        steps = 9
+                    )
+                }
                 Column(modifier = Modifier.padding(16.dp)) {
                     var threshold by remember(assistant.ragSimilarityThreshold) {
                         mutableFloatStateOf(assistant.ragSimilarityThreshold)
