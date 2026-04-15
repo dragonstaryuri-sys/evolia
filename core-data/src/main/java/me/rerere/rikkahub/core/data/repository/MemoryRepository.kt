@@ -391,9 +391,17 @@ class MemoryRepository(
         memoriesNeedingEmbedding.forEach { memory ->
             current++
             try {
+                // 【新增】补全关键词逻辑
+                val finalKeywords = if (memory.keywords.isNullOrBlank()) {
+                    KeywordExtractor.extract(memory.content)
+                } else memory.keywords
                 val embedding = embeddingService.embed(memory.content, assistantId)
                 val embeddingJson = JsonInstant.encodeToString(embedding)
-                memoryDAO.updateMemory(memory.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
+                memoryDAO.updateMemory(memory.copy(
+                    keywords = finalKeywords,
+                    embedding = embeddingJson,
+                    embeddingModelId = currentModelId
+                ))
                 embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = memory.id, memoryType = memory.type, modelId = currentModelId, embedding = embeddingJson))
                 successCount++
             } catch (e: Exception) { failureCount++ }
@@ -403,7 +411,11 @@ class MemoryRepository(
         episodesNeedingEmbedding.forEach { episode ->
             current++
             try {
-                val effectiveContent = if (!episode.keywords.isNullOrBlank()) "Keywords: ${episode.keywords}\nContent: ${episode.content}" else episode.content
+                // 【新增】先确定关键词
+                val finalKeywords = if (episode.keywords.isNullOrBlank()) {
+                    KeywordExtractor.extract(episode.content)
+                } else episode.keywords
+                val effectiveContent = if (!finalKeywords.isNullOrBlank()) "Keywords: $finalKeywords\nContent: ${episode.content}" else episode.content
                 val embedding = embeddingService.embed(effectiveContent, assistantId)
                 val embeddingJson = JsonInstant.encodeToString(embedding)
                 chatEpisodeDAO.insertEpisode(episode.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
@@ -422,7 +434,6 @@ class MemoryRepository(
 
         var successCount = 0
         var failureCount = 0
-
         val memoriesNeedingEmbedding = memories.filter { it.embedding == null || it.embeddingModelId != currentModelId }
         val episodesNeedingEmbedding = episodes.filter { it.embedding == null || it.embeddingModelId != currentModelId }
 
