@@ -1035,7 +1035,7 @@
   <!-- Assistant Model Page -->
   <string name="assistant_model_group_models">模型</string>
   <string name="assistant_model_background_model">后台模型</string>
-  <string name="assistant_model_background_model_desc">用于通知与后台任务</string>
+  <string name="assistant_model_background_model_desc">用于通知/后台任务及搜索摘要,建议选择便宜快速的模型</string>
   <string name="assistant_model_summarizer_model">摘要模型</string>
   <string name="assistant_model_summarizer_model_desc">用于消息总结的模型</string>
   <string name="assistant_model_group_generation">生成参数</string>

@@ -33,12 +33,16 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -56,6 +60,7 @@ import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
@@ -335,7 +340,7 @@ class ChatService(
                 .replace("{{text}}", text)
                 .replace("{{locale}}", Locale.getDefault().displayName)
 
-            val providerHandler = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+            val providerHandler = handler as Provider<ProviderSetting>
             val resp = providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f))
             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
@@ -454,7 +459,7 @@ class ChatService(
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null,
-        assistantOverride: me.rerere.rikkahub.core.data.model.Assistant? = null // 新增：允许传入覆盖的智能体
+        assistantOverride: Assistant? = null // 新增：允许传入覆盖的智能体
     ) {
         val settings = settingsStore.settingsFlow.first()
         runCatching {
@@ -509,7 +514,7 @@ class ChatService(
                     val supportsBuiltIn = model.tools.isNotEmpty() || me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
                     val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
                     val searchMode = assistant.searchMode
-                    if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) addAll(createSearchTool(settings, searchMode.index))
+                    if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) addAll(createSearchTool(settings, assistant, searchMode.index))
                     addAll(localTools.getTools(options = assistant.localTools, assistantId = assistant.id, conversationId = conversation.id, userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()?.map { it.url } ?: emptyList()))
 
                     // MCP Tools
@@ -562,7 +567,7 @@ class ChatService(
         }
     }
 
-    private fun createSearchTool(settings: Settings, providerIndex: Int? = null): Set<Tool> {
+    private fun createSearchTool(settings: Settings, assistant: Assistant, providerIndex: Int? = null): Set<Tool> {
         val idx = providerIndex ?: settings.searchServiceSelected
         return buildSet {
             add(Tool(name = "search_web", description = "search web", parameters = {
@@ -570,102 +575,102 @@ class ChatService(
                 SearchService.getService(opt).parameters
             }, execute = {
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
-                val result = SearchService.getService(opt).search(it.jsonObject, settings.searchCommonOptions, opt)
-                JsonInstantPretty.encodeToJsonElement(result.getOrThrow()).jsonObject.let { json ->
-                    val map = json.toMutableMap()
-                    val items = map["items"]
-                    if (items is JsonArray) map["items"] = JsonArray(items.mapIndexed { i, item ->
-                        if (item is JsonObject) JsonObject(item.toMutableMap().apply { put("id", JsonPrimitive(Uuid.random().toString().take(6))); put("index", JsonPrimitive(i + 1)) }) else item
-                    })
-                    JsonObject(map)
+
+                // 1. 强制固定返回 6 条搜索结果
+                val resultSize = 6
+                val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
+
+                val searchResult = SearchService.getService(opt).search(it.jsonObject, commonOptions, opt).getOrThrow()
+
+                // 打印原始搜索日志
+                Log.d(TAG, "Web Search Raw Results (Fixed Request: $resultSize, Got: ${searchResult.items.size})")
+                searchResult.items.forEachIndexed { i, item ->
+                    Log.v(TAG, "Raw Item [$i]: ${item.title} (${item.url})")
+                }
+
+                // 2. 过滤网页标签 (使用 Regex 清理 HTML)
+                val htmlRegex = Regex("<[^>]*>")
+                val cleanedItems = searchResult.items.take(resultSize).map { item ->
+                    item.copy(text = item.text.replace(htmlRegex, "").trim())
+                }
+
+                // 3. Background model 处理
+                val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
+                val backgroundModel = settings.findModelById(backgroundModelId) ?: settings.getCurrentChatModel()
+
+                if (backgroundModel != null) {
+                    val providerSetting = backgroundModel.findProvider(settings.providers)
+                    if (providerSetting != null) {
+                        try {
+                            val handler = providerManager.getProviderByType(providerSetting)
+                            val locale = Locale.getDefault().displayName
+
+                            val searchContent = cleanedItems.joinToString("\n") { item ->
+                                 "Title: ${item.title}\nURL: ${item.url}\nContent: ${item.text}"
+                            }
+
+                            val prompt = """
+                                你是一个专业的信息密度压缩引擎。你的任务是将网页搜索结果处理成供大模型阅读的精炼摘要。
+                                注意：该摘要是给 AI 阅读的，不是给人阅读的。
+                                要求：
+                                1. 信息密度拉满，只保留核心事实、关键数据和结论。
+                                2. 情绪价值拉到最低，去除所有修饰词、客气话和主观色彩。保持 factual 和高效。
+                                3. 在事实陈述后保留原始搜索结果的索引（如 [1], [2]）。
+                                4. 保持机器友好的逻辑结构。
+                                5. 语言：使用 $locale。
+
+                                搜索内容：
+                                $searchContent
+                            """.trimIndent()
+
+                            @Suppress("UNCHECKED_CAST")
+                            val h = handler as Provider<ProviderSetting>
+                            val resp = h.generateText(
+                                providerSetting,
+                                listOf(UIMessage.user(prompt)),
+                                TextGenerationParams(backgroundModel, 0.3f)
+                            )
+                            val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+
+                            if (summary.isNotBlank()) {
+                                Log.i(TAG, "Web Search Background Summary (Model: ${backgroundModel.modelId}):\n$summary")
+                                Log.i(TAG, "Background Model Token Usage: ${resp.usage ?: "unknown"}")
+                                return@Tool buildJsonObject {
+                                    put("summary", summary)
+                                    put("note", "This summary is processed by a background model for efficiency.")
+                                    put("items", JsonArray(cleanedItems.mapIndexed { i, item ->
+                                        buildJsonObject {
+                                            put("id", Uuid.random().toString().take(6))
+                                            put("index", i + 1)
+                                            put("title", item.title)
+                                            put("url", item.url)
+                                        }
+                                    }))
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Search background summary failed", e)
+                        }
+                    }
+                }
+
+                // Fallback: 返回原始的前 6 条（已清洗内容）
+                Log.w(TAG, "Background model summary failed, falling back to raw cleaned content.")
+                buildJsonObject {
+                    put("items", JsonArray(cleanedItems.mapIndexed { i, item ->
+                        buildJsonObject {
+                            put("id", Uuid.random().toString().take(6))
+                            put("index", i + 1)
+                            put("title", item.title)
+                            put("url", item.url)
+                            put("text", item.text)
+                        }
+                    }))
                 }
             }, systemPrompt = { _, msgs ->
                 if (msgs.any { it.getToolCalls().any { tc -> tc.toolName == "search_web" } }) "## tool: search_web\n\nUse `[citation,domain](id)` after facts." else "## tool: search_web"
             }))
         }
-    }
-
-    private suspend fun checkInvalidMessages(conversationId: Uuid) {
-        val conv = getConversationFlow(conversationId).value
-        var nodes = conv.messageNodes.filter { it.messages.isNotEmpty() }
-            .map { if (it.selectIndex !in it.messages.indices) it.copy(selectIndex = 0) else it }
-        nodes = nodes.mapIndexed { idx, node ->
-            val next = nodes.getOrNull(idx + 1)
-            if (node.currentMessage.hasPart<UIMessagePart.ToolCall>() && next?.currentMessage?.hasPart<UIMessagePart.ToolResult>() != true)
-                node.copy(messages = node.messages.filter { it.id != node.currentMessage.id }, selectIndex = (node.selectIndex - 1).coerceAtLeast(0))
-            else node
-        }.filter { it.messages.isNotEmpty() }
-        updateConversation(conversationId, conv.copy(messageNodes = nodes))
-    }
-
-    suspend fun generateTitle(conversationId: Uuid, conversation: Conversation, force: Boolean = false) {
-        if (!force && conversation.title.isNotBlank()) return
-        runCatching {
-            val settings = settingsStore.settingsFlow.first()
-            val model = settings.findModelById(settings.titleModelId) ?: settings.getCurrentChatModel() ?: return
-            val provider = model.findProvider(settings.providers) ?: return
-            val content = conversation.currentMessages.truncate(conversation.truncateIndex).joinToString("\n\n") { it.summaryAsText() }
-            if (content.isBlank()) return
-            val result = (providerManager.getProviderByType(provider) as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 0f))
-            saveConversation(conversationId, conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""))
-        }
-    }
-
-    suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
-        runCatching {
-            val settings = settingsStore.settingsFlow.first()
-            val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
-            val modelId = assistant.suggestionModelId ?: settings.suggestionModelId
-            val model = settings.findModelById(modelId) ?: return
-            val provider = model.findProvider(settings.providers) ?: return
-            val result = (providerManager.getProviderByType(provider) as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 0f))
-            val suggestions = result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
-            saveConversation(conversationId, conversation.copy(chatSuggestions = suggestions))
-        }
-    }
-
-    private val conversationDeletionJobs = ConcurrentHashMap<Uuid, Job>()
-    private val recentlyDeletedConversations = ConcurrentHashMap<Uuid, Conversation>()
-    private val _recentlyRestoredIds = MutableStateFlow<Set<Uuid>>(emptySet())
-    val recentlyRestoredIds: StateFlow<Set<Uuid>> = _recentlyRestoredIds
-
-    fun deleteConversation(conversation: Conversation) {
-        appScope.launch {
-            val full = conversationRepo.getConversationById(conversation.id) ?: return@launch
-            conversationDeletionJobs[conversation.id]?.cancel()
-            conversationRepo.deleteConversation(full, false)
-            recentlyDeletedConversations[conversation.id] = full
-            conversationDeletionJobs[conversation.id] = appScope.launch { delay(4000); context.deleteChatFiles(full.files); recentlyDeletedConversations.remove(conversation.id) }
-        }
-    }
-
-    fun undoDeleteConversation(conversationId: Uuid) {
-        conversationDeletionJobs[conversationId]?.cancel()
-        recentlyDeletedConversations.remove(conversationId)?.let { conv ->
-            appScope.launch { conversationRepo.insertConversation(conv); _recentlyRestoredIds.value += conversationId; delay(1000); _recentlyRestoredIds.value -= conversationId }
-        }
-    }
-
-    private fun sendGenerationDoneNotification(conversationId: Uuid) {
-        val msg = getConversationFlow(conversationId).value.currentMessages.lastOrNull()?.toText()?.take(50) ?: ""
-        val notification = NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(context.getString(R.string.notification_chat_done_title)).setContentText(msg)
-            .setSmallIcon(R.drawable.about_logo).setAutoCancel(true).setContentIntent(getPendingIntent(context, conversationId))
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
-            NotificationManagerCompat.from(context).notify(1, notification.build())
-    }
-
-    private fun getPendingIntent(context: Context, id: Uuid): PendingIntent {
-        val intent = Intent(context, RouteActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP; putExtra("conversationId", id.toString()) }
-        return PendingIntent.getActivity(context, id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-    }
-
-    private suspend fun updateConversation(id: Uuid, conversation: Conversation) {
-        if (conversation.id != id) return
-        val old = getConversationFlow(id).value
-        val deleted = old.files.filter { f -> conversation.files.none { it == f } }
-        if (deleted.isNotEmpty()) context.deleteChatFiles(deleted)
-        conversations.getOrPut(id) { MutableStateFlow(conversation) }.value = conversation
     }
 
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
@@ -716,7 +721,7 @@ class ChatService(
                 .replace("{{new_messages}}", text)
                 .replace("{{locale}}", locale)
 
-            val providerHandler = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+            val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
@@ -790,8 +795,8 @@ class ChatService(
      */
     @Suppress("UNCHECKED_CAST")
     private suspend fun extractKeywords(
-        handler: me.rerere.ai.provider.Provider<*>,
-        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        handler: Provider<*>,
+        providerSetting: ProviderSetting,
         model: me.rerere.ai.provider.Model,
         summary: String
     ): String {
@@ -801,7 +806,7 @@ class ChatService(
                 .replace("{{summary}}", summary)
                 .replace("{{locale}}", locale)
 
-            val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+            val h = handler as Provider<ProviderSetting>
             val resp = h.generateText(
                 providerSetting = providerSetting,
                 messages = listOf(UIMessage.user(prompt)),
@@ -860,6 +865,89 @@ class ChatService(
         _generationJobs.value[id]?.cancel()
         removeGenerationJob(id)
         conversations.remove(id)
+    }
+
+    private suspend fun checkInvalidMessages(conversationId: Uuid) {
+        val conv = getConversationFlow(conversationId).value
+        var nodes = conv.messageNodes.filter { it.messages.isNotEmpty() }
+            .map { if (it.selectIndex !in it.messages.indices) it.copy(selectIndex = 0) else it }
+        nodes = nodes.mapIndexed { idx, node ->
+            val next = nodes.getOrNull(idx + 1)
+            if (node.currentMessage.hasPart<UIMessagePart.ToolCall>() && next?.currentMessage?.hasPart<UIMessagePart.ToolResult>() != true)
+                node.copy(messages = node.messages.filter { it.id != node.currentMessage.id }, selectIndex = (node.selectIndex - 1).coerceAtLeast(0))
+            else node
+        }.filter { it.messages.isNotEmpty() }
+        updateConversation(conversationId, conv.copy(messageNodes = nodes))
+    }
+
+    suspend fun generateTitle(conversationId: Uuid, conversation: Conversation, force: Boolean = false) {
+        if (!force && conversation.title.isNotBlank()) return
+        runCatching {
+            val settings = settingsStore.settingsFlow.first()
+            val model = settings.findModelById(settings.titleModelId) ?: settings.getCurrentChatModel() ?: return
+            val provider = model.findProvider(settings.providers) ?: return
+            val content = conversation.currentMessages.truncate(conversation.truncateIndex).joinToString("\n\n") { it.summaryAsText() }
+            if (content.isBlank()) return
+            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 0f))
+            saveConversation(conversationId, conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""))
+        }
+    }
+
+    suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
+        runCatching {
+            val settings = settingsStore.settingsFlow.first()
+            val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+            val modelId = assistant.suggestionModelId ?: settings.suggestionModelId
+            val model = settings.findModelById(modelId) ?: return
+            val provider = model.findProvider(settings.providers) ?: return
+            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 0f))
+            val suggestions = result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            saveConversation(conversationId, conversation.copy(chatSuggestions = suggestions))
+        }
+    }
+
+    private val conversationDeletionJobs = ConcurrentHashMap<Uuid, Job>()
+    private val recentlyDeletedConversations = ConcurrentHashMap<Uuid, Conversation>()
+    private val _recentlyRestoredIds = MutableStateFlow<Set<Uuid>>(emptySet())
+    val recentlyRestoredIds: StateFlow<Set<Uuid>> = _recentlyRestoredIds
+
+    fun deleteConversation(conversation: Conversation) {
+        appScope.launch {
+            val full = conversationRepo.getConversationById(conversation.id) ?: return@launch
+            conversationDeletionJobs[conversation.id]?.cancel()
+            conversationRepo.deleteConversation(full, false)
+            recentlyDeletedConversations[conversation.id] = full
+            conversationDeletionJobs[conversation.id] = appScope.launch { delay(4000); context.deleteChatFiles(full.files); recentlyDeletedConversations.remove(conversation.id) }
+        }
+    }
+
+    fun undoDeleteConversation(conversationId: Uuid) {
+        conversationDeletionJobs[conversationId]?.cancel()
+        recentlyDeletedConversations.remove(conversationId)?.let { conv ->
+            appScope.launch { conversationRepo.insertConversation(conv); _recentlyRestoredIds.value += conversationId; delay(1000); _recentlyRestoredIds.value -= conversationId }
+        }
+    }
+
+    private fun sendGenerationDoneNotification(conversationId: Uuid) {
+        val msg = getConversationFlow(conversationId).value.currentMessages.lastOrNull()?.toText()?.take(50) ?: ""
+        val notification = NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
+            .setContentTitle(context.getString(R.string.notification_chat_done_title)).setContentText(msg)
+            .setSmallIcon(R.drawable.about_logo).setAutoCancel(true).setContentIntent(getPendingIntent(context, conversationId))
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+            NotificationManagerCompat.from(context).notify(1, notification.build())
+    }
+
+    private fun getPendingIntent(context: Context, id: Uuid): PendingIntent {
+        val intent = Intent(context, RouteActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP; putExtra("conversationId", id.toString()) }
+        return PendingIntent.getActivity(context, id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    private suspend fun updateConversation(id: Uuid, conversation: Conversation) {
+        if (conversation.id != id) return
+        val old = getConversationFlow(id).value
+        val deleted = old.files.filter { f -> conversation.files.none { it == f } }
+        if (deleted.isNotEmpty()) context.deleteChatFiles(deleted)
+        conversations.getOrPut(id) { MutableStateFlow(conversation) }.value = conversation
     }
 }
 
