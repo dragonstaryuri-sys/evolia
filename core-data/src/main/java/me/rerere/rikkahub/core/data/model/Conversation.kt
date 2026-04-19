@@ -82,7 +82,11 @@ data class MessageNode(
     val messages: List<UIMessage>,
     val selectIndex: Int = 0,
 ) {
-    val currentMessage get() = messages[selectIndex]
+    // 增加安全性保护，防止索引越界崩溃
+    val currentMessage get() = messages.getOrElse(selectIndex) {
+        messages.lastOrNull() ?: UIMessage.system("Error: Node has no messages")
+    }
+
     val role get() = messages.firstOrNull()?.role ?: MessageRole.USER
     companion object {
         fun of(message: UIMessage) = MessageNode(messages = listOf(message), selectIndex = 0)

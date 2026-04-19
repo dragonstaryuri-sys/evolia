@@ -359,7 +359,7 @@ class ChatVM(
                 val canDeleteByVersionTag = deleteVersionTag != null && index in turnStartIndex until turnEndIndex && n.role != me.rerere.ai.core.MessageRole.USER
                 val newMessages = n.messages.filter { msg -> if (canDeleteByVersionTag && msg.versionTag == deleteVersionTag) false else msg.id != message.id }
                 if (newMessages.isEmpty()) null
-                else n.copy(messages = newMessages, selectIndex = if (n.selectIndex >= newMessages.size) n.selectIndex else n.selectIndex)
+                else n.copy(messages = newMessages, selectIndex = n.selectIndex.coerceIn(0, newMessages.size - 1))
             }
             conversation.copy(messageNodes = updatedNodes)
         }
