@@ -92,6 +92,7 @@ fun AgentListPage() {
     val vm: ChatListVM = koinViewModel()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val lastMessages by vm.assistantsLastMessages.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val repo = org.koin.compose.koinInject<me.rerere.rikkahub.core.data.repository.ConversationRepository>()
 
@@ -111,6 +112,7 @@ fun AgentListPage() {
             items(settings!!.assistants) { assistant ->
                 AgentItem(
                     assistant = assistant,
+                    lastMessage = lastMessages[assistant.id] ?: "",
                     onClick = {
                         scope.launch {
                             // 切换当前助手
@@ -144,7 +146,11 @@ fun AgentListPage() {
 }
 
 @Composable
-fun AgentItem(assistant: Assistant, onClick: () -> Unit) {
+fun AgentItem(
+    assistant: Assistant,
+    lastMessage: String,
+    onClick: () -> Unit
+) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,7 +178,7 @@ fun AgentItem(assistant: Assistant, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = assistant.systemPrompt,
+                    text = lastMessage,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

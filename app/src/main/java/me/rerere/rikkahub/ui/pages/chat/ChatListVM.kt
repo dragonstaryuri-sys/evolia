@@ -36,6 +36,25 @@ class ChatListVM(
 
     val recentlyRestoredIds = chatService.recentlyRestoredIds
 
+    /**
+     * 每个助手的最后一条消息内容
+     */
+    val assistantsLastMessages: StateFlow<Map<Uuid, String>> = settings
+        .flatMapLatest { settings ->
+            if (settings.assistants.isEmpty()) return@flatMapLatest flowOf(emptyMap())
+            combine(
+                settings.assistants.map { assistant ->
+                    conversationRepo.getConversationsOfAssistant(assistant.id)
+                        .map { conversations ->
+                            assistant.id to (conversations.firstOrNull()?.lastMessageContent ?: "")
+                        }
+                }
+            ) { pairs ->
+                pairs.toMap()
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     val conversations: Flow<PagingData<ConversationListItem>> = combine(
         settings.map { it.assistantId }.distinctUntilChanged(),
         _searchQuery

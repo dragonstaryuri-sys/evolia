@@ -46,6 +46,12 @@ data class Conversation(
         node.messages.getOrNull(node.selectIndex) ?: node.messages.lastOrNull() ?: UIMessage.system("Error: Message missing")
     }
 
+    /**
+     * 获取最后一条消息的文本内容
+     */
+    val lastMessageContent: String
+        get() = currentMessages.lastOrNull()?.toContentText() ?: ""
+
     fun getMessageNodeByMessage(message: UIMessage): MessageNode? = messageNodes.firstOrNull { it.messages.contains(message) }
     fun getMessageNodeByMessageId(messageId: Uuid): MessageNode? = messageNodes.firstOrNull { it.messages.any { it.id == messageId } }
 
