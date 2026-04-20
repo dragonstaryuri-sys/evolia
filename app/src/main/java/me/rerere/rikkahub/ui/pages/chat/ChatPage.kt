@@ -228,8 +228,6 @@ private fun ChatPageContent(
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
 
-    val isMonitorConversation = conversation.id.toString() == "00000000-0000-0000-0000-000000000001"
-
     LaunchedEffect(initialSearchQuery, conversation.id) {
         if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
             val matchIndex = conversation.messageNodes.indexOfFirst { node ->
@@ -520,118 +518,109 @@ private fun ChatPageContent(
                     )
                 }
 
-                if (!isMonitorConversation) {
-                    when (effectiveDisplaySetting.chatInputStyle) {
-                        ChatInputStyle.MINIMAL -> {
-                            MinimalChatInput(
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                state = inputState,
-                                settings = setting,
-                                conversation = conversation,
-                                mcpManager = vm.mcpManager,
-                                chatSuggestions = conversation.chatSuggestions,
-                                onClickSuggestion = { suggestion ->
-                                    if (currentChatModel != null) {
-                                        vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                        scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
-                                    } else { toaster.show("Please select a model first", type = ToastType.Error) }
-                                },
-                                onCancelClick = { loadingJob?.cancel() },
-                                enableSearch = enableWebSearch,
-                                onToggleSearch = {
-                                    if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
-                                    else if (setting.searchServices.isNotEmpty()) {
-                                        val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
-                                        vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
-                                    }
-                                },
-                                onSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                    else {
-                                        if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
-                                        vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                        scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onLongSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                    else {
-                                        if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
-                                        vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                        scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
-                                onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
-                                onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
-                                onClearContext = { vm.handleMessageTruncate() },
-                                onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
-                                onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
-                                onRefreshContext = { vm.refreshContext() },
-                                onDeleteFile = { vm.deleteFile(it) },
-                            )
-                        }
-                        ChatInputStyle.FLOATING -> {
-                            ChatInput(
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                state = inputState,
-                                settings = setting,
-                                conversation = conversation,
-                                mcpManager = vm.mcpManager,
-                                chatSuggestions = conversation.chatSuggestions,
-                                onClickSuggestion = { suggestion ->
-                                    if (currentChatModel != null) {
-                                        vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                        scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
-                                    } else { toaster.show("Please select a model first", type = ToastType.Error) }
-                                },
-                                onCancelClick = { loadingJob?.cancel() },
-                                enableSearch = enableWebSearch,
-                                onToggleSearch = {
-                                    if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
-                                    else if (setting.searchServices.isNotEmpty()) {
-                                        val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
-                                        vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
-                                    }
-                                },
-                                onSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                    else {
-                                        if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
-                                        vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                        scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onLongSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                    else {
-                                        if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
-                                        vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                        scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
-                                onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
-                                onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
-                                onClearContext = { vm.handleMessageTruncate() },
-                                onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
-                                onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
-                                onRefreshContext = { vm.refreshContext() },
-                                onDeleteFile = { vm.deleteFile(it) },
-                            )
-                        }
+                when (effectiveDisplaySetting.chatInputStyle) {
+                    ChatInputStyle.MINIMAL -> {
+                        MinimalChatInput(
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            state = inputState,
+                            settings = setting,
+                            conversation = conversation,
+                            mcpManager = vm.mcpManager,
+                            chatSuggestions = conversation.chatSuggestions,
+                            onClickSuggestion = { suggestion ->
+                                if (currentChatModel != null) {
+                                    vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
+                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                } else { toaster.show("Please select a model first", type = ToastType.Error) }
+                            },
+                            onCancelClick = { loadingJob?.cancel() },
+                            enableSearch = enableWebSearch,
+                            onToggleSearch = {
+                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
+                                else if (setting.searchServices.isNotEmpty()) {
+                                    val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
+                                }
+                            },
+                            onSendClick = {
+                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
+                                else {
+                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
+                                    vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
+                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                }
+                                inputState.clearInput()
+                            },
+                            onLongSendClick = {
+                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
+                                else {
+                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
+                                    vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
+                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                }
+                                inputState.clearInput()
+                            },
+                            onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
+                            onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
+                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
+                            onClearContext = { vm.handleMessageTruncate() },
+                            onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
+                            onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
+                            onRefreshContext = { vm.refreshContext() },
+                            onDeleteFile = { vm.deleteFile(it) },
+                        )
                     }
-                } else {
-                    Text(
-                        text = "正在监控后台智能体任务执行...",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
-                    )
+                    ChatInputStyle.FLOATING -> {
+                        ChatInput(
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            state = inputState,
+                            settings = setting,
+                            conversation = conversation,
+                            mcpManager = vm.mcpManager,
+                            chatSuggestions = conversation.chatSuggestions,
+                            onClickSuggestion = { suggestion ->
+                                if (currentChatModel != null) {
+                                    vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
+                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                } else { toaster.show("Please select a model first", type = ToastType.Error) }
+                            },
+                            onCancelClick = { loadingJob?.cancel() },
+                            enableSearch = enableWebSearch,
+                            onToggleSearch = {
+                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
+                                else if (setting.searchServices.isNotEmpty()) {
+                                    val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
+                                }
+                            },
+                            onSendClick = {
+                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
+                                else {
+                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
+                                    vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
+                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                }
+                                inputState.clearInput()
+                            },
+                            onLongSendClick = {
+                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
+                                else {
+                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
+                                    vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
+                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                }
+                                inputState.clearInput()
+                            },
+                            onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
+                            onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
+                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
+                            onClearContext = { vm.handleMessageTruncate() },
+                            onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
+                            onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
+                            onRefreshContext = { vm.refreshContext() },
+                            onDeleteFile = { vm.deleteFile(it) },
+                        )
+                    }
                 }
                 }
             }
@@ -671,8 +660,6 @@ private fun TopBar(
     val currentAssistant = settings.getCurrentAssistant()
     val isEmpty = !hasUserMessages
     var animateTopPillIn by remember { mutableStateOf(false) }
-
-    val isMonitorConversation = conversationId.toString() == "00000000-0000-0000-0000-000000000001"
 
     LaunchedEffect(conversationId) {
         animateTopPillIn = false
@@ -719,7 +706,7 @@ private fun TopBar(
             Spacer(Modifier.weight(1f))
 
             Text(
-                text = if (isMonitorConversation) "Agent 任务执行监控" else currentAssistant.name,
+                text = currentAssistant.name,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
                 modifier = Modifier.align(Alignment.CenterVertically)
             )

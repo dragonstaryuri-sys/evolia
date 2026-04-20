@@ -120,7 +120,8 @@ class GenerationHandler(
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
-        temporarySummaries: List<String> = emptyList()
+        temporarySummaries: List<String> = emptyList(),
+        skipContextForResponse: Boolean = false // 新增：标记此次生成的回复是否也应该 skipContext
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -231,7 +232,12 @@ class GenerationHandler(
                 settings = settings,
                 messages = messages,
                 onUpdateMessages = {
-                    messages = it.transforms(
+                    // 如果这次生成被标记为 skipContext，那么它产生的 Assistant 回复也带上标记
+                    val updated = if (skipContextForResponse) {
+                         it.map { m -> if (m.role == CoreMessageRole.ASSISTANT) m.copy(skipContext = true) else m }
+                    } else it
+
+                    messages = updated.transforms(
                         transformers = outputTransformers,
                         context = context,
                         model = model,
@@ -260,6 +266,12 @@ class GenerationHandler(
                 contextSummary = contextSummary,
                 temporarySummaries = temporarySummaries
             )
+
+            // 同样处理生成的最终结果
+            if (skipContextForResponse) {
+                messages = messages.map { m -> if (m.role == CoreMessageRole.ASSISTANT) m.copy(skipContext = true) else m }
+            }
+
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
                 context = context,
@@ -343,10 +355,14 @@ class GenerationHandler(
                     )
                 }
             }
+
+            // TOOL 角色的消息也应当带上标记，防止它出现在后续上下文
             messages = messages + UIMessage(
                 role = CoreMessageRole.TOOL,
-                parts = results
+                parts = results,
+                skipContext = skipContextForResponse
             )
+
             emit(
                 GenerationChunk.Messages(
                     messages.transforms(
@@ -614,11 +630,14 @@ class GenerationHandler(
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
         currentTokens += estimateTokens(baseSystemPrompt)
 
+        // 【核心修改点】剔除掉标记为 skipContext 的消息，使其不计入模型上下文
+        val contextCandidates = messages.filter { !it.skipContext }
+
         // 2. Prepare Candidates
         // Apply message history limit if configured
         val historyLimitedMessages = assistant.maxHistoryMessages?.let { limit ->
-            if (limit > 0) messages.limitContext(limit) else messages
-        } ?: messages
+            if (limit > 0) contextCandidates.limitContext(limit) else contextCandidates
+        } ?: contextCandidates
 
         // Prune search results if configured
         val searchPrunedMessages = assistant.maxSearchResultsRetained?.let { maxSearches ->

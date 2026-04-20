@@ -31,7 +31,8 @@ data class UIMessage(
     val usedLorebookEntries: List<UsedLorebookEntry>? = null, // Lorebook entries used in this message
     val usedModes: List<UsedMode>? = null, // Modes used in this message
     val usedMemories: List<UsedMemory>? = null, // Memories used in this message
-    val versionTag: String? = null // Links messages from same generation for multi-node turn versioning
+    val versionTag: String? = null, // Links messages from same generation for multi-node turn versioning
+    val skipContext: Boolean = false // 如果为 true，这条消息在后续对话中不会被作为上下文发送给 AI
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)
@@ -218,14 +219,16 @@ data class UIMessage(
             parts = listOf(UIMessagePart.Text(prompt))
         )
 
-        fun user(prompt: String) = UIMessage(
+        fun user(prompt: String, skipContext: Boolean = false) = UIMessage(
             role = MessageRole.USER,
-            parts = listOf(UIMessagePart.Text(prompt))
+            parts = listOf(UIMessagePart.Text(prompt)),
+            skipContext = skipContext
         )
 
-        fun assistant(prompt: String) = UIMessage(
+        fun assistant(prompt: String, skipContext: Boolean = false) = UIMessage(
             role = MessageRole.ASSISTANT,
-            parts = listOf(UIMessagePart.Text(prompt))
+            parts = listOf(UIMessagePart.Text(prompt)),
+            skipContext = skipContext
         )
     }
 }

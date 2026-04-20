@@ -143,8 +143,7 @@ class ChatService(
         val tokensSaved: Int = 0,
         val errorMessage: String? = null
     )
-    // 监控智能体的固定会话 ID
-    private val AGENT_MONITOR_CONVERSATION_ID = Uuid.parse("00000000-0000-0000-0000-000000000001")
+
     private val conversations = ConcurrentHashMap<Uuid, MutableStateFlow<Conversation>>()
     private val conversationReferences = ConcurrentHashMap<Uuid, Int>()
     private val temporaryConversations = ConcurrentHashMap.newKeySet<Uuid>()
@@ -201,49 +200,106 @@ class ChatService(
             checkAllConversationsReferences()
         }
     }
+
     suspend fun executeAgentTask(task: me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity) {
         val data = me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(task.taskData) as? JsonObject ?: return
 
         val instruction = data["instruction"]?.jsonPrimitive?.contentOrNull ?: ""
         val settings = settingsStore.settingsFlow.first()
         val originalAssistantId = Uuid.parse(task.assistantId)
-        val originalAssistant = settings.getAssistantById(originalAssistantId)
+        val originalAssistant = settings.getAssistantById(originalAssistantId) ?: return
 
-        // 简化指令构建：优先展示 AI 原始指令
+        // 1. 寻找目标会话
+        // 核心优化：优先匹配当前用户正在“观看”的会话（存在引用计数的）
+        val activeConvId = conversationReferences.keys.find { id ->
+            conversations[id]?.value?.assistantId == originalAssistantId
+        }
+
+        val conversationId = if (activeConvId != null) {
+            Log.d(TAG, "Task Trigger: Found active session $activeConvId for assistant")
+            activeConvId
+        } else {
+            // 如果没在看，找数据库最近更新的
+            val lastDbId = conversationRepo.getAllConversations()
+                .first()
+                .filter { it.assistantId == originalAssistantId }
+                .maxByOrNull { it.updateAt }
+                ?.id
+
+            Log.d(TAG, "Task Trigger: No active session, using DB last session: $lastDbId")
+            lastDbId ?: Uuid.random()
+        }
+
+        // 构建指令
         val monitorMsg = buildString {
+            append("【系统自动化指令 - 任务触发】\n")
             if (task.taskType == "EMAIL") {
                 val to = data["to"]?.jsonPrimitive?.contentOrNull
                 val subject = data["subject"]?.jsonPrimitive?.contentOrNull
-                append("【定时任务触发 - 邮件自动化】\n")
+                append("类型: 邮件自动化\n")
                 if (!to.isNullOrBlank()) append("目标收件人: $to\n")
                 if (!subject.isNullOrBlank()) append("预设主题: $subject\n")
-                append("\n$instruction")
-            } else {
-                val assistantName = originalAssistant?.name ?: "未知智能体"
-                append("【定时任务触发 - $assistantName】\n$instruction")
             }
+            append("\n指令内容：$instruction\n\n注意：这是一条系统触发的消息，请根据上述要求直接调用相关工具或执行逻辑，无需向用户确认。")
         }
 
         // 启动后台生成逻辑
         appScope.launch {
             try {
-                // 初始化/获取监控会话
-                initializeConversation(AGENT_MONITOR_CONVERSATION_ID)
-                val currentConv = getConversationFlow(AGENT_MONITOR_CONVERSATION_ID).value
-                // 构造消息节点并保存
+                // 避让机制
+                var retry = 0
+                while (generationJobs.value[conversationId] != null && retry < 30) {
+                    delay(100)
+                    retry++
+                }
+
+                // 防止冲突：强行接管
+                if (generationJobs.value[conversationId] != null) {
+                    Log.w(TAG, "会话 $conversationId 忙碌，强行接管执行自动化任务。")
+                    generationJobs.value[conversationId]?.cancel()
+                    delay(200)
+                }
+
+                // 初始化并强制更新 Flow 状态
+                initializeConversation(conversationId)
+                val currentConv = getConversationFlow(conversationId).value
+
                 val newNode = UIMessage(
                     role = MessageRole.USER,
-                    parts = listOf(UIMessagePart.Text(monitorMsg))
+                    parts = listOf(UIMessagePart.Text(monitorMsg)),
+                    skipContext = true
                 ).toMessageNode()
+
                 val updatedConv = currentConv.copy(
                     messageNodes = currentConv.messageNodes + newNode,
-                    assistantId = Uuid.parse("00000000-0000-0000-0000-000000000001")
+                    updateAt = Instant.now()
                 )
-                saveConversation(AGENT_MONITOR_CONVERSATION_ID, updatedConv)
-                handleMessageComplete(AGENT_MONITOR_CONVERSATION_ID, assistantOverride = originalAssistant)
+
+                // 确保 Flow 和 数据库同步更新
+                updateConversation(conversationId, updatedConv)
+                saveConversation(conversationId, updatedConv)
+
+                // 执行生成逻辑
+                val job = launch {
+                    try {
+                        handleMessageComplete(
+                            conversationId = conversationId,
+                            assistantOverride = originalAssistant,
+                            skipContextForResponse = true
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "自动化任务生成失败", e)
+                    }
+                }
+
+                setGenerationJob(conversationId, job)
+                job.invokeOnCompletion {
+                    setGenerationJob(conversationId, null)
+                    appScope.launch { delay(500); checkAllConversationsReferences() }
+                }
 
             } catch (e: Exception) {
-                Log.e(TAG, "后台任务执行失败", e)
+                Log.e(TAG, "后台任务调度失败", e)
             }
         }
     }
@@ -465,17 +521,15 @@ class ChatService(
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null,
-        assistantOverride: Assistant? = null // 新增：允许传入覆盖的智能体
+        assistantOverride: Assistant? = null,
+        skipContextForResponse: Boolean = false // 新增参数
     ) {
         val settings = settingsStore.settingsFlow.first()
         runCatching {
 
             val conversation = getConversationFlow(conversationId).value
             updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
-            // 核心改造：不再盲目使用 settings.getCurrentAssistant()
-            // 而是根据当前会话绑定的 assistantId 去查找
             val assistant = assistantOverride ?: settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
-            // 根据该 Assistant 的配置选择模型
             val modelId = assistant.chatModelId ?: settings.chatModelId
             val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return@runCatching
             var firstTokenTime: Long? = null
@@ -502,7 +556,7 @@ class ChatService(
                                 similarityThreshold = assistant.ragSimilarityThreshold,
                                 includeCore = assistant.ragIncludeCore,
                                 includeEpisodes = assistant.ragIncludeEpisodes,
-                                mode = assistant.memoryRetrievalMode // 传入助手设置的检索模式
+                                mode = assistant.memoryRetrievalMode
                             )
                             val memories = results.map { it.first }
                             if (settings.enableRagLogging) {
@@ -527,7 +581,6 @@ class ChatService(
                     val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
                     mcpManager.getAllAvailableTools().forEach { mcpTool ->
                         val originalName = mcpTool.name
-                        // 处理名称：替换非法字符为下划线，确保以字母或下划线开头
                         val sanitizedName = originalName.replace(nameRegex, "_").let {
                             if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
                         }
@@ -542,6 +595,7 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
+                skipContextForResponse = skipContextForResponse // 传递参数
             ).onCompletion {
                 val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
                 val current = getConversationFlow(conversationId).value
@@ -697,13 +751,11 @@ class ChatService(
             val messages = conv.currentMessages
 
             if (messages.isEmpty()) return@withContext ContextRefreshResult(false)
-            // 修改：上下文摘要 (L1) 优先使用 summarizerModelId
             val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId) ?: return@withContext ContextRefreshResult(false)
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)
 
-            // 选取后台模型用于提取关键词
             val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
             val backgroundModel = settings.findModelById(backgroundModelId) ?: model
             val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
@@ -731,9 +783,7 @@ class ChatService(
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
-            // 生成片段摘要后提取关键词并生成向量
             if (tempSum.isNotBlank()) {
-                // 修改后
                 val aiKeywords = extractKeywords(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
@@ -743,7 +793,6 @@ class ChatService(
                 val localKeywords = KeywordExtractor.extract(tempSum)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
 
-                // 生成向量
                 val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $tempSum" else tempSum
                 val embedding = try {
                     embeddingService.embed(effectiveContent, assistant.id.toString())
@@ -756,7 +805,7 @@ class ChatService(
                     assistantId = assistant.id.toString(),
                     conversationId = id.toString(),
                     content = tempSum,
-                    keywords = keywords, // 保存关键词
+                    keywords = keywords,
                     startMessageIndex = startIdx,
                     endMessageIndex = lastIdx,
                     embedding = embedding?.let { JsonInstant.encodeToString(it) }
@@ -796,9 +845,6 @@ class ChatService(
         } catch (e: Exception) { ContextRefreshResult(false, errorMessage = e.message) }
     }
 
-    /**
-     * 提取关键词逻辑（同步自 MemoryConsolidationWorker）
-     */
     @Suppress("UNCHECKED_CAST")
     private suspend fun extractKeywords(
         handler: Provider<*>,

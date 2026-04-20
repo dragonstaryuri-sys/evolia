@@ -158,14 +158,6 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 
     // Filter assistants by both search query and tags
     val filteredAssistants = remember(settings.assistants, searchQuery, selectedTagIds) {
-        val monitorId = Uuid.parse("00000000-0000-0000-0000-000000000001")
-        val monitorAssistant = Assistant(
-            id = monitorId,
-            name = "Agent 任务执行监控",
-            systemPrompt = "此智能体用于监控所有后台定时任务的执行轨迹，不支持用户手动发消息。",
-            avatar = Avatar.Dummy
-        )
-
         var result = settings.assistants
 
         // Filter by search query
@@ -180,11 +172,6 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             result = result.filter { assistant ->
                 assistant.tags.containsAll(selectedTagIds)
             }
-        }
-
-        // Always prepend monitor assistant if it matches search
-        if (searchQuery.isBlank() || "Agent 任务执行监控".contains(searchQuery, ignoreCase = true)) {
-            result = listOf(monitorAssistant) + result
         }
 
         result
@@ -295,8 +282,6 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                 state = lazyListState,
             ) {
                 itemsIndexed(filteredAssistants, key = { _, assistant -> assistant.id }) { index, assistant ->
-                    val isMonitor = assistant.id.toString() == "00000000-0000-0000-0000-000000000001"
-
                     val position = when {
                         filteredAssistants.size == 1 -> ItemPosition.ONLY
                         index == 0 -> ItemPosition.FIRST
@@ -336,8 +321,8 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         state = reorderableState,
                         key = assistant.id
                     ) { isDragging ->
-                        // Check if delete is allowed (more than 1 real assistant, or always false for monitor)
-                        val canDelete = !isMonitor && settings.assistants.size > 1
+                        // Check if delete is allowed
+                        val canDelete = settings.assistants.size > 1
 
                         androidx.compose.runtime.key(canDelete) {
                             PhysicsSwipeToDelete(
@@ -377,17 +362,13 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                 memories = memories,
                                 haptics = haptics,
                                 onClick = {
-                                    if (isMonitor) {
-                                        navigateToChatPage(navController, chatId = assistant.id)
-                                    } else {
-                                        navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
-                                    }
+                                    navController.navigate(Screen.AssistantDetail(id = assistant.id.toString()))
                                 },
                                 onCopy = {
-                                    if (!isMonitor) vm.copyAssistant(assistant)
+                                    vm.copyAssistant(assistant)
                                 },
                                 dragHandle = {
-                                    if (!isFiltering && !isMonitor) {
+                                    if (!isFiltering) {
                                         IconButton(
                                             onClick = {},
                                             modifier = Modifier.longPressDraggableHandle(
@@ -535,8 +516,6 @@ private fun AssistantItemContent(
     onCopy: () -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
-    val isMonitor = assistant.id.toString() == "00000000-0000-0000-0000-000000000001"
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -550,30 +529,13 @@ private fun AssistantItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (isMonitor) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(50))
-                    .heroAnimation(key = "assistant_avatar_${assistant.id}"),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Terminal,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        } else {
-            UIAvatar(
-                name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                value = assistant.avatar,
-                modifier = Modifier
-                    .size(40.dp)
-                    .heroAnimation(key = "assistant_avatar_${assistant.id}")
-            )
-        }
+        UIAvatar(
+            name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
+            value = assistant.avatar,
+            modifier = Modifier
+                .size(40.dp)
+                .heroAnimation(key = "assistant_avatar_${assistant.id}")
+        )
 
         Column(
             modifier = Modifier.weight(1f),
@@ -586,16 +548,8 @@ private fun AssistantItemContent(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (isMonitor) {
-                Text(
-                    text = "系统任务监控室",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-            }
-
             // Only show tag row when there are tags or memory
-            val hasContent = !isMonitor && (assistant.enableMemory || assistant.tags.isNotEmpty())
+            val hasContent = assistant.enableMemory || assistant.tags.isNotEmpty()
             if (hasContent) {
                 Spacer(modifier = Modifier.height(8.dp))
                 // Non-interactive tag row with fixed height - fades to card background at right edge
@@ -649,19 +603,17 @@ private fun AssistantItemContent(
             }
         }
 
-        if (!isMonitor) {
-            // Copy button only for real assistants
-            Icon(
-                imageVector = Icons.Rounded.ContentCopy,
-                contentDescription = stringResource(R.string.assistant_page_clone),
-                modifier = Modifier
-                    .onClick {
-                        onCopy()
-                    }
-                    .size(20.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
-            )
-        }
+        // Copy button only for real assistants
+        Icon(
+            imageVector = Icons.Rounded.ContentCopy,
+            contentDescription = stringResource(R.string.assistant_page_clone),
+            modifier = Modifier
+                .onClick {
+                    onCopy()
+                }
+                .size(20.dp),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+        )
 
         dragHandle()
     }
