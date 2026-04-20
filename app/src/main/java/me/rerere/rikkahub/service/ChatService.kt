@@ -205,6 +205,9 @@ class ChatService(
         val data = me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(task.taskData) as? JsonObject ?: return
 
         val instruction = data["instruction"]?.jsonPrimitive?.contentOrNull ?: ""
+        val settings = settingsStore.settingsFlow.first()
+        val originalAssistantId = Uuid.parse(task.assistantId)
+        val originalAssistant = settings.getAssistantById(originalAssistantId)
 
         // 简化指令构建：优先展示 AI 原始指令
         val monitorMsg = buildString {
@@ -216,9 +219,6 @@ class ChatService(
                 if (!subject.isNullOrBlank()) append("预设主题: $subject\n")
                 append("\n$instruction")
             } else {
-                val settings = settingsStore.settingsFlow.first()
-                val originalAssistantId = Uuid.parse(task.assistantId)
-                val originalAssistant = settings.getAssistantById(originalAssistantId)
                 val assistantName = originalAssistant?.name ?: "未知智能体"
                 append("【定时任务触发 - $assistantName】\n$instruction")
             }
@@ -227,10 +227,6 @@ class ChatService(
         // 启动后台生成逻辑
         appScope.launch {
             try {
-                val settings = settingsStore.settingsFlow.first()
-                val originalAssistantId = Uuid.parse(task.assistantId)
-                val originalAssistant = settings.getAssistantById(originalAssistantId)
-
                 // 初始化/获取监控会话
                 initializeConversation(AGENT_MONITOR_CONVERSATION_ID)
                 val currentConv = getConversationFlow(AGENT_MONITOR_CONVERSATION_ID).value
