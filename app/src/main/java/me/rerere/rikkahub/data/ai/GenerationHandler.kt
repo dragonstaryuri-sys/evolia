@@ -264,7 +264,8 @@ class GenerationHandler(
                 stream = assistant.streamOutput,
                 enabledModeIds = enabledModeIds,
                 contextSummary = contextSummary,
-                temporarySummaries = temporarySummaries
+                temporarySummaries = temporarySummaries,
+                includeSkipContextMessages = skipContextForResponse
             )
 
             // 同样处理生成的最终结果
@@ -387,7 +388,8 @@ class GenerationHandler(
         truncateIndex: Int,
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
-        temporarySummaries: List<String> = emptyList()
+        temporarySummaries: List<String> = emptyList(),
+        includeSkipContextMessages: Boolean = false
     ): BuildMessagesResult {
         // Token estimator
         fun estimateTokens(text: String) = text.length / 4
@@ -630,8 +632,14 @@ class GenerationHandler(
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
         currentTokens += estimateTokens(baseSystemPrompt)
 
-        // 【核心修改点】剔除掉标记为 skipContext 的消息，使其不计入模型上下文
-        val contextCandidates = messages.filter { !it.skipContext }
+        // 修改为：
+        val contextCandidates = if (includeSkipContextMessages) {
+            // 【关键】如果是执行自动化任务，包含所有消息（历史记录 + 当前标记为 skip 的系统指令）
+            messages
+        } else {
+            // 如果是用户平常聊天，过滤掉标记为 skipContext 的消息（隐藏历史自动化痕迹）
+            messages.filter { !it.skipContext }
+        }
 
         // 2. Prepare Candidates
         // Apply message history limit if configured
@@ -1111,7 +1119,8 @@ class GenerationHandler(
         stream: Boolean,
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
-        temporarySummaries: List<String> = emptyList()
+        temporarySummaries: List<String> = emptyList(),
+        includeSkipContextMessages: Boolean = false
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1123,7 +1132,8 @@ class GenerationHandler(
             truncateIndex = truncateIndex,
             enabledModeIds = enabledModeIds,
             contextSummary = contextSummary,
-            temporarySummaries = temporarySummaries
+            temporarySummaries = temporarySummaries,
+            includeSkipContextMessages = includeSkipContextMessages
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
         val usedLorebookEntries = buildResult.activatedLorebookEntries

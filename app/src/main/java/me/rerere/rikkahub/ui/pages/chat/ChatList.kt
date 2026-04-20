@@ -298,7 +298,14 @@ private fun SharedTransitionScope.ChatListNormal(
 
         // Group consecutive messages by role into turns
         // Computed fresh on each recomposition to ensure up-to-date data
-        val turnGroups = conversation.messageNodes.groupIntoTurns()
+        val turnGroups = remember(conversation.messageNodes) {
+            conversation.messageNodes
+                .filter { node ->
+                    // 只有当节点内的当前消息不是 skipContext 时才显示
+                    !node.currentMessage.skipContext
+                }
+                .groupIntoTurns()
+        }
 
         // Index helpers for regen visibility
         val lastUserIndex = remember(conversation.messageNodes) {
@@ -636,10 +643,12 @@ private fun SharedTransitionScope.ChatListPreview(
 
     // Filter messages
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
+        val visibleNodes = conversation.messageNodes.filter { !it.currentMessage.skipContext }
         if (searchQuery.isBlank()) {
             conversation.messageNodes
         } else {
-            conversation.messageNodes.filterIndexed { index, node ->
+            // 3. 如果有搜索词，在可见节点中进行原本的搜索过滤
+            visibleNodes.filter { node ->
                 node.currentMessage.toText().contains(searchQuery, ignoreCase = true)
             }
         }
