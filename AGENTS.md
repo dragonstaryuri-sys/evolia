@@ -138,7 +138,28 @@ The payload sent to LLMs follows this strict code-defined order:
 3. **Chat History**: 
     - Recent **L0 Raw Messages** (User, Assistant, and Tool results).
 
-## 6. Testing & Operations
+## 6. Agent Automation (Task Manager)
+
+### 6.1 Overview
+The `agent_task_manager` allows an Assistant to schedule instructions for its "future self". It's an asynchronous task system driven by AI decision-making rather than static scripts.
+
+### 6.2 Core Logic
+- **Strict Creation Constraints**:
+    - For `EMAIL` tasks, the AI must provide `target` (recipient), `subject`, and `instruction` (body/command).
+    - Tasks are persisted in the `agent_tasks` table and scheduled via `WorkManager` with a `CONNECTED` network constraint.
+- **Smart Session Routing**:
+    - When a task triggers, the system automatically detects the most active/relevant conversation for that Assistant.
+    - **Conflict Handling**: If the user is currently chatting in that session, the system waits (3s retry). If still busy, it forcibly cancels the current job and takes over to ensure automation reliability.
+- **System Message Protocol**:
+    - Trigger instructions are sent with a `【System Automation Instruction】` prefix, allowing the AI to execute logic immediately without requiring further user input.
+- **Ephemeral Context (skipContext)**:
+    - **Visibility**: These automated turns are hidden from the UI by filtering messages where `skipContext == true` in `ChatList`.
+    - **Memory Isolation**: Both the system instruction and AI execution response are marked with `skipContext = true`. They are excluded from future context windows in `GenerationHandler`, ensuring the AI "forgets" the automation task during subsequent normal conversations to prevent hallucinations.
+
+### 6.3 Reliability & Monitoring
+- **Heartbeat Guard**: A 30-minute `AlarmManager` heartbeat, combined with `Application.onCreate` checks, ensures overdue tasks are rescheduled after app restarts or network recovery.
+
+## 7. Testing & Operations
 -   **Unit Tests:** Place in `src/test`. Cover parsing and logic.
 -   **Instrumented Tests:** Place in `src/androidTest`. Cover flows.
 -   **Commit Guidelines:** Use Conventional Commits (`feat:`, `fix:`, `chore:`).
