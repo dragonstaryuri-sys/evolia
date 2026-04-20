@@ -280,19 +280,31 @@ class GenerationHandler(
             }
             if (toolCalls.any { it.toolName == "search_web" }) {
                 searchCount++
-                Log.d(TAG, "generateText: 当前搜索次数: $searchCount")
+                Log.d(TAG, "generateText: current search count: $searchCount")
             }
 
-            if (searchCount > 3) {
-                Log.w(TAG, "generateText: 搜索次数达到上限，强制停止以保护上下文空间")
-                // 可以在这里给 messages 手动加一条系统提示，告诉 AI 别再搜了（可选）
-                break
-            }
             val results = arrayListOf<UIMessagePart.ToolResult>()
             toolCalls.forEach { toolCall ->
                 runCatching {
+                    // 搜索次数限制拦截
+                    if (toolCall.toolName == "search_web" && searchCount > 3) {
+                        results += UIMessagePart.ToolResult(
+                            toolName = toolCall.toolName,
+                            toolCallId = toolCall.toolCallId,
+                            content = buildJsonObject {
+                                put("error", JsonPrimitive("已达到搜索次数上限（3次）。如果仍然没有找到相关信息，请直接告知用户在当前搜索中未找到匹配内容。"))
+                            },
+                            arguments = runCatching {
+                                json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
+                            }.getOrElse { kotlinx.serialization.json.JsonObject(emptyMap()) },
+                            metadata = toolCall.metadata
+                        )
+                        return@forEach
+                    }
+
                     val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
                         ?: error("Tool ${toolCall.toolName} not found")
+
                     val args = runCatching {
                         json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
                     }.getOrElse {
