@@ -23,8 +23,6 @@ object UnsupportedFileTransformer : InputMessageTransformer {
 
         if (!isPythonEnabled) return messages
 
-        val modelSupportsImages = ctx.model.inputModalities.contains(Modality.IMAGE)
-
         return messages.map { msg ->
             if (msg.role == me.rerere.ai.core.MessageRole.USER) {
                 msg.copy(parts = msg.parts.map { part ->
@@ -43,16 +41,7 @@ object UnsupportedFileTransformer : InputMessageTransformer {
                                 part
                             }
                         }
-                        is UIMessagePart.Image -> {
-                            // If model doesn't support images BUT Python is enabled,
-                            // convert to text annotation so model can import via Python
-                            if (!modelSupportsImages) {
-                                val filename = part.url.substringAfterLast("/").substringBefore("?").ifEmpty { "image.jpg" }
-                                UIMessagePart.Text("\n[Image attachment: $filename - Available for Python via eval_python.attachments (auto-import) or import_attachment tool. After running, use list_sandbox_files to verify files. URL: ${part.url}]\n")
-                            } else {
-                                part
-                            }
-                        }
+                        // We removed the image-to-python-text conversion here to let OcrTransformer handle it or pass it directly
                         else -> part
                     }
                 })
