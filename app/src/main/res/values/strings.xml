@@ -1422,4 +1422,13 @@
   <string name="rag_include_episodic">Include Episodic Memories</string>
   <string name="rag_limit_title">Max Retrieval Results (Top K)</string>
   <string name="rag_keyword_threshold_title">Match Precision Threshold</string>
+
+  <!-- 异步任务提示 -->
+  <string name="master_memory_update_started">已在后台开始更新记忆档案...</string>
+  <!-- 通知相关 -->
+  <string name="master_memory_update_done">记忆档案维护完成</string>
+  <string name="master_memory_update_success">%s 的记忆档案已成功更新。</string>
+  <string name="master_memory_update_compressed">%s 的记忆档案已更新，且因内容过长执行了压缩优化。</string>
+  <string name="master_memory_update_failed">记忆档案更新失败</string>
+
 </resources>

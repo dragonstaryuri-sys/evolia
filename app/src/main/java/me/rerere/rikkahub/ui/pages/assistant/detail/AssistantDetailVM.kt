@@ -171,6 +171,22 @@ class AssistantDetailVM(
         consolidateEpisodes: Boolean = true,
         updateMaster: Boolean = true
     ) {
+        // 异步处理“更新记忆档案”（L3）
+        // 此时我们不设置 _isConsolidating 为 true，这样就不会弹出阻塞式的对话框
+        if (updateMaster && !consolidateEpisodes) {
+            val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
+                .setInputData(androidx.work.workDataOf(
+                    "ASSISTANT_ID" to assistantId.toString(),
+                    "FORCE_MASTER" to true,
+                    "IS_MANUAL" to true
+                ))
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueue(request)
+            setSnackbarMessage(context.getString(R.string.master_memory_update_started))
+            return
+        }
+
+        // 以下是原有的逻辑，用于处理整合对话按钮（L2）
         if (_isConsolidating.value) return
         consolidationJob = viewModelScope.launch {
             _isConsolidating.value = true

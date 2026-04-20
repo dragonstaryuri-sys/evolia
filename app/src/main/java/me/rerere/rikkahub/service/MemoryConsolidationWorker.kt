@@ -36,6 +36,9 @@ import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.encodeToString
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 
 private const val TAG = "MemoryConsolidation"
 
@@ -68,6 +71,8 @@ class MemoryConsolidationWorker(
     override suspend fun doWork(): Result {
         val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
         val assistantIdString = inputData.getString("ASSISTANT_ID")
+        val forceMaster = inputData.getBoolean("FORCE_MASTER", false)
+        val isManual = inputData.getBoolean("IS_MANUAL", false)
 
         Log.i(TAG, "Starting memory consolidation (Force: $forceConversationId, Assistant: $assistantIdString)")
 
@@ -109,7 +114,7 @@ class MemoryConsolidationWorker(
             }
 
             for (assistant in assistants) {
-                consolidateAssistantMemories(assistant, false)
+                consolidateAssistantMemories(assistant, false, forceMaster, isManual)
             }
 
             return Result.success()
@@ -224,7 +229,12 @@ class MemoryConsolidationWorker(
         }
     }
 
-    private suspend fun consolidateAssistantMemories(assistant: Assistant, isFullScan: Boolean) {
+    private suspend fun consolidateAssistantMemories(
+        assistant: Assistant,
+        isFullScan: Boolean,
+        forceMaster: Boolean = false,
+        isManual: Boolean = false
+    ) {
         val currentSettings = settingsStore.settingsFlow.first()
         val currentAssistant = currentSettings.assistants.find { it.id == assistant.id } ?: assistant
 
@@ -255,86 +265,91 @@ class MemoryConsolidationWorker(
         val memory = resolveModel(currentAssistant.memoryModelId ?: currentSettings.memoryModelId, currentSettings) ?: summarizer
 
         var episodicSuccessCount = 0
-        for (conv in toConsolidateEpisodes) {
-            val convIdString = conv.id.toString()
-            if (!tryLock(convIdString)) {
-                Log.i(TAG, "Conversation $convIdString is already being processed by another worker, skipping.")
-                continue
-            }
-            try {
-                val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(convIdString)
-
-                val summary = generateRollingSummary(
-                    handler = summarizer.handler,
-                    providerSetting = summarizer.provider,
-                    model = summarizer.model,
-                    assistant = currentAssistant,
-                    conv = conv,
-                    existingEpisode = existingEpisode
-                )
-
-                if (summary.isNotBlank()) {
-                    // 1. AI 提取关键词
-                    val aiKeywords = extractKeywords(
-                        handler = background.handler,
-                        providerSetting = background.provider,
-                        model = background.model,
-                        summary = summary
-                    )
-
-                    // 2. 本地提取关键词
-                    val localKeywords = KeywordExtractor.extract(summary)
-
-                    // 3. 合并
-                    val mergedKeywords = mergeKeywords(aiKeywords, localKeywords)
-
-                    // 生成向量（补充逻辑）
-                    val effectiveContent = if (mergedKeywords.isNotBlank()) {
-                        "Keywords: $mergedKeywords\nContent: $summary"
-                    } else {
-                        summary
-                    }
-                    val embeddingResult = try {
-                        embeddingService.embedWithModelId(effectiveContent, currentAssistant.id.toString())
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to generate embedding", e)
-                        null
-                    }
-
-                    val episode = ChatEpisodeEntity(
-                        id = existingEpisode?.id ?: 0,
-                        assistantId = currentAssistant.id.toString(),
-                        conversationId = convIdString,
-                        content = summary,
-                        keywords = mergedKeywords,
-                        embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
-                        embeddingModelId = embeddingResult?.modelId,
-                        startTime = conv.createAt.toEpochMilli(),
-                        endTime = conv.updateAt.toEpochMilli(),
-                        significance = conv.currentMessages.size,
-                        lastAccessedAt = System.currentTimeMillis()
-                    )
-
-                    chatEpisodeDAO.insertEpisode(episode)
-                    conversationRepository.markAsConsolidated(conv.id)
-                    episodicSuccessCount++
+        // 如果不是手动触发 updateMaster，才执行情节记忆整合（保持原有逻辑独立性）
+        if (!forceMaster) {
+            for (conv in toConsolidateEpisodes) {
+                val convIdString = conv.id.toString()
+                if (!tryLock(convIdString)) {
+                    Log.i(TAG, "Conversation $convIdString is already being processed by another worker, skipping.")
+                    continue
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to consolidate conversation ${conv.id} to episode", e)
-            } finally {
-                unlock(convIdString)
+                try {
+                    val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(convIdString)
+
+                    val summary = generateRollingSummary(
+                        handler = summarizer.handler,
+                        providerSetting = summarizer.provider,
+                        model = summarizer.model,
+                        assistant = currentAssistant,
+                        conv = conv,
+                        existingEpisode = existingEpisode
+                    )
+
+                    if (summary.isNotBlank()) {
+                        // 1. AI 提取关键词
+                        val aiKeywords = extractKeywords(
+                            handler = background.handler,
+                            providerSetting = background.provider,
+                            model = background.model,
+                            summary = summary
+                        )
+
+                        // 2. 本地提取关键词
+                        val localKeywords = KeywordExtractor.extract(summary)
+
+                        // 3. 合并
+                        val mergedKeywords = mergeKeywords(aiKeywords, localKeywords)
+
+                        // 生成向量（补充逻辑）
+                        val effectiveContent = if (mergedKeywords.isNotBlank()) {
+                            "Keywords: $mergedKeywords\nContent: $summary"
+                        } else {
+                            summary
+                        }
+                        val embeddingResult = try {
+                            embeddingService.embedWithModelId(effectiveContent, currentAssistant.id.toString())
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to generate embedding", e)
+                            null
+                        }
+
+                        val episode = ChatEpisodeEntity(
+                            id = existingEpisode?.id ?: 0,
+                            assistantId = currentAssistant.id.toString(),
+                            conversationId = convIdString,
+                            content = summary,
+                            keywords = mergedKeywords,
+                            embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                            embeddingModelId = embeddingResult?.modelId,
+                            startTime = conv.createAt.toEpochMilli(),
+                            endTime = conv.updateAt.toEpochMilli(),
+                            significance = conv.currentMessages.size,
+                            lastAccessedAt = System.currentTimeMillis()
+                        )
+
+                        chatEpisodeDAO.insertEpisode(episode)
+                        conversationRepository.markAsConsolidated(conv.id)
+                        episodicSuccessCount++
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to consolidate conversation ${conv.id} to episode", e)
+                } finally {
+                    unlock(convIdString)
+                }
             }
         }
 
         // --- Process Master Memory ---
         var updatedMasterContent: String? = null
-        if (currentAssistant.enableMasterMemory) {
+        var wasCompressed = false
+        if (currentAssistant.enableMasterMemory || forceMaster) {
+            // 如果是手动强制更新，我们包含所有未更新的对话。如果是自动，则只包含自上次更新以来的。
             val newConversations = conversations.filter {
                 val updateTime = it.updateAt.toEpochMilli()
-                updateTime > currentAssistant.lastMasterMemoryUpdate && it.currentMessages.size >= 4
+                (forceMaster || updateTime > currentAssistant.lastMasterMemoryUpdate) && it.currentMessages.size >= 2
             }.sortedBy { it.updateAt }
 
-            if (newConversations.isNotEmpty()) {
+            if (newConversations.isNotEmpty() || forceMaster) {
                 try {
                     val contextParts = mutableListOf<String>()
                     for (conv in newConversations) {
@@ -352,30 +367,35 @@ class MemoryConsolidationWorker(
 
                     val recentContext = contextParts.joinToString("\n\n---\n\n")
 
-                    if (recentContext.isNotBlank()) {
-                        updatedMasterContent = updateMasterMemory(
+                    // 即使没有新上下文，手动触发也应该执行一次更新以确保同步
+                    updatedMasterContent = updateMasterMemory(
+                        handler = memory.handler,
+                        providerSetting = memory.provider,
+                        model = memory.model,
+                        existingArchive = currentAssistant.masterMemoryContent,
+                        newContext = recentContext.ifBlank { "No new recent conversations." },
+                        systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
+                    )
+
+                    // 核心增强：检查是否需要压缩
+                    if (updatedMasterContent.length > 2500) {
+                        Log.i(TAG, "Master Memory is too large (${updatedMasterContent.length} chars), triggering compression.")
+                        updatedMasterContent = compressMasterMemory(
                             handler = memory.handler,
                             providerSetting = memory.provider,
                             model = memory.model,
-                            existingArchive = currentAssistant.masterMemoryContent,
-                            newContext = recentContext,
-                            systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
+                            archiveToCompress = updatedMasterContent
                         )
-
-                        // 核心增强：检查是否需要压缩
-                        // 估算 Token (简单按字符/3计算，或者更保守一些)
-                        if (updatedMasterContent.length > 2500) {
-                            Log.i(TAG, "Master Memory is too large (${updatedMasterContent.length} chars), triggering compression.")
-                            updatedMasterContent = compressMasterMemory(
-                                handler = memory.handler,
-                                providerSetting = memory.provider,
-                                model = memory.model,
-                                archiveToCompress = updatedMasterContent
-                            )
-                        }
+                        wasCompressed = true
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Master Memory", e)
+                    if (isManual) {
+                        sendNotification(
+                            title = applicationContext.getString(R.string.master_memory_update_failed),
+                            content = e.message ?: "Unknown error"
+                        )
+                    }
                 }
             }
         }
@@ -389,10 +409,10 @@ class MemoryConsolidationWorker(
                 if (currentAssistant.id == assistantItem.id) {
                     assistantItem.copy(
                         lastConsolidationTime = now,
-                        lastConsolidationResult = if (episodicSuccessCount > 0) {
-                            "Consolidated $episodicSuccessCount items automatically"
-                        } else {
-                            assistantItem.lastConsolidationResult
+                        lastConsolidationResult = when {
+                            updatedMasterContent != null -> "Master Memory updated manually"
+                            episodicSuccessCount > 0 -> "Consolidated $episodicSuccessCount items automatically"
+                            else -> assistantItem.lastConsolidationResult
                         },
                         masterMemoryContent = updatedMasterContent ?: assistantItem.masterMemoryContent,
                         lastMasterMemoryUpdate = if (updatedMasterContent != null) {
@@ -407,6 +427,19 @@ class MemoryConsolidationWorker(
             }
         )
         settingsStore.update(updatedSettings)
+
+        // 发送通知
+        if (isManual && updatedMasterContent != null) {
+            val content = if (wasCompressed) {
+                applicationContext.getString(R.string.master_memory_update_compressed, currentAssistant.name)
+            } else {
+                applicationContext.getString(R.string.master_memory_update_success, currentAssistant.name)
+            }
+            sendNotification(
+                title = applicationContext.getString(R.string.master_memory_update_done),
+                content = content
+            )
+        }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -608,7 +641,7 @@ class MemoryConsolidationWorker(
         val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.replace("{{locale}}", locale)
 
         val userPrompt = """
-            Memory Archive to Compress (Last Updated: ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:MM"))}):
+            Memory Archive to Compress (Last Updated: ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}):
 
             $archiveToCompress
 
@@ -630,5 +663,22 @@ class MemoryConsolidationWorker(
             )
         )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: archiveToCompress
+    }
+
+    private fun sendNotification(title: String, content: String) {
+        val notificationManager = NotificationManagerCompat.from(applicationContext)
+        val notification = NotificationCompat.Builder(applicationContext, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(content)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Notification permission missing", e)
+        }
     }
 }
