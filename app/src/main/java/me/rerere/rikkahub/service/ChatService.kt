@@ -203,22 +203,34 @@ class ChatService(
     }
     suspend fun executeAgentTask(task: me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity) {
         val data = me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(task.taskData) as? JsonObject ?: return
-        val instruction = data["instruction"]?.jsonPrimitive?.contentOrNull ?: return
 
-        // 获取该任务原本所属的智能体名字
-        val settings = settingsStore.settingsFlow.first()
-        val originalAssistantId = Uuid.parse(task.assistantId)
-        val originalAssistant = settings.getAssistantById(originalAssistantId)
-        val assistantName = originalAssistant?.name ?: "未知智能体"
+        val instruction = data["instruction"]?.jsonPrimitive?.contentOrNull ?: ""
 
-        // 1. 在监控会话中发送一条带标记的消息
-        val monitorMsg = "【定时任务触发 - $assistantName】\n$instruction"
+        // 简化指令构建：优先展示 AI 原始指令
+        val monitorMsg = buildString {
+            if (task.taskType == "EMAIL") {
+                val to = data["to"]?.jsonPrimitive?.contentOrNull
+                val subject = data["subject"]?.jsonPrimitive?.contentOrNull
+                append("【定时任务触发 - 邮件自动化】\n")
+                if (!to.isNullOrBlank()) append("目标收件人: $to\n")
+                if (!subject.isNullOrBlank()) append("预设主题: $subject\n")
+                append("\n$instruction")
+            } else {
+                val settings = settingsStore.settingsFlow.first()
+                val originalAssistantId = Uuid.parse(task.assistantId)
+                val originalAssistant = settings.getAssistantById(originalAssistantId)
+                val assistantName = originalAssistant?.name ?: "未知智能体"
+                append("【定时任务触发 - $assistantName】\n$instruction")
+            }
+        }
 
         // 启动后台生成逻辑
         appScope.launch {
             try {
-                // 这里我们需要模拟 sendMessage 的逻辑，但目标是监控会话
-                // 并且我们要确保使用的是任务原本所属 Assistant 的配置（模型、工具等）
+                val settings = settingsStore.settingsFlow.first()
+                val originalAssistantId = Uuid.parse(task.assistantId)
+                val originalAssistant = settings.getAssistantById(originalAssistantId)
+
                 // 初始化/获取监控会话
                 initializeConversation(AGENT_MONITOR_CONVERSATION_ID)
                 val currentConv = getConversationFlow(AGENT_MONITOR_CONVERSATION_ID).value
@@ -229,8 +241,6 @@ class ChatService(
                 ).toMessageNode()
                 val updatedConv = currentConv.copy(
                     messageNodes = currentConv.messageNodes + newNode,
-                    // 核心：将会话的 assistantId 设为任务原本的 assistantId
-                    // 这样 handleMessageComplete 触发时，就会加载它的人格、记忆和工具
                     assistantId = Uuid.parse("00000000-0000-0000-0000-000000000001")
                 )
                 saveConversation(AGENT_MONITOR_CONVERSATION_ID, updatedConv)

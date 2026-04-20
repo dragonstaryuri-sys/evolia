@@ -120,7 +120,7 @@ class LocalTools(
         }
 
         val preloadedInfo = if (preloadedFiles.isNotEmpty()) {
-            " User attachments are pre-loaded in sandbox as: ${preloadedFiles.joinToString { it }}. Access them with Image.open(\"${'$'}{filename}\")."
+            " User attachments are pre-loaded in sandbox as: ${preloadedFiles.joinToString { it }}. Access them with Image.open(\"${"$"}{filename}\")."
         } else ""
 
         return listOf(
@@ -783,15 +783,19 @@ class LocalTools(
                             })
                             put("repeat_interval", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Optional repeat interval in milliseconds (e.g., 86400000 for daily,604800000 for a week)")
+                                put("description", "Optional repeat interval in milliseconds (e.g., 86400000 for daily, 604800000 for a week)")
                             })
                             put("instruction", buildJsonObject {
                                 put("type", "string")
                                 put("description", "Instruction for your future self. e.g., 'Check if it will rain tomorrow in Tokyo, and if so, send an email to boss@example.com'.")
                             })
-                            put("task_id", buildJsonObject {
-                                put("type", "integer")
-                                put("description", "Required for 'delete'.")
+                            put("target", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Recipient email address (REQUIRED for EMAIL) or notification title (for NOTIFICATION).")
+                            })
+                            put("subject", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Email subject (REQUIRED for EMAIL).")
                             })
                         },
                         required = listOf("action", "task_type")
@@ -820,14 +824,34 @@ class LocalTools(
                                 }
 
                                 val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: 0L
+
+                                val instruction = json["instruction"]?.jsonPrimitive?.contentOrNull
+                                val target = json["target"]?.jsonPrimitive?.contentOrNull
+                                val subject = json["subject"]?.jsonPrimitive?.contentOrNull
+
+                                // 强制校验 EMAIL 任务的必填项
+                                if (finalType == "EMAIL") {
+                                    val missing = mutableListOf<String>()
+                                    if (target.isNullOrBlank()) missing.add("target (recipient email)")
+                                    if (subject.isNullOrBlank()) missing.add("subject")
+                                    if (instruction.isNullOrBlank()) missing.add("instruction (email body/command)")
+
+                                    if (missing.isNotEmpty()) {
+                                        return@Tool buildJsonObject {
+                                            put("success", false)
+                                            put("error", "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}.")
+                                        }
+                                    }
+                                }
+
                                 val taskData = buildJsonObject {
                                     json["task_name"]?.let { put("task_name", it) }
-                                    json["instruction"]?.let { put("instruction", it) }
-                                    json["target"]?.let { target ->
-                                        if (finalType == "EMAIL") put("to", target)
-                                        else if (finalType == "NOTIFICATION") put("title", target)
+                                    instruction?.let { put("instruction", it) }
+                                    target?.let {
+                                        if (finalType == "EMAIL") put("to", it)
+                                        else if (finalType == "NOTIFICATION") put("title", it)
                                     }
-                                    json["subject"]?.let { put("subject", it) }
+                                    subject?.let { put("subject", it) }
                                 }.toString()
 
                                 val entity = AgentTaskEntity(
@@ -838,7 +862,6 @@ class LocalTools(
                                     repeatInterval = repeat
                                 )
                                 val newId = agentTaskRepository.addTask(entity)
-                                // FIX: pass copy with new ID to scheduler
                                 agentTaskScheduler.scheduleTask(entity.copy(id = newId))
 
                                 buildJsonObject { put("success", true); put("task_id", newId) }
@@ -890,20 +913,34 @@ class LocalTools(
                                         buildJsonObject { }
                                     }
 
+                                    val instruction = json["instruction"]?.jsonPrimitive?.contentOrNull ?: oldData["instruction"]?.jsonPrimitive?.contentOrNull
+                                    val target = json["target"]?.jsonPrimitive?.contentOrNull ?: oldData["to"]?.jsonPrimitive?.contentOrNull
+                                    val subject = json["subject"]?.jsonPrimitive?.contentOrNull ?: oldData["subject"]?.jsonPrimitive?.contentOrNull
+
+                                    if (finalType == "EMAIL") {
+                                        val missing = mutableListOf<String>()
+                                        if (target.isNullOrBlank()) missing.add("target (recipient email)")
+                                        if (subject.isNullOrBlank()) missing.add("subject")
+                                        if (instruction.isNullOrBlank()) missing.add("instruction")
+
+                                        if (missing.isNotEmpty()) {
+                                            return@Tool buildJsonObject {
+                                                put("success", false)
+                                                put("error", "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}.")
+                                            }
+                                        }
+                                    }
+
                                     val taskData = buildJsonObject {
                                         put("task_name", json["task_name"] ?: oldData["task_name"] ?: JsonPrimitive(""))
-                                        put("instruction", json["instruction"] ?: oldData["instruction"] ?: JsonPrimitive(""))
+                                        put("instruction", JsonPrimitive(instruction ?: ""))
 
-                                        val target = json["target"]?.jsonPrimitive?.contentOrNull
                                         if (target != null) {
-                                            if (finalType == "EMAIL") put("to", target)
-                                            else if (finalType == "NOTIFICATION") put("title", target)
-                                        } else {
-                                            if (task.taskType == "EMAIL") put("to", oldData["to"] ?: JsonPrimitive(""))
-                                            else if (task.taskType == "NOTIFICATION") put("title", oldData["title"] ?: JsonPrimitive(""))
+                                            if (finalType == "EMAIL") put("to", JsonPrimitive(target))
+                                            else if (finalType == "NOTIFICATION") put("title", JsonPrimitive(target))
                                         }
 
-                                        put("subject", json["subject"] ?: oldData["subject"] ?: JsonPrimitive(""))
+                                        put("subject", JsonPrimitive(subject ?: ""))
                                     }.toString()
 
                                     val updatedTask = task.copy(taskType = finalType, taskData = taskData, scheduledTime = time, repeatInterval = repeat, isExecuted = false)

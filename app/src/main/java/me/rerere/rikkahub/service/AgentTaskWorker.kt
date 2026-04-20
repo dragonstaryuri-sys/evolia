@@ -70,8 +70,8 @@ class AgentTaskWorker(
             }
 
             val success = when (task.taskType) {
-                "AGENT_TASK" -> {
-                    Log.d(TAG, "Running AGENT_TASK via ChatService")
+                "AGENT_TASK", "EMAIL" -> {
+                    Log.d(TAG, "Running ${task.taskType} via ChatService (Instruction Triggered)")
                     chatService.executeAgentTask(task)
                     true
                 }
@@ -81,13 +81,6 @@ class AgentTaskWorker(
                     Log.d(TAG, "Sending notification: $title")
                     sendNotification(title, content)
                     true
-                }
-                "EMAIL" -> {
-                    val to = data["to"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val subject = data["subject"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = data["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                    Log.d(TAG, "Sending email to: $to")
-                    sendEmail(to, subject, content)
                 }
                 "DIARY" -> {
                     val content = data["content"]?.jsonPrimitive?.contentOrNull ?: ""
@@ -130,7 +123,6 @@ class AgentTaskWorker(
                 Result.success()
             } else {
                 Log.w(TAG, "Task execution failed (success=false), worker will NOT retry to avoid loops if type is unknown")
-                // 如果是类型未知导致的失败，不要重试，直接标记为失败或结束，避免死循环
                 Result.failure()
             }
         } catch (e: Exception) {
@@ -161,43 +153,4 @@ class AgentTaskWorker(
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
-    private fun sendEmail(to: String, subject: String, content: String): Boolean {
-        val settings = settingsStore.settingsFlow.value
-        val emailAccount = settings.emailConfig.account
-        val authCode = secretKeyManager.getEmailPassword("")
-
-        if (!settings.emailConfig.enabled || emailAccount.isBlank() || authCode.isBlank()) {
-            Log.w(TAG, "Email not sent: Email service is disabled or not configured.")
-            return false
-        }
-
-        return try {
-            val props = Properties().apply {
-                put("mail.smtp.host", "smtp.qq.com")
-                put("mail.smtp.port", "465")
-                put("mail.smtp.auth", "true")
-                put("mail.smtp.ssl.enable", "true")
-                put("mail.smtp.socketFactory.class", "javax.net.ssl.SSLSocketFactory")
-            }
-
-            val session = Session.getInstance(props, object : Authenticator() {
-                override fun getPasswordAuthentication(): PasswordAuthentication {
-                    return PasswordAuthentication(emailAccount, authCode)
-                }
-            })
-
-            val message = MimeMessage(session).apply {
-                setFrom(InternetAddress(emailAccount))
-                setRecipients(Message.RecipientType.TO, InternetAddress.parse(to))
-                setSubject(subject)
-                setText(content)
-            }
-
-            Transport.send(message)
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to send email", e)
-            false
-        }
-    }
 }
