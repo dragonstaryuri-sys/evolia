@@ -19,6 +19,7 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -27,6 +28,8 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
@@ -339,8 +342,9 @@ class MemoryConsolidationWorker(
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
+                            // 此处修改：使用 toContentText() 排除推理过程
                             val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
-                                "${it.role}: ${it.toText().take(1000)}"
+                                "${it.role}: ${it.toContentText().take(1000)}"
                             }
                             contextParts.add("Recent Messages:\n$messagesText")
                         }
@@ -357,6 +361,18 @@ class MemoryConsolidationWorker(
                             newContext = recentContext,
                             systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
                         )
+
+                        // 核心增强：检查是否需要压缩
+                        // 估算 Token (简单按字符/3计算，或者更保守一些)
+                        if (updatedMasterContent.length > 2500) {
+                            Log.i(TAG, "Master Memory is too large (${updatedMasterContent.length} chars), triggering compression.")
+                            updatedMasterContent = compressMasterMemory(
+                                handler = memory.handler,
+                                providerSetting = memory.provider,
+                                model = memory.model,
+                                archiveToCompress = updatedMasterContent
+                            )
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Master Memory", e)
@@ -470,8 +486,9 @@ class MemoryConsolidationWorker(
         messages: List<UIMessage>,
         temporarySummaries: List<String> = emptyList()
     ): String {
+        // 此处修改：使用 toContentText() 排除推理过程
         val messagesText = messages.takeLast(100).joinToString("\n") {
-            "${it.role}: ${it.toText().take(5000)}"
+            "${it.role}: ${it.toContentText().take(5000)}"
         }
 
         val detailText = if (temporarySummaries.isNotEmpty()) {
@@ -559,6 +576,7 @@ class MemoryConsolidationWorker(
             $newContext
 
             Please provide the fully updated Memory Archive incorporating all relevant new information.
+            Note: Only provide the final archive content. Do not include your thinking process in the output.
         """.trimIndent()
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
@@ -572,9 +590,45 @@ class MemoryConsolidationWorker(
                 model = model,
                 temperature = 0.2f,
                 topP = 0f,
-                maxTokens = 2048
+                maxTokens = 4096
             )
         )
+        // 关键：只提取 Text 部分，排除 Reasoning
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private suspend fun compressMasterMemory(
+        handler: me.rerere.ai.provider.Provider<*>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        archiveToCompress: String
+    ): String {
+        val locale = Locale.getDefault().displayName
+        val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.replace("{{locale}}", locale)
+
+        val userPrompt = """
+            Memory Archive to Compress (Last Updated: ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:MM"))}):
+
+            $archiveToCompress
+
+            Please compress this archive according to the rules provided in the system prompt.
+        """.trimIndent()
+
+        val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+        val resp = h.generateText(
+            providerSetting = providerSetting,
+            messages = listOf(
+                UIMessage.system(sysPrompt),
+                UIMessage.user(userPrompt)
+            ),
+            params = TextGenerationParams(
+                model = model,
+                temperature = 0.2f,
+                topP = 0f,
+                maxTokens = 4096
+            )
+        )
+        return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: archiveToCompress
     }
 }

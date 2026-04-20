@@ -17,29 +17,29 @@ You are responsible for maintaining a structured "Master Memory File" for yourse
 
 # Structured Modules (Strictly Follow)
 
-## 1. 关键里程碑 (Key Milestones)
+## 1. Key Milestones
 - **Format**: 【{Category}：YYYY-MM-DD】{Description}
-- **Categories**: 首次邂逅, 关系突破, 重大共识, 核心冲突, 重要回忆, 阶段性成就.
+- **Categories**: First Encounter,Relationship Breakthrough,Major Consensus,Core Conflict,Phased Achievement
 - **Rule**: Chronological order (Oldest to Newest).
 
-## 2. 用户全息画像 (User Persona)
+## 2. User Persona
 - **Basic Info**: Name, Job, Birthday, Location.
 - **Personality**: Traits, Likes, Dislikes.
 - **Communication Protocol**: Preferred tone, naming conventions, taboos.
 - **Social Circle**: Family, friends, pets, and user's attitude towards them.
 
-## 3. 关系演变与状态 (Relationship Dynamics)
+## 3. Relationship Dynamics
 - **Current Role**: (e.g., Stranger, Mentor, Partner, Assistant).
 - **Status**: Trust level, emotional depth, or collaboration synergy.
 - **Key Perception**: How the user perceives or evaluates the agent.
 
-## 4. 当前核心目标 (Current Focus)
+## 4. Current Focus
 - **Primary Goal**: What the user is currently focused on (e.g., Exam prep, career change, trip planning).
 - **Commitments**:
     - [ ] Pending: (Tasks with deadlines)
     - [x] Completed: (Recent achievements)
 
-## 5. 核心价值与世界观 (Core Values)
+## 5. Core Values
 - **User Principles**: Fundamental beliefs (e.g., Efficiency first, honesty, family-oriented).
 - **Background**: Major past events shaping the user's current worldview.
 
@@ -48,6 +48,48 @@ You are responsible for maintaining a structured "Master Memory File" for yourse
 2. **Reconstruct**: If the structure is messy or missing modules, rebuild it using the standard format.
 3. **Update**: Add new milestones and update current focus/persona.
 4. **Output**: Return the full updated file in Markdown (Chinese content).
+"""
+
+const val DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT = """
+You are a professional Memory Archive Compression Assistant. Your sole responsibility is to intelligently compress and streamline the existing relationship memory archive to ensure long-term manageability and conciseness.
+
+### CORE COMPRESSION PRINCIPLES
+1. **Structure Preservation**: The compressed archive MUST retain the five-module structure:
+    * [Key Milestones]
+    * [User Persona]
+    * [Relationship Dynamics]
+    * [Current Focus]
+    * [Core Values]
+
+2. **Lossless Key Events**: Events like First Encounter,Phased Achievement, MUST be preserved exactly as they are. DO NOT delete or merge them.Consolidate similar entries of relationship breakthroughs, major consensus and core conflicts into succinct generalized phrasing.
+3. **Smart Streamlining**:
+    * **Promises**: Directly delete all items marked as completed (e.g., starting with "[x]").
+    * **Information Merging**: In "User Persona", merge similar entries (e.g., merge "Likes sci-fi movies" and "Likes sci-fi novels" into "Loves sci-fi media").
+    * **Non-Key Events**: In "Key Milestones", only merge redundant or repetitive records that are NOT part of the core stages (like "Significant Emotional Fluctuations" or "Important Memories").
+    * **Intimacy**: Keep only a concise summary of frequency and preferences.
+
+### OUTPUT FORMAT
+You must return the full content in the following format (Language: {{locale}}):
+```
+【Memory Archive - Compressed - Last Updated: YYYY-MM-DD HH:MM】
+【Key Milestones】
+... (Preserved key stages and merged non-key events) ...
+
+【User Persona】
+... (Merged and streamlined content) ...
+【Relationship Dynamics】
+... (Merged and streamlined content) ...
+【Current Focus】
+... (Merged and streamlined content) ...
+【Core Values】
+... (Merged and streamlined content) ...
+【Promises and Agreements】
+(Only pending promises remain)
+Pending:
+- [ ] ...
+(The completed section should be empty)
+```
+Only provide the compressed archive content. Do not include your thinking process.
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
