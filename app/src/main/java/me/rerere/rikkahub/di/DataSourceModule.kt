@@ -11,7 +11,7 @@ import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
-import me.rerere.rikkahub.data.api.LastChatAPI
+import me.rerere.rikkahub.data.api.EvoliaAPI
 import me.rerere.rikkahub.data.api.SponsorAPI
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.QuickSettingsCache
@@ -48,6 +48,7 @@ val dataSourceModule = module {
     }
 
     single {
+        // 修正：改回原来的数据库名称 "rikka_hub"，确保老用户升级后数据不丢失
         Room.databaseBuilder(get(), AppDatabase::class.java, "rikka_hub")
             .addMigrations(Migration_6_7, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_14_16, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27)
             .build()
@@ -136,7 +137,8 @@ val dataSourceModule = module {
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
                     .addHeader(HttpHeaders.AcceptLanguage, acceptLang)
-                    .addHeader(HttpHeaders.UserAgent, "LastChat-Android/${BuildConfig.VERSION_NAME}")
+                    // 修改 User-Agent 为新品牌名
+                    .addHeader(HttpHeaders.UserAgent, "Evolia-Android/${BuildConfig.VERSION_NAME}")
                     .build()
                 chain.proceed(request)
             }
@@ -161,12 +163,13 @@ val dataSourceModule = module {
 
     single<Retrofit> {
         Retrofit.Builder()
+            // 修正：改回原来的服务器地址，除非你已经迁移了后端
             .baseUrl("https://api.rikka-ai.com")
             .addConverterFactory(get<Json>().asConverterFactory("application/json; charset=UTF8".toMediaType()))
             .build()
     }
 
-    single<LastChatAPI> {
-        get<Retrofit>().create(LastChatAPI::class.java)
+    single<EvoliaAPI> {
+        get<Retrofit>().create(EvoliaAPI::class.java)
     }
 }

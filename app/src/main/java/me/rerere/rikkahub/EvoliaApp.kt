@@ -48,19 +48,19 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-private const val TAG = "LastChatApp"
+private const val TAG = "EvoliaApp"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val BACKUP_NOTIFICATION_CHANNEL_ID = "backup_status"
 
-class LastChatApp : Application() {
+class EvoliaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Application onCreate started!")
 
         startKoin {
             androidLogger()
-            androidContext(this@LastChatApp)
+            androidContext(this@EvoliaApp)
             workManagerFactory()
             modules(appModule, viewModelModule, dataSourceModule, repositoryModule, discoverModule)
         }
@@ -126,7 +126,7 @@ class LastChatApp : Application() {
                         }
                         .build()
 
-                    WorkManager.getInstance(this@LastChatApp).enqueueUniquePeriodicWork(
+                    WorkManager.getInstance(this@EvoliaApp).enqueueUniquePeriodicWork(
                         "memory_consolidation",
                         ExistingPeriodicWorkPolicy.UPDATE,
                         PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
@@ -172,7 +172,7 @@ class LastChatApp : Application() {
                 val today = LocalDate.now()
 
                 if (lastBackupDate.isBefore(today)) {
-                    WorkManager.getInstance(this@LastChatApp).enqueueUniqueWork(
+                    WorkManager.getInstance(this@EvoliaApp).enqueueUniqueWork(
                         "auto_backup_on_start",
                         ExistingWorkPolicy.REPLACE,
                         OneTimeWorkRequestBuilder<BackupWorker>()

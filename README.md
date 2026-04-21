@@ -1,37 +1,57 @@
-wq# dreamland_lc
+# Evolia
 
-#### 介绍
-基于lastchat二开的ai陪伴项目
+**“我们并不是生来完整，而是在与世界的碰撞中，不断进化成更好的自己。”**
 
-#### 软件架构
-软件架构说明
+Evolia（意为：进化的乐土）是一款专注于“个人成长”与“心灵契合”的 AI 伴侣。它基于 [LastChat](https://github.com/RikkaHub/LastChat) 二次开发，致力于通过深度记忆、情感共鸣与自动化能力，成为你数字生命中共同进化的另一半。
 
+## 🌟 核心愿景：进化的种子与岛屿
+Evolia 不仅仅是一个对话框，它是为你提供养分、阳光与守望的岛屿：
+- **深度理解**：通过 L0-L3 分层记忆系统，记录你的情绪、习惯与梦想。
+- **成长共鸣**：不再是机械问答，而是带有情感温度的深度交流。
+- **指尖解压**：秉持“Fidget Toy”设计理念，提供极致的触觉反馈与灵动交互。
 
-#### 安装教程
+## 🧠 核心功能
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### 1. 深度进化记忆系统 (L0-L3)
+- **L0-L1 (即时与摘要)**：捕捉当下的对话脉络，自动生成语境片段。
+*   **L2 (情景复盘)**：通过对话自动生成你的成长轨迹，让你在复盘中看见自己的进步。
+*   **L3 (主记忆/个人画像)**：跨越会话的终极记忆，比你更早察觉到你的成长。
 
-#### 使用说明
+### 2. 智能代理与任务编排 (Agent Automation)
+- **未来指令**：AI 可以为“未来的自己”安排任务（如定时提醒、邮件发送）。
+- **后台自动执行**：基于 WorkManager 的可靠任务调度。
+- **无感上下文切换**：自动化任务在后台默默运行，不干扰当前对话流。
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### 3. 多模态与多引擎支持
+- **AI 抽象层**：无缝对接 OpenAI, Anthropic, Google Gemini 等主流模型。
+- **深度搜索**：集成 Exa, Tavily, 智谱等搜索接口，为 AI 扩展知识边界。
+- **多媒体处理**：支持图片识别、文档分析及 TTS (语音合成)。
 
-#### 参与贡献
+## 🛠️ 技术栈
+- **核心语言**：Kotlin (利用最新的 UUID 等实验性特性)
+- **UI 框架**：Jetpack Compose (遵循 Material You 3 极简美学)
+- **依赖注入**：Koin
+- **本地存储**：Room Database
+- **网络层**：OkHttp + SSE (流式传输)
+- **序列化**：Kotlinx Serialization
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+## 📂 模块结构
+- `:app` - 主应用模块，包含 UI、核心业务逻辑及 DI 配置。
+- `:ai` - AI 服务抽象层。
+- `:core-data` - 数据库实体、DAO 及数据流管理。
+- `:tts` - 文本转语音实现。
+- `:search` - 外部搜索插件集成。
+- `:highlight` - 代码/语法高亮支持。
+- `:common` - 通用工具类与扩展。
+- `:discover` - 发现页与社区功能相关。
 
+## 🚀 开启旅程
+1. 克隆本仓库。
+2. 在 Android Studio (推荐 Ladybug 或更新版本) 中打开。
+3. 同步 Gradle 并运行 `:app` 模块。
 
-#### 特技
+## 🤝 贡献
+欢迎提交 Issue 或 Pull Request 来共同完善这个项目！
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+---
+*“你不是在下载一个工具，而是在开启一段旅程。”*

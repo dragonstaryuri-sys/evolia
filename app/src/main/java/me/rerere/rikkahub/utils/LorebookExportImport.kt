@@ -41,19 +41,19 @@ data class LorebookEntryExport(
 )
 
 /**
- * LastChat export format with embedded attachments.
+ * Evolia export format with embedded attachments.
  */
 @Serializable
 data class LorebookExportV2(
     val version: Int = 2,
-    val format: String = "lastchat",
+    val format: String = "evolia",
     val lorebook: Lorebook,
     val entryAttachments: Map<String, List<EmbeddedAttachment>> = emptyMap()  // entry id -> attachments
 )
 
 /**
  * Utility for importing and exporting lorebooks.
- * Supports LastChat format, Tavern CharacterBook format, and SillyTavern World Info format.
+ * Supports Evolia/LastChat format, Tavern CharacterBook format, and SillyTavern World Info format.
  */
 object LorebookExportImport {
 
@@ -64,9 +64,9 @@ object LorebookExportImport {
     }
 
     /**
-     * Export a lorebook to LastChat JSON format with embedded attachments.
+     * Export a lorebook to Evolia JSON format with embedded attachments.
      */
-    fun exportToLastChatFormat(lorebook: Lorebook, context: Context? = null): String {
+    fun exportToEvoliaFormat(lorebook: Lorebook, context: Context? = null): String {
         // If context is provided, embed attachments as base64
         val entryAttachments = if (context != null) {
             lorebook.entries.associate { entry ->
@@ -82,7 +82,7 @@ object LorebookExportImport {
             // Use V2 format with embedded attachments
             val export = LorebookExportV2(
                 version = 2,
-                format = "lastchat",
+                format = "evolia",
                 lorebook = lorebook,
                 entryAttachments = entryAttachments
             )
@@ -92,7 +92,7 @@ object LorebookExportImport {
         // Fallback to V1 format (no attachments or no context)
         val export = LorebookExport(
             version = 1,
-            format = "lastchat",
+            format = "evolia",
             lorebook = lorebook
         )
         return json.encodeToString(LorebookExport.serializer(), export)
@@ -154,20 +154,20 @@ object LorebookExportImport {
 
     /**
      * Import a lorebook from a JSON string.
-     * Auto-detects format (LastChat V1/V2, Tavern, or SillyTavern).
+     * Auto-detects format (Evolia V2, LastChat V1/V2, Tavern, or SillyTavern).
      */
     fun importFromJson(jsonString: String, context: Context? = null): ImportResult {
         return try {
-            // Try LastChat V2 format first (with embedded attachments)
+            // Try Evolia/LastChat V2 format first (with embedded attachments)
             try {
                 val export = json.decodeFromString(LorebookExportV2.serializer(), jsonString)
-                if (export.format == "lastchat" && export.version >= 2) {
+                if ((export.format == "evolia" || export.format == "lastchat") && export.version >= 2) {
                     val lorebook = if (context != null && export.entryAttachments.isNotEmpty()) {
                         restoreAttachments(context, export.lorebook, export.entryAttachments)
                     } else {
                         export.lorebook
                     }
-                    return ImportResult.Success(lorebook, "lastchat")
+                    return ImportResult.Success(lorebook, export.format)
                 }
             } catch (e: Exception) {
                 // Not V2 format
@@ -176,9 +176,9 @@ object LorebookExportImport {
             // Try LastChat V1 format
             try {
                 val export = json.decodeFromString(LorebookExport.serializer(), jsonString)
-                return ImportResult.Success(export.lorebook, "lastchat")
+                return ImportResult.Success(export.lorebook, "evolia")
             } catch (e: Exception) {
-                // Not LastChat format, try others
+                // Not format
             }
 
             // Try SillyTavern World Info format (entries is an object/map)
@@ -290,7 +290,7 @@ object LorebookExportImport {
     /**
      * Get file name suggestion based on lorebook name.
      */
-    fun getSuggestedFileName(lorebook: Lorebook, format: String = "lastchat"): String {
+    fun getSuggestedFileName(lorebook: Lorebook, format: String = "evolia"): String {
         val baseName = lorebook.name.ifEmpty { "lorebook" }
             .replace(Regex("[^a-zA-Z0-9_-]"), "_")
             .take(50)

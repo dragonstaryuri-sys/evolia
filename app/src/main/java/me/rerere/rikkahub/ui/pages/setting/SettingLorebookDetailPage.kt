@@ -221,10 +221,10 @@ fun SettingLorebookDetailPage(
 
     fun exportLorebook(format: String) {
         val content = when (format) {
-            "lastchat" -> LorebookExportImport.exportToLastChatFormat(lorebook, context)
+            "evolia" -> LorebookExportImport.exportToEvoliaFormat(lorebook, context)
             "tavern" -> LorebookExportImport.exportToTavernFormat(lorebook)
             "sillytavern" -> LorebookExportImport.exportToSillyTavernFormat(lorebook)
-            else -> LorebookExportImport.exportToLastChatFormat(lorebook, context)
+            else -> LorebookExportImport.exportToEvoliaFormat(lorebook, context)
         }
         pendingExportContent = content
         pendingExportFormat = format
@@ -273,7 +273,7 @@ fun SettingLorebookDetailPage(
                                 text = { Text(stringResource(R.string.export_format_lastchat)) },
                                 onClick = {
                                     showExportMenu = false
-                                    exportLorebook("lastchat")
+                                    exportLorebook("evolia")
                                 }
                             )
                             DropdownMenuItem(

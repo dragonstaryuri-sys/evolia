@@ -16,15 +16,15 @@ class ShortcutHandlerActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         Log.d(TAG, "onCreate called")
         Log.d(TAG, "Intent: $intent")
         Log.d(TAG, "Intent action: ${intent?.action}")
         Log.d(TAG, "Intent data: ${intent?.data}")
-        
+
         // Handle assistant shortcut
         val data = intent?.data
-        if (data?.scheme == "lastchat" && data.host == "assistant") {
+        if (data?.scheme == "evolia" && data.host == "assistant") {
             val assistantId = data.pathSegments.firstOrNull()
             Log.d(TAG, "Parsed assistantId: $assistantId")
             if (!assistantId.isNullOrBlank()) {
@@ -40,7 +40,7 @@ class ShortcutHandlerActivity : ComponentActivity() {
         } else {
             Log.w(TAG, "Unexpected URI scheme: ${data?.scheme}, host: ${data?.host}")
         }
-        
+
         // Always finish this activity
         Log.d(TAG, "Finishing activity")
         finish()

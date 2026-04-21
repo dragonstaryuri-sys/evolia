@@ -27,7 +27,7 @@
     android:required="false" />
 
   <application
-        android:name=".LastChatApp"
+        android:name=".EvoliaApp"
     android:allowBackup="true"
     android:appCategory="productivity"
     android:dataExtractionRules="@xml/data_extraction_rules"
@@ -80,11 +80,11 @@
         <intent-filter>
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.DEFAULT" />
-            <data android:scheme="lastchat" android:host="assistant" />
+            <data android:scheme="evolia" android:host="assistant" />
         </intent-filter>
     </activity>
 
-    <!-- Text Selection Integration - "Ask LastChat" in system text selection menu -->
+    <!-- Text Selection Integration - "Ask Evolia" in system text selection menu -->
     <activity
         android:name=".ui.activity.TextSelectionActivity"
         android:exported="true"

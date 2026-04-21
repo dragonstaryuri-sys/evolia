@@ -74,7 +74,7 @@ data class Lorebook(
 @Serializable
 data class LorebookExport(
     val version: Int = 1,
-    val format: String = "lastchat",
+    val format: String = "evolia",
     val lorebook: Lorebook
 )
 

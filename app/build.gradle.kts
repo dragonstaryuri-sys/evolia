@@ -19,8 +19,10 @@ plugins {
 android {
     namespace = "me.rerere.rikkahub"
     compileSdk = 36
+    val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
 
     defaultConfig {
+        // 保持包名不变，确保老用户可以覆盖升级
         applicationId = "ailand.lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
@@ -33,13 +35,11 @@ android {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
-        // 注入清单占位符，强制安装时解压原生库以兼容 16 KB 页面
         manifestPlaceholders["extractNativeLibs"] = "true"
     }
 
     packaging {
         jniLibs {
-            // 设置为 true 配合 extractNativeLibs=true，确保 .so 文件被解压到磁盘
             useLegacyPackaging = true
         }
         resources {
@@ -50,7 +50,6 @@ android {
             excludes += "META-INF/LICENSE"
             excludes += "META-INF/DEPENDENCIES"
 
-            // JavaMail needs these
             merges += "META-INF/mailcap"
             merges += "META-INF/javamail.providers"
             merges += "META-INF/javamail.default.providers"
@@ -61,9 +60,7 @@ android {
 
     splits {
         abi {
-            // AppBundle tasks usually contain "bundle" in their name
-            //noinspection WrongGradleMethod
-            val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
+
             isEnable = !isBuildingBundle
             reset()
             include("arm64-v8a", "x86_64")
@@ -98,7 +95,6 @@ android {
 
     buildTypes {
         release {
-            // Use release signing if configured, otherwise fall back to debug signing
             val releaseSigningConfig = signingConfigs.findByName("release")
             if (releaseSigningConfig?.storeFile != null && releaseSigningConfig.storeFile?.exists() == true) {
                 signingConfig = releaseSigningConfig
@@ -149,7 +145,7 @@ android {
             this as com.android.build.gradle.internal.api.ApkVariantOutputImpl
 
             val variantName = name
-            val apkName = "lastchat_" + defaultConfig.versionName + "_" + variantName + ".apk"
+            val apkName = "evolia_" + defaultConfig.versionName + "_" + variantName + ".apk"
 
             outputFileName = apkName
         }
@@ -187,8 +183,6 @@ chaquopy {
     defaultConfig {
         version = "3.11"
 
-        // Allow local/CI environments to override Python discovery instead of relying
-        // on a machine-specific Windows path.
         val configuredBuildPython = providers.gradleProperty("chaquopy.buildPython").orNull
             ?: System.getenv("CHAQUOPY_BUILD_PYTHON")
             ?: System.getenv("PYTHON")
@@ -198,21 +192,14 @@ chaquopy {
         }
 
         pip {
-            // Core data science
             install("numpy")
             install("pandas")
-
-            // Visualization
             install("matplotlib")
             install("Pillow")
-
-            // Documents & Office files
-            install("openpyxl")      // Excel files
-            install("python-pptx")   // PowerPoint presentations
-            install("pypdf")         // PDF manipulation
-            install("python-docx")   // Word documents
-
-            // Utilities
+            install("openpyxl")
+            install("python-pptx")
+            install("pypdf")
+            install("python-docx")
             install("requests")
         }
     }
@@ -226,7 +213,6 @@ dependencies {
     implementation(libs.androidx.browser)
     implementation(libs.androidx.profileinstaller)
 
-    // Compose
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -237,14 +223,7 @@ dependencies {
     implementation(libs.androidx.material3.adaptive)
     implementation(libs.androidx.material3.adaptive.layout)
 
-    // Navigation 2
     implementation(libs.androidx.navigation2)
-
-    // Navigation 3
-//    implementation(libs.androidx.navigation3.runtime)
-//    implementation(libs.androidx.navigation3.ui)
-//    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
-//    implementation(libs.androidx.material3.adaptive.navigation3)
 
     // Firebase (Analytics removed for privacy - only crash reporting and remote config)
     implementation(platform(libs.firebase.bom))
@@ -281,7 +260,6 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
-
 
     // pebble (template engine)
     implementation(libs.pebble)

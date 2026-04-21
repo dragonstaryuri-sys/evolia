@@ -8,7 +8,7 @@
 <string name="about_page_version">版本</string>
 <string name="about_page_website">官网</string>
 <string name="add">添加</string>
-<string name="app_name">LastChat</string>
+<string name="app_name">Evolia</string>
 <string name="assistant_importer_import_failed">导入失败</string>
   <string name="assistant_importer_import_character">导入角色卡</string>
   <string name="assistant_importer_import_tavern_json">导入酒馆角色卡 (JSON)</string>
@@ -477,7 +477,7 @@
 <string name="setting_page_search_title">搜索服务</string>
 <string name="setting_page_share">分享</string>
 <string name="setting_page_share_desc">分享本APP给朋友</string>
-<string name="setting_page_share_text">LastChat - 开源安卓AI助手\n\n官网: https://rikka-ai.com/</string>
+<string name="setting_page_share_text">Evolia - 开源安卓AI助手\n\n官网: https://rikka-ai.com/</string>
 <string name="setting_page_theme_setting">主题设置</string>
 <string name="setting_page_theme_type_high_contrast">高对比</string>
 <string name="setting_page_theme_type_medium_contrast">中对比</string>
