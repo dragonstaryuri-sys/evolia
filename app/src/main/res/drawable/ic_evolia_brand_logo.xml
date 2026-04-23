@@ -1,0 +1,51 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="1024dp"
+    android:height="1024dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+
+    <!-- 背景装饰：参考 evolia_green 的温暖底色 -->
+    <path
+        android:pathData="M512,512m-448,0a448,448 0,1 1,896 0a448,448 0,1 1,-896 0"
+        android:fillAlpha="0.15"
+        android:fillColor="#F5EDE0"/>
+
+    <!-- Evolia 核心图标：进化的螺旋 E -->
+    <group
+        android:pivotX="512"
+        android:pivotY="512">
+
+        <!-- 主体路径：参考 evolia_green 的双绿渐变 -->
+        <path
+            android:fillType="nonZero"
+            android:pathData="M812,320C812,210 710,120 580,120H320C210,120 120,210 120,320V704C120,814 210,904 320,904H580C710,904 812,814 812,704C812,650 780,600 730,570C780,540 812,490 812,436V320ZM240,320C240,276 276,240 320,240H580C646,240 700,294 700,360C700,426 646,480 580,480H400V560H580C646,560 700,614 700,680C700,746 646,800 580,800H320C276,800 240,764 240,720V320Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:startX="120"
+                    android:startY="120"
+                    android:endX="812"
+                    android:endY="904"
+                    android:type="linear">
+                    <item android:offset="0.0" android:color="#6B8E6B" />
+                    <item android:offset="1.0" android:color="#8FAA7A" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- 灵魂核心：使用 evolia_green 的暖黄色光点 -->
+        <path
+            android:pathData="M480,420m-60,0a60,60 0,1 1,120 0a60,60 0,1 1,-120 0"
+            android:fillColor="#F0DBA8"/>
+    </group>
+
+    <!-- 动态进化的流线 -->
+    <path
+        android:pathData="M850,200C900,300 900,700 850,800"
+        android:strokeWidth="20"
+        android:strokeLineCap="round"
+        android:strokeColor="#8FAA7A"
+        android:fillColor="#00000000"
+        android:strokeAlpha="0.4"/>
+
+</vector>

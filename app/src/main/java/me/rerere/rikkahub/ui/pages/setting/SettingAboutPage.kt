@@ -81,7 +81,7 @@ fun SettingAboutPage() {
 
             // App Icon - Large, Centered PNG without circle
             Image(
-                painter = painterResource(R.mipmap.ic_launcher_lastchat_foreground),
+                painter = painterResource(R.mipmap.ic_launcher_evolia_foreground),
                 contentDescription = null,
                 modifier = Modifier.size(240.dp)
             )

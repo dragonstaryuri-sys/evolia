@@ -36,11 +36,10 @@ import javax.mail.Session
 fun SettingEmailPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val secretKeyManager = koinInject<SecretKeyManager>()
     val scope = rememberCoroutineScope()
 
     var account by remember(settings.emailConfig.account) { mutableStateOf(settings.emailConfig.account) }
-    var password by remember { mutableStateOf(secretKeyManager.getEmailPassword("")) }
+    var password by remember(settings.emailConfig.password) { mutableStateOf(settings.emailConfig.password) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<Result<Unit>?>(null) }
 
@@ -81,7 +80,9 @@ fun SettingEmailPage(vm: SettingVM = koinViewModel()) {
                         value = password,
                         onValueChange = {
                             password = it
-                            secretKeyManager.setEmailPassword(it)
+                            vm.updateSettings(settings.copy(
+                                emailConfig = settings.emailConfig.copy(password = it)
+                            ))
                         },
                         label = { Text(stringResource(R.string.setting_email_page_auth_code)) },
                         placeholder = { Text(stringResource(R.string.setting_email_page_auth_code_hint)) },
