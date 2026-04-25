@@ -100,18 +100,21 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 - **Trigger**: `ChatService.checkAndAutoSummarize` based on `maxHistoryMessages`.
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
-- **Mechanism**: Hard-persist conversation essence into `ChatEpisodeEntity`.
-- **Relationship**: Maintains a **1:1 relationship** with a Conversation, but has a **1:N relationship with L1 Segments** (one episode consumes multiple temporary summaries).
+- **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation. Room `REPLACE` strategy is used with `existingEpisode.id` to prevent duplicate entries per conversation ID.
 - **Rolling Update Logic**: 
-    - Worker compares `contextSummary` progress vs. existing `ChatEpisode` significance.
-    - It selects the most comprehensive summary as a **Base**, then appends any new L1 Segments (`temporarySummaries`) and remaining L0 messages.
+    - **Trigger Check**: Only proceed if new messages since the last consolidation >= 4.
+    - **Token Optimization**: If an episode already exists, use `DEFAULT_FULL_SUMMARY_PROMPT` to perform a "Rolling Summary" (Old Summary + New Messages) instead of re-summarizing the entire chat history.
+    - **Manual vs Auto**: Both manual UI consolidation and background workers follow the same rolling logic to ensure consistency and economy.
 - **Retrieval**: AI extracts keywords from L2 for hybrid RAG search (Keywords have higher matching priority than Embeddings).
 - **Triggers**: `MemoryConsolidationWorker` (Automatic/Manual).
 
 ### 6.3 Master Memory (L3 - Personal Archive)
 - **Mechanism**: An evolving "User Profile" that transcends individual conversations.
-- **Generation**: The Worker aggregates the L2 Episodic summaries of all updated conversations since `lastMasterMemoryUpdate`.
-- **Purpose**: Forms the assistant's permanent understanding of the user (hobbies, secrets, rules, relationship status).
+- **Generation Logic**:
+    - **Automatic (Incremental)**: Aggregates L2 summaries of only those conversations updated since `lastMasterMemoryUpdate`. 
+    - **Manual (Full Sync)**: Aggregates L2 summaries from ALL conversations. Useful for re-calibrating the archive after database manual edits or deletions.
+- **Threshold**: Only considers conversations with >= 2 messages.
+- **Compression**: Automatically triggers a compression task if the archive exceeds 2500 characters to maintain context window efficiency.
 
 ### 6.4 Token Allocation & Context Priority
 - **Hierarchy of Injection**: In `GenerationHandler.buildMessages`:
