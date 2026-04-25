@@ -23,6 +23,11 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.DayOfWeek
+import java.time.format.TextStyle
+import java.util.Locale
 
 private const val TAG = "SpontaneousWorker"
 
@@ -49,7 +54,6 @@ class SpontaneousWorker(
 
             for (assistantId in eligibleAssistantIds) {
                 try {
-                    // Fetch fresh settings for each assistant to ensure lastNotificationTime is up-to-date
                     val currentSettings = settingsStore.settingsFlow.first()
                     val assistant = currentSettings.assistants.find { it.id == assistantId } ?: continue
 
@@ -67,15 +71,17 @@ class SpontaneousWorker(
     }
 
     private suspend fun processAssistant(settings: me.rerere.rikkahub.data.datastore.Settings, assistant: Assistant) {
+        val nowTime = LocalDateTime.now()
+        val currentHour = nowTime.hour
+
         // Check time window
-        val currentHour = java.time.LocalTime.now().hour
         if (currentHour < assistant.notificationStartHour || currentHour >= assistant.notificationEndHour) {
             return
         }
 
         // Check frequency
-        val now = System.currentTimeMillis()
-        val timeSinceLastNotification = now - assistant.lastNotificationTime
+        val nowMs = System.currentTimeMillis()
+        val timeSinceLastNotification = nowMs - assistant.lastNotificationTime
         val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
         if (timeSinceLastNotification < minIntervalMs) {
             return
@@ -85,10 +91,8 @@ class SpontaneousWorker(
         val conversations = conversationRepository.getRecentConversations(assistant.id, 1)
         val conversation = conversations.firstOrNull() ?: return
 
-        // 优化点：检查对话最后活跃时间
-        // 如果用户刚刚才聊过天（或者AI刚回复过），不应该立刻触发主动消息
         val lastUpdateTime = conversation.updateAt
-        val timeSinceLastActivity = now - lastUpdateTime.toEpochMilli()
+        val timeSinceLastActivity = nowMs - lastUpdateTime.toEpochMilli()
         if (timeSinceLastActivity < minIntervalMs) {
             Log.d(TAG, "Assistant ${assistant.name} skipped: recent activity detected (${timeSinceLastActivity / 60000} mins ago)")
             return
@@ -99,7 +103,11 @@ class SpontaneousWorker(
         val provider = model.findProvider(settings.providers) ?: return
         val providerHandler = providerManager.getProviderByType(provider)
 
-        // Calculate context info
+        // --- 时间上下文计算 ---
+        val dayOfWeek = nowTime.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+        val formattedNow = nowTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        val timeContext = "Current Time: $formattedNow ($dayOfWeek)"
+
         val timeDiffHours = timeSinceLastActivity / (1000 * 60 * 60)
         val timeDiffMinutes = timeSinceLastActivity / (1000 * 60)
 
@@ -114,29 +122,39 @@ class SpontaneousWorker(
         val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
         val history = conversation.currentMessages.takeLast(6).joinToString("\n") { "${it.role}: ${it.toText()}" }
 
+        // --- 核心优化：注入时间与重复检测 ---
         val customPrompt = assistant.spontaneousPrompt.ifBlank {
             """
-            You are ${assistant.name}. You are checking in on the user because they haven't messaged you for a while.
+            # Role: Spontaneous Persona Engagement
+            You are ${assistant.name}. You are deciding whether to proactively message the user.
 
             [Persona/System Prompt]
             ${assistant.systemPrompt}
 
-            [Context]
-            - It has been $timeDiffHours hours ($timeDiffMinutes minutes) since the last message in this conversation.
-            - Recent chat history:
+            [Time & Context]
+            - $timeContext
+            - Idle Duration: $timeDiffHours hours ($timeDiffMinutes minutes) since the last interaction.
+            - Last Spontaneous Message Sent: "${assistant.lastNotificationContent.ifBlank { "None" }}"
+
+            [Recent History]
             {{history}}
 
+            [Memories]
+            {{memories}}
+
             [Task]
-            Based on your persona and the context, do you want to send a spontaneous message to the user?
-            - If YES: Formulate a natural, concise message as if you're reaching out in the chat. Keep it simple(less than 5 words).eg. "在吗？","做好了吗？","怎么不说话?"
-            - If NO: Explain why.
+            Analyze the context and the time of day.
+            1. **Time Awareness**: If the last interaction was last night and it's now morning, do NOT continue last night's topic.
+            2. **Extreme Brevity**: Real people send very short messages when checking in (e.g., "在干嘛?", "忙呢?", "早安"). Keep it under 10 words.
+            3. **No Repetition**: Do NOT send anything similar to your "Last Spontaneous Message Sent".
+            4. **Decision**: Decide if you should reach out.
 
             [Output Format (Strict JSON)]
             {
                 "send": true/false,
                 "reason": "Why you decided to (not) send",
-                "content": "The message text to send to the chat",
-                "title": "Notification title (usually your name)"
+                "content": "Short message text (max 10 words, character's locale)",
+                "title": "${assistant.name}"
             }
             """.trimIndent()
         }
@@ -174,22 +192,16 @@ class SpontaneousWorker(
                     val title = json["title"]?.jsonPrimitive?.contentOrNull ?: assistant.name
 
                     if (content.isNotBlank()) {
-                        // 1. Add message to database
                         val newMessage = UIMessage.assistant(content).copy(modelId = model.id)
                         val updatedConversation = conversation.updateCurrentMessages(
                             conversation.currentMessages + newMessage
                         ).copy(updateAt = Instant.now())
 
                         conversationRepository.updateConversation(updatedConversation)
-
-                        // 2. Send notification
                         sendNotification(title, content, conversation.id)
-
-                        // 3. Update assistant state
                         updateAssistantState(assistant, content, false)
                     }
                 } else {
-                    // AI declined. Apply Half-Delay.
                     updateAssistantState(assistant, "", true)
                 }
             }
