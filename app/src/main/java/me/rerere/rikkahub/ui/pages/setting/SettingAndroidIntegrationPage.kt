@@ -334,7 +334,7 @@ private fun PreviewCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Image(
-                            painter = painterResource(R.mipmap.ic_launcher_evolia_foreground),
+                            painter = painterResource(R.drawable.ic_launcher_evolia_foreground),
                             contentDescription = null,
                             modifier = Modifier.size(40.dp) // Match popup icon size
                         )

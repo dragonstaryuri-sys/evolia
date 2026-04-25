@@ -21,7 +21,7 @@ fun EvoliaLogoExportPreview() {
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            painter = painterResource(id = R.drawable.ic_evolia_brand_logo),
+            painter = painterResource(id = R.drawable.ic_launcher_evolia_foreground),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             tint = Color.Unspecified // 关键：保持原有的渐变色

@@ -79,9 +79,9 @@ fun SettingAboutPage() {
         ) {
             Spacer(modifier = Modifier.height(32.dp))
 
-            // App Icon - Large, Centered PNG without circle
+            // App Icon - Large, Centered Vector
             Image(
-                painter = painterResource(R.mipmap.ic_launcher_evolia_foreground),
+                painter = painterResource(R.drawable.ic_launcher_evolia_foreground),
                 contentDescription = null,
                 modifier = Modifier.size(240.dp)
             )

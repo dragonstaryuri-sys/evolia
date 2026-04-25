@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+    <defs>
+        <!-- 对应原文件的线性渐变 -->
+        <linearGradient id="evoliaGradient" x1="120" y1="120" x2="812" y2="904" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#6B8E6B" />
+            <stop offset="1" stop-color="#8FAA7A" />
+        </linearGradient>
+    </defs>
+
+    <!-- 外层变换：对应原文件的 scale=0.6 和 translate=204.8 -->
+    <g transform="translate(204.8, 204.8) scale(0.6)">
+
+        <!-- 背景圆圈装饰 -->
+        <circle cx="512" cy="512" r="448" fill="#F5EDE0" fill-opacity="0.15" />
+
+        <!-- 核心图标组：包含你刚刚设置的 translateX="46" 居中偏移 -->
+        <g transform="translate(46, 0)">
+            <!-- 进化的螺旋 E 主体 -->
+            <path fill="url(#evoliaGradient)"
+                d="M812,320C812,210 710,120 580,120H320C210,120 120,210 120,320V704C120,814 210,904 320,904H580C710,904 812,814 812,704C812,650 780,600 730,570C780,540 812,490 812,436V320ZM240,320C240,276 276,240 320,240H580C646,240 700,294 700,360C700,426 646,480 580,480H400V560H580C646,560 700,614 700,680C700,746 646,800 580,800H320C276,800 240,764 240,720V320Z" />
+
+            <!-- 灵魂核心（暖黄光点） -->
+            <circle cx="480" cy="420" r="60" fill="#F0DBA8" />
+        </g>
+    </g>
+</svg>
