@@ -136,12 +136,12 @@ class ConversationRepository(
 
     suspend fun updateConversation(conversation: Conversation) {
         if (conversation.isConsolidated) {
-            // 如果当前是已整合状态，但又有新更新（比如发了新消息）
-            // 我们只把状态改回 false，标记该会话“需要重新整合”
+            // 只把状态改回 false，标记该会话内容已变动，需要下次重新滚动整合
             val updatedConversation = conversation.copy(isConsolidated = false)
             conversationDAO.update(
                 conversationToConversationEntity(updatedConversation)
             )
+            // 删除了之前所有的 deleteEpisode/Segment 调用，由 Worker 进行覆盖更新
         } else {
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
