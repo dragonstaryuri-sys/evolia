@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.core.data.db.dao.ConversationDAO
 import me.rerere.rikkahub.core.data.db.dao.DailyActivityDAO
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
+import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
 import me.rerere.rikkahub.core.data.model.Conversation
@@ -29,6 +30,7 @@ class ConversationRepository(
     private val context: Context,
     private val conversationDAO: ConversationDAO,
     private val chatEpisodeDAO: ChatEpisodeDAO,
+    private val chatSegmentDAO: ChatSegmentDAO,
     private val dailyActivityDAO: DailyActivityDAO,
 ) {
     companion object {
@@ -134,20 +136,12 @@ class ConversationRepository(
 
     suspend fun updateConversation(conversation: Conversation) {
         if (conversation.isConsolidated) {
+            // 如果当前是已整合状态，但又有新更新（比如发了新消息）
+            // 我们只把状态改回 false，标记该会话“需要重新整合”
             val updatedConversation = conversation.copy(isConsolidated = false)
-
             conversationDAO.update(
                 conversationToConversationEntity(updatedConversation)
             )
-
-            val deletedCount = chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
-            if (deletedCount == 0) {
-                chatEpisodeDAO.deleteEpisodeByTimeRange(
-                    assistantId = conversation.assistantId.toString(),
-                    startTime = conversation.createAt.toEpochMilli(),
-                    endTime = Long.MAX_VALUE
-                )
-            }
         } else {
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
@@ -160,6 +154,7 @@ class ConversationRepository(
             conversationToConversationEntity(conversation)
         )
         chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
+        chatSegmentDAO.deleteSegmentsByConversation(conversation.id.toString())
         if (deleteFiles) {
             context.deleteChatFiles(conversation.files)
         }

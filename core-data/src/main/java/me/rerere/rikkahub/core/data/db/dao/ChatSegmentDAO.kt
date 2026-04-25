@@ -21,6 +21,9 @@ interface ChatSegmentDAO {
     @Query("DELETE FROM chat_segments WHERE conversation_id = :conversationId")
     suspend fun deleteSegmentsByConversation(conversationId: String)
 
+    @Query("DELETE FROM chat_segments WHERE assistant_id = :assistantId")
+    suspend fun deleteSegmentsByAssistant(assistantId: String)
+
     @Query("SELECT * FROM chat_segments WHERE id = :id")
     suspend fun getSegmentById(id: Int): ChatSegmentEntity?
 }

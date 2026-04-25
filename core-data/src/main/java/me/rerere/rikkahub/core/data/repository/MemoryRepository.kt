@@ -202,6 +202,7 @@ class MemoryRepository(
     suspend fun deleteMemoriesOfAssistant(assistantId: String) {
         memoryDAO.deleteMemoriesOfAssistant(assistantId)
         chatEpisodeDAO.deleteEpisodesOfAssistant(assistantId)
+        chatSegmentDAO.deleteSegmentsByAssistant(assistantId)
     }
 
     suspend fun updateContent(id: Int, content: String): AssistantMemory {
