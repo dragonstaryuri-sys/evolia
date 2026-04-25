@@ -122,9 +122,8 @@ class SpontaneousWorker(
         val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
         val history = conversation.currentMessages.takeLast(6).joinToString("\n") { "${it.role}: ${it.toText()}" }
 
-        // --- 核心优化：注入时间与重复检测 ---
-        val customPrompt = assistant.spontaneousPrompt.ifBlank {
-            """
+        // --- 核心优化：强制使用系统级提示词，忽略用户自定义内容 ---
+        val systemSpontaneousPrompt = """
             # Role: Spontaneous Persona Engagement
             You are ${assistant.name}. You are deciding whether to proactively message the user.
 
@@ -137,10 +136,10 @@ class SpontaneousWorker(
             - Last Spontaneous Message Sent: "${assistant.lastNotificationContent.ifBlank { "None" }}"
 
             [Recent History]
-            {{history}}
+            $history
 
             [Memories]
-            {{memories}}
+            $memoryContext
 
             [Task]
             Analyze the context and the time of day.
@@ -156,16 +155,11 @@ class SpontaneousWorker(
                 "content": "Short message text (max 10 words, character's locale)",
                 "title": "${assistant.name}"
             }
-            """.trimIndent()
-        }
-
-        val prompt = customPrompt
-            .replace("{{history}}", history)
-            .replace("{{memories}}", memoryContext)
+        """.trimIndent()
 
         val result = providerHandler.generateText(
             providerSetting = provider,
-            messages = listOf(UIMessage.user(prompt)),
+            messages = listOf(UIMessage.user(systemSpontaneousPrompt)),
             params = TextGenerationParams(
                 model = model,
                 temperature = 0.7f,
