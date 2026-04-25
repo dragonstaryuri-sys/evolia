@@ -551,7 +551,7 @@ class MemoryConsolidationWorker(
             params = TextGenerationParams(
                 model = model,
                 temperature = 0.3f,
-                topP = 0f,
+                topP = 0.5f,
                 maxTokens = 1024
             )
         )
@@ -577,7 +577,7 @@ class MemoryConsolidationWorker(
             params = TextGenerationParams(
                 model = model,
                 temperature = 0.3f,
-                topP = 0f,
+                topP = 0.5f,
                 maxTokens = 256
             )
         )
@@ -622,7 +622,7 @@ class MemoryConsolidationWorker(
             params = TextGenerationParams(
                 model = model,
                 temperature = 0.2f,
-                topP = 0f,
+                topP = 0.5f,
                 maxTokens = 4096
             )
         )
@@ -657,8 +657,8 @@ class MemoryConsolidationWorker(
             ),
             params = TextGenerationParams(
                 model = model,
-                temperature = 0.2f,
-                topP = 0f,
+                temperature = 0.3f,
+                topP = 0.5f,
                 maxTokens = 4096
             )
         )

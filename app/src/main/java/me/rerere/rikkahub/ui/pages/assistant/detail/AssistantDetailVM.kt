@@ -37,6 +37,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.util.Locale
@@ -46,6 +47,7 @@ import kotlinx.coroutines.CancellationException
 
 private const val TAG = "AssistantDetailVM"
 
+@Serializable
 data class AssistantMemoryOp(
     val op: String,
     val id: Int? = null,
@@ -172,7 +174,6 @@ class AssistantDetailVM(
         updateMaster: Boolean = true
     ) {
         // 异步处理“更新记忆档案”（L3）
-        // 此时我们不设置 _isConsolidating 为 true，这样就不会弹出阻塞式的对话框
         if (updateMaster && !consolidateEpisodes) {
             val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
                 .setInputData(androidx.work.workDataOf(
@@ -202,20 +203,51 @@ class AssistantDetailVM(
 
                 var episodicSuccessCount = 0
                 if (consolidateEpisodes) {
+                    val existingEpisodes = chatEpisodeDAO.getEpisodesOfAssistant(currentAssistant.id.toString())
+                    val episodeMap = existingEpisodes.associateBy { it.conversationId }
+
                     val toConsolidateEpisodes = conversations.filter { conv ->
-                        !conv.isConsolidated && conv.currentMessages.size >= 4
+                        val existing = episodeMap[conv.id.toString()]
+                        val messageCount = conv.currentMessages.size
+                        if (existing != null) {
+                            // 增量：消息数增加超过4条
+                            messageCount - existing.significance >= 4
+                        } else {
+                            // 全新：消息数超过4条
+                            messageCount >= 4
+                        }
                     }
+
                     for (conv in toConsolidateEpisodes) {
                         yield() // 响应取消
-                        val summary = generateConversationSummary(handler, providerSetting, model, conv)
+                        val existingEpisode = episodeMap[conv.id.toString()]
+                        val skipCount = existingEpisode?.significance ?: 0
+                        val newMessages = conv.currentMessages.drop(skipCount)
+
+                        // 滚动式总结逻辑：如果有旧总结，则基于旧总结+新消息生成新总结
+                        val summary = if (newMessages.isEmpty() && existingEpisode != null) {
+                            existingEpisode.content
+                        } else {
+                            generateConversationSummary(
+                                handler = handler,
+                                providerSetting = providerSetting,
+                                model = model,
+                                assistantName = currentAssistant.name,
+                                previousSummary = existingEpisode?.content,
+                                messages = newMessages,
+                                temporarySummaries = conv.temporarySummaries
+                            )
+                        }
+
                         if (summary.isNotBlank()) {
                             val episode = ChatEpisodeEntity(
+                                id = existingEpisode?.id ?: 0, // 使用旧 ID 以覆盖
                                 assistantId = currentAssistant.id.toString(),
                                 conversationId = conv.id.toString(),
                                 content = summary,
                                 startTime = conv.createAt.toEpochMilli(),
                                 endTime = conv.updateAt.toEpochMilli(),
-                                significance = 5,
+                                significance = conv.currentMessages.size,
                                 lastAccessedAt = System.currentTimeMillis()
                             )
                             chatEpisodeDAO.insertEpisode(episode)
@@ -234,7 +266,7 @@ class AssistantDetailVM(
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
-                            contextParts.add("Recent Messages:\n${conv.currentMessages.takeLast(20).joinToString("\n") { "${it.role}: ${it.toText().take(300)}" }}")
+                            contextParts.add("Recent Messages:\n${conv.currentMessages.takeLast(20).joinToString("\n") { "${it.role}: ${it.toContentText().take(300)}" }}")
                         }
                     }
                     val recentContext = contextParts.joinToString("\n\n---\n\n")
@@ -341,14 +373,31 @@ class AssistantDetailVM(
         handler: me.rerere.ai.provider.Provider<*>,
         providerSetting: me.rerere.ai.provider.ProviderSetting,
         model: me.rerere.ai.provider.Model,
-        conversation: me.rerere.rikkahub.core.data.model.Conversation
+        assistantName: String,
+        previousSummary: String?,
+        messages: List<UIMessage>,
+        temporarySummaries: List<String> = emptyList()
     ): String {
-        val text = conversation.currentMessages.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
-        val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-            .replace("{{text}}", text)
-            .replace("{{locale}}", Locale.getDefault().displayName)
+        val messagesText = messages.joinToString("\n") { "${it.role}: ${it.toContentText().take(1000)}" }
+        val detailText = if (temporarySummaries.isNotEmpty()) {
+            "\n### Tactical Details:\n" + temporarySummaries.joinToString("\n") { "- $it" }
+        } else ""
+
+        val prompt = if (previousSummary != null) {
+            DEFAULT_FULL_SUMMARY_PROMPT
+                .replace("{{previous_summary}}", previousSummary + detailText)
+                .replace("{{new_messages}}", messagesText)
+                .replace("{{locale}}", Locale.getDefault().displayName)
+                .replace("{{char}}", assistantName)
+        } else {
+            DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+                .replace("{{text}}", detailText + "\n" + messagesText)
+                .replace("{{locale}}", Locale.getDefault().displayName)
+                .replace("{{char}}", assistantName)
+        }
+
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model = model, temperature = 0.3f, topP = 0f))
+        val resp = h.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f))
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
@@ -362,7 +411,7 @@ class AssistantDetailVM(
     ): String {
         val inputPrompt = "Current Date: ${LocalDate.now()}\n\n# Existing Memory Archive:\n${existingArchive.ifBlank { "(Empty)" }}\n\n# New Conversation Context:\n$newContext\n\nPlease provide the fully updated Memory Archive incorporating all relevant new information."
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(providerSetting, listOf(UIMessage.system(systemPrompt), UIMessage.user(inputPrompt)), TextGenerationParams(model = model, temperature = 0.2f, topP = 0f))
+        val resp = h.generateText(providerSetting, listOf(UIMessage.system(systemPrompt), UIMessage.user(inputPrompt)), TextGenerationParams(model = model, temperature = 0.2f, topP = 1.0f))
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 

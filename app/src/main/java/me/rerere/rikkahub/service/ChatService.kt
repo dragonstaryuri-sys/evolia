@@ -403,7 +403,7 @@ class ChatService(
                 .replace("{{locale}}", Locale.getDefault().displayName)
 
             val providerHandler = handler as Provider<ProviderSetting>
-            val resp = providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f))
+            val resp = providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
             if (summary.isNotBlank()) {
@@ -688,7 +688,7 @@ class ChatService(
                             val resp = h.generateText(
                                 providerSetting,
                                 listOf(UIMessage.user(prompt)),
-                                TextGenerationParams(backgroundModel, 0.3f)
+                                TextGenerationParams(backgroundModel, 0.3f, 0.5f)
                             )
                             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
@@ -780,7 +780,7 @@ class ChatService(
                 .replace("{{locale}}", locale)
 
             val providerHandler = handler as Provider<ProviderSetting>
-            val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f))
+            val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
             if (tempSum.isNotBlank()) {
@@ -828,7 +828,7 @@ class ChatService(
             val fullResp = handler.generateText(
                 providerSetting = provider,
                 messages = listOf(UIMessage.user(fullPrompt)),
-                params = TextGenerationParams(model, 0.3f)
+                params = TextGenerationParams(model, 0.3f, 1.0f)
             )
             val fullSum = fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(false)
 
@@ -865,7 +865,7 @@ class ChatService(
                 params = TextGenerationParams(
                     model = model,
                     temperature = 0.3f,
-                    topP = 0f,
+                    topP = 1.0f,
                     maxTokens = 256
                 )
             )
@@ -940,7 +940,7 @@ class ChatService(
             val provider = model.findProvider(settings.providers) ?: return
             val content = conversation.currentMessages.truncate(conversation.truncateIndex).joinToString("\n\n") { it.summaryAsText() }
             if (content.isBlank()) return
-            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 0f))
+            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 1.0f))
             saveConversation(conversationId, conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""))
         }
     }
@@ -952,7 +952,7 @@ class ChatService(
             val modelId = assistant.suggestionModelId ?: settings.suggestionModelId
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
-            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 0f))
+            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 1.0f))
             val suggestions = result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
             saveConversation(conversationId, conversation.copy(chatSuggestions = suggestions))
         }
