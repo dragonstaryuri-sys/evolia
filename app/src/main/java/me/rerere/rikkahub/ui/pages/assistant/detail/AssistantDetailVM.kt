@@ -132,6 +132,7 @@ class AssistantDetailVM(
         episodes,
         _memorySearchQuery
     ) { coreMemories, episodesList, query ->
+        val core = coreMemories.map { it.copy(content = it.content) }
         val episodic = episodesList.map {
             AssistantMemory(
                 id = -it.id,
@@ -143,7 +144,7 @@ class AssistantDetailVM(
                 significance = it.significance
             )
         }
-        val allMemories = coreMemories + episodic
+        val allMemories = core + episodic
         if (query.isBlank()) allMemories else allMemories.filter { it.content.contains(query, ignoreCase = true) }
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
@@ -187,7 +188,7 @@ class AssistantDetailVM(
             return
         }
 
-        // 以下是原有的逻辑，用于处理整合对话按钮（L2）
+        // L2 情节记忆整合逻辑
         if (_isConsolidating.value) return
         consolidationJob = viewModelScope.launch {
             _isConsolidating.value = true
@@ -210,21 +211,18 @@ class AssistantDetailVM(
                         val existing = episodeMap[conv.id.toString()]
                         val messageCount = conv.currentMessages.size
                         if (existing != null) {
-                            // 增量：消息数增加超过4条
                             messageCount - existing.significance >= 4
                         } else {
-                            // 全新：消息数超过4条
                             messageCount >= 4
                         }
                     }
 
                     for (conv in toConsolidateEpisodes) {
-                        yield() // 响应取消
+                        yield()
                         val existingEpisode = episodeMap[conv.id.toString()]
                         val skipCount = existingEpisode?.significance ?: 0
                         val newMessages = conv.currentMessages.drop(skipCount)
 
-                        // 滚动式总结逻辑：如果有旧总结，则基于旧总结+新消息生成新总结
                         val summary = if (newMessages.isEmpty() && existingEpisode != null) {
                             existingEpisode.content
                         } else {
@@ -241,7 +239,7 @@ class AssistantDetailVM(
 
                         if (summary.isNotBlank()) {
                             val episode = ChatEpisodeEntity(
-                                id = existingEpisode?.id ?: 0, // 使用旧 ID 以覆盖
+                                id = existingEpisode?.id ?: 0,
                                 assistantId = currentAssistant.id.toString(),
                                 conversationId = conv.id.toString(),
                                 content = summary,
@@ -259,7 +257,7 @@ class AssistantDetailVM(
 
                 var updatedMasterContent: String? = null
                 if (updateMaster && currentAssistant.enableMasterMemory) {
-                    yield() // 响应取消
+                    yield()
                     val contextParts = mutableListOf<String>()
                     for (conv in conversations.filter { it.currentMessages.size >= 2 }) {
                         val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
@@ -562,13 +560,14 @@ class AssistantDetailVM(
     val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { list -> list.any { !it.hasEmbedding } }.stateIn(viewModelScope, SharingStarted.Lazily, false)
     private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
     val retrievalResults = _retrievalResults.asStateFlow()
-    fun testRetrieval(query: String) { viewModelScope.launch { val results = memoryRepository.retrieveRelevantMemoriesWithScores(assistantId.toString(), query); _retrievalResults.value = results } }
+    fun testRetrieval(query: String) { viewModelScope.launch { val results = memoryRepository.retrieveRelevantMemoriesWithScores(assistantId.toString(), query); _retrievalResults.value = results.map { it.first.copy(content = it.first.content) to it.second } } }
     fun regenerateEmbeddings() { viewModelScope.launch { _embeddingProgress.value = EmbeddingProgress(0, 1, true); memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t -> _embeddingProgress.value = EmbeddingProgress(c, t, true) }; _embeddingProgress.value = null } }
     fun consolidateMemories(isFullScan: Boolean) { val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>().setInputData(androidx.work.workDataOf("FULL_SCAN" to isFullScan, "ASSISTANT_ID" to assistantId.toString())).build(); androidx.work.WorkManager.getInstance(context).enqueue(request) }
     fun estimateTokens(text: String): Int = text.length / 4
     val averageMemoryLength = memoryRepository.getAverageMemoryLength(assistantId.toString()).stateIn(viewModelScope, SharingStarted.Lazily, 150)
     val estimatedMemoryCapacity = assistant.map { (it.maxTokenUsage / 50).coerceAtLeast(10) }.stateIn(viewModelScope, SharingStarted.Lazily, 10)
 }
+
 
 data class EmbeddingProgress(val current: Int, val total: Int, val isRunning: Boolean)
 data class EpisodeStats(val totalEpisodes: Int, val averageSignificance: Double, val coreMemoryCount: Int)

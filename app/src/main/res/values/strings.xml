@@ -1423,12 +1423,23 @@
   <string name="rag_limit_title">Max Retrieval Results (Top K)</string>
   <string name="rag_keyword_threshold_title">Match Precision Threshold</string>
 
-  <!-- 异步任务提示 -->
-  <string name="master_memory_update_started">已在后台开始更新记忆档案...</string>
-  <!-- 通知相关 -->
-  <string name="master_memory_update_done">记忆档案维护完成</string>
-  <string name="master_memory_update_success">%s 的记忆档案已成功更新。</string>
-  <string name="master_memory_update_compressed">%s 的记忆档案已更新，且因内容过长执行了压缩优化。</string>
-  <string name="master_memory_update_failed">记忆档案更新失败</string>
+  <!-- Async Task Tips -->
+  <string name="master_memory_update_started">Started updating memory profile in the background...</string>
+  <!-- Notification Related -->
+  <string name="master_memory_update_done">Memory maintenance completed</string>
+  <string name="master_memory_update_success">Memory profile for %s updated successfully.</string>
+  <string name="master_memory_update_compressed">%s\'s memory has been updated and compressed due to excessive length.</string>
+  <string name="master_memory_update_failed">Failed to update memory profile</string>
+
+  <!-- Context Sources Sheet -->
+  <string name="context_sources_title">Context Sources</string>
+  <string name="context_sources_modes">Modes</string>
+  <string name="context_sources_memories">Memories</string>
+  <string name="context_sources_lorebook_entries">Lorebook Entries</string>
+  <string name="context_sources_mode_label">Mode</string>
+  <string name="context_sources_core_memory">Core Memory</string>
+  <string name="context_sources_recent_chat">Recent Chat</string>
+  <string name="context_sources_episodic_memory">Episodic Memory</string>
+  <string name="context_sources_entry_default_name">Entry #%1$d</string>
 
 </resources>

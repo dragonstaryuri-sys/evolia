@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -278,7 +279,7 @@ private fun MemoryCover(
             isCore -> {
                 Icon(
                     imageVector = Icons.Rounded.Memory,
-                    contentDescription = "Core Memory",
+                    contentDescription = stringResource(R.string.context_sources_core_memory),
                     modifier = Modifier.size(16.dp),
                     tint = contentColor
                 )
@@ -287,7 +288,7 @@ private fun MemoryCover(
                 // Recent chat reference (non-RAG mode)
                 Icon(
                     imageVector = Icons.Rounded.History,
-                    contentDescription = "Recent Chat",
+                    contentDescription = stringResource(R.string.context_sources_recent_chat),
                     modifier = Modifier.size(16.dp),
                     tint = contentColor
                 )
@@ -296,7 +297,7 @@ private fun MemoryCover(
                 // True episodic memory (RAG mode)
                 androidx.compose.foundation.Image(
                     painter = painterResource(R.drawable.search_activity_24),
-                    contentDescription = "Episodic Memory",
+                    contentDescription = stringResource(R.string.context_sources_episodic_memory),
                     modifier = Modifier.size(16.dp),
                     colorFilter = ColorFilter.tint(contentColor)
                 )

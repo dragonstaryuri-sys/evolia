@@ -885,7 +885,8 @@
 <string name="context_max_messages_unlimited">无限制</string>
 <string name="context_enable_summarization">总结较早的消息</string>
 <string name="context_enable_summarization_desc">生成精简摘要，以保留前文聊天进度</string>
-<string name="export_format_sillytavern">SillyTavern</string>
+    <string name="export_format_lastchat">"Evolia "</string>
+    <string name="export_format_sillytavern">SillyTavern</string>
 <string name="export_format_tavern">Tavern (兼容)</string>
 <string name="text_selection_menu_label">问问 DreamLand</string>
 <string name="text_selection_translate">翻译</string>
@@ -1298,6 +1299,7 @@
   <string name="discover_page_schedule_desc">管理你的每日任务与目标</string>
   <!-- 备份页面显示的选项名称 -->
   <string name="backup_page_schedule">日程数据</string>
+  <string name="schedule_add_task">新增任务</string>
   <string name="schedule_button_tip">允许智能体读取和写入你的日程。开启后，它可以查看你的今日安排并协助你创建新日程。</string>
 
   <!-- 邮件服务设置 -->
@@ -1349,6 +1351,7 @@
   <string name="master_memory_backup_message">更新记忆档案可能因 AI 生成异常导致旧内容丢失。建议先将当前内容备份至剪贴板，是否继续？</string>
   <string name="master_memory_backup_confirm">确认备份并更新</string>
   <!-- 本地工具: 时间观念 -->
+  <string name="error_select_model_first">请先选择一个模型</string>
   <string name="memory_retrieval_strategy_title">检索策略</string>
   <string name="memory_retrieval_strategy_desc">ai如何搜索相关的记忆片段。</string>
   <string name="memory_mode_disabled">禁用</string>
@@ -1372,5 +1375,24 @@
   <string name="master_memory_update_success">%s 的记忆档案已成功更新。</string>
   <string name="master_memory_update_compressed">%s 的记忆档案已更新，且因内容过长执行了压缩优化。</string>
   <string name="master_memory_update_failed">记忆档案更新失败</string>
-
+  <string name="schedule_title">智能日程</string>
+  <string name="schedule_today_progress">今日进度</string>
+  <string name="schedule_unfinished_tasks">%d 任务剩余</string>
+  <string name="schedule_no_tasks">今日没有任务</string>
+  <string name="schedule_all_done">太牛啦！任务全部完成</string>
+  <string name="local_tool_time_sense">时间观念</string>
+  <string name="local_tool_time_sense_desc">让 AI 感知当前时间与回复间隔，以此提升对话的真实感。</string>
+  <string name="regenerate_title">重新生成回复</string>
+  <string name="regenerate_description">该消息包含工具调用或多步执行内容。重新生成将覆盖整条回复，且无法恢复至上一版本。确定要继续吗？</string>
+  <string name="regenerate_confirm">重新生成</string>
+  <!-- Context Sources Sheet -->
+  <string name="context_sources_title">上下文来源</string>
+  <string name="context_sources_modes">模式</string>
+  <string name="context_sources_memories">记忆片段</string>
+  <string name="context_sources_lorebook_entries">世界书条目</string>
+  <string name="context_sources_mode_label">模式</string>
+  <string name="context_sources_core_memory">核心记忆</string>
+  <string name="context_sources_recent_chat">最近对话</string>
+  <string name="context_sources_episodic_memory">情节记忆</string>
+  <string name="context_sources_entry_default_name">条目 #%1$d</string>
 </resources>

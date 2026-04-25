@@ -634,7 +634,7 @@ class GenerationHandler(
 
         // 修改为：
         val contextCandidates = if (includeSkipContextMessages) {
-            // 【关键】如果是执行自动化任务，包含所有消息（历史记录 + 当前标记为 skip 的系统指令）
+            // 【关键】如果是执行自动化任务，包含所有消息（历史记录 + 当前标记为 skip 的 system 指令）
             messages
         } else {
             // 如果是用户平常聊天，过滤掉标记为 skipContext 的消息（隐藏历史自动化痕迹）
@@ -884,9 +884,8 @@ class GenerationHandler(
             }
             UsedMemory(
                 memoryId = memory.id,
-                // 显示时带上关键词
+                // 只显示清洗后的纯净正文，不带关键词
                 memoryContent = buildString {
-                    if (!memory.keywords.isNullOrBlank()) append("[${memory.keywords}] ")
                     append(memory.content.take(50))
                     if (memory.content.length > 50) append("...")
                 },

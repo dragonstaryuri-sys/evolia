@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -106,7 +107,7 @@ fun ContextSourcesSheet(
         ) {
             // Header - centered
             Text(
-                text = "Context Sources",
+                text = stringResource(R.string.context_sources_title),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center
@@ -117,7 +118,7 @@ fun ContextSourcesSheet(
             ) {
                 // Modes Section
                 if (sortedModes.isNotEmpty()) {
-                    item { SectionHeader("Modes") }
+                    item { SectionHeader(stringResource(R.string.context_sources_modes)) }
                     itemsIndexed(sortedModes) { index, mode ->
                         val shape = getGroupedShape(index, sortedModes.size)
                         ModeItem(
@@ -133,7 +134,7 @@ fun ContextSourcesSheet(
 
                 // Memories Section
                 if (sortedMemories.isNotEmpty()) {
-                    item { SectionHeader("Memories") }
+                    item { SectionHeader(stringResource(R.string.context_sources_memories)) }
                     itemsIndexed(sortedMemories) { index, memory ->
                         val shape = getGroupedShape(index, sortedMemories.size)
                         MemoryItem(
@@ -149,7 +150,7 @@ fun ContextSourcesSheet(
 
                 // Lorebook Entries Section
                 if (sortedEntries.isNotEmpty()) {
-                    item { SectionHeader("Lorebook Entries") }
+                    item { SectionHeader(stringResource(R.string.context_sources_lorebook_entries)) }
                     itemsIndexed(sortedEntries) { index, entry ->
                         val shape = getGroupedShape(index, sortedEntries.size)
                         LorebookEntryItem(
@@ -253,7 +254,7 @@ private fun ModeItem(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = "Mode",
+                    text = stringResource(R.string.context_sources_mode_label),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -338,7 +339,7 @@ private fun MemoryItem(
                     isCore -> {
                         Icon(
                             imageVector = Icons.Rounded.Memory,
-                            contentDescription = "Core Memory",
+                            contentDescription = stringResource(R.string.context_sources_core_memory),
                             modifier = Modifier.size(24.dp),
                             tint = contentColor
                         )
@@ -347,7 +348,7 @@ private fun MemoryItem(
                         // Recent chat reference (non-RAG mode)
                         Icon(
                             imageVector = Icons.Rounded.History,
-                            contentDescription = "Recent Chat",
+                            contentDescription = stringResource(R.string.context_sources_recent_chat),
                             modifier = Modifier.size(24.dp),
                             tint = contentColor
                         )
@@ -356,7 +357,7 @@ private fun MemoryItem(
                         // True episodic memory (RAG mode)
                         Image(
                             painter = painterResource(R.drawable.search_activity_24),
-                            contentDescription = "Episodic Memory",
+                            contentDescription = stringResource(R.string.context_sources_episodic_memory),
                             modifier = Modifier.size(24.dp),
                             colorFilter = ColorFilter.tint(contentColor)
                         )
@@ -371,9 +372,9 @@ private fun MemoryItem(
             ) {
                 Text(
                     text = when {
-                        isCore -> "Core Memory"
-                        memory.memoryId < 0 -> "Recent Chat"  // Recent chat reference (non-RAG mode)
-                        else -> "Episodic Memory"  // True episodic memory (RAG mode)
+                        isCore -> stringResource(R.string.context_sources_core_memory)
+                        memory.memoryId < 0 -> stringResource(R.string.context_sources_recent_chat)
+                        else -> stringResource(R.string.context_sources_episodic_memory)
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -520,7 +521,7 @@ private fun LorebookEntryItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = entry.entryName.ifBlank { "Entry #${entry.entryIndex + 1}" },
+                    text = entry.entryName.ifBlank { stringResource(R.string.context_sources_entry_default_name, entry.entryIndex + 1) },
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
