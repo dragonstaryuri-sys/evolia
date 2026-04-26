@@ -671,4 +671,5 @@
   <string name="delete_memory_confirmation">Вы уверены, что хотите удалить это воспоминание? Это действие нельзя отменить.</string>
   <string name="done">Готово</string>
   <string name="loading">Загрузка...</string>
+    <string name="default_assistant_name">Evolia</string>
 </resources>

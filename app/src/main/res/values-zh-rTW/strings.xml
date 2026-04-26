@@ -680,4 +680,5 @@
   <string name="setting_new_chat_content_actions">操作</string>
   <string name="minimal_input_search_desc">在網頁上搜尋資訊</string>
   <string name="assistant_detail_tools_search_title">工具與搜尋</string>
+    <string name="default_assistant_name">Evolia</string>
 </resources>

@@ -158,13 +158,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
 
                     SettingGroupItem(
-                        title = stringResource(R.string.setting_page_assistant),
-                        subtitle = stringResource(R.string.setting_page_assistant_desc),
-                        icon = { Icon(Icons.Rounded.Group, null, modifier = Modifier.size(20.dp)) },
-                        onClick = { navController.navigate(Screen.Assistant) }
-                    )
-
-                    SettingGroupItem(
                         title = stringResource(R.string.setting_page_prompt_injections),
                         subtitle = stringResource(R.string.setting_page_prompt_injections_desc),
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },

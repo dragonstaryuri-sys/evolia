@@ -153,10 +153,10 @@ fun PhysicsSwipeToDelete(
     val shape by remember {
         derivedStateOf {
             val ownUnlockProgress = if (neighborOffset == 0f) unlockProgress else 0f
-            val finalTopStart = animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress
-            val finalTopEnd = animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress
-            val finalBottomEnd = animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress
-            val finalBottomStart = animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress
+            val finalTopStart = (animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress).coerceAtLeast(0f)
+            val finalTopEnd = (animatedTopRadius + (groupRadiusPx - animatedTopRadius) * ownUnlockProgress).coerceAtLeast(0f)
+            val finalBottomEnd = (animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress).coerceAtLeast(0f)
+            val finalBottomStart = (animatedBottomRadius + (groupRadiusPx - animatedBottomRadius) * ownUnlockProgress).coerceAtLeast(0f)
 
             RoundedCornerShape(
                 topStart = with(density) { finalTopStart.toDp() },

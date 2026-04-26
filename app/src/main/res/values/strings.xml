@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+  <string name="default_assistant_name">Evolia</string>
   <string name="chat_page_title">Chats</string>
   <string name="about_page_github">Github</string>
   <string name="about_page_license">License</string>

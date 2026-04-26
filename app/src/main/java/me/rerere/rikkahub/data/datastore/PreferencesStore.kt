@@ -497,6 +497,6 @@ fun Model.findProvider(providers: List<ProviderSetting>, checkOverwrite: Boolean
 
 internal val GEMINI_2_5_FLASH_ID = Uuid.parse("cd2cba9a-3f92-4148-b4c6-4d7a86f7b9c2")
 internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa36b4e")
-internal val DEFAULT_ASSISTANTS = listOf(Assistant(id = DEFAULT_ASSISTANT_ID, name = "Generical", avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp), temperature = 0.6f, systemPrompt = "You are the best generic assistant.", isMain = true))
+internal val DEFAULT_ASSISTANTS = listOf(Assistant(id = DEFAULT_ASSISTANT_ID, name = "Evolia", avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp), temperature = 0.6f, systemPrompt = "You are the best generic assistant.", isMain = true))
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")
 private val DEFAULT_TTS_PROVIDERS = listOf(TTSProviderSetting.SystemTTS(id = DEFAULT_SYSTEM_TTS_ID, name = ""))

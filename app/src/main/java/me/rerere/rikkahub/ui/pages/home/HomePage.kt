@@ -135,12 +135,24 @@ fun AgentListPage() {
         }
     }
 
+    // 分离主智能体和其他智能体
+    val mainAgents = remember(settings.assistants) { settings.assistants.filter { it.isMain } }
+    val otherAgents = remember(settings.assistants) { settings.assistants.filter { !it.isMain } }
+
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        val newAssistants = settings.assistants.toMutableList().apply {
-            add(to.index, removeAt(from.index))
+        // 计算索引偏移逻辑
+        // 主智能体列表 (mainAgents) + 1 (Spacer)
+        val offset = if (mainAgents.isNotEmpty()) mainAgents.size + 1 else 0
+        val fromIndex = from.index - offset
+        val toIndex = to.index - offset
+
+        if (fromIndex >= 0 && toIndex >= 0 && fromIndex < otherAgents.size && toIndex < otherAgents.size) {
+            val newOthers = otherAgents.toMutableList().apply {
+                add(toIndex, removeAt(fromIndex))
+            }
+            assistantVm.updateSettings(settings.copy(assistants = mainAgents + newOthers))
         }
-        assistantVm.updateSettings(settings.copy(assistants = newAssistants))
     }
 
     Scaffold(
@@ -184,11 +196,44 @@ fun AgentListPage() {
             contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            itemsIndexed(settings.assistants, key = { _, assistant -> assistant.id }) { index, assistant ->
+            // 1. 渲染主智能体 (独立卡片)
+            itemsIndexed(mainAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
+                // 主智能体固定不可删除
+                PhysicsSwipeToDelete(
+                    onDelete = {}, // 修复：必须传入 onDelete 参数，即使 deleteEnabled 为 false
+                    position = if (mainAgents.size == 1) ItemPosition.ONLY else if (index == 0) ItemPosition.FIRST else if (index == mainAgents.lastIndex) ItemPosition.LAST else ItemPosition.MIDDLE,
+                    deleteEnabled = false,
+                    modifier = Modifier.fillMaxWidth(),
+                    groupCornerRadius = 24.dp
+                ) { _ ->
+                    AgentItem(
+                        assistant = assistant,
+                        lastMessage = lastMessages[assistant.id] ?: "",
+                        onClick = {
+                            scope.launch {
+                                chatVm.selectAssistant(assistant.id)
+                                val lastConv = repo.getConversationsOfAssistant(assistant.id)
+                                    .firstOrNull()
+                                    ?.firstOrNull()
+                                val chatId = lastConv?.id ?: Uuid.random()
+                                navController.navigate(Screen.Chat(id = chatId.toString()))
+                            }
+                        }
+                    )
+                }
+            }
+
+            // 间距项
+            if (mainAgents.isNotEmpty() && otherAgents.isNotEmpty()) {
+                item { Spacer(Modifier.height(12.dp)) }
+            }
+
+            // 2. 渲染其他智能体 (组合卡片)
+            itemsIndexed(otherAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
                 val position = when {
-                    settings.assistants.size == 1 -> ItemPosition.ONLY
+                    otherAgents.size == 1 -> ItemPosition.ONLY
                     index == 0 -> ItemPosition.FIRST
-                    index == settings.assistants.lastIndex -> ItemPosition.LAST
+                    index == otherAgents.lastIndex -> ItemPosition.LAST
                     else -> ItemPosition.MIDDLE
                 }
 
@@ -196,10 +241,9 @@ fun AgentListPage() {
                     state = reorderableState,
                     key = assistant.id
                 ) { isDragging ->
-                    val canDelete = settings.assistants.size > 1 && !assistant.isMain
                     PhysicsSwipeToDelete(
                         position = position,
-                        deleteEnabled = canDelete,
+                        deleteEnabled = true,
                         onDelete = {
                             assistantVm.removeAssistant(assistant)
                             toaster.show(
@@ -230,16 +274,14 @@ fun AgentListPage() {
                             },
                             onCopy = { assistantVm.copyAssistant(assistant) },
                             dragHandle = {
-                                if (!assistant.isMain) {
-                                    IconButton(
-                                        onClick = {},
-                                        modifier = Modifier.longPressDraggableHandle(
-                                            onDragStarted = { haptics.perform(HapticPattern.Pop) },
-                                            onDragStopped = { haptics.perform(HapticPattern.Thud) }
-                                        )
-                                    ) {
-                                        Icon(Icons.Rounded.DragIndicator, null)
-                                    }
+                                IconButton(
+                                    onClick = {},
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = { haptics.perform(HapticPattern.Pop) },
+                                        onDragStopped = { haptics.perform(HapticPattern.Thud) }
+                                    )
+                                ) {
+                                    Icon(Icons.Rounded.DragIndicator, null)
                                 }
                             }
                         )
@@ -267,8 +309,8 @@ fun AgentListPage() {
                     Text(
                         text = stringResource(R.string.app_slogan),
                         style = MaterialTheme.typography.bodySmall.copy(
-                            lineHeight = 22.sp, // 增加行高，像诗一样
-                            letterSpacing = 0.8.sp, // 增加字间距
+                            lineHeight = 22.sp,
+                            letterSpacing = 0.8.sp,
                             fontSize = 11.sp
                         ),
                         textAlign = TextAlign.Center,

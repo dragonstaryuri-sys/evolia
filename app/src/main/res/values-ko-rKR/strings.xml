@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="chat_page_title">채팅</string>
+    <string name="default_assistant_name">Evolia</string>
+    <string name="chat_page_title">채팅</string>
   <string name="about_page_github">깃허브</string>
   <string name="about_page_license">라이선스</string>
   <string name="about_page_system">시스템</string>
