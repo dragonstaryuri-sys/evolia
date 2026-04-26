@@ -486,8 +486,7 @@ class MemoryConsolidationWorker(
                 model = model,
                 assistantName = assistant.name,
                 previousSummary = baseSummary,
-                messages = newMessages,
-                temporarySummaries = conv.temporarySummaries
+                messages = newMessages
             )
         }
     }
@@ -516,30 +515,24 @@ class MemoryConsolidationWorker(
         model: me.rerere.ai.provider.Model,
         assistantName: String,
         previousSummary: String?,
-        messages: List<UIMessage>,
-        temporarySummaries: List<String> = emptyList()
+        messages: List<UIMessage>
     ): String {
         // 此处修改：使用 toContentText() 排除推理过程
         val messagesText = messages.takeLast(100).joinToString("\n") {
             "${it.role}: ${it.toContentText().take(5000)}"
         }
 
-        val detailText = if (temporarySummaries.isNotEmpty()) {
-            "\n### Tactical Details from Recent Segments:\n" +
-                temporarySummaries.joinToString("\n") { "- $it" }
-        } else ""
-
         val locale = Locale.getDefault().displayName
 
         val prompt = if (previousSummary != null) {
             DEFAULT_FULL_SUMMARY_PROMPT
-                .replace("{{previous_summary}}", previousSummary + detailText)
+                .replace("{{previous_summary}}", previousSummary)
                 .replace("{{new_messages}}", messagesText)
                 .replace("{{locale}}", locale)
                 .replace("{{char}}", assistantName)
         } else {
             DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-                .replace("{{text}}", detailText + "\n" + messagesText)
+                .replace("{{text}}", messagesText)
                 .replace("{{locale}}", locale)
                 .replace("{{char}}", assistantName)
         }
