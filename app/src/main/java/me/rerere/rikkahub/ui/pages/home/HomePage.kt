@@ -4,38 +4,53 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ChatBubble
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.ui.components.ui.ItemPosition
+import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.hooks.useEditState
+import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
+import me.rerere.rikkahub.ui.pages.assistant.AssistantCreationSheet
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
-import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
+import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import org.koin.androidx.compose.koinViewModel
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 
 enum class HomeTab {
@@ -69,9 +84,11 @@ fun HomePage() {
                     label = { Text(stringResource(R.string.settings)) }
                 )
             }
-        }
+        },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        Box(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()).fillMaxSize()) {
             AnimatedContent(
                 targetState = currentTab,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -87,96 +104,235 @@ fun HomePage() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AgentListPage() {
-    val vm: ChatListVM = koinViewModel()
+    val chatVm: ChatListVM = koinViewModel()
+    val assistantVm: AssistantVM = koinViewModel()
     val navController = LocalNavController.current
-    val settings by vm.settings.collectAsStateWithLifecycle()
-    val lastMessages by vm.assistantsLastMessages.collectAsStateWithLifecycle()
+    val settings by assistantVm.settings.collectAsStateWithLifecycle()
+    val lastMessages by chatVm.assistantsLastMessages.collectAsStateWithLifecycle()
+    val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
     val repo = org.koin.compose.koinInject<me.rerere.rikkahub.core.data.repository.ConversationRepository>()
+    val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
-    if (settings == null) return
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = stringResource(R.string.chat_page_title),
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(16.dp)
-        )
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 80.dp)
-        ) {
-            items(settings!!.assistants) { assistant ->
-                AgentItem(
-                    assistant = assistant,
-                    lastMessage = lastMessages[assistant.id] ?: "",
-                    onClick = {
-                        scope.launch {
-                            // 切换当前助手
-                            vm.selectAssistant(assistant.id)
-
-                            // 查找该助手的最近一次会话
-                            val lastConv = repo.getConversationsOfAssistant(assistant.id)
-                                .firstOrNull()
-                                ?.firstOrNull()
-
-                            val chatId = lastConv?.id ?: Uuid.random()
-                            navController.navigate(Screen.Chat(id = chatId.toString()))
-                        }
-                    }
-                )
-            }
-
-            item {
-                OutlinedButton(
-                    onClick = { navController.navigate(Screen.Assistant) },
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Rounded.Add, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.assistant_page_add))
+    val createState = useEditState<Assistant> {
+        assistantVm.addAssistant(it)
+    }
+    val context = LocalContext.current
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val res = me.rerere.rikkahub.utils.AssistantExportImport.parseImport(uri, context)
+                if (res is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Success) {
+                    assistantVm.addAssistant(res.assistant)
+                    toaster.show("Character Imported")
                 }
             }
         }
     }
+
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val newAssistants = settings.assistants.toMutableList().apply {
+            add(to.index, removeAt(from.index))
+        }
+        assistantVm.updateSettings(settings.copy(assistants = newAssistants))
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.chat_page_title),
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate(Screen.AssistantSearch) }) {
+                        Icon(Icons.Rounded.Search, contentDescription = "Search")
+                    }
+                    IconButton(onClick = {
+                        createState.open(Assistant(
+                            chatModelId = settings.chatModelId,
+                            embeddingModelId = settings.embeddingModelId,
+                            memoryModelId = settings.memoryModelId,
+                            diaryModelId = settings.diaryModelId,
+                        ))
+                    }) {
+                        Icon(Icons.Rounded.Add, contentDescription = "Add")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.95f)
+                )
+            )
+        },
+        containerColor = Color.Transparent
+    ) { innerPadding ->
+        LazyColumn(
+            state = lazyListState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            itemsIndexed(settings.assistants, key = { _, assistant -> assistant.id }) { index, assistant ->
+                val position = when {
+                    settings.assistants.size == 1 -> ItemPosition.ONLY
+                    index == 0 -> ItemPosition.FIRST
+                    index == settings.assistants.lastIndex -> ItemPosition.LAST
+                    else -> ItemPosition.MIDDLE
+                }
+
+                ReorderableItem(
+                    state = reorderableState,
+                    key = assistant.id
+                ) { isDragging ->
+                    val canDelete = settings.assistants.size > 1 && !assistant.isMain
+                    PhysicsSwipeToDelete(
+                        position = position,
+                        deleteEnabled = canDelete,
+                        onDelete = {
+                            assistantVm.removeAssistant(assistant)
+                            toaster.show(
+                                message = context.getString(R.string.assistant_deleted, assistant.name),
+                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                    label = context.getString(R.string.undo),
+                                    onClick = { assistantVm.undoRemoveAssistant(assistant) }
+                                )
+                            )
+                        },
+                        modifier = Modifier
+                            .scale(if (isDragging) 0.95f else 1f)
+                            .fillMaxWidth(),
+                        groupCornerRadius = 24.dp
+                    ) { _ ->
+                        AgentItem(
+                            assistant = assistant,
+                            lastMessage = lastMessages[assistant.id] ?: "",
+                            onClick = {
+                                scope.launch {
+                                    chatVm.selectAssistant(assistant.id)
+                                    val lastConv = repo.getConversationsOfAssistant(assistant.id)
+                                        .firstOrNull()
+                                        ?.firstOrNull()
+                                    val chatId = lastConv?.id ?: Uuid.random()
+                                    navController.navigate(Screen.Chat(id = chatId.toString()))
+                                }
+                            },
+                            onCopy = { assistantVm.copyAssistant(assistant) },
+                            dragHandle = {
+                                if (!assistant.isMain) {
+                                    IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = { haptics.perform(HapticPattern.Pop) },
+                                            onDragStopped = { haptics.perform(HapticPattern.Thud) }
+                                        )
+                                    ) {
+                                        Icon(Icons.Rounded.DragIndicator, null)
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
+            // 优化的品牌页脚
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 64.dp, bottom = 48.dp)
+                        .padding(horizontal = 32.dp)
+                        .alpha(0.35f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        text = stringResource(R.string.app_slogan),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            lineHeight = 22.sp, // 增加行高，像诗一样
+                            letterSpacing = 0.8.sp, // 增加字间距
+                            fontSize = 11.sp
+                        ),
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
+
+    AssistantCreationSheet(
+        state = createState,
+        onImportClick = {
+            createState.dismiss()
+            importLauncher.launch(arrayOf("*/*"))
+        }
+    )
 }
 
 @Composable
 fun AgentItem(
     assistant: Assistant,
     lastMessage: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onCopy: (() -> Unit)? = null,
+    dragHandle: (@Composable () -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
             .clickable { onClick() },
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(16.dp)
+        color = Color.Transparent,
+        shape = RoundedCornerShape(0.dp)
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             UIAvatar(
                 name = assistant.name,
                 value = assistant.avatar,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(8.dp)
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = assistant.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = assistant.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (assistant.isMain) {
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Rounded.Star,
+                            contentDescription = "Master",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
                 Text(
                     text = lastMessage,
                     style = MaterialTheme.typography.bodySmall,
@@ -185,6 +341,19 @@ fun AgentItem(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            if (onCopy != null) {
+                IconButton(onClick = onCopy) {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentCopy,
+                        contentDescription = "Copy",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                    )
+                }
+            }
+
+            dragHandle?.invoke()
         }
     }
 }

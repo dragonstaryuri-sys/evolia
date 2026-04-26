@@ -27,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,21 +41,21 @@ fun SettingsGroup(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
-        modifier = Modifier.padding(bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        modifier = Modifier.padding(bottom = 16.dp), // 模块间的间距
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 16.dp, bottom = 4.dp, top = 0.dp)
+            modifier = Modifier.padding(start = 24.dp, bottom = 0.dp, top = 0.dp)
         )
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(24.dp)),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .clip(RoundedCornerShape(24.dp)), // 整个模块的大圆角
+            verticalArrangement = Arrangement.spacedBy(0.dp), // 内部项无间距
             content = content
         )
     }
@@ -70,13 +72,13 @@ fun SettingGroupItem(
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.98f else 1f,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
         label = "scale"
     )
-    
+
     Surface(
         onClick = {
             if (onClick != null) {
@@ -86,7 +88,7 @@ fun SettingGroupItem(
         },
         enabled = onClick != null,
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(10.dp),
+        shape = RectangleShape, // 内部项设为直角，以便合并成一整块卡片
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()
@@ -112,7 +114,7 @@ fun SettingGroupItem(
             }
             Column(
                 modifier = Modifier.weight(1f).padding(end = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = title,
@@ -122,7 +124,7 @@ fun SettingGroupItem(
                 if (subtitle != null) {
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall, // 微调字体大小
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }

@@ -59,6 +59,7 @@ import me.rerere.rikkahub.ui.hooks.readBooleanPreference
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
+import me.rerere.rikkahub.ui.pages.assistant.AssistantSearchPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
@@ -381,6 +382,10 @@ class RouteActivity : AppCompatActivity() {
                         }
                     }
 
+                    composable<Screen.AssistantSearch> {
+                        AssistantSearchPage()
+                    }
+
                     composable<Screen.AssistantDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.AssistantDetail>()
                         CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
@@ -451,6 +456,9 @@ sealed interface Screen {
 
     @Serializable
     data object Assistant : Screen
+
+    @Serializable
+    data object AssistantSearch : Screen
 
     @Serializable
     data class AssistantDetail(

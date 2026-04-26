@@ -11,24 +11,22 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.discover.ui.components.ScheduleCard
 import me.rerere.rikkahub.discover.ui.ScheduleViewModel
 import org.koin.androidx.compose.koinViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscoverPage() {
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     // 获取日程 ViewModel
     val scheduleViewModel: ScheduleViewModel = koinViewModel()
@@ -37,14 +35,20 @@ fun DiscoverPage() {
     val unfinishedCount by scheduleViewModel.unfinishedCount.collectAsState()
     val allPendingSchedules by scheduleViewModel.allPendingSchedules.collectAsState()
 
-    Column(modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection)) {
-        OneUITopAppBar(
-            title = stringResource(R.string.discover_page_title),
-            scrollBehavior = scrollBehavior
-        )
-
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.discover_page_title),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            )
+        }
+    ) { innerPadding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -54,9 +58,8 @@ fun DiscoverPage() {
                     progress = progress,
                     completedCount = completedCount,
                     unfinishedCount = unfinishedCount,
-                    recentTasks = allPendingSchedules, // 这里改为传入所有待办列表（已排好序）
+                    recentTasks = allPendingSchedules,
                     onClick = {
-                        // 使用类型安全的路由进行导航
                         navController.navigate(Screen.Schedule)
                     }
                 )

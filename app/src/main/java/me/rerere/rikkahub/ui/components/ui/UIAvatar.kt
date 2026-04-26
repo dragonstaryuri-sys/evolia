@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -80,6 +81,7 @@ fun UIAvatar(
     value: Avatar,
     modifier: Modifier = Modifier,
     loading: Boolean = false,
+    shape: Shape? = null, // 新增参数
     onUpdate: ((Avatar) -> Unit)? = null,
     onClick: (() -> Unit)? = null
 ) {
@@ -103,8 +105,10 @@ fun UIAvatar(
         }
     }
 
+    val avatarShape = shape ?: rememberAvatarShape(loading)
+
     Surface(
-        shape = rememberAvatarShape(loading),
+        shape = avatarShape,
         modifier = modifier.size(32.dp),
         onClick = {
             onClick?.invoke()
