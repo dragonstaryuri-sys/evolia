@@ -112,7 +112,10 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 ### 6.3 Master Memory (L3 - Personal Archive)
 - **Mechanism**: An evolving "User Profile" that transcends individual conversations.
 - **Generation Logic**:
-    - **Automatic (Incremental)**: Aggregates L2 summaries of only those conversations updated since `lastMasterMemoryUpdate`. 
+    - **Automatic (Incremental)**: Aggregates L2 summaries of conversations updated since `lastMasterMemoryUpdate`.
+    - **Trigger Strategy (Throttling)**: To avoid excessive API calls, automatic L3 updates are independent of L2's delay and only trigger when:
+        - **Inactivity Timeout**: At least 2 hours have passed since the user's last message across all conversations.
+        - **Daily Sync**: Once per day during the 3 AM (system local time) window.
     - **Manual (Full Sync)**: Aggregates L2 summaries from ALL conversations. Useful for re-calibrating the archive after database manual edits or deletions.
 - **Threshold**: Only considers conversations with >= 2 messages.
 - **Compression**: Automatically triggers a compression task if the archive exceeds 2500 characters to maintain context window efficiency.

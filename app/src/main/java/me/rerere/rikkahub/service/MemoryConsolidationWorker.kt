@@ -349,16 +349,7 @@ class MemoryConsolidationWorker(
                 (forceMaster || updateTime > currentAssistant.lastMasterMemoryUpdate) && it.currentMessages.size >= 2
             }.sortedBy { it.updateAt }
 
-            // 自动触发逻辑：距离最后一次发送消息超过 2 小时，或者处于每日凌晨 3 点 (Catch-all)
-            val now = System.currentTimeMillis()
-            val lastInteractionTime = conversations.maxOfOrNull { it.updateAt.toEpochMilli() } ?: 0L
-            val isCooldownPassed = now - lastInteractionTime >= 2 * 60 * 60 * 1000L // 2小时
-            val isScheduledWindow = LocalDateTime.now().hour == 3
-
-            // 只有手动触发，或者满足时间条件且有新内容时才执行更新
-            val shouldUpdate = forceMaster || (newConversations.isNotEmpty() && (isCooldownPassed || isScheduledWindow))
-
-            if (shouldUpdate) {
+            if (newConversations.isNotEmpty() || forceMaster) {
                 try {
                     val contextParts = mutableListOf<String>()
                     for (conv in newConversations) {
