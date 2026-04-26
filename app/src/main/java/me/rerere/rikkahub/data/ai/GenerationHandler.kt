@@ -69,6 +69,7 @@ import kotlin.uuid.Uuid
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_WORLD_PROMPT
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.ZoneId
@@ -76,6 +77,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.DayOfWeek
 import java.time.format.TextStyle
+import kotlin.text.append
 
 
 /**
@@ -522,13 +524,19 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine("\n")
         }
 
-        // 2. Learning mode (legacy - still supported)
+        // 2. Virtual World Mode Injection
+        if (assistant.isVirtualWorldMode) {
+            baseSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT) // 已改为引用常量
+            baseSystemPromptBuilder.appendLine("\n")
+        }
+
+        // 3. Learning mode (legacy - still supported)
         if (assistant.learningMode) {
             baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
             baseSystemPromptBuilder.appendLine("\n")
         }
 
-        // 3. BEFORE_SYSTEM injections
+        // 4. BEFORE_SYSTEM injections
         beforeSystemModes.forEach { mode ->
             baseSystemPromptBuilder.append(mode.prompt)
             baseSystemPromptBuilder.appendLine()
@@ -538,14 +546,14 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine()
         }
 
-        // 4. Memory Archive
+        // 5. Memory Archive
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
             baseSystemPromptBuilder.append("## Memory Archive\n")
             baseSystemPromptBuilder.append(assistant.masterMemoryContent)
             baseSystemPromptBuilder.append("\n\n")
         }
 
-        // 5. AFTER_SYSTEM injections
+        // 6. AFTER_SYSTEM injections
         afterSystemModes.forEach { mode ->
             baseSystemPromptBuilder.appendLine()
             baseSystemPromptBuilder.append(mode.prompt)

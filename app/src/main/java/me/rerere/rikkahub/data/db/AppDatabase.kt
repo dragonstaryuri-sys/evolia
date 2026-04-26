@@ -58,7 +58,7 @@ import kotlinx.serialization.json.put
         AgentTaskEntity::class,
         ChatSegmentEntity::class
     ],
-    version = 30, // 升级版本
+    version = 31, // 升级版本：增加 ConversationEntity.isVirtual
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -80,7 +80,8 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 24, to = 25),
         AutoMigration(from = 27, to = 28),
         AutoMigration(from = 28, to = 29),
-        AutoMigration(from = 29, to = 30), // 新增迁移：增加 MemoryEntity.keywords
+        AutoMigration(from = 29, to = 30),
+        AutoMigration(from = 30, to = 31), // 新增自动迁移
     ]
 )
 @TypeConverters(TokenUsageConverter::class)

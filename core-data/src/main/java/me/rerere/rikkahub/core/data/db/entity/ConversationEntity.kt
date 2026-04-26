@@ -7,7 +7,8 @@ import androidx.room.PrimaryKey
 
 @Entity(
     indices = [
-        Index(value = ["assistant_id", "is_pinned", "update_at"])
+        Index(value = ["assistant_id", "is_pinned", "update_at"]),
+        Index(value = ["is_virtual"])
     ]
 )
 data class ConversationEntity(
@@ -43,4 +44,6 @@ data class ConversationEntity(
     val lastPruneMessageCount: Int = 0,
     @ColumnInfo(name = "last_refresh_time", defaultValue = "0")
     val lastRefreshTime: Long = 0L,
+    @ColumnInfo(name = "is_virtual", defaultValue = "0")
+    val isVirtual: Boolean = false,
 )

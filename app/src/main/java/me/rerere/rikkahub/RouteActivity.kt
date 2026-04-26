@@ -63,6 +63,7 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantSearchPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
+import me.rerere.rikkahub.ui.pages.chat.VirtualWorldPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
@@ -356,18 +357,21 @@ class RouteActivity : AppCompatActivity() {
                         exitTransition = { fadeOut() },
                     ) { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.Chat>()
-                        // 增加异常捕获以定位具体的错误 ID
-                        val uuid = try {
-                            Uuid.parse(route.id)
-                        } catch (e: Exception) {
-                            android.util.Log.e("RouteActivity", "Invalid UUID: ${route.id}")
-                            Uuid.random() // 或者跳转回首页
-                        }
                         ChatPage(
                             id = Uuid.parse(route.id),
                             text = route.text,
                             files = route.files.map { it.toUri() },
                             searchQuery = route.searchQuery
+                        )
+                    }
+
+                    composable<Screen.VirtualWorld>(
+                        enterTransition = { fadeIn() },
+                        exitTransition = { fadeOut() },
+                    ) { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.VirtualWorld>()
+                        VirtualWorldPage(
+                            id = Uuid.parse(route.id)
                         )
                     }
 
@@ -450,6 +454,9 @@ sealed interface Screen {
 
     @Serializable
     data class Chat(val id: String, val text: String? = null, val files: List<String> = emptyList(), val searchQuery: String? = null) : Screen
+
+    @Serializable
+    data class VirtualWorld(val id: String) : Screen
 
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen

@@ -20,32 +20,32 @@ interface ConversationDAO {
     @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
     fun getAll(): Flow<List<ConversationEntity>>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity ORDER BY update_at DESC")
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_virtual as isVirtual FROM conversationentity ORDER BY update_at DESC")
     fun getAllLight(): Flow<List<LightConversationEntity>>
 
     @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
     fun getAllPaging(): PagingSource<Int, ConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
-    fun getConversationsOfAssistant(assistantId: String): Flow<List<ConversationEntity>>
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = :isVirtual ORDER BY is_pinned DESC, update_at DESC")
+    fun getConversationsOfAssistant(assistantId: String, isVirtual: Boolean = false): Flow<List<ConversationEntity>>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
-    fun getConversationsOfAssistantPaging(assistantId: String): PagingSource<Int, LightConversationEntity>
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_virtual as isVirtual FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = :isVirtual ORDER BY is_pinned DESC, update_at DESC")
+    fun getConversationsOfAssistantPaging(assistantId: String, isVirtual: Boolean = false): PagingSource<Int, LightConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
-    suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int): List<ConversationEntity>
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = :isVirtual ORDER BY is_pinned DESC, update_at DESC LIMIT :limit")
+    suspend fun getRecentConversationsOfAssistant(assistantId: String, limit: Int, isVirtual: Boolean = false): List<ConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
-    fun searchConversations(searchText: String): Flow<List<ConversationEntity>>
+    @Query("SELECT * FROM conversationentity WHERE is_virtual = :isVirtual AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
+    fun searchConversations(searchText: String, isVirtual: Boolean = false): Flow<List<ConversationEntity>>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity WHERE (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
-    fun searchConversationsPaging(searchText: String): PagingSource<Int, LightConversationEntity>
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_virtual as isVirtual FROM conversationentity WHERE is_virtual = :isVirtual AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
+    fun searchConversationsPaging(searchText: String, isVirtual: Boolean = false): PagingSource<Int, LightConversationEntity>
 
-    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
-    fun searchConversationsOfAssistant(assistantId: String, searchText: String): Flow<List<ConversationEntity>>
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = :isVirtual AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
+    fun searchConversationsOfAssistant(assistantId: String, searchText: String, isVirtual: Boolean = false): Flow<List<ConversationEntity>>
 
-    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity WHERE assistant_id = :assistantId AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
-    fun searchConversationsOfAssistantPaging(assistantId: String, searchText: String): PagingSource<Int, LightConversationEntity>
+    @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_virtual as isVirtual FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = :isVirtual AND (title LIKE '%' || :searchText || '%' OR nodes LIKE '%' || :searchText || '%') ORDER BY is_pinned DESC, update_at DESC")
+    fun searchConversationsOfAssistantPaging(assistantId: String, searchText: String, isVirtual: Boolean = false): PagingSource<Int, LightConversationEntity>
 
     @Query("SELECT * FROM conversationentity WHERE id = :id")
     fun getConversationFlowById(id: String): Flow<ConversationEntity?>

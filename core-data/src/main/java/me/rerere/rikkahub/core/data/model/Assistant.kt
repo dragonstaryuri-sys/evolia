@@ -122,6 +122,9 @@ data class Assistant(
 
     // Master Assistant Flag
     val isMain: Boolean = false,
+
+    // Virtual World Mode
+    val isVirtualWorldMode: Boolean = false,
 )
 
 @Serializable

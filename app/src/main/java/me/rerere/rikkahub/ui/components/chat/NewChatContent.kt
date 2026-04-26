@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -92,6 +94,11 @@ fun NewChatContent(
     onAvatarClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    if (assistant.isVirtualWorldMode) {
+        VirtualWorldWelcome(assistant)
+        return
+    }
+
     // Pre-fetch string resources - add trailing space for cursor positioning
     val writePrompt = stringResource(R.string.new_chat_template_write_prompt) + " "
     val codePrompt = stringResource(R.string.new_chat_template_code_prompt) + " "
@@ -256,6 +263,63 @@ fun NewChatContent(
             }
             NewChatContentStyle.NONE -> {
                 // No content
+            }
+        }
+    }
+}
+
+@Composable
+private fun VirtualWorldWelcome(assistant: Assistant) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+        modifier = Modifier.padding(32.dp).fillMaxWidth()
+    ) {
+        UIAvatar(
+            name = assistant.name,
+            value = assistant.avatar,
+            modifier = Modifier.size(100.dp)
+        )
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "您已进入 ${assistant.name} 的世界",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "在这里，一切皆有可能。你们可以接触到彼此，感受真实的互动。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        Surface(
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Public,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    "虚拟世界模式已开启",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }

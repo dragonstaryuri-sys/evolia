@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.home
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -212,12 +214,20 @@ fun AgentListPage() {
                         onClick = {
                             scope.launch {
                                 chatVm.selectAssistant(assistant.id)
-                                val lastConv = repo.getConversationsOfAssistant(assistant.id)
+                                val lastConv = repo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
                                     .firstOrNull()
                                     ?.firstOrNull()
                                 val chatId = lastConv?.id ?: Uuid.random()
-                                navController.navigate(Screen.Chat(id = chatId.toString()))
+                                if (assistant.isVirtualWorldMode) {
+                                    navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
+                                } else {
+                                    navController.navigate(Screen.Chat(id = chatId.toString()))
+                                }
                             }
+                        },
+                        onModeToggle = {
+                            // 调用新封装的 toggleVirtualMode，自动触发归档逻辑
+                            chatVm.toggleVirtualMode(assistant)
                         }
                     )
                 }
@@ -265,11 +275,15 @@ fun AgentListPage() {
                             onClick = {
                                 scope.launch {
                                     chatVm.selectAssistant(assistant.id)
-                                    val lastConv = repo.getConversationsOfAssistant(assistant.id)
+                                    val lastConv = repo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
                                         .firstOrNull()
                                         ?.firstOrNull()
                                     val chatId = lastConv?.id ?: Uuid.random()
-                                    navController.navigate(Screen.Chat(id = chatId.toString()))
+                                    if (assistant.isVirtualWorldMode) {
+                                        navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
+                                    } else {
+                                        navController.navigate(Screen.Chat(id = chatId.toString()))
+                                    }
                                 }
                             },
                             onCopy = { assistantVm.copyAssistant(assistant) },
@@ -337,65 +351,123 @@ fun AgentItem(
     lastMessage: String,
     onClick: () -> Unit,
     onCopy: (() -> Unit)? = null,
+    onModeToggle: (() -> Unit)? = null,
     dragHandle: (@Composable () -> Unit)? = null
 ) {
+    val haptics = rememberPremiumHaptics()
+
+    // 背景色动画
+    val isVirtual = assistant.isVirtualWorldMode
+    val targetBackgroundColor = if (isVirtual) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+    } else {
+        Color.Transparent
+    }
+    val animatedColor by animateColorAsState(targetBackgroundColor, label = "bg_color")
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        color = Color.Transparent,
+        color = animatedColor,
         shape = RoundedCornerShape(0.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            UIAvatar(
-                name = assistant.name,
-                value = assistant.avatar,
-                modifier = Modifier.size(48.dp),
-                shape = RoundedCornerShape(8.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = assistant.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (assistant.isMain) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Rounded.Star,
-                            contentDescription = "Master",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
+        Box {
+            if (isVirtual) {
+                Box(
+                    modifier = Modifier.matchParentSize().background(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)
+                            )
                         )
-                    }
-                }
-                Text(
-                    text = lastMessage,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    )
                 )
             }
 
-            if (onCopy != null) {
-                IconButton(onClick = onCopy) {
-                    Icon(
-                        imageVector = Icons.Rounded.ContentCopy,
-                        contentDescription = "Copy",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                UIAvatar(
+                    name = assistant.name,
+                    value = assistant.avatar,
+                    modifier = Modifier.size(48.dp),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = assistant.name,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = if (isVirtual) MaterialTheme.colorScheme.primary else Color.Unspecified
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (assistant.isMain) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Rounded.Star,
+                                contentDescription = "Master",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        if (isVirtual) {
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "Virtual",
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = lastMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-            }
 
-            dragHandle?.invoke()
+                if (onModeToggle != null && assistant.isMain) {
+                    IconButton(onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onModeToggle()
+                    }) {
+                        Icon(
+                            imageVector = if (isVirtual) Icons.Rounded.Public else Icons.Rounded.PublicOff,
+                            contentDescription = "Toggle Virtual Mode",
+                            modifier = Modifier.size(22.dp),
+                            tint = if (isVirtual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                if (onCopy != null) {
+                    IconButton(onClick = onCopy) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = "Copy",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+
+                dragHandle?.invoke()
+            }
         }
     }
 }

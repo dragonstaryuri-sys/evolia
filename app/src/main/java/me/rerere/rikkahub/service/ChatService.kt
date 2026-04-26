@@ -351,7 +351,11 @@ class ChatService(
             settingsStore.updateAssistant(conversation.assistantId)
         } else {
             val assistant = settingsStore.settingsFlowRaw.first().getCurrentAssistant()
-            val newConversation = Conversation.ofId(id = conversationId, assistantId = assistant.id)
+            val newConversation = Conversation.ofId(
+                id = conversationId,
+                assistantId = assistant.id,
+                isVirtual = assistant.isVirtualWorldMode
+            )
                 .updateCurrentMessages(assistant.presetMessages)
             updateConversation(conversationId, newConversation)
         }
@@ -574,6 +578,7 @@ class ChatService(
                 tools = buildList {
                     // --- 工具权限过滤核心逻辑 ---
                     val isMain = assistant.isMain
+                    val isVirtual = conversation.isVirtual
 
                     val supportsBuiltIn = model.tools.isNotEmpty() || me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
                     val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
@@ -585,7 +590,10 @@ class ChatService(
                     }
 
                     // 2. 本地工具 (Local Tools)
-                    val targetOptions = if (isMain) {
+                    val targetOptions = if (isVirtual) {
+                         // 虚拟模式：仅保留 Memory, WebSearch (已在上面处理), TimeSense
+                         assistant.localTools.filter { it is LocalToolOption.TimeSense }
+                    } else if (isMain) {
                         assistant.localTools
                     } else {
                         // 非主智能体：仅保留 TimeSense（时间观念）
@@ -601,8 +609,8 @@ class ChatService(
                         )
                     )
 
-                    // 3. MCP 外部工具：只有主智能体可以使用
-                    if (isMain) {
+                    // 3. MCP 外部工具：只有主智能体且非虚拟模式可以使用
+                    if (isMain && !isVirtual) {
                         val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
                         mcpManager.getAllAvailableTools().forEach { mcpTool ->
                             val originalName = mcpTool.name

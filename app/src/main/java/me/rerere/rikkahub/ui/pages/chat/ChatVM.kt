@@ -29,6 +29,7 @@ import me.rerere.rikkahub.core.data.model.AssistantAffectScope
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.replaceRegexes
+import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
@@ -206,13 +207,14 @@ class ChatVM(
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(
             currentAssistantIdFlow,
-            _searchQuery
-        ) { assistantId, query -> assistantId to query }
-            .flatMapLatest { (assistantId, query) ->
+            _searchQuery,
+            conversation.map { it.isVirtual }.distinctUntilChanged()
+        ) { assistantId, query, isVirtual -> Triple(assistantId, query, isVirtual) }
+            .flatMapLatest { (assistantId, query, isVirtual) ->
                 if (query.isBlank()) {
-                    conversationRepo.getConversationsOfAssistantPaging(assistantId)
+                    conversationRepo.getConversationsOfAssistantPaging(assistantId, isVirtual = isVirtual)
                 } else {
-                    conversationRepo.searchConversationsOfAssistantPaging(assistantId, query)
+                    conversationRepo.searchConversationsOfAssistantPaging(assistantId, query, isVirtual = isVirtual)
                 }
             }
             .map { pagingData ->
@@ -309,11 +311,32 @@ class ChatVM(
         updateConversation(newConversation)
     }
 
-    fun handleMessageTruncate() {
+    fun handleMessageTruncate(isVirtualNewTopic: Boolean = false) {
         viewModelScope.launch {
-            val lastTruncateIndex = conversation.value.messageNodes.lastIndex + 1
-            val newConversation = conversation.value.copy(truncateIndex = if (conversation.value.truncateIndex == lastTruncateIndex) -1 else lastTruncateIndex, title = "", chatSuggestions = emptyList())
-            chatService.saveConversation(id = _conversationId, conversation = newConversation)
+            val currentConv = conversation.value
+
+            if (isVirtualNewTopic) {
+                // UI 上增加一行灰字提示，告诉用户已开启新话题
+                val hintNode = UIMessage.system("——— 已开启新话题 ———").toMessageNode()
+                val updatedNodes = currentConv.messageNodes + hintNode
+                val newTruncateIndex = updatedNodes.lastIndex
+
+                val newConversation = currentConv.copy(
+                    messageNodes = updatedNodes,
+                    truncateIndex = newTruncateIndex,
+                    title = "",
+                    chatSuggestions = emptyList()
+                )
+                chatService.saveConversation(id = _conversationId, conversation = newConversation)
+            } else {
+                val lastTruncateIndex = currentConv.messageNodes.lastIndex + 1
+                val newConversation = currentConv.copy(
+                    truncateIndex = if (currentConv.truncateIndex == lastTruncateIndex) -1 else lastTruncateIndex,
+                    title = "",
+                    chatSuggestions = emptyList()
+                )
+                chatService.saveConversation(id = _conversationId, conversation = newConversation)
+            }
         }
     }
 
@@ -332,7 +355,7 @@ class ChatVM(
                 })
             })
         }
-        val newConversation = Conversation(id = Uuid.random(), assistantId = conversation.value.assistantId, messageNodes = nodes)
+        val newConversation = Conversation(id = Uuid.random(), assistantId = conversation.value.assistantId, messageNodes = nodes, isVirtual = conversation.value.isVirtual)
         chatService.saveConversation(newConversation.id, newConversation)
         return newConversation
     }

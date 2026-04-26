@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.toLocalString
@@ -36,15 +37,19 @@ class ChatListVM(
 
     val recentlyRestoredIds = chatService.recentlyRestoredIds
 
+    // 模式切换状态：用于控制全屏转场动画
+    private val _isSwitchingMode = MutableStateFlow(false)
+    val isSwitchingMode: StateFlow<Boolean> = _isSwitchingMode.asStateFlow()
+
     /**
-     * 每个助手的最后一条消息内容
+     * 每个助手的最后一条消息内容 (根据当前模式显示)
      */
     val assistantsLastMessages: StateFlow<Map<Uuid, String>> = settings
         .flatMapLatest { settings ->
             if (settings.assistants.isEmpty()) return@flatMapLatest flowOf(emptyMap())
             combine(
                 settings.assistants.map { assistant ->
-                    conversationRepo.getConversationsOfAssistant(assistant.id)
+                    conversationRepo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
                         .map { conversations ->
                             assistant.id to (conversations.firstOrNull()?.lastMessageContent ?: "")
                         }
@@ -57,13 +62,14 @@ class ChatListVM(
 
     val conversations: Flow<PagingData<ConversationListItem>> = combine(
         settings.map { it.assistantId }.distinctUntilChanged(),
-        _searchQuery
-    ) { assistantId, query -> assistantId to query }
-        .flatMapLatest { (assistantId, query) ->
+        _searchQuery,
+        settings.map { s -> s.assistants.find { it.id == s.assistantId }?.isVirtualWorldMode ?: false }.distinctUntilChanged()
+    ) { assistantId, query, isVirtual -> Triple(assistantId, query, isVirtual) }
+        .flatMapLatest { (assistantId, query, isVirtual) ->
             if (query.isBlank()) {
-                conversationRepo.getConversationsOfAssistantPaging(assistantId)
+                conversationRepo.getConversationsOfAssistantPaging(assistantId, isVirtual = isVirtual)
             } else {
-                conversationRepo.searchConversationsOfAssistantPaging(assistantId, query)
+                conversationRepo.searchConversationsOfAssistantPaging(assistantId, query, isVirtual = isVirtual)
             }
         }
         .map { pagingData ->
@@ -156,6 +162,40 @@ class ChatListVM(
                 .setInputData(androidx.work.workDataOf("FORCE_CONVERSATION_ID" to conversation.id.toString()))
                 .build()
             androidx.work.WorkManager.getInstance(context).enqueue(request)
+        }
+    }
+
+    /**
+     * 切换虚拟世界模式，并触发自动归档 (Episode Generation)
+     */
+    fun toggleVirtualMode(assistant: Assistant) {
+        viewModelScope.launch {
+            _isSwitchingMode.value = true
+            try {
+                // 1. 在离开当前模式前，尝试对该模式下的最后一次对话进行归档
+                val lastConv = conversationRepo.getConversationsOfAssistant(
+                    assistantId = assistant.id,
+                    isVirtual = assistant.isVirtualWorldMode
+                ).firstOrNull()?.firstOrNull()
+
+                lastConv?.let {
+                    android.util.Log.i("ChatListVM", "Switching mode: archiving last conversation ${it.id}")
+                    chatService.archiveConversation(it.id, force = true)
+                }
+
+                // 2. 更新设置
+                val currentSettings = settings.value
+                val updatedSettings = currentSettings.copy(
+                    assistants = currentSettings.assistants.map {
+                        if (it.id == assistant.id) it.copy(isVirtualWorldMode = !it.isVirtualWorldMode) else it
+                    }
+                )
+                settingsStore.update(updatedSettings)
+                // 增加一个小小的延迟确保体验流畅
+                kotlinx.coroutines.delay(500)
+            } finally {
+                _isSwitchingMode.value = false
+            }
         }
     }
 
