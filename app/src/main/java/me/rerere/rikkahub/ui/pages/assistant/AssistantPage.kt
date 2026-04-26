@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.pages.assistant
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,6 +73,7 @@ import androidx.compose.material.icons.rounded.PowerOff
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material3.OutlinedButton
 import me.rerere.rikkahub.R
@@ -174,7 +174,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             }
         }
 
-        result
+        result.sortedByDescending { it.isMain }
     }
 
     val isFiltering = selectedTagIds.isNotEmpty() || searchQuery.isNotBlank()
@@ -321,8 +321,8 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                         state = reorderableState,
                         key = assistant.id
                     ) { isDragging ->
-                        // Check if delete is allowed
-                        val canDelete = settings.assistants.size > 1
+                        // --- 改进：主智能体不允许删除 ---
+                        val canDelete = settings.assistants.size > 1 && !assistant.isMain
 
                         androidx.compose.runtime.key(canDelete) {
                             PhysicsSwipeToDelete(
@@ -368,7 +368,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                                     vm.copyAssistant(assistant)
                                 },
                                 dragHandle = {
-                                    if (!isFiltering) {
+                                    if (!isFiltering && !assistant.isMain) {
                                         IconButton(
                                             onClick = {},
                                             modifier = Modifier.longPressDraggableHandle(
@@ -541,12 +541,25 @@ private fun AssistantItemContent(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(
-                text = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (assistant.isMain) {
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = "Master",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
 
             // Only show tag row when there are tags or memory
             val hasContent = assistant.enableMemory || assistant.tags.isNotEmpty()

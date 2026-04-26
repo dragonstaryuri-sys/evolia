@@ -119,6 +119,9 @@ data class Assistant(
     val enableAutoDiary: Boolean = false,
     val autoDiaryTime: String = "06:00",
     val lastAutoDiaryDate: String = "",
+
+    // Master Assistant Flag
+    val isMain: Boolean = false,
 )
 
 @Serializable

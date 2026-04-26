@@ -214,7 +214,43 @@ class SettingsStore(
                     )
                 } else provider
             }.toMutableList()
-            val assistants = it.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
+            var assistants = it.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
+
+            // --- 强化修复逻辑：绝对单主智能体约束 (修正全员 evolia 问题) ---
+            val mainCount = assistants.count { a -> a.isMain }
+            if (assistants.isNotEmpty() && mainCount != 1) {
+                Log.w(TAG, "Master assistant count is $mainCount, enforcing absolute single-master rule.")
+
+                val currentSelectedId = it.assistantId
+                var masterAlreadyEnforced = false
+
+                assistants = assistants.map { a ->
+                    // 修正逻辑：
+                    // 1. 如果存在多个主智能体（之前的 Bug 导致），只保留列表中的第一个标记为主的。
+                    // 2. 如果一个都没有（旧版本升级），将当前选中的设为主智能体。
+                    val shouldBeMain = if (!masterAlreadyEnforced) {
+                        if (mainCount > 1) {
+                             a.isMain // 如果这个是 true，它会被保留，并锁死 masterAlreadyEnforced 为 true
+                        } else {
+                             // 此时 mainCount == 0
+                             a.id == currentSelectedId || currentSelectedId == Uuid.NIL
+                        }
+                    } else false
+
+                    if (shouldBeMain) {
+                        masterAlreadyEnforced = true
+                        a.copy(isMain = true)
+                    } else {
+                        a.copy(isMain = false)
+                    }
+                }.toMutableList()
+
+                // 兜底：如果上面的映射没能选出主智能体，强行指定第一个
+                if (!masterAlreadyEnforced && assistants.isNotEmpty()) {
+                    assistants[0] = assistants[0].copy(isMain = true)
+                }
+            }
+
             val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
             DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
                 if (ttsProviders.none { provider -> provider.id == defaultTTSProvider.id }) {
@@ -430,7 +466,7 @@ fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 fun Settings.findModelById(uuid: Uuid): Model? = this.providers.findModelById(uuid)
 fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? { forEach { s -> s.models.forEach { if (it.id == uuid) return it } }; return null }
 fun Settings.getCurrentChatModel(): Model? = findModelById(this.getCurrentAssistant().chatModelId ?: this.chatModelId)
-fun Settings.getCurrentAssistant(): Assistant = assistants.find { it.id == assistantId } ?: assistants.firstOrNull() ?: DEFAULT_ASSISTANTS.first()
+fun Settings.getCurrentAssistant(): Assistant = assistants.find { it.id == assistantId } ?: assistants.find { it.isMain } ?: assistants.firstOrNull() ?: DEFAULT_ASSISTANTS.first()
 fun Settings.getAssistantById(id: Uuid): Assistant? = assistants.find { it.id == id }
 fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
     val ui = (assistant ?: getCurrentAssistant()).uiSettings
@@ -461,6 +497,6 @@ fun Model.findProvider(providers: List<ProviderSetting>, checkOverwrite: Boolean
 
 internal val GEMINI_2_5_FLASH_ID = Uuid.parse("cd2cba9a-3f92-4148-b4c6-4d7a86f7b9c2")
 internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa36b4e")
-internal val DEFAULT_ASSISTANTS = listOf(Assistant(id = DEFAULT_ASSISTANT_ID, name = "Generical", avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp), temperature = 0.6f, systemPrompt = "You are the best generic assistant."))
+internal val DEFAULT_ASSISTANTS = listOf(Assistant(id = DEFAULT_ASSISTANT_ID, name = "Generical", avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp), temperature = 0.6f, systemPrompt = "You are the best generic assistant.", isMain = true))
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")
 private val DEFAULT_TTS_PROVIDERS = listOf(TTSProviderSetting.SystemTTS(id = DEFAULT_SYSTEM_TTS_ID, name = ""))

@@ -48,7 +48,7 @@ class AssistantVM(
             if (newAssistant.name.isBlank()) {
                 newAssistant = newAssistant.copy(
                     name = "Generical",
-                    avatar = Avatar.Resource(R.drawable.default_generical_pfp),
+                    avatar = Avatar.Resource(R.drawable.about_logo),
                     systemPrompt = """
                         You are the best generic assistant, called {{char}}. {{char}} is a really nice guy. He doesn't use emojis though. Use the search tool when looking for factual info. You can have opinions if the user asks you for one.
 

@@ -43,16 +43,16 @@ import kotlin.uuid.Uuid
 private const val TAG = "AssistantWidget"
 
 class AssistantWidget : GlanceAppWidget() {
-    
+
     // Use Glance's built-in preferences state definition
     override val stateDefinition: GlanceStateDefinition<*> = PreferencesGlanceStateDefinition
-    
+
     companion object {
         val ASSISTANT_ID_KEY = stringPreferencesKey("assistant_id")
         val ASSISTANT_NAME_KEY = stringPreferencesKey("assistant_name")
         val AVATAR_TYPE_KEY = stringPreferencesKey("avatar_type")
         val AVATAR_DATA_KEY = stringPreferencesKey("avatar_data")
-        
+
         // Helper to save widget state and trigger update
         suspend fun updateWidgetState(
             context: Context,
@@ -63,7 +63,7 @@ class AssistantWidget : GlanceAppWidget() {
             avatarData: String
         ) {
             Log.d(TAG, "updateWidgetState: id=$assistantId, name=$assistantName, type=$avatarType")
-            
+
             // Use explicit PreferencesGlanceStateDefinition to ensure state is saved correctly
             updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
                 prefs.toMutablePreferences().apply {
@@ -73,12 +73,12 @@ class AssistantWidget : GlanceAppWidget() {
                     this[AVATAR_DATA_KEY] = avatarData
                 }
             }
-            
+
             // Verify the state was saved
             val savedPrefs = getAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId)
             val savedType = savedPrefs[AVATAR_TYPE_KEY]
             Log.d(TAG, "Verification: saved type=$savedType")
-            
+
             Log.d(TAG, "State saved, calling updateAll()")
             // Use updateAll instead of update - this seems more reliable
             AssistantWidget().updateAll(context)
@@ -88,25 +88,25 @@ class AssistantWidget : GlanceAppWidget() {
             Log.d(TAG, "Delay completed")
         }
     }
-    
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         Log.d(TAG, "provideGlance called for id: $id")
-        
+
         provideContent {
             // Read state using Glance's currentState - this will be updated automatically
             val prefs = currentState<Preferences>()
-            
+
             val assistantIdStr = prefs[ASSISTANT_ID_KEY]
             val assistantName = prefs[ASSISTANT_NAME_KEY] ?: "Assistant"
             val avatarType = prefs[AVATAR_TYPE_KEY] ?: "dummy"
             val avatarData = prefs[AVATAR_DATA_KEY] ?: ""
-            
+
             Log.d(TAG, "State from prefs: id=$assistantIdStr, name=$assistantName, type=$avatarType")
-            
-            val assistantId = assistantIdStr?.let { 
+
+            val assistantId = assistantIdStr?.let {
                 try { Uuid.parse(it) } catch (e: Exception) { null }
             }
-            
+
             GlanceTheme {
                 WidgetContent(
                     context = context,
@@ -118,7 +118,7 @@ class AssistantWidget : GlanceAppWidget() {
             }
         }
     }
-    
+
     @Composable
     private fun WidgetContent(
         context: Context,
@@ -138,10 +138,10 @@ class AssistantWidget : GlanceAppWidget() {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
         }
-        
+
         // Create avatar bitmap synchronously for display
         val avatarBitmap = createAvatarBitmap(context, avatarType, avatarData, assistantName)
-        
+
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
@@ -157,7 +157,7 @@ class AssistantWidget : GlanceAppWidget() {
             )
         }
     }
-    
+
     private fun createAvatarBitmap(
         context: Context,
         avatarType: String,
@@ -170,7 +170,7 @@ class AssistantWidget : GlanceAppWidget() {
             "image" -> loadImageBitmapSync(avatarData) ?: createTextBitmap(fallbackName)
             "resource" -> {
                 try {
-                    val resId = avatarData.toIntOrNull() ?: R.drawable.default_generical_pfp
+                    val resId = avatarData.toIntOrNull() ?: R.drawable.about_logo
                     val sourceBitmap = BitmapFactory.decodeResource(context.resources, resId)
                     if (sourceBitmap != null) {
                         makeCircular(sourceBitmap)
@@ -185,18 +185,18 @@ class AssistantWidget : GlanceAppWidget() {
             else -> createTextBitmap(fallbackName)
         }
     }
-    
+
     private fun createEmojiBitmap(emoji: String): Bitmap {
         val size = 256
         val bitmap = createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        
+
         val bgPaint = Paint().apply {
             color = 0xFFE8E8E8.toInt()
             isAntiAlias = true
         }
         canvas.drawCircle(size / 2f, size / 2f, size / 2f, bgPaint)
-        
+
         val textPaint = Paint().apply {
             textSize = size * 0.5f
             isAntiAlias = true
@@ -206,21 +206,21 @@ class AssistantWidget : GlanceAppWidget() {
         textPaint.getTextBounds(emoji, 0, emoji.length, bounds)
         val y = size / 2f + bounds.height() / 2f
         canvas.drawText(emoji, size / 2f, y, textPaint)
-        
+
         return bitmap
     }
-    
+
     private fun createTextBitmap(name: String): Bitmap {
         val size = 256
         val bitmap = createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        
+
         val bgPaint = Paint().apply {
             color = 0xFF6750A4.toInt()
             isAntiAlias = true
         }
         canvas.drawCircle(size / 2f, size / 2f, size / 2f, bgPaint)
-        
+
         val letter = name.firstOrNull()?.uppercase() ?: "A"
         val textPaint = Paint().apply {
             color = 0xFFFFFFFF.toInt()
@@ -233,16 +233,16 @@ class AssistantWidget : GlanceAppWidget() {
         textPaint.getTextBounds(letter, 0, letter.length, bounds)
         val y = size / 2f + bounds.height() / 2f
         canvas.drawText(letter, size / 2f, y, textPaint)
-        
+
         return bitmap
     }
-    
+
     private fun makeCircular(sourceBitmap: Bitmap): Bitmap {
         val size = 256
         val scaledBitmap = Bitmap.createScaledBitmap(sourceBitmap, size, size, true)
         val circularBitmap = createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(circularBitmap)
-        
+
         val paint = Paint().apply {
             isAntiAlias = true
             shader = android.graphics.BitmapShader(
@@ -252,14 +252,14 @@ class AssistantWidget : GlanceAppWidget() {
             )
         }
         canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
-        
+
         if (sourceBitmap != scaledBitmap) {
             scaledBitmap.recycle()
         }
-        
+
         return circularBitmap
     }
-    
+
     private fun loadImageBitmapSync(url: String): Bitmap? {
         return try {
             val connection = URL(url).openConnection()

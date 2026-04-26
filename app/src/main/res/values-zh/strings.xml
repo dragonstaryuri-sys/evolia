@@ -1395,4 +1395,10 @@
   <string name="context_sources_recent_chat">最近对话</string>
   <string name="context_sources_episodic_memory">情节记忆</string>
   <string name="context_sources_entry_default_name">条目 #%1$d</string>
+
+  <string name="assistant_advanced_group_master">主智能体设置</string>
+  <string name="assistant_advanced_master_title">设为evolia</string>
+  <string name="assistant_advanced_master_desc">evolia拥有完整的本地工具与 MCP 权限，并在智能体列表中始终置顶。注意：全局只能有一个主智能体，开启此项会自动关闭其他主智能体。</string>
+  <string name="assistant_delete_master_disabled">evolia是核心陪伴 AI，不允许删除</string>
+  <string name="assistant_advanced_master_locked_hint">必须保留一个evolia。如需更换，请去往另一个智能体的高级设置中将其设为evolia。</string>
 </resources>

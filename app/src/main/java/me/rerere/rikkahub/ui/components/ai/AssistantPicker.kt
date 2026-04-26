@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Star
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -99,6 +100,16 @@ fun AssistantPicker(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                if (state.currentAssistant.isMain) {
+                    Spacer(Modifier.size(4.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
 
                 Spacer(Modifier.weight(1f))
 
@@ -155,15 +166,16 @@ fun AssistantPickerSheet(
     var transitioningAssistantId by remember { mutableStateOf<Uuid?>(null) }
     val isTransitioning = transitioningAssistantId != null
 
-    // 根据选中的标签过滤助手
+    // 根据选中的标签过滤助手，并按 isMain 置顶排序
     val filteredAssistants = remember(settings.assistants, selectedTagIds) {
-        if (selectedTagIds.isEmpty()) {
+        val base = if (selectedTagIds.isEmpty()) {
             settings.assistants
         } else {
             settings.assistants.filter { assistant ->
                 assistant.tags.containsAll(selectedTagIds)
             }
         }
+        base.sortedByDescending { it.isMain }
     }
 
     val isDarkMode = LocalDarkMode.current
@@ -301,13 +313,24 @@ fun AssistantPickerSheet(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(
-                                text = assistant.name.ifEmpty { defaultAssistantName },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = assistant.name.ifEmpty { defaultAssistantName },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (assistant.isMain) {
+                                    Spacer(Modifier.size(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Rounded.Star,
+                                        contentDescription = null,
+                                        tint = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                             Text(
                                 text = assistant.systemPrompt.ifBlank { stringResource(R.string.assistant_page_no_system_prompt) },
                                 style = MaterialTheme.typography.bodySmall,
@@ -367,11 +390,22 @@ private fun AssistantItem(
 ) {
     ListItem(
         headlineContent = {
-            Text(
-                text = assistant.name.ifEmpty { defaultAssistantName },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = assistant.name.ifEmpty { defaultAssistantName },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (assistant.isMain) {
+                    Spacer(Modifier.size(4.dp))
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
         },
         supportingContent = {
             Text(

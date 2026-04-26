@@ -206,7 +206,7 @@ fun UIAvatar(
                         onClick = {
                             showPickOption = false
                             if (name == "Generical") {
-                                onUpdate?.invoke(Avatar.Resource(R.drawable.default_generical_pfp))
+                                onUpdate?.invoke(Avatar.Resource(R.drawable.about_logo))
                             } else {
                                 onUpdate?.invoke(Avatar.Dummy)
                             }

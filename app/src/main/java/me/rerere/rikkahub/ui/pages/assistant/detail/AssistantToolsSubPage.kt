@@ -147,169 +147,172 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
-
-            // Schedule Management
-            SettingGroupItem(
-                title = stringResource(R.string.discover_page_schedule),
-                subtitle = stringResource(R.string.schedule_button_tip),
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.ScheduleManagement),
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.ScheduleManagement
-                            } else {
-                                assistant.localTools - LocalToolOption.ScheduleManagement
-                            }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                },
-                onClick = {
-                    val enabled = !assistant.localTools.contains(LocalToolOption.ScheduleManagement)
-                    val newLocalTools = if (enabled) {
-                        assistant.localTools + LocalToolOption.ScheduleManagement
-                    } else {
-                        assistant.localTools - LocalToolOption.ScheduleManagement
-                    }
-                    onUpdate(assistant.copy(localTools = newLocalTools))
-                }
-            )
-
-            // JavaScript Engine
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.JavascriptEngine
-                            } else {
-                                assistant.localTools - LocalToolOption.JavascriptEngine
-                            }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                }
-            )
-
-            // Device Control
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_tools_device_control_title),
-                subtitle = stringResource(R.string.assistant_tools_device_control_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
-                        onCheckedChange = { enabled ->
-                            if (enabled) {
-                                val permissions = mutableListOf<String>()
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                }
-                                permissions.add(Manifest.permission.CAMERA)
-
-                                if (permissions.isNotEmpty()) {
-                                    deviceControlPermissionLauncher.launch(permissions.toTypedArray())
+            if (assistant.isMain) {
+                // Schedule Management
+                SettingGroupItem(
+                    title = stringResource(R.string.discover_page_schedule),
+                    subtitle = stringResource(R.string.schedule_button_tip),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.ScheduleManagement),
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.ScheduleManagement
                                 } else {
-                                    val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
-                                    onUpdate(assistant.copy(localTools = newLocalTools))
+                                    assistant.localTools - LocalToolOption.ScheduleManagement
                                 }
-                            } else {
-                                val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
                                 onUpdate(assistant.copy(localTools = newLocalTools))
                             }
-                        }
-                    )
-                }
-            )
-
-            // Python Engine
-            val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = pythonOption != null,
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.PythonEngine
-                            } else {
-                                assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
-                            }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                }
-            )
-
-            // Email Service
-            val emailEnabled = assistant.localTools.contains(LocalToolOption.EmailService)
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_email_service_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_email_service_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = emailEnabled,
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.EmailService
-                            } else {
-                                assistant.localTools - LocalToolOption.EmailService
-                            }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                }
-            )
-
-            // 警告提示：如果开启了邮件工具但没配置全局账号/授权码
-            val isEmailConfigured = settings.emailConfig.account.isNotBlank() && secretKeyManager.getEmailPassword("").isNotBlank()
-            AnimatedVisibility(visible = emailEnabled && !isEmailConfigured) {
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_tools_email_not_configured_warning),
-                    subtitle = stringResource(R.string.assistant_tools_email_not_configured_warning_desc),
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Rounded.Warning,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error
                         )
                     },
                     onClick = {
-                        navController.navigate(Screen.SettingEmail)
+                        val enabled = !assistant.localTools.contains(LocalToolOption.ScheduleManagement)
+                        val newLocalTools = if (enabled) {
+                            assistant.localTools + LocalToolOption.ScheduleManagement
+                        } else {
+                            assistant.localTools - LocalToolOption.ScheduleManagement
+                        }
+                        onUpdate(assistant.copy(localTools = newLocalTools))
                     }
                 )
-            }
-            val automationEnabled = assistant.localTools.contains(LocalToolOption.AgentAutomation)
-            SettingGroupItem(
-                title = stringResource(R.string.agent_automation_title),
-                subtitle = stringResource(R.string.agent_automation_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = automationEnabled,
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.AgentAutomation
-                            } else {
-                                assistant.localTools - LocalToolOption.AgentAutomation
+
+                // JavaScript Engine
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_javascript_engine_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.JavascriptEngine),
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.JavascriptEngine
+                                } else {
+                                    assistant.localTools - LocalToolOption.JavascriptEngine
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
                             }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        )
+                    }
+                )
+
+                // Device Control
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_tools_device_control_title),
+                    subtitle = stringResource(R.string.assistant_tools_device_control_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
+                            onCheckedChange = { enabled ->
+                                if (enabled) {
+                                    val permissions = mutableListOf<String>()
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                    permissions.add(Manifest.permission.CAMERA)
+
+                                    if (permissions.isNotEmpty()) {
+                                        deviceControlPermissionLauncher.launch(permissions.toTypedArray())
+                                    } else {
+                                        val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
+                                        onUpdate(assistant.copy(localTools = newLocalTools))
+                                    }
+                                } else {
+                                    val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
+                                    onUpdate(assistant.copy(localTools = newLocalTools))
+                                }
+                            }
+                        )
+                    }
+                )
+
+                // Python Engine
+                val pythonOption = assistant.localTools.filterIsInstance<LocalToolOption.PythonEngine>().firstOrNull()
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_python_engine_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_python_engine_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = pythonOption != null,
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.PythonEngine
+                                } else {
+                                    assistant.localTools.filterNot { it is LocalToolOption.PythonEngine }
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    }
+                )
+
+                // Email Service
+                val emailEnabled = assistant.localTools.contains(LocalToolOption.EmailService)
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_email_service_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_email_service_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = emailEnabled,
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.EmailService
+                                } else {
+                                    assistant.localTools - LocalToolOption.EmailService
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    }
+                )
+
+                // 警告提示：如果开启了邮件工具但没配置全局账号/授权码
+                val isEmailConfigured =
+                    settings.emailConfig.account.isNotBlank() && secretKeyManager.getEmailPassword("").isNotBlank()
+                AnimatedVisibility(visible = emailEnabled && !isEmailConfigured) {
+                    SettingGroupItem(
+                        title = stringResource(R.string.assistant_tools_email_not_configured_warning),
+                        subtitle = stringResource(R.string.assistant_tools_email_not_configured_warning_desc),
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Rounded.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        onClick = {
+                            navController.navigate(Screen.SettingEmail)
                         }
                     )
                 }
-            )
+                val automationEnabled = assistant.localTools.contains(LocalToolOption.AgentAutomation)
+                SettingGroupItem(
+                    title = stringResource(R.string.agent_automation_title),
+                    subtitle = stringResource(R.string.agent_automation_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = automationEnabled,
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.AgentAutomation
+                                } else {
+                                    assistant.localTools - LocalToolOption.AgentAutomation
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    }
+                )
+
+            }
+
 
         }
-
         // ═══════════════════════════════════════════════════════════════════
         // MCP GROUP (only show if servers configured)
         // ═══════════════════════════════════════════════════════════════════
         if (mcpServerConfigs.isNotEmpty()) {
             SettingsGroup(title = stringResource(R.string.assistant_page_tab_mcp)) {
-            SettingGroupItem(
+                SettingGroupItem(
                     title = stringResource(R.string.assistant_tools_mcp_servers_title),
                     subtitle = stringResource(R.string.assistant_tools_mcp_servers_desc),
                     trailing = {

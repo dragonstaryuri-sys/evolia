@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PriorityHigh
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +42,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.core.data.model.ContextPriority
+import me.rerere.rikkahub.ui.context.LocalToaster
 
 /**
  * Advanced tab - Notifications and custom request settings.
@@ -51,6 +53,7 @@ fun AssistantAdvancedSubPage(
     onUpdate: (Assistant) -> Unit,
     onNavigateToAgentTasks: () -> Unit
 ) {
+    val toaster = LocalToaster.current
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -65,16 +68,49 @@ fun AssistantAdvancedSubPage(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         // ═══════════════════════════════════════════════════════════════════
-        // AUTOMATION GROUP
+        // MASTER ASSISTANT SETTING
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = stringResource(R.string.agent_automation_title)) {
-            SettingGroupItem(
-                title = stringResource(R.string.agent_task_manager),
-                subtitle = stringResource(R.string.agent_task_manager_desc),
-                onClick = {
-                    onNavigateToAgentTasks()
+        SettingsGroup(title = stringResource(R.string.assistant_advanced_group_master)) {
+             SettingGroupItem(
+                title = stringResource(R.string.assistant_advanced_master_title),
+                subtitle = stringResource(R.string.assistant_advanced_master_desc),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Star,
+                        contentDescription = null,
+                        tint = if (assistant.isMain) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailing = {
+                    val lockedHint = stringResource(R.string.assistant_advanced_master_locked_hint)
+                    HapticSwitch(
+                        checked = assistant.isMain,
+                        onCheckedChange = { checked ->
+                            // 核心保护：如果已经是主智能体，点击关闭时给予提示并不予操作
+                            if (!checked && assistant.isMain) {
+                                toaster.show(lockedHint)
+                            } else {
+                                onUpdate(assistant.copy(isMain = checked))
+                            }
+                        }
+                    )
                 }
             )
+        }
+        if (assistant.isMain) {
+            // ═══════════════════════════════════════════════════════════════════
+            // AUTOMATION GROUP
+            // ═══════════════════════════════════════════════════════════════════
+
+            SettingsGroup(title = stringResource(R.string.agent_automation_title)) {
+                SettingGroupItem(
+                    title = stringResource(R.string.agent_task_manager),
+                    subtitle = stringResource(R.string.agent_task_manager_desc),
+                    onClick = {
+                        onNavigateToAgentTasks()
+                    }
+                )
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════════

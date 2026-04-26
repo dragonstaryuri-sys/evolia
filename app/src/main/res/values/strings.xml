@@ -1442,4 +1442,9 @@
   <string name="context_sources_episodic_memory">Episodic Memory</string>
   <string name="context_sources_entry_default_name">Entry #%1$d</string>
 
+  <string name="assistant_advanced_group_master">Main Agent Settings</string>
+  <string name="assistant_advanced_master_title">Set as Evolia</string>
+  <string name="assistant_advanced_master_desc">Evolia has full access to local tools and MCP permissions, and is always pinned at the top of the agent list. Note: Only one main agent is allowed globally. Enabling this option will automatically disable other main agents.</string>
+  <string name="assistant_delete_master_disabled">Evolia is the core companion AI and cannot be deleted.</string>
+  <string name="assistant_advanced_master_locked_hint">One Evolia must remain active. To replace it, go to the advanced settings of another agent and set it as Evolia.</string>
 </resources>

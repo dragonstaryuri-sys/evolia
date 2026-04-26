@@ -548,7 +548,26 @@ class AssistantDetailVM(
     }
 
     val providers: StateFlow<List<me.rerere.ai.provider.ProviderSetting>> = settingsStore.settingsFlow.map { it.providers }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
-    fun update(assistant: Assistant) { viewModelScope.launch { val currentSettings = settingsStore.settingsFlow.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map { if (it.id == assistant.id) assistant else it })) } }
+
+    fun update(assistant: Assistant) {
+        viewModelScope.launch {
+            val currentSettings = settingsStore.settingsFlow.value
+
+            // 强制互斥逻辑：如果当前被设为主智能体，将其余所有智能体设为非主智能体
+            val updatedAssistants = if (assistant.isMain) {
+                currentSettings.assistants.map {
+                    if (it.id == assistant.id) assistant else it.copy(isMain = false)
+                }
+            } else {
+                currentSettings.assistants.map {
+                    if (it.id == assistant.id) assistant else it
+                }
+            }
+
+            settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+        }
+    }
+
     fun updateTags(tagIds: List<Uuid>, updatedTags: List<Tag>) { viewModelScope.launch { val currentSettings = settingsStore.settingsFlow.value; val currentAssistant = assistant.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map { if (it.id == currentAssistant.id) it.copy(tags = tagIds) else it }, assistantTags = updatedTags)) } }
     fun addMemory(memory: AssistantMemory) { viewModelScope.launch { memoryRepository.addMemory(assistantId.toString(), memory.content) } }
     fun updateMemory(memory: AssistantMemory) { viewModelScope.launch { if (memory.id < 0) memoryRepository.updateEpisodeContent(-memory.id, memory.content) else memoryRepository.updateContent(memory.id, memory.content) } }

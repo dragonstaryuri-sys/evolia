@@ -65,6 +65,7 @@ import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
+import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
@@ -571,26 +572,51 @@ class ChatService(
                 inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
                 outputTransformers = outputTransformers,
                 tools = buildList {
+                    // --- 工具权限过滤核心逻辑 ---
+                    val isMain = assistant.isMain
+
                     val supportsBuiltIn = model.tools.isNotEmpty() || me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
                     val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
                     val searchMode = assistant.searchMode
-                    if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) addAll(createSearchTool(settings, assistant, searchMode.index))
-                    addAll(localTools.getTools(options = assistant.localTools, assistantId = assistant.id, conversationId = conversation.id, userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()?.map { it.url } ?: emptyList()))
 
-                    // MCP Tools
-                    val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
-                    mcpManager.getAllAvailableTools().forEach { mcpTool ->
-                        val originalName = mcpTool.name
-                        val sanitizedName = originalName.replace(nameRegex, "_").let {
-                            if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
+                    // 1. 搜索工具 (Web Search)：所有人都有权使用
+                    if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) {
+                        addAll(createSearchTool(settings, assistant, searchMode.index))
+                    }
+
+                    // 2. 本地工具 (Local Tools)
+                    val targetOptions = if (isMain) {
+                        assistant.localTools
+                    } else {
+                        // 非主智能体：仅保留 TimeSense（时间观念）
+                        assistant.localTools.filter { it is LocalToolOption.TimeSense }
+                    }
+
+                    addAll(
+                        localTools.getTools(
+                            options = targetOptions,
+                            assistantId = assistant.id,
+                            conversationId = conversation.id,
+                            userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()?.map { it.url } ?: emptyList()
+                        )
+                    )
+
+                    // 3. MCP 外部工具：只有主智能体可以使用
+                    if (isMain) {
+                        val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
+                        mcpManager.getAllAvailableTools().forEach { mcpTool ->
+                            val originalName = mcpTool.name
+                            val sanitizedName = originalName.replace(nameRegex, "_").let {
+                                if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
+                            }
+
+                            add(Tool(
+                                name = sanitizedName,
+                                description = mcpTool.description ?: "",
+                                parameters = { mcpTool.inputSchema },
+                                execute = { mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText() }
+                            ))
                         }
-
-                        add(Tool(
-                            name = sanitizedName,
-                            description = mcpTool.description ?: "",
-                            parameters = { mcpTool.inputSchema },
-                            execute = { mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText() }
-                        ))
                     }
                 },
                 truncateIndex = conversation.truncateIndex,
