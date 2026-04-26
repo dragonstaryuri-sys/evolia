@@ -30,12 +30,11 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 private const val TAG = "SpontaneousWorker"
-
 class SpontaneousWorker(
     appContext: Context,
     workerParams: WorkerParameters
 ) : CoroutineWorker(appContext, workerParams), KoinComponent {
-
+    private val chatService: ChatService by inject()
     private val settingsStore: SettingsStore by inject()
     private val conversationRepository: ConversationRepository by inject()
     private val memoryRepository: MemoryRepository by inject()
@@ -191,7 +190,7 @@ class SpontaneousWorker(
                             conversation.currentMessages + newMessage
                         ).copy(updateAt = Instant.now())
 
-                        conversationRepository.updateConversation(updatedConversation)
+                        chatService.saveConversation(conversation.id, updatedConversation)
                         sendNotification(title, content, conversation.id)
                         updateAssistantState(assistant, content, false)
                     }

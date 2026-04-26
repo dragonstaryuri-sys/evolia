@@ -11,6 +11,7 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
+import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
@@ -99,7 +100,6 @@ class ScheduledMessageWorker(
             )
 
             val content = result.choices.firstOrNull()?.message?.toContentText()?.trim() ?: return Result.failure()
-
             sendNotification(assistant.name, content, conversationId)
             Result.success()
         } catch (e: Exception) {
