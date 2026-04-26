@@ -103,7 +103,8 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 - **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation. Room `REPLACE` strategy is used with `existingEpisode.id` to prevent duplicate entries per conversation ID.
 - **Rolling Update Logic**: 
     - **Trigger Check**: Only proceed if new messages since the last consolidation >= 4.
-    - **Token Optimization**: If an episode already exists, use `DEFAULT_FULL_SUMMARY_PROMPT` to perform a "Rolling Summary" (Old Summary + New Messages) instead of re-summarizing the entire chat history.
+    - **Token Optimization**: If an episode already exists, use `DEFAULT_FULL_SUMMARY_PROMPT` to perform a "Rolling Summary" instead of re-summarizing the entire chat history.
+    - **Data Purity**: **EXCLUDES** L1 Segments (`temporarySummaries`) during consolidation. It relies solely on the `contextSummary` (Global History) and `newMessages` (Raw L0) to prevent information redundancy and ensure a clean, high-level summary.
     - **Manual vs Auto**: Both manual UI consolidation and background workers follow the same rolling logic to ensure consistency and economy.
 - **Retrieval**: AI extracts keywords from L2 for hybrid RAG search (Keywords have higher matching priority than Embeddings).
 - **Triggers**: `MemoryConsolidationWorker` (Automatic/Manual).

@@ -128,7 +128,7 @@ fun ChatList(
     onForkMessage: (UIMessage) -> Unit = {},
     onDelete: (UIMessage) -> Unit = {},
     onUpdateMessage: (MessageNode) -> Unit = {},
-    onJumpToMessage: (Int) -> Unit = {},
+    onJumpToMessage: (MessageNode) -> Unit = {},
 ) {
     SharedTransitionLayout {
         AnimatedContent(
@@ -635,7 +635,7 @@ private fun SharedTransitionScope.ChatListPreview(
     conversation: Conversation,
     settings: Settings,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    onJumpToMessage: (Int) -> Unit,
+    onJumpToMessage: (MessageNode) -> Unit,
     initialSearchQuery: String? = null,
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
@@ -724,7 +724,7 @@ private fun SharedTransitionScope.ChatListPreview(
                         Row(
                             modifier = Modifier
                                 .clickable {
-                                    onJumpToMessage(originalIndex)
+                                    onJumpToMessage(node)
                                 }
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),

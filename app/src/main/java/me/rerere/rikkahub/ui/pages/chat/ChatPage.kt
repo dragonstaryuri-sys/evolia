@@ -57,6 +57,7 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
@@ -230,12 +231,17 @@ private fun ChatPageContent(
 
     LaunchedEffect(initialSearchQuery, conversation.id) {
         if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
-            val matchIndex = conversation.messageNodes.indexOfFirst { node ->
-                node.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true)
-            }
-            if (matchIndex >= 0) {
+            // 计算包含搜索词的轮次索引
+            val turnIndex = conversation.messageNodes
+                .filter { !it.currentMessage.skipContext }
+                .groupIntoTurns()
+                .indexOfFirst { group ->
+                    group.nodes.any { it.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true) }
+                }
+
+            if (turnIndex >= 0) {
                 delay(100)
-                chatListState.animateScrollToItem(matchIndex)
+                chatListState.animateScrollToItem(turnIndex)
             }
         }
     }
@@ -299,11 +305,21 @@ private fun ChatPageContent(
                         settings = setting,
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
                         initialSearchQuery = initialSearchQuery,
-                        onJumpToMessage = { index ->
+                        onJumpToMessage = { targetNode ->
                             previewMode = false
                             scope.launch {
-                                delay(350)
-                                chatListState.animateScrollToItem(index)
+                                // 计算目标消息在分组后的索引
+                                val turnIndex = conversation.messageNodes
+                                    .filter { !it.currentMessage.skipContext } // 过滤掉不显示的消息
+                                    .groupIntoTurns() // 进行分组
+                                    .indexOfFirst { group ->
+                                        group.nodes.any { it.id == targetNode.id }
+                                    }
+
+                                if (turnIndex >= 0) {
+                                    delay(350) // 等待模式切换动画
+                                    chatListState.animateScrollToItem(turnIndex)
+                                }
                             }
                         },
                         onRegenerate = { message ->
