@@ -9,6 +9,7 @@ import androidx.paging.insertSeparators
 import androidx.paging.map
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -166,24 +167,38 @@ class ChatListVM(
     }
 
     /**
-     * 切换虚拟世界模式，并触发自动归档 (Episode Generation)
+     * 切换虚拟 world 模式，并触发自动归档 (Episode Generation)
      */
     fun toggleVirtualMode(assistant: Assistant) {
         viewModelScope.launch {
             _isSwitchingMode.value = true
             try {
-                // 1. 在离开当前模式前，尝试对该模式下的最后一次对话进行归档
+                // 1. 获取最后一次对话
                 val lastConv = conversationRepo.getConversationsOfAssistant(
                     assistantId = assistant.id,
                     isVirtual = assistant.isVirtualWorldMode
                 ).firstOrNull()?.firstOrNull()
 
-                lastConv?.let {
-                    android.util.Log.i("ChatListVM", "Switching mode: archiving last conversation ${it.id}")
-                    chatService.archiveConversation(it.id, force = true)
+                // 2. 尝试归档逻辑
+                if (lastConv != null) {
+                    android.util.Log.i("ChatListVM", "Switching mode: triggering background archive")
+
+                    // 在子协程启动，确保不会被 withTimeout 取消
+                    val archiveJob = launch {
+                        try {
+                            chatService.archiveConversation(lastConv.id, force = true)
+                        } catch (e: Exception) {
+                            android.util.Log.e("ChatListVM", "Background archive failed", e)
+                        }
+                    }
+
+                    // UI 最多等待 8 秒，无论是否完成都会进入下一步
+                    withTimeoutOrNull(8000) {
+                        archiveJob.join()
+                    }
                 }
 
-                // 2. 更新设置
+                // 3. 更新设置
                 val currentSettings = settings.value
                 val updatedSettings = currentSettings.copy(
                     assistants = currentSettings.assistants.map {
@@ -191,9 +206,13 @@ class ChatListVM(
                     }
                 )
                 settingsStore.update(updatedSettings)
-                // 增加一个小小的延迟确保体验流畅
-                kotlinx.coroutines.delay(500)
+
+                // 额外给 UI 留一点缓冲时间
+                kotlinx.coroutines.delay(300)
+            } catch (e: Exception) {
+                e.printStackTrace()
             } finally {
+                // 确保无论如何动画都会结束
                 _isSwitchingMode.value = false
             }
         }

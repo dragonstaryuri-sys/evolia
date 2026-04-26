@@ -40,6 +40,9 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_WORLD_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_TRANSITION_TO_NORMAL
+import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_TRANSITION_TO_VIRTUAL
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -69,7 +72,6 @@ import kotlin.uuid.Uuid
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.launch
-import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_WORLD_PROMPT
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.time.ZoneId
@@ -77,7 +79,6 @@ import java.time.Duration
 import java.time.Instant
 import java.time.DayOfWeek
 import java.time.format.TextStyle
-import kotlin.text.append
 
 
 /**
@@ -526,8 +527,8 @@ class GenerationHandler(
 
         // 2. Virtual World Mode Injection
         if (assistant.isVirtualWorldMode) {
-            baseSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT) // 已改为引用常量
-            baseSystemPromptBuilder.appendLine("\n")
+             baseSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT)
+             baseSystemPromptBuilder.appendLine("\n")
         }
 
         // 3. Learning mode (legacy - still supported)
@@ -688,7 +689,7 @@ class GenerationHandler(
         val chatHistoryCandidates = searchPrunedMessages.truncate(truncateIndex).reversed()
 
         val effectiveMemoriesCandidates = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
-            val recentChatMemories = if (assistant.enableRecentChatsReference && messages.size <= 2) {
+            val recentChatMemories = if (assistant.enableRecentChatsReference) {
                 val today = java.time.LocalDate.now()
                 val zoneId = java.time.ZoneId.systemDefault()
 
@@ -704,16 +705,45 @@ class GenerationHandler(
                 } ?: false
 
                 if (isFromToday && lastEpisode != null) {
-                    listOf(
-                        AssistantMemory(
-                            id = -1, // 特殊 ID 标记为“近期增强”
-                            content = "Last conversation summary: ${lastEpisode.content}",
-                            type = 1, // EPISODIC
-                            timestamp = lastEpisode.endTime
+                    // 【新逻辑】：智能判断是否需要注入
+                    val lastConvIdStr = lastEpisode.conversationId
+                    val lastConv = if (!lastConvIdStr.isNullOrBlank()) {
+                         try { conversationRepo.getConversationById(Uuid.parse(lastConvIdStr)) } catch (e: Exception) { null }
+                    } else null
+
+                    val currentIsVirtual = assistant.isVirtualWorldMode
+                    val lastIsVirtual = lastConv?.isVirtual ?: false
+
+                    // 判断是否是“跨次元切换”：模式不同 且 是刚刚发生的（10分钟内）
+                    val isModeTransition = (currentIsVirtual != lastIsVirtual) && (System.currentTimeMillis() - lastEpisode.endTime < 600_000)
+
+                    // 只有在以下两种情况之一才注入：
+                    // 1. 正常的会话开头（messages.size <= 2）
+                    // 2. 刚刚发生的跨次元转场
+                    if (messages.size <= 2 || isModeTransition) {
+                        val modeTransitionPrompt = when {
+                             currentIsVirtual && !lastIsVirtual ->
+                                 VIRTUAL_TRANSITION_TO_VIRTUAL
+                             !currentIsVirtual && lastIsVirtual ->
+                                 VIRTUAL_TRANSITION_TO_NORMAL
+                             else -> "Last conversation summary: "
+                        }
+
+                        Log.i(TAG, "Injecting context reference. ModeTransition=$isModeTransition, Size=${messages.size}")
+
+                        listOf(
+                            AssistantMemory(
+                                id = -1, // 特殊 ID 标记为“近期增强”
+                                content = "$modeTransitionPrompt${lastEpisode.content}",
+                                type = 1, // EPISODIC
+                                timestamp = lastEpisode.endTime
+                            )
                         )
-                    )
+                    } else {
+                        emptyList()
+                    }
                 } else {
-                    emptyList() // 确保分支返回类型一致
+                    emptyList()
                 }
             } else {
                 emptyList()
@@ -782,7 +812,7 @@ class GenerationHandler(
                             availableTokens -= cost
                         }
                     }
-                    for (msg in remainingChatHistory) {
+                    for (msg in chatHistoryCandidates.drop(minChatHistory)) {
                         val cost = estimateTokens(msg)
                         if (availableTokens >= cost) {
                             selectedMessages.add(msg)
@@ -1143,6 +1173,12 @@ class GenerationHandler(
             includeSkipContextMessages = includeSkipContextMessages
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
+
+        // 【日志优化】：打印所有 SYSTEM 消息，确保“## Memories”也能被看到
+        internalMessages.filter { it.role == CoreMessageRole.SYSTEM }.forEach {
+             Log.i(TAG, ">>> SYSTEM MESSAGE [${it.id}] <<<\n${it.toText()}\n<<< END SYSTEM MESSAGE >>>")
+        }
+
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes
         val usedMemories = buildResult.usedMemories

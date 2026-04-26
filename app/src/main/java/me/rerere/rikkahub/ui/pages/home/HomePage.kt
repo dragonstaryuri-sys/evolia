@@ -1,16 +1,15 @@
 package me.rerere.rikkahub.ui.pages.home
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -20,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -114,6 +114,10 @@ fun AgentListPage() {
     val navController = LocalNavController.current
     val settings by assistantVm.settings.collectAsStateWithLifecycle()
     val lastMessages by chatVm.assistantsLastMessages.collectAsStateWithLifecycle()
+
+    // 获取转场加载状态
+    val isSwitchingMode by chatVm.isSwitchingMode.collectAsStateWithLifecycle()
+
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
     val repo = org.koin.compose.koinInject<me.rerere.rikkahub.core.data.repository.ConversationRepository>()
@@ -137,14 +141,12 @@ fun AgentListPage() {
         }
     }
 
-    // 分离主智能体和其他智能体
+    // 分离主智能体
     val mainAgents = remember(settings.assistants) { settings.assistants.filter { it.isMain } }
     val otherAgents = remember(settings.assistants) { settings.assistants.filter { !it.isMain } }
 
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        // 计算索引偏移逻辑
-        // 主智能体列表 (mainAgents) + 1 (Spacer)
         val offset = if (mainAgents.isNotEmpty()) mainAgents.size + 1 else 0
         val fromIndex = from.index - offset
         val toIndex = to.index - offset
@@ -157,116 +159,55 @@ fun AgentListPage() {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.chat_page_title),
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                actions = {
-                    IconButton(onClick = { navController.navigate(Screen.AssistantSearch) }) {
-                        Icon(Icons.Rounded.Search, contentDescription = "Search")
-                    }
-                    IconButton(onClick = {
-                        createState.open(Assistant(
-                            chatModelId = settings.chatModelId,
-                            embeddingModelId = settings.embeddingModelId,
-                            memoryModelId = settings.memoryModelId,
-                            diaryModelId = settings.diaryModelId,
-                        ))
-                    }) {
-                        Icon(Icons.Rounded.Add, contentDescription = "Add")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.95f)
-                )
-            )
-        },
-        containerColor = Color.Transparent
-    ) { innerPadding ->
-        LazyColumn(
-            state = lazyListState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            // 1. 渲染主智能体 (独立卡片)
-            itemsIndexed(mainAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
-                // 主智能体固定不可删除
-                PhysicsSwipeToDelete(
-                    onDelete = {}, // 修复：必须传入 onDelete 参数，即使 deleteEnabled 为 false
-                    position = if (mainAgents.size == 1) ItemPosition.ONLY else if (index == 0) ItemPosition.FIRST else if (index == mainAgents.lastIndex) ItemPosition.LAST else ItemPosition.MIDDLE,
-                    deleteEnabled = false,
-                    modifier = Modifier.fillMaxWidth(),
-                    groupCornerRadius = 24.dp
-                ) { _ ->
-                    AgentItem(
-                        assistant = assistant,
-                        lastMessage = lastMessages[assistant.id] ?: "",
-                        onClick = {
-                            scope.launch {
-                                chatVm.selectAssistant(assistant.id)
-                                val lastConv = repo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
-                                    .firstOrNull()
-                                    ?.firstOrNull()
-                                val chatId = lastConv?.id ?: Uuid.random()
-                                if (assistant.isVirtualWorldMode) {
-                                    navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
-                                } else {
-                                    navController.navigate(Screen.Chat(id = chatId.toString()))
-                                }
-                            }
-                        },
-                        onModeToggle = {
-                            // 调用新封装的 toggleVirtualMode，自动触发归档逻辑
-                            chatVm.toggleVirtualMode(assistant)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = stringResource(R.string.chat_page_title),
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    actions = {
+                        IconButton(onClick = { navController.navigate(Screen.AssistantSearch) }) {
+                            Icon(Icons.Rounded.Search, contentDescription = "Search")
                         }
+                        IconButton(onClick = {
+                            createState.open(Assistant(
+                                chatModelId = settings.chatModelId,
+                                embeddingModelId = settings.embeddingModelId,
+                                memoryModelId = settings.memoryModelId,
+                                diaryModelId = settings.diaryModelId,
+                            ))
+                        }) {
+                            Icon(Icons.Rounded.Add, contentDescription = "Add")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.95f)
                     )
-                }
-            }
-
-            // 间距项
-            if (mainAgents.isNotEmpty() && otherAgents.isNotEmpty()) {
-                item { Spacer(Modifier.height(12.dp)) }
-            }
-
-            // 2. 渲染其他智能体 (组合卡片)
-            itemsIndexed(otherAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
-                val position = when {
-                    otherAgents.size == 1 -> ItemPosition.ONLY
-                    index == 0 -> ItemPosition.FIRST
-                    index == otherAgents.lastIndex -> ItemPosition.LAST
-                    else -> ItemPosition.MIDDLE
-                }
-
-                ReorderableItem(
-                    state = reorderableState,
-                    key = assistant.id
-                ) { isDragging ->
+                )
+            },
+            containerColor = Color.Transparent
+        ) { innerPadding ->
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                // 1. 渲染主智能体
+                itemsIndexed(mainAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
                     PhysicsSwipeToDelete(
-                        position = position,
-                        deleteEnabled = true,
-                        onDelete = {
-                            assistantVm.removeAssistant(assistant)
-                            toaster.show(
-                                message = context.getString(R.string.assistant_deleted, assistant.name),
-                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
-                                    label = context.getString(R.string.undo),
-                                    onClick = { assistantVm.undoRemoveAssistant(assistant) }
-                                )
-                            )
-                        },
-                        modifier = Modifier
-                            .scale(if (isDragging) 0.95f else 1f)
-                            .fillMaxWidth(),
+                        onDelete = {},
+                        position = if (mainAgents.size == 1) ItemPosition.ONLY else if (index == 0) ItemPosition.FIRST else if (index == mainAgents.lastIndex) ItemPosition.LAST else ItemPosition.MIDDLE,
+                        deleteEnabled = false,
+                        modifier = Modifier.fillMaxWidth(),
                         groupCornerRadius = 24.dp
                     ) { _ ->
                         AgentItem(
@@ -286,54 +227,119 @@ fun AgentListPage() {
                                     }
                                 }
                             },
-                            onCopy = { assistantVm.copyAssistant(assistant) },
-                            dragHandle = {
-                                IconButton(
-                                    onClick = {},
-                                    modifier = Modifier.longPressDraggableHandle(
-                                        onDragStarted = { haptics.perform(HapticPattern.Pop) },
-                                        onDragStopped = { haptics.perform(HapticPattern.Thud) }
-                                    )
-                                ) {
-                                    Icon(Icons.Rounded.DragIndicator, null)
-                                }
+                            onModeToggle = {
+                                chatVm.toggleVirtualMode(assistant)
                             }
                         )
                     }
                 }
-            }
 
-            // 优化的品牌页脚
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 64.dp, bottom = 48.dp)
-                        .padding(horizontal = 32.dp)
-                        .alpha(0.35f),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(20.dp))
-                    Text(
-                        text = stringResource(R.string.app_slogan),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            lineHeight = 22.sp,
-                            letterSpacing = 0.8.sp,
-                            fontSize = 11.sp
-                        ),
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.Normal,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                if (mainAgents.isNotEmpty() && otherAgents.isNotEmpty()) {
+                    item { Spacer(Modifier.height(12.dp)) }
+                }
+
+                // 2. 渲染其他智能体
+                itemsIndexed(otherAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
+                    val position = when {
+                        otherAgents.size == 1 -> ItemPosition.ONLY
+                        index == 0 -> ItemPosition.FIRST
+                        index == otherAgents.lastIndex -> ItemPosition.LAST
+                        else -> ItemPosition.MIDDLE
+                    }
+
+                    ReorderableItem(
+                        state = reorderableState,
+                        key = assistant.id
+                    ) { isDragging ->
+                        PhysicsSwipeToDelete(
+                            position = position,
+                            deleteEnabled = true,
+                            onDelete = {
+                                assistantVm.removeAssistant(assistant)
+                                toaster.show(
+                                    message = context.getString(R.string.assistant_deleted, assistant.name),
+                                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                        label = context.getString(R.string.undo),
+                                        onClick = { assistantVm.undoRemoveAssistant(assistant) }
+                                    )
+                                )
+                            },
+                            modifier = Modifier
+                                .scale(if (isDragging) 0.95f else 1f)
+                                .fillMaxWidth(),
+                            groupCornerRadius = 24.dp
+                        ) { _ ->
+                            AgentItem(
+                                assistant = assistant,
+                                lastMessage = lastMessages[assistant.id] ?: "",
+                                onClick = {
+                                    scope.launch {
+                                        chatVm.selectAssistant(assistant.id)
+                                        val lastConv = repo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
+                                            .firstOrNull()
+                                            ?.firstOrNull()
+                                        val chatId = lastConv?.id ?: Uuid.random()
+                                        if (assistant.isVirtualWorldMode) {
+                                            navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
+                                        } else {
+                                            navController.navigate(Screen.Chat(id = chatId.toString()))
+                                        }
+                                    }
+                                },
+                                onCopy = { assistantVm.copyAssistant(assistant) },
+                                dragHandle = {
+                                    IconButton(
+                                        onClick = {},
+                                        modifier = Modifier.longPressDraggableHandle(
+                                            onDragStarted = { haptics.perform(HapticPattern.Pop) },
+                                            onDragStopped = { haptics.perform(HapticPattern.Thud) }
+                                        )
+                                    ) {
+                                        Icon(Icons.Rounded.DragIndicator, null)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 64.dp, bottom = 48.dp)
+                            .padding(horizontal = 32.dp)
+                            .alpha(0.35f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            text = stringResource(R.string.app_slogan),
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                lineHeight = 22.sp,
+                                letterSpacing = 0.8.sp,
+                                fontSize = 11.sp
+                            ),
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
             }
         }
+
+        // === 关键修复：全屏模式切换转场动画层 ===
+        TransitionOverlay(
+            visible = isSwitchingMode,
+            assistant = mainAgents.firstOrNull() // 默认展示主智能体
+        )
     }
 
     AssistantCreationSheet(
@@ -343,6 +349,110 @@ fun AgentListPage() {
             importLauncher.launch(arrayOf("*/*"))
         }
     )
+}
+
+@Composable
+private fun TransitionOverlay(
+    visible: Boolean,
+    assistant: Assistant?
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(400)),
+        exit = fadeOut(tween(600))
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "portal")
+        val scale by infiniteTransition.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.15f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "scale"
+        )
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.6f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "alpha"
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                .blur(16.dp)
+                .clickable(enabled = false) {}, // 拦截点击
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                // 呼吸效果的头像
+                Box(contentAlignment = Alignment.Center) {
+                    // 背景光晕
+                    Box(
+                        modifier = Modifier
+                            .size(140.dp)
+                            .scale(scale)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                        Color.Transparent
+                                    )
+                                ),
+                                shape = CircleShape
+                            )
+                    )
+
+                    if (assistant != null) {
+                        UIAvatar(
+                            name = assistant.name,
+                            value = assistant.avatar,
+                            modifier = Modifier
+                                .size(100.dp)
+                                .scale(scale)
+                                .clip(CircleShape)
+                                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape)
+                        )
+                    }
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = if (assistant?.isVirtualWorldMode == true) "正在返回现实世界..." else "正在构筑虚拟空间...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.alpha(alpha)
+                    )
+                    Text(
+                        text = "正在同步灵魂记忆",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .width(140.dp)
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(99.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                )
+            }
+        }
+    }
 }
 
 @Composable
