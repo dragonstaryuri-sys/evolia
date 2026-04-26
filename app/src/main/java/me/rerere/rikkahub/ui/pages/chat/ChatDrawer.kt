@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.paging.compose.collectAsLazyPagingItems
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.core.data.model.Conversation
@@ -48,11 +50,19 @@ fun ChatDrawerContent(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header: Assistant Info
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable {
+                    navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                }
+            ) {
                 UIAvatar(
                     name = currentAssistant.name,
                     value = currentAssistant.avatar,
-                    modifier = Modifier.size(40.dp)
+                    modifier = Modifier.size(40.dp),
+                    onClick = {
+                        navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                    }
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(

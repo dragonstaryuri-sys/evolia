@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.lazy.LazyListState
@@ -453,8 +454,6 @@ private fun ChatPageContent(
 
                 val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && showNewChatContent && !hasTextInput && !isKeyboardOpen
 
-                var showHeaderAssistantPicker by remember { mutableStateOf(false) }
-
                 androidx.compose.animation.AnimatedVisibility(
                     visible = shouldShowNewChatContent,
                     enter = androidx.compose.animation.fadeIn(),
@@ -470,22 +469,9 @@ private fun ChatPageContent(
                         hasBackgroundImage = currentAssistant.background != null,
                         onTemplateClick = { prompt -> inputState.setMessageTextAndFocus(prompt, scope) },
                         onNavigateToImageGen = { navController.navigate(Screen.ImageGen) },
-                        onAvatarClick = { showHeaderAssistantPicker = true }
-                    )
-                }
-
-                if (showHeaderAssistantPicker) {
-                    val assistantState = me.rerere.rikkahub.ui.hooks.rememberAssistantState(setting) { newSettings ->
-                        vm.updateSettings(newSettings)
-                    }
-                    me.rerere.rikkahub.ui.components.ai.AssistantPickerSheet(
-                        settings = setting,
-                        currentAssistant = currentAssistant,
-                        onAssistantSelected = { selectedAssistant ->
-                            assistantState.setSelectAssistant(selectedAssistant)
-                            showHeaderAssistantPicker = false
-                        },
-                        onDismiss = { showHeaderAssistantPicker = false }
+                        onAvatarClick = {
+                            navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                        }
                     )
                 }
 
@@ -724,7 +710,11 @@ private fun TopBar(
             Text(
                 text = currentAssistant.name,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
-                modifier = Modifier.align(Alignment.CenterVertically)
+                modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .clickable {
+                        navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                    }
             )
 
             Spacer(Modifier.weight(1f))
