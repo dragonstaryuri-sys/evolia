@@ -401,11 +401,12 @@ class ChatService(
             val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
             val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
 
-            // 生成会话总体摘要
-            val text = messages.joinToString("\n") { "${it.role}: ${it.toText().take(500)}" }
+            // 生成会话总体摘要 - 使用 toContentText() 排除推理过程
+            val text = messages.joinToString("\n") { "${it.role}: ${it.toContentText().take(500)}" }
             val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
                 .replace("{{text}}", text)
                 .replace("{{locale}}", Locale.getDefault().displayName)
+                .replace("{{char}}", assistant.name)
 
             val providerHandler = handler as Provider<ProviderSetting>
             val resp = providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
@@ -803,8 +804,9 @@ class ChatService(
                 return@withContext ContextRefreshResult(false)
             }
 
+            // 使用 toContentText() 排除推理过程
             val text = toSummarize.joinToString("\n") {
-                "${it.role}: ${it.toText().take(500)}"
+                "${it.role}: ${it.toContentText().take(500)}"
             }
             val locale = Locale.getDefault().displayName
 
@@ -812,6 +814,7 @@ class ChatService(
                 .ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }
                 .replace("{{new_messages}}", text)
                 .replace("{{locale}}", locale)
+                .replace("{{char}}", assistant.name)
 
             val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f))
@@ -855,6 +858,7 @@ class ChatService(
                     .replace("{{previous_summary}}", currentSummary)
                     .replace("{{new_messages}}", text)
                     .replace("{{locale}}", locale)
+                    .replace("{{char}}", assistant.name)
             } else {
                 "Summarize the following chat history:\n$text"
             }

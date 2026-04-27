@@ -21,6 +21,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -357,7 +358,7 @@ class MemoryConsolidationWorker(
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
-                            // 此处修改：使用 toContentText() 排除推理过程
+                            // 使用 toContentText() 排除推理过程
                             val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
                                 "${it.role}: ${it.toContentText().take(1000)}"
                             }
@@ -372,6 +373,7 @@ class MemoryConsolidationWorker(
                         handler = memory.handler,
                         providerSetting = memory.provider,
                         model = memory.model,
+                        assistantName = currentAssistant.name,
                         existingArchive = currentAssistant.masterMemoryContent,
                         newContext = recentContext.ifBlank { "No new recent conversations." },
                         systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
@@ -517,7 +519,7 @@ class MemoryConsolidationWorker(
         previousSummary: String?,
         messages: List<UIMessage>
     ): String {
-        // 此处修改：使用 toContentText() 排除推理过程
+        // 使用 toContentText() 排除推理过程
         val messagesText = messages.takeLast(100).joinToString("\n") {
             "${it.role}: ${it.toContentText().take(5000)}"
         }
@@ -525,16 +527,18 @@ class MemoryConsolidationWorker(
         val locale = Locale.getDefault().displayName
 
         val prompt = if (previousSummary != null) {
-            DEFAULT_FULL_SUMMARY_PROMPT
-                .replace("{{previous_summary}}", previousSummary)
-                .replace("{{new_messages}}", messagesText)
-                .replace("{{locale}}", locale)
-                .replace("{{char}}", assistantName)
+            DEFAULT_FULL_SUMMARY_PROMPT.applyPlaceholders(
+                "previous_summary" to previousSummary,
+                "new_messages" to messagesText,
+                "locale" to locale,
+                "char" to assistantName
+            )
         } else {
-            DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-                .replace("{{text}}", messagesText)
-                .replace("{{locale}}", locale)
-                .replace("{{char}}", assistantName)
+            DEFAULT_EPISODIC_CONSOLIDATION_PROMPT.applyPlaceholders(
+                "text" to messagesText,
+                "locale" to locale,
+                "char" to assistantName
+            )
         }
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
@@ -559,9 +563,10 @@ class MemoryConsolidationWorker(
         summary: String
     ): String {
         val locale = Locale.getDefault().displayName
-        val prompt = DEFAULT_KEYWORD_EXTRACTION_PROMPT
-            .replace("{{summary}}", summary)
-            .replace("{{locale}}", locale)
+        val prompt = DEFAULT_KEYWORD_EXTRACTION_PROMPT.applyPlaceholders(
+            "summary" to summary,
+            "locale" to locale
+        )
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = h.generateText(
@@ -588,10 +593,17 @@ class MemoryConsolidationWorker(
         handler: me.rerere.ai.provider.Provider<*>,
         providerSetting: me.rerere.ai.provider.ProviderSetting,
         model: me.rerere.ai.provider.Model,
+        assistantName: String,
         existingArchive: String,
         newContext: String,
         systemPrompt: String
     ): String {
+        val locale = Locale.getDefault().displayName
+        val finalSystemPrompt = systemPrompt.applyPlaceholders(
+            "char" to assistantName,
+            "locale" to locale
+        )
+
         val inputPrompt = """
             Current Date: ${LocalDate.now()}
 
@@ -609,7 +621,7 @@ class MemoryConsolidationWorker(
         val resp = h.generateText(
             providerSetting = providerSetting,
             messages = listOf(
-                UIMessage.system(systemPrompt),
+                UIMessage.system(finalSystemPrompt),
                 UIMessage.user(inputPrompt)
             ),
             params = TextGenerationParams(
@@ -631,7 +643,9 @@ class MemoryConsolidationWorker(
         archiveToCompress: String
     ): String {
         val locale = Locale.getDefault().displayName
-        val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.replace("{{locale}}", locale)
+        val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.applyPlaceholders(
+            "locale" to locale
+        )
 
         val userPrompt = """
             Memory Archive to Compress (Last Updated: ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}):

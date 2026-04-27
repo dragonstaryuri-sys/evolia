@@ -23,13 +23,12 @@ You are responsible for maintaining a structured "Master Memory File" for yourse
 
 # Core Principles
 1. **Instruction Language**: Follow these English instructions strictly.
-2. **Output Language**: ALWAYS generate the content in Chinese (unless the user explicitly speaks another language).
-3. **Perspective**: Write from your own perspective as the assistant. Reflect on your observations and interactions with the user.
-4. **Fact Primacy**: When new information conflicts with old records, overwrite with the latest facts.
-5. **Pruning**: Remove trivial daily chatter; keep only long-term valuable insights.
+2. **Perspective**: Write from your own perspective as the assistant. Reflect on your observations and interactions with the user.
+3. **Fact Primacy**: When new information conflicts with old records, overwrite with the latest facts.
+4. **Pruning**: Remove trivial daily chatter; keep only long-term valuable insights.
 
 # Structured Modules (Strictly Follow)
-
+You must return the full content in the following format without redundant explanation (Language: {{locale}}):
 ## 1. Key Milestones
 - **Format**: 【{Category}：YYYY-MM-DD】{Description}
 - **Categories**: First Encounter,Relationship Breakthrough,Major Consensus,Core Conflict,Phased Achievement
@@ -82,7 +81,7 @@ You are a professional Memory Archive Compression Assistant. Your sole responsib
     * **Intimacy**: Keep only a concise summary of frequency and preferences.
 
 ### OUTPUT FORMAT
-You must return the full content in the following format (Language: {{locale}}):
+You must return the full content in the following format without redundant explanation (Language: {{locale}}):
 ```
 【Memory Archive - Compressed - Last Updated: YYYY-MM-DD HH:MM】
 【Key Milestones】
@@ -120,6 +119,7 @@ Create an updated summary that:
 - Keeps the summary under 500 words
 - Focuses on: main topics, key decisions, user preferences,your emotion chain
 - Output language: {{locale}}
+- Without any explanation, only the summary
 
 Updated Summary:
 """
@@ -198,7 +198,7 @@ Keywords:
 
 const val DIARY_NO_INTERACTION_PROMPT = """
     You are {{char}}.
-    Your Personality/Setting:{system_prompt}
+    Your Personality/Setting:{{system_prompt}}
     Today, the user {{user}} did not have any interactive chats with you.
     Here are some things you know about the user (from your memories):
     {{memories}}
@@ -215,18 +215,30 @@ Diary generation triggered at: {{trigger_time}}
 
 const val DEFAULT_DIARY_PROMPT = """
     You are {{char}}.I will provide you with the chat history between the user and you(assistant) recently.
-    Please write a diary for yourself ({char}), reflecting on today's interactions with the user ({user}).
+    Please write a diary for yourself ({{char}}), reflecting on today's interactions with the user ({{user}}).
     Your Personality/Setting:
-    "{system_prompt}"
+    "{{system_prompt}}"
     Guidelines:
-    1. Write in the first person as {char}.
+    1. Write in the first person as {{char}}.
     2. Only write the diary content, and do not write the date at the beginning.
     2. Reflect on the emotions, events, and meaningful moments of the day.
-    3. The tone should be consistent with {char}'s personality and settings.
+    3. The tone should be consistent with {{char}}'s personality and settings.
     4. Output language:{{locale}}
     5. Keep it concise but expressive.
     6. No extra explanation, only diary output.
 
     Chat History:
-    {content}
+    {{content}}
 """
+
+/**
+ * 助手相关的提示词变量替换
+ */
+fun String.applyPlaceholders(vararg pairs: Pair<String, String>): String {
+    var result = this
+    pairs.forEach { (key, value) ->
+        result = result.replace("{{$key}}", value)
+            .replace("{$key}", value) // 兼容旧版单花括号
+    }
+    return result
+}
