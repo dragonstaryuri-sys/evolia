@@ -731,6 +731,15 @@ private fun RagSettingsCard(
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit
 ) {
+    // 1. 为 Top K 和 阈值 引入局部状态，避免滑动时由于频繁更新数据库导致的卡顿
+    var localLimit by remember(assistant.ragLimit) {
+        mutableFloatStateOf(assistant.ragLimit.toFloat())
+    }
+    var localThreshold by remember(assistant.ragSimilarityThreshold) {
+        mutableFloatStateOf(assistant.ragSimilarityThreshold)
+    }
+    val haptics = rememberPremiumHaptics()
+
     Column(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -745,11 +754,19 @@ private fun RagSettingsCard(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(stringResource(R.string.rag_limit_title), style = MaterialTheme.typography.titleMedium)
-                        Text(text = assistant.ragLimit.toString(), color = MaterialTheme.colorScheme.primary)
+                        Text(text = localLimit.toInt().toString(), color = MaterialTheme.colorScheme.primary)
                     }
                     Slider(
-                        value = assistant.ragLimit.toFloat(),
-                        onValueChange = { onUpdateAssistant(assistant.copy(ragLimit = it.toInt())) },
+                        value = localLimit,
+                        onValueChange = {
+                            if (it != localLimit) {
+                                localLimit = it
+                                haptics.perform(HapticPattern.Pop)
+                            }
+                        },
+                        onValueChangeFinished = {
+                            onUpdateAssistant(assistant.copy(ragLimit = localLimit.toInt()))
+                        },
                         valueRange = 1f..10f,
                         steps = 9
                     )
@@ -762,25 +779,27 @@ private fun RagSettingsCard(
                     exit = fadeOut() + shrinkVertically()
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        var threshold by remember(assistant.ragSimilarityThreshold) {
-                            mutableFloatStateOf(assistant.ragSimilarityThreshold)
-                        }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(stringResource(R.string.assistant_memory_similarity_threshold_title), style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = String.format("%.2f", threshold),
+                                text = String.format("%.2f", localThreshold),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
                         Slider(
-                            value = threshold,
+                            value = localThreshold,
                             onValueChange = { newValue ->
-                                threshold = newValue
-                                onUpdateAssistant(assistant.copy(ragSimilarityThreshold = newValue))
+                                if (newValue != localThreshold) {
+                                    localThreshold = newValue
+                                    haptics.perform(HapticPattern.Pop)
+                                }
+                            },
+                            onValueChangeFinished = {
+                                onUpdateAssistant(assistant.copy(ragSimilarityThreshold = localThreshold))
                             },
                             valueRange = 0f..1f,
                             steps = 19,
@@ -1001,6 +1020,12 @@ private fun ConsolidationSettingsCard(
     showSummarizerWarning: Boolean = false,
     onNavigateToModels: () -> Unit = {}
 ) {
+    // 引入局部状态来处理滑动，避免实时更新导致的卡顿
+    var localDelay by remember(assistant.consolidationDelayMinutes) {
+        mutableFloatStateOf(assistant.consolidationDelayMinutes.toFloat())
+    }
+    val haptics = rememberPremiumHaptics()
+
     Column(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1052,7 +1077,7 @@ private fun ConsolidationSettingsCard(
                 ) {
                     Text(stringResource(R.string.assistant_memory_consolidation_delay_title), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        text = stringResource(R.string.assistant_memory_consolidation_delay_value, assistant.consolidationDelayMinutes),
+                        text = stringResource(R.string.assistant_memory_consolidation_delay_value, localDelay.toInt()),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -1062,11 +1087,22 @@ private fun ConsolidationSettingsCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // 3. 优化后的 Slider
                 Slider(
-                    value = assistant.consolidationDelayMinutes.toFloat(),
-                    onValueChange = { onUpdateAssistant(assistant.copy(consolidationDelayMinutes = it.toInt())) },
-                    valueRange = 0f..240f,
-                    steps = 23,
+                    value = localDelay,
+                    onValueChange = {
+                        if (it != localDelay) {
+                            localDelay = it
+                            // 触感反馈：每滑动到一个步进点触发一次
+                            haptics.perform(HapticPattern.Pop)
+                        }
+                    },
+                    onValueChangeFinished = {
+                        // 仅在手指离开屏幕时才真正保存数据
+                        onUpdateAssistant(assistant.copy(consolidationDelayMinutes = localDelay.toInt()))
+                    },
+                    valueRange = 30f..300f, // 最小 30min，最大 300min
+                    steps = 26,             // (300-30)/10 - 1 = 26，实现 10 分钟一个步进
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
