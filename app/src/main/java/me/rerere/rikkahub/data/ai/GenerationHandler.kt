@@ -234,12 +234,8 @@ class GenerationHandler(
                 assistant = assistant,
                 settings = settings,
                 messages = messages,
-                onUpdateMessages = {
-                    // 如果这次生成被标记为 skipContext，那么它产生的 Assistant 回复也带上标记
-                    val updated = if (skipContextForResponse) {
-                         it.map { m -> if (m.role == CoreMessageRole.ASSISTANT) m.copy(skipContext = true) else m }
-                    } else it
-
+                onUpdateMessages = {currentMessages ->
+                    val updated = currentMessages
                     messages = updated.transforms(
                         transformers = outputTransformers,
                         context = context,
@@ -271,10 +267,6 @@ class GenerationHandler(
                 includeSkipContextMessages = skipContextForResponse
             )
 
-            // 同样处理生成的最终结果
-            if (skipContextForResponse) {
-                messages = messages.map { m -> if (m.role == CoreMessageRole.ASSISTANT) m.copy(skipContext = true) else m }
-            }
 
             messages = messages.visualTransforms(
                 transformers = outputTransformers,
