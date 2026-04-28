@@ -630,7 +630,8 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-                skipContextForResponse = skipContextForResponse // 传递参数
+                skipContextForResponse = skipContextForResponse, // 传递参数
+                conversationId = conversationId // 传递会话 ID
             ).onCompletion {
                 val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
                 val current = getConversationFlow(conversationId).value

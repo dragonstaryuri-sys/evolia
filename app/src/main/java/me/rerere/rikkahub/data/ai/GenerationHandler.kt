@@ -124,7 +124,8 @@ class GenerationHandler(
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList(),
-        skipContextForResponse: Boolean = false // 新增：标记此次生成的回复是否也应该 skipContext
+        skipContextForResponse: Boolean = false, // 新增：标记此次生成的回复是否也应该 skipContext
+        conversationId: Uuid? = null // 新增：会话 ID
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -264,7 +265,8 @@ class GenerationHandler(
                 enabledModeIds = enabledModeIds,
                 contextSummary = contextSummary,
                 temporarySummaries = temporarySummaries,
-                includeSkipContextMessages = skipContextForResponse
+                includeSkipContextMessages = skipContextForResponse,
+                conversationId = conversationId
             )
 
 
@@ -384,7 +386,8 @@ class GenerationHandler(
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList(),
-        includeSkipContextMessages: Boolean = false
+        includeSkipContextMessages: Boolean = false,
+        conversationId: Uuid? = null // 新增：当前会话 ID
     ): BuildMessagesResult {
         // Token estimator
         fun estimateTokens(text: String) = text.length / 4
@@ -685,52 +688,56 @@ class GenerationHandler(
                 val today = java.time.LocalDate.now()
                 val zoneId = java.time.ZoneId.systemDefault()
 
-                // 获取该助手下最近的一个情节记忆（Episode）
-                val lastEpisode = memoryRepo.getEpisodeEntitiesOfAssistant(assistant.id.toString()).firstOrNull()
+                // 【优化】：直接获取上一次会话信息，而不是依赖 lastEpisode 关联。
+                // 这样可以确保即使中间有几次没生成摘要的简短聊天，也能找回真正的上一次语境。
+                val lastConv = if (conversationId != null) {
+                    conversationRepo.getPreviousConversation(assistant.id, conversationId)
+                } else {
+                    conversationRepo.getLatestConversation(assistant.id)
+                }
 
-                // 判定该摘要是否属于今天
-                val isFromToday = lastEpisode?.let {
-                    val episodeDate = java.time.Instant.ofEpochMilli(it.endTime)
-                        .atZone(zoneId)
-                        .toLocalDate()
-                    episodeDate == today
+                // 判定该会话是否属于今天
+                val isFromToday = lastConv?.let {
+                    it.updateAt.atZone(zoneId).toLocalDate() == today
                 } ?: false
 
-                if (isFromToday && lastEpisode != null) {
-                    // 【新逻辑】：智能判断是否需要注入
-                    val lastConvIdStr = lastEpisode.conversationId
-                    val lastConv = if (!lastConvIdStr.isNullOrBlank()) {
-                         try { conversationRepo.getConversationById(Uuid.parse(lastConvIdStr)) } catch (e: Exception) { null }
-                    } else null
-
+                if (isFromToday && lastConv != null) {
                     val currentIsVirtual = assistant.isVirtualWorldMode
-                    val lastIsVirtual = lastConv?.isVirtual ?: false
+                    val lastIsVirtual = lastConv.isVirtual
 
-                    // 判断是否是“跨次元切换”：模式不同 且 是刚刚发生的（10分钟内）
-                    val isModeTransition = (currentIsVirtual != lastIsVirtual) && (System.currentTimeMillis() - lastEpisode.endTime < 600_000)
+                    // 判断是否是“模式切换”（移除了时间敏感度，只要模式不同就判定为切换）
+                    val isModeTransition = currentIsVirtual != lastIsVirtual
 
                     // 只有在以下两种情况之一才注入：
                     // 1. 正常的会话开头（messages.size <= 2）
-                    // 2. 刚刚发生的跨次元转场
+                    // 2. 模式切换
                     if (messages.size <= 2 || isModeTransition) {
-                        val modeTransitionPrompt = when {
-                             currentIsVirtual && !lastIsVirtual ->
-                                 VIRTUAL_TRANSITION_TO_VIRTUAL
-                             !currentIsVirtual && lastIsVirtual ->
-                                 VIRTUAL_TRANSITION_TO_NORMAL
-                             else -> "Last conversation summary: "
-                        }
+                        // 尝试寻找该会话对应的 Episode 摘要
+                        val episode = memoryRepo.getEpisodeByConversationId(lastConv.id.toString())
 
-                        Log.i(TAG, "Injecting context reference. ModeTransition=$isModeTransition, Size=${messages.size}")
+                        if (episode != null) {
+                            val modeTransitionPrompt = when {
+                                 currentIsVirtual && !lastIsVirtual ->
+                                     VIRTUAL_TRANSITION_TO_VIRTUAL
+                                 !currentIsVirtual && lastIsVirtual ->
+                                     VIRTUAL_TRANSITION_TO_NORMAL
+                                 else -> "Last conversation summary: "
+                            }
 
-                        listOf(
-                            AssistantMemory(
-                                id = -1, // 特殊 ID 标记为“近期增强”
-                                content = "$modeTransitionPrompt${lastEpisode.content}",
-                                type = 1, // EPISODIC
-                                timestamp = lastEpisode.endTime
+                            Log.i(TAG, "Injecting context reference. ModeTransition=$isModeTransition, Size=${messages.size}")
+
+                            listOf(
+                                AssistantMemory(
+                                    id = -1, // 特殊 ID 标记为“近期增强”
+                                    content = "$modeTransitionPrompt${episode.content}",
+                                    type = 1, // EPISODIC
+                                    timestamp = episode.endTime
+                                )
                             )
-                        )
+                        } else {
+                            // 【接受缺失】：如果满足条件但上一次会话还没生成 episode，则先不注入，优雅跳过。
+                            emptyList()
+                        }
                     } else {
                         emptyList()
                     }
@@ -1149,7 +1156,8 @@ class GenerationHandler(
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList(),
-        includeSkipContextMessages: Boolean = false
+        includeSkipContextMessages: Boolean = false,
+        conversationId: Uuid? = null // 新增
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1162,7 +1170,8 @@ class GenerationHandler(
             enabledModeIds = enabledModeIds,
             contextSummary = contextSummary,
             temporarySummaries = temporarySummaries,
-            includeSkipContextMessages = includeSkipContextMessages
+            includeSkipContextMessages = includeSkipContextMessages,
+            conversationId = conversationId
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
 

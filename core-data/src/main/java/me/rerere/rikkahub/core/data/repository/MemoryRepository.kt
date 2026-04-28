@@ -147,6 +147,10 @@ class MemoryRepository(
         return chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
     }
 
+    suspend fun getEpisodeByConversationId(conversationId: String): ChatEpisodeEntity? {
+        return chatEpisodeDAO.getEpisodeByConversationId(conversationId)
+    }
+
     private suspend fun getOrCreateEmbedding(
         memoryId: Int,
         memoryType: Int,
@@ -420,7 +424,8 @@ class MemoryRepository(
                 val embedding = embeddingService.embed(effectiveContent, assistantId)
                 val embeddingJson = JsonInstant.encodeToString(embedding)
                 chatEpisodeDAO.insertEpisode(episode.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
-                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = episode.id, memoryType = MemoryType.EPISODIC, modelId = currentModelId, embedding = embeddingJson))
+                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = episode.id, memoryType = MemoryType.EPISODIC, modelId = currentModelId, embedding = JsonInstant.encodeToString(embedding))
+            )
                 successCount++
             } catch (e: Exception) { failureCount++ }
             onProgress(current, total)

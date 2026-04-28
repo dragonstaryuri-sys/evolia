@@ -46,11 +46,26 @@ class ConversationRepository(
         ).map { conversationEntityToConversation(it) }
     }
 
+    suspend fun getLatestConversation(assistantId: Uuid): Conversation? {
+        return conversationDAO.getRecentConversationsOfAssistantAnyMode(
+            assistantId = assistantId.toString(),
+            limit = 1
+        ).firstOrNull()?.let { conversationEntityToConversation(it) }
+    }
+
+    suspend fun getPreviousConversation(assistantId: Uuid, currentConversationId: Uuid): Conversation? {
+        return conversationDAO.getRecentConversationsOfAssistantExclude(
+            assistantId = assistantId.toString(),
+            excludeId = currentConversationId.toString(),
+            limit = 1
+        ).firstOrNull()?.let { conversationEntityToConversation(it) }
+    }
+
     fun getConversationsOfAssistant(assistantId: Uuid, isVirtual: Boolean = false): Flow<List<Conversation>> {
         return conversationDAO
             .getConversationsOfAssistant(assistantId.toString(), isVirtual = isVirtual)
-            .map { flow ->
-                flow.map { entity ->
+            .map { list ->
+                list.map { entity ->
                     conversationEntityToConversation(entity)
                 }
             }
@@ -115,7 +130,7 @@ class ConversationRepository(
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = { conversationDAO.searchConversationsOfAssistantPaging(assistantId.toString(), titleKeyword, isVirtual = isVirtual) }
+        pagingSourceFactory = { conversationDAO.searchConversationsOfAssistantPaging(assistantId.toString(), titleKeyword, isVirtual) }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
