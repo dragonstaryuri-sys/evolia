@@ -705,39 +705,50 @@ class GenerationHandler(
                     val currentIsVirtual = assistant.isVirtualWorldMode
                     val lastIsVirtual = lastConv.isVirtual
 
-                    // 判断是否是“模式切换”（移除了时间敏感度，只要模式不同就判定为切换）
+                    // 判断是否是“模式切换” (移除了时间敏感度)
                     val isModeTransition = currentIsVirtual != lastIsVirtual
 
-                    // 只有在以下两种情况之一才注入：
-                    // 1. 正常的会话开头（messages.size <= 2）
-                    // 2. 模式切换
-                    if (messages.size <= 2 || isModeTransition) {
-                        // 尝试寻找该会话对应的 Episode 摘要
+                    if (messages.size <= 2) {
+                        // 【新对话逻辑】：注入上一个会话的摘要
                         val episode = memoryRepo.getEpisodeByConversationId(lastConv.id.toString())
-
                         if (episode != null) {
-                            val modeTransitionPrompt = when {
-                                 currentIsVirtual && !lastIsVirtual ->
-                                     VIRTUAL_TRANSITION_TO_VIRTUAL
-                                 !currentIsVirtual && lastIsVirtual ->
-                                     VIRTUAL_TRANSITION_TO_NORMAL
-                                 else -> "Last conversation summary: "
-                            }
-
-                            Log.i(TAG, "Injecting context reference. ModeTransition=$isModeTransition, Size=${messages.size}")
-
+                            Log.i(TAG, "Injecting context summary for new conversation.")
                             listOf(
                                 AssistantMemory(
                                     id = -1, // 特殊 ID 标记为“近期增强”
-                                    content = "$modeTransitionPrompt${episode.content}",
+                                    content = "Summary of your last conversation today: ${episode.content}",
                                     type = 1, // EPISODIC
                                     timestamp = episode.endTime
                                 )
                             )
+                        } else emptyList()
+                    } else if (isModeTransition) {
+                        // 【模式切换逻辑】：注入上一个会话的最新原始消息 (最多 6 条)
+                        val transitionPrompt = if (currentIsVirtual) {
+                            VIRTUAL_TRANSITION_TO_VIRTUAL
                         } else {
-                            // 【接受缺失】：如果满足条件但上一次会话还没生成 episode，则先不注入，优雅跳过。
-                            emptyList()
+                            VIRTUAL_TRANSITION_TO_NORMAL
                         }
+
+                        // 获取上一个会话最新的原始历史，确保无缝衔接
+                        val lastRawHistory = lastConv.currentMessages
+                            .filter { !it.skipContext }
+                            .takeLast(6)
+                            .joinToString("\n") { msg ->
+                                "${msg.role.name}: ${msg.toContentText()}"
+                            }
+
+                        if (lastRawHistory.isNotBlank()) {
+                            Log.i(TAG, "Injecting mode transition raw messages (L2). Transition=$isModeTransition")
+                            listOf(
+                                AssistantMemory(
+                                    id = -1, // 特殊 ID 标记
+                                    content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
+                                    type = 1, // EPISODIC
+                                    timestamp = lastConv.updateAt.toEpochMilli()
+                                )
+                            )
+                        } else emptyList()
                     } else {
                         emptyList()
                     }
