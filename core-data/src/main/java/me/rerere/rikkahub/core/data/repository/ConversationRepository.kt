@@ -144,6 +144,10 @@ class ConversationRepository(
         } else null
     }
 
+    suspend fun getConversationById(id: String): Conversation? {
+        return runCatching { getConversationById(Uuid.parse(id)) }.getOrNull()
+    }
+
     suspend fun insertConversation(conversation: Conversation) {
         conversationDAO.insert(
             conversationToConversationEntity(conversation)

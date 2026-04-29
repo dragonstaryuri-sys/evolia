@@ -652,6 +652,17 @@ class ChatService(
         .onSuccess {
             val finalConv = getConversationFlow(conversationId).value
             saveConversation(conversationId, finalConv)
+            appScope.launch {
+                val currentSettings = settingsStore.settingsFlow.value
+                val updatedAssistants = currentSettings.assistants.map {
+                    if (it.id == finalConv.assistantId) {
+                        // 将该助手的 lastConversationId 更新为当前会话 ID
+                        it.copy(lastConversationId = conversationId.toString())
+                    } else it
+                }
+                // 持久化更新后的助手列表
+                settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+            }
             addConversationReference(conversationId)
             appScope.launch {
                 coroutineScope {

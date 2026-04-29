@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.core.data.model
 
+import androidx.room.ColumnInfo
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import me.rerere.ai.provider.CustomBody
@@ -125,6 +126,10 @@ data class Assistant(
 
     // Virtual World Mode
     val isVirtualWorldMode: Boolean = false,
+
+    @ColumnInfo(name = "last_conversation_id")
+    val lastConversationId: String? = null,
+
 )
 
 @Serializable

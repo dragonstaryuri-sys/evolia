@@ -688,49 +688,51 @@ class GenerationHandler(
                 val today = java.time.LocalDate.now()
                 val zoneId = java.time.ZoneId.systemDefault()
 
-                // 【优化】：直接获取上一次会话信息，而不是依赖 lastEpisode 关联。
-                // 这样可以确保即使中间有几次没生成摘要的简短聊天，也能找回真正的上一次语境。
-                val lastConv = if (conversationId != null) {
-                    conversationRepo.getPreviousConversation(assistant.id, conversationId)
-                } else {
-                    conversationRepo.getLatestConversation(assistant.id)
+                // 1. 获取上一次交互的会话（通过记录在 Assistant 里的 ID）
+                val lastConv = assistant.lastConversationId?.let { lastId ->
+                    // 只有当记录的 ID 与当前 ID 不同时，才需要回溯上个会话
+                    if (lastId != conversationId?.toString()) {
+                        conversationRepo.getConversationById(lastId)
+                    } else null
                 }
 
-                // 判定该会话是否属于今天
+                // 2. 判定该会话是否属于今天
                 val isFromToday = lastConv?.let {
                     it.updateAt.atZone(zoneId).toLocalDate() == today
                 } ?: false
 
+                // 3. 构建记忆注入列表
                 if (isFromToday && lastConv != null) {
                     val currentIsVirtual = assistant.isVirtualWorldMode
                     val lastIsVirtual = lastConv.isVirtual
+                    val memoriesToInject = mutableListOf<AssistantMemory>()
 
-                    // 判断是否是“模式切换” (移除了时间敏感度)
-                    val isModeTransition = currentIsVirtual != lastIsVirtual
-
+                    // 【逻辑一：新会话摘要】
+                    // 只要是新开启的会话（前两轮），就注入上个会话的摘要
                     if (messages.size <= 2) {
-                        // 【新对话逻辑】：注入上一个会话的摘要
                         val episode = memoryRepo.getEpisodeByConversationId(lastConv.id.toString())
                         if (episode != null) {
                             Log.i(TAG, "Injecting context summary for new conversation.")
-                            listOf(
+                            memoriesToInject.add(
                                 AssistantMemory(
-                                    id = -1, // 特殊 ID 标记为“近期增强”
+                                    id = -1,
                                     content = "Summary of your last conversation today: ${episode.content}",
-                                    type = 1, // EPISODIC
+                                    type = 1,
                                     timestamp = episode.endTime
                                 )
                             )
-                        } else emptyList()
-                    } else if (isModeTransition) {
-                        // 【模式切换逻辑】：注入上一个会话的最新原始消息 (最多 6 条)
+                        }
+                    }
+
+                    // 【逻辑二：模式切换历史】
+                    // 只要当前模式和上个会话模式不同，就注入 6 条原始消息片段，确保 AI 记得刚才聊了什么
+                    if (currentIsVirtual != lastIsVirtual) {
                         val transitionPrompt = if (currentIsVirtual) {
                             VIRTUAL_TRANSITION_TO_VIRTUAL
                         } else {
                             VIRTUAL_TRANSITION_TO_NORMAL
                         }
 
-                        // 获取上一个会话最新的原始历史，确保无缝衔接
                         val lastRawHistory = lastConv.currentMessages
                             .filter { !it.skipContext }
                             .takeLast(6)
@@ -739,19 +741,19 @@ class GenerationHandler(
                             }
 
                         if (lastRawHistory.isNotBlank()) {
-                            Log.i(TAG, "Injecting mode transition raw messages (L2). Transition=$isModeTransition")
-                            listOf(
+                            Log.i(TAG, "Injecting mode transition raw messages.")
+                            memoriesToInject.add(
                                 AssistantMemory(
-                                    id = -1, // 特殊 ID 标记
+                                    id = -1,
                                     content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
-                                    type = 1, // EPISODIC
+                                    type = 1,
                                     timestamp = lastConv.updateAt.toEpochMilli()
                                 )
                             )
-                        } else emptyList()
-                    } else {
-                        emptyList()
+                        }
                     }
+
+                    memoriesToInject
                 } else {
                     emptyList()
                 }
@@ -759,8 +761,7 @@ class GenerationHandler(
                 emptyList()
             }
 
-            // 合并 RAG 检索结果与近期参考。
-            // 使用 distinctBy 防止同一条摘要在两个来源中重复出现，节省 Token 并提高理解效率。
+            // 合并 RAG 检索结果与近期参考（去重）
             (memories + recentChatMemories).distinctBy { it.content }
         } else {
             emptyList()
