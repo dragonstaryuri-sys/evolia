@@ -229,6 +229,7 @@ private fun ChatPageContent(
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
+    val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
 
     LaunchedEffect(initialSearchQuery, conversation.id) {
         if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
@@ -299,6 +300,7 @@ private fun ChatPageContent(
                 ) {
                     ChatList(
                         innerPadding = PaddingValues(top = topMessagePadding, bottom = 140.dp),
+                        uiItems = uiMessages,
                         conversation = conversation,
                         state = chatListState,
                         loading = loadingJob != null,

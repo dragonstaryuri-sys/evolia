@@ -387,6 +387,25 @@ class ConversationRepository(
         dailyActivityDAO.recordActivity(date)
     }
 
+    fun getAllVirtualMessagesOfAssistant(assistantId: Uuid): Flow<List<MessageNode>> {
+        return conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true)
+            .map { conversations ->
+                // 按时间升序排序，然后打平所有的消息节点
+                conversations.sortedBy { it.createAt }
+                    .flatMap { entity ->
+                        // 解码每个会话的消息节点
+                        conversationEntityToConversation(entity).messageNodes
+                    }
+            }
+    }
+
+
+    fun getVirtualConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
+        return conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true)
+            .map { entities ->
+                entities.map { conversationEntityToConversation(it) }
+            }
+    }
     suspend fun migrateConversationDatesToActivity() {
         val dates = conversationDAO.getDistinctCreateDates()
         dates.forEach { date ->

@@ -113,10 +113,16 @@ private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
 
+sealed class ChatListDisplayItem {
+    data class TurnGroup(val group: MessageTurnGroup) : ChatListDisplayItem()
+    data class Separator(val text: String) : ChatListDisplayItem()
+}
+
 @Composable
 fun ChatList(
     innerPadding: PaddingValues,
     conversation: Conversation,
+    uiItems: List<ChatVM.ChatUIItem>,
     state: LazyListState,
     loading: Boolean,
     previewMode: Boolean,
@@ -151,6 +157,7 @@ fun ChatList(
                 ChatListNormal(
                     innerPadding = innerPadding,
                     conversation = conversation,
+                    uiItems = uiItems,
                     state = state,
                     loading = loading,
                     settings = settings,
@@ -171,6 +178,7 @@ fun ChatList(
 private fun SharedTransitionScope.ChatListNormal(
     innerPadding: PaddingValues,
     conversation: Conversation,
+    uiItems: List<ChatVM.ChatUIItem>,
     state: LazyListState,
     loading: Boolean,
     settings: Settings,
@@ -186,7 +194,6 @@ private fun SharedTransitionScope.ChatListNormal(
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
     var userScrolledUp by remember { mutableStateOf(false) }
-    val conversationUpdated by rememberUpdatedState(conversation)
     val context = LocalContext.current
     val navController = LocalNavController.current
 
@@ -219,10 +226,8 @@ private fun SharedTransitionScope.ChatListNormal(
         if (lastItem.key == LoadingIndicatorKey || lastItem.key == ScrollBottomKey) {
             return true
         }
-        // Check if we can see the bottom spacer or the last real item
         val hasScrollBottom = any { it.key == ScrollBottomKey }
         if (hasScrollBottom) return true
-        // Fallback: check if the last visible item is near the end
         return !state.canScrollForward || (lastItem.offset + lastItem.size <= state.layoutInfo.viewportEndOffset + lastItem.size * 0.15 + 32)
     }
 
@@ -238,8 +243,6 @@ private fun SharedTransitionScope.ChatListNormal(
         modifier = Modifier
             .fillMaxSize(),
     ) {
-        // Empty chat state removed - assistant icon now shown in TopBar
-
         // Detect user scrolling up to suppress auto-scroll
         LaunchedEffect(state) {
             var previousFirstIndex = state.firstVisibleItemIndex
@@ -248,13 +251,11 @@ private fun SharedTransitionScope.ChatListNormal(
                 Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
             }.collect { (isScrolling, firstIndex, firstOffset) ->
                 if (isScrolling && loadingState) {
-                    // User is actively scrolling during generation
                     val scrolledUp = firstIndex < previousFirstIndex ||
                         (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
                     if (scrolledUp) {
                         userScrolledUp = true
                     }
-                    // If user scrolls back to bottom, resume auto-scroll
                     if (state.layoutInfo.visibleItemsInfo.isAtBottom()) {
                         userScrolledUp = false
                     }
@@ -264,18 +265,15 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        // Reset userScrolledUp when loading stops
         LaunchedEffect(loading) {
             if (!loading) {
                 userScrolledUp = false
             }
         }
 
-        // Auto-scroll to bottom during generation
         LaunchedEffect(state) {
             snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
                 if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
-                    // Scroll to the very last item in the list (ScrollBottomKey spacer)
                     val targetIndex = state.layoutInfo.totalItemsCount - 1
                     if (targetIndex >= 0) {
                         state.animateScrollToItem(targetIndex)
@@ -284,7 +282,6 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        // 判断最近是否滚动
         LaunchedEffect(state.isScrollInProgress) {
             if (state.isScrollInProgress) {
                 isRecentScroll = true
@@ -296,41 +293,42 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        // Group consecutive messages by role into turns
-        // Computed fresh on each recomposition to ensure up-to-date data
-        val turnGroups = remember(conversation.messageNodes) {
-            conversation.messageNodes
-                .filter { node ->
-                    // 只有当节点内的当前消息不是 skipContext 时才显示
-                    !node.currentMessage.skipContext
-                }
-                .groupIntoTurns()
-        }
-
-        // Index helpers for regen visibility
-        val lastUserIndex = remember(conversation.messageNodes) {
-            conversation.messageNodes.indexOfLast { it.currentMessage.role == me.rerere.ai.core.MessageRole.USER }
-        }
-        val nodeIndexById = remember(conversation.messageNodes) {
-            conversation.messageNodes.mapIndexed { index, node -> node.id to index }.toMap()
-        }
-
-        // Check if we need a phantom loading turn (loading but no assistant response yet)
         val needsPhantomLoadingTurn = loading && (
-            turnGroups.isEmpty() ||
-            turnGroups.lastOrNull()?.role == me.rerere.ai.core.MessageRole.USER
+            uiItems.isEmpty() ||
+            (uiItems.lastOrNull() as? ChatVM.ChatUIItem.Message)?.node?.currentMessage?.role == me.rerere.ai.core.MessageRole.USER
         )
 
-        val pendingAssistantGroup = remember(conversation.id) {
-            MessageTurnGroup(
-                nodes = listOf(MessageNode.of(UIMessage.assistant(""))),
-                role = me.rerere.ai.core.MessageRole.ASSISTANT
-            )
-        }
-        val displayGroups = if (needsPhantomLoadingTurn) {
-            turnGroups + pendingAssistantGroup
-        } else {
-            turnGroups
+        val displayItems = remember(uiItems, needsPhantomLoadingTurn) {
+            val result = mutableListOf<ChatListDisplayItem>()
+            val currentNodes = mutableListOf<MessageNode>()
+
+            fun flush() {
+                if (currentNodes.isNotEmpty()) {
+                    result.addAll(currentNodes.groupIntoTurns().map { ChatListDisplayItem.TurnGroup(it) })
+                    currentNodes.clear()
+                }
+            }
+
+            uiItems.forEach { item ->
+                when (item) {
+                    is ChatVM.ChatUIItem.Message -> {
+                        if (!item.node.currentMessage.skipContext) {
+                            currentNodes.add(item.node)
+                        }
+                    }
+                    is ChatVM.ChatUIItem.Separator -> {
+                        flush()
+                        result.add(ChatListDisplayItem.Separator(item.text))
+                    }
+                }
+            }
+
+            if (needsPhantomLoadingTurn) {
+                currentNodes.add(MessageNode.of(UIMessage.assistant("")))
+            }
+
+            flush()
+            result
         }
 
         LazyColumn(
@@ -346,117 +344,134 @@ private fun SharedTransitionScope.ChatListNormal(
                 .fillMaxSize(),
         ) {
             itemsIndexed(
-                items = displayGroups,
-                key = { index, group ->
-                    if (group.role == me.rerere.ai.core.MessageRole.ASSISTANT && index == displayGroups.lastIndex) {
-                        "pending_assistant"
-                    } else {
-                        group.firstNode.id
+                items = displayItems,
+                key = { index, item ->
+                    when (item) {
+                        is ChatListDisplayItem.TurnGroup -> {
+                            if (needsPhantomLoadingTurn && index == displayItems.lastIndex) "pending_assistant"
+                            else item.group.firstNode.id
+                        }
+                        is ChatListDisplayItem.Separator -> "sep_$index"
                     }
                 },
-            ) { index, group ->
-                Column {
-                    // Check if any node in group is selected
-                    val isSelected by remember(group.nodes.map { it.id }) {
-                        derivedStateOf { group.nodes.any { selectedItems.contains(it.id) } }
-                    }
-                    ListSelectableItem(
-                        isSelected = isSelected,
-                        onSelectChange = { checked ->
-                            if (checked) {
-                                group.nodes.forEach { selectedItems.add(it.id) }
-                            } else {
-                                group.nodes.forEach { selectedItems.remove(it.id) }
+            ) { index, item ->
+                when (item) {
+                    is ChatListDisplayItem.TurnGroup -> {
+                        val group = item.group
+                        Column {
+                            val isSelected by remember(group.nodes.map { it.id }) {
+                                derivedStateOf { group.nodes.any { selectedItems.contains(it.id) } }
                             }
-                        },
-                        enabled = selecting,
-                    ) {
-                        val isLastTurn = index == displayGroups.lastIndex
-                        val showRegenerate by remember(group.role, isLastTurn) {
-                            derivedStateOf {
-                                when (group.role) {
-                                    me.rerere.ai.core.MessageRole.USER -> true
-                                    else -> isLastTurn
+                            ListSelectableItem(
+                                isSelected = isSelected,
+                                onSelectChange = { checked ->
+                                    if (checked) {
+                                        group.nodes.forEach { selectedItems.add(it.id) }
+                                    } else {
+                                        group.nodes.forEach { selectedItems.remove(it.id) }
+                                    }
+                                },
+                                enabled = selecting,
+                            ) {
+                                val isLastTurn = index == displayItems.lastIndex
+                                val showRegenerate by remember(group.role, isLastTurn) {
+                                    derivedStateOf {
+                                        when (group.role) {
+                                            me.rerere.ai.core.MessageRole.USER -> true
+                                            else -> isLastTurn
+                                        }
+                                    }
+                                }
+                                ChatMessageTurn(
+                                    group = group,
+                                    isLastTurn = isLastTurn,
+                                    onCitationClick = onCitationClick,
+                                    model = group.lastNode.currentMessage.modelId?.let { settings.findModelById(it) },
+                                    assistant = settings.getAssistantById(conversation.assistantId),
+                                    loading = loading && isLastTurn,
+                                    onRegenerate = { node ->
+                                        onRegenerate(node.currentMessage)
+                                    },
+                                    onEdit = { node ->
+                                        onEdit(node.currentMessage)
+                                    },
+                                    onFork = { node ->
+                                        onForkMessage(node.currentMessage)
+                                    },
+                                    onDelete = { node ->
+                                        onDelete(node.currentMessage)
+                                    },
+                                    onShare = { node ->
+                                        selecting = true
+                                        selectedItems.clear()
+                                        // Find index in aggregated messages if possible, but fallback to conversation nodes
+                                        val nodeIndex = conversation.messageNodes.indexOf(node)
+                                        if (nodeIndex >= 0) {
+                                            selectedItems.addAll(conversation.messageNodes
+                                                .subList(0, nodeIndex + 1)
+                                                .map { it.id })
+                                        }
+                                    },
+                                    onUpdate = {
+                                        onUpdateMessage(it)
+                                    },
+                                    onEditLorebookEntry = { entry ->
+                                        navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
+                                    },
+                                    onModeClick = { mode ->
+                                        navController.navigate(Screen.SettingModes(scrollToModeId = mode.modeId))
+                                    },
+                                    onMemoryClick = { memory ->
+                                        navController.navigate(
+                                            Screen.AssistantDetail(
+                                                id = conversation.assistantId.toString(),
+                                                startRoute = "memory",
+                                                initialMemoryTab = memory.memoryType,
+                                                scrollToMemoryId = memory.memoryId
+                                            )
+                                        )
+                                    },
+                                    showRegenerate = showRegenerate,
+                                )
+                            }
+                            val truncateNode = group.nodes.find { node ->
+                                conversation.messageNodes.indexOf(node) == conversation.truncateIndex - 1
+                            }
+                            if (truncateNode != null) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier
+                                        .padding(vertical = 8.dp)
+                                        .fillMaxWidth()
+                                ) {
+                                    HorizontalDivider(modifier = Modifier.weight(1f))
+                                    Text(
+                                        text = stringResource(R.string.chat_page_clear_context),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    HorizontalDivider(modifier = Modifier.weight(1f))
                                 }
                             }
                         }
-                        ChatMessageTurn(
-                            group = group,
-                            isLastTurn = isLastTurn,
-                            onCitationClick = onCitationClick,
-                            model = group.lastNode.currentMessage.modelId?.let { settings.findModelById(it) },
-                            assistant = settings.getAssistantById(conversation.assistantId),
-                            loading = loading && isLastTurn,
-                            onRegenerate = { node ->
-                                onRegenerate(node.currentMessage)
-                            },
-                            onEdit = { node ->
-                                onEdit(node.currentMessage)
-                            },
-                            onFork = { node ->
-                                onForkMessage(node.currentMessage)
-                            },
-                            onDelete = { node ->
-                                onDelete(node.currentMessage)
-                            },
-                            onShare = { node ->
-                                selecting = true
-                                selectedItems.clear()
-                                val nodeIndex = conversation.messageNodes.indexOf(node)
-                                if (nodeIndex >= 0) {
-                                    selectedItems.addAll(conversation.messageNodes
-                                        .subList(0, nodeIndex + 1)
-                                        .map { it.id })
-                                }
-                            },
-                            onUpdate = {
-                                onUpdateMessage(it)
-                            },
-                            onEditLorebookEntry = { entry ->
-                                navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
-                            },
-                            onModeClick = { mode ->
-                                navController.navigate(Screen.SettingModes(scrollToModeId = mode.modeId))
-                            },
-                            onMemoryClick = { memory ->
-                                navController.navigate(
-                                    Screen.AssistantDetail(
-                                        id = conversation.assistantId.toString(),
-                                        startRoute = "memory",
-                                        initialMemoryTab = memory.memoryType,
-                                        scrollToMemoryId = memory.memoryId
-                                    )
-                                )
-                            },
-                            showRegenerate = showRegenerate,
-                        )
                     }
-                    // Show truncate indicator if any node in this group is at the truncate point
-                    val truncateNode = group.nodes.find { node ->
-                        conversation.messageNodes.indexOf(node) == conversation.truncateIndex - 1
-                    }
-                    if (truncateNode != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    is ChatListDisplayItem.Separator -> {
+                        Box(
                             modifier = Modifier
-                                .padding(vertical = 8.dp)
                                 .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            HorizontalDivider(modifier = Modifier.weight(1f))
                             Text(
-                                text = stringResource(R.string.chat_page_clear_context),
-                                style = MaterialTheme.typography.bodySmall
+                                text = item.text,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.outline
                             )
-                            HorizontalDivider(modifier = Modifier.weight(1f))
                         }
                     }
                 }
             }
 
-            // Phantom loading turn now handled as a synthetic assistant group for morphing.
-
-            // 为了能正确滚动到这
             item(ScrollBottomKey) {
                 Spacer(
                     Modifier
@@ -471,7 +486,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            // 完成选择
             AnimatedVisibility(
                 visible = selecting,
                 modifier = Modifier
@@ -538,7 +552,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // 导出对话框
             ChatExportSheet(
                 visible = showExportSheet,
                 onDismissRequest = {
@@ -553,7 +566,6 @@ private fun SharedTransitionScope.ChatListNormal(
             val captureProgress = LocalScrollCaptureInProgress.current
             val effectiveDisplay = settings.getEffectiveDisplaySetting()
 
-            // 消息快速跳转
             MessageJumper(
                 show = isRecentScroll && !state.isScrollInProgress && effectiveDisplay.showMessageJumper && !captureProgress,
                 onLeft = effectiveDisplay.messageJumperOnLeft,
@@ -564,9 +576,6 @@ private fun SharedTransitionScope.ChatListNormal(
     }
 }
 
-/**
- * 提取包含搜索词的文本片段，确保匹配词在开头可见
- */
 private fun extractMatchingSnippet(
     text: String,
     query: String
@@ -580,10 +589,8 @@ private fun extractMatchingSnippet(
         return text
     }
 
-    // 直接从匹配词开始显示，确保匹配词在最前面
     val snippet = text.substring(matchIndex)
 
-    // 只在前面有内容时添加省略号
     return if (matchIndex > 0) {
         "...$snippet"
     } else {
@@ -605,10 +612,8 @@ private fun buildHighlightedText(
         var index = text.indexOf(query, startIndex, ignoreCase = true)
 
         while (index >= 0) {
-            // 添加高亮前的文本
             append(text.substring(startIndex, index))
 
-            // 添加高亮文本
             withStyle(
                 style = SpanStyle(
                     background = highlightColor,
@@ -622,7 +627,6 @@ private fun buildHighlightedText(
             index = text.indexOf(query, startIndex, ignoreCase = true)
         }
 
-        // 添加剩余文本
         if (startIndex < text.length) {
             append(text.substring(startIndex))
         }
@@ -641,13 +645,11 @@ private fun SharedTransitionScope.ChatListPreview(
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
     val previewTopPadding = 20.dp
 
-    // Filter messages
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
         val visibleNodes = conversation.messageNodes.filter { !it.currentMessage.skipContext }
         if (searchQuery.isBlank()) {
             conversation.messageNodes
         } else {
-            // 3. 如果有搜索词，在可见节点中进行原本的搜索过滤
             visibleNodes.filter { node ->
                 node.currentMessage.toText().contains(searchQuery, ignoreCase = true)
             }
@@ -660,7 +662,6 @@ private fun SharedTransitionScope.ChatListPreview(
             .padding(top = previewTopPadding)
             .fillMaxSize(),
     ) {
-        // 搜索框
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -691,7 +692,6 @@ private fun SharedTransitionScope.ChatListPreview(
             maxLines = 1,
         )
 
-        // 消息预览
         LazyColumn(
             contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -709,7 +709,6 @@ private fun SharedTransitionScope.ChatListPreview(
             ) { _, node ->
                 val message = node.currentMessage
                 val isUser = message.role == me.rerere.ai.core.MessageRole.USER
-                val originalIndex = conversation.messageNodes.indexOf(node)
                 Column(
                     modifier = Modifier.fillMaxWidth()
                         .then(
@@ -857,96 +856,6 @@ private fun BoxScope.MessageJumper(
                         .padding(4.dp)
                 )
             }
-        }
-    }
-}
-
-/**
- * Phantom loading turn shown immediately when user sends a message,
- * before any tokens arrive from the assistant.
- */
-@Composable
-private fun PhantomLoadingTurn(
-    assistant: Assistant?,
-    settings: Settings,
-    modifier: Modifier = Modifier
-) {
-    val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
-    val showIcon = effectiveDisplay.showModelIcon
-    val showModelName = effectiveDisplay.showModelName
-    val showAssistantBubbles = effectiveDisplay.showAssistantBubbles
-    val avatarName = assistant?.name?.ifEmpty { null } ?: "Assistant"
-    val avatarValue = assistant?.avatar ?: Avatar.Dummy
-    val elementSpacing = if (showAssistantBubbles) 4.dp else 3.dp
-
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(elementSpacing)
-    ) {
-        if (showAssistantBubbles) {
-            // Name above pills (only if enabled)
-            if (showModelName) {
-                Text(
-                    text = avatarName,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.alpha(0f)
-                )
-            }
-
-            // Avatar + Waiting pill row
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(elementSpacing)
-            ) {
-                if (showIcon) {
-                    me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                        name = avatarName,
-                        modifier = Modifier.size(36.dp),
-                        value = avatarValue,
-                        loading = true,
-                    )
-                }
-
-                me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
-                    state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
-                    onClick = { _ -> },
-                    connectsToBubbleBelow = false,
-                    modifier = Modifier.height(36.dp)
-                )
-            }
-        } else {
-            // No assistant bubbles layout
-            if (showIcon || showModelName) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (showIcon) {
-                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                            name = avatarName,
-                            modifier = Modifier.size(36.dp),
-                            value = avatarValue,
-                            loading = true,
-                        )
-                    }
-                    if (showModelName) {
-                        Text(
-                            text = avatarName,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.alpha(0f)
-                        )
-                    }
-                }
-            }
-
-            me.rerere.rikkahub.ui.components.chat.ActivityPillRow(
-                state = me.rerere.rikkahub.ui.components.chat.ActivityState.Waiting,
-                onClick = { _ -> },
-                connectsToBubbleBelow = false,
-                modifier = Modifier.height(36.dp)
-            )
         }
     }
 }

@@ -983,6 +983,7 @@ class ChatService(
     }
 
     suspend fun generateTitle(conversationId: Uuid, conversation: Conversation, force: Boolean = false) {
+        if (conversation.isVirtual) return
         if (!force && conversation.title.isNotBlank()) return
         runCatching {
             val settings = settingsStore.settingsFlow.first()

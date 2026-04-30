@@ -28,6 +28,7 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantAffectScope
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.core.data.model.replaceRegexes
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
@@ -45,6 +46,7 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatVM"
 
+
 class ChatVM(
     id: String,
     private val context: Application,
@@ -52,7 +54,7 @@ class ChatVM(
     private val conversationRepo: ConversationRepository,
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
-    private val appScope: me.rerere.rikkahub.AppScope
+    private val appScope: me.rerere.rikkahub.AppScope,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
 
@@ -62,7 +64,37 @@ class ChatVM(
 
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
+    sealed class ChatUIItem {
+        data class Message(val node: MessageNode) : ChatUIItem()
+        data class Separator(val text: String) : ChatUIItem()
+    }
+    //1. 修改 uiMessages 的定义和逻辑
+    val uiMessages: StateFlow<List<ChatUIItem>> = conversation
+        .flatMapLatest { conv ->
+            if (conv.isVirtual) {
+                // 虚拟模式：聚合该助理下所有的虚拟会话，并动态插入提示
+                conversationRepo.getVirtualConversationsOfAssistant(conv.assistantId)
+                    .map { conversations ->
+                        val items = mutableListOf<ChatUIItem>()
+                        // 按创建时间升序排列会话
+                        val sortedConvs = conversations.sortedBy { it.createAt }
 
+                        sortedConvs.forEachIndexed { index, c ->
+                            // 如果不是第一个会话，且当前会话有消息，则在上方插入提示
+                            if (index > 0 && c.messageNodes.isNotEmpty()) {
+                                items.add(ChatUIItem.Separator("——— 已开启新话题 ———"))
+                            }
+                            // 添加该会话的所有消息节点
+                            items.addAll(c.messageNodes.map { ChatUIItem.Message(it) })
+                        }
+                        items
+                    }
+            } else {
+                // 普通模式：只显示当前会话的消息
+                flowOf(conv.messageNodes.map { ChatUIItem.Message(it) })
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     var chatListInitialized by mutableStateOf(false)
 
     val conversationJob: StateFlow<Job?> =
@@ -315,19 +347,14 @@ class ChatVM(
         viewModelScope.launch {
             val currentConv = conversation.value
 
-            if (isVirtualNewTopic) {
-                // UI 上增加一行灰字提示，告诉用户已开启新话题
-                val hintNode = UIMessage.system("——— 已开启新话题 ———").toMessageNode()
-                val updatedNodes = currentConv.messageNodes + hintNode
-                val newTruncateIndex = updatedNodes.lastIndex
-
-                val newConversation = currentConv.copy(
-                    messageNodes = updatedNodes,
-                    truncateIndex = newTruncateIndex,
-                    title = "",
-                    chatSuggestions = emptyList()
+            if (isVirtualNewTopic && currentConv.isVirtual) {
+                val newConvId = Uuid.random()
+                val newConv = Conversation.ofId(
+                    id = newConvId,
+                    assistantId = currentConv.assistantId,
+                    isVirtual = true
                 )
-                chatService.saveConversation(id = _conversationId, conversation = newConversation)
+                chatService.saveConversation(newConvId, newConv)
             } else {
                 val lastTruncateIndex = currentConv.messageNodes.lastIndex + 1
                 val newConversation = currentConv.copy(
@@ -475,3 +502,5 @@ class ChatVM(
         }
     }
 }
+
+
