@@ -561,6 +561,41 @@ class GenerationHandler(
 
         tools.forEach { baseSystemPromptBuilder.appendLine().append(it.systemPrompt(model, messages)) }
 
+        if (model.abilities.contains(ModelAbility.TOOL) && assistant.enableMemory) {
+            baseSystemPromptBuilder.appendLine().append(
+                """
+
+                        ## Memory Tool
+                        You are a stateless large language model; you **cannot store memories** internally. To remember information, you must use **memory tools**.
+                        Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.
+
+                        ### Person Specification (IMPORTANT)
+                        To ensure clarity and avoid identity confusion when retrieving memories in the future, please strictly adhere to the following specifications:
+                        1. **"User"**: Refers to the person you are chatting with. Always use "User" to refer to them in all records.
+                        2. **"I"**: Refers to yourself (the AI Assistant).
+
+                        **Record Format Guidelines:**
+                        - **STRICTLY PROHIBITED**: Using the first-person pronoun "I" or "me".
+                        - **CORRECT EXAMPLE**: "User completed a PPT with me", "User plans to go to Shanghai tomorrow".
+                        - **INCORRECT EXAMPLE**: "You completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
+
+                        ### Tool Usage
+                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory_details` tools to create, update, delete or \"deep dive\" into that specific conversation's  memories.
+                        - If there is no relevant information in memory, call `create_memory` to create a new record.
+                        - If a relevant record already exists, call `edit_memory` to update it.
+                        - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
+                        - `retrieve_memory_details` for Episodic Memories: Call this when a summary is insufficient and you need to \"deep dive\" into that specific conversation's segments."
+                        **Note:** You can only edit or delete **Core Memories** (which have an ID). Episodic Memories are read-only context.
+
+                        **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
+                        During chats, act like a personal secretary and **proactively** record user-related information, including but not limited to:
+                        - Name/Nickname
+                        - Age/Gender/Hobbies
+                        - Plans
+                        - User's target
+                    """.trimIndent()
+            )
+        }
         if (!contextSummary.isNullOrBlank()) baseSystemPromptBuilder.append("\n\n## Overall Conversation Summary\n").append(contextSummary)
 
         val tempSummaries = temporarySummaries.takeLast(assistant.maxTemporarySummariesToInclude)
@@ -568,7 +603,11 @@ class GenerationHandler(
             baseSystemPromptBuilder.append("\n\n## Recent Context Highlights\n")
             tempSummaries.forEachIndexed { index, s -> baseSystemPromptBuilder.append("${index + 1}. $s\n") }
         }
-
+        // --- 新增：注入引用变量模块 ---
+        if (assistant.referenceVariables.isNotBlank()) {
+            baseSystemPromptBuilder.append(assistant.referenceVariables)
+            baseSystemPromptBuilder.appendLine()
+        }
         // Time Sense Injection
         if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
             val now = LocalDateTime.now()
@@ -630,7 +669,7 @@ class GenerationHandler(
                 }.getOrNull()
             } ?: ""
 
-            baseSystemPromptBuilder.insert(0, "## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n Fabricating time will result in punishment.")
+            baseSystemPromptBuilder.append("\n\n## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n Fabricating time will result in punishment.")
         }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
@@ -1116,41 +1155,6 @@ class GenerationHandler(
                         }
                     }
                 }
-            }
-            if (model.abilities.contains(ModelAbility.TOOL)) {
-                append(
-                    """
-
-                        ## Memory Tool
-                        You are a stateless large language model; you **cannot store memories** internally. To remember information, you must use **memory tools**.
-                        Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.
-
-                        ### Person Specification (IMPORTANT)
-                        To ensure clarity and avoid identity confusion when retrieving memories in the future, please strictly adhere to the following specifications:
-                        1. **"User"**: Refers to the person you are chatting with. Always use "User" to refer to them in all records.
-                        2. **"I"**: Refers to yourself (the AI Assistant).
-
-                        **Record Format Guidelines:**
-                        - **STRICTLY PROHIBITED**: Using the first-person pronoun "I" or "me".
-                        - **CORRECT EXAMPLE**: "User completed a PPT with me", "User plans to go to Shanghai tomorrow".
-                        - **INCORRECT EXAMPLE**: "You completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
-
-                        ### Tool Usage
-                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory_details` tools to create, update, delete or \"deep dive\" into that specific conversation's  memories.
-                        - If there is no relevant information in memory, call `create_memory` to create a new record.
-                        - If a relevant record already exists, call `edit_memory` to update it.
-                        - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
-                        - `retrieve_memory_details` for Episodic Memories: Call this when a summary is insufficient and you need to \"deep dive\" into that specific conversation's segments."
-                        **Note:** You can only edit or delete **Core Memories** (which have an ID). Episodic Memories are read-only context.
-
-                        **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
-                        During chats, act like a personal secretary and **proactively** record user-related information, including but not limited to:
-                        - Name/Nickname
-                        - Age/Gender/Hobbies
-                        - Plans
-                        - User's target
-                    """.trimIndent()
-                )
             }
         }
     }

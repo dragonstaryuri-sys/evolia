@@ -1405,4 +1405,7 @@
   <string name="app_slogan">我们并不是生来完整,\n而是在与世界的碰撞中,\n不断成长为更好的自己。</string>
 
   <string name="context_sources_activation_reason">引用原因：%s</string>
+
+  <string name="assistant_reference_variables">引用变量</string>
+  <string name="assistant_reference_variables_hint">在此处编写需要引用变量的内容（如:用户当前位置为{{location}}等）</string>
 </resources>

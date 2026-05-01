@@ -1452,4 +1452,7 @@
   <string name="app_slogan">We are not born complete.\nWe grow through collisions with the world,\nconstantly evolving into a better self.</string>
 
   <string name="context_sources_activation_reason">Activation Reason: %s</string>
+
+  <string name="assistant_reference_variables">Reference Variables</string>
+  <string name="assistant_reference_variables_hint">Write content referencing variables (e.g., User is at {{location}}) here. </string>
 </resources>

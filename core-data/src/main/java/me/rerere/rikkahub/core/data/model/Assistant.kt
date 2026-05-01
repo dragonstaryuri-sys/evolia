@@ -48,6 +48,7 @@ data class Assistant(
     val useAssistantAvatar: Boolean = false,
     val tags: List<Uuid> = emptyList(),
     val systemPrompt: String = "",
+    val referenceVariables: String = "",
     val temperature: Float? = null,
     val topP: Float? = null,
     val maxTokenUsage: Int = 81920,

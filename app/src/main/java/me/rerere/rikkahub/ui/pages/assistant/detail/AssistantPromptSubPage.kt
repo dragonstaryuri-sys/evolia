@@ -111,8 +111,13 @@ fun AssistantPromptSubPage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val templateTransformer = koinInject<TemplateTransformer>()
-    var isFocused by remember { mutableStateOf(false) }
-    var isFullScreen by remember { mutableStateOf(false) }
+
+    // System Prompt focus/fullscreen
+    var isSystemPromptFocused by remember { mutableStateOf(false) }
+    var isSystemPromptFullScreen by remember { mutableStateOf(false) }
+
+    // Reference Variables focus
+    var isRefVarsFocused by remember { mutableStateOf(false) }
 
     val systemPromptTokenCount by vm.systemPromptTokenCount.collectAsStateWithLifecycle()
 
@@ -159,7 +164,7 @@ fun AssistantPromptSubPage(
                         Spacer(Modifier.weight(1f))
                         IconButton(
                             onClick = {
-                                isFullScreen = !isFullScreen
+                                isSystemPromptFullScreen = !isSystemPromptFullScreen
                             },
                             modifier = Modifier.size(24.dp)
                         ) {
@@ -175,9 +180,8 @@ fun AssistantPromptSubPage(
                     }
 
                     // Sync from external state ONLY when NOT focused
-                    // This prevents overwriting user input during typing
-                    LaunchedEffect(assistant.systemPrompt, isFocused) {
-                        if (!isFocused && systemPromptValue.text.toString() != assistant.systemPrompt) {
+                    LaunchedEffect(assistant.systemPrompt, isSystemPromptFocused) {
+                        if (!isSystemPromptFocused && systemPromptValue.text.toString() != assistant.systemPrompt) {
                             systemPromptValue.edit {
                                 replace(0, length, assistant.systemPrompt)
                             }
@@ -187,8 +191,8 @@ fun AssistantPromptSubPage(
                     // Debounced sync to external state
                     LaunchedEffect(assistant.id) {
                         snapshotFlow { systemPromptValue.text }
-                            .drop(1) // Skip initial emission
-                            .debounce(150L) // Debounce to prevent race conditions
+                            .drop(1)
+                            .debounce(150L)
                             .collect {
                                 if (it.toString() != assistant.systemPrompt) {
                                     onUpdate(
@@ -204,7 +208,7 @@ fun AssistantPromptSubPage(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onFocusChanged {
-                                isFocused = it.isFocused
+                                isSystemPromptFocused = it.isFocused
                             },
                         trailingIcon = null,
                         lineLimits = TextFieldLineLimits.MultiLine(
@@ -214,7 +218,7 @@ fun AssistantPromptSubPage(
                         textStyle = MaterialTheme.typography.bodySmall,
                     )
 
-                    if (isFullScreen) {
+                    if (isSystemPromptFullScreen) {
                         FullScreenSystemPromptEditor(
                             systemPrompt = assistant.systemPrompt,
                             onUpdate = { newSystemPrompt ->
@@ -225,9 +229,107 @@ fun AssistantPromptSubPage(
                                 )
                             }
                         ) {
-                            isFullScreen = false
+                            isSystemPromptFullScreen = false
                         }
                     }
+
+                    // 恢复静态变量 Tag：user 和 char
+                    Column {
+                        Text(
+                            text = stringResource(R.string.assistant_page_available_variables),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            DefaultPlaceholderProvider.placeholders.filter { it.key == "user" || it.key == "char" }.forEach { (k, info) ->
+                                Tag(
+                                    onClick = {
+                                        systemPromptValue.insertAtCursor("{{$k}}")
+                                    }
+                                ) {
+                                    info.displayName()
+                                    Text(": {{$k}}")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // REFERENCE VARIABLES
+        // ═══════════════════════════════════════════════════════════════════
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.assistant_reference_variables),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.assistant_reference_variables_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    val refVarsValue = androidx.compose.runtime.key(assistant.id) {
+                        rememberTextFieldState(
+                            initialText = assistant.referenceVariables,
+                        )
+                    }
+
+                    LaunchedEffect(assistant.referenceVariables, isRefVarsFocused) {
+                        if (!isRefVarsFocused && refVarsValue.text.toString() != assistant.referenceVariables) {
+                            refVarsValue.edit {
+                                replace(0, length, assistant.referenceVariables)
+                            }
+                        }
+                    }
+
+                    LaunchedEffect(assistant.id) {
+                        snapshotFlow { refVarsValue.text }
+                            .drop(1)
+                            .debounce(150L)
+                            .collect {
+                                if (it.toString() != assistant.referenceVariables) {
+                                    onUpdate(
+                                        assistant.copy(
+                                            referenceVariables = it.toString()
+                                        )
+                                    )
+                                }
+                            }
+                    }
+
+                    OutlinedTextField(
+                        state = refVarsValue,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged {
+                                isRefVarsFocused = it.isFocused
+                            },
+                        lineLimits = TextFieldLineLimits.MultiLine(
+                            minHeightInLines = 3,
+                            maxHeightInLines = 6,
+                        ),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                    )
 
                     Column {
                         Text(
@@ -243,7 +345,7 @@ fun AssistantPromptSubPage(
                                 ActivityResultContracts.RequestMultiplePermissions()
                             ) {
                                 pendingInsertion?.let { text ->
-                                    systemPromptValue.insertAtCursor(text)
+                                    refVarsValue.insertAtCursor(text)
                                 }
                                 pendingInsertion = null
                             }
@@ -264,7 +366,7 @@ fun AssistantPromptSubPage(
                                             pendingInsertion = textToInsert
                                             permissionLauncher.launch(permissions.toTypedArray())
                                         } else {
-                                            systemPromptValue.insertAtCursor(textToInsert)
+                                            refVarsValue.insertAtCursor(textToInsert)
                                         }
                                     }
                                 ) {
