@@ -73,6 +73,18 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
+        vm.toastFlow.collect { message ->
+            if (message.startsWith("NAVIGATE_NEW_CHAT:")) {
+                val newId = message.substringAfter("NAVIGATE_NEW_CHAT:")
+                // 执行跳转到新会话页面
+                navController.navigate(Screen.Chat(id = newId)) {
+                    // 弹出当前页面，防止返回键回到旧会话
+                    popUpTo(Screen.Chat(id = id.toString())) { inclusive = true }
+                }
+            } else {
+                toaster.show(message)
+            }
+        }
         vm.errorFlow.collect { error ->
             toaster.show(error.message ?: "Error", type = ToastType.Error)
         }
@@ -229,6 +241,7 @@ private fun ChatPageContent(
     var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
+
     val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
 
     LaunchedEffect(initialSearchQuery, conversation.id) {
@@ -279,7 +292,7 @@ private fun ChatPageContent(
                         previewMode = previewMode,
                         isTemporaryChat = isTemporaryChat,
                         onNewChat = {
-                            navigateToChatPage(navController)
+                            vm.startNewTopic()
                         },
                         onClickMenu = {
                             previewMode = !previewMode
@@ -300,8 +313,8 @@ private fun ChatPageContent(
                 ) {
                     ChatList(
                         innerPadding = PaddingValues(top = topMessagePadding, bottom = 140.dp),
-                        uiItems = uiMessages,
                         conversation = conversation,
+                        uiItems = uiMessages,
                         state = chatListState,
                         loading = loadingJob != null,
                         previewMode = previewMode,
@@ -355,54 +368,8 @@ private fun ChatPageContent(
                             )
                         },
                         onUpdateMessage = { newNode ->
-                            val oldNode = conversation.messageNodes.find { it.id == newNode.id }
-                            val isVersionSwitch = oldNode != null &&
-                                oldNode.selectIndex != newNode.selectIndex &&
-                                oldNode.role != me.rerere.ai.core.MessageRole.USER
-
-                            if (isVersionSwitch && oldNode != null) {
-                                val nodeIndex = conversation.messageNodes.indexOf(oldNode)
-                                val targetVersionTag = newNode.messages.getOrNull(newNode.selectIndex)?.versionTag
-                                val turnStartIndex = conversation.messageNodes
-                                    .subList(0, nodeIndex + 1)
-                                    .indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER } + 1
-                                val turnEndIndex = conversation.messageNodes
-                                    .subList(nodeIndex, conversation.messageNodes.size)
-                                    .indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }
-                                    .let { if (it == -1) conversation.messageNodes.size else nodeIndex + it }
-                                val updatedNodes = conversation.messageNodes.mapIndexed { index, node ->
-                                    when {
-                                        node.id == newNode.id -> newNode
-                                        index in turnStartIndex until turnEndIndex &&
-                                            node.role != me.rerere.ai.core.MessageRole.USER &&
-                                            node.messages.size > 1 -> {
-                                            if (targetVersionTag != null) {
-                                                val matchingIndex = node.messages.indexOfFirst { it.versionTag == targetVersionTag }
-                                                if (matchingIndex >= 0) node.copy(selectIndex = matchingIndex)
-                                                else {
-                                                    val versionDelta = newNode.selectIndex - oldNode.selectIndex
-                                                    val newSelectIndex = (node.selectIndex + versionDelta).coerceIn(0, node.messages.lastIndex)
-                                                    node.copy(selectIndex = newSelectIndex)
-                                                }
-                                            } else {
-                                                val versionDelta = newNode.selectIndex - oldNode.selectIndex
-                                                val newSelectIndex = (node.selectIndex + versionDelta).coerceIn(0, node.messages.lastIndex)
-                                                node.copy(selectIndex = newSelectIndex)
-                                            }
-                                        }
-                                        else -> node
-                                    }
-                                }
-                                vm.updateConversation(conversation.copy(messageNodes = updatedNodes))
-                            } else {
-                                vm.updateConversation(
-                                    conversation.copy(
-                                        messageNodes = conversation.messageNodes.map { node ->
-                                            if (node.id == newNode.id) newNode else node
-                                        }
-                                    )
-                                )
-                            }
+                            // 核心适配：使用支持跨会话查找的 updateMessageNodeInAnyConversation
+                            vm.updateMessageNodeInAnyConversation(newNode)
                         },
                         onForkMessage = {
                             scope.launch { vm.forkMessage(it) }
@@ -567,7 +534,7 @@ private fun ChatPageContent(
                             onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
                             onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
                             onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
-                            onClearContext = { vm.handleMessageTruncate() },
+                            onClearContext = { vm.startNewTopic() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                             onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
                             onRefreshContext = { vm.refreshContext() },
@@ -618,7 +585,7 @@ private fun ChatPageContent(
                             onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
                             onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
                             onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
-                            onClearContext = { vm.handleMessageTruncate() },
+                            onClearContext = { vm.startNewTopic() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                             onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
                             onRefreshContext = { vm.refreshContext() },

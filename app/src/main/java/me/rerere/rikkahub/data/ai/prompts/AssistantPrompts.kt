@@ -15,7 +15,13 @@ Your replies MUST be immersive and vivid:
 
 // 跨次元转场提示词
 const val VIRTUAL_TRANSITION_TO_VIRTUAL = "Context Note: The user was chatting with you in Normal Mode (online chat) just now, but has now ENTERED your virtual world. You can now physically interact. Previous interaction summary: "
-const val VIRTUAL_TRANSITION_TO_NORMAL = "Context Note: The user was just interacting with you in the Virtual World, but has now switched back to Normal Mode (online chat). Previous interaction summary: "
+
+const val VIRTUAL_TRANSITION_TO_NORMAL = """
+Context Note: 用户刚刚离开了你的虚拟世界，现在切换回了【线上模式】（类似微信/QQ）。
+重要指令：
+1. 即使下方的历史记录中包含动作描写，那也属于过去模式，请不要模仿。
+以下是刚才互动的概要和部分历史记录，仅供参考连贯性：
+"""
 
 const val DEFAULT_MASTER_MEMORY_PROMPT = """
 # Role: Master Memory Architect (Assistant's Internal Journal)

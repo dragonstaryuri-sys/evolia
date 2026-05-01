@@ -1,8 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.background
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -61,6 +62,20 @@ fun VirtualWorldPage(id: Uuid) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // 监听 Toast 信号（处理新话题反馈）
+    LaunchedEffect(Unit) {
+        vm.toastFlow.collect { message ->
+            if (message.startsWith("NAVIGATE_NEW_CHAT:")) {
+                val newId = message.substringAfter("NAVIGATE_NEW_CHAT:")
+                navController.navigate(Screen.Chat(id = newId)) {
+                    popUpTo(Screen.VirtualWorld(id = id.toString())) { inclusive = true }
+                }
+            } else {
+                toaster.show(message)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         vm.errorFlow.collect { error ->
             toaster.show(error.message ?: "Error", type = ToastType.Error)
@@ -69,6 +84,7 @@ fun VirtualWorldPage(id: Uuid) {
 
     val setting by vm.settings.collectAsStateWithLifecycle()
     val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
     val isConversationLoaded by vm.isConversationLoaded.collectAsStateWithLifecycle()
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
@@ -96,7 +112,6 @@ fun VirtualWorldPage(id: Uuid) {
             color = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxSize()
         ) {
-            // Future Animation Layer can be added here
             AssistantBackground(setting = setting)
 
             Scaffold(
@@ -104,7 +119,7 @@ fun VirtualWorldPage(id: Uuid) {
                     VirtualTopBar(
                         assistantName = currentAssistant.name,
                         onBack = { navController.navigateUp() },
-                        onNewTopic = { vm.handleMessageTruncate(isVirtualNewTopic = true) }
+                        onNewTopic = { vm.startNewTopic() }
                     )
                 },
                 containerColor = Color.Transparent,
@@ -114,6 +129,7 @@ fun VirtualWorldPage(id: Uuid) {
                     ChatList(
                         innerPadding = PaddingValues(top = 72.dp, bottom = 140.dp),
                         conversation = conversation,
+                        uiItems = uiMessages,
                         state = chatListState,
                         loading = loadingJob != null,
                         previewMode = false,
@@ -126,7 +142,8 @@ fun VirtualWorldPage(id: Uuid) {
                         },
                         onDelete = { vm.deleteMessage(it) },
                         onUpdateMessage = { newNode ->
-                            vm.updateConversation(conversation.copy(messageNodes = conversation.messageNodes.map { if (it.id == newNode.id) newNode else it }))
+                            // 虚拟模式下需要跨物理会话查找节点
+                            vm.updateMessageNodeInAnyConversation(newNode)
                         },
                         onForkMessage = { scope.launch { vm.forkMessage(it) } }
                     )
@@ -170,7 +187,8 @@ fun VirtualWorldPage(id: Uuid) {
                         onClickSuggestion = { suggestion ->
                              if (currentChatModel != null) {
                                  vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)))
-                                 scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                 // 基于聚合列表长度滚动
+                                 scope.launch { chatListState.requestScrollToItem(uiMessages.size + 5) }
                              }
                         },
                         onCancelClick = { loadingJob?.cancel() },
@@ -186,7 +204,7 @@ fun VirtualWorldPage(id: Uuid) {
                             else {
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(inputState.getContents())
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    scope.launch { chatListState.requestScrollToItem(uiMessages.size + 5) }
                                 }
                             }
                             inputState.clearInput()
@@ -196,7 +214,7 @@ fun VirtualWorldPage(id: Uuid) {
                             else {
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false)
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    scope.launch { chatListState.requestScrollToItem(uiMessages.size + 5) }
                                 }
                             }
                             inputState.clearInput()
@@ -204,11 +222,11 @@ fun VirtualWorldPage(id: Uuid) {
                         onUpdateChatModel = { vm.setChatModel(assistant = currentAssistant, model = it) },
                         onUpdateAssistant = { /* Virtual mode doesn't allow switching assistant inside */ },
                         onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
-                        onClearContext = { vm.handleMessageTruncate() },
                         onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                         onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
                         onRefreshContext = { vm.refreshContext() },
                         onDeleteFile = { vm.deleteFile(it) },
+                        onClearContext = { vm.startNewTopic() } // 对接新话题逻辑
                     )
                 }
             }

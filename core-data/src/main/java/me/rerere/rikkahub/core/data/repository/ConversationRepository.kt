@@ -46,6 +46,14 @@ class ConversationRepository(
         ).map { conversationEntityToConversation(it) }
     }
 
+    suspend fun getLatestConversations(assistantId: Uuid, limit: Int = 1, isVirtual: Boolean = false): List<Conversation> {
+        return conversationDAO.getLatestConversationsOfAssistant(
+            assistantId = assistantId.toString(),
+            limit = limit,
+            isVirtual = isVirtual
+        ).map { conversationEntityToConversation(it) }
+    }
+
     suspend fun getLatestConversation(assistantId: Uuid): Conversation? {
         return conversationDAO.getRecentConversationsOfAssistantAnyMode(
             assistantId = assistantId.toString(),

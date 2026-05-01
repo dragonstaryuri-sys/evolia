@@ -314,8 +314,15 @@ class ChatService(
 
     fun getConversationFlow(conversationId: Uuid): StateFlow<Conversation> {
         val settings = settingsStore.settingsFlow.value
+        val currentAssistant = settings.getCurrentAssistant()
         return conversations.getOrPut(conversationId) {
-            MutableStateFlow(Conversation.ofId(id = conversationId, assistantId = settings.getCurrentAssistant().id))
+            MutableStateFlow(
+                Conversation.ofId(
+                    id = conversationId,
+                    assistantId = currentAssistant.id,
+                    isVirtual = currentAssistant.isVirtualWorldMode // 修复：默认创建时根据助理当前模式同步 isVirtual
+                )
+            )
         }
     }
 
@@ -460,6 +467,9 @@ class ChatService(
 
         val job = appScope.launch {
             try {
+                // 确保数据从数据库或正确初始化开始
+                initializeConversation(conversationId)
+
                 val currentConversation = getConversationFlow(conversationId).value
                 val newConversation = currentConversation.copy(
                     messageNodes = currentConversation.messageNodes + UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
@@ -480,6 +490,7 @@ class ChatService(
         _generationJobs.value[conversationId]?.cancel()
         val job = appScope.launch {
             try {
+                initializeConversation(conversationId)
                 val conversation = getConversationFlow(conversationId).value
                 if (message.role == MessageRole.USER) {
                     val node = conversation.getMessageNodeByMessage(message)
@@ -935,7 +946,11 @@ class ChatService(
     suspend fun saveConversation(id: Uuid, conversation: Conversation) {
         if (temporaryConversations.contains(id)) { updateConversation(id, conversation); return }
         updateConversation(id, conversation)
-        if (conversation.title.isBlank() && conversation.messageNodes.isEmpty()) return
+
+        // In virtual mode, we allow saving empty conversations to ensure session partitioning
+        // is preserved when "Start New Topic" is clicked.
+        if (conversation.title.isBlank() && conversation.messageNodes.isEmpty() && !conversation.isVirtual) return
+
         if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(conversation)
     }
 
