@@ -715,9 +715,9 @@ class GenerationHandler(
                             Log.i(TAG, "Injecting context summary for new conversation.")
                             memoriesToInject.add(
                                 AssistantMemory(
-                                    id = -1,
+                                    id = 0,
                                     content = "Summary of your last conversation today: ${episode.content}",
-                                    type = 1,
+                                    type = 2,
                                     timestamp = episode.endTime
                                 )
                             )
@@ -744,9 +744,9 @@ class GenerationHandler(
                             Log.i(TAG, "Injecting mode transition raw messages.")
                             memoriesToInject.add(
                                 AssistantMemory(
-                                    id = -1,
+                                    id = 0,
                                     content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
-                                    type = 1,
+                                    type = 2,
                                     timestamp = lastConv.updateAt.toEpochMilli()
                                 )
                             )
@@ -923,9 +923,10 @@ class GenerationHandler(
         }
 
         val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
+            val isBoost = memory.type == 2
             val reason = when {
                 // ID 为 -1 表示这是来自“今天其他会话标题”的参考记忆
-                memory.id == -1 -> "Recent episode boost"
+                isBoost -> "Recent episode boost"
                 // 如果开启了 RAG 检索，则说明是语义匹配成功的记忆
                 assistant.useRagMemoryRetrieval -> "Contextually relevant"
                 // 基础层级的默认包含记忆
@@ -934,9 +935,11 @@ class GenerationHandler(
             UsedMemory(
                 memoryId = memory.id,
                 // 只显示清洗后的纯净正文，不带关键词
-                memoryContent = buildString {
-                    append(memory.content.take(50))
-                    if (memory.content.length > 50) append("...")
+                memoryContent = if (isBoost) memory.content else {
+                    buildString {
+                        append(memory.content.take(50))
+                        if (memory.content.length > 50) append("...")
+                    }
                 },
                 memoryType = memory.type,
                 priority = selectedMemories.size - index,  // Higher priority for earlier memories

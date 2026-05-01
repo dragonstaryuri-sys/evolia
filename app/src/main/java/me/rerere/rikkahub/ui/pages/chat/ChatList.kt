@@ -75,6 +75,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -435,6 +436,10 @@ private fun SharedTransitionScope.ChatListNormal(
                                         scope.launch {
                                             isMemoryLoading = true
                                             previewingMemory = memory
+                                            if (memory.memoryType == 2) {
+                                                isMemoryLoading = false
+                                                return@launch
+                                            }
                                             // 2. 异步从数据库查完整的
                                             val fullContent = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
                                             // 3. 如果查到了，更新弹窗显示完整内容
@@ -904,7 +909,11 @@ fun MemoryPreviewDialog(    memory: me.rerere.ai.ui.UsedMemory,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(
-                    imageVector = if (memory.memoryType == 0) Icons.Rounded.Memory else Icons.Rounded.History,
+                    imageVector = when(memory.memoryType) {
+                        0 -> Icons.Rounded.Memory
+                        2 -> Icons.Rounded.Bolt // 临时/增强记忆用闪电
+                        else -> Icons.Rounded.History
+                    },
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary
                 )
