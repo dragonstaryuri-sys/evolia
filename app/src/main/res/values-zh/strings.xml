@@ -1408,4 +1408,11 @@
 
   <string name="assistant_reference_variables">引用变量</string>
   <string name="assistant_reference_variables_hint">在此处编写需要引用变量的内容（如:用户当前位置为{{location}}等）</string>
+
+  <string name="assistant_style_examples">语言风格示例</string>
+  <string name="assistant_style_examples_tip">提供喜欢的回复供AI参考语言风格</string>
+  <string name="assistant_style_examples_normal">普通模式示例</string>
+  <string name="assistant_style_examples_virtual">虚拟模式示例</string>
+  <string name="assistant_style_examples_add">添加示例</string>
+
 </resources>

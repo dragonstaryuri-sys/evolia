@@ -1455,4 +1455,10 @@
 
   <string name="assistant_reference_variables">Reference Variables</string>
   <string name="assistant_reference_variables_hint">Write content referencing variables (e.g., User is at {{location}}) here. </string>
+  <string name="assistant_style_examples">Language Style Examples</string>
+  <string name="assistant_style_examples_tip">Provide preferred replies for AI to reference language style.</string>
+  <string name="assistant_style_examples_normal">Normal Mode Examples</string>
+  <string name="assistant_style_examples_virtual">Virtual Mode Examples</string>
+  <string name="assistant_style_examples_add">Add Example</string>
+
 </resources>

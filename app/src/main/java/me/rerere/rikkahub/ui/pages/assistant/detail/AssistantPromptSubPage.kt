@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.drop
@@ -111,6 +112,10 @@ fun AssistantPromptSubPage(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val templateTransformer = koinInject<TemplateTransformer>()
+
+    // 使用 rememberUpdatedState 解决闭包陷阱
+    val currentAssistant by rememberUpdatedState(assistant)
+    val currentOnUpdate by rememberUpdatedState(onUpdate)
 
     // System Prompt focus/fullscreen
     var isSystemPromptFocused by remember { mutableStateOf(false) }
@@ -194,9 +199,9 @@ fun AssistantPromptSubPage(
                             .drop(1)
                             .debounce(150L)
                             .collect {
-                                if (it.toString() != assistant.systemPrompt) {
-                                    onUpdate(
-                                        assistant.copy(
+                                if (it.toString() != currentAssistant.systemPrompt) {
+                                    currentOnUpdate(
+                                        currentAssistant.copy(
                                             systemPrompt = it.toString()
                                         )
                                     )
@@ -260,6 +265,14 @@ fun AssistantPromptSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
+        // LANGUAGE STYLE EXAMPLES
+        // ═══════════════════════════════════════════════════════════════════
+        LanguageStyleExamplesSection(
+            assistant = assistant,
+            onUpdate = onUpdate
+        )
+
+        // ═══════════════════════════════════════════════════════════════════
         // REFERENCE VARIABLES
         // ═══════════════════════════════════════════════════════════════════
         Column(
@@ -307,9 +320,9 @@ fun AssistantPromptSubPage(
                             .drop(1)
                             .debounce(150L)
                             .collect {
-                                if (it.toString() != assistant.referenceVariables) {
-                                    onUpdate(
-                                        assistant.copy(
+                                if (it.toString() != currentAssistant.referenceVariables) {
+                                    currentOnUpdate(
+                                        currentAssistant.copy(
                                             referenceVariables = it.toString()
                                         )
                                     )
@@ -707,6 +720,141 @@ fun AssistantPromptSubPage(
         }
 
 
+    }
+}
+
+@Composable
+private fun LanguageStyleExamplesSection(
+    assistant: Assistant,
+    onUpdate: (Assistant) -> Unit
+) {
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                MaterialTheme.colorScheme.surfaceContainerLow
+            else
+                MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.assistant_style_examples),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = stringResource(R.string.assistant_style_examples_tip),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (assistant.isMain) {
+                    // Normal Mode
+                    Text(
+                        text = stringResource(R.string.assistant_style_examples_normal),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    StyleExampleList(
+                        assistant = assistant,
+                        examples = assistant.languageStyleExamples,
+                        onUpdate = { newList ->
+                            onUpdate(assistant.copy(languageStyleExamples = newList))
+                        },
+                        stateKeyPrefix = "normal"
+                    )
+
+                    Spacer(modifier = Modifier.size(8.dp))
+
+                    // Virtual Mode
+                    Text(
+                        text = stringResource(R.string.assistant_style_examples_virtual),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    StyleExampleList(
+                        assistant = assistant,
+                        examples = assistant.virtualLanguageStyleExamples,
+                        onUpdate = { newList ->
+                            onUpdate(assistant.copy(virtualLanguageStyleExamples = newList))
+                        },
+                        stateKeyPrefix = "virtual"
+                    )
+                } else {
+                    StyleExampleList(
+                        assistant = assistant,
+                        examples = assistant.languageStyleExamples,
+                        onUpdate = { newList ->
+                            onUpdate(assistant.copy(languageStyleExamples = newList))
+                        },
+                        stateKeyPrefix = "default"
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StyleExampleList(
+    assistant: Assistant,
+    examples: List<String>,
+    onUpdate: (List<String>) -> Unit,
+    stateKeyPrefix: String
+) {
+    val currentAssistant by rememberUpdatedState(assistant)
+    val currentOnUpdate by rememberUpdatedState(onUpdate)
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        examples.fastForEachIndexed { index, example ->
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    DebouncedTextField(
+                        value = example,
+                        onValueChange = { text ->
+                            val newList = examples.mapIndexed { i, s -> if (i == index) text else s }
+                            onUpdate(newList)
+                        },
+                        stateKey = "${stateKeyPrefix}_style_$index",
+                        modifier = Modifier.weight(1f),
+                        maxLines = 5
+                    )
+                    IconButton(
+                        onClick = {
+                            val newList = examples.filterIndexed { i, _ -> i != index }
+                            onUpdate(newList)
+                        }
+                    ) {
+                        Icon(Icons.Rounded.Close, null)
+                    }
+                }
+            }
+        }
+        Button(
+            onClick = {
+                val newList = examples + ""
+                onUpdate(newList)
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Rounded.Add, null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.assistant_style_examples_add))
+        }
     }
 }
 

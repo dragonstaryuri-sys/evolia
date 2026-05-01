@@ -49,6 +49,8 @@ data class Assistant(
     val tags: List<Uuid> = emptyList(),
     val systemPrompt: String = "",
     val referenceVariables: String = "",
+    val languageStyleExamples: List<String> = emptyList(),
+    val virtualLanguageStyleExamples: List<String> = emptyList(),
     val temperature: Float? = null,
     val topP: Float? = null,
     val maxTokenUsage: Int = 81920,

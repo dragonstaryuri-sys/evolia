@@ -520,6 +520,21 @@ class GenerationHandler(
             baseSystemPromptBuilder.appendLine("\n")
         }
 
+        // --- 新增：语言风格示例 ---
+        val styleExamples = if (assistant.isMain && assistant.isVirtualWorldMode) {
+            assistant.virtualLanguageStyleExamples
+        } else {
+            assistant.languageStyleExamples
+        }
+
+        if (styleExamples.isNotEmpty()) {
+            baseSystemPromptBuilder.append("## Language Style Examples\n")
+            styleExamples.forEach { example ->
+                baseSystemPromptBuilder.append("- $example\n")
+            }
+            baseSystemPromptBuilder.appendLine()
+        }
+
         // 2. Virtual World Mode Injection
         if (assistant.isVirtualWorldMode) {
              baseSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT)
