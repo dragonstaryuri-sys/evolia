@@ -82,7 +82,7 @@ class MemoryRepository(
                     if (queryEmbedding == null) keywordScore
                     else (keywordScore * 0.6f) + (similarity * 0.4f)
                 }
-                MemoryRetrievalMode.OFF -> 0f
+                else -> 0f
             }
 
             segment to score
@@ -149,6 +149,20 @@ class MemoryRepository(
 
     suspend fun getEpisodeByConversationId(conversationId: String): ChatEpisodeEntity? {
         return chatEpisodeDAO.getEpisodeByConversationId(conversationId)
+    }
+
+    /**
+     * 根据 ID 和类型获取完整记忆内容
+     */
+    suspend fun getFullMemoryContent(id: Int, type: Int): String? {
+        return if (type == 0) { // CORE
+            val memory = memoryDAO.getMemoryById(id)
+            memory?.content
+        } else { // EPISODIC (L2)
+            val absoluteId = kotlin.math.abs(id)
+            val episode = chatEpisodeDAO.getEpisodeById(absoluteId)
+            episode?.content
+        }
     }
 
     private suspend fun getOrCreateEmbedding(

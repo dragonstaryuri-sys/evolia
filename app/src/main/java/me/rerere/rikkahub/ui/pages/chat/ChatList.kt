@@ -5,6 +5,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -27,15 +29,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.HorizontalFloatingToolbar
@@ -46,6 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -59,7 +64,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
@@ -79,6 +83,8 @@ import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,7 +97,6 @@ import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
-import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
@@ -105,9 +110,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.openUrl
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Memory
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
@@ -135,6 +141,7 @@ fun ChatList(
     onDelete: (UIMessage) -> Unit = {},
     onUpdateMessage: (MessageNode) -> Unit = {},
     onJumpToMessage: (MessageNode) -> Unit = {},
+    onGetFullMemoryContent: suspend (Int, Int) -> String? = { _, _ -> null },
 ) {
     SharedTransitionLayout {
         AnimatedContent(
@@ -167,6 +174,7 @@ fun ChatList(
                     onForkMessage = onForkMessage,
                     onDelete = onDelete,
                     onUpdateMessage = onUpdateMessage,
+                    onGetFullMemoryContent = onGetFullMemoryContent,
                     animatedVisibilityScope = this@AnimatedContent,
                 )
             }
@@ -188,6 +196,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onForkMessage: (UIMessage) -> Unit,
     onDelete: (UIMessage) -> Unit,
     onUpdateMessage: (MessageNode) -> Unit,
+    onGetFullMemoryContent: suspend (Int, Int) -> String?,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val scope = rememberCoroutineScope()
@@ -217,9 +226,10 @@ private fun SharedTransitionScope.ChatListNormal(
                     }
                 }
             }
-            Unit
         }
     }
+    var previewingMemory by remember { mutableStateOf<me.rerere.ai.ui.UsedMemory?>(null) }
+    var isMemoryLoading by remember { mutableStateOf(false) }
 
     fun List<LazyListItemInfo>.isAtBottom(): Boolean {
         val lastItem = lastOrNull() ?: return false
@@ -422,14 +432,20 @@ private fun SharedTransitionScope.ChatListNormal(
                                         navController.navigate(Screen.SettingModes(scrollToModeId = mode.modeId))
                                     },
                                     onMemoryClick = { memory ->
-                                        navController.navigate(
-                                            Screen.AssistantDetail(
-                                                id = conversation.assistantId.toString(),
-                                                startRoute = "memory",
-                                                initialMemoryTab = memory.memoryType,
-                                                scrollToMemoryId = memory.memoryId
-                                            )
-                                        )
+                                        scope.launch {
+                                            isMemoryLoading = true
+                                            previewingMemory = memory
+                                            // 2. 异步从数据库查完整的
+                                            val fullContent = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
+                                            // 3. 如果查到了，更新弹窗显示完整内容
+                                            if (fullContent != null) {
+                                                previewingMemory = memory.copy(memoryContent = fullContent)
+                                            }
+                                            else {
+                                                previewingMemory = memory.copy(memoryContent = "未找到完整内容")
+                                            }
+                                            isMemoryLoading = false
+                                        }
                                     },
                                     showRegenerate = showRegenerate,
                                 )
@@ -562,6 +578,17 @@ private fun SharedTransitionScope.ChatListNormal(
                 selectedMessages = conversation.messageNodes.filter { it.id in selectedItems }
                     .map { it.currentMessage }
             )
+
+            previewingMemory?.let { memory ->
+                MemoryPreviewDialog(
+                    memory = memory,
+                    isLoading = isMemoryLoading,
+                    onDismissRequest = {
+                        previewingMemory = null
+                        isMemoryLoading = false
+                    }
+                )
+            }
 
             val captureProgress = LocalScrollCaptureInProgress.current
             val effectiveDisplay = settings.getEffectiveDisplaySetting()
@@ -710,7 +737,8 @@ private fun SharedTransitionScope.ChatListPreview(
                 val message = node.currentMessage
                 val isUser = message.role == me.rerere.ai.core.MessageRole.USER
                 Column(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
                         .then(
                             if (!isUser) Modifier.padding(end = 24.dp) else Modifier
                         ),
@@ -858,4 +886,72 @@ private fun BoxScope.MessageJumper(
             }
         }
     }
+}
+
+
+@Composable
+fun MemoryPreviewDialog(    memory: me.rerere.ai.ui.UsedMemory,
+                            isLoading: Boolean,
+                            onDismissRequest: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(stringResource(id = android.R.string.ok))
+            }
+        },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    imageVector = if (memory.memoryType == 0) Icons.Rounded.Memory else Icons.Rounded.History,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = if (memory.memoryType == 0)
+                        stringResource(R.string.context_sources_core_memory)
+                    else
+                        stringResource(R.string.context_sources_episodic_memory)
+                )
+            }
+        },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(animationSpec = androidx.compose.animation.core.spring(stiffness = 300f))
+                    .heightIn(min = 120.dp), // 这里的 heightIn 是正确写法
+                contentAlignment = Alignment.Center
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                } else {
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Text(
+                                text = memory.memoryContent,
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+
+                        memory.activationReason?.let { reason ->
+                            Text(
+                                text = stringResource(R.string.context_sources_activation_reason, reason),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
 }

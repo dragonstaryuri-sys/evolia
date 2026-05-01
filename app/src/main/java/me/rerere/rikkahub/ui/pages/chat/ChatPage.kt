@@ -374,6 +374,7 @@ private fun ChatPageContent(
                         onForkMessage = {
                             scope.launch { vm.forkMessage(it) }
                         },
+                        onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) }
                     )
 
                 val hasUserSentMessages = remember(conversation.messageNodes) {

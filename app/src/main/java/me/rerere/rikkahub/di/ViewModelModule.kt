@@ -29,7 +29,8 @@ val viewModelModule = module {
             conversationRepo = get(),
             chatService = get(),
             updateChecker = get(),
-            appScope = get()
+            appScope = get(),
+            memoryRepo = get()
         )
     }
     viewModel<SettingVM> {

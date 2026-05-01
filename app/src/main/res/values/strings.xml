@@ -1450,4 +1450,6 @@
   <string name="assistant_advanced_master_locked_hint">One Evolia must remain active. To replace it, go to the advanced settings of another agent and set it as Evolia.</string>
   <!-- 主页底部的品牌标语 -->
   <string name="app_slogan">We are not born complete.\nWe grow through collisions with the world,\nconstantly evolving into a better self.</string>
+
+  <string name="context_sources_activation_reason">Activation Reason: %s</string>
 </resources>

@@ -145,7 +145,8 @@ fun VirtualWorldPage(id: Uuid) {
                             // 虚拟模式下需要跨物理会话查找节点
                             vm.updateMessageNodeInAnyConversation(newNode)
                         },
-                        onForkMessage = { scope.launch { vm.forkMessage(it) } }
+                        onForkMessage = { scope.launch { vm.forkMessage(it) } },
+                        onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) }
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {

@@ -32,6 +32,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.core.data.model.replaceRegexes
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
@@ -56,7 +57,12 @@ class ChatVM(
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
     private val appScope: me.rerere.rikkahub.AppScope,
+    private val memoryRepo: MemoryRepository,
 ) : ViewModel() {
+
+    suspend fun getFullMemoryContent(memoryId: Int, memoryType: Int): String? {
+        return memoryRepo.getFullMemoryContent(memoryId, memoryType)
+    }
     private val anchorConversationId: Uuid = Uuid.parse(id)
 
     // 追踪当前活跃的会话 ID。在虚拟模式下，它会随着“新话题”或“发送消息到最新话题”而改变
