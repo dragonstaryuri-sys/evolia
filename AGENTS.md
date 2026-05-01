@@ -119,9 +119,9 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 
 ### 6.4 Token Allocation & Context Priority
 - **Hierarchy of Injection**: In `GenerationHandler.buildMessages`:
-    1. **System Core**: Base prompt + Assistant personality (Static variables like `{{user}}` and `{{char}}` should be used here).
+    1. **System Core**: Base prompt + Assistant personality. (Static variables like `{{user}}` and `{{char}}` should be used here to ensure stable caching).
     2. **Context Summaries**: The Global Summary (L1) and Recent Highlights (Segments).
-    3. **Reference Information**: `assistant.referenceVariables`. Strategic block for dynamic variables (e.g. `{{location}}`, `{{battery_level}}`) to protect core personality cache.
+    3. **Reference Information**: `assistant.referenceVariables`. Dedicated block for dynamic variables (e.g. `{{location}}`, `{{battery_level}}`, `{{cur_time}}`) placed here to protect the core personality cache from frequent invalidation.
     4. **Mandatory Minimums**: Guaranteed 2 raw messages + 2 memory records.
     5. **Dynamic Allocation**: Based on `assistant.contextPriority` (CHAT_HISTORY, MEMORIES, or BALANCED).
 - **Cross-Session Continuity**: `enableRecentChatsReference` injects titles of today's other chats as episodic memories during early turns.
@@ -129,7 +129,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 ### 6.5 Final Prompt Structure (Detailed Order)
 The payload sent to LLMs follows this strict code-defined order:
 1. **System Message (Combined)**:
-    - **Core Personality**: Assistant's `systemPrompt` (Contains static identity rules and variables `{{user}}`/`{{char}}`).
+    - **Core Personality**: Assistant's `systemPrompt`. (Contains static identity rules and stable variables `{{user}}`/`{{char}}`).
     - **Environment/Mode**: Virtual World Mode or Learning Mode behavioral guidance.
     - **BEFORE_SYSTEM**: Pre-patches from Modes and Lorebook entries.
     - **L3: Master Memory**: Permanent archive of user identity and relationship.
@@ -138,7 +138,7 @@ The payload sent to LLMs follows this strict code-defined order:
     - **Memory Tool Specification**: Guidelines for proactive recording and Person Specification rules (User vs. I).
     - **L1: Global Context Summary**: `contextSummary`.
     - **L1: Recent Context Highlights**: `temporarySummaries` (Segments).
-    - **Reference Information**: `assistant.referenceVariables` (User-defined variables block. Placed here to prevent frequently changing variables like `{{location}}` from invalidating the cache of the core setting above).
+    - **Reference Information**: `assistant.referenceVariables`. (Dedicated block for dynamic/changing variables like `{{location}}` or `{{cur_time}}`. Placed here to prevent frequently changing values from invalidating the cache of the static core settings above).
     - **Time Information**: Dynamic time and response interval data (Last line of the base builder).
     - **L2 & Core Memories**: RAG-retrieved records (Core + Episodic with Keywords).
 2. **User Message (Context Attachments)**: 

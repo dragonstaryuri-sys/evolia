@@ -1,17 +1,13 @@
 package me.rerere.rikkahub.data.ai.tools
 
 import android.app.Application
-import android.app.WallpaperManager
 import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
-import androidx.compose.animation.core.copy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -29,8 +25,6 @@ import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import kotlinx.coroutines.flow.first
-import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.intOrNull
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -594,7 +588,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "qq_email_service",
-                description = "Send or fetch emails using QQ mailbox.",
+                description = "Send or fetch emails using QQ mailbox. For sending emails, the recipient 'to' parameter is optional; if omitted, the email is sent to the user's default email address set in their profile settings.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -605,7 +599,7 @@ class LocalTools(
                             })
                             put("to", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Recipient email address, required when action=send")
+                                put("description", "Recipient email address. OPTIONAL: If not provided, the email is sent to the user's saved default email.")
                             })
                             put("subject", buildJsonObject {
                                 put("type", "string")
@@ -639,7 +633,17 @@ class LocalTools(
                         try {
                             when (action) {
                                 "send" -> {
-                                    val to = json["to"]?.jsonPrimitive?.contentOrNull ?: ""
+                                    val toParam = json["to"]?.jsonPrimitive?.contentOrNull
+                                    val to = if (toParam.isNullOrBlank()) {
+                                        settings.displaySetting.userEmail
+                                    } else {
+                                        toParam
+                                    }
+
+                                    if (to.isBlank()) {
+                                        return@withContext buildJsonObject { put("error", "Recipient email is required. Please ask the user if you don't know,or ask she/he to set it in their profile settings.") }
+                                    }
+
                                     val subject = json["subject"]?.jsonPrimitive?.contentOrNull ?: ""
                                     val content = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
 

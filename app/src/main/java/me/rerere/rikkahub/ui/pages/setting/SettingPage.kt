@@ -4,12 +4,14 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +34,7 @@ import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.utils.UiState
 import org.koin.compose.koinInject
 import okhttp3.OkHttpClient
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +72,59 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             contentPadding = innerPadding,
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
+            // User Profile Header (WeChat Style)
+            item {
+                Surface(
+                    onClick = { navController.navigate(Screen.SettingUserProfile) },
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    Row(
+                        modifier = Modifier.padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        UIAvatar(
+                            name = settings.displaySetting.userNickname,
+                            value = settings.displaySetting.userAvatar,
+                            modifier = Modifier.size(64.dp),
+                            onClick = { navController.navigate(Screen.SettingUserProfile) }
+                        )
+
+                        Spacer(Modifier.width(20.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) },
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (settings.displaySetting.userEmail.isNotBlank()) {
+                                Text(
+                                    text = settings.displaySetting.userEmail,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                Text(
+                                    text = "点击修改个人资料",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Icon(
+                            Icons.Rounded.ChevronRight,
+                            null,
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
+
             if (settings.isNotConfigured()) {
                 item {
                     ProviderConfigWarningCard(navController)

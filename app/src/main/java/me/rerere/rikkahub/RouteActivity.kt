@@ -87,6 +87,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingEmailPage
+import me.rerere.rikkahub.ui.pages.setting.SettingUserProfilePage
 import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
@@ -432,6 +433,7 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingUICustomization> { SettingUICustomizationPage() }
                     composable<Screen.SettingFonts> { SettingFontsPage() }
                     composable<Screen.SettingEmail> { SettingEmailPage() }
+                    composable<Screen.SettingUserProfile> { SettingUserProfilePage() }
                     composable<Screen.Discover> { DiscoverPage() }
                     composable<Screen.DiaryList> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.DiaryList>()
@@ -543,6 +545,9 @@ sealed interface Screen {
 
     @Serializable
     data object SettingEmail : Screen
+
+    @Serializable
+    data object SettingUserProfile : Screen
 
     @Serializable
     data object Discover : Screen
