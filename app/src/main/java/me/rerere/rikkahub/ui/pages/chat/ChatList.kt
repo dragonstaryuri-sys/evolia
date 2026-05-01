@@ -219,7 +219,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 val id = item.jsonObject["id"]?.jsonPrimitive?.content ?: return@forEach
                                 val url = item.jsonObject["url"]?.jsonPrimitive?.content ?: return@forEach
                                 if (citationId == id) {
-                                    context.openUrl(url)
+                                    navController.navigate(Screen.WebView(url = url))
                                     return@findCitation
                                 }
                             }

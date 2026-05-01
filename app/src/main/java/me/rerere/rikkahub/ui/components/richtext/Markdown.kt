@@ -48,6 +48,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
@@ -77,8 +79,10 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.RpStyleRule
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.toDp
 import me.rerere.rikkahub.utils.saveToDownloads
@@ -130,7 +134,7 @@ private fun getRpColor(pattern: String): Color? {
 }
 
 // Standard markdown patterns that are handled by the AST parser
-private val STANDARD_PATTERNS = setOf("*", "**", "~~", "`", "#", "##", "###", "####", "#####", "######", ">")
+private val STANDARD_PATTERNS = setOf("*", "**", "~~", "`", "#", "##", "###", "####", "####", "#####", "######", ">")
 
 /**
  * Append text to AnnotatedString.Builder, scanning for custom RP patterns.
@@ -143,12 +147,12 @@ private fun AnnotatedString.Builder.appendTextWithCustomPatterns(
 ) {
     // Get custom patterns only (exclude standard markdown patterns)
     val customRules = rpStyleRules.filter { it.enabled && it.pattern !in STANDARD_PATTERNS }
-    
+
     if (customRules.isEmpty()) {
         append(text)
         return
     }
-    
+
     // Build a combined regex for all custom patterns
     // Each pattern matches: pattern + content + pattern (non-greedy)
     val patternRegexes = customRules.mapNotNull { rule ->
@@ -158,16 +162,16 @@ private fun AnnotatedString.Builder.appendTextWithCustomPatterns(
             Regex("$escaped(.+?)$escaped") to color
         }.getOrNull()
     }
-    
+
     if (patternRegexes.isEmpty()) {
         append(text)
         return
     }
-    
+
     // Find all matches from all patterns
     data class Match(val range: IntRange, val content: String, val color: Color)
     val allMatches = mutableListOf<Match>()
-    
+
     patternRegexes.forEach { (regex, color) ->
         regex.findAll(text).forEach { matchResult ->
             allMatches.add(Match(
@@ -177,10 +181,10 @@ private fun AnnotatedString.Builder.appendTextWithCustomPatterns(
             ))
         }
     }
-    
+
     // Sort by start position
     allMatches.sortBy { it.range.first }
-    
+
     // Remove overlapping matches (keep earlier ones)
     val nonOverlapping = mutableListOf<Match>()
     var lastEnd = -1
@@ -190,7 +194,7 @@ private fun AnnotatedString.Builder.appendTextWithCustomPatterns(
             lastEnd = match.range.last
         }
     }
-    
+
     // Build the annotated string
     var currentIndex = 0
     nonOverlapping.forEach { match ->
@@ -204,7 +208,7 @@ private fun AnnotatedString.Builder.appendTextWithCustomPatterns(
         }
         currentIndex = match.range.last + 1
     }
-    
+
     // Append remaining text
     if (currentIndex < text.length) {
         append(text.substring(currentIndex))
@@ -313,7 +317,8 @@ fun MarkdownBlock(
     // Read rpStyleRules from settings
     val settings = LocalSettings.current
     val rpStyleRules = settings.displaySetting.rpStyleRules
-    
+    val navController = LocalNavController.current
+
     var (data, setData) = remember {
         val preprocessed = preProcess(content)
         val astTree = parser.buildMarkdownTreeFromString(preprocessed)
@@ -338,8 +343,25 @@ fun MarkdownBlock(
     }
 
     val (preprocessed, astTree) = data
+
+    // 自定义 UriHandler，让所有 http/https 链接都在应用内 WebView 打开
+    val customUriHandler = remember {
+        object : UriHandler {
+            override fun openUri(uri: String) {
+                if (uri.startsWith("http")) {
+                    navController.navigate(Screen.WebView(url = uri))
+                } else {
+                    // 非 http 链接暂不处理或保持默认（实际在应用内较少见）
+                }
+            }
+        }
+    }
+
     // Provide rpStyleRules to entire tree via CompositionLocal
-    CompositionLocalProvider(LocalRpStyleRules provides rpStyleRules) {
+    CompositionLocalProvider(
+        LocalRpStyleRules provides rpStyleRules,
+        LocalUriHandler provides customUriHandler
+    ) {
         ProvideTextStyle(style) {
             Column(
                 modifier = modifier.padding(start = 4.dp)
@@ -522,7 +544,7 @@ private fun MarkdownNode(
             }
         }
 
-        // 链接
+        // 链接 (非文本内链接)
         MarkdownElementTypes.INLINE_LINK -> {
             val linkText = node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_TEXT)
                 ?.findChildOfTypeRecursive(GFMTokenTypes.GFM_AUTOLINK, MarkdownTokenTypes.TEXT)?.getTextInNode(content)
@@ -530,6 +552,7 @@ private fun MarkdownNode(
             val linkDest =
                 node.findChildOfTypeRecursive(MarkdownElementTypes.LINK_DESTINATION)?.getTextInNode(content) ?: ""
             val context = LocalContext.current
+            val navController = LocalNavController.current
             val scope = rememberCoroutineScope()
             Text(
                 text = linkText,
@@ -538,20 +561,15 @@ private fun MarkdownNode(
                 modifier = modifier.clickable {
                     Log.d("Markdown", "Link clicked: text='$linkText', dest='$linkDest'")
                     val uri = linkDest.toUri()
-                    Log.d("Markdown", "Parsed URI: scheme=${uri.scheme}, authority=${uri.authority}, packageName=${context.packageName}")
-                    // Handle content:// URIs as downloads (files from sandbox/fileprovider)
+                    // Handle content:// URIs as downloads
                     if (uri.scheme == "content") {
                         val fileName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else uri.lastPathSegment ?: "downloaded_file"
-                        Log.d("Markdown", "Content URI detected, saving to downloads: $fileName")
-                        scope.launch {
-                            context.saveToDownloads(uri, fileName)
-                        }
-                    } else if (uri.scheme in listOf("http", "https", "mailto")) {
-                        val intent = Intent(Intent.ACTION_VIEW, uri)
-                        context.startActivity(intent)
+                        scope.launch { context.saveToDownloads(uri, fileName) }
+                    } else if (uri.scheme in listOf("http", "https")) {
+                        // 应用内 WebView 打开
+                        navController.navigate(Screen.WebView(url = linkDest))
                     } else {
-                        // Try to open with ACTION_VIEW for other schemes (file://, etc)
-                        Log.d("Markdown", "Non-content scheme '${uri.scheme}', trying ACTION_VIEW")
+                        // 其他 Scheme (如 mailto, file 等) 使用系统 Intent
                         try {
                             val intent = Intent(Intent.ACTION_VIEW, uri)
                             context.startActivity(intent)

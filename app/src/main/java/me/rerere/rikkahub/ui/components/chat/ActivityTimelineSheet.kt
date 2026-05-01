@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -73,9 +74,11 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.common.JsonInstantPretty
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -699,6 +702,8 @@ private fun TimelineExpandedContent(
 
 @Composable
 private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
+    val navController = LocalNavController.current
+    val haptics = rememberPremiumHaptics()
     val argsObj = entry.argumentsJson as? JsonObject
     val query = argsObj?.get("query")?.jsonPrimitiveOrNull?.contentOrNull
     val resultObj = entry.resultJson as? JsonObject
@@ -749,6 +754,12 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
                 Surface(
                     shape = AppShapes.CardSmall,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.clickable {
+                        url?.let {
+                            haptics.perform(HapticPattern.Pop)
+                            navController.navigate(Screen.WebView(url = it))
+                        }
+                    }
                 ) {
                     Column(
                         modifier = Modifier.padding(10.dp),
@@ -788,6 +799,8 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
 
 @Composable
 private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
+    val navController = LocalNavController.current
+    val haptics = rememberPremiumHaptics()
     val argsObj = entry.argumentsJson as? JsonObject
     val url = argsObj?.get("url")?.jsonPrimitiveOrNull?.contentOrNull
     val resultObj = entry.resultJson as? JsonObject
@@ -802,7 +815,11 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
         Text(
             text = url,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.clickable {
+                haptics.perform(HapticPattern.Pop)
+                navController.navigate(Screen.WebView(url = url))
+            }
         )
     }
 
@@ -966,7 +983,7 @@ private fun MemoryDetails(
                 }
                 if (entry.memoryId != null && entry.previousContent != null) {
                     TimelineActionButton(
-                        label = "Revert",
+                        label = "Refresh",
                         icon = Icons.Rounded.Refresh,
                         onClick = { onRevertMemory(entry.memoryId, entry.previousContent) }
                     )
