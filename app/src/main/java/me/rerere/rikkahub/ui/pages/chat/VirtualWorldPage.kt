@@ -1,54 +1,43 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import android.net.Uri
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import me.rerere.ai.provider.Model
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
-import me.rerere.rikkahub.core.data.model.Conversation
-import me.rerere.rikkahub.data.datastore.ChatInputStyle
-import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
-import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
-import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 
 @Composable
 fun VirtualWorldPage(id: Uuid) {
@@ -87,6 +76,16 @@ fun VirtualWorldPage(id: Uuid) {
     val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
     val isConversationLoaded by vm.isConversationLoaded.collectAsStateWithLifecycle()
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
+    val conversationJobs by vm.conversationJobs.collectAsStateWithLifecycle()
+
+    // 聚合判断：在虚拟聚合模式下，追踪所有活跃的任务。
+    // 使用 derivedStateOf 确保只有在实际活跃状态变化时才触发重组。
+    val isAnyJobRunning by remember(loadingJob, conversationJobs) {
+        derivedStateOf {
+            loadingJob?.isActive == true || conversationJobs.values.any { it?.isActive == true }
+        }
+    }
+
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val currentSearchMode by vm.currentSearchMode.collectAsStateWithLifecycle()
@@ -94,6 +93,11 @@ fun VirtualWorldPage(id: Uuid) {
     val currentAssistant = setting.getCurrentAssistant()
 
     val inputState = rememberChatInputState(message = emptyList())
+
+    // 同步聚合加载状态到输入框
+    LaunchedEffect(isAnyJobRunning) {
+        inputState.loading = isAnyJobRunning
+    }
 
     val chatListState = rememberLazyListState()
     LaunchedEffect(isConversationLoaded) {
@@ -131,7 +135,7 @@ fun VirtualWorldPage(id: Uuid) {
                         conversation = conversation,
                         uiItems = uiMessages,
                         state = chatListState,
-                        loading = loadingJob != null,
+                        loading = isAnyJobRunning,
                         previewMode = false,
                         settings = setting,
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
@@ -142,7 +146,6 @@ fun VirtualWorldPage(id: Uuid) {
                         },
                         onDelete = { vm.deleteMessage(it) },
                         onUpdateMessage = { newNode ->
-                            // 虚拟模式下需要跨物理会话查找节点
                             vm.updateMessageNodeInAnyConversation(newNode)
                         },
                         onForkMessage = { scope.launch { vm.forkMessage(it) } },
@@ -155,8 +158,8 @@ fun VirtualWorldPage(id: Uuid) {
 
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isConversationLoaded && !hasUserSentMessages && currentAssistant.presetMessages.isEmpty(),
-                        enter = androidx.compose.animation.fadeIn(),
-                        exit = androidx.compose.animation.fadeOut(),
+                        enter = fadeIn(),
+                        exit = fadeOut(),
                         modifier = Modifier.align(Alignment.Center).offset(y = 28.dp)
                     ) {
                         NewChatContent(
@@ -192,7 +195,10 @@ fun VirtualWorldPage(id: Uuid) {
                                  scope.launch { chatListState.requestScrollToItem(uiMessages.size + 5) }
                              }
                         },
-                        onCancelClick = { loadingJob?.cancel() },
+                        onCancelClick = {
+                            loadingJob?.cancel()
+                            conversationJobs.values.forEach { it?.cancel() }
+                        },
                         enableSearch = enableWebSearch,
                         onToggleSearch = {
                             if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
@@ -221,13 +227,13 @@ fun VirtualWorldPage(id: Uuid) {
                             inputState.clearInput()
                         },
                         onUpdateChatModel = { vm.setChatModel(assistant = currentAssistant, model = it) },
-                        onUpdateAssistant = { /* Virtual mode doesn't allow switching assistant inside */ },
+                        onUpdateAssistant = { },
                         onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
                         onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                         onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
                         onRefreshContext = { vm.refreshContext() },
                         onDeleteFile = { vm.deleteFile(it) },
-                        onClearContext = { vm.startNewTopic() } // 对接新话题逻辑
+                        onClearContext = { vm.startNewTopic() }
                     )
                 }
             }
@@ -246,46 +252,63 @@ private fun VirtualTopBar(
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
     val border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(120.dp).background(
-            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                colors = listOf(MaterialTheme.colorScheme.background.copy(alpha = 0.95f), Color.Transparent)
-            )
-        ))
-
-        Row(
-            modifier = Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
+    Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Surface(
+            onClick = onBack,
+            shape = CircleShape,
+            color = containerColor,
+            border = border,
+            modifier = Modifier
+                .padding(start = 16.dp)
+                .size(topPillSize)
+                .align(Alignment.CenterStart)
         ) {
-            Surface(
-                onClick = onBack,
-                shape = buttonShape,
-                color = containerColor,
-                border = border
-            ) {
-                Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
-                }
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
             }
+        }
 
-            Spacer(Modifier.weight(1f))
-
-            Text(
-                text = assistantName,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-            )
-
-            Spacer(Modifier.weight(1f))
-
-            Surface(
-                onClick = onNewTopic,
-                shape = buttonShape,
-                color = containerColor,
-                border = border
+        Surface(
+            shape = buttonShape,
+            color = containerColor,
+            border = border,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .height(topPillSize)
+                .padding(horizontal = 72.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 20.dp)
             ) {
-                Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Add, "New Topic")
-                }
+                Text(
+                    text = assistantName,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1
+                )
+            }
+        }
+
+        Surface(
+            onClick = onNewTopic,
+            shape = CircleShape,
+            color = containerColor,
+            border = border,
+            modifier = Modifier
+                .padding(end = 16.dp)
+                .size(topPillSize)
+                .align(Alignment.CenterEnd)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Rounded.AutoAwesome,
+                    contentDescription = "New Topic",
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
     }
