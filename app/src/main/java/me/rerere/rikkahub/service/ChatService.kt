@@ -659,7 +659,28 @@ class ChatService(
                 if (firstTokenTime == null) firstTokenTime = System.currentTimeMillis()
                 if (chunk is GenerationChunk.Messages) updateConversation(conversationId, getConversationFlow(conversationId).value.updateCurrentMessages(chunk.messages))
             }
-        }.onFailure { _errorFlow.emit(it); Logging.log(TAG, "handleMessageComplete: $it") }
+        }.onFailure { e ->
+            if (e is kotlinx.coroutines.CancellationException) {
+                // 【核心修复】：处理终止生成的情况，保存当前已生成的半截内容
+                Log.d(TAG, "Generation cancelled for $conversationId, saving partial message to DB.")
+                val finalConv = getConversationFlow(conversationId).value
+                appScope.launch {
+                    // 1. 保存对话内容（包含 AI 生成到一半的部分）
+                    saveConversation(conversationId, finalConv)
+
+                    // 2. 同时更新助手的最后通话 ID，确保下次进入或归档时能关联上
+                    val currentSettings = settingsStore.settingsFlow.value
+                    val updatedAssistants = currentSettings.assistants.map {
+                        if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                    }
+                    settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+                }
+            } else {
+                // 普通错误仍需处理
+                _errorFlow.emit(e)
+                Logging.log(TAG, "handleMessageComplete: $e")
+            }
+        }
         .onSuccess {
             val finalConv = getConversationFlow(conversationId).value
             saveConversation(conversationId, finalConv)
