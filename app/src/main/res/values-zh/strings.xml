@@ -1019,12 +1019,12 @@
   <!-- Assistant Context Management Page -->
 <string name="processing_items">处理中： %1$d / %2$d</string>
 <string name="assistant_context_refresh_title">上下文刷新 / 摘要</string>
-  <string name="assistant_context_refresh_desc">通过摘要优化上下文</string>
+  <string name="assistant_context_refresh_desc">对话时带入已有摘要以加强对话连贯性，建议与自动消息摘要一起开启</string>
   <string name="assistant_context_auto_summarize_title">自动消息摘要</string>
   <string name="assistant_context_auto_summarize_desc">达到历史消息上限时自动生成摘要</string>
   <string name="assistant_context_history_limit_title">历史消息上限</string>
   <string name="assistant_context_history_limit_value">%d 条消息</string>
-  <string name="assistant_context_history_limit_desc">触发自动摘要的消息数量（保留最后 4 条消息）</string>
+  <string name="assistant_context_history_limit_desc">触发自动摘要的消息数量</string>
   <string name="assistant_context_episodic_limit_title">包含的片段摘要数量</string>
   <string name="assistant_context_episodic_limit_value">%d 个摘要</string>
   <string name="assistant_context_episodic_limit_desc">作为历史背景带入的近期片段摘要数量</string>

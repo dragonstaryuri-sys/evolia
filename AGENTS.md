@@ -39,7 +39,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   *Crucial:* `AppScope` defaults to `Dispatchers.Default`. Do not block the main thread or the default dispatcher with I/O.
 -   **Compose Optimization:**
 -   **Lists:** Never pass mutable collections (`SnapshotStateList`) directly to `LazyColumn` items. Use `derivedStateOf` to pass simple, immutable states (e.g., `Boolean`) to prevent unnecessary recompositions.
--   **AI Context:** Prioritize token economy and vector memory efficiency. Use caching.
+-   **AI Context:** Prioritize token economy and vector memory efficiency. Use caching (Prefix Caching optimized).
 
 ### Robustness & Safety
 -   **JSON Handling:**
@@ -87,27 +87,25 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 ## 6. Memory & Context Management (L0-L3 Hierarchy)
 
 ### 6.0 Memory Tier Overview
-- **L0: Raw Messages**: Immediate short-term context.
-- **L1: Context Refresh (Segments)**: In-session compression to save tokens.
-- **L2: Episodic Memory**: Long-term conversation archive with keyword indexing.
+- **L0: Raw Messages**: Immediate short-term context (Sliding Window). AI always sees the last N original messages.
+- **L1: Context Refresh (Summaries)**: Rolling compression to save tokens.
+    - **Global Summary (`contextSummary`)**: Rolling history overview.
+    - **Recent Highlights (Segments)**: Fine-grained L1 summaries of recent message blocks.
+- **L2: Episodic Memory**: Long-term conversation archive with hybrid RAG (Keywords + Embeddings).
 - **L3: Master Memory**: The ultimate "Master Archive" of user identity and preferences.
 
 ### 6.1 Context Refresh (L1 - Auto-Summarization)
-- **Mechanism**: Compresses older L0 messages within the active session.
-- **Strategy**:
-    - **Global Summary (`contextSummary`)**: A rolling summary of all compressed history.
-    - **Recent Highlights (`temporarySummaries`)**: Referred to as **Segments**. These are fine-grained summaries of recently compressed message blocks to preserve "Tactical Details".
-- **Trigger**: `ChatService.checkAndAutoSummarize` based on `maxHistoryMessages`.
+- **Mechanism**: Compresses older L0 messages within the active session into summaries.
+- **L0 Sliding Window**: Even if a message is summarized into L1, it remains visible as "Raw Message" in L0 if it falls within the `maxHistoryMessages` limit. This ensures continuity in tone and recent details.
+- **Trigger**: `ChatService.checkAndAutoSummarize` triggers when `(CurrentMessages.size - LastSummarizedIndex - 1) >= maxHistoryMessages`.
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
 - **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation. Room `REPLACE` strategy is used with `existingEpisode.id` to prevent duplicate entries per conversation ID.
 - **Rolling Update Logic**: 
     - **Trigger Check**: Only proceed if new messages since the last consolidation >= 4.
-    - **Token Optimization**: If an episode already exists, use `DEFAULT_FULL_SUMMARY_PROMPT` to perform a "Rolling Summary" instead of re-summarizing the entire chat history.
-    - **Data Purity**: **EXCLUDES** L1 Segments (`temporarySummaries`) during consolidation. It relies solely on the `contextSummary` (Global History) and `newMessages` (Raw L0) to prevent information redundancy and ensure a clean, high-level summary.
-    - **Manual vs Auto**: Both manual UI consolidation and background workers follow the same rolling logic to ensure consistency and economy.
-- **Retrieval**: AI extracts keywords from L2 for hybrid RAG search (Keywords have higher matching priority than Embeddings).
-- **Triggers**: `MemoryConsolidationWorker` (Automatic/Manual).
+    - **Token Optimization**: If an episode already exists, perform a "Rolling Summary" instead of re-summarizing everything.
+    - **Data Purity**: **EXCLUDES** L1 Segments during consolidation to avoid redundancy.
+- **Retrieval**: AI extracts keywords for hybrid search. Call `retrieve_memory_details` for tactical segment "deep dives".
 
 ### 6.3 Master Memory (L3 - Personal Archive)
 - **Mechanism**: An evolving "User Profile" that transcends individual conversations.
@@ -118,38 +116,37 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 - **Compression**: Automatically triggers a compression task if the archive exceeds 2500 characters to maintain context window efficiency.
 
 ### 6.4 Token Allocation & Context Priority
-- **Hierarchy of Injection**: In `GenerationHandler.buildMessages`:
-    1. **System Core**: Base prompt + Assistant personality. (Static variables like `{{user}}` and `{{char}}` should be used here to ensure stable caching).
-    2. **Context Summaries**: The Global Summary (L1) and Recent Highlights (Segments).
-    3. **Reference Information**: `assistant.referenceVariables`. Dedicated block for dynamic variables (e.g. `{{location}}`, `{{battery_level}}`, `{{cur_time}}`) placed here to protect the core personality cache from frequent invalidation.
-    4. **Mandatory Minimums**: Guaranteed 2 raw messages + 2 memory records.
-    5. **Dynamic Allocation**: Based on `assistant.contextPriority` (CHAT_HISTORY, MEMORIES, or BALANCED).
-- **Cross-Session Continuity**: `enableRecentChatsReference` injects titles of today's other chats as episodic memories during early turns.
+- **Hierarchy of Injection**: See 6.5 for detailed order.
+- **Allocation Strategy**:
+    1. **Mandatory Minimums**: Guaranteed 4 raw messages + 1 memory record.
+    2. **Dynamic Allocation**: Controlled by `assistant.contextPriority` (CHAT_HISTORY, MEMORIES, or BALANCED).
+- **Cross-Session Continuity**: Early turns inject titles of today's other chats as "Recent Episode Boosts".
 
-### 6.5 Final Prompt Structure (Detailed Order)
-The payload sent to LLMs follows this strict code-defined order:
+### 6.5 Final Prompt Structure (Prefix Caching Optimized Order)
+The payload sent to LLMs follows a strict order (Stable contents first, Dynamic contents last):
+
 1. **System Message (Combined)**:
-    - **Core Personality**: Assistant's `systemPrompt`. (Contains static identity rules and stable variables `{{user}}`/`{{char}}`).
-    - **Environment/Mode**: Virtual World Mode or Learning Mode behavioral guidance.
-    - **BEFORE_SYSTEM**: Pre-patches from Modes and Lorebook entries.
-    - **L3: Master Memory**: Permanent archive of user identity and relationship.
-    - **AFTER_SYSTEM**: Post-patches from Modes and Lorebook entries.
-    - **Tool Instructions**: System prompts for active tools.
-    - **Memory Tool Specification**: Guidelines for proactive recording and Person Specification rules (User vs. I).
-    - **L1: Global Context Summary**: `contextSummary`.
-    - **L1: Recent Context Highlights**: `temporarySummaries` (Segments).
-    - **Reference Information**: `assistant.referenceVariables`. (Dedicated block for dynamic/changing variables like `{{location}}` or `{{cur_time}}`. Placed here to prevent frequently changing values from invalidating the cache of the static core settings above).
-    - **Time Information**: Dynamic time and response interval data (Last line of the base builder).
-    - **L2 & Core Memories**: RAG-retrieved records (Core + Episodic with Keywords).
+    - **Core Personality**: `systemPrompt` (Rules, Identity).
+    - **Style Examples**: `languageStyleExamples`.
+    - **Environment/Mode**: Virtual World or Learning Mode behavioral instructions.
+    - **BEFORE_SYSTEM**: Patches from Modes/Lorebooks.
+    - **L3: Master Memory**: Permanent User Archive.
+    - **AFTER_SYSTEM**: Additional patches from Modes/Lorebooks.
+    - **Tool Instructions**: Instruction blocks for active tools.
+    - **Memory Specification**: Identity rules (User vs I) and recording standards.
+    - **L1: Context Summaries**: `contextSummary` + `Segments` (Recent Highlights).
+    - **L2 & Core Memories**: RAG-retrieved memory records.
+    - **Reference Information**: `assistant.referenceVariables` (Dynamic variables like location/status).
+    - **Time Information**: Current time, holiday, and response interval (Most dynamic).
 2. **User Message (Context Attachments)**: 
-    - Images, Docs, and media from active Modes or Lorebooks.
+    - Physical media (Images/Docs) from active Modes/Lorebooks.
 3. **Chat History**: 
-    - Recent **L0 Raw Messages** (User, Assistant, and Tool results).
+    - **L0 Raw Messages** (Recent sliding window of User, Assistant, and Tool turns).
 
 ## 7. Agent Automation (Task Manager)
 
 ### 7.1 Overview
-The `agent_task_manager` allows an Assistant to schedule instructions for its "future self". It's an asynchronous task system driven by AI decision-making rather than static scripts.
+The `agent_task_manager` allows an Assistant to schedule instructions for its "future self".
 
 ### 7.2 Core Logic
 - **Strict Creation Constraints**:
@@ -163,12 +160,13 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **Ephemeral Context (skipContext)**:
     - **Visibility**: These automated turns are hidden from the UI by filtering messages where `skipContext == true` in `ChatList`.
     - **Memory Isolation**: Both the system instruction and AI execution response are marked with `skipContext = true`. They are excluded from future context windows in `GenerationHandler`, ensuring the AI "forgets" the automation task during subsequent normal conversations to prevent hallucinations.
+- **Smart Session Routing**: Automatically targets the active session for the Assistant.
+- **Ephemeral Context (skipContext)**: Automated turns are hidden from the UI and excluded from future context windows to prevent hallucinations and memory clutter.
 
 ### 7.3 Reliability & Monitoring
 - **Heartbeat Guard**: A 30-minute `AlarmManager` heartbeat, combined with `Application.onCreate` checks, ensures overdue tasks are rescheduled after app restarts or network recovery.
 
 ## 8. Testing & Operations
 -   **Unit Tests:** Place in `src/test`. Cover parsing and logic.
--   **Instrumented Tests:** Place in `src/androidTest`. Cover flows.
 -   **Commit Guidelines:** Use Conventional Commits (`feat:`, `fix:`, `chore:`).
 -   **Language Support:** Do not submit new languages unless explicitly requested.

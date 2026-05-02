@@ -467,7 +467,7 @@ class ChatService(
 
         val job = appScope.launch {
             try {
-                // 确保数据从数据库或正确初始化开始
+                // 确保数据 from 数据库或正确初始化开始
                 initializeConversation(conversationId)
 
                 val currentConversation = getConversationFlow(conversationId).value
@@ -641,6 +641,8 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
+                contextSummary = conversation.contextSummary, // 修复：传入全量总结
+                temporarySummaries = conversation.temporarySummaries, // 修复：传入片段摘要
                 skipContextForResponse = skipContextForResponse, // 传递参数
                 conversationId = conversationId // 传递会话 ID
             ).onCompletion {
@@ -817,7 +819,15 @@ class ChatService(
         if (!assistant.enableMemory) return
         if (!assistant.enableContextRefresh || !assistant.autoRegenerateSummary) return
         val max = assistant.maxHistoryMessages ?: return
-        val count = if (conv.contextSummaryUpToIndex >= 0) (conv.currentMessages.size - conv.contextSummaryUpToIndex - 1 - 4).coerceAtLeast(0) else (conv.currentMessages.size - 4).coerceAtLeast(0)
+
+        // 【核心修改】触发逻辑调整为：当前消息数减去最后一条已总结消息的索引，超过上限即触发
+        // 例如：size=25, summarizedIndex=19, 则 count=5。如果 max=20，此时不触发。
+        val count = if (conv.contextSummaryUpToIndex >= 0) {
+            conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1)
+        } else {
+            conv.currentMessages.size
+        }
+
         if (count >= max) summarizeAndRefresh(id)
     }
 
@@ -840,6 +850,7 @@ class ChatService(
             val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
             val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
 
+            // 保持适度重叠：总结到倒数第 5 条（即保留最后 4 条作为未总结缓冲）
             val lastIdx = (messages.size - 5).coerceAtLeast(0)
             val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
             val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()

@@ -618,74 +618,6 @@ class GenerationHandler(
             baseSystemPromptBuilder.append("\n\n## Recent Context Highlights\n")
             tempSummaries.forEachIndexed { index, s -> baseSystemPromptBuilder.append("${index + 1}. $s\n") }
         }
-        // --- 新增：注入引用变量模块 ---
-        if (assistant.referenceVariables.isNotBlank()) {
-            baseSystemPromptBuilder.append(assistant.referenceVariables)
-            baseSystemPromptBuilder.appendLine()
-        }
-        // Time Sense Injection
-        if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
-            val now = LocalDateTime.now()
-
-            // 计算节日逻辑
-            val month = now.monthValue
-            val day = now.dayOfMonth
-            val holiday = when {
-                month == 1 && day == 1 -> "New Year's Day"
-                month == 3 && day == 8 -> "Women's Day"
-                month == 3 && day == 12 -> "Arbor Day"
-                month == 4 && (day in 4..6) -> "Qingming Festival"
-                month == 5 && day == 1 -> "Labour Day"
-                month == 5 && day == 4 -> "Youth Day"
-                month == 6 && day == 1 -> "Children's Day"
-                month == 7 && day == 1 -> "CPC Founding Day"
-                month == 8 && day == 1 -> "Army Day"
-                month == 9 && day == 10 -> "Teachers' Day"
-                month == 11 && day == 8 -> "Journalists' Day"
-                month == 12 && day == 25 -> "Christmas"
-                else -> null
-            }
-
-            // 计算详细日期信息
-            val dayOfWeek = now.dayOfWeek
-            val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
-            // 如果是节日，则优先显示节日名称，否则显示工作日/休息日
-            val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "restday" else "workday"
-            val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-            val timeStr = "$dayName.($dayType), $formattedTime"
-
-            val lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT }
-            val intervalInfo = lastAiMessage?.let {
-                // 改用 java.time 进行间隔计算，避开 kotlinx-datetime 的兼容性问题
-                runCatching {
-                    @Suppress("DEPRECATION")
-                    val prevJavaDateTime = LocalDateTime.of(
-                        it.createdAt.year,
-                        it.createdAt.monthNumber,
-                        it.createdAt.dayOfMonth,
-                        it.createdAt.hour,
-                        it.createdAt.minute,
-                        it.createdAt.second,
-                        it.createdAt.nanosecond
-                    )
-                    val prevInstant = prevJavaDateTime.atZone(ZoneId.systemDefault()).toInstant()
-                    val currentInstant = Instant.now()
-                    val duration = Duration.between(prevInstant, currentInstant)
-                    val seconds = duration.seconds
-                    val absSeconds = kotlin.math.abs(seconds)
-                    val sign = if (seconds >= 0) "+" else "-"
-                    val formatted = when {
-                        absSeconds < 60 -> "${sign}${absSeconds}s"
-                        absSeconds < 3600 -> "${sign}${absSeconds / 60}m"
-                        absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
-                        else -> "${sign}${absSeconds / 86400}d"
-                    }
-                    ", Interval since your last reply: $formatted"
-                }.getOrNull()
-            } ?: ""
-
-            baseSystemPromptBuilder.append("\n\n## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n Fabricating time will result in punishment.")
-        }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
         currentTokens += estimateTokens(baseSystemPrompt)
@@ -701,15 +633,23 @@ class GenerationHandler(
 
         // 2. Prepare Candidates
         // Apply message history limit if configured
-        val historyLimitedMessages = assistant.maxHistoryMessages?.let { limit ->
-            if (limit > 0) contextCandidates.limitContext(limit) else contextCandidates
-        } ?: contextCandidates
+        // 【核心修改】: 这里实现滑动窗口.
+        // 如果 truncateIndex 有效（即用户手动执行了“清除上下文”），则先按 truncateIndex 截断。
+        // 然后再按 maxHistoryMessages 取最后 N 条。
+        val chatHistoryCandidates = contextCandidates
+            .truncate(truncateIndex)
+            .let { truncated ->
+                assistant.maxHistoryMessages?.let { limit ->
+                    if (limit > 0) truncated.limitContext(limit) else truncated
+                } ?: truncated
+            }
+            .reversed()
 
         // Prune search results if configured
         val searchPrunedMessages = assistant.maxSearchResultsRetained?.let { maxSearches ->
             if (maxSearches > 0) {
                 // Find all messages that contain search tool results
-                val searchResultIndices = historyLimitedMessages.mapIndexedNotNull { index, msg ->
+                val searchResultIndices = chatHistoryCandidates.mapIndexedNotNull { index, msg ->
                     val hasSearchResult = msg.parts.any { part ->
                         part is UIMessagePart.ToolResult && part.toolName == "search_web"
                     }
@@ -719,7 +659,7 @@ class GenerationHandler(
                 // Keep only the last N search results
                 val indicesToPrune = searchResultIndices.dropLast(maxSearches).toSet()
                 if (indicesToPrune.isNotEmpty()) {
-                    historyLimitedMessages.mapIndexed { index, msg ->
+                    chatHistoryCandidates.mapIndexed { index, msg ->
                         if (index in indicesToPrune) {
                             // Replace search result content with a minimal placeholder
                             msg.copy(parts = msg.parts.map { part ->
@@ -731,11 +671,10 @@ class GenerationHandler(
                             })
                         } else msg
                     }
-                } else historyLimitedMessages
-            } else historyLimitedMessages
-        } ?: historyLimitedMessages
+                } else chatHistoryCandidates
+            } else chatHistoryCandidates
+        } ?: chatHistoryCandidates
 
-        val chatHistoryCandidates = searchPrunedMessages.truncate(truncateIndex).reversed()
 
         val effectiveMemoriesCandidates = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
             val recentChatMemories = if (assistant.enableRecentChatsReference) {
@@ -829,13 +768,13 @@ class GenerationHandler(
             Log.w(TAG, "buildMessages: System prompt exceeds max tokens!")
         }
 
-        val minChatHistory = 4.coerceAtMost(chatHistoryCandidates.size)
+        val minChatHistory = 4.coerceAtMost(searchPrunedMessages.size)
         val minMemories = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) 1.coerceAtMost(effectiveMemoriesCandidates.size) else 0
 
         var usedTokens = 0
 
         // Add min chat history
-        chatHistoryCandidates.take(minChatHistory).forEach {
+        searchPrunedMessages.take(minChatHistory).forEach {
             selectedMessages.add(it)
             usedTokens += estimateTokens(it)
         }
@@ -848,7 +787,7 @@ class GenerationHandler(
 
         var availableTokens = remainingTokens - usedTokens
         if (availableTokens > 0) {
-            val remainingChatHistory = chatHistoryCandidates.drop(minChatHistory)
+            val remainingChatHistory = searchPrunedMessages.drop(minChatHistory)
             val remainingMemories = effectiveMemoriesCandidates.drop(minMemories)
             when (assistant.contextPriority) {
                 ContextPriority.CHAT_HISTORY -> {
@@ -877,7 +816,7 @@ class GenerationHandler(
                             availableTokens -= cost
                         }
                     }
-                    for (msg in chatHistoryCandidates.drop(minChatHistory)) {
+                    for (msg in searchPrunedMessages.drop(minChatHistory)) {
                         val cost = estimateTokens(msg)
                         if (availableTokens >= cost) {
                             selectedMessages.add(msg)
@@ -959,6 +898,72 @@ class GenerationHandler(
                     appendLine()
                     append(buildMemoryPrompt(model, selectedMemories))
                 }
+
+                // --- 移动：引用变量与时间信息移至 RAG 记忆之后 ---
+                // 1. 注入引用变量模块
+                if (assistant.referenceVariables.isNotBlank()) {
+                    appendLine()
+                    append(assistant.referenceVariables)
+                }
+
+                // 2. Time Sense Injection
+                if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
+                    val now = LocalDateTime.now()
+                    val month = now.monthValue
+                    val day = now.dayOfMonth
+                    val holiday = when {
+                        month == 1 && day == 1 -> "New Year's Day"
+                        month == 3 && day == 8 -> "Women's Day"
+                        month == 3 && day == 12 -> "Arbor Day"
+                        month == 4 && (day in 4..6) -> "Qingming Festival"
+                        month == 5 && (day == 1 ||day == 2 ||day == 3 || day == 5) -> "legal holiday for Labour Day"
+                        month == 5 && day == 4 -> "legal holiday for Labour Day&Youth Day"
+                        month == 6 && day == 1 -> "Children's Day"
+                        month == 7 && day == 1 -> "CPC Founding Day"
+                        month == 8 && day == 1 -> "Army Day"
+                        month == 9 && day == 10 -> "Teachers' Day"
+                        month == 11 && day == 8 -> "Journalists' Day"
+                        month == 12 && day == 25 -> "Christmas"
+                        else -> null
+                    }
+                    val dayOfWeek = now.dayOfWeek
+                    val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+                    val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "restday" else "workday"
+                    val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                    val timeStr = "$dayName.($dayType), $formattedTime"
+
+                    val lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT }
+                    val intervalInfo = lastAiMessage?.let {
+                        runCatching {
+                            @Suppress("DEPRECATION")
+                            val prevJavaDateTime = LocalDateTime.of(
+                                it.createdAt.year,
+                                it.createdAt.monthNumber,
+                                it.createdAt.dayOfMonth,
+                                it.createdAt.hour,
+                                it.createdAt.minute,
+                                it.createdAt.second,
+                                it.createdAt.nanosecond
+                            )
+                            val prevInstant = prevJavaDateTime.atZone(ZoneId.systemDefault()).toInstant()
+                            val currentInstant = Instant.now()
+                            val duration = Duration.between(prevInstant, currentInstant)
+                            val seconds = duration.seconds
+                            val absSeconds = kotlin.math.abs(seconds)
+                            val sign = if (seconds >= 0) "+" else "-"
+                            val formatted = when {
+                                absSeconds < 60 -> "${sign}${absSeconds}s"
+                                absSeconds < 3600 -> "${sign}${absSeconds / 60}m"
+                                absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
+                                else -> "${sign}${absSeconds / 86400}d"
+                            }
+                            ", Interval since your last reply: $formatted"
+                        }.getOrNull()
+                    } ?: ""
+
+                    appendLine()
+                    append("\n## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n Fabricating time will result in punishment.")
+                }
             }
             if (finalSystemPrompt.isNotBlank()) {
                 add(UIMessage.system(finalSystemPrompt))
@@ -975,6 +980,9 @@ class GenerationHandler(
             // Restore chat history order
             addAll(selectedMessages.sortedBy { messages.indexOf(it) })
         }
+
+        // 【诊断日志】：打印当前上下文的统计信息
+        Log.d(TAG, "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, segmentsCount=${tempSummaries.size}, rawMessagesCount=${selectedMessages.size}")
 
         val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
             val isBoost = memory.type == 2
@@ -1209,10 +1217,16 @@ class GenerationHandler(
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
 
-        // 【日志优化】：打印所有 SYSTEM 消息，确保“## Memories”也能被看到
-        internalMessages.filter { it.role == CoreMessageRole.SYSTEM }.forEach {
-             Log.i(TAG, ">>> SYSTEM MESSAGE [${it.id}] <<<\n${it.toText()}\n<<< END SYSTEM MESSAGE >>>")
+        // 【日志增强】：打印最终发出的所有消息摘要，便于观察滑动窗口（L0）
+        Log.i(TAG, ">>> START LLM PAYLOAD [${internalMessages.size} messages] <<<")
+        internalMessages.forEach { msg ->
+             val preview = msg.toContentText().take(60).replace("\n", " ")
+             Log.i(TAG, "  [${msg.role}] -> $preview...")
+             if (msg.role == CoreMessageRole.SYSTEM) {
+                 Log.v(TAG, "  Full System Content: \n${msg.toText()}")
+             }
         }
+        Log.i(TAG, ">>> END LLM PAYLOAD <<<")
 
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes
