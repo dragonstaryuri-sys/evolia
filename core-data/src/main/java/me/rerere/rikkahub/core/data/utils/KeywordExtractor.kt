@@ -7,22 +7,22 @@ object KeywordExtractor {
     // 定义停用词表
     private val STOP_WORDS = setOf(
         // 用户提到的词
-        "今天", "明天", "我是", "正在", "首先", "包括","用户","user","为何",
+        "今天", "明天", "我是", "正在", "首先", "包括", "用户", "user", "为何", "为什么", "好的", "是的", "对",
         // 代词
         "你", "我", "他", "她", "它", "你们", "我们", "他们", "她们", "它们",
         "自己", "咱们", "本人", "人家", "某个", "某些",
         // 助词、连词、介词
-        "之后", "因为", "所以",
+        "之后", "因为", "所以", "但是", "而且", "然后", "就是", "这样", "那样",
         // 时间/程度虚词
-        "已经", "可以", "可能", "应该", "以后", "以前", "之后", "之前", "这样", "那样",
-        "非常", "特别", "稍微", "左右", "大约", "现在", "刚才", "过去","正在",
+        "已经", "可以", "可能", "应该", "以后", "以前", "之后", "之前",
+        "非常", "特别", "稍微", "左右", "大约", "现在", "刚才", "过去"
     )
 
     /**
      * 基于本地算法提取关键词 (无需大模型)
      * 策略：使用 BreakIterator 进行词法分析，保留长度 >= 2 的词，过滤停用词，并限制数量
      */
-    fun extract(text: String, maxKeywords: Int = 10): String {
+    fun extract(text: String, maxKeywords: Int = 30): String {
         if (text.isBlank()) return ""
 
         val boundary = BreakIterator.getWordInstance(Locale.CHINA)
@@ -54,7 +54,7 @@ object KeywordExtractor {
             end = boundary.next()
         }
 
-        // 返回前 maxKeywords 个词
+        // 返回前 maxKeywords 个词 (最多 30 个)，有多少回多少
         return words.take(maxKeywords).joinToString(",")
     }
 }
