@@ -533,7 +533,9 @@ private fun ChatPageContent(
                                 inputState.clearInput()
                             },
                             onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
-                            onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
+                            onUpdateAssistant = { updatedAssistant ->
+                                vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
+                            },
                             onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
                             onClearContext = { vm.startNewTopic() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
@@ -584,7 +586,9 @@ private fun ChatPageContent(
                                 inputState.clearInput()
                             },
                             onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
-                            onUpdateAssistant = { vm.updateSettings(setting.copy(assistants = setting.assistants.map { assistant -> if (assistant.id == it.id) it else assistant })) },
+                            onUpdateAssistant = { updatedAssistant ->
+                                vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
+                            },
                             onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
                             onClearContext = { vm.startNewTopic() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },

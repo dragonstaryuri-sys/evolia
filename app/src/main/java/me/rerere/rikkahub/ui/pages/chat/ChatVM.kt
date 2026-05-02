@@ -331,6 +331,19 @@ class ChatVM(
         }
     }
 
+    fun updateAssistant(updatedAssistant: Assistant) {
+        viewModelScope.launch {
+            val currentSettings = settingsStore.settingsFlow.value
+            settingsStore.update(
+                currentSettings.copy(
+                    assistants = currentSettings.assistants.map {
+                        if (it.id == updatedAssistant.id) updatedAssistant else it
+                    }
+                )
+            )
+        }
+    }
+
     private suspend fun checkUserAvatarDelete(oldSettings: Settings, newSettings: Settings) {
         val oldAvatar = oldSettings.displaySetting.userAvatar
         val newAvatar = newSettings.displaySetting.userAvatar

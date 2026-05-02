@@ -226,7 +226,9 @@ fun VirtualWorldPage(id: Uuid) {
                             inputState.clearInput()
                         },
                         onUpdateChatModel = { vm.setChatModel(assistant = currentAssistant, model = it) },
-                        onUpdateAssistant = { },
+                        onUpdateAssistant = { updatedAssistant ->
+                            vm.updateAssistant(updatedAssistant)
+                        },
                         onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
                         onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                         onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
