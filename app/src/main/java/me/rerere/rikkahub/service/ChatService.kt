@@ -187,6 +187,32 @@ class ChatService(
         _generationJobs.value.values.forEach { it?.cancel() }
     }
 
+    private suspend fun <T> retryIO(
+        times: Int = 2,
+        initialDelay: Long = 2000,
+        block: suspend () -> T
+    ): T {
+        var currentDelay = initialDelay
+        repeat(times) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                // 识别 IO 异常、超时或被取消的情况
+                val isNetworkError = e is java.io.IOException ||
+                    e.message?.contains("timeout", ignoreCase = true) == true ||
+                    e.message?.contains("canceled", ignoreCase = true) == true
+                if (isNetworkError) {
+                    Log.w(TAG, "网络异常，正在重试 (第 ${it + 1} 次): ${e.message}")
+                    delay(currentDelay)
+                    currentDelay *= 2 // 指数退避
+                } else {
+                    throw e
+                }
+            }
+        }
+        return block() // 最后一次尝试
+    }
+
     fun addConversationReference(conversationId: Uuid) {
         conversationReferences[conversationId] = conversationReferences.getOrDefault(conversationId, 0) + 1
     }
@@ -416,7 +442,9 @@ class ChatService(
                 .replace("{{char}}", assistant.name)
 
             val providerHandler = handler as Provider<ProviderSetting>
-            val resp = providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
+            val resp = retryIO(times = 2) {
+                providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
+            }
             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
             if (summary.isNotBlank()) {
@@ -641,8 +669,8 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-                contextSummary = conversation.contextSummary, // 修复：传入全量总结
-                temporarySummaries = conversation.temporarySummaries, // 修复：传入片段摘要
+                contextSummary = conversation.contextSummary, // 传入全量总结
+                temporarySummaries = emptyList(), // 不再传递内存列表，由 GenerationHandler 自行查询 DB
                 skipContextForResponse = skipContextForResponse, // 传递参数
                 conversationId = conversationId // 传递会话 ID
             ).onCompletion {
@@ -821,7 +849,6 @@ class ChatService(
         val max = assistant.maxHistoryMessages ?: return
 
         // 【核心修改】触发逻辑调整为：当前消息数减去最后一条已总结消息的索引，超过上限即触发
-        // 例如：size=25, summarizedIndex=19, 则 count=5。如果 max=20，此时不触发。
         val count = if (conv.contextSummaryUpToIndex >= 0) {
             conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1)
         } else {
@@ -918,16 +945,19 @@ class ChatService(
                 "Summarize the following chat history:\n$text"
             }
 
-            val fullResp = handler.generateText(
-                providerSetting = provider,
-                messages = listOf(UIMessage.user(fullPrompt)),
-                params = TextGenerationParams(model, 0.3f, 1.0f)
-            )
+            val fullResp = retryIO(times = 1) {
+                handler.generateText(
+                    providerSetting = provider,
+                    messages = listOf(UIMessage.user(fullPrompt)),
+                    params = TextGenerationParams(model, 0.3f, 1.0f)
+                )
+            }
+
             val fullSum = fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(false)
 
             val updated = conv.copy(
                 contextSummary = fullSum,
-                temporarySummaries = conv.temporarySummaries + tempSum,
+                // 不再更新 temporarySummaries 字段，实现架构瘦身
                 contextSummaryUpToIndex = lastIdx,
                 lastRefreshTime = System.currentTimeMillis()
             )
@@ -1050,7 +1080,7 @@ class ChatService(
             val modelId = assistant.suggestionModelId ?: settings.suggestionModelId
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
-            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 1.0f))
+            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 1.0f))
             val suggestions = result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
             saveConversation(conversationId, conversation.copy(chatSuggestions = suggestions))
         }

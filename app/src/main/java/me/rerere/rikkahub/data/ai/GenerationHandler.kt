@@ -613,10 +613,23 @@ class GenerationHandler(
         }
         if (!contextSummary.isNullOrBlank()) baseSystemPromptBuilder.append("\n\n## Overall Conversation Summary\n").append(contextSummary)
 
-        val tempSummaries = temporarySummaries.takeLast(assistant.maxTemporarySummariesToInclude)
-        if (tempSummaries.isNotEmpty()) {
+        // 【核心修改】：从数据库拉取最新的片段摘要作为 L1 唯一事实来源
+        val finalSegments = if (conversationId != null) {
+            val limit = assistant.maxTemporarySummariesToInclude
+            if (limit > 0) {
+                // 直接从数据库查询该会话的片段摘要，按 start_index 排序并取最后 limit 条
+                chatSegmentDAO.getSegmentsByConversation(conversationId.toString())
+                    .takeLast(limit)
+                    .map { it.content }
+            } else emptyList()
+        } else {
+            // 临时会话回退到内存列表 (虽然目前 ChatService 传的是 emptyList)
+            temporarySummaries.takeLast(assistant.maxTemporarySummariesToInclude)
+        }
+
+        if (finalSegments.isNotEmpty()) {
             baseSystemPromptBuilder.append("\n\n## Recent Context Highlights\n")
-            tempSummaries.forEachIndexed { index, s -> baseSystemPromptBuilder.append("${index + 1}. $s\n") }
+            finalSegments.forEachIndexed { index, s -> baseSystemPromptBuilder.append("${index + 1}. $s\n") }
         }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
@@ -899,7 +912,7 @@ class GenerationHandler(
                     append(buildMemoryPrompt(model, selectedMemories))
                 }
 
-                // --- 移动：引用变量与时间信息移至 RAG 记忆之后 ---
+                // --- 移动：引用变量与时间信息移至 RAG 记忆之后，优化 Prefix Caching ---
                 // 1. 注入引用变量模块
                 if (assistant.referenceVariables.isNotBlank()) {
                     appendLine()
@@ -981,8 +994,9 @@ class GenerationHandler(
             addAll(selectedMessages.sortedBy { messages.indexOf(it) })
         }
 
-        // 【诊断日志】：打印当前上下文的统计信息
-        Log.d(TAG, "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, segmentsCount=${tempSummaries.size}, rawMessagesCount=${selectedMessages.size}")
+        // 【诊断日志】：打印当前上下文的统计信息。
+        // 这里修正了统计口径：直接打印从数据库查出的 finalSegments.size
+        Log.d(TAG, "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, segmentsCount=${finalSegments.size}, rawMessagesCount=${selectedMessages.size}")
 
         val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
             val isBoost = memory.type == 2

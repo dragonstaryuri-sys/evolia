@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
@@ -123,6 +124,31 @@ class MemoryConsolidationWorker(
             Log.e(TAG, "Consolidation failed", e)
             return Result.failure()
         }
+    }
+
+    private suspend fun <T> retryIO(
+        times: Int = 2,
+        initialDelay: Long = 2000,
+        block: suspend () -> T
+    ): T {
+        var currentDelay = initialDelay
+        repeat(times) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                val isNetworkError = e is java.io.IOException ||
+                                     e.message?.contains("timeout", ignoreCase = true) == true ||
+                                     e.message?.contains("canceled", ignoreCase = true) == true
+                if (isNetworkError) {
+                    Log.w(TAG, "Retryable error occurred (Attempt ${it + 1}): ${e.message}")
+                    delay(currentDelay)
+                    currentDelay *= 2
+                } else {
+                    throw e
+                }
+            }
+        }
+        return block()
     }
 
     private suspend fun manualConsolidate(assistant: Assistant, conv: Conversation): Boolean {
@@ -542,16 +568,18 @@ class MemoryConsolidationWorker(
         }
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(
-            providerSetting = providerSetting,
-            messages = listOf(UIMessage.user(prompt)),
-            params = TextGenerationParams(
-                model = model,
-                temperature = 0.3f,
-                topP = 0.5f,
-                maxTokens = 1024
+        val resp = retryIO(times = 2) {
+            h.generateText(
+                providerSetting = providerSetting,
+                messages = listOf(UIMessage.user(prompt)),
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                    topP = 0.5f,
+                    maxTokens = 1024
+                )
             )
-        )
+        }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
@@ -569,16 +597,18 @@ class MemoryConsolidationWorker(
         )
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(
-            providerSetting = providerSetting,
-            messages = listOf(UIMessage.user(prompt)),
-            params = TextGenerationParams(
-                model = model,
-                temperature = 0.3f,
-                topP = 0.5f,
-                maxTokens = 256
+        val resp = retryIO(times = 2) {
+            h.generateText(
+                providerSetting = providerSetting,
+                messages = listOf(UIMessage.user(prompt)),
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                    topP = 0.5f,
+                    maxTokens = 256
+                )
             )
-        )
+        }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
@@ -618,19 +648,24 @@ class MemoryConsolidationWorker(
         """.trimIndent()
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(
-            providerSetting = providerSetting,
-            messages = listOf(
-                UIMessage.system(finalSystemPrompt),
-                UIMessage.user(inputPrompt)
-            ),
-            params = TextGenerationParams(
-                model = model,
-                temperature = 0.2f,
-                topP = 0.5f,
-                maxTokens = 4096
+        val resp = retryIO(
+            times = 1,
+            initialDelay = 60000 // Master Memory 初始延迟 1 分钟
+        ) {
+            h.generateText(
+                providerSetting = providerSetting,
+                messages = listOf(
+                    UIMessage.system(finalSystemPrompt),
+                    UIMessage.user(inputPrompt)
+                ),
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.2f,
+                    topP = 0.5f,
+                    maxTokens = 8000
+                )
             )
-        )
+        }
         // 关键：只提取 Text 部分，排除 Reasoning
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
@@ -656,19 +691,24 @@ class MemoryConsolidationWorker(
         """.trimIndent()
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(
-            providerSetting = providerSetting,
-            messages = listOf(
-                UIMessage.system(sysPrompt),
-                UIMessage.user(userPrompt)
-            ),
-            params = TextGenerationParams(
-                model = model,
-                temperature = 0.3f,
-                topP = 0.5f,
-                maxTokens = 4096
+        val resp = retryIO(
+            times = 2,
+            initialDelay = 60000 // Master Memory
+        ){
+            h.generateText(
+                providerSetting = providerSetting,
+                messages = listOf(
+                    UIMessage.system(sysPrompt),
+                    UIMessage.user(userPrompt)
+                ),
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                    topP = 0.5f,
+                    maxTokens = 4096
+                )
             )
-        )
+        }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: archiveToCompress
     }
 
