@@ -79,7 +79,6 @@ fun VirtualWorldPage(id: Uuid) {
     val conversationJobs by vm.conversationJobs.collectAsStateWithLifecycle()
 
     // 聚合判断：在虚拟聚合模式下，追踪所有活跃的任务。
-    // 使用 derivedStateOf 确保只有在实际活跃状态变化时才触发重组。
     val isAnyJobRunning by remember(loadingJob, conversationJobs) {
         derivedStateOf {
             loadingJob?.isActive == true || conversationJobs.values.any { it?.isActive == true }
@@ -252,63 +251,62 @@ private fun VirtualTopBar(
     val containerColor = MaterialTheme.colorScheme.surfaceContainer
     val border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
 
-    Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-        Surface(
-            onClick = onBack,
-            shape = CircleShape,
-            color = containerColor,
-            border = border,
-            modifier = Modifier
-                .padding(start = 16.dp)
-                .size(topPillSize)
-                .align(Alignment.CenterStart)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // 顶部阴影/渐变背景，和普通模式保持一致
+        Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(120.dp).background(
+            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                colors = listOf(MaterialTheme.colorScheme.background.copy(alpha = 0.95f), Color.Transparent)
+            )
+        ))
 
-        Surface(
-            shape = buttonShape,
-            color = containerColor,
-            border = border,
+        Row(
             modifier = Modifier
-                .align(Alignment.Center)
-                .height(topPillSize)
-                .padding(horizontal = 72.dp)
+                .statusBarsPadding() // 核心：空出状态栏位置，解决重合问题
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 20.dp)
+            Surface(
+                onClick = onBack,
+                shape = CircleShape,
+                color = containerColor,
+                border = border,
+                modifier = Modifier.size(topPillSize)
             ) {
-                Text(
-                    text = assistantName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = "Back",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
-        }
 
-        Surface(
-            onClick = onNewTopic,
-            shape = CircleShape,
-            color = containerColor,
-            border = border,
-            modifier = Modifier
-                .padding(end = 16.dp)
-                .size(topPillSize)
-                .align(Alignment.CenterEnd)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Rounded.AutoAwesome,
-                    contentDescription = "New Topic",
-                    modifier = Modifier.size(22.dp)
-                )
+            Spacer(Modifier.weight(1f))
+
+            Text(
+                text = assistantName,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                maxLines = 1,
+                modifier = Modifier.align(Alignment.CenterVertically)
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            Surface(
+                onClick = onNewTopic,
+                shape = CircleShape,
+                color = containerColor,
+                border = border,
+                modifier = Modifier.size(topPillSize)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add, // 换成和普通模式一致的 Add 图标
+                        contentDescription = "New Topic",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
     }
