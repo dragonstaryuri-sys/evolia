@@ -254,33 +254,48 @@ private fun ChatPageContent(
     var lastProcessedIndex by remember { mutableStateOf(0) }
 
     LaunchedEffect(conversation, loadingJob, setting.autoPlayTts) {
+        val lastMsg = conversation.currentMessages.lastOrNull()
+
+        // 【核心修复】：如果关闭了自动播放，我们需要静默更新进度到最新消息的末尾，并停止当前朗读
         if (!setting.autoPlayTts) {
-            lastProcessedMessageId = null
-            lastProcessedIndex = 0
+            tts.stop()
+            if (lastMsg?.role == MessageRole.ASSISTANT) {
+                val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("\n") { it.text }
+                lastProcessedMessageId = lastMsg.id
+                lastProcessedIndex = rawContent.length
+            } else {
+                lastProcessedMessageId = null
+                lastProcessedIndex = 0
+            }
             return@LaunchedEffect
         }
 
         // 获取最新的一条助手消息
-        val lastMsg = conversation.currentMessages.lastOrNull()
         if (lastMsg?.role == MessageRole.ASSISTANT) {
-            // 注意：这里不直接使用 toContentText() 以免 trim() 导致索引偏移
             val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
                 .joinToString("\n") { it.text }
 
-            // 1. 如果是新消息或者是重新生成的（ID 变了），重置处理索引
+            // 1. 处理索引初始化逻辑
             if (lastProcessedMessageId != lastMsg.id) {
-                lastProcessedMessageId = lastMsg.id
-                lastProcessedIndex = 0
+                // 如果是首次进入页面（ID为null）且当前没有在生成内容（Job为null）
+                // 说明这条是历史消息，我们将其索引直接设为末尾，避免自动播放
+                if (lastProcessedMessageId == null && loadingJob == null) {
+                    lastProcessedMessageId = lastMsg.id
+                    lastProcessedIndex = rawContent.length
+                } else {
+                    lastProcessedMessageId = lastMsg.id
+                    lastProcessedIndex = 0
+                }
             }
 
-            // 2. 寻找句子结束符进行切分（中英文句号、感叹号、问号、换行等）
+            // 2. 寻找句子结束符进行切分
             val terminators = charArrayOf('。', '！', '？', '；', '\n', '.', '!', '?', ';')
             var i = lastProcessedIndex
             while (i < rawContent.length) {
                 if (rawContent[i] in terminators) {
                     val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
                     if (sentence.isNotEmpty()) {
-                        // flushCalled = false 表示“排队播放”，不会打断当前正在说的内容
                         tts.speak(sentence, flushCalled = false)
                     }
                     lastProcessedIndex = i + 1
@@ -288,7 +303,7 @@ private fun ChatPageContent(
                 i++
             }
 
-            // 3. 如果 AI 生成彻底结束了（Job 为 null），把最后剩下的尾巴播完（即使没有标点）
+            // 3. 如果 AI 生成彻底结束了，把最后剩下的尾巴播完
             if (loadingJob == null && lastProcessedIndex < rawContent.length) {
                 val remaining = rawContent.substring(lastProcessedIndex).trim()
                 if (remaining.isNotEmpty()) {
@@ -297,7 +312,6 @@ private fun ChatPageContent(
                 lastProcessedIndex = rawContent.length
             }
         } else {
-            // 如果最后一条不是助手消息（比如用户刚发完），重置状态准备迎接新回复
             lastProcessedMessageId = null
             lastProcessedIndex = 0
         }
