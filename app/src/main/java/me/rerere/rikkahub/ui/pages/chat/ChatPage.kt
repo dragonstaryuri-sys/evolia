@@ -27,6 +27,8 @@ import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -35,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
@@ -47,6 +50,7 @@ import me.rerere.rikkahub.data.datastore.ChatInputStyle
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
@@ -243,6 +247,61 @@ private fun ChatPageContent(
     val topMessagePadding = 72.dp
 
     val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
+
+    // --- 核心优化：流式自动朗读逻辑 ---
+    val tts = LocalTTSState.current
+    var lastProcessedMessageId by remember { mutableStateOf<Uuid?>(null) }
+    var lastProcessedIndex by remember { mutableStateOf(0) }
+
+    LaunchedEffect(conversation, loadingJob, setting.autoPlayTts) {
+        if (!setting.autoPlayTts) {
+            lastProcessedMessageId = null
+            lastProcessedIndex = 0
+            return@LaunchedEffect
+        }
+
+        // 获取最新的一条助手消息
+        val lastMsg = conversation.currentMessages.lastOrNull()
+        if (lastMsg?.role == MessageRole.ASSISTANT) {
+            // 注意：这里不直接使用 toContentText() 以免 trim() 导致索引偏移
+            val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
+                .joinToString("\n") { it.text }
+
+            // 1. 如果是新消息或者是重新生成的（ID 变了），重置处理索引
+            if (lastProcessedMessageId != lastMsg.id) {
+                lastProcessedMessageId = lastMsg.id
+                lastProcessedIndex = 0
+            }
+
+            // 2. 寻找句子结束符进行切分（中英文句号、感叹号、问号、换行等）
+            val terminators = charArrayOf('。', '！', '？', '；', '\n', '.', '!', '?', ';')
+            var i = lastProcessedIndex
+            while (i < rawContent.length) {
+                if (rawContent[i] in terminators) {
+                    val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
+                    if (sentence.isNotEmpty()) {
+                        // flushCalled = false 表示“排队播放”，不会打断当前正在说的内容
+                        tts.speak(sentence, flushCalled = false)
+                    }
+                    lastProcessedIndex = i + 1
+                }
+                i++
+            }
+
+            // 3. 如果 AI 生成彻底结束了（Job 为 null），把最后剩下的尾巴播完（即使没有标点）
+            if (loadingJob == null && lastProcessedIndex < rawContent.length) {
+                val remaining = rawContent.substring(lastProcessedIndex).trim()
+                if (remaining.isNotEmpty()) {
+                    tts.speak(remaining, flushCalled = false)
+                }
+                lastProcessedIndex = rawContent.length
+            }
+        } else {
+            // 如果最后一条不是助手消息（比如用户刚发完），重置状态准备迎接新回复
+            lastProcessedMessageId = null
+            lastProcessedIndex = 0
+        }
+    }
 
     LaunchedEffect(initialSearchQuery, conversation.id) {
         if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
@@ -731,11 +790,19 @@ private fun TopBar(
                     val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
                     when {
                         isEmptyState && !isTempChat && hideTopRightAvatar -> {
-                            IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {
-                                Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                            Row(modifier = Modifier.height(topPillSize), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) }, modifier = Modifier.size(topPillSize)) {
+                                    Icon(if (settings.autoPlayTts) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff, "Auto Play TTS")
+                                }
+                                IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {
+                                    Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                }
                             }
                         }
                         else -> Row(modifier = Modifier.height(topPillSize), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) }, modifier = Modifier.size(topPillSize)) {
+                                Icon(if (settings.autoPlayTts) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff, "Auto Play TTS")
+                            }
                             when {
                                 isEmptyState && !isTempChat -> {
                                     IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {

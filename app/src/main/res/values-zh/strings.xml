@@ -1415,4 +1415,6 @@
   <string name="assistant_style_examples_virtual">虚拟模式示例</string>
   <string name="assistant_style_examples_add">添加示例</string>
 
+  <string name="auto_play_tts">自动朗读</string>
+
 </resources>

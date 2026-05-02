@@ -103,6 +103,7 @@ class SettingsStore(
         val EMAIL_CONFIG = stringPreferencesKey("email_config")
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
+        val AUTO_PLAY_TTS = booleanPreferencesKey("auto_play_tts")
         val CONSOLIDATION_WORKER_INTERVAL = intPreferencesKey("consolidation_worker_interval")
         val CONSOLIDATION_REQUIRES_DEVICE_IDLE = booleanPreferencesKey("consolidation_requires_device_idle")
         val MODES = stringPreferencesKey("modes")
@@ -189,6 +190,7 @@ class SettingsStore(
                 } ?: emptyList(),
                 selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
                     ?: DEFAULT_SYSTEM_TTS_ID,
+                autoPlayTts = preferences[AUTO_PLAY_TTS] ?: false,
                 consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 15,
                 consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
                 modes = preferences[MODES]?.let {
@@ -361,6 +363,7 @@ class SettingsStore(
             preferences[EMAIL_CONFIG] = JsonInstant.encodeToString(migratedSettings.emailConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.ttsProviders)
             settingsToSave.selectedTTSProviderId.let { preferences[SELECTED_TTS_PROVIDER] = it.toString() }
+            preferences[AUTO_PLAY_TTS] = settingsToSave.autoPlayTts
             preferences[CONSOLIDATION_WORKER_INTERVAL] = settingsToSave.consolidationWorkerIntervalMinutes
             preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = settingsToSave.consolidationRequiresDeviceIdle
             preferences[MODES] = JsonInstant.encodeToString(settingsToSave.modes)
@@ -435,6 +438,7 @@ data class Settings(
     val emailConfig: EmailConfig = EmailConfig(),
     val ttsProviders: List<TTSProviderSetting> = emptyList(),
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
+    val autoPlayTts: Boolean = false,
     val consolidationWorkerIntervalMinutes: Int = 15,
     val consolidationRequiresDeviceIdle: Boolean = false,
     val modes: List<Mode> = emptyList(),

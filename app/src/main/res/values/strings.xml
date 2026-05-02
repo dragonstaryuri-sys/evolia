@@ -1460,5 +1460,5 @@
   <string name="assistant_style_examples_normal">Normal Mode Examples</string>
   <string name="assistant_style_examples_virtual">Virtual Mode Examples</string>
   <string name="assistant_style_examples_add">Add Example</string>
-
+  <string name="auto_play_tts">auto read</string>
 </resources>

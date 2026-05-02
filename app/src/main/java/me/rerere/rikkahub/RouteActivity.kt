@@ -48,7 +48,6 @@ import kotlinx.coroutines.launch
 import me.rerere.highlight.Highlighter
 import me.rerere.highlight.LocalHighlighter
 import me.rerere.rikkahub.data.datastore.SettingsStore
-import me.rerere.rikkahub.ui.components.ui.TTSController
 import me.rerere.rikkahub.ui.context.LocalAnimatedVisibilityScope
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
@@ -339,7 +338,6 @@ class RouteActivity : AppCompatActivity() {
                     }
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
-                TTSController()
                 NavHost(
                     modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
                     startDestination = Screen.Home,
