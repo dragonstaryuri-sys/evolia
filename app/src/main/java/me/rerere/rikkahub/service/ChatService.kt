@@ -892,8 +892,8 @@ class ChatService(
             }
             val locale = Locale.getDefault().displayName
 
-            val tempPrompt = assistant.temporarySummaryPrompt
-                .ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT }
+            // 强制使用 DEFAULT_TEMP_SUMMARY_PROMPT，忽略助手中可能存留的旧自定义提示词
+            val tempPrompt = DEFAULT_TEMP_SUMMARY_PROMPT
                 .replace("{{new_messages}}", text)
                 .replace("{{locale}}", locale)
                 .replace("{{char}}", assistant.name)
@@ -934,9 +934,9 @@ class ChatService(
             }
 
             val currentSummary = conv.contextSummary
+            // 强制使用 DEFAULT_FULL_SUMMARY_PROMPT，忽略助手中可能存留的旧自定义提示词
             val fullPrompt = if (!currentSummary.isNullOrBlank()) {
-                assistant.fullSummaryPrompt
-                    .ifBlank { DEFAULT_FULL_SUMMARY_PROMPT }
+                DEFAULT_FULL_SUMMARY_PROMPT
                     .replace("{{previous_summary}}", currentSummary)
                     .replace("{{new_messages}}", text)
                     .replace("{{locale}}", locale)
