@@ -66,7 +66,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
-import me.rerere.rikkahub.utils.applyPlaceholders
+import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
 import java.util.Locale
 import kotlin.uuid.Uuid
 import kotlinx.serialization.encodeToString
@@ -516,7 +516,12 @@ class GenerationHandler(
 
         // 1. Core personality - MUST be first
         if (assistant.systemPrompt.isNotBlank()) {
-            baseSystemPromptBuilder.append(assistant.systemPrompt)
+            baseSystemPromptBuilder.append(
+                assistant.systemPrompt.applyPlaceholders(
+                    "char" to assistant.name,
+                    "locale" to Locale.getDefault().displayName
+                )
+            )
             baseSystemPromptBuilder.appendLine("\n")
         }
 
@@ -543,7 +548,13 @@ class GenerationHandler(
 
         // 3. Learning mode (legacy - still supported)
         if (assistant.learningMode) {
-            baseSystemPromptBuilder.append(settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT })
+            baseSystemPromptBuilder.append(
+                settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT }
+                    .applyPlaceholders(
+                        "char" to assistant.name,
+                        "locale" to Locale.getDefault().displayName
+                    )
+            )
             baseSystemPromptBuilder.appendLine("\n")
         }
 
@@ -916,7 +927,12 @@ class GenerationHandler(
                 // 1. 注入引用变量模块
                 if (assistant.referenceVariables.isNotBlank()) {
                     appendLine()
-                    append(assistant.referenceVariables)
+                    append(
+                        assistant.referenceVariables.applyPlaceholders(
+                            "char" to assistant.name,
+                            "locale" to Locale.getDefault().displayName
+                        )
+                    )
                 }
 
                 // 2. Time Sense Injection

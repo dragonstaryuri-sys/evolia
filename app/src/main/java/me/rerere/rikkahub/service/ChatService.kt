@@ -898,6 +898,9 @@ class ChatService(
                 .replace("{{locale}}", locale)
                 .replace("{{char}}", assistant.name)
 
+            // Log: 打印 L1 片段摘要提示词
+            Log.d(TAG, "Summarize L1 Segment Prompt:\n$tempPrompt")
+
             val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f))
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
@@ -944,6 +947,9 @@ class ChatService(
             } else {
                 "Summarize the following chat history:\n$text"
             }
+
+            // Log: 打印 L1 全量背景摘要提示词
+            Log.d(TAG, "Summarize L1 Full Context Prompt:\n$fullPrompt")
 
             val fullResp = retryIO(times = 1) {
                 handler.generateText(
