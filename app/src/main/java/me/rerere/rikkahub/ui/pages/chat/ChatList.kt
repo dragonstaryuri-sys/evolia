@@ -107,6 +107,9 @@ import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.utils.plus
 import kotlin.uuid.Uuid
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -115,6 +118,7 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.openUrl
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Memory
+import kotlin.time.Duration.Companion.minutes
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
@@ -123,6 +127,7 @@ private const val ScrollBottomKey = "ScrollBottomKey"
 sealed class ChatListDisplayItem {
     data class TurnGroup(val group: MessageTurnGroup) : ChatListDisplayItem()
     data class Separator(val text: String) : ChatListDisplayItem()
+    data class Time(val timeText: String) : ChatListDisplayItem()
 }
 
 @Composable
@@ -312,10 +317,22 @@ private fun SharedTransitionScope.ChatListNormal(
         val displayItems = remember(uiItems, needsPhantomLoadingTurn) {
             val result = mutableListOf<ChatListDisplayItem>()
             val currentNodes = mutableListOf<MessageNode>()
+            var lastShownTime: LocalDateTime? = null
 
             fun flush() {
                 if (currentNodes.isNotEmpty()) {
-                    result.addAll(currentNodes.groupIntoTurns().map { ChatListDisplayItem.TurnGroup(it) })
+                    val turns = currentNodes.groupIntoTurns()
+                    turns.forEach { turn ->
+                        val firstNodeTime = turn.firstNode.currentMessage.createdAt
+                        val shouldShowTime = lastShownTime == null ||
+                            (firstNodeTime.toInstant(TimeZone.currentSystemDefault()) - lastShownTime!!.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+
+                        if (shouldShowTime) {
+                            result.add(ChatListDisplayItem.Time(formatTime(firstNodeTime)))
+                            lastShownTime = firstNodeTime
+                        }
+                        result.add(ChatListDisplayItem.TurnGroup(turn))
+                    }
                     currentNodes.clear()
                 }
             }
@@ -363,6 +380,7 @@ private fun SharedTransitionScope.ChatListNormal(
                             else item.group.firstNode.id
                         }
                         is ChatListDisplayItem.Separator -> "sep_$index"
+                        is ChatListDisplayItem.Time -> "time_${item.timeText}_$index"
                     }
                 },
             ) { index, item ->
@@ -490,6 +508,20 @@ private fun SharedTransitionScope.ChatListNormal(
                             )
                         }
                     }
+                    is ChatListDisplayItem.Time -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = item.timeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            )
+                        }
+                    }
                 }
             }
 
@@ -606,6 +638,12 @@ private fun SharedTransitionScope.ChatListNormal(
             )
         }
     }
+}
+
+private fun formatTime(dateTime: LocalDateTime): String {
+    val hour = dateTime.hour.toString().padStart(2, '0')
+    val minute = dateTime.minute.toString().padStart(2, '0')
+    return "$hour:$minute"
 }
 
 private fun extractMatchingSnippet(
