@@ -19,8 +19,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
@@ -223,108 +221,7 @@ fun AssistantContextManagementSubPage(
             )
         }
 
-
-        // ═══════════════════════════════════════════════════════════════════
-        // CUSTOM PROMPTS
-        // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableContextRefresh,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            SettingsGroup(title = stringResource(R.string.assistant_context_custom_prompts_title)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Full Summary Prompt
-                    Column {
-                        OutlinedTextField(
-                            value = assistant.fullSummaryPrompt.ifBlank { DEFAULT_FULL_SUMMARY_PROMPT },
-                            onValueChange = { onUpdate(assistant.copy(fullSummaryPrompt = it)) },
-                            label = { Text(stringResource(R.string.assistant_context_full_summary_prompt_label)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 3
-                        )
-                        VariableHintRow(
-                            variables = listOf("{{previous_summary}}", "{{new_messages}}", "{{locale}}"),
-                            onVariableClick = { v ->
-                                onUpdate(assistant.copy(fullSummaryPrompt = assistant.fullSummaryPrompt + v))
-                            }
-                        )
-                    }
-
-                    // Temporary Summary Prompt
-                    Column {
-                        OutlinedTextField(
-                            value = assistant.temporarySummaryPrompt.ifBlank { DEFAULT_TEMP_SUMMARY_PROMPT },
-                            onValueChange = { onUpdate(assistant.copy(temporarySummaryPrompt = it)) },
-                            label = { Text(stringResource(R.string.assistant_context_episodic_summary_prompt_label)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 3
-                        )
-                        VariableHintRow(
-                            variables = listOf("{{new_messages}}", "{{locale}}"),
-                            onVariableClick = { v ->
-                                onUpdate(assistant.copy(temporarySummaryPrompt = assistant.temporarySummaryPrompt + v))
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
         Spacer(Modifier.height(32.dp))
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun VariableHintRow(
-    variables: List<String>,
-    onVariableClick: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.padding(top = 8.dp)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.padding(bottom = 4.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Info,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = stringResource(R.string.assistant_page_available_variables),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        androidx.compose.foundation.layout.FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            variables.forEach { variable ->
-                AssistChip(
-                    onClick = { onVariableClick(variable) },
-                    label = {
-                        Text(
-                            text = variable,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        labelColor = MaterialTheme.colorScheme.primary
-                    ),
-                    border = null,
-                    modifier = Modifier.height(28.dp)
-                )
-            }
-        }
     }
 }
 

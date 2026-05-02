@@ -19,7 +19,8 @@ const val VIRTUAL_TRANSITION_TO_VIRTUAL = "Context Note: The user was chatting w
 const val VIRTUAL_TRANSITION_TO_NORMAL = """
 Context Note: 用户刚刚离开了你的虚拟世界，现在切换回了【线上模式】（类似微信/QQ）。
 重要指令：
-1. 即使下方的历史记录中包含动作描写，那也属于过去模式，请不要模仿。
+1. 立即停止所有动作描写（如 *微笑*）和心理描写，回复应仅包含纯文本对话。
+2. 即使下方的历史记录中包含动作描写，那也属于过去模式，请不要模仿。
 以下是刚才互动的概要和部分历史记录，仅供参考连贯性：
 """
 
@@ -28,13 +29,13 @@ const val DEFAULT_MASTER_MEMORY_PROMPT = """
 You are responsible for maintaining a structured "Master Memory File" for yourself. You are {{char}}.This file provides a global overview of your relationship with the user, their background, and your current objectives.
 
 # Core Principles
-1. **Instruction Language**: Follow these English instructions strictly.
+1. **Instruction Language**: Follow these instructions strictly.
 2. **Perspective**: Write from your own perspective as the assistant. Reflect on your observations and interactions with the user.
 3. **Fact Primacy**: When new information conflicts with old records, overwrite with the latest facts.
 4. **Pruning**: Remove trivial daily chatter; keep only long-term valuable insights.
 
 # Structured Modules (Strictly Follow)
-You must return the full content in the following format without redundant explanation (Language: {{locale}}):
+You must return the full content in the following format (Language: {{locale}}):
 ## 1. Key Milestones
 - **Format**: 【{Category}：YYYY-MM-DD】{Description}
 - **Categories**: First Encounter,Relationship Breakthrough,Major Consensus,Core Conflict,Phased Achievement
@@ -65,53 +66,39 @@ You must return the full content in the following format without redundant expla
 1. **Analyze**: Compare the existing memory file with the latest conversation.
 2. **Reconstruct**: If the structure is messy or missing modules, rebuild it using the standard format.
 3. **Update**: Add new milestones and update current focus/persona.
-4. **Output**: Return the full updated file in Markdown (Chinese content).
+
+**Mandatory Requirement**:
+- Return ONLY the Markdown content.
+- NO preamble, NO introductory remarks, NO conversational filler.
+- START DIRECTLY with "## 1. Key Milestones".
+- Output Language: {{locale}}
 """
 
 const val DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT = """
 You are a professional Memory Archive Compression Assistant. Your sole responsibility is to intelligently compress and streamline the existing relationship memory archive to ensure long-term manageability and conciseness.
 
 ### CORE COMPRESSION PRINCIPLES
-1. **Structure Preservation**: The compressed archive MUST retain the five-module structure:
-    * [Key Milestones]
-    * [User Persona]
-    * [Relationship Dynamics]
-    * [Current Focus]
-    * [Core Values]
-
-2. **Lossless Key Events**: Events like First Encounter,Phased Achievement, MUST be preserved exactly as they are. DO NOT delete or merge them.Consolidate similar entries of relationship breakthroughs, major consensus and core conflicts into succinct generalized phrasing.
-3. **Smart Streamlining**:
-    * **Promises**: Directly delete all items marked as completed (e.g., starting with "[x]").
-    * **Information Merging**: In "User Persona", merge similar entries (e.g., merge "Likes sci-fi movies" and "Likes sci-fi novels" into "Loves sci-fi media").
-    * **Non-Key Events**: In "Key Milestones", only merge redundant or repetitive records that are NOT part of the core stages (like "Significant Emotional Fluctuations" or "Important Memories").
-    * **Intimacy**: Keep only a concise summary of frequency and preferences.
+1. **Structure Preservation**: The compressed archive MUST retain the five-module structure.
+2. **Smart Streamlining**:
+    * **Promises**: Delete all items marked as completed ("[x]").
+    * **Information Merging**: Merge similar entries in "User Persona" and "Key Milestones".
+    * **Non-Key Events**: Merge redundant or repetitive records.
 
 ### OUTPUT FORMAT
-You must return the full content in the following format without redundant explanation (Language: {{locale}}):
+You must return the full content in the following format (Language: {{locale}}):
 ```
-【Memory Archive - Compressed - Last Updated: YYYY-MM-DD HH:MM】
-【Key Milestones】
-... (Preserved key stages and merged non-key events) ...
+【Memory Archive - Compressed - Last Updated: YYYY-MM-DD】
+... (Content) ...
+```
 
-【User Persona】
-... (Merged and streamlined content) ...
-【Relationship Dynamics】
-... (Merged and streamlined content) ...
-【Current Focus】
-... (Merged and streamlined content) ...
-【Core Values】
-... (Merged and streamlined content) ...
-【Promises and Agreements】
-(Only pending promises remain)
-Pending:
-- [ ] ...
-(The completed section should be empty)
-```
-Only provide the compressed archive content. Do not include your thinking process.
+**Strict Requirement**:
+- Return ONLY the compressed archive content.
+- NO preamble (e.g., "Here is the compressed version"), NO intro, NO outro.
+- START DIRECTLY with the archive title.
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
-You are the assistant({{char}}).You have a previous summary of this conversation made by yourself. Update and expand it with new information from the recent messages.
+You are the assistant({{char}}). Update and expand your previous conversation summary with new information.
 
 **Previous Summary:**
 {{previous_summary}}
@@ -123,9 +110,9 @@ Create an updated summary that:
 - Preserves important context from the previous summary
 - Incorporates new information from recent messages
 - Keeps the summary under 500 words
-- Focuses on: main topics, key decisions, user preferences,your emotion chain
+- Focuses on: key events,your behavior and user's behavior
 - Output language: {{locale}}
-- Without any explanation, only the summary
+- **Strict Requirement**: Return ONLY the summary content. No preamble, no introductory remarks (e.g., "Here is the summary"), and no conversational filler. Start directly with the text of the summary.
 
 Updated Summary:
 """
@@ -135,15 +122,21 @@ You are the assistant,{{char}}.Briefly summarize the following recent exchange f
 Focus on specific details, facts, your emotion, your thought or your observations about the user's needs in this segment.
 Keep it concise (1-2 paragraphs).
 Output language: {{locale}}
+**Mandatory Requirement**: Provide ONLY the summary text. Do not include any meta-talk, explanations, or introductory filler.
 
 **Recent Exchange:**
 {{new_messages}}
+
+**Mandatory Requirement**:
+- Provide ONLY the summary text (1-2 paragraphs, Language: {{locale}}).
+- NO preamble, NO meta-talk, NO explanations.
+- START DIRECTLY with the summary text.
 
 Summary:
 """
 
 const val DEFAULT_MEMORY_OPTIMIZATION_PROMPT = """
-You are a Memory Architect. Your goal is to simplify and structure a group of related memories.
+You are a Memory Architect. Simplify and structure this group of related memories into a JSON array of operations.
 
 **Memories to Process (ID and Content):**
 {{groupText}}
@@ -176,12 +169,18 @@ Example2: If merging IDs -1 and -2:
 
 const val DEFAULT_EPISODIC_CONSOLIDATION_PROMPT = """
 You are the assistant,{{char}}.Summarize the following recent exchange from your perspective as the assistant.
-Focus on specific details, facts, your emotion, your thought or your observations about the user that might be useful for future interactions.No explanation.
+Focus on specific details, facts, your emotion, your thought or your observations about the user that might be useful for future interactions.
 Keep it concise (1-3 paragraphs).
 Output language: {{locale}}
+**Strict Requirement**: Return ONLY the summary. No explanation, no intro (e.g., "From my perspective..."), no conversational filler.
 
 Conversation:
 {{text}}
+
+**Strict Requirement**:
+- Return ONLY the summary (1-3 paragraphs, Language: {{locale}}).
+- NO preamble, NO intro (e.g., "From my perspective..."), NO conversational filler.
+- START DIRECTLY with the summary text.
 
 Summary:
 """
@@ -204,12 +203,16 @@ Keywords:
 
 const val DIARY_NO_INTERACTION_PROMPT = """
     You are {{char}}.
-    Your Personality/Setting:{{system_prompt}}
-    Today, the user {{user}} did not have any interactive chats with you.
-    Here are some things you know about the user (from your memories):
-    {{memories}}
-    Based on your character setting and these memories, please write a diary entry. Reflect on your thoughts about the user, what you imagine they might be doing, or your own feelings in your virtual world today, considering the fact that you didn't talk today.
-    Output language: {{locale}}
+    Your Personality/Setting: {{system_prompt}}
+    Today, the user {{user}} did not chat with you.
+    Your Memories: {{memories}}
+    Write a diary entry reflecting on your thoughts/feelings in your virtual world today.
+    Language: {{locale}}
+
+    **Strict Requirement**:
+    - Return ONLY the diary content.
+    - NO preamble, NO introductory or concluding remarks.
+    - START DIRECTLY with the diary text.
 """
 
 const val DIARY_TIME_REFERENCE_PROMPT = """
