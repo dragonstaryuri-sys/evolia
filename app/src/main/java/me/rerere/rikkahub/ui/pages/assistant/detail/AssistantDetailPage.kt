@@ -8,17 +8,20 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Build
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
@@ -31,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -46,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -500,40 +505,47 @@ private fun AssistantDetailHome(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         // ═══════════════════════════════════════════════════════════════════
-        // HEADER SECTION - Avatar, Name, System Prompt Preview (2 lines, centered)
+        // HEADER SECTION - Assistant Profile Card
         // ═══════════════════════════════════════════════════════════════════
-        Column(
+        Surface(
+            onClick = onNavigateToProfile,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(16.dp)
+                .fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            shape = MaterialTheme.shapes.extraLarge
         ) {
-            // Hero animation for smooth List ↔ Home transition
-            UIAvatar(
-                value = assistant.avatar,
-                name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                onUpdate = null, // Read-only in home view
-                modifier = Modifier
-                    .size(96.dp)
-                    .heroAnimation(key = "assistant_avatar_${assistant.id}")
-            )
+            Row(
+                modifier = Modifier.padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Hero animation for smooth List ↔ Home transition
+                UIAvatar(
+                    value = assistant.avatar,
+                    name = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
+                    onUpdate = null, // Read-only in home view
+                    modifier = Modifier
+                        .size(64.dp)
+                        .heroAnimation(key = "assistant_avatar_${assistant.id}")
+                )
 
-            Text(
-                text = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
-                style = MaterialTheme.typography.headlineMedium,
-                textAlign = TextAlign.Center
-            )
+                Spacer(Modifier.width(20.dp))
 
-            if (assistant.systemPrompt.isNotBlank()) {
-                Text(
-                    text = assistant.systemPrompt,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = assistant.name.ifBlank { stringResource(R.string.assistant_page_default_assistant) },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                }
+
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.outline
                 )
             }
         }
@@ -544,12 +556,6 @@ private fun AssistantDetailHome(
         // NAVIGATION CARDS - Grouped properly
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_detail_group_configuration)) {
-            NavigationCard(
-                icon = Icons.Rounded.Person,
-                title = stringResource(R.string.assistant_detail_profile_title),
-                description = stringResource(R.string.assistant_detail_profile_desc),
-                onClick = onNavigateToProfile
-            )
 
             NavigationCard(
                 icon = Icons.AutoMirrored.Rounded.Chat,
