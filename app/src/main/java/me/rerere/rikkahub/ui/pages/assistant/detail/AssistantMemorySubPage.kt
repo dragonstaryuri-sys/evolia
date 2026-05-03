@@ -926,28 +926,7 @@ private fun MasterMemoryCard(
 
         AnimatedVisibility(visible = assistant.enableMasterMemory) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Prompt
-                Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Rounded.HistoryEdu, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
-                            Text(stringResource(R.string.assistant_memory_master_prompt_title), style = MaterialTheme.typography.titleSmall)
-                        }
-                        DebouncedTextField(
-                            value = assistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT },
-                            onValueChange = { onUpdateAssistant(assistant.copy(masterMemoryPrompt = it)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = stringResource(R.string.assistant_memory_master_prompt_desc),
-                            maxLines = 5,
-                            stateKey = "master_prompt_${assistant.id}"
-                        )
-                    }
-                }
-
-                // Content
+                // Master Memory Content
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = RoundedCornerShape(10.dp)

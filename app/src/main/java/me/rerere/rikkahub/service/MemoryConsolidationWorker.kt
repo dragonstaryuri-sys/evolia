@@ -402,7 +402,7 @@ class MemoryConsolidationWorker(
                         assistantName = currentAssistant.name,
                         existingArchive = currentAssistant.masterMemoryContent,
                         newContext = recentContext.ifBlank { "No new recent conversations." },
-                        systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
+                        systemPrompt = DEFAULT_MASTER_MEMORY_PROMPT // Changed: Use hardcoded default prompt
                     )
 
                     // 核心增强：检查是否需要压缩

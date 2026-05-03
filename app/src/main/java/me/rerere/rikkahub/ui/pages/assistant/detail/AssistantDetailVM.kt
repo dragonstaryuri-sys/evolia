@@ -38,6 +38,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.util.Locale
@@ -271,9 +272,10 @@ class AssistantDetailVM(
                     if (recentContext.isNotBlank()) {
                         updatedMasterContent = updateMasterMemory(
                             handler, providerSetting, model,
+                            currentAssistant.name,
                             currentAssistant.masterMemoryContent,
                             recentContext,
-                            currentAssistant.masterMemoryPrompt.ifBlank { DEFAULT_MASTER_MEMORY_PROMPT }
+                            DEFAULT_MASTER_MEMORY_PROMPT // Changed: Use hardcoded default prompt
                         )
                     }
                 }
@@ -383,15 +385,19 @@ class AssistantDetailVM(
 
         val prompt = if (previousSummary != null) {
             DEFAULT_FULL_SUMMARY_PROMPT
-                .replace("{{previous_summary}}", previousSummary + detailText)
-                .replace("{{new_messages}}", messagesText)
-                .replace("{{locale}}", Locale.getDefault().displayName)
-                .replace("{{char}}", assistantName)
+                .applyPlaceholders(
+                    "previous_summary" to previousSummary + detailText,
+                    "new_messages" to messagesText,
+                    "locale" to Locale.getDefault().displayName,
+                    "char" to assistantName
+                )
         } else {
             DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-                .replace("{{text}}", detailText + "\n" + messagesText)
-                .replace("{{locale}}", Locale.getDefault().displayName)
-                .replace("{{char}}", assistantName)
+                .applyPlaceholders(
+                    "text" to detailText + "\n" + messagesText,
+                    "locale" to Locale.getDefault().displayName,
+                    "char" to assistantName
+                )
         }
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
@@ -403,13 +409,20 @@ class AssistantDetailVM(
         handler: me.rerere.ai.provider.Provider<*>,
         providerSetting: me.rerere.ai.provider.ProviderSetting,
         model: me.rerere.ai.provider.Model,
+        assistantName: String,
         existingArchive: String,
         newContext: String,
         systemPrompt: String
     ): String {
+        val locale = Locale.getDefault().displayName
+        val finalSystemPrompt = systemPrompt.applyPlaceholders(
+            "char" to assistantName,
+            "locale" to locale
+        )
+
         val inputPrompt = "Current Date: ${LocalDate.now()}\n\n# Existing Memory Archive:\n${existingArchive.ifBlank { "(Empty)" }}\n\n# New Conversation Context:\n$newContext\n\nPlease provide the fully updated Memory Archive incorporating all relevant new information."
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(providerSetting, listOf(UIMessage.system(systemPrompt), UIMessage.user(inputPrompt)), TextGenerationParams(model = model, temperature = 0.2f, topP = 1.0f))
+        val resp = h.generateText(providerSetting, listOf(UIMessage.system(finalSystemPrompt), UIMessage.user(inputPrompt)), TextGenerationParams(model = model, temperature = 0.2f, topP = 1.0f))
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
@@ -460,8 +473,10 @@ class AssistantDetailVM(
         Log.i(TAG, ">>> [Memory Optimization] Sending Similarity Group (IDs: $groupIds) to AI")
 
         val prompt = DEFAULT_MEMORY_OPTIMIZATION_PROMPT
-            .replace("{{groupText}}", groupText)
-            .replace("{{locale}}", Locale.getDefault().displayName)
+            .applyPlaceholders(
+                "groupText" to groupText,
+                "locale" to Locale.getDefault().displayName
+            )
 
         try {
             val response = handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
