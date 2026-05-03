@@ -575,7 +575,7 @@ private fun ChatPageContent(
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    // 移除手动滚动
                                 } else { toaster.show("Please select a model first", type = ToastType.Error) }
                             },
                             onCancelClick = { loadingJob?.cancel() },
@@ -592,7 +592,7 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },
@@ -601,7 +601,7 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },
@@ -628,7 +628,7 @@ private fun ChatPageContent(
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    // 移除手动滚动
                                 } else { toaster.show("Please select a model first", type = ToastType.Error) }
                             },
                             onCancelClick = { loadingJob?.cancel() },
@@ -645,7 +645,7 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },
@@ -654,7 +654,7 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                    scope.launch { chatListState.requestScrollToItem(conversation.currentMessages.size + 5) }
+                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },

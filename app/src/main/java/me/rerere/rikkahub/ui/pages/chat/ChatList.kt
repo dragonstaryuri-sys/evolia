@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -165,6 +166,8 @@ fun ChatList(
                     onJumpToMessage = onJumpToMessage,
                     animatedVisibilityScope = this@AnimatedContent,
                     initialSearchQuery = initialSearchQuery,
+                    state = state,
+                    loading = loading,
                 )
             } else {
                 ChatListNormal(
@@ -269,7 +272,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 if (isScrolling && loadingState) {
                     val scrolledUp = firstIndex < previousFirstIndex ||
                         (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
-                    if (scrolledUp) {
+                    if (scrolledUp && !userScrolledUp) {
                         userScrolledUp = true
                     }
                     if (state.layoutInfo.visibleItemsInfo.isAtBottom()) {
@@ -379,8 +382,9 @@ private fun SharedTransitionScope.ChatListNormal(
                             if (needsPhantomLoadingTurn && index == displayItems.lastIndex) "pending_assistant"
                             else item.group.firstNode.id
                         }
-                        is ChatListDisplayItem.Separator -> "sep_$index"
-                        is ChatListDisplayItem.Time -> "time_${item.timeText}_$index"
+                        // 优化：分隔线和时间使用内容哈希或唯一标识，避免使用 index 导致列表抖动
+                        is ChatListDisplayItem.Separator -> "sep_${item.text.hashCode()}_${item.text.take(5)}"
+                        is ChatListDisplayItem.Time -> "time_${item.timeText.hashCode()}"
                     }
                 },
             ) { index, item ->
@@ -711,6 +715,8 @@ private fun SharedTransitionScope.ChatListPreview(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (MessageNode) -> Unit,
     initialSearchQuery: String? = null,
+    state: LazyListState, // 增加 state
+    loading: Boolean,     // 增加 loading
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
     val previewTopPadding = 20.dp
@@ -726,6 +732,49 @@ private fun SharedTransitionScope.ChatListPreview(
         }
     }
 
+    val loadingState by rememberUpdatedState(loading)
+    var userScrolledUp by remember { mutableStateOf(false) }
+    LaunchedEffect(state) {
+        var previousFirstIndex = state.firstVisibleItemIndex
+        var previousFirstOffset = state.firstVisibleItemScrollOffset
+        snapshotFlow {
+            Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+        }.collect { (isScrolling, firstIndex, firstOffset) ->
+            if (isScrolling && loadingState) {
+                val scrolledUp = firstIndex < previousFirstIndex ||
+                    (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
+                if (scrolledUp && !userScrolledUp) {
+                    userScrolledUp = true
+                }
+
+                // 判断是否已经回到底部，如果回到底部了，重置标志位
+                val lastItem = state.layoutInfo.visibleItemsInfo.lastOrNull()
+                if (lastItem != null && lastItem.index == state.layoutInfo.totalItemsCount - 1) {
+                    userScrolledUp = false
+                }
+            }
+            previousFirstIndex = firstIndex
+            previousFirstOffset = firstOffset
+        }
+    }
+
+    LaunchedEffect(loading) {
+        if (!loading) {
+            userScrolledUp = false
+        }
+    }
+
+    // 2. 如果没有向上滚动且正在加载（发消息），强制滚动到底部
+    LaunchedEffect(state) {
+        snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect {
+            if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
+                val targetIndex = state.layoutInfo.totalItemsCount - 1
+                if (targetIndex >= 0) {
+                    state.animateScrollToItem(targetIndex)
+                }
+            }
+        }
+    }
     Column(
         modifier = Modifier
             .padding(innerPadding)
@@ -763,6 +812,7 @@ private fun SharedTransitionScope.ChatListPreview(
         )
 
         LazyColumn(
+            state = state,
             contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier

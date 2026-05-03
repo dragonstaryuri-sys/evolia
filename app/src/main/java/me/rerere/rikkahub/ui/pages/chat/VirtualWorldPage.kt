@@ -190,8 +190,7 @@ fun VirtualWorldPage(id: Uuid) {
                         onClickSuggestion = { suggestion ->
                              if (currentChatModel != null) {
                                  vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)))
-                                 // 基于聚合列表长度滚动
-                                 scope.launch { chatListState.requestScrollToItem(uiMessages.size + 5) }
+                                 // 移除此处手动滚动索引计算，让 ChatList 的自动跟随逻辑生效
                              }
                         },
                         onCancelClick = {
@@ -210,7 +209,7 @@ fun VirtualWorldPage(id: Uuid) {
                             else {
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(inputState.getContents())
-                                    scope.launch { chatListState.requestScrollToItem(uiMessages.size + 5) }
+                                    // 移除此处手动滚动索引计算，让 ChatList 的自动跟随逻辑生效
                                 }
                             }
                             inputState.clearInput()
@@ -220,7 +219,7 @@ fun VirtualWorldPage(id: Uuid) {
                             else {
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false)
-                                    scope.launch { chatListState.requestScrollToItem(uiMessages.size + 5) }
+                                    // 移除此处手动滚动索引计算，让 ChatList 的自动跟随逻辑生效
                                 }
                             }
                             inputState.clearInput()
