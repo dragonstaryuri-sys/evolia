@@ -226,19 +226,7 @@ fun VirtualWorldPage(id: Uuid) {
                         onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) },
                         onJumpToMessage = { targetNode ->
                             previewMode = false
-                            scope.launch {
-                                val turnIndex = conversation.messageNodes
-                                    .filter { !it.currentMessage.skipContext }
-                                    .groupIntoTurns()
-                                    .indexOfFirst { group ->
-                                        group.nodes.any { it.id == targetNode.id }
-                                    }
-
-                                if (turnIndex >= 0) {
-                                    delay(350)
-                                    chatListState.animateScrollToItem(turnIndex)
-                                }
-                            }
+                            // 跳转逻辑已交由 ChatList 内部处理
                         }
                     )
 

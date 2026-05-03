@@ -152,6 +152,24 @@ fun ChatList(
     onGetFullMemoryContent: suspend (Int, Int) -> String? = { _, _ -> null },
 ) {
     val previewState = rememberLazyListState()
+    var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
+
+    // 处理来自外部（如全局搜索）的初始跳转请求
+    LaunchedEffect(initialSearchQuery, uiItems) {
+        if (!initialSearchQuery.isNullOrBlank()) {
+            // 在 uiItems 中搜索匹配的消息节点，支持聚合/虚拟模式
+            val node = uiItems.filterIsInstance<ChatVM.ChatUIItem.Message>()
+                .map { it.node }
+                .find { it.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true) }
+
+            if (node != null) {
+                // 增加小延迟确保列表已完成布局和测量
+                delay(150)
+                scrollToNodeId = node.id
+            }
+        }
+    }
+
     SharedTransitionLayout {
         AnimatedContent(
             targetState = previewMode,
@@ -165,11 +183,14 @@ fun ChatList(
                     innerPadding = innerPadding,
                     conversation = conversation,
                     settings = settings,
-                    onJumpToMessage = onJumpToMessage,
                     animatedVisibilityScope = this@AnimatedContent,
                     initialSearchQuery = initialSearchQuery,
                     state = previewState,
                     loading = loading,
+                    onJumpToMessage = { node ->
+                        scrollToNodeId = node.id
+                        onJumpToMessage(node)
+                    },
                 )
             } else {
                 ChatListNormal(
@@ -177,6 +198,8 @@ fun ChatList(
                     conversation = conversation,
                     uiItems = uiItems,
                     state = state,
+                    scrollToNodeId = scrollToNodeId,
+                    onScrolledToNode = { scrollToNodeId = null },
                     loading = loading,
                     settings = settings,
                     recentlyRestoredNodeIds = recentlyRestoredNodeIds,
@@ -202,6 +225,8 @@ private fun SharedTransitionScope.ChatListNormal(
     loading: Boolean,
     settings: Settings,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
+    scrollToNodeId: Uuid? = null,
+    onScrolledToNode: () -> Unit = {},
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
     onForkMessage: (UIMessage) -> Unit,
@@ -292,32 +317,13 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-        LaunchedEffect(state) {
-            snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect { visibleItemsInfo ->
-                if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
-                    val targetIndex = state.layoutInfo.totalItemsCount - 1
-                    if (targetIndex >= 0) {
-                        state.animateScrollToItem(targetIndex)
-                    }
-                }
-            }
-        }
 
-        LaunchedEffect(state.isScrollInProgress) {
-            if (state.isScrollInProgress) {
-                isRecentScroll = true
-                delay(1500)
-                isRecentScroll = false
-            } else {
-                delay(1500)
-                isRecentScroll = false
-            }
-        }
+
 
         val needsPhantomLoadingTurn = loading && (
             uiItems.isEmpty() ||
-            (uiItems.lastOrNull() as? ChatVM.ChatUIItem.Message)?.node?.currentMessage?.role == me.rerere.ai.core.MessageRole.USER
-        )
+                (uiItems.lastOrNull() as? ChatVM.ChatUIItem.Message)?.node?.currentMessage?.role == me.rerere.ai.core.MessageRole.USER
+            )
 
         val displayItems = remember(uiItems, needsPhantomLoadingTurn) {
             val result = mutableListOf<ChatListDisplayItem>()
@@ -342,6 +348,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
+
             uiItems.forEach { item ->
                 when (item) {
                     is ChatVM.ChatUIItem.Message -> {
@@ -364,6 +371,22 @@ private fun SharedTransitionScope.ChatListNormal(
             result
         }
 
+        // 核心跳转逻辑：在包含时间标签、分隔线的真实 UI 列表中查找索引
+        LaunchedEffect(displayItems, scrollToNodeId) {
+            val targetId = scrollToNodeId ?: return@LaunchedEffect
+
+            val realIndex = displayItems.indexOfFirst { item ->
+                item is ChatListDisplayItem.TurnGroup && item.group.nodes.any { it.id == targetId }
+            }
+
+            if (realIndex >= 0) {
+                // 给 UI 转场留出一点稳定时间，防止长列表首尾跳转导致的抖动
+                delay(200)
+                state.animateScrollToItem(realIndex)
+                onScrolledToNode()
+            }
+        }
+
         LazyColumn(
             state = state,
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
@@ -384,7 +407,6 @@ private fun SharedTransitionScope.ChatListNormal(
                             if (needsPhantomLoadingTurn && index == displayItems.lastIndex) "pending_assistant"
                             else item.group.firstNode.id
                         }
-                        // 优化：分隔线和时间使用内容哈希或唯一标识，避免使用 index 导致列表抖动
                         is ChatListDisplayItem.Separator -> "sep_${item.text.hashCode()}_${item.text.take(5)}"
                         is ChatListDisplayItem.Time -> "time_${item.timeText.hashCode()}"
                     }
@@ -463,9 +485,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                                 isMemoryLoading = false
                                                 return@launch
                                             }
-                                            // 2. 异步从数据库查完整的
                                             val fullContent = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
-                                            // 3. 如果查到了，更新弹窗显示完整内容
                                             if (fullContent != null) {
                                                 previewingMemory = memory.copy(memoryContent = fullContent)
                                             }
@@ -716,8 +736,8 @@ private fun SharedTransitionScope.ChatListPreview(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (MessageNode) -> Unit,
     initialSearchQuery: String? = null,
-    state: LazyListState, // 增加 state
-    loading: Boolean,     // 增加 loading
+    state: LazyListState,
+    loading: Boolean,
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
     val previewTopPadding = 20.dp
@@ -957,7 +977,7 @@ fun MemoryPreviewDialog(    memory: me.rerere.ai.ui.UsedMemory,
                 Icon(
                     imageVector = when(memory.memoryType) {
                         0 -> Icons.Rounded.Memory
-                        2 -> Icons.Rounded.Bolt // 临时/增强记忆用闪电
+                        2 -> Icons.Rounded.Bolt
                         else -> Icons.Rounded.History
                     },
                     contentDescription = null,
@@ -976,7 +996,7 @@ fun MemoryPreviewDialog(    memory: me.rerere.ai.ui.UsedMemory,
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateContentSize(animationSpec = androidx.compose.animation.core.spring(stiffness = 300f))
-                    .heightIn(min = 120.dp), // 这里的 heightIn 是正确写法
+                    .heightIn(min = 120.dp),
                 contentAlignment = Alignment.Center
             ) {
                 if (isLoading) {

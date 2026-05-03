@@ -81,9 +81,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
             vm.toastFlow.collect { message ->
                 if (message.startsWith("NAVIGATE_NEW_CHAT:")) {
                     val newId = message.substringAfter("NAVIGATE_NEW_CHAT:")
-                    // 执行跳转到新会话页面
                     navController.navigate(Screen.Chat(id = newId)) {
-                        // 弹出当前页面，防止返回键回到旧会话
                         popUpTo(Screen.Chat(id = id.toString())) { inclusive = true }
                     }
                 } else {
@@ -107,7 +105,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
                         }
                     )
                 )
-                // 如果删除的是当前会话，则导航回退或开启新会话
                 if (deletedConv.id == id) {
                     if (navController.previousBackStackEntry != null) {
                         navController.popBackStack()
@@ -165,12 +162,10 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val chatListState = rememberLazyListState()
     LaunchedEffect(isConversationLoaded) {
         if (isConversationLoaded && !vm.chatListInitialized) {
-            // 等待直到列表至少有一个 Item
             snapshotFlow { chatListState.layoutInfo.totalItemsCount }
                 .filter { it > 0 }
                 .first()
 
-            // 增加一个小延迟，确保长列表的初次绘制和测量完成
             delay(150)
 
             chatListState.scrollToItem(chatListState.layoutInfo.totalItemsCount - 1)
@@ -281,7 +276,6 @@ private fun ChatPageContent(
     LaunchedEffect(conversation, loadingJob, setting.autoPlayTts) {
         val lastMsg = conversation.currentMessages.lastOrNull()
 
-        // 【核心修复】：如果关闭了自动播放，我们需要静默更新进度到最新消息的末尾，并停止当前朗读
         if (!setting.autoPlayTts) {
             tts.stop()
             if (lastMsg?.role == MessageRole.ASSISTANT) {
@@ -296,15 +290,11 @@ private fun ChatPageContent(
             return@LaunchedEffect
         }
 
-        // 获取最新的一条助手消息
         if (lastMsg?.role == MessageRole.ASSISTANT) {
             val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
                 .joinToString("\n") { it.text }
 
-            // 1. 处理索引初始化逻辑
             if (lastProcessedMessageId != lastMsg.id) {
-                // 如果是首次进入页面（ID为null）且当前没有在生成内容（Job为null）
-                // 说明这条是历史消息，我们将其索引直接设为末尾，避免自动播放
                 if (lastProcessedMessageId == null && loadingJob == null) {
                     lastProcessedMessageId = lastMsg.id
                     lastProcessedIndex = rawContent.length
@@ -314,7 +304,6 @@ private fun ChatPageContent(
                 }
             }
 
-            // 2. 寻找句子结束符进行切分
             val terminators = charArrayOf('。', '！', '？', '；', '\n', '.', '!', '?', ';')
             var i = lastProcessedIndex
             while (i < rawContent.length) {
@@ -328,7 +317,6 @@ private fun ChatPageContent(
                 i++
             }
 
-            // 3. 如果 AI 生成彻底结束了，把最后剩下的尾巴播完
             if (loadingJob == null && lastProcessedIndex < rawContent.length) {
                 val remaining = rawContent.substring(lastProcessedIndex).trim()
                 if (remaining.isNotEmpty()) {
@@ -339,23 +327,6 @@ private fun ChatPageContent(
         } else {
             lastProcessedMessageId = null
             lastProcessedIndex = 0
-        }
-    }
-
-    LaunchedEffect(initialSearchQuery, conversation.id) {
-        if (!initialSearchQuery.isNullOrBlank() && conversation.messageNodes.isNotEmpty()) {
-            // 计算包含搜索词的轮次索引
-            val turnIndex = conversation.messageNodes
-                .filter { !it.currentMessage.skipContext }
-                .groupIntoTurns()
-                .indexOfFirst { group ->
-                    group.nodes.any { it.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true) }
-                }
-
-            if (turnIndex >= 0) {
-                delay(100)
-                chatListState.animateScrollToItem(turnIndex)
-            }
         }
     }
 
@@ -421,20 +392,7 @@ private fun ChatPageContent(
                         initialSearchQuery = initialSearchQuery,
                         onJumpToMessage = { targetNode ->
                             previewMode = false
-                            scope.launch {
-                                // 计算目标消息在分组后的索引
-                                val turnIndex = conversation.messageNodes
-                                    .filter { !it.currentMessage.skipContext } // 过滤掉不显示的消息
-                                    .groupIntoTurns() // 进行分组
-                                    .indexOfFirst { group ->
-                                        group.nodes.any { it.id == targetNode.id }
-                                    }
-
-                                if (turnIndex >= 0) {
-                                    delay(350) // 等待模式切换动画
-                                    chatListState.animateScrollToItem(turnIndex)
-                                }
-                            }
+                            // 跳转逻辑已交由 ChatList 内部统一处理，避免手动计算索引带来的偏差
                         },
                         onRegenerate = { message ->
                             if (vm.canPreserveVersionHistory(message)) {
@@ -466,7 +424,6 @@ private fun ChatPageContent(
                             )
                         },
                         onUpdateMessage = { newNode ->
-                            // 核心适配：使用支持跨会话查找的 updateMessageNodeInAnyConversation
                             vm.updateMessageNodeInAnyConversation(newNode)
                         },
                         onForkMessage = {
