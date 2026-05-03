@@ -405,15 +405,21 @@ class ChatService(
         try {
             val conv = conversationRepo.getConversationById(conversationId) ?: return
             val messages = conv.currentMessages
-            if (messages.size < 4 && !force) return
-
             val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
-            // 如果已存在记忆，检查是否满足更新条件（新消息数量 > 4）
-            if (existingEpisode != null && !force) {
-                // 利用 significance 暂存上次归档时的消息数
-                val lastArchivedCount = existingEpisode.significance
-                if (messages.size - lastArchivedCount < 4) {
+            // 1. 获取当前所有总结的进度
+            val episodeSignificance = existingEpisode?.significance ?: 0
+            val summarySignificance = if (conv.contextSummary != null) {
+                conv.contextSummaryUpToIndex + 1
+            } else {
+                0
+            }
+
+            // 2. 校验：除非强制触发，否则新消息需达到阈值 (4条) 才更新
+            if (!force) {
+                if (existingEpisode != null) {
+                    if (messages.size - episodeSignificance < 4) return
+                } else if (messages.size < 4) {
                     return
                 }
             }
@@ -422,44 +428,74 @@ class ChatService(
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
             if (!assistant.enableMemoryConsolidation && !force) return
 
-            // 修改：情节记忆归档优先使用 summarizerModelId
+            // 3. 选取最佳基准 (滚动式逻辑)
+            // 对比 L1 和 L2，谁涵盖的消息多就用谁做基准
+            val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
+                conv.contextSummary to summarySignificance
+            } else {
+                existingEpisode?.content to episodeSignificance
+            }
+
+            val newMessages = messages.drop(skipCount)
+
+            // 如果没有新消息且已有基准，且不是强制刷新，则无需重新生成
+            if (newMessages.isEmpty() && baseSummary != null && !force) {
+                return
+            }
+
+            // 4. 模型准备
             val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
             val handler = providerManager.getProviderByType(provider)
 
-            // 选取后台模型用于提取关键词
             val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
             val backgroundModel = settings.findModelById(backgroundModelId) ?: model
             val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
             val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
 
-            // 生成会话总体摘要 - 使用 toContentText() 排除推理过程
-            val text = messages.joinToString("\n") { "${it.role}: ${it.toContentText().take(500)}" }
-            val prompt = DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-                .replace("{{text}}", text)
-                .replace("{{locale}}", Locale.getDefault().displayName)
-                .replace("{{char}}", assistant.name)
+            // 5. 生成摘要 (如果有基准则进行合并总结，否则进行初始总结)
+            val summary = if (newMessages.isEmpty() && baseSummary != null) {
+                baseSummary
+            } else {
+                val messagesText = newMessages.joinToString("\n") {
+                    "${it.role}: ${it.toContentText().take(500)}"
+                }
+                val locale = Locale.getDefault().displayName
 
-            val providerHandler = handler as Provider<ProviderSetting>
-            val resp = retryIO(times = 2) {
-                providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
+                val prompt = if (baseSummary != null) {
+                    // 使用增量合并 Prompt
+                    DEFAULT_FULL_SUMMARY_PROMPT
+                        .replace("{{previous_summary}}", baseSummary)
+                        .replace("{{new_messages}}", messagesText)
+                        .replace("{{locale}}", locale)
+                        .replace("{{char}}", assistant.name)
+                } else {
+                    // 使用初始归档 Prompt
+                    DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
+                        .replace("{{text}}", messagesText)
+                        .replace("{{locale}}", locale)
+                        .replace("{{char}}", assistant.name)
+                }
+
+                val providerHandler = handler as Provider<ProviderSetting>
+                val resp = retryIO(times = 2) {
+                    providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
+                }
+                resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
             }
-            val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
             if (summary.isNotBlank()) {
-                // 修改后
+                // 6. 提取关键词与处理向量
                 val aiKeywords = extractKeywords(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
                     model = backgroundModel,
                     summary = summary
                 )
-                val localKeywords = KeywordExtractor.extract(summary) // 使用本地算法
-                val keywords = mergeKeywords(aiKeywords, localKeywords) // 合并
+                val localKeywords = KeywordExtractor.extract(summary)
+                val keywords = mergeKeywords(aiKeywords, localKeywords)
 
-
-                // 生成向量
                 val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $summary" else summary
                 val embeddingResult = try {
                     embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
@@ -468,8 +504,9 @@ class ChatService(
                     null
                 }
 
+                // 7. 保存/覆盖 Episode
                 val episode = ChatEpisodeEntity(
-                    id = existingEpisode?.id ?: 0,
+                    id = existingEpisode?.id ?: 0, // 核心：保留原 ID 以触发 REPLACE 覆盖，防止重复
                     assistantId = assistant.id.toString(),
                     conversationId = conversationId.toString(),
                     content = summary,
@@ -478,11 +515,11 @@ class ChatService(
                     embeddingModelId = embeddingResult?.modelId,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
-                    significance = messages.size,
+                    significance = messages.size, // 记录当前总结到的消息总数
                     lastAccessedAt = System.currentTimeMillis()
                 )
                 chatEpisodeDAO.insertEpisode(episode)
-                Log.i(TAG, "Archived/Updated episodic memory (L2) for conversation $conversationId (Keywords: ${keywords.take(20)}...)")
+                Log.i(TAG, "Archived/Updated episodic memory (L2) for $conversationId (Inc: ${newMessages.size} messages)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to archive conversation $conversationId", e)

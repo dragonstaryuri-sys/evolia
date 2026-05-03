@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 @Entity(
     indices = [
         Index(value = ["assistant_id", "end_time"]),
-        Index(value = ["conversation_id"])
+        Index(value = ["conversation_id"], unique = true)
     ]
 )
 data class ChatEpisodeEntity(
