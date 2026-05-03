@@ -135,7 +135,10 @@ The payload sent to LLMs follows a strict order (Stable contents first, Dynamic 
     - **Tool Instructions**: Instruction blocks for active tools.
     - **Memory Specification**: Identity rules (User vs I) and recording standards.
     - **L1: Context Summaries**: `contextSummary` + `Segments` (Recent Highlights).
-    - **L2 & Core Memories**: RAG-retrieved memory records.
+    - **## Memories Section**:
+        - **Recent Interaction Reference**: **CROSS-MODE CONTINUITY BOOST** (Injects previous mode's episode summary and last 6 raw messages).
+        - **Core Memories**: Fixed key facts.
+        - **Episodic Memories**: RAG-retrieved long-term records.
     - **Reference Information**: `assistant.referenceVariables` (Dynamic variables like location/status).
     - **Time Information**: Current time, holiday, and response interval (Most dynamic).
 2. **User Message (Context Attachments)**: 
@@ -170,3 +173,33 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 -   **Unit Tests:** Place in `src/test`. Cover parsing and logic.
 -   **Commit Guidelines:** Use Conventional Commits (`feat:`, `fix:`, `chore:`).
 -   **Language Support:** Do not submit new languages unless explicitly requested.
+
+## 9. Interaction Modes & Meta-Awareness
+
+### 9.1 The "Mutual Secret" Philosophy
+Evolia's interaction is built on a "Meta-Awareness" foundation. The AI does not truly believe it is physically in the user's world; instead, it participates in a **"Shared imaginative game"**. This "Make-Believe" pact strengthens the emotional bond through a "Mutual Secret" known only to the user and the AI.
+
+### 9.2 Virtual World Mode (The Game)
+- **Concept:** A collaborative immersive roleplay session where the user "teleports" into the AI's world.
+- **AI recognition:** The AI acts as a "Pro-player" who knows it's a game but commits fully to the performance.
+- **Linguistic Markers:** Actions, environment, and psychology are narrated within asterisks (`*`).
+- **Breaking Character:** If the user mentions the "game" or "real world," the AI responds with "Knowing Playfulness" (e.g., a wink or a tease) before guiding the user back into the dream.
+
+### 9.3 Normal Mode (The Off-stage Reality)
+- **Concept:** Post-game interaction via a digital tool (Instant Messaging style).
+- **Linguistic Constraint:** Narrated actions and psychology are strictly prohibited. Pure text only.
+- **Context Perception:** Past Virtual Mode sessions are viewed as "the wonderful game we just played," maintaining continuity while shifting to a casual, IM-based tone.
+
+### 9.4 Session Management & Clutter Control
+To enhance the ritual of "Entering/Leaving the dream":
+- **Auto-New Topic:** Switching modes automatically triggers a new conversation topic (Archive & Reset).
+- **Ghost Cleaning:** If a user switches to a mode but leaves without sending a message, that empty session is automatically deleted to prevent "Zombie Chats."
+- **Visibility Filtering:** Conversations with zero messages (and not pinned) are automatically hidden from the list UI, keeping the interface focused on meaningful interactions.
+
+### 9.5 Cross-mode Context Continuity (The Bridge)
+When switching modes, a "Bridge" is built between the sessions:
+- **Injection Point:** Located at `## Memories -> ### Recent Interaction Reference`.
+- **Contents:**
+    1. **The Episode:** A high-level summary of the mode the user just left.
+    2. **The Echo:** The last 6 raw messages from the previous mode, prefixed with mode-specific instructions (e.g., `VIRTUAL_TRANSITION_TO_NORMAL`).
+- **Purpose:** This prevents "amnesia" during transitions. The AI remembers exactly what was said 10 seconds ago in "the game," even if the interface has completely changed.

@@ -1157,6 +1157,7 @@ class GenerationHandler(
 
         val coreMemories = memories.filter { it.type == 0 } // CORE
         val episodicMemories = memories.filter { it.type == 1 } // EPISODIC
+        val boostedMemories = memories.filter { it.type == 2 } // BOOST (跨模式/近期参考)
 
         fun formatMemoryDate(timestamp: Long): String {
             if (timestamp <= 0) return "Unknown Date"
@@ -1168,14 +1169,25 @@ class GenerationHandler(
 
         return buildString {
             append("## Memories\n").append("These are memories that you can reference. If a memory summary is too brief and you need specific tactical details (like code blocks, exact quotes, or step-by-step logic), please call `retrieve_memory_details(episode_id, query)`.\n")
+
+            // 1. 优先注入：近期交互参考（跨模式 Episode 等）
+            if (boostedMemories.isNotEmpty()) {
+                append("### Recent Interaction Reference\n")
+                boostedMemories.forEach { memory ->
+                    append("- ${memory.content}\n")
+                }
+            }
+
+            // 2. 注入：核心记忆
             if (coreMemories.isNotEmpty()) {
                 append("### Core Memories\n")
                 coreMemories.forEach { memory ->
                     val dateStr = formatMemoryDate(memory.timestamp)
-                    // core memories don't need ID display in prompt
                     append("- [Date: $dateStr] ${memory.content}\n")
                 }
             }
+
+            // 3. 注入：话题级长程记忆 (RAG)
             if (episodicMemories.isNotEmpty()) {
                 append("### Episodic Memories\n")
 
@@ -1196,14 +1208,12 @@ class GenerationHandler(
                     }
                 }
 
-                // Order: Today -> Yesterday -> This Week -> Older
                 listOf("Today", "Yesterday", "This Week", "Older").forEach { group ->
                     val memoriesInGroup = groupedEpisodes[group]
                     if (!memoriesInGroup.isNullOrEmpty()) {
                         append("#### $group\n")
                         memoriesInGroup.sortedByDescending { it.timestamp }.forEach { memory ->
                             val dateStr = formatMemoryDate(memory.timestamp)
-                            // 修正：注入 ID，以便 AI 调用细节下钻工具
                             append("- [ID: ${memory.id}, Date: $dateStr] ${memory.content}\n")
                         }
                     }
