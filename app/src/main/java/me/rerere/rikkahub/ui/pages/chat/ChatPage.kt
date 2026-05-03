@@ -77,20 +77,45 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
-        vm.toastFlow.collect { message ->
-            if (message.startsWith("NAVIGATE_NEW_CHAT:")) {
-                val newId = message.substringAfter("NAVIGATE_NEW_CHAT:")
-                // 执行跳转到新会话页面
-                navController.navigate(Screen.Chat(id = newId)) {
-                    // 弹出当前页面，防止返回键回到旧会话
-                    popUpTo(Screen.Chat(id = id.toString())) { inclusive = true }
+        launch {
+            vm.toastFlow.collect { message ->
+                if (message.startsWith("NAVIGATE_NEW_CHAT:")) {
+                    val newId = message.substringAfter("NAVIGATE_NEW_CHAT:")
+                    // 执行跳转到新会话页面
+                    navController.navigate(Screen.Chat(id = newId)) {
+                        // 弹出当前页面，防止返回键回到旧会话
+                        popUpTo(Screen.Chat(id = id.toString())) { inclusive = true }
+                    }
+                } else {
+                    toaster.show(message)
                 }
-            } else {
-                toaster.show(message)
             }
         }
-        vm.errorFlow.collect { error ->
-            toaster.show(error.message ?: "Error", type = ToastType.Error)
+        launch {
+            vm.errorFlow.collect { error ->
+                toaster.show(error.message ?: "Error", type = ToastType.Error)
+            }
+        }
+        launch {
+            vm.conversationDeletedFlow.collect { deletedConv ->
+                toaster.show(
+                    message = context.getString(R.string.conversation_deleted),
+                    action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                        label = context.getString(R.string.undo),
+                        onClick = {
+                            vm.undoDeleteConversation(deletedConv.id)
+                        }
+                    )
+                )
+                // 如果删除的是当前会话，则导航回退或开启新会话
+                if (deletedConv.id == id) {
+                    if (navController.previousBackStackEntry != null) {
+                        navController.popBackStack()
+                    } else {
+                        navigateToChatPage(navController, Uuid.random())
+                    }
+                }
+            }
         }
     }
 
@@ -575,7 +600,6 @@ private fun ChatPageContent(
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                    // 移除手动滚动
                                 } else { toaster.show("Please select a model first", type = ToastType.Error) }
                             },
                             onCancelClick = { loadingJob?.cancel() },
@@ -592,7 +616,6 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },
@@ -601,7 +624,6 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },
@@ -628,7 +650,6 @@ private fun ChatPageContent(
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                    // 移除手动滚动
                                 } else { toaster.show("Please select a model first", type = ToastType.Error) }
                             },
                             onCancelClick = { loadingJob?.cancel() },
@@ -645,7 +666,6 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },
@@ -654,7 +674,6 @@ private fun ChatPageContent(
                                 else {
                                     if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                    // 移除手动滚动
                                 }
                                 inputState.clearInput()
                             },

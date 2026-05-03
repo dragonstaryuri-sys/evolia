@@ -141,6 +141,9 @@ class ChatVM(
     private val _toastFlow = MutableSharedFlow<String>()
     val toastFlow: SharedFlow<String> = _toastFlow.asSharedFlow()
 
+    private val _conversationDeletedFlow = MutableSharedFlow<Conversation>()
+    val conversationDeletedFlow: SharedFlow<Conversation> = _conversationDeletedFlow.asSharedFlow()
+
     fun markNodesAsRestored(nodeIds: Set<Uuid>) {
         _recentlyRestoredNodeIds.value = _recentlyRestoredNodeIds.value + nodeIds
         viewModelScope.launch {
@@ -565,7 +568,12 @@ class ChatVM(
 
     fun saveConversationAsync() { viewModelScope.launch { chatService.saveConversation(_currentActiveId.value, conversation.value) } }
     fun updateTitle(title: String) { viewModelScope.launch { chatService.saveConversation(_currentActiveId.value, conversation.value.copy(title = title)) } }
-    fun deleteConversation(conversation: Conversation) { chatService.deleteConversation(conversation) }
+    fun deleteConversation(conversation: Conversation) {
+        chatService.deleteConversation(conversation)
+        viewModelScope.launch {
+            _conversationDeletedFlow.emit(conversation)
+        }
+    }
     fun undoDeleteConversation(conversationId: Uuid) { chatService.undoDeleteConversation(conversationId) }
     fun updatePinnedStatus(conversation: Conversation) { viewModelScope.launch { conversationRepo.togglePinStatus(conversation.id) } }
     fun updateConversationTitle(conversation: Conversation, title: String) { viewModelScope.launch { conversationRepo.updateConversation(conversation.copy(title = title)) } }
