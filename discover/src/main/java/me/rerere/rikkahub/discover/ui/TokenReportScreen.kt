@@ -60,7 +60,7 @@ fun TokenReportScreen(
         ) {
             // 1. 今日实时统计概览
             item {
-                UsageOverviewCard(todayUsage)
+                UsageOverviewCard(todayUsage, viewModel)
             }
 
             // 2. 智能体消耗排行榜
@@ -69,7 +69,7 @@ fun TokenReportScreen(
                     SectionHeader(stringResource(R.string.token_report_by_assistant))
                 }
                 items(agentRankings, key = { it.assistantId }) { ranking ->
-                    AgentUsageItem(ranking) {
+                    AgentUsageItem(ranking, viewModel) {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
                 }
@@ -81,7 +81,7 @@ fun TokenReportScreen(
                     SectionHeader(stringResource(R.string.token_report_daily_history))
                 }
                 items(dailyHistory, key = { it.date }) { summary ->
-                    HistoryItem(summary)
+                    HistoryItem(summary, viewModel)
                 }
             }
         }
@@ -99,7 +99,7 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
-private fun UsageOverviewCard(usage: TokenUsageEntity) {
+private fun UsageOverviewCard(usage: TokenUsageEntity, viewModel: TokenReportVM) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -119,20 +119,21 @@ private fun UsageOverviewCard(usage: TokenUsageEntity) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
-                UsageStat(stringResource(R.string.token_report_stat_total), usage.promptTokens + usage.completionTokens + usage.cachedTokens)
-                UsageStat(stringResource(R.string.token_report_stat_input), usage.promptTokens)
-                UsageStat(stringResource(R.string.token_report_stat_output), usage.completionTokens)
-                UsageStat(stringResource(R.string.token_report_stat_cached), usage.cachedTokens)
+                val total = usage.promptTokens + usage.completionTokens
+                UsageStat(stringResource(R.string.token_report_stat_total), viewModel.formatTokenCount(total))
+                UsageStat(stringResource(R.string.token_report_stat_input), viewModel.formatTokenCount(usage.promptTokens))
+                UsageStat(stringResource(R.string.token_report_stat_output), viewModel.formatTokenCount(usage.completionTokens))
+                UsageStat(stringResource(R.string.token_report_stat_cached), viewModel.formatTokenCount(usage.cachedTokens))
             }
         }
     }
 }
 
 @Composable
-private fun UsageStat(label: String, value: Int) {
+private fun UsageStat(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
-            text = value.toString(),
+            text = value,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Black,
             color = MaterialTheme.colorScheme.onSurface
@@ -146,7 +147,7 @@ private fun UsageStat(label: String, value: Int) {
 }
 
 @Composable
-private fun AgentUsageItem(ranking: AgentTokenRanking, onClick: () -> Unit) {
+private fun AgentUsageItem(ranking: AgentTokenRanking, viewModel: TokenReportVM, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -164,7 +165,7 @@ private fun AgentUsageItem(ranking: AgentTokenRanking, onClick: () -> Unit) {
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = "${ranking.total}",
+                    text = viewModel.formatTokenCount(ranking.total),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.primary
@@ -183,7 +184,7 @@ private fun AgentUsageItem(ranking: AgentTokenRanking, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HistoryItem(summary: DailyUsageSummary) {
+private fun HistoryItem(summary: DailyUsageSummary, viewModel: TokenReportVM) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -203,13 +204,14 @@ private fun HistoryItem(summary: DailyUsageSummary) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
-                    DetailText(stringResource(R.string.token_report_stat_input), summary.promptTokens)
-                    DetailText(stringResource(R.string.token_report_stat_output), summary.completionTokens)
-                    DetailText(stringResource(R.string.token_report_stat_cached), summary.cachedTokens)
+                    DetailText(stringResource(R.string.token_report_stat_input), viewModel.formatTokenCount(summary.promptTokens))
+                    DetailText(stringResource(R.string.token_report_stat_output), viewModel.formatTokenCount(summary.completionTokens))
+                    DetailText(stringResource(R.string.token_report_stat_cached), viewModel.formatTokenCount(summary.cachedTokens))
                 }
             }
+            val total = summary.promptTokens + summary.completionTokens
             Text(
-                text = "${summary.promptTokens + summary.completionTokens + summary.cachedTokens}",
+                text = viewModel.formatTokenCount(total),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -219,7 +221,7 @@ private fun HistoryItem(summary: DailyUsageSummary) {
 }
 
 @Composable
-private fun DetailText(label: String, value: Int) {
+private fun DetailText(label: String, value: String) {
     Text(
         text = "$label: $value",
         style = MaterialTheme.typography.labelSmall,

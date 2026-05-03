@@ -74,4 +74,18 @@ class TokenReportVM(
             cachedTokens = todayLogs.sumOf { it.cachedTokens }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TokenUsageEntity(assistantId = "total", date = LocalDate.now().toString()))
+
+    /**
+     * 格式化 Token 数值
+     * 规则：超过 10000 显示为 k，最多保留一位小数，四舍五入
+     */
+    fun formatTokenCount(count: Int): String {
+        return if (count >= 10000) {
+            val kValue = count / 1000.0
+            val formatted = "%.1f".format(kValue)
+            "${formatted.removeSuffix(".0")}k"
+        } else {
+            count.toString()
+        }
+    }
 }
