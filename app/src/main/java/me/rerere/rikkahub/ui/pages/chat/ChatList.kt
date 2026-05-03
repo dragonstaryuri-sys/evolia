@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -150,6 +151,7 @@ fun ChatList(
     onJumpToMessage: (MessageNode) -> Unit = {},
     onGetFullMemoryContent: suspend (Int, Int) -> String? = { _, _ -> null },
 ) {
+    val previewState = rememberLazyListState()
     SharedTransitionLayout {
         AnimatedContent(
             targetState = previewMode,
@@ -166,7 +168,7 @@ fun ChatList(
                     onJumpToMessage = onJumpToMessage,
                     animatedVisibilityScope = this@AnimatedContent,
                     initialSearchQuery = initialSearchQuery,
-                    state = state,
+                    state = previewState,
                     loading = loading,
                 )
             } else {
@@ -437,7 +439,6 @@ private fun SharedTransitionScope.ChatListNormal(
                                     onShare = { node ->
                                         selecting = true
                                         selectedItems.clear()
-                                        // Find index in aggregated messages if possible, but fallback to conversation nodes
                                         val nodeIndex = conversation.messageNodes.indexOf(node)
                                         if (nodeIndex >= 0) {
                                             selectedItems.addAll(conversation.messageNodes
@@ -732,49 +733,6 @@ private fun SharedTransitionScope.ChatListPreview(
         }
     }
 
-    val loadingState by rememberUpdatedState(loading)
-    var userScrolledUp by remember { mutableStateOf(false) }
-    LaunchedEffect(state) {
-        var previousFirstIndex = state.firstVisibleItemIndex
-        var previousFirstOffset = state.firstVisibleItemScrollOffset
-        snapshotFlow {
-            Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
-        }.collect { (isScrolling, firstIndex, firstOffset) ->
-            if (isScrolling && loadingState) {
-                val scrolledUp = firstIndex < previousFirstIndex ||
-                    (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
-                if (scrolledUp && !userScrolledUp) {
-                    userScrolledUp = true
-                }
-
-                // 判断是否已经回到底部，如果回到底部了，重置标志位
-                val lastItem = state.layoutInfo.visibleItemsInfo.lastOrNull()
-                if (lastItem != null && lastItem.index == state.layoutInfo.totalItemsCount - 1) {
-                    userScrolledUp = false
-                }
-            }
-            previousFirstIndex = firstIndex
-            previousFirstOffset = firstOffset
-        }
-    }
-
-    LaunchedEffect(loading) {
-        if (!loading) {
-            userScrolledUp = false
-        }
-    }
-
-    // 2. 如果没有向上滚动且正在加载（发消息），强制滚动到底部
-    LaunchedEffect(state) {
-        snapshotFlow { state.layoutInfo.visibleItemsInfo }.collect {
-            if (!state.isScrollInProgress && loadingState && !userScrolledUp) {
-                val targetIndex = state.layoutInfo.totalItemsCount - 1
-                if (targetIndex >= 0) {
-                    state.animateScrollToItem(targetIndex)
-                }
-            }
-        }
-    }
     Column(
         modifier = Modifier
             .padding(innerPadding)
@@ -817,7 +775,7 @@ private fun SharedTransitionScope.ChatListPreview(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
                 .sharedBounds(
-                    sharedContentState = rememberSharedContentState(key = "conversation_list"),
+                    sharedContentState = rememberSharedContentState(key = "conversation_list_preview"),
                     animatedVisibilityScope = animatedVisibilityScope
                 )
                 .fillMaxWidth()

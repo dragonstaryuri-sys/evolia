@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,10 +20,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
@@ -32,12 +37,14 @@ import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 
 @Composable
 fun VirtualWorldPage(id: Uuid) {
@@ -51,7 +58,7 @@ fun VirtualWorldPage(id: Uuid) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // 监听 Toast 信号（处理新话题反馈）
+    // 监听 Toast 信号
     LaunchedEffect(Unit) {
         vm.toastFlow.collect { message ->
             if (message.startsWith("NAVIGATE_NEW_CHAT:")) {
@@ -78,7 +85,6 @@ fun VirtualWorldPage(id: Uuid) {
     val loadingJob by vm.conversationJob.collectAsStateWithLifecycle()
     val conversationJobs by vm.conversationJobs.collectAsStateWithLifecycle()
 
-    // 聚合判断：在虚拟聚合模式下，追踪所有活跃的任务。
     val isAnyJobRunning by remember(loadingJob, conversationJobs) {
         derivedStateOf {
             loadingJob?.isActive == true || conversationJobs.values.any { it?.isActive == true }
@@ -92,8 +98,70 @@ fun VirtualWorldPage(id: Uuid) {
     val currentAssistant = setting.getCurrentAssistant()
 
     val inputState = rememberChatInputState(message = emptyList())
+    var previewMode by rememberSaveable { mutableStateOf(false) }
 
-    // 同步聚合加载状态到输入框
+    // --- 补全 TTS 自动朗读逻辑 ---
+    val tts = LocalTTSState.current
+    var lastProcessedMessageId by remember { mutableStateOf<Uuid?>(null) }
+    var lastProcessedIndex by remember { mutableStateOf(0) }
+
+    LaunchedEffect(conversation, isAnyJobRunning, setting.autoPlayTts) {
+        val lastMsg = conversation.currentMessages.lastOrNull()
+
+        if (!setting.autoPlayTts) {
+            tts.stop()
+            if (lastMsg?.role == MessageRole.ASSISTANT) {
+                val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("\n") { it.text }
+                lastProcessedMessageId = lastMsg.id
+                lastProcessedIndex = rawContent.length
+            } else {
+                lastProcessedMessageId = null
+                lastProcessedIndex = 0
+            }
+            return@LaunchedEffect
+        }
+
+        if (lastMsg?.role == MessageRole.ASSISTANT) {
+            val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
+                .joinToString("\n") { it.text }
+
+            if (lastProcessedMessageId != lastMsg.id) {
+                if (lastProcessedMessageId == null && !isAnyJobRunning) {
+                    lastProcessedMessageId = lastMsg.id
+                    lastProcessedIndex = rawContent.length
+                } else {
+                    lastProcessedMessageId = lastMsg.id
+                    lastProcessedIndex = 0
+                }
+            }
+
+            val terminators = charArrayOf('。', '！', '？', '；', '\n', '.', '!', '?', ';')
+            var i = lastProcessedIndex
+            while (i < rawContent.length) {
+                if (rawContent[i] in terminators) {
+                    val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
+                    if (sentence.isNotEmpty()) {
+                        tts.speak(sentence, flushCalled = false)
+                    }
+                    lastProcessedIndex = i + 1
+                }
+                i++
+            }
+
+            if (!isAnyJobRunning && lastProcessedIndex < rawContent.length) {
+                val remaining = rawContent.substring(lastProcessedIndex).trim()
+                if (remaining.isNotEmpty()) {
+                    tts.speak(remaining, flushCalled = false)
+                }
+                lastProcessedIndex = rawContent.length
+            }
+        } else {
+            lastProcessedMessageId = null
+            lastProcessedIndex = 0
+        }
+    }
+
     LaunchedEffect(isAnyJobRunning) {
         inputState.loading = isAnyJobRunning
     }
@@ -121,8 +189,15 @@ fun VirtualWorldPage(id: Uuid) {
                 topBar = {
                     VirtualTopBar(
                         assistantName = currentAssistant.name,
+                        settings = setting,
+                        hasMessages = remember(conversation.messageNodes) {
+                            conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                        },
+                        previewMode = previewMode,
                         onBack = { navController.navigateUp() },
-                        onNewTopic = { vm.startNewTopic() }
+                        onNewTopic = { vm.startNewTopic() },
+                        onTogglePreview = { previewMode = !previewMode },
+                        onUpdateSettings = { vm.updateSettings(it) }
                     )
                 },
                 containerColor = Color.Transparent,
@@ -135,7 +210,7 @@ fun VirtualWorldPage(id: Uuid) {
                         uiItems = uiMessages,
                         state = chatListState,
                         loading = isAnyJobRunning,
-                        previewMode = false,
+                        previewMode = previewMode,
                         settings = setting,
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
                         onRegenerate = { message -> vm.regenerateAtMessage(message, forceWipe = false) },
@@ -148,7 +223,23 @@ fun VirtualWorldPage(id: Uuid) {
                             vm.updateMessageNodeInAnyConversation(newNode)
                         },
                         onForkMessage = { scope.launch { vm.forkMessage(it) } },
-                        onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) }
+                        onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) },
+                        onJumpToMessage = { targetNode ->
+                            previewMode = false
+                            scope.launch {
+                                val turnIndex = conversation.messageNodes
+                                    .filter { !it.currentMessage.skipContext }
+                                    .groupIntoTurns()
+                                    .indexOfFirst { group ->
+                                        group.nodes.any { it.id == targetNode.id }
+                                    }
+
+                                if (turnIndex >= 0) {
+                                    delay(350)
+                                    chatListState.animateScrollToItem(turnIndex)
+                                }
+                            }
+                        }
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {
@@ -170,7 +261,6 @@ fun VirtualWorldPage(id: Uuid) {
                         )
                     }
 
-                    // Bottom Gradient
                     Box(
                         modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(200.dp).background(
                             brush = androidx.compose.ui.graphics.Brush.verticalGradient(
@@ -179,7 +269,6 @@ fun VirtualWorldPage(id: Uuid) {
                         )
                     )
 
-                    // Unified Virtual Input (Minimal)
                     MinimalChatInput(
                         modifier = Modifier.align(Alignment.BottomCenter),
                         state = inputState,
@@ -190,7 +279,6 @@ fun VirtualWorldPage(id: Uuid) {
                         onClickSuggestion = { suggestion ->
                              if (currentChatModel != null) {
                                  vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)))
-                                 // 移除此处手动滚动索引计算，让 ChatList 的自动跟随逻辑生效
                              }
                         },
                         onCancelClick = {
@@ -209,7 +297,6 @@ fun VirtualWorldPage(id: Uuid) {
                             else {
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(inputState.getContents())
-                                    // 移除此处手动滚动索引计算，让 ChatList 的自动跟随逻辑生效
                                 }
                             }
                             inputState.clearInput()
@@ -219,15 +306,12 @@ fun VirtualWorldPage(id: Uuid) {
                             else {
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false)
-                                    // 移除此处手动滚动索引计算，让 ChatList 的自动跟随逻辑生效
                                 }
                             }
                             inputState.clearInput()
                         },
                         onUpdateChatModel = { vm.setChatModel(assistant = currentAssistant, model = it) },
-                        onUpdateAssistant = { updatedAssistant ->
-                            vm.updateAssistant(updatedAssistant)
-                        },
+                        onUpdateAssistant = { },
                         onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
                         onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                         onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
@@ -244,8 +328,13 @@ fun VirtualWorldPage(id: Uuid) {
 @Composable
 private fun VirtualTopBar(
     assistantName: String,
+    settings: Settings,
+    hasMessages: Boolean,
+    previewMode: Boolean,
     onBack: () -> Unit,
-    onNewTopic: () -> Unit
+    onNewTopic: () -> Unit,
+    onTogglePreview: () -> Unit,
+    onUpdateSettings: (Settings) -> Unit
 ) {
     val buttonShape = RoundedCornerShape(999.dp)
     val topPillSize = 48.dp
@@ -253,7 +342,6 @@ private fun VirtualTopBar(
     val border = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        // 顶部阴影/渐变背景，和普通模式保持一致
         Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(120.dp).background(
             brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                 colors = listOf(MaterialTheme.colorScheme.background.copy(alpha = 0.95f), Color.Transparent)
@@ -262,7 +350,7 @@ private fun VirtualTopBar(
 
         Row(
             modifier = Modifier
-                .statusBarsPadding() // 核心：空出状态栏位置，解决重合问题
+                .statusBarsPadding()
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -295,18 +383,39 @@ private fun VirtualTopBar(
             Spacer(Modifier.weight(1f))
 
             Surface(
-                onClick = onNewTopic,
-                shape = CircleShape,
+                shape = buttonShape,
                 color = containerColor,
                 border = border,
-                modifier = Modifier.size(topPillSize)
+                modifier = Modifier.height(topPillSize)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add, // 换成和普通模式一致的 Add 图标
-                        contentDescription = "New Topic",
-                        modifier = Modifier.size(24.dp)
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) },
+                        modifier = Modifier.size(topPillSize)
+                    ) {
+                        Icon(
+                            imageVector = if (settings.autoPlayTts) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
+                            contentDescription = "TTS",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    if (hasMessages) {
+                        IconButton(onClick = onTogglePreview, modifier = Modifier.size(topPillSize)) {
+                            Icon(
+                                imageVector = if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search,
+                                contentDescription = "Search",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    IconButton(onClick = onNewTopic, modifier = Modifier.size(topPillSize)) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "New Topic",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }
