@@ -99,7 +99,8 @@ class ChatCompletionsAPI(
         // 从 JsonObject 中提取必要的信息
         val id = bodyJson["id"]?.jsonPrimitive?.contentOrNull ?: ""
         val model = bodyJson["model"]?.jsonPrimitive?.contentOrNull ?: ""
-        val choice = bodyJson["choices"]?.jsonArray?.get(0)?.jsonObject ?: error("choices is null")
+        val choices = bodyJson["choices"]?.jsonArrayOrNull
+        val choice = choices?.getOrNull(0)?.jsonObject ?: error("choices is null or empty")
 
         val message = choice["message"]?.jsonObject ?: throw Exception("message is null")
         val finishReason = choice["finish_reason"]
@@ -177,7 +178,7 @@ class ChatCompletionsAPI(
                         val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
                         val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                        val choices = it["choices"]?.jsonArray ?: JsonArray(emptyList())
+                        val choices = it["choices"]?.jsonArrayOrNull ?: JsonArray(emptyList())
                         val choiceList = buildList {
                             if (choices.isNotEmpty()) {
                                 val choice = choices[0].jsonObject

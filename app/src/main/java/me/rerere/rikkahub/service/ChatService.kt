@@ -729,23 +729,23 @@ class ChatService(
                 if (chunk is GenerationChunk.Messages) updateConversation(conversationId, getConversationFlow(conversationId).value.updateCurrentMessages(chunk.messages))
             }
         }.onFailure { e ->
-            if (e is kotlinx.coroutines.CancellationException) {
-                // 【核心修复】：处理终止生成的情况，保存当前已生成的半截内容
-                Log.d(TAG, "Generation cancelled for $conversationId, saving partial message to DB.")
-                val finalConv = getConversationFlow(conversationId).value
-                appScope.launch {
-                    // 1. 保存对话内容（包含 AI 生成到一半的部分）
-                    saveConversation(conversationId, finalConv)
+            // 【核心修复】：无论何种错误（取消、超时、解析错误），都保存当前已生成的半截内容到数据库，防止消息丢失
+            Log.d(TAG, "Generation failed/cancelled for $conversationId, saving current state. Error: ${e.message}")
+            val finalConv = getConversationFlow(conversationId).value
+            appScope.launch {
+                // 1. 保存对话内容（包含 AI 可能生成到一半的部分）
+                saveConversation(conversationId, finalConv)
 
-                    // 2. 同时更新助手的最后通话 ID，确保下次进入或归档时能关联上
-                    val currentSettings = settingsStore.settingsFlow.value
-                    val updatedAssistants = currentSettings.assistants.map {
-                        if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
-                    }
-                    settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+                // 2. 同时更新助手的最后通话 ID，确保下次进入或归档时能关联上
+                val currentSettings = settingsStore.settingsFlow.value
+                val updatedAssistants = currentSettings.assistants.map {
+                    if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
                 }
-            } else {
-                // 普通错误仍需处理
+                settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+            }
+
+            if (e !is kotlinx.coroutines.CancellationException) {
+                // 普通错误仍需上报 UI
                 _errorFlow.emit(e)
                 Logging.log(TAG, "handleMessageComplete: $e")
             }
