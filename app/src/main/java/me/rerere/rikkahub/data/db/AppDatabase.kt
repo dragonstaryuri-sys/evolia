@@ -12,26 +12,8 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
-import me.rerere.rikkahub.core.data.db.dao.ConversationDAO
-import me.rerere.rikkahub.core.data.db.dao.DailyActivityDAO
-import me.rerere.rikkahub.core.data.db.dao.EmbeddingCacheDAO
-import me.rerere.rikkahub.core.data.db.dao.GenMediaDAO
-import me.rerere.rikkahub.core.data.db.dao.MemoryDAO
-import me.rerere.rikkahub.core.data.db.dao.AgentDiaryDAO
-import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
-import me.rerere.rikkahub.core.data.db.dao.AgentTaskDAO
-import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
-import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
-import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
-import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
-import me.rerere.rikkahub.core.data.db.entity.EmbeddingCacheEntity
-import me.rerere.rikkahub.core.data.db.entity.GenMediaEntity
-import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
-import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
-import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
-import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
-import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
+import me.rerere.rikkahub.core.data.db.dao.*
+import me.rerere.rikkahub.core.data.db.entity.*
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.encodeToString
@@ -56,9 +38,10 @@ import kotlinx.serialization.json.put
         AgentDiaryEntity::class,
         ScheduleEntity::class,
         AgentTaskEntity::class,
-        ChatSegmentEntity::class
+        ChatSegmentEntity::class,
+        TokenUsageEntity::class
     ],
-    version = 31, // 升级版本：增加 ConversationEntity.isVirtual
+    version = 32, // 升级版本：增加 TokenUsageEntity
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -81,7 +64,8 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 27, to = 28),
         AutoMigration(from = 28, to = 29),
         AutoMigration(from = 29, to = 30),
-        AutoMigration(from = 30, to = 31), // 新增自动迁移
+        AutoMigration(from = 30, to = 31),
+        AutoMigration(from = 31, to = 32),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -105,6 +89,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun agentTaskDao(): AgentTaskDAO
 
     abstract fun chatSegmentDao(): ChatSegmentDAO
+
+    abstract fun tokenUsageDao(): TokenUsageDAO
 
     companion object {
         const val TAG = "AppDatabase"

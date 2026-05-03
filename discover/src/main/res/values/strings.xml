@@ -44,5 +44,16 @@
   <string name="auto_task_optimization_action">Go to Settings</string>
   <string name="assistant_enable_time_sense">Time Awareness</string>
   <string name="assistant_enable_time_sense_desc">Let the agent perceive the current time and response intervals to help enhance the realism of the conversation.</string>
+
+  <!-- 报表页面 -->
+  <string name="token_report_title">Token Consumption Report</string>
+  <string name="token_report_today_total">Today\'s Total</string>
+  <string name="token_report_by_assistant">Agent Ranking (Last 7 Days)</string>
+  <string name="token_report_daily_history">Daily Consumption Log</string>
+  <string name="token_report_stat_total">Total</string>
+  <string name="token_report_stat_input">Input</string>
+  <string name="token_report_stat_output">Output</string>
+  <string name="token_report_stat_cached">Cache Hit</string>
+
 </resources>
 

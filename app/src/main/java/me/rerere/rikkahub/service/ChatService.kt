@@ -116,8 +116,7 @@ private val inputTransformers by lazy {
 }
 
 private val outputTransformers by lazy {
-    listOf(
-        ThinkTagTransformer,
+    listOf( ThinkTagTransformer,
         Base64ImageToLocalFileTransformer,
         RegexOutputTransformer,
     )
@@ -482,6 +481,7 @@ class ChatService(
                 val resp = retryIO(times = 2) {
                     providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
                 }
+                resp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
                 resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
             }
 
@@ -491,7 +491,8 @@ class ChatService(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
                     model = backgroundModel,
-                    summary = summary
+                    summary = summary,
+                    assistantId = assistant.id.toString()
                 )
                 val localKeywords = KeywordExtractor.extract(summary)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
@@ -532,10 +533,11 @@ class ChatService(
 
         val job = appScope.launch {
             try {
-                // 确保数据 from 数据库或正确初始化开始
+                // 确保数据 from 数据库 or 正确初始化开始
                 initializeConversation(conversationId)
 
                 val currentConversation = getConversationFlow(conversationId).value
+                val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
                 val newConversation = currentConversation.copy(
                     messageNodes = currentConversation.messageNodes + UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
                 )
@@ -751,6 +753,15 @@ class ChatService(
         .onSuccess {
             val finalConv = getConversationFlow(conversationId).value
             saveConversation(conversationId, finalConv)
+
+            // Record Token Usage from the last generation
+            val lastAssistantMsg = finalConv.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+            lastAssistantMsg?.usage?.let { usage ->
+                appScope.launch {
+                    conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage)
+                }
+            }
+
             appScope.launch {
                 val currentSettings = settingsStore.settingsFlow.value
                 val updatedAssistants = currentSettings.assistants.map {
@@ -836,6 +847,7 @@ class ChatService(
                                 listOf(UIMessage.user(prompt)),
                                 TextGenerationParams(backgroundModel, 0.3f, 0.5f)
                             )
+                            resp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
                             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
                             if (summary.isNotBlank()) {
@@ -940,6 +952,7 @@ class ChatService(
 
             val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f))
+            tempResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
             val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
             if (tempSum.isNotBlank()) {
@@ -947,7 +960,8 @@ class ChatService(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
                     model = backgroundModel,
-                    summary = tempSum
+                    summary = tempSum,
+                    assistantId = assistant.id.toString()
                 )
                 val localKeywords = KeywordExtractor.extract(tempSum)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
@@ -995,6 +1009,7 @@ class ChatService(
                     params = TextGenerationParams(model, 0.3f, 1.0f)
                 )
             }
+            fullResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
 
             val fullSum = fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(false)
 
@@ -1016,7 +1031,8 @@ class ChatService(
         handler: Provider<*>,
         providerSetting: ProviderSetting,
         model: me.rerere.ai.provider.Model,
-        summary: String
+        summary: String,
+        assistantId: String
     ): String {
         return try {
             val locale = Locale.getDefault().displayName
@@ -1035,6 +1051,7 @@ class ChatService(
                     maxTokens = 256
                 )
             )
+            resp.usage?.let { conversationRepo.recordTokenUsage(assistantId, it) }
             resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
         } catch (e: Exception) {
             Log.e(TAG, "Failed to extract keywords", e)
@@ -1064,11 +1081,14 @@ class ChatService(
             try {
                 val settings = settingsStore.settingsFlow.first()
                 val conv = getConversationFlow(id).value
-                val modelId = settings.getAssistantById(conv.assistantId)?.chatModelId ?: settings.chatModelId
+                val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
+                val modelId = assistant.chatModelId ?: settings.chatModelId
                 val text = message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n\n") { it.text }.trim()
                 if (text.isNotBlank()) {
                     updateTranslationField(id, message.id, context.getString(R.string.translating))
                     generationHandler.translateText(settings, text, target, modelId) { updateTranslationField(id, message.id, it) }.collect {}
+                    // We don't record usage for translateText because currently translateText flow only returns String.
+                    // If needed, we'd need to modify translateText to return usage too.
                     saveConversation(id, getConversationFlow(id).value)
                 }
             } catch (e: Exception) { updateTranslationField(id, message.id, null); _errorFlow.emit(e) }
@@ -1112,6 +1132,7 @@ class ChatService(
             val content = conversation.currentMessages.truncate(conversation.truncateIndex).joinToString("\n\n") { it.summaryAsText() }
             if (content.isBlank()) return
             val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 1.0f))
+            result.usage?.let { conversationRepo.recordTokenUsage(conversation.assistantId.toString(), it) }
             saveConversation(conversationId, conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""))
         }
     }
@@ -1124,6 +1145,7 @@ class ChatService(
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
             val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 1.0f))
+            result.usage?.let { conversationRepo.recordTokenUsage(conversation.assistantId.toString(), it) }
             val suggestions = result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
             saveConversation(conversationId, conversation.copy(chatSuggestions = suggestions))
         }

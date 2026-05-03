@@ -8,18 +8,18 @@ import androidx.paging.map
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import me.rerere.rikkahub.core.data.db.dao.ConversationDAO
-import me.rerere.rikkahub.core.data.db.dao.DailyActivityDAO
-import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
-import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
+import me.rerere.rikkahub.core.data.db.dao.*
 import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
 import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
+import me.rerere.rikkahub.core.data.db.entity.TokenUsageEntity
+import me.rerere.rikkahub.core.data.db.entity.DailyUsageSummary
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.deleteChatFiles
 import java.time.Instant
@@ -32,6 +32,7 @@ class ConversationRepository(
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val chatSegmentDAO: ChatSegmentDAO,
     private val dailyActivityDAO: DailyActivityDAO,
+    private val tokenUsageDAO: TokenUsageDAO,
 ) {
     companion object {
         private const val PAGE_SIZE = 20
@@ -169,7 +170,6 @@ class ConversationRepository(
             conversationDAO.update(
                 conversationToConversationEntity(updatedConversation)
             )
-            // 删除了之前所有的 deleteEpisode/Segment 调用，由 Worker 进行覆盖更新
         } else {
             conversationDAO.update(
                 conversationToConversationEntity(conversation)
@@ -419,5 +419,30 @@ class ConversationRepository(
         dates.forEach { date ->
             dailyActivityDAO.insertDateIfNotExists(date, System.currentTimeMillis())
         }
+    }
+
+    suspend fun recordTokenUsage(assistantId: String, usage: TokenUsage) {
+        val date = LocalDate.now().toString()
+        tokenUsageDAO.incrementUsage(
+            assistantId = assistantId,
+            date = date,
+            prompt = usage.promptTokens,
+            completion = usage.completionTokens,
+            cached = usage.cachedTokens
+        )
+    }
+
+    fun getRecentTokenUsageFlow(assistantId: String, days: Int = 7): Flow<List<TokenUsageEntity>> {
+        return tokenUsageDAO.getRecentUsageFlow(assistantId, days)
+    }
+
+    fun getAllRecentTokenUsageFlow(days: Int = 7): Flow<List<TokenUsageEntity>> {
+        val startDate = LocalDate.now().minusDays(days.toLong()).toString()
+        return tokenUsageDAO.getAllRecentUsageFlow(startDate)
+    }
+
+    fun getDailyTotalUsageFlow(days: Int = 7): Flow<List<DailyUsageSummary>> {
+        val startDate = LocalDate.now().minusDays(days.toLong()).toString()
+        return tokenUsageDAO.getDailyTotalUsageFlow(startDate)
     }
 }

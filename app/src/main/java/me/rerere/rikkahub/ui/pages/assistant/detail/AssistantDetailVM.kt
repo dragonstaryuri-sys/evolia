@@ -25,6 +25,7 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.core.data.db.entity.TokenUsageEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.Avatar
@@ -77,6 +78,16 @@ class AssistantDetailVM(
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
         )
+
+    // Token Usage logic
+    val tokenUsageHistory: StateFlow<List<TokenUsageEntity>> = conversationRepository
+        .getRecentTokenUsageFlow(assistantId.toString(), days = 7)
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val todayTokenUsage: StateFlow<TokenUsageEntity?> = tokenUsageHistory.map { history ->
+        val today = LocalDate.now().toString()
+        history.find { it.date == today }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     // Agent Tasks logic
     val agentTasks: StateFlow<List<AgentTaskEntity>> = agentTaskRepository

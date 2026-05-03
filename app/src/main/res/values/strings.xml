@@ -1461,4 +1461,16 @@
   <string name="assistant_style_examples_virtual">Virtual Mode Examples</string>
   <string name="assistant_style_examples_add">Add Example</string>
   <string name="auto_play_tts">auto read</string>
+
+  <!-- 发现页入口 -->
+  <string name="discover_token_usage_title">Token Usage Statistics</string>
+  <string name="discover_token_usage_desc">View daily token consumption breakdown of each agent</string>
+  <!-- Context Source Activation Reasons -->
+  <string name="context_source_activated_by_user">Activated by user</string>
+  <string name="context_source_default_enabled">Default enabled</string>
+  <string name="context_source_recent_episode_boost">Recent episode boost</string>
+  <string name="context_source_contextually_relevant">Contextually relevant</string>
+  <string name="context_source_always_included">Always included</string>
+  <string name="context_source_rag_match">RAG Match (%s)</string>
+  <string name="context_source_keyword_match">Keyword: %s</string>
 </resources>

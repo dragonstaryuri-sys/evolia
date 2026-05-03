@@ -44,4 +44,16 @@
 
   <string name="assistant_enable_time_sense">时间观念</string>
   <string name="assistant_enable_time_sense_desc">让ai感知当前时间和回复间隔，有助于提升对话的真实感。</string>
+
+
+  <!-- 报表页面 -->
+  <string name="token_report_title">Token 消耗报表</string>
+  <string name="token_report_today_total">今日总消耗</string>
+  <string name="token_report_by_assistant">智能体排行 (近7日)</string>
+  <string name="token_report_daily_history">每日消耗流水</string>
+  <string name="token_report_stat_total">总量</string>
+  <string name="token_report_stat_input">输入</string>
+  <string name="token_report_stat_output">输出</string>
+  <string name="token_report_stat_cached">缓存命中</string>
+
 </resources>

@@ -91,6 +91,7 @@ import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
 import me.rerere.rikkahub.discover.ui.ScheduleScreen
+import me.rerere.rikkahub.discover.ui.TokenReportScreen
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
@@ -440,6 +441,9 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.Schedule> {
                         ScheduleScreen(onBack = { navBackStack.popBackStack() })
                     }
+                    composable<Screen.TokenReport> {
+                        TokenReportScreen(onBack = { navBackStack.popBackStack() })
+                    }
                 }
                 AppToasterHost(state = toastState)
                 }
@@ -555,4 +559,7 @@ sealed interface Screen {
 
     @Serializable
     data object Schedule : Screen
+
+    @Serializable
+    data object TokenReport : Screen
 }

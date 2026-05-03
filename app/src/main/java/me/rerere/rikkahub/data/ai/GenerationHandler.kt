@@ -37,6 +37,7 @@ import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.AppScope
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
@@ -399,7 +400,7 @@ class GenerationHandler(
         fun getLorebookEntryActivationReason(entry: LorebookEntry, recentMessages: List<String>, queryEmbedding: List<Float>? = null): String? {
             if (!entry.enabled) return null
             return when (entry.activationType) {
-                LorebookActivationType.ALWAYS -> "Always Active"
+                LorebookActivationType.ALWAYS -> context.getString(R.string.activation_always)
                 LorebookActivationType.KEYWORDS -> {
                     val searchText = recentMessages.joinToString(" ")
                     val matchingKeyword = entry.keywords.firstOrNull { keyword ->
@@ -412,7 +413,7 @@ class GenerationHandler(
                             if (entry.caseSensitive) searchText.contains(keyword) else searchText.contains(keyword, ignoreCase = true)
                         }
                     }
-                    if (matchingKeyword != null) "Keyword: $matchingKeyword" else null
+                    if (matchingKeyword != null) context.getString(R.string.context_source_keyword_match, matchingKeyword) else null
                 }
                 LorebookActivationType.RAG -> {
                     val entryEmbedding = entry.embedding
@@ -434,7 +435,7 @@ class GenerationHandler(
                                 similarity.toString().take(4)
                             }
                             Log.d(TAG, "RAG entry '${entry.name}' activated with similarity $similarity")
-                            "RAG Match ($scoreStr)"
+                            context.getString(R.string.context_source_rag_match, scoreStr)
                         } else null
                     }
                 }
@@ -446,9 +447,9 @@ class GenerationHandler(
 
         val usedModesList = enabledModes.mapIndexed { index, mode ->
             val reason = if (enabledModeIds.contains(mode.id)) {
-                "Activated by user"
+                context.getString(R.string.context_source_activated_by_user)
             } else {
-                "Default enabled"
+                context.getString(R.string.context_source_default_enabled)
             }
             UsedMode(
                 modeId = mode.id.toString(),
@@ -1018,11 +1019,11 @@ class GenerationHandler(
             val isBoost = memory.type == 2
             val reason = when {
                 // ID 为 -1 表示这是来自“今天其他会话标题”的参考记忆
-                isBoost -> "Recent episode boost"
+                isBoost -> context.getString(R.string.context_source_recent_episode_boost)
                 // 如果开启了 RAG 检索，则说明是语义匹配成功的记忆
-                assistant.useRagMemoryRetrieval -> "Contextually relevant"
+                assistant.useRagMemoryRetrieval -> context.getString(R.string.context_source_contextually_relevant)
                 // 基础层级的默认包含记忆
-                else -> "Always included"
+                else -> context.getString(R.string.context_source_always_included)
             }
             UsedMemory(
                 memoryId = memory.id,

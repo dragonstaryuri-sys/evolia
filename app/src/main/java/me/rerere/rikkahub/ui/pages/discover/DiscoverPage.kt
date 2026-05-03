@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Forum
+import androidx.compose.material.icons.rounded.Token
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -20,6 +21,7 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.discover.ui.components.ScheduleCard
 import me.rerere.rikkahub.discover.ui.ScheduleViewModel
+import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,7 +67,19 @@ fun DiscoverPage() {
                 )
             }
 
-            // 2. 现有功能：日记
+            // 2. Token 消耗统计
+            item {
+                DiscoverItem(
+                    title = stringResource(R.string.discover_token_usage_title),
+                    description = stringResource(R.string.discover_token_usage_desc),
+                    icon = { Icon(Icons.Rounded.Token, null, tint = MaterialTheme.colorScheme.tertiary) },
+                    onClick = {
+                        navController.navigate(Screen.TokenReport)
+                    }
+                )
+            }
+
+            // 3. 现有功能：日记
             item {
                 DiscoverItem(
                     title = stringResource(R.string.discover_page_diary),
@@ -77,7 +91,7 @@ fun DiscoverPage() {
                 )
             }
 
-            // 3. 现有功能：社区（开发中）
+            // 4. 现有功能：社区（开发中）
             item {
                 val developingText = stringResource(R.string.discover_page_developing)
                 DiscoverItem(
@@ -102,7 +116,7 @@ private fun DiscoverItem(
 ) {
     Surface(
         onClick = onClick,
-        shape = MaterialTheme.shapes.large,
+        shape = AppShapes.CardLarge,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth()
     ) {
