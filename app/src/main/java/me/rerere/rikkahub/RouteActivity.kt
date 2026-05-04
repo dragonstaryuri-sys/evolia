@@ -92,6 +92,8 @@ import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
 import me.rerere.rikkahub.discover.ui.ScheduleScreen
 import me.rerere.rikkahub.discover.ui.TokenReportScreen
+import me.rerere.rikkahub.discover.ui.BookShelfScreen
+import me.rerere.rikkahub.discover.ui.BookReaderScreen
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
@@ -444,6 +446,13 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.TokenReport> {
                         TokenReportScreen(onBack = { navBackStack.popBackStack() })
                     }
+                    composable<Screen.BookShelf> {
+                        BookShelfScreen(onBack = { navBackStack.popBackStack() })
+                    }
+                    composable<Screen.BookReader> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.BookReader>()
+                        BookReaderScreen(bookId = route.bookId, onBack = { navBackStack.popBackStack() })
+                    }
                 }
                 AppToasterHost(state = toastState)
                 }
@@ -562,4 +571,10 @@ sealed interface Screen {
 
     @Serializable
     data object TokenReport : Screen
+
+    @Serializable
+    data object BookShelf : Screen
+
+    @Serializable
+    data class BookReader(val bookId: Int) : Screen
 }

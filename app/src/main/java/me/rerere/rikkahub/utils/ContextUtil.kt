@@ -16,6 +16,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.ui.res.stringResource
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -25,6 +26,7 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.R
 
 private const val TAG = "ContextUtil"
 
@@ -228,7 +230,7 @@ fun shareTextFile(context: Context, fileName: String, content: String) {
         // Ensure authority matches what is defined in AndroidManifest.xml
         // Usually it is ${applicationId}.fileprovider
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        
+
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/json"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -258,7 +260,7 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 }
             } else {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@saveToDownloads, "Permission required to save file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@saveToDownloads, R.string.permission_file, Toast.LENGTH_SHORT).show()
                 }
             }
             return
@@ -299,13 +301,13 @@ suspend fun Context.saveToDownloads(uri: Uri, fileName: String) {
                 val destFile = File(downloadsDir, fileName)
                 outputStream = FileOutputStream(destFile)
                 inputStream.copyTo(outputStream!!)
-                
+
                 // Notify media scanner
                 @Suppress("DEPRECATION")
                 val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
                 mediaScanIntent.data = Uri.fromFile(destFile)
                 sendBroadcast(mediaScanIntent)
-                
+
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@saveToDownloads, "Saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
                 }

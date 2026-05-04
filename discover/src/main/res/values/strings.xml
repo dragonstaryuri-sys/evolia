@@ -55,5 +55,17 @@
   <string name="token_report_stat_output">Output</string>
   <string name="token_report_stat_cached">Cache Hit</string>
 
+  <!-- 阅读功能 -->
+  <string name="discover_reading_title">Soulful Reading</string>
+  <string name="discover_reading_desc">Read with your favorite AI agent, sharing wisdom and stories.</string>
+  <string name="reading_shelf_title">Bookshelf</string>
+  <string name="reading_upload_book">Upload Book</string>
+  <string name="reading_category_entertainment">Entertainment</string>
+  <string name="reading_category_knowledge">Knowledge</string>
+  <string name="reading_select_assistant">Choose Companion</string>
+  <string name="reading_no_assistant">No AI Companion</string>
+  <string name="reading_start_reading">Start Reading</string>
+  <string name="reading_delete_confirm">Delete book?</string>
+  <string name="reading_empty_shelf">Your bookshelf is empty. Add a book to start your journey!</string>
+  <string name="reading_ai_thought">AI Thoughts</string>
 </resources>
-

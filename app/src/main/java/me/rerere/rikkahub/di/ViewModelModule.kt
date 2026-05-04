@@ -12,6 +12,9 @@ import me.rerere.rikkahub.ui.pages.setting.SettingVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
 import me.rerere.rikkahub.ui.pages.discover.DiaryVM
+import me.rerere.rikkahub.discover.ui.BookViewModel
+import me.rerere.rikkahub.discover.ui.ScheduleViewModel
+import me.rerere.rikkahub.discover.ui.TokenReportVM
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -73,4 +76,12 @@ val viewModelModule = module {
     viewModelOf(::MenuVM)
     viewModelOf(::TextSelectionVM)
     viewModelOf(::DiaryVM)
+    viewModelOf(::ScheduleViewModel)
+    viewModelOf(::TokenReportVM)
+    viewModel {
+        BookViewModel(
+            bookRepository = get(),
+            assistants = get()
+        )
+    }
 }

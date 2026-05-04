@@ -302,6 +302,7 @@
 <string name="notification_chat_done_title">聊天消息已生成</string>
 <string name="permission_camera">相机</string>
 <string name="permission_camera_desc">需要相机权限以拍摄照片</string>
+<string name="permission_file">需要权限以存储文件</string>
 <string name="permission_desc_goto_setting">某些权限已被永久拒绝，请前往应用设置手动开启：</string>
 <string name="permission_desc_require_permission">为了提供更好的用户体验，应用需要以下权限：</string>
 <string name="permission_diaog_title">权限请求</string>
@@ -1431,5 +1432,10 @@
   <string name="setting_tts_page_voice_default">系统默认</string>
   <string name="setting_tts_page_voice_online">在线音色</string>
   <string name="setting_tts_page_voice_offline">离线音色</string>
+  <string name="backup_permission">你恢复的备份包含需要额外权限才能使用的功能：</string>
+  <string name="all_permission_tips">请允许权限，否则功能无法完整使用。</string>
+  <string name="grant_permission">授予权限</string>
+  <string name="permissions_required">权限申请</string>
+  <string name="skip">跳过</string>
 
 </resources>

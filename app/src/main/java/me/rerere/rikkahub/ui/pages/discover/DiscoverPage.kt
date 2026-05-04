@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.discover
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Forum
 import androidx.compose.material.icons.rounded.Token
@@ -67,7 +68,19 @@ fun DiscoverPage() {
                 )
             }
 
-            // 2. Token 消耗统计
+            // 2. 阅读功能 (新增加)
+            item {
+                DiscoverItem(
+                    title = stringResource(me.rerere.rikkahub.discover.R.string.discover_reading_title),
+                    description = stringResource(me.rerere.rikkahub.discover.R.string.discover_reading_desc),
+                    icon = { Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary) },
+                    onClick = {
+                        navController.navigate(Screen.BookShelf)
+                    }
+                )
+            }
+
+            // 3. Token 消耗统计
             item {
                 DiscoverItem(
                     title = stringResource(R.string.discover_token_usage_title),
@@ -79,25 +92,25 @@ fun DiscoverPage() {
                 )
             }
 
-            // 3. 现有功能：日记
+            // 4. 现有功能：日记
             item {
                 DiscoverItem(
                     title = stringResource(R.string.discover_page_diary),
                     description = stringResource(R.string.discover_page_diary_desc),
-                    icon = { Icon(Icons.Rounded.Book, null, tint = MaterialTheme.colorScheme.primary) },
+                    icon = { Icon(Icons.Rounded.Book, null, tint = MaterialTheme.colorScheme.secondary) },
                     onClick = {
                         navController.navigate(Screen.DiaryList())
                     }
                 )
             }
 
-            // 4. 现有功能：社区（开发中）
+            // 5. 现有功能：社区（开发中）
             item {
                 val developingText = stringResource(R.string.discover_page_developing)
                 DiscoverItem(
                     title = stringResource(R.string.discover_page_forum),
                     description = stringResource(R.string.discover_page_forum_desc),
-                    icon = { Icon(Icons.Rounded.Forum, null, tint = MaterialTheme.colorScheme.secondary) },
+                    icon = { Icon(Icons.Rounded.Forum, null, tint = MaterialTheme.colorScheme.outline) },
                     onClick = {
                         toaster.show(developingText)
                     }

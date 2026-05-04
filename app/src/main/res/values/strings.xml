@@ -325,6 +325,7 @@
   <string name="notification_chat_done_title">Message Generated</string>
   <string name="permission_camera">Camera</string>
   <string name="permission_camera_desc">Camera permission required to take photos</string>
+  <string name="permission_file">Permission required to save file</string>
   <string name="permission_desc_goto_setting">Some permissions permanently denied, please enable in settings:</string>
   <string name="permission_desc_require_permission">App requires following permissions:</string>
   <string name="permission_diaog_title">Permission Request</string>
@@ -1477,4 +1478,9 @@
   <string name="setting_tts_page_voice_default">System Default</string>
   <string name="setting_tts_page_voice_online">Online Voices</string>
   <string name="setting_tts_page_voice_offline">Offline Voices</string>
+  <string name="backup_permission">Your restored backup includes features that require additional permissions:</string>
+  <string name="all_permission_tips">Grant these permissions for full functionality.</string>
+  <string name="grant_permission">Grant Permissions</string>
+  <string name="permissions_required">Permissions Required</string>
+  <string name="skip">Skip</string>
 </resources>

@@ -39,9 +39,11 @@ import kotlinx.serialization.json.put
         ScheduleEntity::class,
         AgentTaskEntity::class,
         ChatSegmentEntity::class,
-        TokenUsageEntity::class
+        TokenUsageEntity::class,
+        BookEntity::class,
+        BookProgressEntity::class
     ],
-    version = 32, // 升级版本：增加 TokenUsageEntity
+    version = 33, // 升级版本：增加 BookEntity 和 BookProgressEntity
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
@@ -66,6 +68,7 @@ import kotlinx.serialization.json.put
         AutoMigration(from = 29, to = 30),
         AutoMigration(from = 30, to = 31),
         AutoMigration(from = 31, to = 32),
+        AutoMigration(from = 32, to = 33),
     ]
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -91,6 +94,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chatSegmentDao(): ChatSegmentDAO
 
     abstract fun tokenUsageDao(): TokenUsageDAO
+
+    abstract fun bookDao(): BookDAO
 
     companion object {
         const val TAG = "AppDatabase"

@@ -521,15 +521,15 @@ private fun WebDavPage(
                 showPermissionDialog = false
                 showRestartDialog = true
             },
-            title = { Text("Permissions Required") },
+            title = { Text(stringResource(R.string.permissions_required)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes features that require additional permissions:")
+                    Text(stringResource(R.string.backup_permission))
                     pendingPermissions.forEach { permission ->
                         val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
                         Text("• $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant these permissions for full functionality.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.all_permission_tips), style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -539,7 +539,7 @@ private fun WebDavPage(
                         permissionLauncher.launch(pendingPermissions.toTypedArray())
                     }
                 ) {
-                    Text("Grant Permissions")
+                    Text(stringResource(R.string.grant_permission))
                 }
             },
             dismissButton = {
@@ -853,15 +853,15 @@ private fun ImportExportPage(
                 showPermissionDialog = false
                 showRestartDialog = true
             },
-            title = { Text("Permissions Required") },
+            title = { Text(stringResource(R.string.permissions_required)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Your restored backup includes features that require additional permissions:")
+                    Text(stringResource(R.string.backup_permission))
                     pendingPermissions.forEach { permission ->
                         val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
                         Text("• $desc", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Grant these permissions for full functionality.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.all_permission_tips), style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -871,7 +871,7 @@ private fun ImportExportPage(
                         permissionLauncher.launch(pendingPermissions.toTypedArray())
                     }
                 ) {
-                    Text("Grant Permissions")
+                    Text(stringResource(R.string.grant_permission))
                 }
             },
             dismissButton = {
@@ -881,7 +881,7 @@ private fun ImportExportPage(
                         showRestartDialog = true
                     }
                 ) {
-                    Text("Skip")
+                    Text(stringResource(R.string.skip))
                 }
             }
         )

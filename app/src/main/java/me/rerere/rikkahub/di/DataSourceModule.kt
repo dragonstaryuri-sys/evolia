@@ -128,6 +128,10 @@ val dataSourceModule = module {
         get<AppDatabase>().tokenUsageDao()
     }
 
+    single {
+        get<AppDatabase>().bookDao()
+    }
+
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single {
