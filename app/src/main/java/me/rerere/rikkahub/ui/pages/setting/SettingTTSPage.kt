@@ -349,7 +349,12 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         var currentProvider by remember(provider) { mutableStateOf(provider) }
         val tts = LocalTTSState.current
         val scope = rememberCoroutineScope()
-
+        var selectedPreviewLang by remember { mutableStateOf("zh") }
+        val previewTexts = mapOf(
+            "zh" to "哼，我声音好听吗？",
+            "en" to "Hello, this is an English voice preview. How does it sound?",
+            "ko" to "안녕하세요, 이것은 한국어 음성 미리보기입니다. 어떠신가요?"
+        )
         ModalBottomSheet(
             onDismissRequest = {
                 editingProvider = null
@@ -369,8 +374,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         ) {
-            // Updated preview text to use resource if available or generic
-            val previewText = "Hello user, this is what your characters will sound like if you use this setup!"
 
             Column(
                 modifier = Modifier
@@ -388,20 +391,33 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         text = stringResource(R.string.setting_tts_page_edit_provider),
                         style = MaterialTheme.typography.headlineSmall
                     )
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                tts.speak(
-                                    text = previewText,
-                                    overrideSetting = currentProvider
-                                )
-                            }
+                    // --- 修改：预览按钮和语言切换 ---
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 语言切换小标签
+                        listOf("zh" to "中", "en" to "EN", "ko" to "KR").forEach { (code, label) ->
+                            androidx.compose.material3.InputChip(
+                                selected = selectedPreviewLang == code,
+                                onClick = { selectedPreviewLang = code },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            )
                         }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
-                            contentDescription = stringResource(R.string.test_tts)
-                        )
+
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    tts.speak(
+                                        text = previewTexts[selectedPreviewLang] ?: "",
+                                        overrideSetting = currentProvider
+                                    )
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
+                                contentDescription = stringResource(R.string.test_tts)
+                            )
+                        }
                     }
                 }
 
