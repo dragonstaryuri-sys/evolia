@@ -84,8 +84,8 @@ class DiaryWorker(
             val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-            // 1. 获取自上次日记以来的所有新消息
-            val conversations = conversationRepo.getConversationsOfAssistant(assistant.id).first()
+            // 1. 获取自上次日记以来的所有新消息 (不区分虚拟/普通模式)
+            val conversations = conversationRepo.getConversationsOfAssistantAnyMode(assistant.id).first()
             val newMessages = conversations.flatMap { conv ->
                 conv.messageNodes.flatMap { node ->
                     node.messages.filter {

@@ -29,6 +29,9 @@ interface ConversationDAO {
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = :isVirtual ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfAssistant(assistantId: String, isVirtual: Boolean = false): Flow<List<ConversationEntity>>
 
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
+    fun getConversationsOfAssistantAnyMode(assistantId: String): Flow<List<ConversationEntity>>
+
     @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated, is_virtual as isVirtual FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = :isVirtual ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfAssistantPaging(assistantId: String, isVirtual: Boolean = false): PagingSource<Int, LightConversationEntity>
 

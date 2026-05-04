@@ -80,6 +80,16 @@ class ConversationRepository(
             }
     }
 
+    fun getConversationsOfAssistantAnyMode(assistantId: Uuid): Flow<List<Conversation>> {
+        return conversationDAO
+            .getConversationsOfAssistantAnyMode(assistantId.toString())
+            .map { list ->
+                list.map { entity ->
+                    conversationEntityToConversation(entity)
+                }
+            }
+    }
+
     fun getAllLightConversations(): Flow<List<Conversation>> {
         return conversationDAO.getAllLight()
             .map { list ->
