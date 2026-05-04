@@ -623,37 +623,44 @@ class ChatService(
             }
 
             checkInvalidMessages(conversationId)
+            // 💡 提取记忆检索逻辑并增加超时保护，防止 Embedding 挂起
+            val retrievedMemories = withContext(Dispatchers.IO) {
+                if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(conversationId)) {
+                    // 设置 8 秒超时，如果接口没响应就跳过记忆，保证聊天不卡死
+                    kotlinx.coroutines.withTimeoutOrNull(8000) {
+                        if (assistant.useRagMemoryRetrieval) {
+                            val lastUserMsg = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
+                            if (lastUserMsg.isNotBlank()) {
+                                val results = memoryRepository.retrieveRelevantMemoriesWithScores(
+                                    assistantId = assistant.id.toString(),
+                                    query = lastUserMsg,
+                                    limit = assistant.ragLimit,
+                                    similarityThreshold = assistant.ragSimilarityThreshold,
+                                    includeCore = assistant.ragIncludeCore,
+                                    includeEpisodes = assistant.ragIncludeEpisodes,
+                                    mode = assistant.memoryRetrievalMode
+                                )
+                                val memories = results.map { it.first }
+                                if (settings.enableRagLogging) {
+                                    results.forEach { (mem, score) ->
+                                        Log.d("RAG", " - [${mem.type}] (Score: ${String.format("%.4f", score)}) ${mem.content.take(50)}...")
+                                    }
+                                }
+                                memories
+                            } else {
+                                emptyList()
+                            }
+                        } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                    } ?: emptyList() // 超时返回空列表
+                } else emptyList()
+            }
 
             generationHandler.generateText(
                 settings = settings,
                 model = model,
                 messages = conversation.currentMessages.let { if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it },
                 assistant = assistant,
-                memories = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(conversationId)) {
-                    if (assistant.useRagMemoryRetrieval) {
-                        val lastUserMsg = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
-                        if (lastUserMsg.isNotBlank()) {
-                            val results = memoryRepository.retrieveRelevantMemoriesWithScores(
-                                assistantId = assistant.id.toString(),
-                                query = lastUserMsg,
-                                limit = assistant.ragLimit,
-                                similarityThreshold = assistant.ragSimilarityThreshold,
-                                includeCore = assistant.ragIncludeCore,
-                                includeEpisodes = assistant.ragIncludeEpisodes,
-                                mode = assistant.memoryRetrievalMode
-                            )
-                            val memories = results.map { it.first }
-                            if (settings.enableRagLogging) {
-                                results.forEach { (mem, score) ->
-                                    Log.d("RAG", " - [${mem.type}] (Score: ${String.format("%.4f", score)}) ${mem.content.take(50)}...")
-                                }
-                            }
-                            memories
-                        } else {
-                            emptyList()
-                        }
-                    } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-                } else emptyList(),
+                memories = retrievedMemories,
                 inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
                 outputTransformers = outputTransformers,
                 tools = buildList {
