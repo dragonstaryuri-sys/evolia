@@ -1428,4 +1428,8 @@
   <string name="context_source_rag_match">RAG 匹配 (%s)</string>
   <string name="context_source_keyword_match">关键词匹配: %s</string>
 
+  <string name="setting_tts_page_voice_default">系统默认</string>
+  <string name="setting_tts_page_voice_online">在线音色</string>
+  <string name="setting_tts_page_voice_offline">离线音色</string>
+
 </resources>

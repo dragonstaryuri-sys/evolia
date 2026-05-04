@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,15 +15,20 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -30,8 +36,6 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
-import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.tts.provider.TTSProviderSetting
 
 @Composable
@@ -431,6 +435,30 @@ private fun SystemTTSConfiguration(
     setting: TTSProviderSetting.SystemTTS,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
+    val context = LocalContext.current
+    val voices = remember { mutableStateListOf<android.speech.tts.Voice>() }
+    var voiceExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val tts = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                // Initial success callback
+            }
+        }
+        var attempts = 0
+        while (attempts < 10) {
+            val v = tts.voices
+            if (!v.isNullOrEmpty()) {
+                voices.clear()
+                voices.addAll(v.toList().sortedBy { it.name })
+                break
+            }
+            kotlinx.coroutines.delay(500)
+            attempts++
+        }
+        tts.shutdown()
+    }
+
     // Speech Rate
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_speech_rate)) },
@@ -463,6 +491,59 @@ private fun SystemTTSConfiguration(
             modifier = Modifier.fillMaxWidth(),
             label = stringResource(R.string.setting_tts_page_pitch)
         )
+    }
+
+    // Voice Selection
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_voice)) },
+        description = { Text(stringResource(R.string.setting_tts_page_voice_description)) }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = voiceExpanded,
+            onExpandedChange = { voiceExpanded = !voiceExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.voiceName ?: stringResource(R.string.setting_tts_page_voice_default),
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
+                }
+            )
+            ExposedDropdownMenu(
+                expanded = voiceExpanded,
+                onDismissRequest = { voiceExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.setting_tts_page_voice_default)) },
+                    onClick = {
+                        onValueChange(setting.copy(voiceName = null))
+                        voiceExpanded = false
+                    }
+                )
+                voices.forEach { voice ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(voice.name)
+                                Text(
+                                    text = "${voice.locale.displayName} (${if (voice.isNetworkConnectionRequired) stringResource(R.string.setting_tts_page_voice_online) else stringResource(R.string.setting_tts_page_voice_offline)})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        onClick = {
+                            onValueChange(setting.copy(voiceName = voice.name))
+                            voiceExpanded = false
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -559,4 +640,3 @@ private fun ElevenLabsTTSConfiguration(
         }
     }
 }
-

@@ -1473,4 +1473,8 @@
   <string name="context_source_always_included">Always included</string>
   <string name="context_source_rag_match">RAG Match (%s)</string>
   <string name="context_source_keyword_match">Keyword: %s</string>
+
+  <string name="setting_tts_page_voice_default">System Default</string>
+  <string name="setting_tts_page_voice_online">Online Voices</string>
+  <string name="setting_tts_page_voice_offline">Offline Voices</string>
 </resources>
