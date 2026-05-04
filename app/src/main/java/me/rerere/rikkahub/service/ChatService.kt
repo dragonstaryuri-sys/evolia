@@ -649,7 +649,9 @@ class ChatService(
                                 }
                             }
                             memories
-                        } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
+                        } else {
+                            emptyList()
+                        }
                     } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
                 } else emptyList(),
                 inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
