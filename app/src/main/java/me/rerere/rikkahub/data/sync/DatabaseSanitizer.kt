@@ -68,7 +68,10 @@ object DatabaseSanitizer {
                 "AgentDiaryEntity",
                 "schedules",
                 "chat_segments",
-                "agent_tasks"
+                "agent_tasks",
+                "token_usage",
+                "books",
+                "book_progress"
             )
 
             // 3. 交叉比对迁移

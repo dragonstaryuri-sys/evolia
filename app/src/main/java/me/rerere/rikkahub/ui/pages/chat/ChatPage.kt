@@ -478,7 +478,7 @@ private fun ChatPageContent(
                 val hasTextInput = inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
 
                 val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && showNewChatContent && !hasTextInput && !isKeyboardOpen
-
+                val errorSelectModelText = stringResource(R.string.error_select_model_first)
                 androidx.compose.animation.AnimatedVisibility(
                     visible = shouldShowNewChatContent,
                     enter = androidx.compose.animation.fadeIn(),
@@ -557,7 +557,7 @@ private fun ChatPageContent(
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                } else { toaster.show("Please select a model first", type = ToastType.Error) }
+                                } else { toaster.show(errorSelectModelText, type = ToastType.Error) }
                             },
                             onCancelClick = { loadingJob?.cancel() },
                             enableSearch = enableWebSearch,
@@ -571,7 +571,7 @@ private fun ChatPageContent(
                             onSendClick = {
                                 if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
                                 else {
-                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
+                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@MinimalChatInput }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
                                 }
                                 inputState.clearInput()
@@ -579,7 +579,7 @@ private fun ChatPageContent(
                             onLongSendClick = {
                                 if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
                                 else {
-                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@MinimalChatInput }
+                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@MinimalChatInput }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
                                 }
                                 inputState.clearInput()
@@ -607,7 +607,7 @@ private fun ChatPageContent(
                             onClickSuggestion = { suggestion ->
                                 if (currentChatModel != null) {
                                     vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                } else { toaster.show("Please select a model first", type = ToastType.Error) }
+                                } else { toaster.show(errorSelectModelText, type = ToastType.Error) }
                             },
                             onCancelClick = { loadingJob?.cancel() },
                             enableSearch = enableWebSearch,
@@ -621,7 +621,7 @@ private fun ChatPageContent(
                             onSendClick = {
                                 if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
                                 else {
-                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
+                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput }
                                     vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
                                 }
                                 inputState.clearInput()
@@ -629,7 +629,7 @@ private fun ChatPageContent(
                             onLongSendClick = {
                                 if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
                                 else {
-                                    if (currentChatModel == null) { toaster.show("Please select a model first", type = ToastType.Error); return@ChatInput }
+                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput }
                                     vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
                                 }
                                 inputState.clearInput()
