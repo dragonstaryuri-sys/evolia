@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.common.FeatureConfig
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.discover.ui.components.ScheduleCard
@@ -68,16 +69,18 @@ fun DiscoverPage() {
                 )
             }
 
-            // 2. 阅读功能 (新增加)
-            item {
-                DiscoverItem(
-                    title = stringResource(me.rerere.rikkahub.discover.R.string.discover_reading_title),
-                    description = stringResource(me.rerere.rikkahub.discover.R.string.discover_reading_desc),
-                    icon = { Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary) },
-                    onClick = {
-                        navController.navigate(Screen.BookShelf)
-                    }
-                )
+            // 2. 阅读功能 (隐藏中)
+            if (FeatureConfig.enableSoulfulReading) {
+                item {
+                    DiscoverItem(
+                        title = stringResource(me.rerere.rikkahub.discover.R.string.discover_reading_title),
+                        description = stringResource(me.rerere.rikkahub.discover.R.string.discover_reading_desc),
+                        icon = { Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary) },
+                        onClick = {
+                            navController.navigate(Screen.BookShelf)
+                        }
+                    )
+                }
             }
 
             // 3. Token 消耗统计

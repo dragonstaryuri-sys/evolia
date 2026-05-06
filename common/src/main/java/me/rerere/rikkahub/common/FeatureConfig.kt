@@ -27,6 +27,12 @@ object FeatureConfig {
     // 示例：还在调优的触觉反馈模式
     val enableCustomHaptics: Boolean = isExperimentalEnabled && true
 
+    // Soulful Reading 功能开关
+    val enableSoulfulReading: Boolean = isExperimentalEnabled && false
+
+    // 记忆档案编辑与更新开关
+    val enableMasterMemoryEditing: Boolean = isExperimentalEnabled && false
+
     /**
      * 检查某个功能是否可见
      */

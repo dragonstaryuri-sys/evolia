@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.FeatureConfig
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
@@ -929,21 +930,32 @@ private fun MasterMemoryCard(
                 // Master Memory Content
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = if (FeatureConfig.enableMasterMemoryEditing) RoundedCornerShape(10.dp) else RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Rounded.HistoryEdu, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
                             Text(stringResource(R.string.assistant_memory_master_content_title), style = MaterialTheme.typography.titleSmall)
                         }
-                        DebouncedTextField(
-                            value = assistant.masterMemoryContent,
-                            onValueChange = { onUpdateAssistant(assistant.copy(masterMemoryContent = it)) },
-                            modifier = Modifier.fillMaxWidth(),
-                            minLines = 3,
-                            maxLines = 10,
-                            stateKey = "master_content_${assistant.id}"
-                        )
+
+                        if (FeatureConfig.enableMasterMemoryEditing) {
+                            DebouncedTextField(
+                                value = assistant.masterMemoryContent,
+                                onValueChange = { onUpdateAssistant(assistant.copy(masterMemoryContent = it)) },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 3,
+                                maxLines = 10,
+                                stateKey = "master_content_${assistant.id}"
+                            )
+                        } else {
+                            Text(
+                                text = assistant.masterMemoryContent.ifBlank { stringResource(R.string.assistant_memory_master_never_updated) },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                            )
+                        }
+
                         if (assistant.lastMasterMemoryUpdate > 0) {
                             val time = java.time.Instant.ofEpochMilli(assistant.lastMasterMemoryUpdate)
                                 .atZone(java.time.ZoneId.systemDefault())
@@ -954,7 +966,7 @@ private fun MasterMemoryCard(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        } else {
+                        } else if (FeatureConfig.enableMasterMemoryEditing) {
                             Text(
                                 text = stringResource(R.string.assistant_memory_master_never_updated),
                                 style = MaterialTheme.typography.labelSmall,
@@ -965,24 +977,26 @@ private fun MasterMemoryCard(
                 }
 
                 // Actions
-                Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
-                ) {
-                    Box(modifier = Modifier.padding(16.dp)) {
-                        Button(
-                            onClick = {
-                                if (assistant.masterMemoryContent.isNotBlank()) {
-                                    showBackupDialog = true
-                                } else {
-                                    onConsolidate()
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.assistant_memory_update_masterfile))
+                if (FeatureConfig.enableMasterMemoryEditing) {
+                    Surface(
+                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+                    ) {
+                        Box(modifier = Modifier.padding(16.dp)) {
+                            Button(
+                                onClick = {
+                                    if (assistant.masterMemoryContent.isNotBlank()) {
+                                        showBackupDialog = true
+                                    } else {
+                                        onConsolidate()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.assistant_memory_update_masterfile))
+                            }
                         }
                     }
                 }
