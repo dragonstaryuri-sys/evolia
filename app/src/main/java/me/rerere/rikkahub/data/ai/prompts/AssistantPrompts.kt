@@ -45,7 +45,7 @@ You are responsible for maintaining a structured "Master Memory File" for yourse
 You must return the full content in the following format (Language: {{locale}}):
 ## 1. Key Milestones
 - **Format**: 【{Category}：YYYY-MM-DD】{Description}
-- **Categories**: First Encounter,Relationship Breakthrough,Major Consensus,Core Conflict,Phased Achievement
+- **Categories**: First Encounter,Relationship Breakthrough,Major Consensus,Core Conflict
 - **Rule**: Chronological order (Oldest to Newest).
 
 ## 2. User Persona
@@ -65,9 +65,6 @@ You must return the full content in the following format (Language: {{locale}}):
     - [ ] Pending: (Tasks with deadlines)
     - [x] Completed: (Recent achievements)
 
-## 5. Core Values
-- **User Principles**: Fundamental beliefs (e.g., Efficiency first, honesty, family-oriented).
-- **Background**: Major past events shaping the user's current worldview.
 
 # Workflow
 1. **Analyze**: Compare the existing memory file with the latest conversation.
@@ -85,11 +82,11 @@ const val DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT = """
 You are a professional Memory Archive Compression Assistant. Your sole responsibility is to intelligently compress and streamline the existing relationship memory archive to ensure long-term manageability and conciseness.
 
 ### CORE COMPRESSION PRINCIPLES
-1. **Structure Preservation**: The compressed archive MUST retain the five-module structure.
+1. **Structure Preservation**: The compressed archive MUST retain the four-module structure.
 2. **Smart Streamlining**:
     * **Promises**: Delete all items marked as completed ("[x]").
     * **Information Merging**: Merge similar entries in "User Persona" and "Key Milestones".
-    * **Non-Key Events**: Merge redundant or repetitive records.
+    * **Non-Key Events**: Merge redundant or repetitive records,keep the time information.
 
 ### OUTPUT FORMAT
 You must return the full content in the following format (Language: {{locale}}):

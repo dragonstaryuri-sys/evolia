@@ -897,7 +897,10 @@ private fun MasterMemoryCard(
         // Master Toggle
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = if (assistant.enableMasterMemory) RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp) else RoundedCornerShape(24.dp)
+            shape = if (assistant.enableMasterMemory && FeatureConfig.enableMasterMemoryEditing)
+                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+            else
+                RoundedCornerShape(24.dp)
         ) {
             Row(
                 modifier = Modifier
@@ -925,7 +928,7 @@ private fun MasterMemoryCard(
             }
         }
 
-        AnimatedVisibility(visible = assistant.enableMasterMemory) {
+        AnimatedVisibility(visible = assistant.enableMasterMemory && FeatureConfig.enableMasterMemoryEditing) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // Master Memory Content
                 Surface(
