@@ -353,7 +353,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
 private data class LanguageOption(val name: String, val tag: String)
 
 @Composable
-private fun ProviderConfigWarningCard(navController: androidx.navigation.NavController) {
+fun ProviderConfigWarningCard(navController: androidx.navigation.NavController) {
     Surface(
         modifier = Modifier
             .padding(16.dp)

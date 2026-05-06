@@ -16,13 +16,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.common.FeatureConfig
+import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.discover.ui.components.ScheduleCard
 import me.rerere.rikkahub.discover.ui.ScheduleViewModel
+import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
+import me.rerere.rikkahub.ui.pages.setting.ProviderConfigWarningCard
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 
@@ -38,6 +42,10 @@ fun DiscoverPage() {
     val completedCount by scheduleViewModel.todayCompletedCount.collectAsState()
     val unfinishedCount by scheduleViewModel.unfinishedCount.collectAsState()
     val allPendingSchedules by scheduleViewModel.allPendingSchedules.collectAsState()
+
+    // 获取设置状态
+    val assistantVm: AssistantVM = koinViewModel()
+    val settings by assistantVm.settings.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -56,6 +64,13 @@ fun DiscoverPage() {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 配置提醒
+            if (settings.isNotConfigured()) {
+                item {
+                    ProviderConfigWarningCard(navController)
+                }
+            }
+
             // 1. 智能日程卡片
             item {
                 ScheduleCard(

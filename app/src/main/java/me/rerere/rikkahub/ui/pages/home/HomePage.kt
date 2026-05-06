@@ -37,6 +37,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -49,6 +50,7 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantCreationSheet
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
+import me.rerere.rikkahub.ui.pages.setting.ProviderConfigWarningCard
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
@@ -201,6 +203,12 @@ fun AgentListPage() {
                 contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
+                if (settings.isNotConfigured()) {
+                    item {
+                        ProviderConfigWarningCard(navController)
+                    }
+                }
+
                 // 1. 渲染主智能体
                 itemsIndexed(mainAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
                     PhysicsSwipeToDelete(
