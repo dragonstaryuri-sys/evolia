@@ -35,6 +35,7 @@ import me.rerere.rikkahub.utils.UiState
 import org.koin.compose.koinInject
 import okhttp3.OkHttpClient
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.BuildConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +54,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
                 },
                 actions = {
-                    if(settings.developerMode) {
+                    if (settings.developerMode) {
                         IconButton(
                             onClick = {
                                 navController.navigate(Screen.Developer)
@@ -295,12 +296,18 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     }
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
-                        subtitle = stringResource(R.string.setting_page_chat_storage_desc, storageState.first, storageState.second.toDouble() / 1024 / 1024),
+                        subtitle = stringResource(
+                            R.string.setting_page_chat_storage_desc,
+                            storageState.first,
+                            storageState.second.toDouble() / 1024 / 1024
+                        ),
                         icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
                         onClick = {
-                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = android.net.Uri.fromParts("package", context.packageName, null)
-                            }
+                            val intent =
+                                android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                    .apply {
+                                        data = android.net.Uri.fromParts("package", context.packageName, null)
+                                    }
                             context.startActivity(intent)
                         }
                     )
@@ -315,7 +322,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_donate_coffee),
                         subtitle = stringResource(R.string.setting_page_donate_coffee_desc),
-                        icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
+                        icon = {
+                            Icon(
+                                Icons.Rounded.Favorite,
+                                null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
                         onClick = {
                             context.openUrl("https://www.ifdian.net/a/evolia_xx")
                         }
@@ -388,41 +402,43 @@ private fun UpdateAvailableBanner(
 
     if (updateState is UiState.Success) {
         val updateInfo = (updateState as UiState.Success).data
-        Surface(
-            modifier = Modifier
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .fillMaxWidth(),
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            shape = MaterialTheme.shapes.medium,
-            onClick = {
-                updateInfo.downloads.firstOrNull()?.let {
-                    context.openUrl(it.url)
+        if (me.rerere.rikkahub.utils.Version(updateInfo.version) > me.rerere.rikkahub.utils.Version(BuildConfig.VERSION_NAME)){
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .fillMaxWidth(),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                onClick = {
+                    updateInfo.downloads.firstOrNull()?.let {
+                        context.openUrl(it.url)
+                    }
                 }
-            }
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Rounded.Public,
-                    null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-                Spacer(Modifier.width(16.dp))
-                Column {
-                    Text(
-                        stringResource(R.string.update_banner_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.Public,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                    Text(
-                        updateInfo.changelog,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            stringResource(R.string.update_banner_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            updateInfo.changelog,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f),
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
