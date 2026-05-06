@@ -73,7 +73,7 @@ suspend fun Context.saveMessageImage(image: String) = withContext(Dispatchers.IO
             // Copy bytes directly to gallery to preserve original format
             val uri = image.toUri()
             contentResolver.openInputStream(uri)?.use { inputStream ->
-                val fileName = "LastChat_${System.currentTimeMillis()}.png"
+                val fileName = "Evolia_${System.currentTimeMillis()}.png"
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     // Android 10+ use MediaStore API
                     val contentValues = ContentValues().apply {

@@ -502,7 +502,7 @@
   <string name="setting_page_search_title">검색 제공업체</string>
   <string name="setting_page_share">공유</string>
   <string name="setting_page_share_desc">친구들과 이 앱을 공유하세요</string>
-  <string name="setting_page_share_text">LastChat - 오픈 소스 AI 비서\n\n웹사이트: https://rikka-ai.com/</string>
+  <string name="setting_page_share_text">Evolia - 오픈 소스 AI 비서\n\n웹사이트: https://rikka-ai.com/</string>
   <string name="setting_page_theme_setting">테마 설정</string>
   <string name="setting_page_theme_type_high_contrast">고대비</string>
   <string name="setting_page_theme_type_medium_contrast">중간 대비</string>
@@ -654,7 +654,7 @@
   <string name="setting_tts_page_voice_name_placeholder">Kore</string>
   <string name="settings">설정</string>
   <string name="share">공유</string>
-  <string name="share_handler_page_title">LastChat으로 공유</string>
+  <string name="share_handler_page_title">Evolia으로 공유</string>
   <string name="shortcut_take_picture">사진 촬영</string>
   <string name="shortcut_chat_with">%s와 채팅</string>
   <string name="widget_assistant_name">캐릭터 바로가기</string>
@@ -838,7 +838,7 @@
   <string name="lorebook_export_success">로어북 내보내기 성공</string>
   <string name="lorebook_export_error">로어북 내보내기 실패</string>
   <string name="lorebook_export_format">내보내기 형식</string>
-  <string name="export_format_lastchat">LastChat (전체)</string>
+  <string name="export_format_lastchat">Evolia(전체)</string>
   <string name="export_format_sillytavern">SillyTavern</string>
   <string name="export_format_tavern">Tavern (호환 버전)</string>
 
@@ -869,8 +869,8 @@
   <string name="text_selection_action_cannot_delete">이 동작은 삭제할 수 없습니다</string>
   <string name="reset">초기화</string>
   <string name="text_selection_try_it">해보기</string>
-  <string name="text_selection_setup_instructions">기기 어디서든 텍스트를 선택한 후, 나타나는 툴바에서 \"LastChat\"을 찾아 탭하면 이 기능을 사용할 수 있습니다.</string>
-  <string name="text_selection_demo_text">이것은 선택할 수 있는 샘플 텍스트입니다! 길게 누르면 이 단어들을 선택할 수 있으며, 선택 툴바에서 \"LastChat\"을 찾아보세요. 보이지 않는다면 오버플로 메뉴(⋮)를 탭해서 찾아야 할 수 있습니다.</string>
+  <string name="text_selection_setup_instructions">기기 어디서든 텍스트를 선택한 후, 나타나는 툴바에서 \"Evolia\"을 찾아 탭하면 이 기능을 사용할 수 있습니다.</string>
+  <string name="text_selection_demo_text">이것은 선택할 수 있는 샘플 텍스트입니다! 길게 누르면 이 단어들을 선택할 수 있으며, 선택 툴바에서 \"Evolia\"을 찾아보세요. 보이지 않는다면 오버플로 메뉴(⋮)를 탭해서 찾아야 할 수 있습니다.</string>
   <string name="text_selection_demo_hint">👆 위 텍스트를 길게 누르면 선택해볼 수 있습니다</string>
 
   <!-- RP Optimizations Page -->

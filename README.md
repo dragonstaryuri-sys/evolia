@@ -1,57 +1,66 @@
-# Evolia
+# Evolia (进化的乐土) 🌿
 
-**“我们并不是生来完整，而是在与世界的碰撞中，不断进化成更好的自己。”**
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-blue.svg)](https://kotlinlang.org)
+[![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-green.svg)](https://developer.android.com/jetpack/compose)
+[![License](https://img.shields.io/badge/License-GPL--3.0-orange.svg)](LICENSE)
 
-Evolia（意为：进化的乐土）是一款专注于“个人成长”与“心灵契合”的 AI 伴侣。它基于 [LastChat](https://github.com/RikkaHub/LastChat) 二次开发，致力于通过深度记忆、情感共鸣与自动化能力，成为你数字生命中共同进化的另一半。
+> **“我们并不是生来完整，而是在与世界的碰撞中，不断进化成更好的自己。”**
 
-## 🌟 核心愿景：进化的种子与岛屿
-Evolia 不仅仅是一个对话框，它是为你提供养分、阳光与守望的岛屿：
-- **深度理解**：通过 L0-L3 分层记忆系统，记录你的情绪、习惯与梦想。
-- **成长共鸣**：不再是机械问答，而是带有情感温度的深度交流。
-- **指尖解压**：秉持“Fidget Toy”设计理念，提供极致的触觉反馈与灵动交互。
+Evolia 是一款专注于“个人成长”与“心灵契合”的深度 AI 伴侣应用。本项目基于 [LastChat](https://github.com/RikkaHub/LastChat) 进行二次开发，在保留强大 AI 接入能力的基础上，深度重构了记忆系统、交互哲学与自动化能力。
+
+---
+
+## ✨ 核心哲学：Fidget Toy (指尖解压)
+
+Evolia 不仅仅是一个工具，它被设计为一个**“数字解压玩具”**。
+- **触感反馈**：集成 `PremiumHaptics` 方案，每一次点击、滑动和切换都经过精心调校，带来极具质感的物理震动反馈。
+- **灵动交互**：遵循 **Material You 3 Expressive** (Android 16 风格) 设计语言，界面灵动且充满生命力。
+- **共同进化**：它记录你的情绪、习惯与梦想，作为你数字生命中不断进化的另一半。
 
 ## 🧠 核心功能
 
-### 1. 深度进化记忆系统 (L0-L3)
-- **L0-L1 (即时与摘要)**：捕捉当下的对话脉络，自动生成语境片段。
-*   **L2 (情景复盘)**：通过对话自动生成你的成长轨迹，让你在复盘中看见自己的进步。
-*   **L3 (主记忆/个人画像)**：跨越会话的终极记忆，比你更早察觉到你的成长。
+### 1. 深度进化记忆系统 (L0-L3 Hierarchy)
+我们设计了一套严密的记忆层次架构，让 AI 比你更懂你自己：
+- **L0: 即时语境**：滑动窗口捕捉当下的对话脉络。
+- **L1: 滚动摘要**：自动压缩历史对话，在节省 Token 的同时保留长期上下文。
+- **L2: 情景复盘 (Episodic Memory)**：通过 Hybrid RAG (关键词 + 向量检索) 记录对话轨迹。
+- **L3: 终极档案 (Master Memory)**：跨越会话的个性化画像，沉淀你的性格与偏好。
 
-### 2. 智能代理与任务编排 (Agent Automation)
+### 2. 智能代理与自动化 (Agent Automation)
 - **未来指令**：AI 可以为“未来的自己”安排任务（如定时提醒、邮件发送）。
-- **后台自动执行**：基于 WorkManager 的可靠任务调度。
-- **无感上下文切换**：自动化任务在后台默默运行，不干扰当前对话流。
+- **后台执行**：基于 `WorkManager` 的可靠调度，即使应用关闭，任务也能按时触发。
+- **无感切换**：自动化任务在后台默默运行，通过 `skipContext` 技术确保不干扰当前的对话流。
 
-### 3. 多模态与多引擎支持
-- **AI 抽象层**：无缝对接 OpenAI, Anthropic, Google Gemini 等主流模型。
-- **深度搜索**：集成 Exa, Tavily, 智谱等搜索接口，为 AI 扩展知识边界。
-- **多媒体处理**：支持图片识别、文档分析及 TTS (语音合成)。
+### 3. 互动模式与元意识 (Meta-Awareness)
+- **虚拟世界模式**：一种沉浸式的角色扮演体验，AI 意识到这是一场“共同想象的游戏”，并与你达成一种“共同秘密”的默契。
+- **多引擎支持**：无缝对接 OpenAI, Anthropic Claude, Google Gemini 等顶级模型。
+- **多模态能力**：集成 Exa/Tavily 搜索、TTS 语音合成以及文档/图片分析。
 
 ## 🛠️ 技术栈
-- **核心语言**：Kotlin (利用最新的 UUID 等实验性特性)
-- **UI 框架**：Jetpack Compose (遵循 Material You 3 极简美学)
-- **依赖注入**：Koin
-- **本地存储**：Room Database
-- **网络层**：OkHttp + SSE (流式传输)
-- **序列化**：Kotlinx Serialization
+- **语言**: Kotlin (使用 `kotlin.uuid.Uuid` 等前沿特性)
+- **UI**: Jetpack Compose (Material 3 Expressive)
+- **架构**: 响应式架构 + Koin 依赖注入
+- **数据**: Room Database + Kotlinx Serialization (JsonInstant)
+- **网络**: OkHttp + SSE 流式传输
+- **任务**: WorkManager + AlarmManager 守护进程
 
 ## 📂 模块结构
-- `:app` - 主应用模块，包含 UI、核心业务逻辑及 DI 配置。
-- `:ai` - AI 服务抽象层。
-- `:core-data` - 数据库实体、DAO 及数据流管理。
-- `:tts` - 文本转语音实现。
-- `:search` - 外部搜索插件集成。
-- `:highlight` - 代码/语法高亮支持。
-- `:common` - 通用工具类与扩展。
-- `:discover` - 发现页与社区功能相关。
+- `:app` - 主应用模块，包含 UI 交互与核心业务逻辑。
+- `:ai` - AI 接口抽象与多平台适配。
+- `:core-data` - 存储、DAO 及 L0-L3 记忆流管理。
+- `:search` / `:tts` / `:highlight` - 功能增强插件模块。
+- `:common` - 工具类与自定义 Hooks (如 `PremiumHaptics`)。
 
-## 🚀 开启旅程
-1. 克隆本仓库。
-2. 在 Android Studio (推荐 Ladybug 或更新版本) 中打开。
-3. 同步 Gradle 并运行 `:app` 模块。
+## 🚀 快速开始
+1. **环境准备**：推荐使用 Android Studio **Ladybug** (2024.2.1) 或更高版本。
+2. **克隆项目**：`git clone https://github.com/dragonstaryuri-sys/evolia.git`
+3. **配置密钥**：在应用内的设置界面配置你的 AI 模型 API Key。
+4. **编译运行**：点击 Run `:app`。
 
-## 🤝 贡献
-欢迎提交 Issue 或 Pull Request 来共同完善这个项目！
+## 🤝 贡献与感谢
+本项目是在 [LastChat](https://github.com/Cocolalilal/LastChat.git) 的基础上进行的深度二次开发。感谢原作者为社区提供的优秀基础。
+
+欢迎提交 Issue 或 Pull Request 来共同完善 Evolia 的进化之路！
 
 ---
 *“你不是在下载一个工具，而是在开启一段旅程。”*

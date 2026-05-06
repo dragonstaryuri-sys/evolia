@@ -1,3 +1,4 @@
+# --- Android / Kotlin ---
 *.iml
 .gradle
 /local.properties
@@ -12,19 +13,44 @@ local.properties
 .history
 .kotlin
 
-# 忽略所有模块的 build 目录
+# Build artifacts
 */build/
 build/
-# 忽略 Gradle 缓存
-.gradle/
-# 忽略本地配置
-local.properties
-# 忽略 IDE 配置
-.idea/
-*.iml
-# 忽略 APK/AAB 文件
 *.apk
 *.aab
-# 忽略 DataStore/SP 等本地数据
+*.output
+
+# --- Security & Secrets (CRITICAL) ---
+# 签名文件
+*.jks
+*.keystore
+*.p12
+
+# 密钥配置文件
+secrets.properties
+key.properties
+signing.properties
+
+# Google Services (Firebase)
+google-services.json
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# --- Database & Local Data ---
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+
+# --- Gradle ---
+.gradle/
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/

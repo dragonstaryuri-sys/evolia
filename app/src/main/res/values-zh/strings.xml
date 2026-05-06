@@ -827,7 +827,7 @@
 <string name="minimal_input_search">搜索</string>
 <string name="minimal_input_photos">照片</string>
 <string name="minimal_input_files">文件</string>
-<string name="setting_chat_input_style_floating">Dreamland</string>
+<string name="setting_chat_input_style_floating">Evolia</string>
 <string name="setting_chat_input_style_minimal">" 极简模式"</string>
 <string name="minimal_input_camera">相机</string>
 <string name="assistant_lorebooks_enabled">"启用 %d "</string>
@@ -886,10 +886,10 @@
 <string name="context_max_messages_unlimited">无限制</string>
 <string name="context_enable_summarization">总结较早的消息</string>
 <string name="context_enable_summarization_desc">生成精简摘要，以保留前文聊天进度</string>
-    <string name="export_format_lastchat">"Evolia "</string>
+    <string name="export_format_lastchat">"Evolia"</string>
     <string name="export_format_sillytavern">SillyTavern</string>
 <string name="export_format_tavern">Tavern (兼容)</string>
-<string name="text_selection_menu_label">问问 DreamLand</string>
+<string name="text_selection_menu_label">问问 Evolia</string>
 <string name="text_selection_translate">翻译</string>
 <string name="text_selection_generating">生成中…</string>
 <string name="setting_android_integration">安卓端集成</string>
@@ -918,8 +918,8 @@
 <string name="text_selection_action_cannot_delete">该操作不能删除</string>
 <string name="reset">恢复默认</string>
 <string name="text_selection_try_it">试试看</string>
-<string name="text_selection_setup_instructions">在你设备上任意位置选中文本，在弹出的工具栏里找到 “DreamLand”，点击它就能使用这些功能。</string>
-<string name="text_selection_demo_text">这是一段你可以选中的示例文本！长按选中这些文字，然后在文本选择工具栏里找到 DreamLand并点击。如果没看到，可以点一下更多（⋮），就能找到。</string>
+<string name="text_selection_setup_instructions">在你设备上任意位置选中文本，在弹出的工具栏里找到 “Evolia”，点击它就能使用这些功能。</string>
+<string name="text_selection_demo_text">这是一段你可以选中的示例文本！长按选中这些文字，然后在文本选择工具栏里找到 Evolia并点击。如果没看到，可以点一下更多（⋮），就能找到。</string>
 
   <!-- Discover -->
   <string name="discover_page_title">发现</string>

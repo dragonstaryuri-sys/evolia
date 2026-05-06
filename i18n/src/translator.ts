@@ -78,7 +78,7 @@ export async function translateString(
 
     const prompt = `Translate the following Android app string resource to ${targetLanguage}.
 
-Context: This is a string resource from an Android LLM chat client app called LastChat.
+Context: This is a string resource from an Android LLM chat client app called Evolia.
 ${context ? `Additional context: ${context}` : ''}
 
 Original text: "${text}"

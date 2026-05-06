@@ -67,7 +67,7 @@ class AppShortcutManager(
                 Log.d(TAG, "Creating shortcut for assistant: ${assistant.name} (${assistant.id})")
                 val intent = Intent(context, ShortcutHandlerActivity::class.java).apply {
                     action = Intent.ACTION_VIEW
-                    data = "lastchat://assistant/${assistant.id}".toUri()
+                    data = "evolia://assistant/${assistant.id}".toUri()
                 }
 
                 val name = assistant.name.ifEmpty { "Assistant" }

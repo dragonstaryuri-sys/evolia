@@ -130,7 +130,7 @@ class AssistantWidget : GlanceAppWidget() {
         val intent = if (assistantId != null) {
             Intent(context, ShortcutHandlerActivity::class.java).apply {
                 action = Intent.ACTION_VIEW
-                data = android.net.Uri.parse("lastchat://assistant/${assistantId}")
+                data = android.net.Uri.parse("evolia://assistant/${assistantId}")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
         } else {

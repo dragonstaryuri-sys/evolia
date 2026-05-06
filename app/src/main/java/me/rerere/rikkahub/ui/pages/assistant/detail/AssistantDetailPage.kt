@@ -230,7 +230,7 @@ fun AssistantDetailPage(
                                 onDismissRequest = { showExportMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("LastChat Bundle (.json)") },
+                                    text = { Text("Evolia Bundle (.json)") },
                                     onClick = {
                                         showExportMenu = false
                                         if (hasMemories || hasLorebooks) {
@@ -245,7 +245,7 @@ fun AssistantDetailPage(
                                                         includeLorebooks = false
                                                     )
                                                     pendingExportContent = content
-                                                    val fileName = AssistantExportImport.getSuggestedFileName(assistant, "lastchat")
+                                                    val fileName = AssistantExportImport.getSuggestedFileName(assistant, "evolia")
                                                     exportLauncher.launch(fileName)
                                                 } catch (e: Exception) {
                                                     e.printStackTrace()
@@ -471,7 +471,7 @@ fun AssistantDetailPage(
                             includeLorebooks = includeLorebooks
                         )
                         pendingExportContent = content
-                        val fileName = AssistantExportImport.getSuggestedFileName(assistant, "lastchat")
+                        val fileName = AssistantExportImport.getSuggestedFileName(assistant, "evolia")
                         exportLauncher.launch(fileName)
                     } catch (e: Exception) {
                         e.printStackTrace()
