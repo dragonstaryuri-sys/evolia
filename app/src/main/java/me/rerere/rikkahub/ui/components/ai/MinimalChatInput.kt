@@ -754,6 +754,14 @@ private fun MinimalPickerContent(
 
         // Reasoning picker - only show if model has reasoning ability (same as floating toolbar)
         if (currentModel?.abilities?.contains(me.rerere.ai.provider.ModelAbility.REASONING) == true) {
+            val reasoningSubtitle = when (val budget = assistant.thinkingBudget) {
+                null, 0 -> stringResource(R.string.reasoning_off)
+                1 -> stringResource(R.string.reasoning_auto)
+                1024 -> stringResource(R.string.reasoning_light)
+                4096 -> stringResource(R.string.reasoning_medium)
+                16384 -> stringResource(R.string.reasoning_heavy)
+                else -> stringResource(R.string.reasoning_set_budget, budget)
+            }
             MinimalPickerItem(
                 icon = {
                     Icon(
@@ -763,7 +771,7 @@ private fun MinimalPickerContent(
                     )
                 },
                 title = stringResource(R.string.minimal_input_thinking),
-                subtitle = stringResource(R.string.minimal_input_thinking_desc),
+                subtitle = reasoningSubtitle,
                 onClick = {
                     showReasoningPicker = true
                 }
