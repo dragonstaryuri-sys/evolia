@@ -136,7 +136,7 @@ fun SettingAboutPage() {
                     subtitle = stringResource(R.string.about_page_source_code_desc),
                     trailing = Icons.AutoMirrored.Rounded.OpenInNew,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Cocolalilal/LastChat"))
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/dragonstaryuri-sys/evolia"))
                         context.startActivity(intent)
                     }
                 )

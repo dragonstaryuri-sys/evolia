@@ -777,7 +777,7 @@ private fun ImportExportPage(
                     if (!isExporting) {
                         val timestamp = LocalDateTime.now()
                             .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"))
-                        createDocumentLauncher.launch("LastChat_backup_$timestamp.zip")
+                        createDocumentLauncher.launch("Evolia_backup_$timestamp.zip")
                     }
                 }
             ) {

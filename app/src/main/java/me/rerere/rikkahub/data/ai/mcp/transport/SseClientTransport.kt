@@ -80,7 +80,7 @@ internal class SseClientTransport(
                         .build()
                 )
                 .addHeader("Accept", "text/event-stream")
-                .addHeader("User-Agent", "LastChat/${BuildConfig.VERSION_NAME}")
+                .addHeader("User-Agent", "Evolia/${BuildConfig.VERSION_NAME}")
                 .build(),
             listener = object : EventSourceListener() {
                 override fun onOpen(eventSource: EventSource, response: Response) {

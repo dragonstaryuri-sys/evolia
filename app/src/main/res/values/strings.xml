@@ -1249,7 +1249,7 @@
   <string name="about_page_android_version">Android Version</string>
   <string name="about_page_device">Device</string>
   <string name="about_page_architecture">Architecture</string>
-  <string name="about_page_based_on">Based on Evolia by Cocolalilal</string>
+  <string name="about_page_based_on">Based on LastChat by Cocolalilal</string>
 
   <!-- Settings Page - Support & Updates -->
   <string name="setting_page_donate_coffee">Buy Me a Coffee</string>

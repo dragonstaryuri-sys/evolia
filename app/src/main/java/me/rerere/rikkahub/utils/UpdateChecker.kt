@@ -18,7 +18,7 @@ import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val GITHUB_API_URL = "https://api.github.com/repos/Cocolalilal/LastChat/releases/latest"
+private const val GITHUB_API_URL = "https://api.github.com/repos/dragonstaryuri-sys/evolia/releases/latest"
 
 class UpdateChecker(private val client: OkHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -35,13 +35,13 @@ class UpdateChecker(private val client: OkHttpClient) {
                             .addHeader("Accept", "application/vnd.github+json")
                             .addHeader(
                                 "User-Agent",
-                                "LastChat ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
+                                "Evolia ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
                             )
                             .build()
                     ).await()
                     if (response.isSuccessful) {
                         val release = json.decodeFromString<GitHubRelease>(response.body.string())
-                        
+
                         // Convert GitHub release to UpdateInfo
                         val arch = getDeviceArchitecture()
                         val downloads = release.assets
@@ -53,7 +53,7 @@ class UpdateChecker(private val client: OkHttpClient) {
                                     size = formatFileSize(asset.size)
                                 )
                             }
-                        
+
                         // Sort downloads to prioritize architecture match
                         val sortedDownloads = downloads.sortedByDescending { download ->
                             when {
@@ -62,7 +62,7 @@ class UpdateChecker(private val client: OkHttpClient) {
                                 else -> 0
                             }
                         }
-                        
+
                         UpdateInfo(
                             version = release.tag_name.removePrefix("v"),
                             publishedAt = release.published_at,
@@ -80,7 +80,7 @@ class UpdateChecker(private val client: OkHttpClient) {
     }.catch {
         emit(UiState.Error(it))
     }.flowOn(Dispatchers.IO)
-    
+
     private fun getDeviceArchitecture(): String {
         val abis = Build.SUPPORTED_ABIS
         return when {
@@ -91,7 +91,7 @@ class UpdateChecker(private val client: OkHttpClient) {
             else -> "universal"
         }
     }
-    
+
     private fun formatFileSize(bytes: Long): String {
         return when {
             bytes >= 1_048_576 -> String.format("%.1f MB", bytes / 1_048_576.0)
@@ -103,7 +103,7 @@ class UpdateChecker(private val client: OkHttpClient) {
     fun downloadUpdate(context: Context, download: UpdateDownload) {
         runCatching {
             val request = DownloadManager.Request(download.url.toUri()).apply {
-                setTitle("LastChat Update")
+                setTitle("Evolia Update")
                 setDescription("Downloading ${download.name}...")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
