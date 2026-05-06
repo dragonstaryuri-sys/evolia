@@ -101,6 +101,8 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
+            isDebuggable = true
+
             isMinifyEnabled = true
             isShrinkResources = true
             isZipAlignEnabled = true
