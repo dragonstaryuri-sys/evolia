@@ -138,17 +138,12 @@ private class CustomTtsStateImpl(
     }
 
     override fun speak(text: String, flushCalled: Boolean, overrideSetting: TTSProviderSetting?) {
-        // Apply TTS filters FIRST (before markdown stripping), so patterns like * can match
+        // Apply TTS filters (Now fully controlled by user-defined rules)
         val filtered = applyTtsTextFilters(text)
 
-        // Filter out descriptive text usually wrapped in parentheses or single asterisks
-        // We keep double asterisks (**) because they are usually used for emphasis in conversation
-        val cleaned = filtered
-            .replace(Regex("\\(.*?\\)"), "") // Remove (english parentheses)
-            .replace(Regex("（.*?）"), "") // Remove （chinese parentheses）
-            .replace(Regex("(?<!\\*)\\*[^*]+?\\*(?!\\*)"), "") // Remove *actions* but keep **emphasis**
-
-        val processed = cleaned.stripMarkdown()
+        // Removed hardcoded parenthesis and asterisk filtering.
+        // Users can now define their own rules in TTS settings.
+        val processed = filtered.stripMarkdown()
 
         if (processed.isBlank()) {
             Log.d(TAG, "Text fully filtered, nothing to speak")
@@ -181,8 +176,9 @@ private class CustomTtsStateImpl(
             // Extract only matched content from ONLY_READ rules
             val extracted = StringBuilder()
             for (rule in onlyReadRules) {
-                val pattern = Regex.escape(rule.pattern)
-                val regex = Regex("$pattern(.+?)$pattern")
+                val startPattern = Regex.escape(rule.pattern)
+                val endPattern = Regex.escape(rule.endPattern ?: rule.pattern)
+                val regex = Regex("$startPattern(.*?)$endPattern")
                 val matches = regex.findAll(result)
                 for (match in matches) {
                     if (extracted.isNotEmpty()) extracted.append(" ")
@@ -195,8 +191,9 @@ private class CustomTtsStateImpl(
         // Apply SKIP rules
         val skipRules = rules.filter { it.mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP }
         for (rule in skipRules) {
-            val pattern = Regex.escape(rule.pattern)
-            val regex = Regex("$pattern.+?$pattern")
+            val startPattern = Regex.escape(rule.pattern)
+            val endPattern = Regex.escape(rule.endPattern ?: rule.pattern)
+            val regex = Regex("$startPattern.*?$endPattern")
             result = result.replace(regex, "")
         }
 

@@ -449,7 +449,13 @@ data class Settings(
 ) { companion object { fun dummy() = Settings(init = true) } }
 
 @Serializable data class RpStyleRule(val id: String = Uuid.random().toString(), val pattern: String = "*", val colorHex: String = "#808080", val enabled: Boolean = true)
-@Serializable data class TtsTextFilterRule(val id: String = Uuid.random().toString(), val pattern: String = "*", val mode: TtsFilterMode = TtsFilterMode.SKIP, val enabled: Boolean = true)
+@Serializable data class TtsTextFilterRule(
+    val id: String = Uuid.random().toString(),
+    val pattern: String = "*",
+    val endPattern: String? = null,
+    val mode: TtsFilterMode = TtsFilterMode.SKIP,
+    val enabled: Boolean = true
+)
 @Serializable enum class TtsFilterMode { SKIP, ONLY_READ }
 @Serializable enum class FontSource { System, SystemCode, Custom }
 @Serializable data class FontAxis(val tag: String, val name: String, val minValue: Float, val maxValue: Float, val defaultValue: Float, val currentValue: Float = defaultValue)

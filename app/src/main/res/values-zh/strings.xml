@@ -1440,6 +1440,6 @@
   <string name="setting_provider_tutorial_title">API Key 获取教程</string>
   <string name="setting_provider_tutorial_button">查看 API Key 获取教程</string>
   <string name="setting_provider_siliconflow_register_hint">没有账号？点击此处注册 SiliconFlow (赠送 2000 万 Token)</string>
-
+  <string name="tts_filter_dialog_end_pattern_label">结束匹配符 (可选)</string>
 
 </resources>

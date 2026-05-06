@@ -353,7 +353,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         val previewTexts = mapOf(
             "zh" to "哼，我声音好听吗？",
             "en" to "Hello, this is an English voice preview. How does it sound?",
-            "ko" to "안녕하세요, 이것은 한국어 음성 미리보기입니다. 어떠신가요?"
+            "ko" to "안녕하세요, 이것은 한국어 음性 미리보기입니다. 어떠신가요?"
         )
         ModalBottomSheet(
             onDismissRequest = {
@@ -651,7 +651,9 @@ private fun TtsFilterRuleItem(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("${rule.pattern}text${rule.pattern}")
+                    val start = rule.pattern
+                    val end = rule.endPattern ?: rule.pattern
+                    Text("${start}text${end}")
                 }
             },
             supportingContent = {
@@ -689,6 +691,7 @@ private fun TtsFilterRuleEditDialog(
     onSave: (me.rerere.rikkahub.data.datastore.TtsTextFilterRule) -> Unit
 ) {
     var pattern by remember { mutableStateOf(rule?.pattern ?: "*") }
+    var endPattern by remember { mutableStateOf(rule?.endPattern ?: "") }
     var mode by remember { mutableStateOf(rule?.mode ?: me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP) }
 
     androidx.compose.material3.AlertDialog(
@@ -700,17 +703,27 @@ private fun TtsFilterRuleEditDialog(
             Column(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                androidx.compose.material3.OutlinedTextField(
-                    value = pattern,
-                    onValueChange = { pattern = it },
-                    label = { Text(stringResource(R.string.tts_filter_dialog_pattern_label)) },
-                    placeholder = { Text(stringResource(R.string.tts_filter_dialog_pattern_placeholder)) },
-                    singleLine = true,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    supportingText = {
-                        Text(stringResource(R.string.tts_filter_dialog_pattern_hint, pattern, pattern))
-                    }
-                )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.OutlinedTextField(
+                        value = pattern,
+                        onValueChange = { pattern = it },
+                        label = { Text(stringResource(R.string.tts_filter_dialog_pattern_label)) },
+                        placeholder = { Text("（") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    androidx.compose.material3.OutlinedTextField(
+                        value = endPattern,
+                        onValueChange = { endPattern = it },
+                        label = { Text(stringResource(R.string.tts_filter_dialog_end_pattern_label)) },
+                        placeholder = { Text("）") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
                 // Mode selector
                 Text(
@@ -737,10 +750,12 @@ private fun TtsFilterRuleEditDialog(
                 }
 
                 // Mode description
+                val start = pattern
+                val end = if (endPattern.isEmpty()) pattern else endPattern
                 Text(
                     text = when (mode) {
-                        me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> stringResource(R.string.tts_filter_dialog_desc_skip, pattern, pattern)
-                        me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ -> stringResource(R.string.tts_filter_dialog_desc_only_read, pattern, pattern)
+                        me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> stringResource(R.string.tts_filter_dialog_desc_skip, start, end)
+                        me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ -> stringResource(R.string.tts_filter_dialog_desc_only_read, start, end)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -755,6 +770,7 @@ private fun TtsFilterRuleEditDialog(
                             me.rerere.rikkahub.data.datastore.TtsTextFilterRule(
                                 id = rule?.id ?: kotlin.uuid.Uuid.random().toString(),
                                 pattern = pattern,
+                                endPattern = endPattern.ifBlank { null },
                                 mode = mode,
                                 enabled = rule?.enabled ?: true
                             )
