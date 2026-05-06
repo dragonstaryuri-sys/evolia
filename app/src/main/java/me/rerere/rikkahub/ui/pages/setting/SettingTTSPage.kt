@@ -718,7 +718,7 @@ private fun TtsFilterRuleEditDialog(
                     androidx.compose.material3.OutlinedTextField(
                         value = endPattern,
                         onValueChange = { endPattern = it },
-                        label = { Text(stringResource(R.string.tts_filter_dialog_end_pattern_label)) },
+                        label = { Text(stringResource(R.string.tts_filter_dialog_pattern_label)) },
                         placeholder = { Text("）") },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
