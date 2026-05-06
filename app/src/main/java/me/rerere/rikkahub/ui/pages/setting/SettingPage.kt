@@ -317,7 +317,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         subtitle = stringResource(R.string.setting_page_donate_coffee_desc),
                         icon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error) },
                         onClick = {
-                            context.openUrl("https://buymeacoffee.com/cocolalilal")
+                            context.openUrl("https://www.ifdian.net/a/evolia_xx")
                         }
                     )
                     SettingGroupItem(
