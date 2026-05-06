@@ -299,7 +299,7 @@
 <string name="more_options">更多选项</string>
 <string name="no_text_content_to_copy">暂无可复制的文本内容</string>
 <string name="notification_channel_chat_completed">聊天完成</string>
-<string name="notification_chat_done_title">聊天消息已生成</string>
+<string name="notification_chat_done_title">已回复</string>
 <string name="permission_camera">相机</string>
 <string name="permission_camera_desc">需要相机权限以拍摄照片</string>
 <string name="permission_file">需要权限以存储文件</string>
@@ -934,11 +934,11 @@
   <string name="discover_page_diary_empty">暂无日记。开始聊天并生成一篇吧！</string>
   <string name="discover_page_diary_delete_confirm">确定要删除这篇日记吗？</string>
   <string name="discover_page_diary_generating">正在生成日记...</string>
-  <string name="discover_page_diary_generate_success">日记生成成功</string>
+  <string name="discover_page_diary_generate_success">TA的日记更新啦</string>
   <string name="discover_page_diary_no_chat_today">没有找到今日聊天记录</string>
 
   <!-- Diary Settings -->
-  <string name="setting_model_page_diary_model">日记生成模型</string>
+  <string name="setting_model_page_diary_model">日记编写模型</string>
   <string name="setting_model_page_diary_model_desc">用于生成智能体日记的模型</string>
   <string name="setting_model_page_diary_prompt">日记提示词</string>
   <string name="setting_model_page_diary_prompt_desc">日记生成的提示词。变量: {content}</string>

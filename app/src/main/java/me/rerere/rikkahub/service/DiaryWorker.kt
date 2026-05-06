@@ -143,7 +143,10 @@ class DiaryWorker(
                 settings = currentSettings,
                 model = model,
                 messages = listOf(UIMessage.user(finalPrompt)),
-                assistant = assistant
+                assistant = assistant.copy(
+                    temperature = 0.6f, // 降低随机性，让日记更稳定
+                    topP = 0.8f,
+                )
             ).collect { chunk ->
                 if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
                     generatedContent = chunk.messages.lastOrNull()?.toText() ?: ""
