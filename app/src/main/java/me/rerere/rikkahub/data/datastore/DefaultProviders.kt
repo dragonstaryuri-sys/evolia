@@ -16,6 +16,18 @@ import kotlin.uuid.Uuid
 
 val DEFAULT_PROVIDERS = listOf(
     ProviderSetting.OpenAI(
+        id = Uuid.parse("77777777-4444-4444-4444-444444444444"),
+        name = "SiliconFlow",
+        baseUrl = "https://api.siliconflow.cn/v1",
+        apiKey = "",
+        builtIn = true,
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/info",
+            resultPath = "data.balance",
+        )
+    ),
+    ProviderSetting.OpenAI(
         id = Uuid.parse("d5734028-d39b-4d41-9841-fd648d65440e"),
         name = "OpenRouter",
         baseUrl = "https://openrouter.ai/api/v1",
@@ -25,18 +37,6 @@ val DEFAULT_PROVIDERS = listOf(
             enabled = true,
             apiPath = "/credits",
             resultPath = "data.total_credits - data.total_usage",
-        )
-    ),
-    ProviderSetting.OpenAI(
-        id = Uuid.parse("77777777-4444-4444-4444-444444444444"),
-        name = "deepseek",
-        baseUrl = "https://api.deepseek.com/v1",
-        apiKey = "",
-        builtIn = true,
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "/user/balance",
-            resultPath = "balance_infos[0].total_balance",
         )
     ),
 )

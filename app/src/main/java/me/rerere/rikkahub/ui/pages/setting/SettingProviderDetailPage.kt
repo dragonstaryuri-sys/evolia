@@ -1,8 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-
+import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,13 +25,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -83,8 +86,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,10 +98,12 @@ import androidx.compose.ui.util.fastFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.HelpOutline
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.Public
@@ -152,6 +160,7 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.model.Tag as DataTag
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import androidx.compose.runtime.mutableFloatStateOf
 
 @Composable
 fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
@@ -394,6 +403,7 @@ private fun SettingProviderConfigPage(
 ) {
     var internalProvider by remember(provider) { mutableStateOf(provider) }
     val scope = rememberCoroutineScope()
+    var showTutorial by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -421,6 +431,42 @@ private fun SettingProviderConfigPage(
                         onEdit(it)
                     }
                 )
+            }
+
+            // SiliconFlow Tutorial Button
+            if (provider is ProviderSetting.OpenAI && provider.baseUrl.contains("siliconflow.cn")) {
+                OutlinedCard(
+                    onClick = { showTutorial = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.HelpOutline,
+                            null,
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(
+                            text = stringResource(R.string.setting_provider_tutorial_button),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            Icons.Rounded.AutoAwesome,
+                            null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
 
             // Tags section
@@ -492,6 +538,115 @@ private fun SettingProviderConfigPage(
                     )
                 )
         )
+    }
+
+    if (showTutorial) {
+        SiliconFlowTutorialBottomSheet(
+            onDismissRequest = { showTutorial = false }
+        )
+    }
+}
+
+@Composable
+private fun SiliconFlowTutorialBottomSheet(
+    onDismissRequest: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    // 1. 将资源 ID 转换为组件支持的 String 路径
+    val tutorialImages = remember {
+        listOf(
+            R.drawable.tutorial_siliconflow,
+            R.drawable.tutorial_siliconflow2,
+            R.drawable.tutorial_siliconflow3,
+            R.drawable.tutorial_siliconflow4
+        ).map { "android.resource://${context.packageName}/$it" }
+    }
+    val pagerState = rememberPagerState { tutorialImages.size }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        dragHandle = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(width = 40.dp, height = 4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                Text(
+                    text = stringResource(R.string.setting_provider_tutorial_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth().height(500.dp),
+                contentPadding = PaddingValues(horizontal = 32.dp),
+                pageSpacing = 16.dp
+            ) { page ->
+                Card(
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    // 2. 关键修改点：使用 ZoomableAsyncImage 替换原有的 Image
+                    ZoomableAsyncImage(
+                        model = tutorialImages[page],
+                        contentDescription = "Tutorial Step ${page + 1}",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+
+            val uriHandler = LocalUriHandler.current
+            Spacer(modifier = Modifier.height(16.dp))
+            TextButton(
+                onClick = {
+                    uriHandler.openUri("https://cloud.siliconflow.cn/i/jtf76JUQ")
+                }
+            ) {
+                Text(
+                    text = stringResource(R.string.setting_provider_siliconflow_register_hint),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Page Indicator
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(tutorialImages.size) { index ->
+                    val isSelected = pagerState.currentPage == index
+                    Box(
+                        modifier = Modifier
+                            .size(if (isSelected) 10.dp else 8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant
+                            )
+                    )
+                }
+            }
+        }
     }
 }
 

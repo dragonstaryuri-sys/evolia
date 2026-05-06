@@ -1482,4 +1482,10 @@
   <string name="grant_permission">Grant Permissions</string>
   <string name="permissions_required">Permissions Required</string>
   <string name="skip">Skip</string>
+
+  <string name="setting_provider_tutorial_title">tutorial</string>
+  <string name="setting_provider_tutorial_button">Get tutorial</string>
+  <string name="setting_provider_siliconflow_register_hint">Don\'t have an account? Click here to register for SiliconFlow (20 million Tokens gifted)</string>
+
+
 </resources>
