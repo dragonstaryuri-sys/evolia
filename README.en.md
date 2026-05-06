@@ -1,55 +1,74 @@
-# Evolia
-**"We are not born complete. Instead, through every collision with the world, we continuously evolve into a better version of ourselves."**
+# Evolia 🌿
 
-Evolia, meaning *Land of Evolution*, is an AI companion dedicated to **personal growth** and **spiritual resonance**. Built upon secondary development of [LastChat](https://github.com/RikkaHub/LastChat), it strives to become your co-evolving other half in your digital life through deep memory, emotional empathy, and autonomous capabilities.
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-blue.svg)](https://kotlinlang.org)
+[![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-green.svg)](https://developer.android.com/jetpack/compose)
+[![License](https://img.shields.io/badge/License-GPL--3.0-orange.svg)](LICENSE)
 
-## 🌟 Core Vision: Seeds of Evolution, Isle of Growth
-Evolia is far more than a chat box. It is an island that nurtures you, provides warmth and light, and stands watch over you:
-- **Deep Comprehension**: Records your emotions, habits and aspirations via the L0–L3 hierarchical memory system.
-- **Growth Resonance**: Beyond mechanical question-and-answer exchanges, it enables heartfelt, in-depth conversations with genuine emotional warmth.
-- **Intuitive Stress Relief**: Designed around the Fidget Toy concept, delivering exquisite tactile feedback and fluid, interactive experiences.
+> **"We are not born complete; instead, through every collision with the world, we continuously evolve into a better version of ourselves."**
 
-## 🧠 Core Features
-### 1. Deep Evolutionary Memory System (L0–L3)
-- **L0–L1 (Immediate & Summarized Memory)**: Captures real-time conversation context and automatically generates contextual fragments.
-- **L2 (Situational Review)**: Automatically maps your growth trajectory from dialogues, allowing you to perceive your progress through reflection.
-- **L3 (Master Memory / Personal Profile)**: Permanent cross-session memory that recognizes your personal evolution even before you do.
-
-### 2. Agent Automation & Task Orchestration
-- **Future Self Commands**: The AI can schedule tasks for your future self, such as scheduled reminders and email delivery.
-- **Background Autonomous Execution**: Reliable task scheduling powered by WorkManager.
-- **Unobtrusive Context Switching**: Automated tasks run silently in the background without interrupting your ongoing chat flow.
-
-### 3. Multimodality & Multi-Engine Support
-- **AI Abstraction Layer**: Seamlessly integrates mainstream models including OpenAI, Anthropic, Google Gemini and more.
-- **Deep Web Search**: Integrated with Exa, Tavily, Zhipu AI and other search APIs to expand the AI’s knowledge scope.
-- **Multimedia Processing**: Supports image recognition, document analysis, and TTS (Text-to-Speech).
-
-## 🛠️ Tech Stack
-- **Primary Language**: Kotlin (utilizing latest experimental features such as new UUID APIs)
-- **UI Framework**: Jetpack Compose (adhering to minimalist Material You 3 aesthetics)
-- **Dependency Injection**: Koin
-- **Local Storage**: Room Database
-- **Network Layer**: OkHttp + SSE (Server-Sent Events streaming)
-- **Serialization**: Kotlinx Serialization
-
-## 📂 Module Structure
-- `:app` – Main application module containing UI, core business logic and DI configurations.
-- `:ai` – Abstraction layer for AI services.
-- `:core-data` – Database entities, DAOs and data flow management.
-- `:tts` – Text-to-speech implementation.
-- `:search` – Integration of external search plugins.
-- `:highlight` – Code & syntax highlighting support.
-- `:common` – General utilities and extension functions.
-- `:discover` – Explore page and community-related features.
-
-## 🚀 Get Started
-1. Clone this repository.
-2. Open the project in Android Studio (Ladybug version or newer recommended).
-3. Sync Gradle and run the `:app` module.
-
-## 🤝 Contributions
-Issues and pull requests are welcome. Let us refine this project together!
+Evolia is a deep AI companion application focused on "Personal Growth" and "Soul Resonance." Built upon the secondary development of [LastChat](https://github.com/RikkaHub/LastChat), it features a deeply refactored memory system, interactive experiences, and newly added schedule management/automation capabilities.
 
 ---
-*"You are not downloading a tool. You are embarking on a journey."*
+
+## ✨ Core Philosophy: Fidget Toy
+
+Evolia is designed to be more than just a tool; it is a **"Digital Fidget Toy."**
+- **Tactile Feedback**: Integrated with the `PremiumHaptics` solution, every click, slide, and transition is meticulously tuned to provide high-quality physical vibration feedback.
+- **Fluid Interaction**: Follows the **Material You 3 Expressive** (Android 16 style) design language, making the interface agile and full of life.
+- **Co-Evolution**: It records your emotions, habits, and dreams, acting as the evolving other half of your digital life.
+
+## 🧠 Core Features
+
+### 1. Deep Evolutionary Memory System (L0-L3 Hierarchy)
+We have designed a rigorous memory hierarchy to help the AI understand you better than you know yourself:
+- **L0: Immediate Context**: Sliding window capturing the current flow of conversation.
+- **L1: Rolling Summaries**: Automatically compresses historical dialogues to save tokens while preserving long-term context.
+- **L2: Episodic Memory**: Records conversational trajectories via Hybrid RAG (Keywords + Vector Search).
+- **L3: Master Memory**: A cross-session personalized profile that distills your personality and preferences.
+
+### 2. Agent Automation & Orchestration
+- **Future Commands**: AI can schedule tasks for its "future self" (e.g., scheduled reminders, email delivery).
+- **Background Execution**: Reliable scheduling powered by `WorkManager`, ensuring tasks trigger even if the app is closed.
+- **Unobtrusive Switching**: Automation tasks run silently in the background, using `skipContext` technology to avoid interrupting your current chat.
+
+### 3. Interaction Modes & Meta-Awareness
+- **Virtual World Mode**: An immersive role-playing experience where the AI recognizes it's a "shared imaginative game," creating a "mutual secret" bond with the user.
+- **Multi-Engine Support**: Seamless integration with top-tier models like OpenAI, Anthropic Claude, and Google Gemini.
+- **Multimodal Capabilities**: Integrated Exa/Tavily search, TTS (Text-to-Speech), and document/image analysis.
+
+### 4. Discovery & Productivity Tools
+- **Smart Schedule Management**: Task scheduling based on a multi-dimensional matrix (Priority/Urgency/Difficulty), featuring smart reminders and system-level battery optimization tips.
+- **Reading Together**: Supports various document uploads with built-in AI reading companions. (Under development... *this is a cake I painted* 🥧)
+- **Diary**: Peek into their little thoughts... 🤦(/ω＼*)
+- **Token Consumption Audit**: Visual rankings of token usage by assistant and daily usage reports for total transparency.
+
+## 🛠️ Tech Stack
+- **Language**: Kotlin (utilizing cutting-edge features like `kotlin.uuid.Uuid`)
+- **UI**: Jetpack Compose (Material 3 Expressive)
+- **Architecture**: Reactive Architecture + Koin Dependency Injection
+- **Storage**: Room Database + Kotlinx Serialization (JsonInstant)
+- **Networking**: OkHttp + SSE (Server-Sent Events)
+- **Tasks**: WorkManager + AlarmManager
+
+## 📂 Module Structure
+- `:app` - Main application module, containing UI and core business logic.
+- `:ai` - AI interface abstraction and multi-platform adaptation.
+- `:discover` - Discovery module, including scheduling, AI bookshelf, and token auditing tools.
+- `:core-data` - Persistence, DAOs, and L0-L3 memory stream management.
+- `:document` - Core library for document parsing and processing.
+- `:search` / `:tts` / `:highlight` - Feature enhancement plugins.
+- `:common` - General utilities and custom hooks (e.g., `PremiumHaptics`).
+
+## 🚀 Get Started
+1. **Prerequisites**: Android Studio **Ladybug** (2024.2.1) or newer is recommended.
+2. **Clone**: `git clone https://github.com/dragonstaryuri-sys/evolia.git`
+3. **Configure**: Set up your AI model API keys in the app settings.
+4. **Run**: Click Run `:app`.
+
+## 🤝 Contributions & Acknowledgements
+This project is a deep secondary development based on [LastChat](https://github.com/Cocolalilal/LastChat.git). We are grateful to the original authors for providing an excellent foundation.
+
+Issues and pull requests are welcome as we refine the evolution of Evolia!
+
+---
+*May you and your AI both continue to evolve for the better!*
