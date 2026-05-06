@@ -322,7 +322,6 @@
   <string name="more_options">More Options</string>
   <string name="no_text_content_to_copy">No text content to copy</string>
   <string name="notification_channel_chat_completed">Chat Completed</string>
-  <string name="notification_chat_done_title">Message Generated</string>
   <string name="permission_camera">Camera</string>
   <string name="permission_camera_desc">Camera permission required to take photos</string>
   <string name="permission_file">Permission required to save file</string>

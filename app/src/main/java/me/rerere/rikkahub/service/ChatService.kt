@@ -1183,10 +1183,19 @@ class ChatService(
     }
 
     private fun sendGenerationDoneNotification(conversationId: Uuid) {
-        val msg = getConversationFlow(conversationId).value.currentMessages.lastOrNull()?.toText()?.take(50) ?: ""
+        val conversation = getConversationFlow(conversationId).value
+        val settings = settingsStore.settingsFlow.value
+        // 获取当前会话对应的智能体
+        val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+        val lastMsg = conversation.currentMessages.lastOrNull()
+        val msg = lastMsg?.toContentText()?.take(50) ?: ""
         val notification = NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(context.getString(R.string.notification_chat_done_title)).setContentText(msg)
-            .setSmallIcon(R.drawable.about_logo).setAutoCancel(true).setContentIntent(getPendingIntent(context, conversationId))
+            .setContentTitle(assistant.name) // 设置标题为智能体名称
+            .setContentText(msg)            // 设置内容（已过滤思考过程）
+            .setSmallIcon(R.drawable.about_logo)
+            .setAutoCancel(true)
+            .setContentIntent(getPendingIntent(context, conversationId))
+
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
             NotificationManagerCompat.from(context).notify(1, notification.build())
     }

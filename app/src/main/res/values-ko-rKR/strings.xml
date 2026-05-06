@@ -322,8 +322,7 @@
   <string name="more_options">더 많은 옵션</string>
   <string name="no_text_content_to_copy">복사할 텍스트 내용이 없습니다</string>
   <string name="notification_channel_chat_completed">채팅 완료</string>
-  <string name="notification_chat_done_title">메시지 생성 완료</string>
-  <string name="permission_camera">카메라</string>
+    <string name="permission_camera">카메라</string>
   <string name="permission_camera_desc">사진 촬영을 위해 카메라 권한이 필요합니다</string>
   <string name="permission_desc_goto_setting">일부 권한이 영구적으로 거부되었습니다. 설정에서 활성화해주세요:</string>
   <string name="permission_desc_require_permission">앱에서 다음 권한이 필요합니다:</string>
