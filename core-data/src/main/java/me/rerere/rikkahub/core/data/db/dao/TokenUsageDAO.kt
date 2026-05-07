@@ -41,6 +41,9 @@ interface TokenUsageDAO {
         }
     }
 
+    @Query("DELETE FROM token_usage WHERE date < :beforeDate")
+    suspend fun deleteOldUsage(beforeDate: String)
+
     @Query("SELECT * FROM token_usage WHERE assistant_id = :assistantId ORDER BY date DESC LIMIT :days")
     fun getRecentUsageFlow(assistantId: String, days: Int): Flow<List<TokenUsageEntity>>
 

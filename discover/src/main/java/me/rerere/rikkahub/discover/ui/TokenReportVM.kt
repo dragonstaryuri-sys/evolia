@@ -32,9 +32,10 @@ class TokenReportVM(
         .getAllRecentTokenUsageFlow(days = 7)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 每日总计汇总（用于报表列表）
+    // 每日总计汇总（用于报表列表），强制只显示最近 7 天
     val dailyHistory: StateFlow<List<DailyUsageSummary>> = conversationRepository
         .getDailyTotalUsageFlow(days = 7)
+        .map { it.take(7) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // 智能体消耗排行

@@ -1280,7 +1280,7 @@
   <string name="diary_auto_generate_time">自动生成时间</string>
   <string name="diary_assistant_title_format">%s的日记</string>
   <string name="diary_settings">日记设置</string>
-  <string name="diary_auto_generate">自动生成日记</string>
+  <string name="diary_auto_generate">自主更新日记</string>
   <string name="diary_auto_generate_time_label">自动生成时间</string>
   <string name="diary_no_new_messages">TA现在不想写日记...</string>
   <!-- 数据备份页面新增 -->

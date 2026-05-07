@@ -1326,7 +1326,7 @@
   <string name="diary_auto_generate_time">Auto-generation Time</string>
   <string name="diary_assistant_title_format">%s\'s Diary</string>
   <string name="diary_settings">Diary Settings</string>
-  <string name="diary_auto_generate">Auto-generate Diary</string>
+  <string name="diary_auto_generate">Self-update Diary</string>
   <string name="diary_auto_generate_time_label">Auto-generate Time</string>
   <string name="diary_no_new_messages">He/She don\'t feel like writing a diary right now.</string>
   <!-- Back Up -->

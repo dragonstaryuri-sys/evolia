@@ -440,6 +440,9 @@ class ConversationRepository(
             completion = usage.completionTokens,
             cached = usage.cachedTokens
         )
+        // 清理 30 天前的旧记录，防止无限增长
+        val thirtyDaysAgo = LocalDate.now().minusDays(30).toString()
+        tokenUsageDAO.deleteOldUsage(thirtyDaysAgo)
     }
 
     fun getRecentTokenUsageFlow(assistantId: String, days: Int = 7): Flow<List<TokenUsageEntity>> {
