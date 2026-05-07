@@ -197,7 +197,7 @@ fun ContextRefreshDialog(
                             }
 
                             Text(
-                                text = "$messagesToSummarize messages will be summarized and ~$tokensToCleanUp tokens will be cleaned up.",
+                                text = "$messagesToSummarize 条消息将被压缩，节省大约 $tokensToCleanUp tokens",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -206,16 +206,16 @@ fun ContextRefreshDialog(
                             // Show previous summary if exists
                             if (hasPreviousSummary) {
                                 Text(
-                                    text = "Previous summary:",
+                                    text = "当前已总结内容：",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = conversation.contextSummary?.take(200) + if ((conversation.contextSummary?.length ?: 0) > 200) "..." else "",
+                                    text = conversation.contextSummary?.take(100) + if ((conversation.contextSummary?.length ?: 0) > 200) "..." else "",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 4
+                                    maxLines = 6
                                 )
                             }
                         }

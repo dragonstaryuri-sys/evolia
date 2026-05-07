@@ -605,7 +605,24 @@ class AssistantDetailVM(
     val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { list -> list.any { !it.hasEmbedding } }.stateIn(viewModelScope, SharingStarted.Lazily, false)
     private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
     val retrievalResults = _retrievalResults.asStateFlow()
-    fun testRetrieval(query: String) { viewModelScope.launch { val results = memoryRepository.retrieveRelevantMemoriesWithScores(assistantId.toString(), query); _retrievalResults.value = results.map { it.first.copy(content = it.first.content) to it.second } } }
+
+    // 修改 testRetrieval 函数
+    fun testRetrieval(query: String) {
+        viewModelScope.launch {
+            val currentAssistant = assistant.value // 获取界面上当前的设置
+            val results = memoryRepository.retrieveRelevantMemoriesWithScores(
+                assistantId = assistantId.toString(),
+                query = query,
+                limit = currentAssistant.ragLimit, // 传递界面设置的数量限制
+                similarityThreshold = currentAssistant.ragSimilarityThreshold, // 传递界面设置的阈值
+                includeCore = currentAssistant.ragIncludeCore, // 传递检索范围
+                includeEpisodes = currentAssistant.ragIncludeEpisodes,
+                mode = currentAssistant.memoryRetrievalMode // 传递检索模式（语义/混合/关键词）
+            )
+            _retrievalResults.value = results.map { it.first.copy(content = it.first.content) to it.second }
+        }
+    }
+
     fun regenerateEmbeddings() { viewModelScope.launch { _embeddingProgress.value = EmbeddingProgress(0, 1, true); memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t -> _embeddingProgress.value = EmbeddingProgress(c, t, true) }; _embeddingProgress.value = null } }
     fun consolidateMemories(isFullScan: Boolean) { val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>().setInputData(androidx.work.workDataOf("FULL_SCAN" to isFullScan, "ASSISTANT_ID" to assistantId.toString())).build(); androidx.work.WorkManager.getInstance(context).enqueue(request) }
     fun estimateTokens(text: String): Int = text.length / 4

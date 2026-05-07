@@ -174,6 +174,9 @@ class MemoryRepository(
         existingEmbedding: String? = null,
         existingModelId: String? = null
     ): List<Float>? {
+        if (content.trim().isBlank()) {
+            return null
+        }
         val modelId = embeddingService.getEmbeddingModelId(assistantId)
         val effectiveContent = if (!keywords.isNullOrBlank() && memoryType == MemoryType.EPISODIC) {
             "Keywords: $keywords\nContent: $content"
@@ -301,7 +304,7 @@ class MemoryRepository(
         includeEpisodes: Boolean = true,
         mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID
     ): List<Pair<AssistantMemory, Float>> {
-        if (mode == MemoryRetrievalMode.OFF) return emptyList()
+        if (mode == MemoryRetrievalMode.OFF || query.trim().isBlank()) return emptyList()
         val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
             try { embeddingService.embed(query, assistantId) } catch (e: Exception) { null }
         } else null
@@ -393,6 +396,15 @@ class MemoryRepository(
     }
 
     suspend fun regenerateEmbeddings(assistantId: String, onProgress: (Int, Int) -> Unit): Pair<Int, Int> {
+        val rawMemories = memoryDAO.getMemoriesOfAssistant(assistantId)
+        val rawEpisodes = chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
+
+        rawMemories.filter { it.content.trim().isBlank() }.forEach { deleteMemory(it.id) }
+        rawEpisodes.filter { it.content.trim().isBlank() }.forEach {
+            chatEpisodeDAO.deleteEpisode(it.id)
+            embeddingCacheDAO.deleteByMemoryId(it.id, MemoryType.EPISODIC)
+        }
+
         val allMemories = memoryDAO.getMemoriesOfAssistant(assistantId)
         val allEpisodes = chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
         val currentModelId = embeddingService.getEmbeddingModelId(assistantId)

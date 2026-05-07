@@ -316,10 +316,15 @@ class OpenAIProvider(
         val requestBody = json.encodeToString(
             buildJsonObject {
                 put("model", model.modelId)
-                put(
-                    "input",
-                    kotlinx.serialization.json.JsonArray(input.map { kotlinx.serialization.json.JsonPrimitive(it) })
-                )
+                // 优化点：单条输入发送字符串，多条输入发送数组，提高对 SiliconFlow 等供应商的兼容性
+                if (input.size == 1) {
+                    put("input", input[0])
+                } else {
+                    put(
+                        "input",
+                        kotlinx.serialization.json.JsonArray(input.map { kotlinx.serialization.json.JsonPrimitive(it) })
+                    )
+                }
             }
         )
 
