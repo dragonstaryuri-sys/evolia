@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.provider.AlarmClock
+import android.provider.CalendarContract
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.whl.quickjs.wrapper.QuickJSContext
@@ -37,6 +38,8 @@ import javax.mail.internet.MimeMessage
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @Composable
 fun rememberLocalTools(): LocalTools {
@@ -468,7 +471,11 @@ class LocalTools(
                             })
                             put("end_time", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Deadline, please use ISO 8601 format (e.g., 2023-10-27T10:00:00).Fill in only if provided by the user")
+                                put("description", "Deadline/End time, please use ISO 8601 format (e.g., 2023-10-27T10:00:00).")
+                            })
+                            put("reminder_time", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Specific reminder time, please use ISO 8601 format (e.g., 2023-10-27T09:30:00).")
                             })
                         },
                         required = listOf("action")
@@ -484,13 +491,22 @@ class LocalTools(
                                 val priority = json["priority"]?.jsonPrimitive?.intOrNull ?: 1
                                 val urgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: 1
                                 val difficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
+
+                                val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+
                                 val endTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
                                 val endTime = if (endTimeStr != null) {
-                                    runCatching {
-                                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(endTimeStr)?.time
-                                    }.getOrNull() ?: return@Tool buildJsonObject {
+                                    runCatching { df.parse(endTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
                                         put("success", false)
-                                        put("error", "Invalid end_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                        put("error", "Invalid end_time format.")
+                                    }
+                                } else null
+
+                                val reminderTimeStr = json["reminder_time"]?.jsonPrimitive?.contentOrNull
+                                val reminderTime = if (reminderTimeStr != null) {
+                                    runCatching { df.parse(reminderTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
+                                        put("success", false)
+                                        put("error", "Invalid reminder_time format.")
                                     }
                                 } else null
 
@@ -502,9 +518,21 @@ class LocalTools(
                                         urgency = urgency,
                                         difficulty = difficulty,
                                         startTime = System.currentTimeMillis(),
-                                        endTime = endTime
+                                        endTime = endTime,
+                                        reminderTime = reminderTime
                                     )
                                 )
+
+                                // 自动同步到系统日历 (如果包含结束时间或提醒时间)
+                                if (endTime != null || reminderTime != null) {
+                                    openSystemCalendar(
+                                        title = title,
+                                        startTime = reminderTime ?: System.currentTimeMillis(),
+                                        endTime = endTime,
+                                        description = "Created by Evolia Assistant"
+                                    )
+                                }
+
                                 buildJsonObject { put("success", true) }
                             }
                             "list" -> {
@@ -520,6 +548,7 @@ class LocalTools(
                                             put("difficulty", s.difficulty)
                                             put("start_time", df.format(java.util.Date(s.startTime)))
                                             s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
+                                            s.reminderTime?.let { put("reminder_time", df.format(java.util.Date(it))) }
                                             put("is_completed", s.isCompleted)
                                         }
                                     }))
@@ -533,17 +562,24 @@ class LocalTools(
                                     val newPriority = json["priority"]?.jsonPrimitive?.intOrNull ?: schedule.priority
                                     val newUrgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
                                     val newDifficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
+
+                                    val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+
                                     val newEndTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
                                     val newEndTime = if (newEndTimeStr != null) {
-                                        runCatching {
-                                            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(newEndTimeStr)?.time
-                                        }.getOrNull() ?: return@Tool buildJsonObject {
+                                        runCatching { df.parse(newEndTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
                                             put("success", false)
-                                            put("error", "Invalid end_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                            put("error", "Invalid end_time format.")
                                         }
-                                    } else {
-                                        schedule.endTime
-                                    }
+                                    } else schedule.endTime
+
+                                    val newReminderTimeStr = json["reminder_time"]?.jsonPrimitive?.contentOrNull
+                                    val newReminderTime = if (newReminderTimeStr != null) {
+                                        runCatching { df.parse(newReminderTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
+                                            put("success", false)
+                                            put("error", "Invalid reminder_time format.")
+                                        }
+                                    } else schedule.reminderTime
 
                                     scheduleRepository.updateSchedule(schedule.copy(
                                         title = newTitle,
@@ -551,8 +587,20 @@ class LocalTools(
                                         urgency = newUrgency,
                                         difficulty = newDifficulty,
                                         endTime = newEndTime,
+                                        reminderTime = newReminderTime,
                                         updatedAt = System.currentTimeMillis()
                                     ))
+
+                                    // 自动同步到系统日历
+                                    if (newEndTime != null || newReminderTime != null) {
+                                        openSystemCalendar(
+                                            title = newTitle,
+                                            startTime = newReminderTime ?: System.currentTimeMillis(),
+                                            endTime = newEndTime,
+                                            description = "Updated by Evolia Assistant"
+                                        )
+                                    }
+
                                     buildJsonObject { put("success", true) }
                                 } else {
                                     buildJsonObject { put("error", "Schedule not found") }
@@ -582,6 +630,26 @@ class LocalTools(
                 }
             )
         )
+    }
+
+    private fun openSystemCalendar(title: String, startTime: Long, endTime: Long?, description: String?) {
+        try {
+            val intent = Intent(Intent.ACTION_INSERT).apply {
+                data = CalendarContract.Events.CONTENT_URI
+                putExtra(CalendarContract.Events.TITLE, title)
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startTime)
+                if (endTime != null) {
+                    putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTime)
+                }
+                if (description != null) {
+                    putExtra(CalendarContract.Events.DESCRIPTION, description)
+                }
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("LocalTools", "Failed to open system calendar", e)
+        }
     }
 
     fun getEmailTools(): List<Tool> {

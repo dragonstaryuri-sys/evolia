@@ -1488,4 +1488,6 @@
   <string name="setting_provider_siliconflow_register_hint">Don\'t have an account? Click here to register for SiliconFlow (20 million Tokens gifted)</string>
   <string name="tts_filter_dialog_end_pattern_label">End Pattern (Optional)</string>
 
+  <string name="calendar_sync_title">New Schedule Found</string>
+  <string name="calendar_sync_desc">AI has identified the exact reminder time and prepared system calendar details for you.</string>
 </resources>
