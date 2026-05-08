@@ -123,20 +123,20 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 - **Cross-Session Continuity**: Early turns inject titles of today's other chats as "Recent Episode Boosts".
 
 ### 6.5 Final Prompt Structure (Prefix Caching Optimized Order)
-To maximize Prefix Caching efficiency, the payload follows a "Stable-Front, Dynamic-Tail" structure. High-frequency changes (e.g., current time) are moved to a separate System Message at the very end to prevent cache invalidation for the preceding context.
+To maximize Prefix Caching efficiency, the payload adopts a "Stable-Front, Dynamic-Tail" structure. Highly dynamic information (such as current time) is isolated into a dedicated System Message at the very end of the payload, ensuring that the cache for the preceding stable segments remains valid across multiple turns.
 
 1. **System Message: Stable & Semi-stable Context** (High Cache-Hit Region)
     - **Core Personality**: `systemPrompt` (Rules, Identity).
     - **Style Examples**: `languageStyleExamples`.
-    - **Environment Instructions**: Specific guidelines for Virtual World or Learning Mode.
-    - **Injections**: `BEFORE_SYSTEM` and `AFTER_SYSTEM` prompts from Modes/Lorebooks.
-    - **Tool Specs**: System instructions for currently active Tools.
-    - **Memory Specifications**: Identity definitions (User vs. I) and recording standards.
+    - **Environment Instructions**: Behavior guidelines for Virtual World or Learning Mode.
+    - **Position Patches**: `BEFORE_SYSTEM` and `AFTER_SYSTEM` injections from Modes/Lorebooks.
+    - **Tool Specifications**: System instructions for currently activated Tools.
+    - **Memory Standards**: Identity definitions (User vs. I) and recording protocols.
     - **L3: Master Memory**: Persistent user archive.
     - **L1: Context Summaries**: `contextSummary` + `Segments` (Recent history highlights).
 
 2. **User Message: Context Attachments** (Optional)
-    - Physical media attachments (images, documents, etc.) from active Modes or Lorebooks.
+    - Media attachments (images, documents, etc.) from active Modes or Lorebooks.
 
 3. **Multi-Role: Chat History (L0)**
     - Sliding window of recent original messages (User, Assistant, Tool interaction).
@@ -147,7 +147,7 @@ To maximize Prefix Caching efficiency, the payload follows a "Stable-Front, Dyna
         - **Core Memories**: Fundamental memory records.
         - **Episodic Memories**: Segmented long-term/short-term memories.
     - **Reference Variables**: `assistant.referenceVariables`.
-    - **Time Information**: Current timestamp, holidays, and the interval since the last reply (Highly dynamic).
+    - **Time Information**: Current timestamp, holidays, and the interval since the last reply (Highest frequency change).
 
 ## 7. Agent Automation (Task Manager)
 

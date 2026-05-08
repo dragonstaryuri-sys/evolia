@@ -102,6 +102,7 @@
     <activity
         android:name=".ui.activity.TextSelectionActivity"
         android:exported="true"
+        android:enabled="@bool/text_selection_enabled"
         android:label="@string/text_selection_menu_label"
         android:theme="@style/Theme.Rikkahub.Translucent"
         android:configChanges="keyboardHidden|orientation|screenSize|locale|layoutDirection"

@@ -36,6 +36,8 @@ android {
         }
 
         manifestPlaceholders["extractNativeLibs"] = "true"
+        // 默认启用
+        resValue("bool", "text_selection_enabled", "true")
     }
 
     packaging {
@@ -112,6 +114,9 @@ android {
             )
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
+
+            // Release 版本禁用
+            resValue("bool", "text_selection_enabled", "false")
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -119,6 +124,9 @@ android {
             isZipAlignEnabled = true
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
+
+            // Debug 版本启用
+            resValue("bool", "text_selection_enabled", "true")
         }
         create("baseline") {
             initWith(getByName("release"))
@@ -129,6 +137,8 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             isProfileable = true
+
+            resValue("bool", "text_selection_enabled", "false")
         }
     }
     compileOptions {
