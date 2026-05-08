@@ -123,28 +123,31 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 - **Cross-Session Continuity**: Early turns inject titles of today's other chats as "Recent Episode Boosts".
 
 ### 6.5 Final Prompt Structure (Prefix Caching Optimized Order)
-The payload sent to LLMs follows a strict order (Stable contents first, Dynamic contents last):
+To maximize Prefix Caching efficiency, the payload follows a "Stable-Front, Dynamic-Tail" structure. High-frequency changes (e.g., current time) are moved to a separate System Message at the very end to prevent cache invalidation for the preceding context.
 
-1. **System Message (Combined)**:
+1. **System Message: Stable & Semi-stable Context** (High Cache-Hit Region)
     - **Core Personality**: `systemPrompt` (Rules, Identity).
     - **Style Examples**: `languageStyleExamples`.
-    - **Environment/Mode**: Virtual World or Learning Mode behavioral instructions.
-    - **BEFORE_SYSTEM**: Patches from Modes/Lorebooks.
-    - **L3: Master Memory**: Permanent User Archive.
-    - **AFTER_SYSTEM**: Additional patches from Modes/Lorebooks.
-    - **Tool Instructions**: Instruction blocks for active tools.
-    - **Memory Specification**: Identity rules (User vs I) and recording standards.
-    - **L1: Context Summaries**: `contextSummary` + `Segments` (Recent Highlights).
-    - **## Memories Section**:
-        - **Recent Interaction Reference**: **CROSS-MODE CONTINUITY BOOST** (Injects previous mode's episode summary and last 6 raw messages).
-        - **Core Memories**: Fixed key facts.
-        - **Episodic Memories**: RAG-retrieved long-term records.
-    - **Reference Information**: `assistant.referenceVariables` (Dynamic variables like location/status).
-    - **Time Information**: Current time, holiday, and response interval (Most dynamic).
-2. **User Message (Context Attachments)**: 
-    - Physical media (Images/Docs) from active Modes/Lorebooks.
-3. **Chat History**: 
-    - **L0 Raw Messages** (Recent sliding window of User, Assistant, and Tool turns).
+    - **Environment Instructions**: Specific guidelines for Virtual World or Learning Mode.
+    - **Injections**: `BEFORE_SYSTEM` and `AFTER_SYSTEM` prompts from Modes/Lorebooks.
+    - **Tool Specs**: System instructions for currently active Tools.
+    - **Memory Specifications**: Identity definitions (User vs. I) and recording standards.
+    - **L3: Master Memory**: Persistent user archive.
+    - **L1: Context Summaries**: `contextSummary` + `Segments` (Recent history highlights).
+
+2. **User Message: Context Attachments** (Optional)
+    - Physical media attachments (images, documents, etc.) from active Modes or Lorebooks.
+
+3. **Multi-Role: Chat History (L0)**
+    - Sliding window of recent original messages (User, Assistant, Tool interaction).
+
+4. **System Message: Instant Dynamic Facts** (Dynamic Tail)
+    - **L2: Memories (RAG)**: Contextually retrieved facts, including:
+        - **Recent Interaction Reference**: Cross-mode continuity guidance (injected summary or recent history from previous mode).
+        - **Core Memories**: Fundamental memory records.
+        - **Episodic Memories**: Segmented long-term/short-term memories.
+    - **Reference Variables**: `assistant.referenceVariables`.
+    - **Time Information**: Current timestamp, holidays, and the interval since the last reply (Highly dynamic).
 
 ## 7. Agent Automation (Task Manager)
 
@@ -182,24 +185,12 @@ Evolia's interaction is built on a "Meta-Awareness" foundation. The AI does not 
 ### 9.2 Virtual World Mode (The Game)
 - **Concept:** A collaborative immersive roleplay session where the user "teleports" into the AI's world.
 - **AI recognition:** The AI acts as a "Pro-player" who knows it's a game but commits fully to the performance.
-- **Linguistic Markers:** Actions, environment, and psychology are narrated within asterisks (`*`).
-- **Breaking Character:** If the user mentions the "game" or "real world," the AI responds with "Knowing Playfulness" (e.g., a wink or a tease) before guiding the user back into the dream.
+- **Linguistic Markers:** Use `( ( ))` or `[ [ ]]` for "out-of-character" (OOC) meta-talk.
+- **Transition Protocol:** 
+    - When entering Virtual Mode, the UI provides a "Teleportation" visual effect.
+    - The `GenerationHandler` injects a transition prompt to help the AI reconcile previous real-world interactions with the new virtual setting.
 
-### 9.3 Normal Mode (The Off-stage Reality)
-- **Concept:** Post-game interaction via a digital tool (Instant Messaging style).
-- **Linguistic Constraint:** Narrated actions and psychology are strictly prohibited. Pure text only.
-- **Context Perception:** Past Virtual Mode sessions are viewed as "the wonderful game we just played," maintaining continuity while shifting to a casual, IM-based tone.
-
-### 9.4 Session Management & Clutter Control
-To enhance the ritual of "Entering/Leaving the dream":
-- **Auto-New Topic:** Switching modes automatically triggers a new conversation topic (Archive & Reset).
-- **Ghost Cleaning:** If a user switches to a mode but leaves without sending a message, that empty session is automatically deleted to prevent "Zombie Chats."
-- **Visibility Filtering:** Conversations with zero messages (and not pinned) are automatically hidden from the list UI, keeping the interface focused on meaningful interactions.
-
-### 9.5 Cross-mode Context Continuity (The Bridge)
-When switching modes, a "Bridge" is built between the sessions:
-- **Injection Point:** Located at `## Memories -> ### Recent Interaction Reference`.
-- **Contents:**
-    1. **The Episode:** A high-level summary of the mode the user just left.
-    2. **The Echo:** The last 6 raw messages from the previous mode, prefixed with mode-specific instructions (e.g., `VIRTUAL_TRANSITION_TO_NORMAL`).
-- **Purpose:** This prevents "amnesia" during transitions. The AI remembers exactly what was said 10 seconds ago in "the game," even if the interface has completely changed.
+## 10. Localization & Multi-language Support
+- **Default Locale:** Handled via Android system resources.
+- **Translation Engine:** Integrated with `ModelRegistry.QWEN_MT` for high-quality semantic translation.
+- **Prompt Localization:** Core prompts use `{{ locale }}` placeholders to adapt instructions to the user's native language.
