@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.model.TTSResponse
+import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
 import me.rerere.tts.controller.TtsController
@@ -107,6 +108,9 @@ interface CustomTtsState {
 
     /** Set playback [speed]. */
     fun setSpeed(speed: Float)
+
+    /** Get available voices for a provider. */
+    suspend fun getVoices(providerSetting: TTSProviderSetting): List<TTSVoice>
 
     /** Cleanup resources. */
     fun cleanup()
@@ -224,6 +228,10 @@ private class CustomTtsStateImpl(
 
     override fun setSpeed(speed: Float) {
         controller.setSpeed(speed)
+    }
+
+    override suspend fun getVoices(providerSetting: TTSProviderSetting): List<TTSVoice> {
+        return ttsManager.getVoices(providerSetting)
     }
 
     override fun cleanup() {

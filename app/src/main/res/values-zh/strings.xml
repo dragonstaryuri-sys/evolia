@@ -1444,4 +1444,26 @@
 
   <string name="calendar_sync_title">发现新日程</string>
   <string name="calendar_sync_desc">AI 识别到具体的提醒时间，已为你准备好系统日历详情。</string>
+
+
+  <!-- Azure TTS 资源 -->
+  <string name="setting_tts_page_api_key_description_azure">Azure Speech Service 的订阅密钥</string>
+  <string name="setting_tts_page_api_key_placeholder_azure">请输入 Azure API Key</string>
+  <string name="setting_tts_page_region">区域 (Region)</string>
+  <string name="setting_tts_page_region_description">服务部署的区域，例如 eastus</string>
+
+  <!-- Gemini TTS 补充资源 -->
+  <string name="setting_tts_page_api_key_description_gemini">您的 Gemini API Key</string>
+  <string name="setting_tts_page_voice_name_placeholder_gemini">例如 Kore</string>
+
+  <!-- ElevenLabs 补充资源 -->
+  <string name="setting_tts_page_api_key_description_elevenlabs">您的 ElevenLabs API Key</string>
+  <string name="setting_tts_page_api_key_placeholder_elevenlabs">请输入 ElevenLabs API Key</string>
+  <string name="setting_tts_page_model_id">模型 ID</string>
+  <string name="setting_tts_page_model_id_description">ElevenLabs 的模型标识符</string>
+
+  <!-- System TTS 补充资源 -->
+  <string name="setting_tts_page_voice_name_default">系统默认</string>
+
+  <string name="provider_type_hint">提示：大多数提供商（包括 DeepSeek、智谱、以及各大中转站）都兼容 OpenAI 格式。只有在直接连接 Google 或 Anthropic 官方 API 时才需选择对应选项。如果是从中转站调用 Gemini/Claude，请依然选择 OpenAI。</string>
 </resources>

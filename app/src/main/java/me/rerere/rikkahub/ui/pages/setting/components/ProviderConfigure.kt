@@ -39,6 +39,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalToaster
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.rikkahub.ui.components.ui.AutoAIIconWithUrl
 import me.rerere.rikkahub.ui.components.ui.ClickableIconPicker
@@ -92,24 +93,37 @@ fun ProviderConfigure(
 
         // 2. Type selector (for non-built-in providers)
         if (!provider.builtIn) {
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ProviderSetting.Types.forEachIndexed { index, type ->
-                    SegmentedButton(
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = ProviderSetting.Types.size
-                        ),
-                        label = {
-                            Text(type.simpleName ?: "")
-                        },
-                        selected = provider::class == type,
-                        onClick = {
-                            onEdit(provider.convertTo(type))
-                        }
-                    )
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    ProviderSetting.Types.forEachIndexed { index, type ->
+                        SegmentedButton(
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = ProviderSetting.Types.size
+                            ),
+                            label = {
+                                Text(type.simpleName ?: "")
+                            },
+                            selected = provider::class == type,
+                            onClick = {
+                                onEdit(provider.convertTo(type))
+                            }
+                        )
+                    }
                 }
+
+                // 类型选择提示词
+                Text(
+                    text = stringResource(id = R.string.provider_type_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
             }
         }
 
@@ -117,7 +131,7 @@ fun ProviderConfigure(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         ) {
             ClickableIconPicker(
                 currentIconUri = provider.customIconUri,
@@ -282,14 +296,14 @@ private fun ColumnScope.ProviderConfigureOpenAI(
 
     // Local state for URL fields with debouncing to prevent lag
     var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
-    
+
     // Sync from external changes (e.g., preset selection)
     LaunchedEffect(provider.baseUrl) {
         if (provider.baseUrl != localBaseUrl) {
             localBaseUrl = provider.baseUrl
         }
     }
-    
+
     // Debounce commits to parent
     LaunchedEffect(localBaseUrl) {
         delay(300)
@@ -310,13 +324,13 @@ private fun ColumnScope.ProviderConfigureOpenAI(
 
     if (!provider.useResponseApi) {
         var localPath by remember(provider.id) { mutableStateOf(provider.chatCompletionsPath) }
-        
+
         LaunchedEffect(provider.chatCompletionsPath) {
             if (provider.chatCompletionsPath != localPath) {
                 localPath = provider.chatCompletionsPath
             }
         }
-        
+
         LaunchedEffect(localPath) {
             delay(300)
             val latest = latestProvider
@@ -402,13 +416,13 @@ private fun ColumnScope.ProviderConfigureClaude(
 
     // Local state for URL field with debouncing to prevent lag
     var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
-    
+
     LaunchedEffect(provider.baseUrl) {
         if (provider.baseUrl != localBaseUrl) {
             localBaseUrl = provider.baseUrl
         }
     }
-    
+
     LaunchedEffect(localBaseUrl) {
         delay(300)
         val latest = latestProvider
@@ -485,13 +499,13 @@ private fun ColumnScope.ProviderConfigureGoogle(
 
         // Local state for URL field with debouncing
         var localBaseUrl by remember(provider.id) { mutableStateOf(provider.baseUrl) }
-        
+
         LaunchedEffect(provider.baseUrl) {
             if (provider.baseUrl != localBaseUrl) {
                 localBaseUrl = provider.baseUrl
             }
         }
-        
+
         LaunchedEffect(localBaseUrl) {
             delay(300)
             val latest = latestProvider
@@ -520,7 +534,7 @@ private fun ColumnScope.ProviderConfigureGoogle(
         var localPrivateKey by remember(provider.id) { mutableStateOf(provider.privateKey) }
         var localLocation by remember(provider.id) { mutableStateOf(provider.location) }
         var localProjectId by remember(provider.id) { mutableStateOf(provider.projectId) }
-        
+
         // Sync from external changes
         LaunchedEffect(provider.serviceAccountEmail) {
             if (provider.serviceAccountEmail != localEmail) localEmail = provider.serviceAccountEmail
@@ -534,7 +548,7 @@ private fun ColumnScope.ProviderConfigureGoogle(
         LaunchedEffect(provider.projectId) {
             if (provider.projectId != localProjectId) localProjectId = provider.projectId
         }
-        
+
         // Debounce commits
         LaunchedEffect(localEmail) {
             delay(300)

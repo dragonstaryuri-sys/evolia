@@ -1490,4 +1490,25 @@
 
   <string name="calendar_sync_title">New Schedule Found</string>
   <string name="calendar_sync_desc">AI has identified the exact reminder time and prepared system calendar details for you.</string>
+
+  <!-- Azure TTS Resources -->
+  <string name="setting_tts_page_api_key_description_azure">Subscription key for Azure Speech Service</string>
+  <string name="setting_tts_page_api_key_placeholder_azure">Please enter Azure API Key</string>
+  <string name="setting_tts_page_region">Region</string>
+  <string name="setting_tts_page_region_description">Region where the service is deployed, e.g. eastus</string>
+
+  <!-- Gemini TTS Additional Resources -->
+  <string name="setting_tts_page_api_key_description_gemini">Your Gemini API Key</string>
+  <string name="setting_tts_page_voice_name_placeholder_gemini">e.g. Kore</string>
+
+  <!-- ElevenLabs Additional Resources -->
+  <string name="setting_tts_page_api_key_description_elevenlabs">Your ElevenLabs API Key</string>
+  <string name="setting_tts_page_api_key_placeholder_elevenlabs">Please enter ElevenLabs API Key</string>
+  <string name="setting_tts_page_model_id">Model ID</string>
+  <string name="setting_tts_page_model_id_description">Model identifier for ElevenLabs</string>
+
+  <!-- System TTS Additional Resources -->
+  <string name="setting_tts_page_voice_name_default">System Default</string>
+  <string name="provider_type_hint">Note: Most providers (including DeepSeek, Zhipu, and various aggregators) are compatible with the OpenAI format. Select Google or Claude only when connecting directly to their official APIs. Use OpenAI format even for Gemini/Claude if using an aggregator.</string>
+
 </resources>

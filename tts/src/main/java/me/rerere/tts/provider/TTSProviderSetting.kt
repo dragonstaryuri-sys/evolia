@@ -119,6 +119,28 @@ sealed class TTSProviderSetting {
         }
     }
 
+    @Serializable
+    @SerialName("azure")
+    data class Azure(
+        override var id: Uuid = Uuid.random(),
+        override var name: String = "Azure TTS",
+        val apiKey: String = "",
+        val region: String = "eastus",
+        val voiceName: String = "zh-CN-XiaoxiaoNeural",
+        val style: String = "general",
+        val speed: Float = 1.0f
+    ) : TTSProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+        ): TTSProviderSetting {
+            return this.copy(
+                id = id,
+                name = name,
+            )
+        }
+    }
+
     companion object {
         val Types by lazy {
             listOf(
@@ -127,6 +149,7 @@ sealed class TTSProviderSetting {
                 SystemTTS::class,
                 MiniMax::class,
                 ElevenLabs::class,
+                Azure::class,
             )
         }
     }

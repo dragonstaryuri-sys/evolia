@@ -306,6 +306,7 @@ private fun getProviderSlugFromName(name: String): String? {
         lowerName.contains("openai") -> "openai"
         lowerName.contains("anthropic") || lowerName.contains("claude") -> "anthropic"
         lowerName.contains("google") || lowerName.contains("gemini") -> "google"
+        lowerName.contains("azure") || lowerName.contains("microsoft") -> "azure"
         lowerName.contains("deepseek") -> "deepseek"
         lowerName.contains("mistral") -> "mistral"
         lowerName.contains("meta") || lowerName.contains("llama") -> "meta"
@@ -516,6 +517,7 @@ private fun hasGoodLocalIcon(name: String): Boolean {
            lowerName.contains("openai") ||
            lowerName.contains("google") ||
            lowerName.contains("silicon")
+           // azure is missing locally, so we don't return true here anymore
 }
 
 /**
@@ -733,6 +735,7 @@ private fun matchProviderPattern(providerName: String): String? {
         providerName == "openai" -> "openai.svg"
         providerName == "google" -> "google-color.svg"
         providerName == "anthropic" -> "claude-color.svg" // Anthropic = Claude
+        providerName == "azure" -> null // Fallback to CDN
         providerName == "meta-llama" || providerName == "meta" -> "meta-color.svg"
         providerName == "mistralai" || providerName == "mistral" -> "mistral-color.svg"
         providerName == "deepseek" -> "deepseek-color.svg"
@@ -741,7 +744,7 @@ private fun matchProviderPattern(providerName: String): String? {
         providerName == "perplexity" -> "perplexity-color.svg"
         providerName == "nvidia" -> "nvidia-color.svg"
         providerName == "qwen" || providerName == "alibaba" -> "qwen-color.svg"
-        providerName == "microsoft" -> "openai.svg" // Azure OpenAI
+        providerName == "microsoft" -> "openai.svg" // Azure OpenAI often uses OpenAI logo
         providerName == "groq" -> "groq.svg"
         providerName == "together" -> "openrouter.svg"
         providerName == "fireworks" -> "openrouter.svg"
@@ -792,7 +795,7 @@ private fun matchModelPattern(modelName: String): String? {
         PATTERN_QWEN_MODEL.containsMatchIn(modelName) -> "qwen-color.svg"
         PATTERN_MISTRAL_MODEL.containsMatchIn(modelName) -> "mistral-color.svg"
         PATTERN_MIXTRAL.containsMatchIn(modelName) -> "mistral-color.svg"
-        PATTERN_CODESTRAL.containsMatchIn(modelName) -> "mistral-color.svg"
+        PATTERN_CODESTRAL.containsMatchIn(modelName) -> "codestral.svg"
         PATTERN_PIXTRAL.containsMatchIn(modelName) -> "mistral-color.svg"
         PATTERN_PHI.containsMatchIn(modelName) -> "openai.svg" // Microsoft Phi
         PATTERN_COMMAND.containsMatchIn(modelName) -> "cohere-color.svg"

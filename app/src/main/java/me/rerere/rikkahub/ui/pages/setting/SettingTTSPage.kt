@@ -16,34 +16,24 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
@@ -52,8 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,9 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -74,7 +60,6 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.AutoProviderIcon
 import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
-import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
@@ -86,14 +71,10 @@ import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.animateFloatAsState
 import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.components.ui.PhysicsSwipeToDelete
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -104,22 +85,18 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Warning
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.ToastType
 
 @Composable
 fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val navController = LocalNavController.current
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    // Move lazyListState outside for canScroll detection
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val newProviders = settings.ttsProviders.toMutableList().apply {
@@ -128,7 +105,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         vm.updateSettings(settings.copy(ttsProviders = newProviders))
     }
 
-    // State for TTS text filter settings dialog
     var showFilterSettingsDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -158,35 +134,25 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
 
         val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
-        // State for swipe neighbor tracking
-        var draggingIndex by remember { mutableStateOf(-1) }
+        var draggingIndex by remember { mutableIntStateOf(-1) }
         var dragOffset by remember { mutableFloatStateOf(0f) }
         var isUnlocked by remember { mutableStateOf(false) }
         var neighborsUnlocked by remember { mutableStateOf(false) }
 
-
         val density = androidx.compose.ui.platform.LocalDensity.current
-
-        // Check if delete is allowed (more than 1 provider)
         val canDelete = settings.ttsProviders.size > 1
 
-        // Reset neighborsUnlocked when offset returns to 0
         if (dragOffset == 0f && neighborsUnlocked) {
             neighborsUnlocked = false
         }
 
-
-
-        // Delete confirmation state
         var showDeleteDialog by remember { mutableStateOf(false) }
         var providerToDelete by remember { mutableStateOf<TTSProviderSetting?>(null) }
 
-        // TTS error state - show as toast notification
         val tts = LocalTTSState.current
         val ttsError by tts.error.collectAsState()
         val toaster = LocalToaster.current
 
-        // Show error toast when TTS error changes
         LaunchedEffect(ttsError) {
             ttsError?.let { errorMessage ->
                 toaster.show(
@@ -213,7 +179,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     else -> ItemPosition.MIDDLE
                 }
 
-                // Calculate neighbor offset
                 val thresholdPx = with(density) { 35.dp.toPx() }
                 if (draggingIndex >= 0 && !neighborsUnlocked && kotlin.math.abs(dragOffset) >= thresholdPx) {
                     neighborsUnlocked = true
@@ -241,11 +206,10 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     key = provider.id,
                     animateItemModifier = Modifier
                 ) { isDragging ->
-                    // Key on isSelected to force complete PhysicsSwipeToDelete recreation when selection changes
                     key(isSelected) {
                         PhysicsSwipeToDelete(
                             position = if (isSelected) ItemPosition.ONLY else position,
-                            groupCornerRadius = if (isSelected) 100.dp else 24.dp, // Pill shape for selected
+                            groupCornerRadius = if (isSelected) 100.dp else 24.dp,
                             deleteEnabled = canDelete && !isSelected,
                             neighborOffset = neighborOffset,
                             onDragProgress = { offset, unlocked ->
@@ -300,12 +264,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                             }
                         )
                     }
-                    } // key(isSelected)
+                    }
                 }
             }
         }
 
-        // Delete confirmation dialog
         if (showDeleteDialog && providerToDelete != null) {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = {
@@ -343,7 +306,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
-    // Edit TTS Provider Bottom Sheet
     editingProvider?.let { provider ->
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         var currentProvider by remember(provider) { mutableStateOf(provider) }
@@ -391,9 +353,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                         text = stringResource(R.string.setting_tts_page_edit_provider),
                         style = MaterialTheme.typography.headlineSmall
                     )
-                    // --- 修改：预览按钮和语言切换 ---
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // 语言切换小标签
                         listOf("zh" to "中", "en" to "EN", "ko" to "KR").forEach { (code, label) ->
                             androidx.compose.material3.InputChip(
                                 selected = selectedPreviewLang == code,
@@ -460,7 +420,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         }
     }
 
-    // TTS Text Filter Settings Dialog
     if (showFilterSettingsDialog) {
         TtsTextFilterSettingsDialog(
             rules = settings.displaySetting.ttsTextFilterRules,
@@ -488,7 +447,7 @@ private fun TtsTextFilterSettingsDialog(
     var editingRule by remember { mutableStateOf<me.rerere.rikkahub.data.datastore.TtsTextFilterRule?>(null) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -513,7 +472,6 @@ private fun TtsTextFilterSettingsDialog(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -528,12 +486,11 @@ private fun TtsTextFilterSettingsDialog(
                 }
             }
 
-            // Description
             androidx.compose.material3.Card(
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
                 ),
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+                shape = AppShapes.CardLarge
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -552,13 +509,12 @@ private fun TtsTextFilterSettingsDialog(
                 }
             }
 
-            // Rules list
             if (rules.isEmpty()) {
                 androidx.compose.material3.Card(
                     colors = androidx.compose.material3.CardDefaults.cardColors(
                         containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
                     ),
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+                    shape = AppShapes.CardLarge
                 ) {
                     Box(
                         modifier = Modifier
@@ -598,7 +554,6 @@ private fun TtsTextFilterSettingsDialog(
         }
     }
 
-    // Add/Edit Dialog
     if (showAddDialog || editingRule != null) {
         TtsFilterRuleEditDialog(
             rule = editingRule,
@@ -641,11 +596,11 @@ private fun TtsFilterRuleItem(
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
         ),
-        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+        shape = AppShapes.CardLarge,
         onClick = onEdit
     ) {
         androidx.compose.material3.ListItem(
-            colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+            colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
             headlineContent = {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -725,7 +680,6 @@ private fun TtsFilterRuleEditDialog(
                     )
                 }
 
-                // Mode selector
                 Text(
                     text = stringResource(R.string.tts_filter_dialog_mode_label),
                     style = MaterialTheme.typography.labelMedium,
@@ -749,9 +703,8 @@ private fun TtsFilterRuleEditDialog(
                     )
                 }
 
-                // Mode description
                 val start = pattern
-                val end = if (endPattern.isEmpty()) pattern else endPattern
+                val end = endPattern.ifEmpty { pattern }
                 Text(
                     text = when (mode) {
                         me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP -> stringResource(R.string.tts_filter_dialog_desc_skip, start, end)
@@ -788,6 +741,7 @@ private fun TtsFilterRuleEditDialog(
         }
     )
 }
+
 @Composable
 private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
     var showBottomSheet by remember { mutableStateOf(false) }
@@ -807,7 +761,6 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
     if (showBottomSheet) {
         val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-        // TTS Provider presets
         data class TTSPreset(
             val type: kotlin.reflect.KClass<out TTSProviderSetting>,
             val name: String,
@@ -820,12 +773,12 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                 TTSPreset(TTSProviderSetting.SystemTTS::class, "System TTS", "Uses device's built-in TTS engine", isLocal = true),
                 TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", "High-quality voices with emotion"),
                 TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", "Google's TTS with natural voices"),
+                TTSPreset(TTSProviderSetting.Azure::class, "Azure TTS", "Microsoft's high-quality cloud TTS"),
                 TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", "Professional voice cloning"),
                 TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", "Chinese TTS with emotions"),
             )
         }
 
-        // Filter presets based on search
         val filteredPresets = remember(searchQuery) {
             if (searchQuery.isBlank()) {
                 allTtsPresets
@@ -865,7 +818,6 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                     .fillMaxHeight(0.85f)
                     .clipToBounds()
             ) {
-                // Title
                 Text(
                     text = stringResource(R.string.setting_tts_page_add_provider),
                     style = MaterialTheme.typography.headlineSmall,
@@ -875,7 +827,6 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                         .padding(bottom = 16.dp)
                 )
 
-                // Search bar
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -922,6 +873,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                     TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS()
                                     TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI()
                                     TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini()
+                                    TTSProviderSetting.Azure::class -> TTSProviderSetting.Azure()
                                     TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs()
                                     TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax()
                                     else -> TTSProviderSetting.SystemTTS()
@@ -940,7 +892,6 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Icon
                                 when (preset.type) {
                                     TTSProviderSetting.SystemTTS::class -> {
                                         Box(
@@ -963,6 +914,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                         val providerName = when (preset.type) {
                                             TTSProviderSetting.OpenAI::class -> "OpenAI"
                                             TTSProviderSetting.Gemini::class -> "Google"
+                                            TTSProviderSetting.Azure::class -> "Azure"
                                             TTSProviderSetting.ElevenLabs::class -> "ElevenLabs"
                                             TTSProviderSetting.MiniMax::class -> "MiniMax"
                                             else -> "Unknown"
@@ -988,7 +940,6 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                     )
                                 }
 
-                                // Tags on right side
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
@@ -1021,11 +972,6 @@ private fun TTSProviderItemContent(
     onEdit: () -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
-    val tts = LocalTTSState.current
-    val isSpeaking by tts.isSpeaking.collectAsState()
-    val isAvailable by tts.isAvailable.collectAsState()
-
-    // Animated color transition for selection
     val backgroundColor by androidx.compose.animation.animateColorAsState(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primaryContainer
@@ -1058,7 +1004,6 @@ private fun TTSProviderItemContent(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Icon: System TTS shows a phone icon, others use provider icon lookup
         when (provider) {
             is TTSProviderSetting.SystemTTS -> {
                 Box(
@@ -1078,13 +1023,13 @@ private fun TTSProviderItemContent(
                 }
             }
             else -> {
-                // Use provider type name for icon lookup (OpenAI, Gemini, MiniMax, ElevenLabs)
                 val providerTypeName = when (provider) {
                     is TTSProviderSetting.OpenAI -> "OpenAI"
                     is TTSProviderSetting.Gemini -> "Google"
                     is TTSProviderSetting.MiniMax -> "MiniMax"
                     is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
-                    is TTSProviderSetting.SystemTTS -> "System"
+                    is TTSProviderSetting.Azure -> "Azure"
+                    else -> "Unknown"
                 }
                 AutoProviderIcon(
                     name = providerTypeName,
@@ -1105,7 +1050,6 @@ private fun TTSProviderItemContent(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Tags row - only show for SystemTTS
             if (provider is TTSProviderSetting.SystemTTS) {
                 Box(
                     modifier = Modifier
@@ -1122,7 +1066,6 @@ private fun TTSProviderItemContent(
                             Text("Local")
                         }
                     }
-                    // Fade gradient overlay
                     Box(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
@@ -1140,7 +1083,6 @@ private fun TTSProviderItemContent(
             }
         }
 
-        // Settings button first
         IconButton(
             onClick = {
                 haptics.perform(HapticPattern.Pop)
@@ -1153,7 +1095,6 @@ private fun TTSProviderItemContent(
             )
         }
 
-        // Drag handle at the end
         dragHandle()
     }
 }
