@@ -8,5 +8,6 @@ data class TTSVoice(
     val name: String,
     val locale: String? = null,
     val gender: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val styles: List<String> = emptyList()
 )

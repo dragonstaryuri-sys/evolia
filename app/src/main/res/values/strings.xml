@@ -1517,6 +1517,8 @@
   <string name="setting_tts_page_azure_voice_picker_empty">No voices found</string>
   <string name="setting_tts_page_azure_style_picker_title">Select Azure Style</string>
   <string name="setting_tts_page_azure_style_picker_search_placeholder">Search styles...</string>
-
-
+  <string name="setting_tts_page_azure_filter_all">All</string>
+  <string name="setting_tts_page_azure_filter_neural">Neural Only</string>
+  <string name="setting_tts_page_azure_filter_standard">Standard Only</string>
+  <string name="setting_tts_page_azure_style_no_styles">This voice does not support styles</string>
 </resources>

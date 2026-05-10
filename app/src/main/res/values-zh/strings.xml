@@ -1473,4 +1473,9 @@
   <string name="setting_tts_page_azure_voice_picker_empty">未找到对应语音</string>
   <string name="setting_tts_page_azure_style_picker_title">选择情感风格</string>
   <string name="setting_tts_page_azure_style_picker_search_placeholder">搜索风格...</string>
+  <!-- Azure 语音过滤 -->
+  <string name="setting_tts_page_azure_filter_all">全部</string>
+  <string name="setting_tts_page_azure_filter_neural">神经网络 (Neural)</string>
+  <string name="setting_tts_page_azure_filter_standard">标准 (Standard)</string>
+  <string name="setting_tts_page_azure_style_no_styles">此语音不支持情感调节</string>
 </resources>

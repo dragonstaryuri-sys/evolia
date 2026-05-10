@@ -114,13 +114,21 @@ class AzureTTSProvider : TTSProvider<TTSProviderSetting.Azure> {
             val voices = mutableListOf<TTSVoice>()
             for (i in 0 until jsonArray.length()) {
                 val voiceObj = jsonArray.getJSONObject(i)
+                val styles = mutableListOf<String>()
+                if (voiceObj.has("StyleList")) {
+                    val stylesArray = voiceObj.getJSONArray("StyleList")
+                    for (j in 0 until stylesArray.length()) {
+                        styles.add(stylesArray.getString(j))
+                    }
+                }
                 voices.add(
                     TTSVoice(
                         id = voiceObj.getString("ShortName"),
                         name = voiceObj.optString("DisplayName", voiceObj.optString("LocalName", voiceObj.getString("ShortName"))),
                         locale = voiceObj.optString("Locale"),
                         gender = voiceObj.optString("Gender"),
-                        description = voiceObj.optString("Name")
+                        description = voiceObj.optString("Name"),
+                        styles = styles
                     )
                 )
             }

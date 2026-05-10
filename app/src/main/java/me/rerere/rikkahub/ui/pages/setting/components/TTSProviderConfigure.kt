@@ -37,12 +37,16 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,16 +65,12 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.context.LocalTTSState
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSProviderSetting
 
 private const val TAG = "TTSProviderConfigure"
-
-private val AZURE_COMMON_STYLES = listOf(
-    "general", "cheerful", "empathetic", "chat", "newscast",
-    "customerservice", "assistant", "lyrical", "calm",
-    "fearful", "sad", "angry", "whispering", "poetry-reading"
-)
 
 @Composable
 fun TTSProviderConfigure(
@@ -125,6 +125,16 @@ private fun AzureTTSConfiguration(
     var localVoiceName by remember(setting.voiceName) { mutableStateOf(setting.voiceName) }
     var localStyle by remember(setting.style) { mutableStateOf(setting.style) }
     var localSpeed by remember(setting.speed) { mutableStateOf(setting.speed) }
+
+    // 获取当前语音对象以提取动态风格
+    val currentVoice = remember(localVoiceName, voices) {
+        voices.find { it.id == localVoiceName }
+    }
+    val supportedStyles = remember(currentVoice) {
+        val list = mutableListOf("general")
+        currentVoice?.styles?.let { list.addAll(it) }
+        list.distinct()
+    }
 
     // 防抖同步：停止输入 500ms 后才同步给外部（触发数据库保存）
     LaunchedEffect(localApiKey, localRegion, localVoiceName, localStyle, localSpeed) {
@@ -229,18 +239,28 @@ private fun AzureTTSConfiguration(
 
     // Style (Emotion)
     var showStylePicker by remember { mutableStateOf(false) }
+    val hasStyles = supportedStyles.size > 1
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_emotion)) },
-        description = { Text(stringResource(R.string.setting_tts_page_emotion_description)) }
+        description = {
+            if (!hasStyles && currentVoice != null) {
+                Text(stringResource(R.string.setting_tts_page_azure_style_no_styles), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(stringResource(R.string.setting_tts_page_emotion_description))
+            }
+        }
     ) {
         OutlinedTextField(
-            value = localStyle,
-            onValueChange = { localStyle = it },
+            value = if (hasStyles) localStyle else "general",
+            onValueChange = { if (hasStyles) localStyle = it },
             modifier = Modifier.fillMaxWidth(),
+            enabled = hasStyles,
             trailingIcon = {
-                IconButton(onClick = { showStylePicker = true }) {
-                    Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style")
+                if (hasStyles) {
+                    IconButton(onClick = { showStylePicker = true }) {
+                        Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style")
+                    }
                 }
             },
             placeholder = { Text("general") }
@@ -270,7 +290,11 @@ private fun AzureTTSConfiguration(
             currentVoiceId = localVoiceName,
             onSelect = {
                 localVoiceName = it.id
+                // 切换语音后重置风格为默认
+                localStyle = "general"
                 showVoicePicker = false
+                // 强制立刻同步一次，确保预览生效
+                onValueChange(setting.copy(voiceName = it.id, style = "general"))
             },
             onDismiss = { showVoicePicker = false }
         )
@@ -279,9 +303,12 @@ private fun AzureTTSConfiguration(
     if (showStylePicker) {
         AzureStylePicker(
             currentStyle = localStyle,
+            supportedStyles = supportedStyles,
             onSelect = {
                 localStyle = it
                 showStylePicker = false
+                // 强制立刻同步一次，确保预览生效
+                onValueChange(setting.copy(style = it))
             },
             onDismiss = { showStylePicker = false }
         )
@@ -296,14 +323,28 @@ private fun AzureVoicePicker(
     onSelect: (TTSVoice) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val haptics = rememberPremiumHaptics()
     var searchQuery by remember { mutableStateOf("") }
-    val filteredVoices by remember(voices, searchQuery) {
+    var filterType by remember { mutableIntStateOf(0) } // 0: All, 1: Neural, 2: Standard
+
+    val filteredVoices by remember(voices, searchQuery, filterType) {
         derivedStateOf {
-            if (searchQuery.isBlank()) voices
-            else voices.filter {
-                it.name.contains(searchQuery, ignoreCase = true) ||
-                it.id.contains(searchQuery, ignoreCase = true) ||
-                (it.locale?.contains(searchQuery, ignoreCase = true) ?: false)
+            voices.filter { voice ->
+                val matchesSearch = if (searchQuery.isBlank()) true
+                else {
+                    voice.name.contains(searchQuery, ignoreCase = true) ||
+                    voice.id.contains(searchQuery, ignoreCase = true) ||
+                    (voice.locale?.contains(searchQuery, ignoreCase = true) ?: false)
+                }
+
+                val isNeural = voice.id.contains("Neural", ignoreCase = true)
+                val matchesType = when (filterType) {
+                    1 -> isNeural
+                    2 -> !isNeural
+                    else -> true
+                }
+
+                matchesSearch && matchesType
             }
         }
     }
@@ -341,6 +382,43 @@ private fun AzureVoicePicker(
                     shape = MaterialTheme.shapes.medium
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                ) {
+                    SegmentedButton(
+                        selected = filterType == 0,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            filterType = 0
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                    ) {
+                        Text(stringResource(R.string.setting_tts_page_azure_filter_all), style = MaterialTheme.typography.labelSmall)
+                    }
+                    SegmentedButton(
+                        selected = filterType == 1,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            filterType = 1
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                    ) {
+                        Text(stringResource(R.string.setting_tts_page_azure_filter_neural), style = MaterialTheme.typography.labelSmall)
+                    }
+                    SegmentedButton(
+                        selected = filterType == 2,
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            filterType = 2
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                    ) {
+                        Text(stringResource(R.string.setting_tts_page_azure_filter_standard), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 LazyColumn(
@@ -350,9 +428,14 @@ private fun AzureVoicePicker(
                 ) {
                     items(filteredVoices, key = { it.id }) { voice ->
                         val isSelected = voice.id == currentVoiceId
+                        val isNeural = voice.id.contains("Neural", ignoreCase = true)
+
                         ListItem(
                             modifier = Modifier
-                                .clickable { onSelect(voice) },
+                                .clickable {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onSelect(voice)
+                                },
                             headlineContent = {
                                 Text(
                                     text = voice.name,
@@ -362,7 +445,7 @@ private fun AzureVoicePicker(
                             },
                             supportingContent = {
                                 Text(
-                                    text = "${voice.locale ?: ""} | ${voice.gender ?: ""} | ${voice.id}",
+                                    text = "${voice.locale ?: ""} | ${if (isNeural) "Neural" else "Standard"} | ${voice.id}",
                                     style = MaterialTheme.typography.labelSmall
                                 )
                             },
@@ -408,15 +491,16 @@ private fun AzureVoicePicker(
 @Composable
 private fun AzureStylePicker(
     currentStyle: String,
+    supportedStyles: List<String>,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val haptics = rememberPremiumHaptics()
     var searchQuery by remember { mutableStateOf("") }
-    val styles = remember { AZURE_COMMON_STYLES }
-    val filteredStyles by remember(searchQuery) {
+    val filteredStyles by remember(searchQuery, supportedStyles) {
         derivedStateOf {
-            if (searchQuery.isBlank()) styles
-            else styles.filter { it.contains(searchQuery, ignoreCase = true) }
+            if (searchQuery.isBlank()) supportedStyles
+            else supportedStyles.filter { it.contains(searchQuery, ignoreCase = true) }
         }
     }
 
@@ -464,7 +548,10 @@ private fun AzureStylePicker(
                         val isSelected = style == currentStyle
                         ListItem(
                             modifier = Modifier
-                                .clickable { onSelect(style) },
+                                .clickable {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onSelect(style)
+                                },
                             headlineContent = {
                                 Text(
                                     text = style,
