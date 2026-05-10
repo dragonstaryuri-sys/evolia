@@ -125,6 +125,11 @@ class AssistantVM(
                 id = kotlin.uuid.Uuid.random(),
                 name = "${assistant.name} (Clone)",
                 avatar = if(assistant.avatar is Avatar.Image) Avatar.Dummy else assistant.avatar,
+                // 不复制记忆档案和相关状态
+                masterMemoryContent = "",
+                lastMasterMemoryUpdate = 0L,
+                lastConsolidationTime = 0L,
+                lastConsolidationResult = ""
             )
             settingsStore.update(
                 settings.copy(
