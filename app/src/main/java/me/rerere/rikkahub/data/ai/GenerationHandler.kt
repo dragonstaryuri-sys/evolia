@@ -497,6 +497,7 @@ class GenerationHandler(
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
         val baseSystemPromptBuilder = StringBuilder()
+        baseSystemPromptBuilder.append("The default user gender is female.\n")
 
         if (assistant.systemPrompt.isNotBlank()) {
             baseSystemPromptBuilder.append(
