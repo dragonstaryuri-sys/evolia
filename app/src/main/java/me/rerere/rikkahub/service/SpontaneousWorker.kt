@@ -87,8 +87,7 @@ class SpontaneousWorker(
         }
 
         // Get latest conversation for THIS assistant
-        val conversations = conversationRepository.getRecentConversations(assistant.id, 1)
-        val conversation = conversations.firstOrNull() ?: return
+        val conversation = conversationRepository.getLatestConversation(assistant.id) ?: return
 
         val lastUpdateTime = conversation.updateAt
         val timeSinceLastActivity = nowMs - lastUpdateTime.toEpochMilli()
@@ -120,10 +119,15 @@ class SpontaneousWorker(
         ).map { it.first }
         val memoryContext = memories.joinToString("\n") { "- ${it.content}" }
         val history = conversation.currentMessages.takeLast(6).joinToString("\n") { "${it.role}: ${it.toText()}" }
-
+        val modeContext = if (conversation.isVirtual) {
+            "[Current Mode: VIRTUAL WORLD]\nYou are currently in a role-play/virtual environment. Maintain that persona."
+        } else {
+            "[Current Mode: NORMAL CHAT]"
+        }
         // --- 核心优化：强制使用系统级提示词，忽略用户自定义内容 ---
         val systemSpontaneousPrompt = """
             # Role: Spontaneous Persona Engagement
+            $modeContext
             You are ${assistant.name}. You are deciding whether to proactively message the user.
 
             [Persona/System Prompt]
