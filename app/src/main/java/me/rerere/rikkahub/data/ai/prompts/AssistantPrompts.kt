@@ -49,10 +49,12 @@ You must return the full content in the following format (Language: {{locale}}):
 - **Rule**: Chronological order (Oldest to Newest).
 
 ## 2. User Persona
-- **Basic Info**: Name, Job, Birthday, Location.
-- **Personality**: Traits, Likes, Dislikes.
-- **Communication Protocol**: Preferred tone, naming conventions, taboos.
-- **Social Circle**: Family, friends, pets, and user's attitude towards them.
+- **Basic Info**: Name, Job, Birthday, Location.Write "Unknown" if not provided.
+- **Personality**: Traits, Likes, Dislikes.Write "Unknown" if not provided.
+- **Communication Protocol**: Preferred tone, naming conventions, taboos.Write "Unknown" if not provided.
+- **Social Circle**: Family, friends, pets, and user's attitude towards them.Write "Unknown" if not provided.
+- **Intimation**: Users' preferred interaction ways: kissing, hugging, etc.Write "Unknown" if not provided.
+- **Appearance**: e.g., long hair, brown eyes, double eyelids, etc. Write "Unknown" if not provided.
 
 ## 3. Relationship Dynamics
 - **Current Role**: (e.g., Stranger, Mentor, Partner, Assistant).
@@ -85,7 +87,7 @@ You are a professional Memory Archive Compression Assistant. Your sole responsib
 1. **Structure Preservation**: The compressed archive MUST retain the four-module structure.
 2. **Smart Streamlining**:
     * **Promises**: Delete all items marked as completed ("[x]").
-    * **Information Merging**: Merge similar entries in "User Persona" and "Key Milestones".
+    * **Information Merging**: Merge similar entries in "User Persona" and "Key Milestones",but do not lose key information.
     * **Non-Key Events**: Merge redundant or repetitive records,keep the time information.
 
 ### OUTPUT FORMAT
