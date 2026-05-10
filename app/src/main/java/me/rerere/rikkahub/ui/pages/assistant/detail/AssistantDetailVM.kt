@@ -36,7 +36,6 @@ import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
@@ -66,7 +65,11 @@ class AssistantDetailVM(
     private val providerManager: ProviderManager,
     private val agentTaskRepository: AgentTaskRepository
 ) : ViewModel() {
-    private val assistantId = try { Uuid.parse(id) } catch (e: Exception) { Uuid.NIL }
+    private val assistantId = try {
+        Uuid.parse(id)
+    } catch (e: Exception) {
+        Uuid.NIL
+    }
 
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
@@ -188,13 +191,16 @@ class AssistantDetailVM(
     ) {
         // 异步处理“更新记忆档案”（L3）
         if (updateMaster && !consolidateEpisodes) {
-            val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-                .setInputData(androidx.work.workDataOf(
-                    "ASSISTANT_ID" to assistantId.toString(),
-                    "FORCE_MASTER" to true,
-                    "IS_MANUAL" to true
-                ))
-                .build()
+            val request =
+                androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
+                    .setInputData(
+                        androidx.work.workDataOf(
+                            "ASSISTANT_ID" to assistantId.toString(),
+                            "FORCE_MASTER" to true,
+                            "IS_MANUAL" to true
+                        )
+                    )
+                    .build()
             androidx.work.WorkManager.getInstance(context).enqueue(request)
             setSnackbarMessage(context.getString(R.string.master_memory_update_started))
             return
@@ -276,7 +282,12 @@ class AssistantDetailVM(
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
-                            contextParts.add("Recent Messages:\n${conv.currentMessages.takeLast(20).joinToString("\n") { "${it.role}: ${it.toContentText().take(300)}" }}")
+                            contextParts.add(
+                                "Recent Messages:\n${
+                                    conv.currentMessages.takeLast(20)
+                                        .joinToString("\n") { "${it.role}: ${it.toContentText().take(300)}" }
+                                }"
+                            )
                         }
                     }
                     val recentContext = contextParts.joinToString("\n\n---\n\n")
@@ -356,14 +367,27 @@ class AssistantDetailVM(
                 if (coreMemories.isNotEmpty()) {
                     val coreGroups = findSimilarGroups(coreMemories, true)
                     for (group in coreGroups) {
-                        val result = processOptimizationGroup(handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>, providerSetting, model, group, null)
+                        val result = processOptimizationGroup(
+                            handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>,
+                            providerSetting,
+                            model,
+                            group,
+                            null
+                        )
                         totalUpdated += result.updated
                         totalDeleted += result.deleted
                         totalAdded += result.added
                     }
                 }
 
-                setSnackbarMessage(context.getString(R.string.memory_optimize_success, totalUpdated, totalDeleted, totalAdded))
+                setSnackbarMessage(
+                    context.getString(
+                        R.string.memory_optimize_success,
+                        totalUpdated,
+                        totalDeleted,
+                        totalAdded
+                    )
+                )
 
                 _embeddingProgress.value = EmbeddingProgress(0, 1, true)
                 memoryRepository.regenerateEmbeddings(assistantId.toString()) { current, total ->
@@ -394,7 +418,7 @@ class AssistantDetailVM(
             "\n### Tactical Details:\n" + temporarySummaries.joinToString("\n") { "- $it" }
         } else ""
 
-        val prompt = if (previousSummary != null) {
+        val prompt =
             DEFAULT_FULL_SUMMARY_PROMPT
                 .applyPlaceholders(
                     "previous_summary" to previousSummary + detailText,
@@ -402,17 +426,13 @@ class AssistantDetailVM(
                     "locale" to Locale.getDefault().displayName,
                     "char" to assistantName
                 )
-        } else {
-            DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-                .applyPlaceholders(
-                    "text" to detailText + "\n" + messagesText,
-                    "locale" to Locale.getDefault().displayName,
-                    "char" to assistantName
-                )
-        }
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f))
+        val resp = h.generateText(
+            providerSetting,
+            listOf(UIMessage.user(prompt)),
+            TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f)
+        )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
@@ -431,9 +451,14 @@ class AssistantDetailVM(
             "locale" to locale
         )
 
-        val inputPrompt = "Current Date: ${LocalDate.now()}\n\n# Existing Memory Archive:\n${existingArchive.ifBlank { "(Empty)" }}\n\n# New Conversation Context:\n$newContext\n\nPlease provide the fully updated Memory Archive incorporating all relevant new information."
+        val inputPrompt =
+            "Current Date: ${LocalDate.now()}\n\n# Existing Memory Archive:\n${existingArchive.ifBlank { "(Empty)" }}\n\n# New Conversation Context:\n$newContext\n\nPlease provide the fully updated Memory Archive incorporating all relevant new information."
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = h.generateText(providerSetting, listOf(UIMessage.system(finalSystemPrompt), UIMessage.user(inputPrompt)), TextGenerationParams(model = model, temperature = 0.2f, topP = 1.0f))
+        val resp = h.generateText(
+            providerSetting,
+            listOf(UIMessage.system(finalSystemPrompt), UIMessage.user(inputPrompt)),
+            TextGenerationParams(model = model, temperature = 0.2f, topP = 1.0f)
+        )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
@@ -490,7 +515,8 @@ class AssistantDetailVM(
             )
 
         try {
-            val response = handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
+            val response =
+                handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
             val resultText = response.choices.firstOrNull()?.message?.toContentText() ?: ""
             Log.i(TAG, "<<< [Memory Optimization] AI Raw Response:\n$resultText")
 
@@ -507,7 +533,10 @@ class AssistantDetailVM(
             val root = try {
                 json.parseToJsonElement(jsonString)
             } catch (e: Exception) {
-                Log.w(TAG, "!!! [Memory Optimization] 不能识别 AI 返回内容的格式 (可能存在语法错误)。跳过此组优化。错误: ${e.message}")
+                Log.w(
+                    TAG,
+                    "!!! [Memory Optimization] 不能识别 AI 返回内容的格式 (可能存在语法错误)。跳过此组优化。错误: ${e.message}"
+                )
                 return OptimizationResult(0, 0, 0)
             }
 
@@ -529,6 +558,7 @@ class AssistantDetailVM(
                             ?: contentElement["Content"]?.jsonPrimitive?.contentOrNull
                             ?: contentElement.toString()
                     }
+
                     else -> contentElement.toString()
                 }
 
@@ -542,6 +572,7 @@ class AssistantDetailVM(
                         updated++
                         Log.i(TAG, "Executed [UPDATE] on ID: $id")
                     }
+
                     "delete" -> if (id != null) {
                         if (groupIds.contains(id)) {
                             deleteMemoryById(id)
@@ -551,6 +582,7 @@ class AssistantDetailVM(
                             Log.w(TAG, "!!! [PROTECTED] AI tried to delete ID $id NOT in group. Bypassing.")
                         }
                     }
+
                     "add" -> {
                         memoryRepository.addMemory(assistantId.toString(), contentString ?: "")
                         added++
@@ -573,7 +605,8 @@ class AssistantDetailVM(
         }
     }
 
-    val providers: StateFlow<List<me.rerere.ai.provider.ProviderSetting>> = settingsStore.settingsFlow.map { it.providers }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val providers: StateFlow<List<me.rerere.ai.provider.ProviderSetting>> =
+        settingsStore.settingsFlow.map { it.providers }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun update(assistant: Assistant) {
         viewModelScope.launch {
@@ -594,15 +627,47 @@ class AssistantDetailVM(
         }
     }
 
-    fun updateTags(tagIds: List<Uuid>, updatedTags: List<Tag>) { viewModelScope.launch { val currentSettings = settingsStore.settingsFlow.value; val currentAssistant = assistant.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map { if (it.id == currentAssistant.id) it.copy(tags = tagIds) else it }, assistantTags = updatedTags)) } }
-    fun addMemory(memory: AssistantMemory) { viewModelScope.launch { memoryRepository.addMemory(assistantId.toString(), memory.content) } }
-    fun updateMemory(memory: AssistantMemory) { viewModelScope.launch { if (memory.id < 0) memoryRepository.updateEpisodeContent(-memory.id, memory.content) else memoryRepository.updateContent(memory.id, memory.content) } }
-    fun deleteMemory(memory: AssistantMemory) { viewModelScope.launch { deleteMemoryById(memory.id) } }
+    fun updateTags(tagIds: List<Uuid>, updatedTags: List<Tag>) {
+        viewModelScope.launch {
+            val currentSettings = settingsStore.settingsFlow.value;
+            val currentAssistant =
+                assistant.value; settingsStore.update(currentSettings.copy(assistants = currentSettings.assistants.map {
+            if (it.id == currentAssistant.id) it.copy(
+                tags = tagIds
+            ) else it
+        }, assistantTags = updatedTags))
+        }
+    }
+
+    fun addMemory(memory: AssistantMemory) {
+        viewModelScope.launch { memoryRepository.addMemory(assistantId.toString(), memory.content) }
+    }
+
+    fun updateMemory(memory: AssistantMemory) {
+        viewModelScope.launch {
+            if (memory.id < 0) memoryRepository.updateEpisodeContent(
+                -memory.id,
+                memory.content
+            ) else memoryRepository.updateContent(memory.id, memory.content)
+        }
+    }
+
+    fun deleteMemory(memory: AssistantMemory) {
+        viewModelScope.launch { deleteMemoryById(memory.id) }
+    }
+
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage = _snackbarMessage.asStateFlow()
-    fun setSnackbarMessage(message: String?) { _snackbarMessage.value = message }
-    fun clearSnackbarMessage() { _snackbarMessage.value = null }
-    val needsEmbeddingRegeneration: StateFlow<Boolean> = memories.map { list -> list.any { !it.hasEmbedding } }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+    fun setSnackbarMessage(message: String?) {
+        _snackbarMessage.value = message
+    }
+
+    fun clearSnackbarMessage() {
+        _snackbarMessage.value = null
+    }
+
+    val needsEmbeddingRegeneration: StateFlow<Boolean> =
+        memories.map { list -> list.any { !it.hasEmbedding } }.stateIn(viewModelScope, SharingStarted.Lazily, false)
     private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
     val retrievalResults = _retrievalResults.asStateFlow()
 
@@ -623,11 +688,29 @@ class AssistantDetailVM(
         }
     }
 
-    fun regenerateEmbeddings() { viewModelScope.launch { _embeddingProgress.value = EmbeddingProgress(0, 1, true); memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t -> _embeddingProgress.value = EmbeddingProgress(c, t, true) }; _embeddingProgress.value = null } }
-    fun consolidateMemories(isFullScan: Boolean) { val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>().setInputData(androidx.work.workDataOf("FULL_SCAN" to isFullScan, "ASSISTANT_ID" to assistantId.toString())).build(); androidx.work.WorkManager.getInstance(context).enqueue(request) }
+    fun regenerateEmbeddings() {
+        viewModelScope.launch {
+            _embeddingProgress.value = EmbeddingProgress(
+                0,
+                1,
+                true
+            ); memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t ->
+            _embeddingProgress.value = EmbeddingProgress(c, t, true)
+        }; _embeddingProgress.value = null
+        }
+    }
+
+    fun consolidateMemories(isFullScan: Boolean) {
+        val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
+            .setInputData(androidx.work.workDataOf("FULL_SCAN" to isFullScan, "ASSISTANT_ID" to assistantId.toString()))
+            .build(); androidx.work.WorkManager.getInstance(context).enqueue(request)
+    }
+
     fun estimateTokens(text: String): Int = text.length / 4
-    val averageMemoryLength = memoryRepository.getAverageMemoryLength(assistantId.toString()).stateIn(viewModelScope, SharingStarted.Lazily, 150)
-    val estimatedMemoryCapacity = assistant.map { (it.maxTokenUsage / 50).coerceAtLeast(10) }.stateIn(viewModelScope, SharingStarted.Lazily, 10)
+    val averageMemoryLength = memoryRepository.getAverageMemoryLength(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.Lazily, 150)
+    val estimatedMemoryCapacity =
+        assistant.map { (it.maxTokenUsage / 50).coerceAtLeast(10) }.stateIn(viewModelScope, SharingStarted.Lazily, 10)
 }
 
 

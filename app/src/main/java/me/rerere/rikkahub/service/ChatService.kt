@@ -72,7 +72,6 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
@@ -463,7 +462,7 @@ class ChatService(
             val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
             val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
 
-            // 5. 生成摘要 (如果有基准则进行合并总结，否则进行初始总结)
+            // 5. 生成摘要 (合并总结逻辑)
             val summary = if (newMessages.isEmpty() && baseSummary != null) {
                 baseSummary
             } else {
@@ -472,20 +471,12 @@ class ChatService(
                 }
                 val locale = Locale.getDefault().displayName
 
-                val prompt = if (baseSummary != null) {
-                    // 使用增量合并 Prompt
-                    DEFAULT_FULL_SUMMARY_PROMPT
-                        .replace("{{previous_summary}}", baseSummary)
-                        .replace("{{new_messages}}", messagesText)
-                        .replace("{{locale}}", locale)
-                        .replace("{{char}}", assistant.name)
-                } else {
-                    // 使用初始归档 Prompt
-                    DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
-                        .replace("{{text}}", messagesText)
-                        .replace("{{locale}}", locale)
-                        .replace("{{char}}", assistant.name)
-                }
+                // 使用合并后的统一提示词
+                val prompt = DEFAULT_FULL_SUMMARY_PROMPT
+                    .replace("{{previous_summary}}", baseSummary ?: "None")
+                    .replace("{{new_messages}}", messagesText)
+                    .replace("{{locale}}", locale)
+                    .replace("{{char}}", assistant.name)
 
                 val providerHandler = handler as Provider<ProviderSetting>
                 val resp = retryIO(times = 2) {
@@ -962,14 +953,11 @@ class ChatService(
             }
             val locale = Locale.getDefault().displayName
 
-            // 强制使用 DEFAULT_TEMP_SUMMARY_PROMPT，忽略助手中可能存留的旧自定义提示词
+            // 1. 生成片段摘要 (L1 Segment)
             val tempPrompt = DEFAULT_TEMP_SUMMARY_PROMPT
                 .replace("{{new_messages}}", text)
                 .replace("{{locale}}", locale)
                 .replace("{{char}}", assistant.name)
-
-            // Log: 打印 L1 片段摘要提示词
-            Log.d(TAG, "Summarize L1 Segment Prompt:\n$tempPrompt")
 
             val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f))
@@ -1008,19 +996,15 @@ class ChatService(
                 Log.i(TAG, "Persistent segment (L1) saved for conversation $id: $startIdx to $lastIdx (Keywords: ${keywords.take(20)}...)")
             }
 
+            // 2. 生成全量背景总结 (L1 Global Summary)
             val currentSummary = conv.contextSummary
-            // 强制使用 DEFAULT_FULL_SUMMARY_PROMPT，忽略助手中可能存留的旧自定义提示词
-            val fullPrompt = if (!currentSummary.isNullOrBlank()) {
-                DEFAULT_FULL_SUMMARY_PROMPT
-                    .replace("{{previous_summary}}", currentSummary)
-                    .replace("{{new_messages}}", text)
-                    .replace("{{locale}}", locale)
-                    .replace("{{char}}", assistant.name)
-            } else {
-                "Summarize the following chat history:\n$text"
-            }
+            // 统一使用 DEFAULT_FULL_SUMMARY_PROMPT，并处理空值
+            val fullPrompt = DEFAULT_FULL_SUMMARY_PROMPT
+                .replace("{{previous_summary}}", currentSummary ?: "None")
+                .replace("{{new_messages}}", text)
+                .replace("{{locale}}", locale)
+                .replace("{{char}}", assistant.name)
 
-            // Log: 打印 L1 全量背景摘要提示词
             Log.d(TAG, "Summarize L1 Full Context Prompt:\n$fullPrompt")
 
             val fullResp = retryIO(times = 1) {
@@ -1036,7 +1020,6 @@ class ChatService(
 
             val updated = conv.copy(
                 contextSummary = fullSum,
-                // 不再更新 temporarySummaries 字段，实现架构瘦身
                 contextSummaryUpToIndex = lastIdx,
                 lastRefreshTime = System.currentTimeMillis()
             )
@@ -1231,6 +1214,5 @@ private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLeng
         is JsonPrimitive -> if (this.isString && this.content.length > maxLength) JsonPrimitive(this.content.take(maxLength) + "... (truncated)") else this
         is JsonObject -> JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
         is JsonArray -> JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
-        else -> this
     }
 }

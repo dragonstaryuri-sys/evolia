@@ -102,23 +102,27 @@ You must return the full content in the following format (Language: {{locale}}):
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
-You are the assistant({{char}}). Update and expand your previous conversation summary with new information.
+You are the assistant ({{char}}). Now you need to write or update your memory based on the conversation between you and the user.
 
-**Previous Summary:**
+**Previous Memory:**
 {{previous_summary}}
 
 **New Messages:**
 {{new_messages}}
 
-Create an updated summary that:
-- Preserves important context from the previous summary
-- Incorporates new information from recent messages
-- Keeps the summary under 500 words
-- Focuses on: key events,your behavior and user's behavior
-- Output language: {{locale}}
-- **Strict Requirement**: Return ONLY the summary content. No preamble, no introductory remarks (e.g., "Here is the summary"), and no conversational filler. Start directly with the text of the summary.
+**Instructions:**
+1. **Context Integration**: If a "Previous Memory" is provided (not "None"), update and expand it with the "New Messages". If it is "None", create a new  Memory based solely on the "New Messages".
+2. **Content Focus**: Focus on specific details, key facts, and observations about the user that are valuable for long-term memory.
+3. **Style**: Maintain your perspective as {{char}}.
+4. **Constraint**:  Don't miss the key points and Keep it simple(1-2 paragraph).
+5. **Output Language**: {{locale}}
 
-Updated Summary:
+**Mandatory Requirement**:
+- Provide ONLY the memory(summary) text.
+- NO preamble, NO meta-talk (e.g., "Based on the messages..."), NO conversational filler.
+- START DIRECTLY with the memory(summary) text.
+
+Summary:
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
@@ -169,24 +173,6 @@ Example2: If merging IDs -1 and -2:
   {"op": "update", "id": -1, "content": "Merged text..."},
   {"op": "delete", "id": -2}
 ]
-"""
-
-const val DEFAULT_EPISODIC_CONSOLIDATION_PROMPT = """
-You are the assistant,{{char}}.Summarize the following recent exchange from your perspective as the assistant.
-Focus on specific details, facts, your emotion, your thought or your observations about the user that might be useful for future interactions.
-Keep it concise (1-3 paragraphs).
-Output language: {{locale}}
-**Strict Requirement**: Return ONLY the summary. No explanation, no intro (e.g., "From my perspective..."), no conversational filler.
-
-Conversation:
-{{text}}
-
-**Strict Requirement**:
-- Return ONLY the summary (1-3 paragraphs, Language: {{locale}}).
-- NO preamble, NO intro (e.g., "From my perspective..."), NO conversational filler.
-- START DIRECTLY with the summary text.
-
-Summary:
 """
 
 const val DEFAULT_KEYWORD_EXTRACTION_PROMPT = """

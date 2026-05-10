@@ -17,7 +17,6 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_EPISODIC_CONSOLIDATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
@@ -554,20 +553,12 @@ class MemoryConsolidationWorker(
 
         val locale = Locale.getDefault().displayName
 
-        val prompt = if (previousSummary != null) {
-            DEFAULT_FULL_SUMMARY_PROMPT.applyPlaceholders(
-                "previous_summary" to previousSummary,
-                "new_messages" to messagesText,
-                "locale" to locale,
-                "char" to assistantName
-            )
-        } else {
-            DEFAULT_EPISODIC_CONSOLIDATION_PROMPT.applyPlaceholders(
-                "text" to messagesText,
-                "locale" to locale,
-                "char" to assistantName
-            )
-        }
+        val prompt = DEFAULT_FULL_SUMMARY_PROMPT.applyPlaceholders(
+            "previous_summary" to (previousSummary ?: "None"),
+            "new_messages" to messagesText,
+            "locale" to locale,
+            "char" to assistantName
+        )
 
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = retryIO(times = 2) {
