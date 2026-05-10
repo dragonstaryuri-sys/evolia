@@ -102,6 +102,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 
 private const val TAG = "ChatService"
 
@@ -377,15 +380,27 @@ class ChatService(
             if (oldId != conversationId) {
                 appScope.launch {
                     val settings = settingsStore.settingsFlow.first()
-                    conversationRepo.getConversationById(oldId)?.let { oldConv ->
-                        val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
-                        // 如果开启了细节记忆，切换会话时将剩余未归档消息进行 L1 归档
-                        if (assistant.enableDetailMemory) {
-                            summarizeAndRefresh(oldId)
-                        }
-                    }
-                    // 执行 L2 情节记忆归档
+                    val oldConv = conversationRepo.getConversationById(oldId) ?: return@launch
+                    val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
+                    // 1. L2 情节记忆归档
                     archiveConversation(oldId)
+                    // 2. L1 细节记忆：清算剩余消息
+                    if (assistant.enableDetailMemory) {
+                        summarizeAndRefresh(oldId)
+                    }
+                    // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3（新增逻辑）
+                    if (assistant.enableMasterMemory) {
+                        val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
+                            .setInputData(
+                                workDataOf(
+                                    "ASSISTANT_ID" to assistant.id.toString(),
+                                    "INCREMENTAL_MASTER" to true
+                                )
+                            )
+                            .build()
+                        WorkManager.getInstance(context).enqueue(request)
+                        Log.i(TAG, "New Topic: Enqueued incremental L3 update for ${assistant.name}")
+                    }
                 }
             }
         }

@@ -66,16 +66,22 @@ class MemoryConsolidationWorker(
         private val processingConversations = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
         private fun tryLock(convId: String): Boolean = processingConversations.add(convId)
-        private fun unlock(convId: String) { processingConversations.remove(convId) }
+        private fun unlock(convId: String) {
+            processingConversations.remove(convId)
+        }
     }
 
     override suspend fun doWork(): Result {
         val forceConversationId = inputData.getString("FORCE_CONVERSATION_ID")
         val assistantIdString = inputData.getString("ASSISTANT_ID")
         val forceMaster = inputData.getBoolean("FORCE_MASTER", false)
+        val incrementalMaster = inputData.getBoolean("INCREMENTAL_MASTER", false)
         val isManual = inputData.getBoolean("IS_MANUAL", false)
 
-        Log.i(TAG, "Starting memory consolidation (Force: $forceConversationId, Assistant: $assistantIdString)")
+        Log.i(
+            TAG,
+            "Starting memory consolidation (Force: $forceConversationId, Assistant: $assistantIdString, IncrementalMaster: $incrementalMaster)"
+        )
 
         try {
             if (forceConversationId != null) {
@@ -106,7 +112,6 @@ class MemoryConsolidationWorker(
             val assistants = if (assistantIdString != null) {
                 settings.assistants.filter { it.id.toString() == assistantIdString }
             } else {
-                // 修改点：自动扫描仅根据 L2 状态触发，不再主动扫描 L3
                 settings.assistants.filter { it.enableMemoryConsolidation }
             }
 
@@ -116,7 +121,7 @@ class MemoryConsolidationWorker(
             }
 
             for (assistant in assistants) {
-                consolidateAssistantMemories(assistant, false, forceMaster, isManual)
+                consolidateAssistantMemories(assistant, false, forceMaster, incrementalMaster, isManual)
             }
 
             return Result.success()
@@ -137,8 +142,8 @@ class MemoryConsolidationWorker(
                 return block()
             } catch (e: Exception) {
                 val isNetworkError = e is java.io.IOException ||
-                                     e.message?.contains("timeout", ignoreCase = true) == true ||
-                                     e.message?.contains("canceled", ignoreCase = true) == true
+                    e.message?.contains("timeout", ignoreCase = true) == true ||
+                    e.message?.contains("canceled", ignoreCase = true) == true
                 if (isNetworkError) {
                     Log.w(TAG, "Retryable error occurred (Attempt ${it + 1}): ${e.message}")
                     delay(currentDelay)
@@ -177,7 +182,8 @@ class MemoryConsolidationWorker(
         }
 
         // 修改：情节记忆使用 summarizerModelId
-        val summarizer = resolveModel(assistant.summarizerModelId ?: settings.summarizerModelId, settings) ?: return false
+        val summarizer =
+            resolveModel(assistant.summarizerModelId ?: settings.summarizerModelId, settings) ?: return false
         val background = resolveModel(assistant.backgroundModelId ?: settings.backgroundModelId, settings) ?: summarizer
 
         return try {
@@ -265,6 +271,7 @@ class MemoryConsolidationWorker(
         assistant: Assistant,
         isFullScan: Boolean,
         forceMaster: Boolean = false,
+        incrementalMaster: Boolean = false,
         isManual: Boolean = false
     ) {
         val currentSettings = settingsStore.settingsFlow.first()
@@ -290,15 +297,20 @@ class MemoryConsolidationWorker(
         }
 
         // 1. 解析情节记忆 (L2) 模型
-        val summarizer = resolveModel(currentAssistant.summarizerModelId ?: currentSettings.summarizerModelId, currentSettings) ?: return
-        val background = resolveModel(currentAssistant.backgroundModelId ?: currentSettings.backgroundModelId, currentSettings) ?: summarizer
+        val summarizer =
+            resolveModel(currentAssistant.summarizerModelId ?: currentSettings.summarizerModelId, currentSettings)
+                ?: return
+        val background =
+            resolveModel(currentAssistant.backgroundModelId ?: currentSettings.backgroundModelId, currentSettings)
+                ?: summarizer
 
         // 2. 解析大师记忆 (L3) 模型
-        val memory = resolveModel(currentAssistant.memoryModelId ?: currentSettings.memoryModelId, currentSettings) ?: summarizer
+        val memory =
+            resolveModel(currentAssistant.memoryModelId ?: currentSettings.memoryModelId, currentSettings) ?: summarizer
 
         var episodicSuccessCount = 0
-        // 如果不是手动触发 updateMaster，才执行情节记忆整合（保持原有逻辑独立性）
-        if (!forceMaster) {
+        // 如果不是手动触发 updateMaster，才执行情节记忆整合
+        if (!forceMaster && !incrementalMaster) {
             for (conv in toConsolidateEpisodes) {
                 val convIdString = conv.id.toString()
                 if (!tryLock(convIdString)) {
@@ -318,26 +330,17 @@ class MemoryConsolidationWorker(
                     )
 
                     if (summary.isNotBlank()) {
-                        // 1. AI 提取关键词
                         val aiKeywords = extractKeywords(
                             handler = background.handler,
                             providerSetting = background.provider,
                             model = background.model,
                             summary = summary
                         )
-
-                        // 2. 本地提取关键词
                         val localKeywords = KeywordExtractor.extract(summary)
-
-                        // 3. 合并
                         val mergedKeywords = mergeKeywords(aiKeywords, localKeywords)
 
-                        // 生成向量（补充逻辑）
-                        val effectiveContent = if (mergedKeywords.isNotBlank()) {
-                            "Keywords: $mergedKeywords\nContent: $summary"
-                        } else {
-                            summary
-                        }
+                        val effectiveContent =
+                            if (mergedKeywords.isNotBlank()) "Keywords: $mergedKeywords\nContent: $summary" else summary
                         val embeddingResult = try {
                             embeddingService.embedWithModelId(effectiveContent, currentAssistant.id.toString())
                         } catch (e: Exception) {
@@ -351,7 +354,8 @@ class MemoryConsolidationWorker(
                             conversationId = convIdString,
                             content = summary,
                             keywords = mergedKeywords,
-                            embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                            embedding = embeddingResult?.embeddings?.firstOrNull()
+                                ?.let { JsonInstant.encodeToString(it) },
                             embeddingModelId = embeddingResult?.modelId,
                             startTime = conv.createAt.toEpochMilli(),
                             endTime = conv.updateAt.toEpochMilli(),
@@ -374,12 +378,13 @@ class MemoryConsolidationWorker(
         // --- Process Master Memory ---
         var updatedMasterContent: String? = null
         var wasCompressed = false
-        // 修改点：仅在强制更新或 L2 归档成功运行后才去更新 L3
-        if (forceMaster || (currentAssistant.enableMasterMemory && episodicSuccessCount > 0)) {
-            // 如果是手动强制更新，我们包含所有未更新的对话。如果是自动，则只包含自上次更新以来的。
+        // 修改点：支持 incrementalMaster 触发 L3 更新
+        if (forceMaster || incrementalMaster || (currentAssistant.enableMasterMemory && episodicSuccessCount > 0)) {
             val newConversations = conversations.filter {
                 val updateTime = it.updateAt.toEpochMilli()
-                (forceMaster || updateTime > currentAssistant.lastMasterMemoryUpdate) && it.currentMessages.size >= 2
+                // forceMaster -> 全量更新；否则 -> 增量更新（仅包含上次更新后的对话）
+                val timeCondition = if (forceMaster) true else updateTime > currentAssistant.lastMasterMemoryUpdate
+                timeCondition && it.currentMessages.size >= 2
             }.sortedBy { it.updateAt }
 
             if (newConversations.isNotEmpty() || forceMaster) {
@@ -390,7 +395,6 @@ class MemoryConsolidationWorker(
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
-                            // 使用 toContentText() 排除推理过程
                             val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
                                 "${it.role}: ${it.toContentText().take(1000)}"
                             }
@@ -400,7 +404,6 @@ class MemoryConsolidationWorker(
 
                     val recentContext = contextParts.joinToString("\n\n---\n\n")
 
-                    // 即使没有新上下文，手动触发也应该执行一次更新以确保同步
                     updatedMasterContent = updateMasterMemory(
                         handler = memory.handler,
                         providerSetting = memory.provider,
@@ -408,12 +411,10 @@ class MemoryConsolidationWorker(
                         assistantName = currentAssistant.name,
                         existingArchive = currentAssistant.masterMemoryContent,
                         newContext = recentContext.ifBlank { "No new recent conversations." },
-                        systemPrompt = DEFAULT_MASTER_MEMORY_PROMPT // Changed: Use hardcoded default prompt
+                        systemPrompt = DEFAULT_MASTER_MEMORY_PROMPT
                     )
 
-                    // 核心增强：检查是否需要压缩
                     if (updatedMasterContent.length > 2500) {
-                        Log.i(TAG, "Master Memory is too large (${updatedMasterContent.length} chars), triggering compression.")
                         updatedMasterContent = compressMasterMemory(
                             handler = memory.handler,
                             providerSetting = memory.provider,
@@ -424,12 +425,6 @@ class MemoryConsolidationWorker(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Master Memory", e)
-                    if (isManual) {
-                        sendNotification(
-                            title = applicationContext.getString(R.string.master_memory_update_failed),
-                            content = e.message ?: "Unknown error"
-                        )
-                    }
                 }
             }
         }
@@ -444,16 +439,13 @@ class MemoryConsolidationWorker(
                     assistantItem.copy(
                         lastConsolidationTime = if (episodicSuccessCount > 0) now else assistantItem.lastConsolidationTime,
                         lastConsolidationResult = when {
-                            updatedMasterContent != null -> "Master Memory updated manually"
+                            updatedMasterContent != null && forceMaster -> "Master Memory updated manually"
+                            updatedMasterContent != null && incrementalMaster -> "Master Memory updated (Session End)"
                             episodicSuccessCount > 0 -> "Consolidated $episodicSuccessCount items automatically"
                             else -> assistantItem.lastConsolidationResult
                         },
                         masterMemoryContent = updatedMasterContent ?: assistantItem.masterMemoryContent,
-                        lastMasterMemoryUpdate = if (updatedMasterContent != null) {
-                            now
-                        } else {
-                            assistantItem.lastMasterMemoryUpdate
-                        }
+                        lastMasterMemoryUpdate = if (updatedMasterContent != null) now else assistantItem.lastMasterMemoryUpdate
                     )
                 } else {
                     assistantItem
@@ -480,7 +472,9 @@ class MemoryConsolidationWorker(
     private fun resolveModel(modelId: Uuid, settings: Settings): ResolvedModel? {
         val model = settings.findModelById(modelId) ?: return null
         val providerSetting = model.findProvider(settings.providers) ?: return null
-        val handler = providerManager.getProviderByType(providerSetting) as? me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting> ?: return null
+        val handler =
+            providerManager.getProviderByType(providerSetting) as? me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+                ?: return null
         return ResolvedModel(handler, providerSetting, model)
     }
 
@@ -492,15 +486,9 @@ class MemoryConsolidationWorker(
         conv: Conversation,
         existingEpisode: ChatEpisodeEntity?
     ): String {
-        // 1. 获取进度
         val episodeSignificance = existingEpisode?.significance ?: 0
-        val summarySignificance = if (conv.contextSummary != null) {
-            conv.contextSummaryUpToIndex + 1
-        } else {
-            0
-        }
+        val summarySignificance = if (conv.contextSummary != null) conv.contextSummaryUpToIndex + 1 else 0
 
-        // 2. 选取最佳基准
         val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
             conv.contextSummary to summarySignificance
         } else {
@@ -510,10 +498,8 @@ class MemoryConsolidationWorker(
         val newMessages = conv.currentMessages.drop(skipCount)
 
         return if (newMessages.isEmpty() && baseSummary != null) {
-            Log.i(TAG, "generateRollingSummary: No new messages, reusing base summary.")
             baseSummary
         } else {
-            Log.i(TAG, "generateRollingSummary: Rolling summary from index $skipCount.")
             generateConversationSummary(
                 handler = handler,
                 providerSetting = providerSetting,
@@ -552,31 +538,22 @@ class MemoryConsolidationWorker(
         previousSummary: String?,
         messages: List<UIMessage>
     ): String {
-        // 使用 toContentText() 排除推理过程
         val messagesText = messages.takeLast(100).joinToString("\n") {
             "${it.role}: ${it.toContentText().take(5000)}"
         }
-
         val locale = Locale.getDefault().displayName
-
         val prompt = DEFAULT_FULL_SUMMARY_PROMPT.applyPlaceholders(
             "previous_summary" to (previousSummary ?: "None"),
             "new_messages" to messagesText,
             "locale" to locale,
             "char" to assistantName
         )
-
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = retryIO(times = 2) {
             h.generateText(
                 providerSetting = providerSetting,
                 messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
-                    topP = 0.5f,
-                    maxTokens = 1024
-                )
+                params = TextGenerationParams(model = model, temperature = 0.3f, topP = 0.5f, maxTokens = 1024)
             )
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
@@ -594,18 +571,12 @@ class MemoryConsolidationWorker(
             "summary" to summary,
             "locale" to locale
         )
-
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
         val resp = retryIO(times = 2) {
             h.generateText(
                 providerSetting = providerSetting,
                 messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
-                    topP = 0.5f,
-                    maxTokens = 256
-                )
+                params = TextGenerationParams(model = model, temperature = 0.3f, topP = 0.5f, maxTokens = 256)
             )
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
@@ -628,44 +599,23 @@ class MemoryConsolidationWorker(
         systemPrompt: String
     ): String {
         val locale = Locale.getDefault().displayName
-        val finalSystemPrompt = systemPrompt.applyPlaceholders(
-            "char" to assistantName,
-            "locale" to locale
-        )
-
+        val finalSystemPrompt = systemPrompt.applyPlaceholders("char" to assistantName, "locale" to locale)
         val inputPrompt = """
             Current Date: ${LocalDate.now()}
-
             # Existing Memory Archive:
             ${existingArchive.ifBlank { "(Empty)" }}
-
             # New Conversation Context:
-            ${newContext}
-
+            $newContext
             Please provide the fully updated Memory Archive incorporating all relevant new information.
-            Note: Only provide the final archive content. Do not include your thinking process in the output.
         """.trimIndent()
-
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = retryIO(
-            times = 1,
-            initialDelay = 60000 // Master Memory 初始延迟 1 分钟
-        ) {
+        val resp = retryIO(times = 1, initialDelay = 30000) {
             h.generateText(
                 providerSetting = providerSetting,
-                messages = listOf(
-                    UIMessage.system(finalSystemPrompt),
-                    UIMessage.user(inputPrompt)
-                ),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.2f,
-                    topP = 0.5f,
-                    maxTokens = 8000
-                )
+                messages = listOf(UIMessage.system(finalSystemPrompt), UIMessage.user(inputPrompt)),
+                params = TextGenerationParams(model = model, temperature = 0.2f, topP = 0.5f, maxTokens = 8000)
             )
         }
-        // 关键：只提取 Text 部分，排除 Reasoning
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
@@ -677,35 +627,14 @@ class MemoryConsolidationWorker(
         archiveToCompress: String
     ): String {
         val locale = Locale.getDefault().displayName
-        val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.applyPlaceholders(
-            "locale" to locale
-        )
-
-        val userPrompt = """
-            Memory Archive to Compress (Last Updated: ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}):
-
-            $archiveToCompress
-
-            Please compress this archive according to the rules provided in the system prompt.
-        """.trimIndent()
-
+        val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.applyPlaceholders("locale" to locale)
+        val userPrompt = "Memory Archive to Compress:\n$archiveToCompress"
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = retryIO(
-            times = 2,
-            initialDelay = 60000 // Master Memory
-        ){
+        val resp = retryIO(times = 2, initialDelay = 30000) {
             h.generateText(
                 providerSetting = providerSetting,
-                messages = listOf(
-                    UIMessage.system(sysPrompt),
-                    UIMessage.user(userPrompt)
-                ),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
-                    topP = 0.5f,
-                    maxTokens = 4096
-                )
+                messages = listOf(UIMessage.system(sysPrompt), UIMessage.user(userPrompt)),
+                params = TextGenerationParams(model = model, temperature = 0.3f, topP = 0.5f, maxTokens = 4096)
             )
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: archiveToCompress
@@ -720,11 +649,9 @@ class MemoryConsolidationWorker(
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
-
         try {
             notificationManager.notify(System.currentTimeMillis().toInt(), notification)
         } catch (e: SecurityException) {
-            Log.e(TAG, "Notification permission missing", e)
         }
     }
 }
