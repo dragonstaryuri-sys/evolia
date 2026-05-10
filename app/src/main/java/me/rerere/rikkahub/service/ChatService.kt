@@ -382,12 +382,12 @@ class ChatService(
                     val settings = settingsStore.settingsFlow.first()
                     val oldConv = conversationRepo.getConversationById(oldId) ?: return@launch
                     val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
-                    // 1. L2 情节记忆归档
-                    archiveConversation(oldId)
-                    // 2. L1 细节记忆：清算剩余消息
+                    // 1. L1 细节记忆：清算剩余消息
                     if (assistant.enableDetailMemory) {
-                        summarizeAndRefresh(oldId)
+                        summarizeAndRefresh(oldId, onlySegments = true)
                     }
+                    // 1. L2 情节记忆归档
+                    archiveConversation(oldId, force = true)
                     // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3（新增逻辑）
                     if (assistant.enableMasterMemory) {
                         val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
@@ -1051,7 +1051,10 @@ class ChatService(
         if (count >= max) summarizeAndRefresh(id)
     }
 
-    suspend fun summarizeAndRefresh(id: Uuid): ContextRefreshResult = withContext(Dispatchers.IO) {
+    suspend fun summarizeAndRefresh(
+        id: Uuid,
+        onlySegments: Boolean = false
+    ): ContextRefreshResult = withContext(Dispatchers.IO) {
         try {
             val settings = settingsStore.settingsFlow.first()
             val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(
@@ -1142,7 +1145,10 @@ class ChatService(
                 memoryRepository.saveSegment(segment)
                 Log.i(TAG, "Persistent contextual segment (L1) saved for conversation $id (Format: Structured)")
             }
-
+            if (onlySegments) {
+                // 如果只更新片段，我们只需返回成功，不需要再跑 AI 生成全量总结了
+                return@withContext ContextRefreshResult(true, summary = "Segments updated")
+            }
             // 2. 生成全量背景总结 (L1 Global Summary)
             val currentSummary = conv.contextSummary
             // 统一使用 DEFAULT_FULL_SUMMARY_PROMPT，并处理空值
