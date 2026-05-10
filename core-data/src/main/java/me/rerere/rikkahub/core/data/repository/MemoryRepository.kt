@@ -17,13 +17,15 @@ import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.ai.rag.VectorEngine
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
+import kotlin.uuid.Uuid
 
 class MemoryRepository(
     private val memoryDAO: MemoryDAO,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val chatSegmentDAO: ChatSegmentDAO,
     private val embeddingService: EmbeddingService,
-    private val embeddingCacheDAO: EmbeddingCacheDAO
+    private val embeddingCacheDAO: EmbeddingCacheDAO,
+    private val conversationRepository: ConversationRepository // 注入以获取原文
 ) {
     // --- L1 Segment Support ---
 
@@ -40,6 +42,7 @@ class MemoryRepository(
 
     /**
      * 针对 L1 Segment 的混合检索
+     * 优化：返回的 content 是 摘要背景 + 原文拼接
      */
     suspend fun retrieveRelevantSegments(
         assistantId: String,
@@ -56,6 +59,10 @@ class MemoryRepository(
             try { embeddingService.embed(query, assistantId) } catch (e: Exception) { null }
         } else null
 
+        // 预加载当前会话的所有消息以便拼接
+        val conversation = conversationRepository.getConversationById(Uuid.parse(conversationId))
+        val messages = conversation?.currentMessages ?: emptyList()
+
         val scoredSegments = segments.map { segment ->
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
                 calculateKeywordScore(query, segment.keywords)
@@ -65,7 +72,16 @@ class MemoryRepository(
                 val segmentEmbedding = segment.embedding?.let {
                     runCatching { JsonInstant.decodeFromString<List<Float>>(it) }.getOrNull()
                 } ?: run {
-                    val newEmb = try { embeddingService.embed(segment.content, assistantId) } catch (e: Exception) { null }
+                    // 如果没有向量，则重新计算。此处必须按照“背景+原文”逻辑计算
+                    val originalText = if (messages.isNotEmpty()) {
+                        messages.subList(
+                            segment.startMessageIndex.coerceIn(messages.indices),
+                            (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
+                        ).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                    } else ""
+
+                    val effectiveContent = "[Background]: ${segment.content}\n[Original Text]:\n$originalText"
+                    val newEmb = try { embeddingService.embed(effectiveContent, assistantId) } catch (e: Exception) { null }
                     if (newEmb != null) {
                         chatSegmentDAO.insertSegment(segment.copy(embedding = JsonInstant.encodeToString(newEmb)))
                     }
@@ -78,9 +94,8 @@ class MemoryRepository(
                 MemoryRetrievalMode.SEMANTIC -> similarity
                 MemoryRetrievalMode.KEYWORD -> keywordScore
                 MemoryRetrievalMode.HYBRID -> {
-                    // 如果向量不可用，降级为纯关键词
                     if (queryEmbedding == null) keywordScore
-                    else (keywordScore * 0.6f) + (similarity * 0.4f)
+                    else (keywordScore * 0.5f) + (similarity * 0.5f)
                 }
                 else -> 0f
             }
@@ -88,11 +103,26 @@ class MemoryRepository(
             segment to score
         }
 
-        return scoredSegments.sortedByDescending { it.second }.take(limit).map { it.first }
+        return scoredSegments.sortedByDescending { it.second }
+            .take(limit)
+            .map { (segment, _) ->
+                // 【核心优化点】：返回时动态拼接原文
+                val originalText = if (messages.isNotEmpty()) {
+                    val start = segment.startMessageIndex.coerceIn(messages.indices)
+                    val end = (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
+                    if (start < end) {
+                        messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                    } else ""
+                } else ""
+
+                segment.copy(
+                    content = "[Background]: ${segment.content}\n[Original Text]:\n$originalText"
+                )
+            }
     }
 
     // --- Core Memory Methods ---
-
+    // (其余代码保持不变，仅展示变更部分...)
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
             .map { entities ->
@@ -151,9 +181,6 @@ class MemoryRepository(
         return chatEpisodeDAO.getEpisodeByConversationId(conversationId)
     }
 
-    /**
-     * 根据 ID 和类型获取完整记忆内容
-     */
     suspend fun getFullMemoryContent(id: Int, type: Int): String? {
         return if (type == 0) { // CORE
             val memory = memoryDAO.getMemoryById(id)
@@ -312,11 +339,9 @@ class MemoryRepository(
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
         val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistant(assistantId) else emptyList()
 
-        // Core Memory Scoring
         val memoryScores = memories.mapNotNull { memory ->
             val effectiveKeywords = if (memory.keywords.isNullOrBlank()) {
                 val local = KeywordExtractor.extract(memory.content)
-                // 顺便更新数据库，下次就不用现场分词了
                 memoryDAO.updateMemory(memory.copy(keywords = local))
                 local
             } else memory.keywords
@@ -333,7 +358,7 @@ class MemoryRepository(
                 MemoryRetrievalMode.SEMANTIC -> similarity * 1.05f
                 MemoryRetrievalMode.KEYWORD -> keywordScore
                 MemoryRetrievalMode.HYBRID -> {
-                    if (queryEmbedding == null) keywordScore // 降级
+                    if (queryEmbedding == null) keywordScore
                     else (keywordScore * 0.5f) + (similarity * 0.5f)
                 }
                 MemoryRetrievalMode.OFF -> 0f
@@ -342,7 +367,6 @@ class MemoryRepository(
             if (score >= similarityThreshold) Triple(memory, score, true) else null
         }
 
-        // Episodic Memory Scoring
         val episodeScores = episodes.mapNotNull { episode ->
             val effectiveKeywords = if (episode.keywords.isNullOrBlank()) {
                 val local = KeywordExtractor.extract(episode.content)
@@ -358,7 +382,6 @@ class MemoryRepository(
                 embedding?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
             } else 0f
 
-            // Recency Score
             val ageInMillis = System.currentTimeMillis() - episode.startTime
             val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
             val recency = (1.0 / (1.0 + (ageInDays / 7.0))).toFloat()
@@ -367,8 +390,8 @@ class MemoryRepository(
                 MemoryRetrievalMode.SEMANTIC -> (similarity * 0.8f) + (recency * 0.2f)
                 MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.8f) + (recency * 0.2f)
                 MemoryRetrievalMode.HYBRID -> {
-                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f) // 降级
-                    else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.2f) // 40/40/20 比例
+                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
+                    else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.2f)
                 }
                 MemoryRetrievalMode.OFF -> 0f
             }
@@ -422,7 +445,6 @@ class MemoryRepository(
         memoriesNeedingEmbedding.forEach { memory ->
             current++
             try {
-                // 【新增】补全关键词逻辑
                 val finalKeywords = if (memory.keywords.isNullOrBlank()) {
                     KeywordExtractor.extract(memory.content)
                 } else memory.keywords
@@ -442,7 +464,6 @@ class MemoryRepository(
         episodesNeedingEmbedding.forEach { episode ->
             current++
             try {
-                // 【新增】先确定关键词
                 val finalKeywords = if (episode.keywords.isNullOrBlank()) {
                     KeywordExtractor.extract(episode.content)
                 } else episode.keywords

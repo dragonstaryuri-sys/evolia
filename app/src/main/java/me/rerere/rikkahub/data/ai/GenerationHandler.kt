@@ -599,24 +599,10 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(assistant.masterMemoryContent)
             baseSystemPromptBuilder.append("\n\n")
         }
-        // --- Semi-stable Section: Context Summaries (L1) ---
-        val finalSegments = if (conversationId != null) {
-            val limit = assistant.maxTemporarySummariesToInclude
-            if (limit > 0) {
-                chatSegmentDAO.getSegmentsByConversation(conversationId.toString())
-                    .takeLast(limit)
-                    .map { it.content }
-            } else emptyList()
-        } else {
-            temporarySummaries.takeLast(assistant.maxTemporarySummariesToInclude)
-        }
-
+        // --- Semi-stable Section: Context Summary (L1) ---
+        // Only Global Summary is included now. Segments are removed for prompt purity.
         if (!contextSummary.isNullOrBlank()) {
             baseSystemPromptBuilder.append("\n## Overall Conversation Summary\n").append(contextSummary).appendLine()
-        }
-        if (finalSegments.isNotEmpty()) {
-            baseSystemPromptBuilder.append("\n## Recent Context Highlights\n")
-            finalSegments.forEachIndexed { index, s -> baseSystemPromptBuilder.append("${index + 1}. $s\n") }
         }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()
@@ -860,7 +846,7 @@ class GenerationHandler(
 
         val builtMessages = buildList {
             // 1. Stable & Semi-stable System Prompt
-            // Includes personality, tools, Master Memory (L3), and Summaries (L1).
+            // Includes personality, tools, Master Memory (L3), and Global Summary (L1).
             if (baseSystemPrompt.isNotBlank()) {
                 add(UIMessage.system(baseSystemPrompt))
             }
@@ -961,7 +947,7 @@ class GenerationHandler(
             }
         }
 
-        Log.d(TAG, "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, segmentsCount=${finalSegments.size}, rawMessagesCount=${selectedMessages.size}")
+        Log.d(TAG, "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, rawMessagesCount=${selectedMessages.size}")
 
         val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
             val isBoost = memory.type == 2

@@ -57,7 +57,7 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // MESSAGE HISTORY & SUMMARIZATION
+        // MESSAGE HISTORY & L0 SLIDING WINDOW
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
             val historyLimit = assistant.maxHistoryMessages ?: 0
@@ -71,11 +71,7 @@ fun AssistantContextManagementSubPage(
                 },
                 value = sliderValue,
                 valueText = if (sliderValue.roundToInt() == 0) "" else stringResource(R.string.assistant_context_history_limit_value, sliderValue.roundToInt()),
-                description = if (assistant.enableContextRefresh && assistant.autoRegenerateSummary) {
-                    stringResource(R.string.assistant_context_history_limit_desc)
-                } else {
-                    stringResource(R.string.context_max_messages_desc)
-                },
+                description = stringResource(R.string.context_max_messages_desc),
                 onValueChange = { sliderValue = it },
                 onValueChangeFinished = {
                     val newValue = sliderValue.roundToInt()
@@ -87,7 +83,8 @@ fun AssistantContextManagementSubPage(
                 steps = 99
             )
 
-            val needsSummarizerWarning = assistant.enableContextRefresh && assistant.summarizerModelId == null
+            // 如果开启了细节记忆但未设置总结模型，显示警告（因为 L1 自动归档依赖总结模型）
+            val needsSummarizerWarning = assistant.enableDetailMemory && assistant.summarizerModelId == null
             AnimatedVisibility(
                 visible = needsSummarizerWarning,
                 enter = fadeIn() + expandVertically(),
@@ -95,78 +92,10 @@ fun AssistantContextManagementSubPage(
             ) {
                 SummarizerWarningBanner(onClick = onNavigateToModels)
             }
-
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_context_refresh_title),
-                subtitle = stringResource(R.string.assistant_context_refresh_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.enableContextRefresh,
-                        onCheckedChange = { enabled ->
-                            onUpdate(assistant.copy(
-                                enableContextRefresh = enabled,
-                                autoRegenerateSummary = if (!enabled) false else assistant.autoRegenerateSummary
-                            ))
-                        }
-                    )
-                },
-                onClick = {
-                    val newEnabled = !assistant.enableContextRefresh
-                    onUpdate(assistant.copy(
-                        enableContextRefresh = newEnabled,
-                        autoRegenerateSummary = if (!newEnabled) false else assistant.autoRegenerateSummary
-                    ))
-                }
-            )
-
-            AnimatedVisibility(
-                visible = assistant.enableContextRefresh,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_context_auto_summarize_title),
-                    subtitle = stringResource(R.string.assistant_context_auto_summarize_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = assistant.autoRegenerateSummary,
-                            onCheckedChange = { enabled ->
-                                onUpdate(assistant.copy(autoRegenerateSummary = enabled))
-                            }
-                        )
-                    },
-                    onClick = {
-                        onUpdate(assistant.copy(autoRegenerateSummary = !assistant.autoRegenerateSummary))
-                    }
-                )
-            }
-
-            AnimatedVisibility(
-                visible = assistant.enableContextRefresh,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                val tempLimit = assistant.maxTemporarySummariesToInclude
-                var tempSliderValue by remember(tempLimit) { mutableFloatStateOf(tempLimit.toFloat()) }
-
-                SliderSettingCard(
-                    title = stringResource(R.string.assistant_context_episodic_limit_title),
-                    value = tempSliderValue,
-                    valueText = stringResource(R.string.assistant_context_episodic_limit_value, tempSliderValue.roundToInt()),
-                    description = stringResource(R.string.assistant_context_episodic_limit_desc),
-                    onValueChange = { tempSliderValue = it },
-                    onValueChangeFinished = {
-                        val newValue = tempSliderValue.roundToInt()
-                        onUpdate(assistant.copy(maxTemporarySummariesToInclude = newValue))
-                    },
-                    valueRange = 0f..20f,
-                    steps = 20
-                )
-            }
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // MEMORY RETRIEVAL
+        // MEMORY RETRIEVAL (RAG)
         // ═══════════════════════════════════════════════════════════════════
         AnimatedVisibility(
             visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,

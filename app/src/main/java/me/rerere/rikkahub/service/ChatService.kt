@@ -115,7 +115,8 @@ private val inputTransformers by lazy {
 }
 
 private val outputTransformers by lazy {
-    listOf( ThinkTagTransformer,
+    listOf(
+        ThinkTagTransformer,
         Base64ImageToLocalFileTransformer,
         RegexOutputTransformer,
     )
@@ -371,10 +372,21 @@ class ChatService(
     }
 
     suspend fun initializeConversation(conversationId: Uuid) {
-        // 当切换会话时，尝试对上一个会话进行片段记忆归档
+        // 当切换会话时，尝试对上一个会话进行记忆归档
         lastConversationId?.let { oldId ->
             if (oldId != conversationId) {
-                appScope.launch { archiveConversation(oldId) }
+                appScope.launch {
+                    val settings = settingsStore.settingsFlow.first()
+                    conversationRepo.getConversationById(oldId)?.let { oldConv ->
+                        val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
+                        // 如果开启了细节记忆，切换会话时将剩余未归档消息进行 L1 归档
+                        if (assistant.enableDetailMemory) {
+                            summarizeAndRefresh(oldId)
+                        }
+                    }
+                    // 执行 L2 情节记忆归档
+                    archiveConversation(oldId)
+                }
             }
         }
         lastConversationId = conversationId
@@ -467,7 +479,11 @@ class ChatService(
                 baseSummary
             } else {
                 val messagesText = newMessages.joinToString("\n") {
-                    "${it.role}: ${it.toContentText().take(500)}"
+                    val content = it.toContentText()
+                    val displayed = if (content.length > 400) {
+                        "${content.take(200)}...${content.takeLast(200)}"
+                    } else content
+                    "${it.role}: $displayed"
                 }
                 val locale = Locale.getDefault().displayName
 
@@ -480,7 +496,11 @@ class ChatService(
 
                 val providerHandler = handler as Provider<ProviderSetting>
                 val resp = retryIO(times = 2) {
-                    providerHandler.generateText(provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f))
+                    providerHandler.generateText(
+                        provider,
+                        listOf(UIMessage.user(prompt)),
+                        TextGenerationParams(model, 0.3f, 0.5f)
+                    )
                 }
                 resp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
                 resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
@@ -521,7 +541,10 @@ class ChatService(
                     lastAccessedAt = System.currentTimeMillis()
                 )
                 chatEpisodeDAO.insertEpisode(episode)
-                Log.i(TAG, "Archived/Updated episodic memory (L2) for $conversationId (Inc: ${newMessages.size} messages)")
+                Log.i(
+                    TAG,
+                    "Archived/Updated episodic memory (L2) for $conversationId (Inc: ${newMessages.size} messages)"
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to archive conversation $conversationId", e)
@@ -530,7 +553,12 @@ class ChatService(
         }
     }
 
-    fun sendMessage(conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false) {
+    fun sendMessage(
+        conversationId: Uuid,
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        isTemporaryChat: Boolean = false
+    ) {
         if (isTemporaryChat) temporaryConversations.add(conversationId)
         _generationJobs.value[conversationId]?.cancel()
 
@@ -542,7 +570,10 @@ class ChatService(
                 val currentConversation = getConversationFlow(conversationId).value
                 val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
                 val newConversation = currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes + UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
+                    messageNodes = currentConversation.messageNodes + UIMessage(
+                        role = MessageRole.USER,
+                        parts = content
+                    ).toMessageNode()
                 )
                 saveConversation(conversationId, newConversation)
                 conversationRepo.recordDailyActivity()
@@ -553,10 +584,20 @@ class ChatService(
             }
         }
         setGenerationJob(conversationId, job)
-        job.invokeOnCompletion { setGenerationJob(conversationId, null); appScope.launch { delay(500); checkAllConversationsReferences() } }
+        job.invokeOnCompletion {
+            setGenerationJob(
+                conversationId,
+                null
+            ); appScope.launch { delay(500); checkAllConversationsReferences() }
+        }
     }
 
-    fun regenerateAtMessage(conversationId: Uuid, message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false) {
+    fun regenerateAtMessage(
+        conversationId: Uuid,
+        message: UIMessage,
+        regenerateAssistantMsg: Boolean = true,
+        forceWipe: Boolean = false
+    ) {
         _generationJobs.value[conversationId]?.cancel()
         val job = appScope.launch {
             try {
@@ -565,23 +606,37 @@ class ChatService(
                 if (message.role == MessageRole.USER) {
                     val node = conversation.getMessageNodeByMessage(message)
                     val indexAt = conversation.messageNodes.indexOf(node)
-                    val newConversation = conversation.copy(messageNodes = conversation.messageNodes.subList(0, indexAt + 1))
+                    val newConversation =
+                        conversation.copy(messageNodes = conversation.messageNodes.subList(0, indexAt + 1))
                     saveConversation(conversationId, newConversation)
                     handleMessageComplete(conversationId)
                 } else if (regenerateAssistantMsg) {
                     val clickedNode = conversation.getMessageNodeByMessage(message)
                     val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
-                    val lastUserIndex = conversation.messageNodes.subList(0, clickedIndex + 1).indexOfLast { it.role == MessageRole.USER }
+                    val lastUserIndex = conversation.messageNodes.subList(0, clickedIndex + 1)
+                        .indexOfLast { it.role == MessageRole.USER }
 
                     if (lastUserIndex >= 0) {
                         val firstAssistantIndex = lastUserIndex + 1
-                        val turnEndIndex = conversation.messageNodes.subList(firstAssistantIndex, conversation.messageNodes.size).indexOfFirst { it.role == MessageRole.USER }
-                            .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
+                        val turnEndIndex =
+                            conversation.messageNodes.subList(firstAssistantIndex, conversation.messageNodes.size)
+                                .indexOfFirst { it.role == MessageRole.USER }
+                                .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
 
                         if (forceWipe) {
                             val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-                            nodes.add(MessageNode(id = Uuid.random(), messages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()))))
-                            if (turnEndIndex < conversation.messageNodes.size) nodes.addAll(conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size))
+                            nodes.add(
+                                MessageNode(
+                                    id = Uuid.random(),
+                                    messages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()))
+                                )
+                            )
+                            if (turnEndIndex < conversation.messageNodes.size) nodes.addAll(
+                                conversation.messageNodes.subList(
+                                    turnEndIndex,
+                                    conversation.messageNodes.size
+                                )
+                            )
                             saveConversation(conversationId, conversation.copy(messageNodes = nodes))
                             handleMessageComplete(conversationId)
                         } else {
@@ -589,9 +644,23 @@ class ChatService(
                             val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
                             val firstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
                             if (firstAssistant != null) {
-                                val newMessages = firstAssistant.messages + UIMessage(role = MessageRole.ASSISTANT, parts = emptyList(), versionTag = versionTag)
-                                nodes.add(firstAssistant.copy(messages = newMessages, selectIndex = newMessages.lastIndex))
-                                if (turnEndIndex < conversation.messageNodes.size) nodes.addAll(conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size))
+                                val newMessages = firstAssistant.messages + UIMessage(
+                                    role = MessageRole.ASSISTANT,
+                                    parts = emptyList(),
+                                    versionTag = versionTag
+                                )
+                                nodes.add(
+                                    firstAssistant.copy(
+                                        messages = newMessages,
+                                        selectIndex = newMessages.lastIndex
+                                    )
+                                )
+                                if (turnEndIndex < conversation.messageNodes.size) nodes.addAll(
+                                    conversation.messageNodes.subList(
+                                        turnEndIndex,
+                                        conversation.messageNodes.size
+                                    )
+                                )
                             }
                             saveConversation(conversationId, conversation.copy(messageNodes = nodes))
                             handleMessageComplete(conversationId)
@@ -599,10 +668,17 @@ class ChatService(
                     } else handleMessageComplete(conversationId, messageRange = 0..<clickedIndex)
                 }
                 _generationDoneFlow.emit(conversationId)
-            } catch (e: Exception) { _errorFlow.emit(e) }
+            } catch (e: Exception) {
+                _errorFlow.emit(e)
+            }
         }
         setGenerationJob(conversationId, job)
-        job.invokeOnCompletion { setGenerationJob(conversationId, null); appScope.launch { delay(500); checkAllConversationsReferences() } }
+        job.invokeOnCompletion {
+            setGenerationJob(
+                conversationId,
+                null
+            ); appScope.launch { delay(500); checkAllConversationsReferences() }
+        }
     }
 
     private suspend fun handleMessageComplete(
@@ -616,23 +692,29 @@ class ChatService(
 
             val conversation = getConversationFlow(conversationId).value
             updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
-            val assistant = assistantOverride ?: settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
+            val assistant = assistantOverride ?: settings.getAssistantById(conversation.assistantId)
+            ?: settings.getCurrentAssistant()
             val modelId = assistant.chatModelId ?: settings.chatModelId
             val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return@runCatching
             var firstTokenTime: Long? = null
             if (!model.abilities.contains(ModelAbility.TOOL)) {
-                val hasExternalTools = (assistant.searchMode !is AssistantSearchMode.Off) || mcpManager.getAllAvailableTools().isNotEmpty()
+                val hasExternalTools =
+                    (assistant.searchMode !is AssistantSearchMode.Off) || mcpManager.getAllAvailableTools().isNotEmpty()
                 if (hasExternalTools) _errorFlow.emit(IllegalStateException(context.getString(R.string.tools_warning)))
             }
 
             checkInvalidMessages(conversationId)
             // 💡 提取记忆检索逻辑并增加超时保护，防止 Embedding 挂起
             val retrievedMemories = withContext(Dispatchers.IO) {
-                if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(conversationId)) {
+                if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(
+                        conversationId
+                    )
+                ) {
                     // 设置 8 秒超时，如果接口没响应就跳过记忆，保证聊天不卡死
                     kotlinx.coroutines.withTimeoutOrNull(8000) {
                         if (assistant.useRagMemoryRetrieval) {
-                            val lastUserMsg = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
+                            val lastUserMsg =
+                                conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
                             if (lastUserMsg.isNotBlank()) {
                                 val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                                     assistantId = assistant.id.toString(),
@@ -646,7 +728,15 @@ class ChatService(
                                 val memories = results.map { it.first }
                                 if (settings.enableRagLogging) {
                                     results.forEach { (mem, score) ->
-                                        Log.d("RAG", " - [${mem.type}] (Score: ${String.format("%.4f", score)}) ${mem.content.take(50)}...")
+                                        Log.d(
+                                            "RAG",
+                                            " - [${mem.type}] (Score: ${
+                                                String.format(
+                                                    "%.4f",
+                                                    score
+                                                )
+                                            }) ${mem.content.take(50)}..."
+                                        )
                                     }
                                 }
                                 memories
@@ -661,7 +751,12 @@ class ChatService(
             generationHandler.generateText(
                 settings = settings,
                 model = model,
-                messages = conversation.currentMessages.let { if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it },
+                messages = conversation.currentMessages.let {
+                    if (messageRange != null) it.subList(
+                        messageRange.start,
+                        messageRange.endInclusive + 1
+                    ) else it
+                },
                 assistant = assistant,
                 memories = retrievedMemories,
                 inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
@@ -671,7 +766,8 @@ class ChatService(
                     val isMain = assistant.isMain
                     val isVirtual = conversation.isVirtual
 
-                    val supportsBuiltIn = model.tools.isNotEmpty() || me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
+                    val supportsBuiltIn =
+                        model.tools.isNotEmpty() || me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
                     val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
                     val searchMode = assistant.searchMode
 
@@ -682,8 +778,8 @@ class ChatService(
 
                     // 2. 本地工具 (Local Tools)
                     val targetOptions = if (isVirtual) {
-                         // 虚拟模式：仅保留 Memory, WebSearch (已在上面处理), TimeSense
-                         assistant.localTools.filter { it is LocalToolOption.TimeSense }
+                        // 虚拟模式：仅保留 Memory, WebSearch (已在上面处理), TimeSense
+                        assistant.localTools.filter { it is LocalToolOption.TimeSense }
                     } else if (isMain) {
                         assistant.localTools
                     } else {
@@ -696,7 +792,8 @@ class ChatService(
                             options = targetOptions,
                             assistantId = assistant.id,
                             conversationId = conversation.id,
-                            userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()?.map { it.url } ?: emptyList()
+                            userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()
+                                ?.map { it.url } ?: emptyList()
                         )
                     )
 
@@ -709,11 +806,14 @@ class ChatService(
                                 if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
                             }
 
-                            add(Tool(
+                            add(
+                                Tool(
                                 name = sanitizedName,
                                 description = mcpTool.description ?: "",
                                 parameters = { mcpTool.inputSchema },
-                                execute = { mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText() }
+                                execute = {
+                                    mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
+                                }
                             ))
                         }
                     }
@@ -731,14 +831,21 @@ class ChatService(
                     val isLast = idx == current.messageNodes.lastIndex
                     node.copy(messages = node.messages.map { msg ->
                         val finished = msg.finishReasoning()
-                        if (isLast && finished.role == MessageRole.ASSISTANT && finished.generationDurationMs == null) finished.copy(generationDurationMs = duration) else finished
+                        if (isLast && finished.role == MessageRole.ASSISTANT && finished.generationDurationMs == null) finished.copy(
+                            generationDurationMs = duration
+                        ) else finished
                     })
                 }, updateAt = Instant.now())
                 updateConversation(conversationId, updated)
-                if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) sendGenerationDoneNotification(conversationId)
+                if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) sendGenerationDoneNotification(
+                    conversationId
+                )
             }.collect { chunk ->
                 if (firstTokenTime == null) firstTokenTime = System.currentTimeMillis()
-                if (chunk is GenerationChunk.Messages) updateConversation(conversationId, getConversationFlow(conversationId).value.updateCurrentMessages(chunk.messages))
+                if (chunk is GenerationChunk.Messages) updateConversation(
+                    conversationId,
+                    getConversationFlow(conversationId).value.updateCurrentMessages(chunk.messages)
+                )
             }
         }.onFailure { e ->
             // 【核心修复】：无论何种错误（取消、超时、解析错误），都保存当前已生成的半截内容到数据库，防止消息丢失
@@ -762,38 +869,41 @@ class ChatService(
                 Logging.log(TAG, "handleMessageComplete: $e")
             }
         }
-        .onSuccess {
-            val finalConv = getConversationFlow(conversationId).value
-            saveConversation(conversationId, finalConv)
+            .onSuccess {
+                val finalConv = getConversationFlow(conversationId).value
+                saveConversation(conversationId, finalConv)
 
-            // Record Token Usage from the last generation
-            val lastAssistantMsg = finalConv.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
-            lastAssistantMsg?.usage?.let { usage ->
+                // Record Token Usage from the last generation
+                val lastAssistantMsg = finalConv.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                lastAssistantMsg?.usage?.let { usage ->
+                    appScope.launch {
+                        conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage)
+                    }
+                }
+
                 appScope.launch {
-                    conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage)
+                    val currentSettings = settingsStore.settingsFlow.value
+                    val updatedAssistants = currentSettings.assistants.map {
+                        if (it.id == finalConv.assistantId) {
+                            // 将该助手的 lastConversationId 更新为当前会话 ID
+                            it.copy(lastConversationId = conversationId.toString())
+                        } else it
+                    }
+                    // 持久化更新后的助手列表
+                    settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                 }
+                addConversationReference(conversationId)
+                appScope.launch {
+                    coroutineScope {
+                        launch {
+                            conversationRepo.getConversationById(conversationId)
+                                ?.let { generateTitle(conversationId, it) }
+                        }
+                        launch { generateSuggestion(conversationId, finalConv) }
+                        launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
+                    }
+                }.invokeOnCompletion { removeConversationReference(conversationId) }
             }
-
-            appScope.launch {
-                val currentSettings = settingsStore.settingsFlow.value
-                val updatedAssistants = currentSettings.assistants.map {
-                    if (it.id == finalConv.assistantId) {
-                        // 将该助手的 lastConversationId 更新为当前会话 ID
-                        it.copy(lastConversationId = conversationId.toString())
-                    } else it
-                }
-                // 持久化更新后的助手列表
-                settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
-            }
-            addConversationReference(conversationId)
-            appScope.launch {
-                coroutineScope {
-                    launch { conversationRepo.getConversationById(conversationId)?.let { generateTitle(conversationId, it) } }
-                    launch { generateSuggestion(conversationId, finalConv) }
-                    launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
-                }
-            }.invokeOnCompletion { removeConversationReference(conversationId) }
-        }
     }
 
     private fun createSearchTool(settings: Settings, assistant: Assistant, providerIndex: Int? = null): Set<Tool> {
@@ -835,7 +945,7 @@ class ChatService(
                             val locale = Locale.getDefault().displayName
 
                             val searchContent = cleanedItems.joinToString("\n") { item ->
-                                 "Title: ${item.title}\nURL: ${item.url}\nContent: ${item.text}"
+                                "Title: ${item.title}\nURL: ${item.url}\nContent: ${item.text}"
                             }
 
                             val prompt = """
@@ -863,7 +973,10 @@ class ChatService(
                             val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
 
                             if (summary.isNotBlank()) {
-                                Log.i(TAG, "Web Search Background Summary (Model: ${backgroundModel.modelId}):\n$summary")
+                                Log.i(
+                                    TAG,
+                                    "Web Search Background Summary (Model: ${backgroundModel.modelId}):\n$summary"
+                                )
                                 Log.i(TAG, "Background Model Token Usage: ${resp.usage ?: "unknown"}")
                                 return@Tool buildJsonObject {
                                     put("summary", summary)
@@ -898,7 +1011,9 @@ class ChatService(
                     }))
                 }
             }, systemPrompt = { _, msgs ->
-                if (msgs.any { it.getToolCalls().any { tc -> tc.toolName == "search_web" } }) "## tool: search_web\n\nUse `[citation,domain](id)` after facts." else "## tool: search_web"
+                if (msgs.any {
+                        it.getToolCalls().any { tc -> tc.toolName == "search_web" }
+                    }) "## tool: search_web\n\nUse `[citation,domain](id)` after facts." else "## tool: search_web"
             }))
         }
     }
@@ -906,16 +1021,12 @@ class ChatService(
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
-        if (!assistant.enableContextRefresh || !assistant.autoRegenerateSummary) return
 
-        // 【核心修改】优先使用“细节记忆”设置的阈值
-        val max = if (assistant.enableDetailMemory) {
-            assistant.detailMemoryThreshold
-        } else {
-            assistant.maxHistoryMessages ?: return
-        }
+        // 【核心修改】L1 归档完全由“细节记忆”独占控制，若关闭则不归档
+        if (!assistant.enableDetailMemory) return
+        val max = assistant.detailMemoryThreshold
 
-        // 触发逻辑：当前消息数减去最后一条已总结消息的索引，超过上限即触发
+        // 触发逻辑：当前消息数减去最后一条已总结消息的索引，超过阈值即触发
         val count = if (conv.contextSummaryUpToIndex >= 0) {
             conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1)
         } else {
@@ -928,7 +1039,10 @@ class ChatService(
     suspend fun summarizeAndRefresh(id: Uuid): ContextRefreshResult = withContext(Dispatchers.IO) {
         try {
             val settings = settingsStore.settingsFlow.first()
-            val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(false, errorMessage = "Not found")
+            val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(
+                false,
+                errorMessage = "Not found"
+            )
 
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
             val messages = conv.currentMessages
@@ -939,8 +1053,7 @@ class ChatService(
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)
 
-            // 保持适度重叠：总结到倒数第 5 条（即保留最后 4 条作为未总结缓冲）
-            val lastIdx = (messages.size - 5).coerceAtLeast(0)
+            val lastIdx = (messages.size - 1).coerceAtLeast(0)
             val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
             val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()
 
@@ -961,7 +1074,11 @@ class ChatService(
                 .replace("{{char}}", assistant.name)
 
             val providerHandler = handler as Provider<ProviderSetting>
-            val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f))
+            val tempResp = providerHandler.generateText(
+                provider,
+                listOf(UIMessage.user(tempPrompt)),
+                TextGenerationParams(model, 0.3f, 1.0f)
+            )
             tempResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
             val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
@@ -974,7 +1091,9 @@ class ChatService(
                 val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
 
                 // 智能降级回退：如果正则没匹配到，尝试按行取第一行作为背景
-                val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
+                val finalBackground =
+                    backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
+                    ?: aiResponse
                 val aiKeywords = keywordsMatch ?: ""
 
                 // 构建 拼接内容 (Background + Original Text)
@@ -988,10 +1107,9 @@ class ChatService(
                 val localKeywords = KeywordExtractor.extract(finalBackground)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
 
-                val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\n$fullContextualContent" else fullContextualContent
                 val embedding = try {
-                    // 对拼接后的全文进行向量化
-                    embeddingService.embed(effectiveContent, assistant.id.toString())
+                    // 对背景+原文进行向量化
+                    embeddingService.embed(fullContextualContent, assistant.id.toString())
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to generate embedding for segment", e)
                     null
@@ -1000,7 +1118,7 @@ class ChatService(
                 val segment = ChatSegmentEntity(
                     assistantId = assistant.id.toString(),
                     conversationId = id.toString(),
-                    content = fullContextualContent, // 存储拼接内容
+                    content = finalBackground, // 只存储背景
                     keywords = keywords,
                     startMessageIndex = startIdx,
                     endMessageIndex = lastIdx,
@@ -1030,7 +1148,10 @@ class ChatService(
             }
             fullResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
 
-            val fullSum = fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(false)
+            val fullSum =
+                fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(
+                    false
+                )
 
             val updated = conv.copy(
                 contextSummary = fullSum,
@@ -1041,7 +1162,9 @@ class ChatService(
             conversationRepo.updateConversation(updated)
             updateConversation(id, updated)
             ContextRefreshResult(true, fullSum, toSummarize.size)
-        } catch (e: Exception) { ContextRefreshResult(false, errorMessage = e.message) }
+        } catch (e: Exception) {
+            ContextRefreshResult(false, errorMessage = e.message)
+        }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -1084,14 +1207,18 @@ class ChatService(
     }
 
     suspend fun saveConversation(id: Uuid, conversation: Conversation) {
-        if (temporaryConversations.contains(id)) { updateConversation(id, conversation); return }
+        if (temporaryConversations.contains(id)) {
+            updateConversation(id, conversation); return
+        }
         updateConversation(id, conversation)
 
         // In virtual mode, we allow saving empty conversations to ensure session partitioning
         // is preserved when "Start New Topic" is clicked.
         if (conversation.title.isBlank() && conversation.messageNodes.isEmpty() && !conversation.isVirtual) return
 
-        if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(conversation)
+        if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(
+            conversation
+        )
     }
 
     fun translateMessage(id: Uuid, message: UIMessage, target: Locale) {
@@ -1104,19 +1231,31 @@ class ChatService(
                 val text = message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n\n") { it.text }.trim()
                 if (text.isNotBlank()) {
                     updateTranslationField(id, message.id, context.getString(R.string.translating))
-                    generationHandler.translateText(settings, text, target, modelId) { updateTranslationField(id, message.id, it) }.collect {}
+                    generationHandler.translateText(settings, text, target, modelId) {
+                        updateTranslationField(
+                            id,
+                            message.id,
+                            it
+                        )
+                    }.collect {}
                     // We don't record usage for translateText because currently translateText flow only returns String.
                     // If needed, we'd need to modify translateText to return usage too.
                     saveConversation(id, getConversationFlow(id).value)
                 }
-            } catch (e: Exception) { updateTranslationField(id, message.id, null); _errorFlow.emit(e) }
+            } catch (e: Exception) {
+                updateTranslationField(id, message.id, null); _errorFlow.emit(e)
+            }
         }
     }
 
     private suspend fun updateTranslationField(id: Uuid, mid: Uuid, text: String?) {
         val conv = getConversationFlow(id).value
         val nodes = conv.messageNodes.map { node ->
-            if (node.messages.any { it.id == mid }) node.copy(messages = node.messages.map { if (it.id == mid) it.copy(translation = text) else it }) else node
+            if (node.messages.any { it.id == mid }) node.copy(messages = node.messages.map {
+                if (it.id == mid) it.copy(
+                    translation = text
+                ) else it
+            }) else node
         }
         updateConversation(id, conv.copy(messageNodes = nodes))
     }
@@ -1134,7 +1273,10 @@ class ChatService(
         nodes = nodes.mapIndexed { idx, node ->
             val next = nodes.getOrNull(idx + 1)
             if (node.currentMessage.hasPart<UIMessagePart.ToolCall>() && next?.currentMessage?.hasPart<UIMessagePart.ToolResult>() != true)
-                node.copy(messages = node.messages.filter { it.id != node.currentMessage.id }, selectIndex = (node.selectIndex - 1).coerceAtLeast(0))
+                node.copy(
+                    messages = node.messages.filter { it.id != node.currentMessage.id },
+                    selectIndex = (node.selectIndex - 1).coerceAtLeast(0)
+                )
             else node
         }.filter { it.messages.isNotEmpty() }
         updateConversation(conversationId, conv.copy(messageNodes = nodes))
@@ -1147,11 +1289,26 @@ class ChatService(
             val settings = settingsStore.settingsFlow.first()
             val model = settings.findModelById(settings.titleModelId) ?: settings.getCurrentChatModel() ?: return
             val provider = model.findProvider(settings.providers) ?: return
-            val content = conversation.currentMessages.truncate(conversation.truncateIndex).joinToString("\n\n") { it.summaryAsText() }
+            val content = conversation.currentMessages.truncate(conversation.truncateIndex)
+                .joinToString("\n\n") { it.summaryAsText() }
             if (content.isBlank()) return
-            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.titlePrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to content))), TextGenerationParams(model, 0.3f, 1.0f))
+            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(
+                provider,
+                listOf(
+                    UIMessage.user(
+                        settings.titlePrompt.applyPlaceholders(
+                            "locale" to Locale.getDefault().displayName,
+                            "content" to content
+                        )
+                    )
+                ),
+                TextGenerationParams(model, 0.3f, 1.0f)
+            )
             result.usage?.let { conversationRepo.recordTokenUsage(conversation.assistantId.toString(), it) }
-            saveConversation(conversationId, conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: ""))
+            saveConversation(
+                conversationId,
+                conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: "")
+            )
         }
     }
 
@@ -1162,9 +1319,22 @@ class ChatService(
             val modelId = assistant.suggestionModelId ?: settings.suggestionModelId
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
-            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(provider, listOf(UIMessage.user(settings.suggestionPrompt.applyPlaceholders("locale" to Locale.getDefault().displayName, "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8).joinToString("\n") { it.summaryAsText() }))), TextGenerationParams(model, 1.0f, 1.0f))
+            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(
+                provider,
+                listOf(
+                    UIMessage.user(
+                        settings.suggestionPrompt.applyPlaceholders(
+                            "locale" to Locale.getDefault().displayName,
+                            "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8)
+                                .joinToString("\n") { it.summaryAsText() })
+                    )
+                ),
+                TextGenerationParams(model, 1.0f, 1.0f)
+            )
             result.usage?.let { conversationRepo.recordTokenUsage(conversation.assistantId.toString(), it) }
-            val suggestions = result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+            val suggestions =
+                result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() }
+                    ?: emptyList()
             saveConversation(conversationId, conversation.copy(chatSuggestions = suggestions))
         }
     }
@@ -1180,14 +1350,20 @@ class ChatService(
             conversationDeletionJobs[conversation.id]?.cancel()
             conversationRepo.deleteConversation(full, false)
             recentlyDeletedConversations[conversation.id] = full
-            conversationDeletionJobs[conversation.id] = appScope.launch { delay(4000); context.deleteChatFiles(full.files); recentlyDeletedConversations.remove(conversation.id) }
+            conversationDeletionJobs[conversation.id] = appScope.launch {
+                delay(4000); context.deleteChatFiles(full.files); recentlyDeletedConversations.remove(conversation.id)
+            }
         }
     }
 
     fun undoDeleteConversation(conversationId: Uuid) {
         conversationDeletionJobs[conversationId]?.cancel()
         recentlyDeletedConversations.remove(conversationId)?.let { conv ->
-            appScope.launch { conversationRepo.insertConversation(conv); _recentlyRestoredIds.value += conversationId; delay(1000); _recentlyRestoredIds.value -= conversationId }
+            appScope.launch {
+                conversationRepo.insertConversation(conv); _recentlyRestoredIds.value += conversationId; delay(
+                1000
+            ); _recentlyRestoredIds.value -= conversationId
+            }
         }
     }
 
@@ -1205,13 +1381,27 @@ class ChatService(
             .setAutoCancel(true)
             .setContentIntent(getPendingIntent(context, conversationId))
 
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+        if (ActivityCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        )
             NotificationManagerCompat.from(context).notify(1, notification.build())
     }
 
     private fun getPendingIntent(context: Context, id: Uuid): PendingIntent {
-        val intent = Intent(context, RouteActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP; putExtra("conversationId", id.toString()) }
-        return PendingIntent.getActivity(context, id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val intent = Intent(context, RouteActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP; putExtra(
+            "conversationId",
+            id.toString()
+        )
+        }
+        return PendingIntent.getActivity(
+            context,
+            id.hashCode(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
     }
 
     private suspend fun updateConversation(id: Uuid, conversation: Conversation) {
@@ -1225,7 +1415,12 @@ class ChatService(
 
 private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLength: Int = 32000): kotlinx.serialization.json.JsonElement {
     return when (this) {
-        is JsonPrimitive -> if (this.isString && this.content.length > maxLength) JsonPrimitive(this.content.take(maxLength) + "... (truncated)") else this
+        is JsonPrimitive -> if (this.isString && this.content.length > maxLength) JsonPrimitive(
+            this.content.take(
+                maxLength
+            ) + "... (truncated)"
+        ) else this
+
         is JsonObject -> JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
         is JsonArray -> JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
     }
