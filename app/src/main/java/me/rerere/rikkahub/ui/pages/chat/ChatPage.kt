@@ -47,6 +47,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.data.datastore.ChatInputStyle
+import me.rerere.rikkahub.data.datastore.TtsTextFilterRule
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -304,11 +305,20 @@ private fun ChatPageContent(
                 }
             }
 
+            val rules = setting.displaySetting.ttsTextFilterRules.filter { it.enabled }
             val terminators = charArrayOf('。', '！', '？', '；', '\n', '.', '!', '?', ';')
             var i = lastProcessedIndex
             while (i < rawContent.length) {
                 if (rawContent[i] in terminators) {
-                    val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
+                    val textToTest = rawContent.substring(lastProcessedIndex, i + 1)
+
+                    // 如果还在加载中，且当前片段包含未闭合的过滤符（如括号），则跳过本次朗读触发，等待闭合
+                    if (loadingJob != null && hasUnclosedFilter(textToTest, rules)) {
+                        i++
+                        continue
+                    }
+
+                    val sentence = textToTest.trim()
                     if (sentence.isNotEmpty()) {
                         tts.speak(sentence, flushCalled = false)
                     }
@@ -838,4 +848,40 @@ private fun TopBar(
             onDismiss = { showAssistantPicker = false }
         )
     }
+}
+
+/**
+ * 检查文本中是否包含未闭合的过滤符（如括号、星号等）
+ */
+private fun hasUnclosedFilter(text: String, rules: List<TtsTextFilterRule>): Boolean {
+    for (rule in rules) {
+        if (!rule.enabled) continue
+        val start = rule.pattern
+        val end = rule.endPattern ?: rule.pattern
+
+        if (start == end) {
+            // 对称符号（如 * *），检查出现次数是否为奇数
+            val count = countOccurrences(text, start)
+            if (count % 2 != 0) return true
+        } else {
+            // 非对称符号（如 ( )），检查开始符号数量是否大于结束符号
+            val startCount = countOccurrences(text, start)
+            val endCount = countOccurrences(text, end)
+            if (startCount > endCount) return true
+        }
+    }
+    return false
+}
+
+private fun countOccurrences(text: String, sub: String): Int {
+    if (sub.isEmpty()) return 0
+    var count = 0
+    var idx = 0
+    while (true) {
+        idx = text.indexOf(sub, idx)
+        if (idx == -1) break
+        count++
+        idx += sub.length
+    }
+    return count
 }

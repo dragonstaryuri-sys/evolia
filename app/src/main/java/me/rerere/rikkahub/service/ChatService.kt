@@ -163,6 +163,8 @@ class ChatService(
 
     // 保留：归档中的会话锁
     private val archivingConversations = ConcurrentHashMap.newKeySet<Uuid>()
+    // 新增：正在总结 L1 的会话锁
+    private val summarizingConversations = ConcurrentHashMap.newKeySet<Uuid>()
 
     private val lifecycleObserver = LifecycleEventObserver { _, event ->
         when (event) {
@@ -1056,6 +1058,13 @@ class ChatService(
         id: Uuid,
         onlySegments: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
+        // 并发防抖：如果该会话正在进行 L1 总结，则直接返回
+        if (summarizingConversations.contains(id)) {
+            Log.d(TAG, "summarizeAndRefresh: $id is already summarizing, skipping.")
+            return@withContext ContextRefreshResult(false, errorMessage = "Already summarizing")
+        }
+        summarizingConversations.add(id)
+
         try {
             val settings = settingsStore.settingsFlow.first()
             val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(
@@ -1186,6 +1195,8 @@ class ChatService(
             ContextRefreshResult(true, fullSum, toSummarize.size)
         } catch (e: Exception) {
             ContextRefreshResult(false, errorMessage = e.message)
+        } finally {
+            summarizingConversations.remove(id)
         }
     }
 
