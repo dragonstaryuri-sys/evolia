@@ -107,7 +107,8 @@ class MemoryConsolidationWorker(
             val assistants = if (assistantIdString != null) {
                 settings.assistants.filter { it.id.toString() == assistantIdString }
             } else {
-                settings.assistants.filter { it.enableMemoryConsolidation || it.enableMasterMemory }
+                // 修改点：自动扫描仅根据 L2 状态触发，不再主动扫描 L3
+                settings.assistants.filter { it.enableMemoryConsolidation }
             }
 
             if (assistants.isEmpty()) {
@@ -369,7 +370,8 @@ class MemoryConsolidationWorker(
         // --- Process Master Memory ---
         var updatedMasterContent: String? = null
         var wasCompressed = false
-        if (currentAssistant.enableMasterMemory || forceMaster) {
+        // 修改点：仅在强制更新或 L2 归档成功运行后才去更新 L3
+        if (forceMaster || (currentAssistant.enableMasterMemory && episodicSuccessCount > 0)) {
             // 如果是手动强制更新，我们包含所有未更新的对话。如果是自动，则只包含自上次更新以来的。
             val newConversations = conversations.filter {
                 val updateTime = it.updateAt.toEpochMilli()

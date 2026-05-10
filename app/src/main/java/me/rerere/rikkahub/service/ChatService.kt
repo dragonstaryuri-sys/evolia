@@ -158,6 +158,9 @@ class ChatService(
 
     private var lastConversationId: Uuid? = null
 
+    // 保留：归档中的会话锁
+    private val archivingConversations = ConcurrentHashMap.newKeySet<Uuid>()
+
     private val lifecycleObserver = LifecycleEventObserver { _, event ->
         when (event) {
             Lifecycle.Event.ON_START -> _isForeground.value = true
@@ -401,6 +404,13 @@ class ChatService(
     suspend fun archiveConversation(conversationId: Uuid, force: Boolean = false) {
         if (temporaryConversations.contains(conversationId)) return
 
+        // 并发防抖：如果该会话已经在归档中，则直接返回
+        if (archivingConversations.contains(conversationId)) {
+            Log.d(TAG, "archiveConversation: $conversationId is already archiving, skipping.")
+            return
+        }
+        archivingConversations.add(conversationId)
+
         try {
             val conv = conversationRepo.getConversationById(conversationId) ?: return
             val messages = conv.currentMessages
@@ -524,6 +534,8 @@ class ChatService(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to archive conversation $conversationId", e)
+        } finally {
+            archivingConversations.remove(conversationId)
         }
     }
 
