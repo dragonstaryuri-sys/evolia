@@ -78,8 +78,8 @@
 <string name="assistant_page_quick_message_title">标题</string>
 <string name="assistant_page_quick_messages">快捷消息</string>
 <string name="assistant_page_quick_messages_desc">配置快捷消息快捷方式</string>
-<string name="assistant_page_recent_chats">参考历史聊天记录</string>
-<string name="assistant_page_recent_chats_desc">启用后，助手将参考最近的聊天历史记录来提供更有上下文的回应</string>
+<string name="assistant_page_recent_chats">跨窗口对话连贯</string>
+<string name="assistant_page_recent_chats_desc">启用后，开启新会话后TA会知道当天上一个会话聊了什么内容</string>
 <string name="assistant_page_regex_affecting_scopes">影响范围：</string>
 <string name="assistant_page_regex_desc">定义正则表达式模式，在发送/接收消息前对其进行转换</string>
 <string name="assistant_page_regex_find_regex">查找正则表达式</string>
@@ -1484,4 +1484,9 @@
   <!-- MiniMax TTS 选择器 -->
   <string name="setting_tts_page_minimax_voice_picker_title">选择 MiniMax 语音</string>
   <string name="setting_tts_page_minimax_style_picker_title">选择 MiniMax 情感风格</string>
+
+  <string name="detail_memory_title">细节记忆</string>
+  <string name="detail_memory_desc">根据消息条数精确触发记忆归档</string>
+  <string name="detail_memory_hint">控制TA记忆的细节程度，数值越小，精度越高，但消耗的token也越多。</string>
+  <string name="detail_memory_threshold">归档触发阈值</string>
 </resources>

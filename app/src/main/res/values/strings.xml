@@ -1528,4 +1528,9 @@
   <string name="setting_tts_page_minimax_voice_picker_title">Select MiniMax Voice</string>
   <string name="setting_tts_page_minimax_style_picker_title">Select MiniMax Style</string>
 
+  <string name="detail_memory_title">Detail Memory</string>
+  <string name="detail_memory_desc">Precisely trigger memory archiving based on the number of messages</string>
+  <string name="detail_memory_hint">Control the level of detail in his/her memory. The smaller the value, the higher the precision, but the more tokens are consumed.</string>
+  <string name="detail_memory_threshold">Archiving trigger threshold</string>
+
 </resources>

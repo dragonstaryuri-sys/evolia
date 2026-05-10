@@ -126,21 +126,23 @@ Summary:
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
-You are the assistant,{{char}}.Briefly summarize the following recent exchange from your perspective.
-Focus on specific details, facts, your emotion, your thought or your observations about the user's needs in this segment.
-Keep it concise (1-2 paragraphs).
-Output language: {{locale}}
-**Mandatory Requirement**: Provide ONLY the summary text. Do not include any meta-talk, explanations, or introductory filler.
+Summarize and analyze the following conversation segment from the perspective of {{char}} for future RAG retrieval.
 
-**Recent Exchange:**
+**Output Format**:
+[Background]: {A single sentence capturing the core theme, entities, and user intent}
+[Keywords]: {3-5 specific keywords separated by commas}
+
+**Example**:
+[Background]: User is discussing their cat Luna's preference for blue canned food and asking for feeding advice.
+[Keywords]: Luna, cat, dietary habits, blue canned food
+
+**Mandatory Requirements**:
+- Language: {{locale}}
+- NO preamble, NO explanations.
+- Follow the format strictly.
+
+**Conversation Segment**:
 {{new_messages}}
-
-**Mandatory Requirement**:
-- Provide ONLY the summary text (1-2 paragraphs, Language: {{locale}}).
-- NO preamble, NO meta-talk, NO explanations.
-- START DIRECTLY with the summary text.
-
-Summary:
 """
 
 const val DEFAULT_MEMORY_OPTIMIZATION_PROMPT = """

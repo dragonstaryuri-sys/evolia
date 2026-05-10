@@ -167,6 +167,12 @@ fun AssistantMemorySettings(
 
     val isOptimizing by assistantDetailVM.isOptimizing.collectAsStateWithLifecycle()
     val isConsolidating by assistantDetailVM.isConsolidating.collectAsStateWithLifecycle()
+    val haptics = rememberPremiumHaptics()
+
+    // Detail Memory Local State
+    var localDetailThreshold by remember(assistant.detailMemoryThreshold) {
+        mutableFloatStateOf(assistant.detailMemoryThreshold.toFloat())
+    }
 
     // Embedding progress dialog
     if (embeddingProgress != null && embeddingProgress.isRunning) {
@@ -429,14 +435,15 @@ fun AssistantMemorySettings(
                     MemorySettingsItem(
                         title = stringResource(R.string.assistant_memory_enable_consolidation_title),
                         subtitle = stringResource(R.string.assistant_memory_enable_consolidation_desc),
-                        position = "LAST",
+                        position = if (assistant.enableMemoryConsolidation) "MIDDLE" else "LAST",
                         trailing = {
                             HapticSwitch(
                                 checked = assistant.enableMemoryConsolidation,
                                 onCheckedChange = { enabled ->
                                     if (!enabled) {
                                         onUpdateAssistant(assistant.copy(
-                                            enableMemoryConsolidation = false
+                                            enableMemoryConsolidation = false,
+                                            enableDetailMemory = false // 同时关闭细节记忆
                                         ))
                                     } else {
                                         onUpdateAssistant(assistant.copy(
@@ -448,6 +455,72 @@ fun AssistantMemorySettings(
                             )
                         }
                     )
+                }
+
+                // 🌟 Detail Memory Toggle & Slider
+                AnimatedVisibility(
+                    visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && assistant.enableMemoryConsolidation,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column {
+                        MemorySettingsItem(
+                            title = stringResource(R.string.detail_memory_title),
+                            subtitle = stringResource(R.string.detail_memory_desc),
+                            position = if (assistant.enableDetailMemory) "MIDDLE" else "LAST",
+                            trailing = {
+                                HapticSwitch(
+                                    checked = assistant.enableDetailMemory,
+                                    onCheckedChange = { onUpdateAssistant(assistant.copy(enableDetailMemory = it)) }
+                                )
+                            }
+                        )
+
+                        AnimatedVisibility(visible = assistant.enableDetailMemory) {
+                            Surface(
+                                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.detail_memory_hint),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.detail_memory_threshold),
+                                            style = MaterialTheme.typography.titleSmall
+                                        )
+                                        Text(
+                                            text = localDetailThreshold.toInt().toString(),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Slider(
+                                        value = localDetailThreshold,
+                                        onValueChange = {
+                                            if (it != localDetailThreshold) {
+                                                localDetailThreshold = it
+                                                haptics.perform(HapticPattern.Pop)
+                                            }
+                                        },
+                                        onValueChangeFinished = {
+                                            onUpdateAssistant(assistant.copy(detailMemoryThreshold = localDetailThreshold.toInt()))
+                                        },
+                                        valueRange = 10f..50f,
+                                        steps = 3
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

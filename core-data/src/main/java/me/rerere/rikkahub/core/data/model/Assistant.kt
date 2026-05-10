@@ -133,6 +133,10 @@ data class Assistant(
     @ColumnInfo(name = "last_conversation_id")
     val lastConversationId: String? = null,
 
+    // Detail Memory (L1 Trigger Control)
+    val enableDetailMemory: Boolean = false,
+    val detailMemoryThreshold: Int = 20,
+
 )
 
 @Serializable

@@ -97,7 +97,10 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 ### 6.1 Context Refresh (L1 - Auto-Summarization)
 - **Mechanism**: Compresses older L0 messages within the active session into summaries.
 - **L0 Sliding Window**: Even if a message is summarized into L1, it remains visible as "Raw Message" in L0 if it falls within the `maxHistoryMessages` limit. This ensures continuity in tone and recent details.
-- **Trigger**: `ChatService.checkAndAutoSummarize` triggers when `(CurrentMessages.size - LastSummarizedIndex - 1) >= maxHistoryMessages`.
+- **Trigger**: `ChatService.checkAndAutoSummarize` logic:
+    - **Detail Memory (Priority)**: If `enableDetailMemory` is active, triggers based on `detailMemoryThreshold` (User-defined 10-50). Smaller values result in higher precision/detail but higher token usage.
+    - **Standard Mode**: If inactive, falls back to `maxHistoryMessages` (History Limit).
+    - **Calculation**: Triggers when `(CurrentMessages.size - LastSummarizedIndex - 1) >= threshold`.
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
 - **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation. Room `REPLACE` strategy is used with `existingEpisode.id` to prevent duplicate entries per conversation ID.

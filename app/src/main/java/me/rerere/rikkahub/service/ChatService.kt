@@ -907,9 +907,15 @@ class ChatService(
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
         if (!assistant.enableContextRefresh || !assistant.autoRegenerateSummary) return
-        val max = assistant.maxHistoryMessages ?: return
 
-        // 【核心修改】触发逻辑调整为：当前消息数减去最后一条已总结消息的索引，超过上限即触发
+        // 【核心修改】优先使用“细节记忆”设置的阈值
+        val max = if (assistant.enableDetailMemory) {
+            assistant.detailMemoryThreshold
+        } else {
+            assistant.maxHistoryMessages ?: return
+        }
+
+        // 触发逻辑：当前消息数减去最后一条已总结消息的索引，超过上限即触发
         val count = if (conv.contextSummaryUpToIndex >= 0) {
             conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1)
         } else {
@@ -933,11 +939,6 @@ class ChatService(
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)
 
-            val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
-            val backgroundModel = settings.findModelById(backgroundModelId) ?: model
-            val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
-            val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
-
             // 保持适度重叠：总结到倒数第 5 条（即保留最后 4 条作为未总结缓冲）
             val lastIdx = (messages.size - 5).coerceAtLeast(0)
             val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
@@ -953,7 +954,7 @@ class ChatService(
             }
             val locale = Locale.getDefault().displayName
 
-            // 1. 生成片段摘要 (L1 Segment)
+            // 1. 生成背景总结 (L1 Segment Background + Keywords)
             val tempPrompt = DEFAULT_TEMP_SUMMARY_PROMPT
                 .replace("{{new_messages}}", text)
                 .replace("{{locale}}", locale)
@@ -962,21 +963,34 @@ class ChatService(
             val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f))
             tempResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
-            val tempSum = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
+            val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
-            if (tempSum.isNotBlank()) {
-                val aiKeywords = extractKeywords(
-                    handler = backgroundHandler,
-                    providerSetting = backgroundProvider,
-                    model = backgroundModel,
-                    summary = tempSum,
-                    assistantId = assistant.id.toString()
-                )
-                val localKeywords = KeywordExtractor.extract(tempSum)
+            if (aiResponse.isNotBlank()) {
+                // --- 增强型结构化解析逻辑 ---
+                val backgroundRegex = Regex("""\[Background\]:\s*(.*)""", RegexOption.IGNORE_CASE)
+                val keywordsRegex = Regex("""\[Keywords\]:\s*(.*)""", RegexOption.IGNORE_CASE)
+
+                val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+
+                // 智能降级回退：如果正则没匹配到，尝试按行取第一行作为背景
+                val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
+                val aiKeywords = keywordsMatch ?: ""
+
+                // 构建 拼接内容 (Background + Original Text)
+                val fullContextualContent = """
+                    [Background]: $finalBackground
+                    [Original Text]:
+                    $text
+                """.trimIndent()
+
+                // 合并 AI 提取的和本地分词的关键词
+                val localKeywords = KeywordExtractor.extract(finalBackground)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
 
-                val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $tempSum" else tempSum
+                val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\n$fullContextualContent" else fullContextualContent
                 val embedding = try {
+                    // 对拼接后的全文进行向量化
                     embeddingService.embed(effectiveContent, assistant.id.toString())
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to generate embedding for segment", e)
@@ -986,14 +1000,14 @@ class ChatService(
                 val segment = ChatSegmentEntity(
                     assistantId = assistant.id.toString(),
                     conversationId = id.toString(),
-                    content = tempSum,
+                    content = fullContextualContent, // 存储拼接内容
                     keywords = keywords,
                     startMessageIndex = startIdx,
                     endMessageIndex = lastIdx,
                     embedding = embedding?.let { JsonInstant.encodeToString(it) }
                 )
                 memoryRepository.saveSegment(segment)
-                Log.i(TAG, "Persistent segment (L1) saved for conversation $id: $startIdx to $lastIdx (Keywords: ${keywords.take(20)}...)")
+                Log.i(TAG, "Persistent contextual segment (L1) saved for conversation $id (Format: Structured)")
             }
 
             // 2. 生成全量背景总结 (L1 Global Summary)
