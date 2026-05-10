@@ -964,7 +964,7 @@
 
   <!-- Diary Settings -->
   <string name="setting_model_page_diary_model">Diary Model</string>
-  <string name="setting_model_page_diary_model_desc">Model for generating agent diaries</string>
+  <string name="setting_model_page_diary_model_desc">Model for generating agent diaries.It is recommended to choose the model that charges by the time.</string>
   <string name="setting_model_page_diary_prompt">Diary Prompt</string>
   <string name="setting_model_page_diary_prompt_desc">Prompt for diary generation. Vars: {content}</string>
 

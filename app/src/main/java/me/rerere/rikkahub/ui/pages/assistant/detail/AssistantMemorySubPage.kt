@@ -86,6 +86,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.common.FeatureConfig
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -897,7 +898,7 @@ private fun MasterMemoryCard(
         // Master Toggle
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = if (assistant.enableMasterMemory && FeatureConfig.enableMasterMemoryEditing)
+            shape = if (assistant.enableMasterMemory && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing))
                 RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
             else
                 RoundedCornerShape(24.dp)
@@ -928,12 +929,12 @@ private fun MasterMemoryCard(
             }
         }
 
-        AnimatedVisibility(visible = assistant.enableMasterMemory && FeatureConfig.enableMasterMemoryEditing) {
+        AnimatedVisibility(visible = assistant.enableMasterMemory && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // Master Memory Content
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = if (FeatureConfig.enableMasterMemoryEditing) RoundedCornerShape(10.dp) else RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+                    shape = if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) RoundedCornerShape(10.dp) else RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -941,7 +942,7 @@ private fun MasterMemoryCard(
                             Text(stringResource(R.string.assistant_memory_master_content_title), style = MaterialTheme.typography.titleSmall)
                         }
 
-                        if (FeatureConfig.enableMasterMemoryEditing) {
+                        if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
                             DebouncedTextField(
                                 value = assistant.masterMemoryContent,
                                 onValueChange = { onUpdateAssistant(assistant.copy(masterMemoryContent = it)) },
@@ -969,7 +970,7 @@ private fun MasterMemoryCard(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        } else if (FeatureConfig.enableMasterMemoryEditing) {
+                        } else if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
                             Text(
                                 text = stringResource(R.string.assistant_memory_master_never_updated),
                                 style = MaterialTheme.typography.labelSmall,
@@ -980,7 +981,7 @@ private fun MasterMemoryCard(
                 }
 
                 // Actions
-                if (FeatureConfig.enableMasterMemoryEditing) {
+                if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
                     Surface(
                         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
                         shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
@@ -1691,7 +1692,7 @@ private fun MemoryDebugger(
 private fun FormItem(
     label: @Composable () -> Unit,
     description: (@Composable () -> Unit)? = null,
-    tail: (@Composable () -> Unit)? = null,
+    tail: @Composable (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),

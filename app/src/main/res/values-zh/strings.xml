@@ -938,7 +938,7 @@
 
   <!-- Diary Settings -->
   <string name="setting_model_page_diary_model">日记编写模型</string>
-  <string name="setting_model_page_diary_model_desc">用于生成智能体日记的模型</string>
+  <string name="setting_model_page_diary_model_desc">用于生成智能体日记的模型，建议选择按次计费的模型</string>
   <string name="setting_model_page_diary_prompt">日记提示词</string>
   <string name="setting_model_page_diary_prompt_desc">日记生成的提示词。变量: {content}</string>
   <string name="setting_new_chat_header_desc">空聊天顶部显示的样式</string>
