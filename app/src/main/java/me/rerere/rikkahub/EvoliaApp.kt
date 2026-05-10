@@ -101,7 +101,6 @@ class EvoliaApp : Application() {
                 .build()
         )
 
-        // 修改点：将 UPDATE 改为 REPLACE，确保逻辑变更后任务被重置并执行
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "diary_scheduler",
             ExistingPeriodicWorkPolicy.REPLACE,
@@ -130,7 +129,7 @@ class EvoliaApp : Application() {
                         "memory_consolidation",
                         ExistingPeriodicWorkPolicy.UPDATE,
                         PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
-                            interval.toLong().coerceAtLeast(15), TimeUnit.MINUTES
+                            interval.toLong().coerceAtLeast(300), TimeUnit.MINUTES
                         )
                             .setConstraints(constraints)
                             .build()

@@ -191,7 +191,7 @@ class SettingsStore(
                 selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
                     ?: DEFAULT_SYSTEM_TTS_ID,
                 autoPlayTts = preferences[AUTO_PLAY_TTS] ?: false,
-                consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 15,
+                consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 300,
                 consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
                 modes = preferences[MODES]?.let {
                     JsonInstant.decodeFromString(it)
@@ -218,23 +218,16 @@ class SettingsStore(
             }.toMutableList()
             var assistants = it.assistants.ifEmpty { DEFAULT_ASSISTANTS }.toMutableList()
 
-            // --- 强化修复逻辑：绝对单主智能体约束 (修正全员 evolia 问题) ---
             val mainCount = assistants.count { a -> a.isMain }
             if (assistants.isNotEmpty() && mainCount != 1) {
-                Log.w(TAG, "Master assistant count is $mainCount, enforcing absolute single-master rule.")
-
                 val currentSelectedId = it.assistantId
                 var masterAlreadyEnforced = false
 
                 assistants = assistants.map { a ->
-                    // 修正逻辑：
-                    // 1. 如果存在多个主智能体（之前的 Bug 导致），只保留列表中的第一个标记为主的。
-                    // 2. 如果一个都没有（旧版本升级），将当前选中的设为主智能体。
                     val shouldBeMain = if (!masterAlreadyEnforced) {
                         if (mainCount > 1) {
-                             a.isMain // 如果这个是 true，它会被保留，并锁死 masterAlreadyEnforced 为 true
+                             a.isMain
                         } else {
-                             // 此时 mainCount == 0
                              a.id == currentSelectedId || currentSelectedId == Uuid.NIL
                         }
                     } else false
@@ -247,7 +240,6 @@ class SettingsStore(
                     }
                 }.toMutableList()
 
-                // 兜底：如果上面的映射没能选出主智能体，强行指定第一个
                 if (!masterAlreadyEnforced && assistants.isNotEmpty()) {
                     assistants[0] = assistants[0].copy(isMain = true)
                 }
@@ -439,7 +431,7 @@ data class Settings(
     val ttsProviders: List<TTSProviderSetting> = emptyList(),
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val autoPlayTts: Boolean = false,
-    val consolidationWorkerIntervalMinutes: Int = 15,
+    val consolidationWorkerIntervalMinutes: Int = 300,
     val consolidationRequiresDeviceIdle: Boolean = false,
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
