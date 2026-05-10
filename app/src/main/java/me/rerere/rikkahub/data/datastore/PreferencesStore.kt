@@ -226,9 +226,9 @@ class SettingsStore(
                 assistants = assistants.map { a ->
                     val shouldBeMain = if (!masterAlreadyEnforced) {
                         if (mainCount > 1) {
-                             a.isMain
+                            a.isMain
                         } else {
-                             a.id == currentSelectedId || currentSelectedId == Uuid.NIL
+                            a.id == currentSelectedId || currentSelectedId == Uuid.NIL
                         }
                     } else false
 
@@ -306,13 +306,14 @@ class SettingsStore(
     }
 
     suspend fun update(settings: Settings) {
-        if(settings.init) return
-        val settingsToSave = if (settings.assistantId != settingsFlow.value.assistantId && !settingsFlow.value.init && settings.assistants.any { it.id == settings.assistantId }) {
-            settings.copy(recentlyUsedAssistants = buildList {
-                add(settings.assistantId)
-                settings.recentlyUsedAssistants.filter { it != settings.assistantId }.take(2).forEach { add(it) }
-            })
-        } else settings
+        if (settings.init) return
+        val settingsToSave =
+            if (settings.assistantId != settingsFlow.value.assistantId && !settingsFlow.value.init && settings.assistants.any { it.id == settings.assistantId }) {
+                settings.copy(recentlyUsedAssistants = buildList {
+                    add(settings.assistantId)
+                    settings.recentlyUsedAssistants.filter { it != settings.assistantId }.take(2).forEach { add(it) }
+                })
+            } else settings
         secretKeyManager.handleExplicitSecretDeletions(settingsFlow.value, settingsToSave)
         val migratedSettings = secretKeyManager.migrateSecretsFromSettings(settingsToSave)
         settingsFlow.value = secretKeyManager.populateSecretsForExport(migratedSettings)
@@ -349,7 +350,8 @@ class SettingsStore(
             preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.recentlyUsedAssistants)
             preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settingsToSave.searchServices)
             preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settingsToSave.searchCommonOptions)
-            preferences[SEARCH_SELECTED] = settingsToSave.searchServiceSelected.coerceIn(0, settingsToSave.searchServices.size - 1)
+            preferences[SEARCH_SELECTED] =
+                settingsToSave.searchServiceSelected.coerceIn(0, settingsToSave.searchServices.size - 1)
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(settingsToSave.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
             preferences[EMAIL_CONFIG] = JsonInstant.encodeToString(migratedSettings.emailConfig)
@@ -438,42 +440,152 @@ data class Settings(
     val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val autoBackupOnStart: Boolean = false,
     val lastAutoBackupTime: Long = 0L,
-) { companion object { fun dummy() = Settings(init = true) } }
+) {
+    companion object {
+        fun dummy() = Settings(init = true)
+    }
+}
 
-@Serializable data class RpStyleRule(val id: String = Uuid.random().toString(), val pattern: String = "*", val colorHex: String = "#808080", val enabled: Boolean = true)
-@Serializable data class TtsTextFilterRule(
+@Serializable
+data class RpStyleRule(
+    val id: String = Uuid.random().toString(),
+    val pattern: String = "*",
+    val colorHex: String = "#808080",
+    val enabled: Boolean = true
+)
+
+@Serializable
+data class TtsTextFilterRule(
     val id: String = Uuid.random().toString(),
     val pattern: String = "*",
     val endPattern: String? = null,
     val mode: TtsFilterMode = TtsFilterMode.SKIP,
     val enabled: Boolean = true
 )
-@Serializable enum class TtsFilterMode { SKIP, ONLY_READ }
-@Serializable enum class FontSource { System, SystemCode, Custom }
-@Serializable data class FontAxis(val tag: String, val name: String, val minValue: Float, val maxValue: Float, val defaultValue: Float, val currentValue: Float = defaultValue)
-@Serializable data class FontFeature(val tag: String, val name: String, val enabled: Boolean = true)
-@Serializable data class FontConfig(val fontSource: FontSource = FontSource.System, val customFontPath: String? = null, val customFontName: String? = null, val weight: Float = 400f, val width: Float = 100f, val roundness: Float = 100f, val grade: Float = 0f, val slant: Float = 0f, val fontSize: Float = 1.0f, val lineHeight: Float = 1.0f, val letterSpacing: Float = 0f, val customAxes: List<FontAxis> = emptyList(), val features: List<FontFeature> = emptyList()) {
-    companion object { val DEFAULT_EXPRESSIVE = FontConfig(fontSource = FontSource.System, roundness = 100f); val DEFAULT_NORMAL = FontConfig(fontSource = FontSource.System, roundness = 0f); val DEFAULT_CODE = FontConfig(fontSource = FontSource.SystemCode, roundness = 0f, weight = 400f) }
+
+@Serializable
+enum class TtsFilterMode { SKIP, ONLY_READ }
+@Serializable
+enum class FontSource { System, SystemCode, Custom }
+@Serializable
+data class FontAxis(
+    val tag: String,
+    val name: String,
+    val minValue: Float,
+    val maxValue: Float,
+    val defaultValue: Float,
+    val currentValue: Float = defaultValue
+)
+
+@Serializable
+data class FontFeature(val tag: String, val name: String, val enabled: Boolean = true)
+@Serializable
+data class FontConfig(
+    val fontSource: FontSource = FontSource.System,
+    val customFontPath: String? = null,
+    val customFontName: String? = null,
+    val weight: Float = 400f,
+    val width: Float = 100f,
+    val roundness: Float = 100f,
+    val grade: Float = 0f,
+    val slant: Float = 0f,
+    val fontSize: Float = 1.0f,
+    val lineHeight: Float = 1.0f,
+    val letterSpacing: Float = 0f,
+    val customAxes: List<FontAxis> = emptyList(),
+    val features: List<FontFeature> = emptyList()
+) {
+    companion object {
+        val DEFAULT_EXPRESSIVE = FontConfig(fontSource = FontSource.System, roundness = 100f);
+        val DEFAULT_NORMAL = FontConfig(fontSource = FontSource.System, roundness = 0f);
+        val DEFAULT_CODE = FontConfig(fontSource = FontSource.SystemCode, roundness = 0f, weight = 400f)
+    }
 }
-@Serializable data class FontSettings(val useSameFontForHeadersAndContent: Boolean = false, val headerFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE, val contentFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE, val codeFont: FontConfig = FontConfig.DEFAULT_CODE)
-@Serializable data class DisplaySetting(val userAvatar: Avatar = Avatar.Dummy, val userNickname: String = "", val userEmail: String = "", val chatInputStyle: me.rerere.rikkahub.data.datastore.ChatInputStyle = me.rerere.rikkahub.data.datastore.ChatInputStyle.MINIMAL, val showUserAvatar: Boolean = true, val showModelIcon: Boolean = true, val showModelName: Boolean = true, val showAssistantBubbles: Boolean = true, val showTokenUsage: Boolean = false, val autoCloseThinking: Boolean = true, val showUpdates: Boolean = false, val checkForUpdates: Boolean = true, val showMessageJumper: Boolean = false, val messageJumperOnLeft: Boolean = false, val fontSizeRatio: Float = 1.0f, val fontSettings: FontSettings = FontSettings(), val enableMessageGenerationHapticEffect: Boolean = false, val enableUIHaptics: Boolean = true, val skipCropImage: Boolean = false, val enableNotificationOnMessageGeneration: Boolean = false, val codeBlockAutoWrap: Boolean = false, val codeBlockAutoCollapse: Boolean = true, val rpStyleRules: List<RpStyleRule> = emptyList(), val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(), val providerViewMode: ProviderViewMode = ProviderViewMode.LIST, val showContextStacks: Boolean = false, val newChatHeaderStyle: me.rerere.rikkahub.data.datastore.NewChatHeaderStyle = me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING, val newChatContentStyle: me.rerere.rikkahub.data.datastore.NewChatContentStyle = me.rerere.rikkahub.data.datastore.NewChatContentStyle.ACTIONS, val newChatShowAvatar: Boolean = true, val hasShownProviderGuide: Boolean = false)
-@Serializable enum class NewChatHeaderStyle { NONE, GREETING, BIG_ICON }
-@Serializable enum class NewChatContentStyle { NONE, TEMPLATES, STATS, ACTIONS }
-@Serializable enum class ProviderViewMode { LIST, GRID }
-@Serializable enum class ChatInputStyle { FLOATING, MINIMAL }
-@Serializable data class WebDavConfig(val url: String = "", val username: String = "", val password: String = "", val path: String = "evolia_backups", val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES), val maxBackupFiles: Int = 3) { @Serializable enum class BackupItem { DATABASE, FILES} }
-@Serializable data class EmailConfig(val account: String = "", val password: String = "", val enabled: Boolean = false)
+
+@Serializable
+data class FontSettings(
+    val useSameFontForHeadersAndContent: Boolean = false,
+    val headerFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
+    val contentFont: FontConfig = FontConfig.DEFAULT_EXPRESSIVE,
+    val codeFont: FontConfig = FontConfig.DEFAULT_CODE
+)
+
+@Serializable
+data class DisplaySetting(
+    val userAvatar: Avatar = Avatar.Dummy,
+    val userNickname: String = "",
+    val userEmail: String = "",
+    val chatInputStyle: me.rerere.rikkahub.data.datastore.ChatInputStyle = me.rerere.rikkahub.data.datastore.ChatInputStyle.MINIMAL,
+    val showUserAvatar: Boolean = true,
+    val showModelIcon: Boolean = true,
+    val showModelName: Boolean = true,
+    val showAssistantBubbles: Boolean = true,
+    val showTokenUsage: Boolean = false,
+    val autoCloseThinking: Boolean = true,
+    val showUpdates: Boolean = false,
+    val checkForUpdates: Boolean = true,
+    val showMessageJumper: Boolean = false,
+    val messageJumperOnLeft: Boolean = false,
+    val fontSizeRatio: Float = 1.0f,
+    val fontSettings: FontSettings = FontSettings(),
+    val enableMessageGenerationHapticEffect: Boolean = false,
+    val enableUIHaptics: Boolean = true,
+    val skipCropImage: Boolean = false,
+    val enableNotificationOnMessageGeneration: Boolean = false,
+    val codeBlockAutoWrap: Boolean = false,
+    val codeBlockAutoCollapse: Boolean = true,
+    val rpStyleRules: List<RpStyleRule> = emptyList(),
+    val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
+    val filterEmojis: Boolean = false,
+    val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
+    val showContextStacks: Boolean = false,
+    val newChatHeaderStyle: me.rerere.rikkahub.data.datastore.NewChatHeaderStyle = me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING,
+    val newChatContentStyle: me.rerere.rikkahub.data.datastore.NewChatContentStyle = me.rerere.rikkahub.data.datastore.NewChatContentStyle.ACTIONS,
+    val newChatShowAvatar: Boolean = true,
+    val hasShownProviderGuide: Boolean = false
+)
+
+@Serializable
+enum class NewChatHeaderStyle { NONE, GREETING, BIG_ICON }
+@Serializable
+enum class NewChatContentStyle { NONE, TEMPLATES, STATS, ACTIONS }
+@Serializable
+enum class ProviderViewMode { LIST, GRID }
+@Serializable
+enum class ChatInputStyle { FLOATING, MINIMAL }
+@Serializable
+data class WebDavConfig(
+    val url: String = "",
+    val username: String = "",
+    val password: String = "",
+    val path: String = "evolia_backups",
+    val items: List<BackupItem> = listOf(BackupItem.DATABASE, BackupItem.FILES),
+    val maxBackupFiles: Int = 3
+) {
+    @Serializable
+    enum class BackupItem { DATABASE, FILES }
+}
+
+@Serializable
+data class EmailConfig(val account: String = "", val password: String = "", val enabled: Boolean = false)
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 fun Settings.findModelById(uuid: Uuid): Model? = this.providers.findModelById(uuid)
-fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? { forEach { s -> s.models.forEach { if (it.id == uuid) return it } }; return null }
+fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? {
+    forEach { s -> s.models.forEach { if (it.id == uuid) return it } }; return null
+}
+
 fun Settings.getCurrentChatModel(): Model? = findModelById(this.getCurrentAssistant().chatModelId ?: this.chatModelId)
-fun Settings.getCurrentAssistant(): Assistant = assistants.find { it.id == assistantId } ?: assistants.find { it.isMain } ?: assistants.firstOrNull() ?: DEFAULT_ASSISTANTS.first()
+fun Settings.getCurrentAssistant(): Assistant =
+    assistants.find { it.id == assistantId } ?: assistants.find { it.isMain } ?: assistants.firstOrNull()
+    ?: DEFAULT_ASSISTANTS.first()
+
 fun Settings.getAssistantById(id: Uuid): Assistant? = assistants.find { it.id == id }
 fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySetting {
     val ui = (assistant ?: getCurrentAssistant()).uiSettings
     return displaySetting.copy(
-        chatInputStyle = ui.chatInputStyle?.let { runCatching { ChatInputStyle.valueOf(it) }.getOrNull() } ?: displaySetting.chatInputStyle,
+        chatInputStyle = ui.chatInputStyle?.let { runCatching { ChatInputStyle.valueOf(it) }.getOrNull() }
+            ?: displaySetting.chatInputStyle,
         showUserAvatar = ui.showUserAvatar ?: displaySetting.showUserAvatar,
         showModelIcon = ui.showAssistantAvatar ?: displaySetting.showModelIcon,
         showAssistantBubbles = ui.showAssistantBubbles ?: displaySetting.showAssistantBubbles,
@@ -485,20 +597,37 @@ fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySe
         codeBlockAutoWrap = ui.codeBlockAutoWrap ?: displaySetting.codeBlockAutoWrap,
         codeBlockAutoCollapse = ui.codeBlockAutoCollapse ?: displaySetting.codeBlockAutoCollapse,
         showContextStacks = ui.showContextStacks ?: displaySetting.showContextStacks,
-        newChatHeaderStyle = ui.newChatHeaderStyle?.let { runCatching { NewChatHeaderStyle.valueOf(it) }.getOrNull() } ?: displaySetting.newChatHeaderStyle,
-        newChatContentStyle = ui.newChatContentStyle?.let { runCatching { NewChatContentStyle.valueOf(it) }.getOrNull() } ?: displaySetting.newChatContentStyle,
+        newChatHeaderStyle = ui.newChatHeaderStyle?.let { runCatching { NewChatHeaderStyle.valueOf(it) }.getOrNull() }
+            ?: displaySetting.newChatHeaderStyle,
+        newChatContentStyle = ui.newChatContentStyle?.let { runCatching { NewChatContentStyle.valueOf(it) }.getOrNull() }
+            ?: displaySetting.newChatContentStyle,
         newChatShowAvatar = ui.newChatShowAvatar ?: displaySetting.newChatShowAvatar,
     )
 }
-fun Settings.getSelectedTTSProvider(): TTSProviderSetting? = ttsProviders.find { it.id == selectedTTSProviderId } ?: ttsProviders.firstOrNull()
+
+fun Settings.getSelectedTTSProvider(): TTSProviderSetting? =
+    ttsProviders.find { it.id == selectedTTSProviderId } ?: ttsProviders.firstOrNull()
+
 fun Model.findProvider(providers: List<ProviderSetting>, checkOverwrite: Boolean = true): ProviderSetting? {
     val provider = providers.find { p -> p.models.any { it.id == this.id } } ?: return null
-    if (checkOverwrite && this.providerOverwrite != null) return this.providerOverwrite!!.copyProvider(proxy = provider.proxy, models = emptyList())
+    if (checkOverwrite && this.providerOverwrite != null) return this.providerOverwrite!!.copyProvider(
+        proxy = provider.proxy,
+        models = emptyList()
+    )
     return provider
 }
 
 internal val GEMINI_2_5_FLASH_ID = Uuid.parse("cd2cba9a-3f92-4148-b4c6-4d7a86f7b9c2")
 internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa36b4e")
-internal val DEFAULT_ASSISTANTS = listOf(Assistant(id = DEFAULT_ASSISTANT_ID, name = "Evolia", avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp), temperature = 0.6f, systemPrompt = "You are the best generic assistant.", isMain = true))
+internal val DEFAULT_ASSISTANTS = listOf(
+    Assistant(
+        id = DEFAULT_ASSISTANT_ID,
+        name = "Evolia",
+        avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
+        temperature = 0.6f,
+        systemPrompt = "You are the best generic assistant.",
+        isMain = true
+    )
+)
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")
 private val DEFAULT_TTS_PROVIDERS = listOf(TTSProviderSetting.SystemTTS(id = DEFAULT_SYSTEM_TTS_ID, name = ""))

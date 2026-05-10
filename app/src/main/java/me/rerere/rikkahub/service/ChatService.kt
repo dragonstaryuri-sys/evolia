@@ -382,12 +382,13 @@ class ChatService(
                     val settings = settingsStore.settingsFlow.first()
                     val oldConv = conversationRepo.getConversationById(oldId) ?: return@launch
                     val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
-                    // 1. L1 细节记忆：清算剩余消息
+
+                    // 1. L2 情节记忆归档
+                    archiveConversation(oldId, force = true)
+                    // 2. L1 细节记忆：清算剩余消息
                     if (assistant.enableDetailMemory) {
                         summarizeAndRefresh(oldId, onlySegments = true)
                     }
-                    // 1. L2 情节记忆归档
-                    archiveConversation(oldId, force = true)
                     // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3（新增逻辑）
                     if (assistant.enableMasterMemory) {
                         val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()

@@ -1533,4 +1533,6 @@
   <string name="detail_memory_hint">Control the level of detail in his/her memory. The smaller the value, the higher the precision, but the more tokens are consumed.</string>
   <string name="detail_memory_threshold">Archiving trigger threshold</string>
 
+  <string name="tts_filter_rules_filter_emojis_title">Filter Emojis</string>
+  <string name="tts_filter_rules_filter_emojis_desc">When enabled, emojis (e.g. 🤯) will not be read out by TTS.</string>
 </resources>

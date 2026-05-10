@@ -423,12 +423,22 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     if (showFilterSettingsDialog) {
         TtsTextFilterSettingsDialog(
             rules = settings.displaySetting.ttsTextFilterRules,
+            filterEmojis = settings.displaySetting.filterEmojis,
             onDismiss = { showFilterSettingsDialog = false },
             onUpdateRules = { newRules ->
                 vm.updateSettings(
                     settings.copy(
                         displaySetting = settings.displaySetting.copy(
                             ttsTextFilterRules = newRules
+                        )
+                    )
+                )
+            },
+            onUpdateFilterEmojis = { enabled ->
+                vm.updateSettings(
+                    settings.copy(
+                        displaySetting = settings.displaySetting.copy(
+                            filterEmojis = enabled
                         )
                     )
                 )
@@ -440,8 +450,10 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
 @Composable
 private fun TtsTextFilterSettingsDialog(
     rules: List<me.rerere.rikkahub.data.datastore.TtsTextFilterRule>,
+    filterEmojis: Boolean,
     onDismiss: () -> Unit,
-    onUpdateRules: (List<me.rerere.rikkahub.data.datastore.TtsTextFilterRule>) -> Unit
+    onUpdateRules: (List<me.rerere.rikkahub.data.datastore.TtsTextFilterRule>) -> Unit,
+    onUpdateFilterEmojis: (Boolean) -> Unit
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<me.rerere.rikkahub.data.datastore.TtsTextFilterRule?>(null) }
@@ -507,6 +519,33 @@ private fun TtsTextFilterSettingsDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+
+            // Global Emoji Filter Switch
+            androidx.compose.material3.Card(
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                shape = AppShapes.CardLarge
+            ) {
+                androidx.compose.material3.ListItem(
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = {
+                        Text(stringResource(R.string.tts_filter_rules_filter_emojis_title))
+                    },
+                    supportingContent = {
+                        Text(
+                            text = stringResource(R.string.tts_filter_rules_filter_emojis_desc),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    trailingContent = {
+                        HapticSwitch(
+                            checked = filterEmojis,
+                            onCheckedChange = onUpdateFilterEmojis
+                        )
+                    }
+                )
             }
 
             if (rules.isEmpty()) {
@@ -811,6 +850,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                 }
             }
         ) {
+            @Suppress("RemoveExplicitTypeArguments")
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1042,6 +1082,7 @@ private fun TTSProviderItemContent(
             modifier = Modifier.weight(1f),
             verticalArrangement = if (provider is TTSProviderSetting.SystemTTS) Arrangement.spacedBy(8.dp) else Arrangement.Center,
         ) {
+            @Suppress("DEPRECATION")
             Text(
                 text = provider.name.ifEmpty { stringResource(R.string.setting_tts_page_default_name) },
                 style = MaterialTheme.typography.titleMedium,

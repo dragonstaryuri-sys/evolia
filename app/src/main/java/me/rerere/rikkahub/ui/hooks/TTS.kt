@@ -29,6 +29,9 @@ import org.koin.core.component.inject
 
 private const val TAG = "TTS"
 
+// Regex to match common emojis and symbols that TTS often reads out
+private val EMOJI_REGEX = Regex("[\\uD83C-\\uDBFF\\uDC00-\\uDFFF]|\\p{So}")
+
 /**
  * Composable function to remember and manage custom TTS state.
  * Uses user-configured TTS providers instead of system TTS.
@@ -169,10 +172,16 @@ private class CustomTtsStateImpl(
     private fun applyTtsTextFilters(text: String): String {
         val settings = settingsStore.settingsFlow.value
         val rules = settings.displaySetting.ttsTextFilterRules.filter { it.enabled }
-
-        if (rules.isEmpty()) return text
+        val filterEmojis = settings.displaySetting.filterEmojis
 
         var result = text
+
+        // Filter emojis if enabled
+        if (filterEmojis) {
+            result = result.replace(EMOJI_REGEX, "")
+        }
+
+        if (rules.isEmpty()) return result.trim()
 
         // Check for ONLY_READ rules first (they take precedence)
         val onlyReadRules = rules.filter { it.mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ }
