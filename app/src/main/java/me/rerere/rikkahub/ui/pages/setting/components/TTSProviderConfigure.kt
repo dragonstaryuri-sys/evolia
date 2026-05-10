@@ -66,6 +66,12 @@ import me.rerere.tts.provider.TTSProviderSetting
 
 private const val TAG = "TTSProviderConfigure"
 
+private val AZURE_COMMON_STYLES = listOf(
+    "general", "cheerful", "empathetic", "chat", "newscast",
+    "customerservice", "assistant", "lyrical", "calm",
+    "fearful", "sad", "angry", "whispering", "poetry-reading"
+)
+
 @Composable
 fun TTSProviderConfigure(
     setting: TTSProviderSetting,
@@ -222,47 +228,23 @@ private fun AzureTTSConfiguration(
     }
 
     // Style (Emotion)
-    var styleExpanded by remember { mutableStateOf(false) }
-    val commonStyles = listOf(
-        "general", "cheerful", "empathetic", "chat", "newscast",
-        "customerservice", "assistant", "lyrical", "calm",
-        "fearful", "sad", "angry", "whispering", "poetry-reading"
-    )
+    var showStylePicker by remember { mutableStateOf(false) }
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_emotion)) },
         description = { Text(stringResource(R.string.setting_tts_page_emotion_description)) }
     ) {
-        ExposedDropdownMenuBox(
-            expanded = styleExpanded,
-            onExpandedChange = { styleExpanded = !styleExpanded }
-        ) {
-            OutlinedTextField(
-                value = localStyle,
-                onValueChange = { localStyle = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = styleExpanded)
-                },
-                placeholder = { Text("general") }
-            )
-            ExposedDropdownMenu(
-                expanded = styleExpanded,
-                onDismissRequest = { styleExpanded = false }
-            ) {
-                commonStyles.forEach { style ->
-                    DropdownMenuItem(
-                        text = { Text(style) },
-                        onClick = {
-                            localStyle = style
-                            styleExpanded = false
-                        }
-                    )
+        OutlinedTextField(
+            value = localStyle,
+            onValueChange = { localStyle = it },
+            modifier = Modifier.fillMaxWidth(),
+            trailingIcon = {
+                IconButton(onClick = { showStylePicker = true }) {
+                    Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style")
                 }
-            }
-        }
+            },
+            placeholder = { Text("general") }
+        )
     }
 
     // Speed
@@ -291,6 +273,17 @@ private fun AzureTTSConfiguration(
                 showVoicePicker = false
             },
             onDismiss = { showVoicePicker = false }
+        )
+    }
+
+    if (showStylePicker) {
+        AzureStylePicker(
+            currentStyle = localStyle,
+            onSelect = {
+                localStyle = it
+                showStylePicker = false
+            },
+            onDismiss = { showStylePicker = false }
         )
     }
 }
@@ -329,7 +322,7 @@ private fun AzureVoicePicker(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Select Azure Voice",
+                    text = stringResource(R.string.setting_tts_page_azure_voice_picker_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 16.dp, start = 8.dp)
@@ -339,7 +332,7 @@ private fun AzureVoicePicker(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                    placeholder = { Text("Search by name or ID...") },
+                    placeholder = { Text(stringResource(R.string.setting_tts_page_azure_voice_picker_search_placeholder)) },
                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                     trailingIcon = if (searchQuery.isNotEmpty()) {
                         { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear") } }
@@ -392,7 +385,7 @@ private fun AzureVoicePicker(
                                 modifier = Modifier.fillMaxWidth().padding(32.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("No voices found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.setting_tts_page_azure_voice_picker_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -403,7 +396,102 @@ private fun AzureVoicePicker(
                     horizontalArrangement = Arrangement.End
                 ) {
                     androidx.compose.material3.TextButton(onClick = onDismiss) {
-                        Text("Close")
+                        Text(stringResource(R.string.done))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AzureStylePicker(
+    currentStyle: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    val styles = remember { AZURE_COMMON_STYLES }
+    val filteredStyles by remember(searchQuery) {
+        derivedStateOf {
+            if (searchQuery.isBlank()) styles
+            else styles.filter { it.contains(searchQuery, ignoreCase = true) }
+        }
+    }
+
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.85f),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = stringResource(R.string.setting_tts_page_azure_style_picker_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 16.dp, start = 8.dp)
+                )
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    placeholder = { Text(stringResource(R.string.setting_tts_page_azure_style_picker_search_placeholder)) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Clear") } }
+                    } else null,
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    contentPadding = PaddingValues(bottom = 8.dp)
+                ) {
+                    items(filteredStyles) { style ->
+                        val isSelected = style == currentStyle
+                        ListItem(
+                            modifier = Modifier
+                                .clickable { onSelect(style) },
+                            headlineContent = {
+                                Text(
+                                    text = style,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            trailingContent = if (isSelected) {
+                                { Icon(Icons.Rounded.Visibility, tint = MaterialTheme.colorScheme.primary, contentDescription = "Selected") }
+                            } else null,
+                            colors = ListItemDefaults.colors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface
+                            )
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.done))
                     }
                 }
             }
