@@ -1521,4 +1521,8 @@
   <string name="setting_tts_page_azure_filter_neural">Neural Only</string>
   <string name="setting_tts_page_azure_filter_standard">Standard Only</string>
   <string name="setting_tts_page_azure_style_no_styles">This voice does not support styles</string>
+  <string name="setting_tts_page_azure_filter_gender_all">All genders</string>
+  <string name="setting_tts_page_azure_filter_male">Male voice</string>
+  <string name="setting_tts_page_azure_filter_female">Female voice</string>
+
 </resources>

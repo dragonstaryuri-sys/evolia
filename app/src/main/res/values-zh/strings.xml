@@ -1475,7 +1475,10 @@
   <string name="setting_tts_page_azure_style_picker_search_placeholder">搜索风格...</string>
   <!-- Azure 语音过滤 -->
   <string name="setting_tts_page_azure_filter_all">全部</string>
-  <string name="setting_tts_page_azure_filter_neural">神经网络 (Neural)</string>
-  <string name="setting_tts_page_azure_filter_standard">标准 (Standard)</string>
+  <string name="setting_tts_page_azure_filter_neural">高级</string>
+  <string name="setting_tts_page_azure_filter_standard">标准</string>
   <string name="setting_tts_page_azure_style_no_styles">此语音不支持情感调节</string>
+  <string name="setting_tts_page_azure_filter_gender_all">所有性别</string>
+  <string name="setting_tts_page_azure_filter_male">男声</string>
+  <string name="setting_tts_page_azure_filter_female">女声</string>
 </resources>

@@ -119,14 +119,12 @@ private fun AzureTTSConfiguration(
     var isLoadingVoices by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
 
-    // 引入本地状态，彻底隔离打字时的数据库写入卡顿
     var localApiKey by remember(setting.apiKey) { mutableStateOf(setting.apiKey) }
     var localRegion by remember(setting.region) { mutableStateOf(setting.region) }
     var localVoiceName by remember(setting.voiceName) { mutableStateOf(setting.voiceName) }
     var localStyle by remember(setting.style) { mutableStateOf(setting.style) }
     var localSpeed by remember(setting.speed) { mutableStateOf(setting.speed) }
 
-    // 获取当前语音对象以提取动态风格
     val currentVoice = remember(localVoiceName, voices) {
         voices.find { it.id == localVoiceName }
     }
@@ -136,7 +134,6 @@ private fun AzureTTSConfiguration(
         list.distinct()
     }
 
-    // 防抖同步：停止输入 500ms 后才同步给外部（触发数据库保存）
     LaunchedEffect(localApiKey, localRegion, localVoiceName, localStyle, localSpeed) {
         if (localApiKey != setting.apiKey || localRegion != setting.region ||
             localVoiceName != setting.voiceName || localStyle != setting.style ||
@@ -167,7 +164,6 @@ private fun AzureTTSConfiguration(
         }
     }
 
-    // API Key
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -192,7 +188,6 @@ private fun AzureTTSConfiguration(
         )
     }
 
-    // Region
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_region)) },
         description = { Text(stringResource(R.string.setting_tts_page_region_description)) }
@@ -205,9 +200,7 @@ private fun AzureTTSConfiguration(
         )
     }
 
-    // Voice Name
     var showVoicePicker by remember { mutableStateOf(false) }
-
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_voice_name)) },
         description = {
@@ -237,10 +230,8 @@ private fun AzureTTSConfiguration(
         )
     }
 
-    // Style (Emotion)
     var showStylePicker by remember { mutableStateOf(false) }
     val hasStyles = supportedStyles.size > 1
-
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_emotion)) },
         description = {
@@ -267,7 +258,6 @@ private fun AzureTTSConfiguration(
         )
     }
 
-    // Speed
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_speed)) },
         description = { Text(stringResource(R.string.setting_tts_page_speed_description)) }
@@ -290,10 +280,8 @@ private fun AzureTTSConfiguration(
             currentVoiceId = localVoiceName,
             onSelect = {
                 localVoiceName = it.id
-                // 切换语音后重置风格为默认
                 localStyle = "general"
                 showVoicePicker = false
-                // 强制立刻同步一次，确保预览生效
                 onValueChange(setting.copy(voiceName = it.id, style = "general"))
             },
             onDismiss = { showVoicePicker = false }
@@ -307,7 +295,6 @@ private fun AzureTTSConfiguration(
             onSelect = {
                 localStyle = it
                 showStylePicker = false
-                // 强制立刻同步一次，确保预览生效
                 onValueChange(setting.copy(style = it))
             },
             onDismiss = { showStylePicker = false }
@@ -325,11 +312,15 @@ private fun AzureVoicePicker(
 ) {
     val haptics = rememberPremiumHaptics()
     var searchQuery by remember { mutableStateOf("") }
-    var filterType by remember { mutableIntStateOf(0) } // 0: All, 1: Neural, 2: Standard
 
-    val filteredVoices by remember(voices, searchQuery, filterType) {
+    // 过滤器状态
+    var filterType by remember { mutableIntStateOf(0) } // 0: All, 1: Neural, 2: Standard
+    var filterGender by remember { mutableIntStateOf(0) } // 0: All, 1: Male, 2: Female
+
+    val filteredVoices by remember(voices, searchQuery, filterType, filterGender) {
         derivedStateOf {
             voices.filter { voice ->
+                // 1. 搜索过滤
                 val matchesSearch = if (searchQuery.isBlank()) true
                 else {
                     voice.name.contains(searchQuery, ignoreCase = true) ||
@@ -337,6 +328,7 @@ private fun AzureVoicePicker(
                     (voice.locale?.contains(searchQuery, ignoreCase = true) ?: false)
                 }
 
+                // 2. 类型过滤
                 val isNeural = voice.id.contains("Neural", ignoreCase = true)
                 val matchesType = when (filterType) {
                     1 -> isNeural
@@ -344,7 +336,15 @@ private fun AzureVoicePicker(
                     else -> true
                 }
 
-                matchesSearch && matchesType
+                // 3. 性别过滤
+                val voiceGender = voice.gender?.lowercase() ?: ""
+                val matchesGender = when (filterGender) {
+                    1 -> voiceGender == "male"
+                    2 -> voiceGender == "female"
+                    else -> true
+                }
+
+                matchesSearch && matchesType && matchesGender
             }
         }
     }
@@ -384,38 +384,47 @@ private fun AzureVoicePicker(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                // 过滤器矩阵
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    SegmentedButton(
-                        selected = filterType == 0,
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            filterType = 0
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
-                    ) {
-                        Text(stringResource(R.string.setting_tts_page_azure_filter_all), style = MaterialTheme.typography.labelSmall)
+                    // 品质维度
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = filterType == 0,
+                            onClick = { haptics.perform(HapticPattern.Pop); filterType = 0 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                        ) { Text(stringResource(R.string.setting_tts_page_azure_filter_all), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(
+                            selected = filterType == 1,
+                            onClick = { haptics.perform(HapticPattern.Pop); filterType = 1 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                        ) { Text(stringResource(R.string.setting_tts_page_azure_filter_neural), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(
+                            selected = filterType == 2,
+                            onClick = { haptics.perform(HapticPattern.Pop); filterType = 2 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) { Text(stringResource(R.string.setting_tts_page_azure_filter_standard), style = MaterialTheme.typography.labelSmall) }
                     }
-                    SegmentedButton(
-                        selected = filterType == 1,
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            filterType = 1
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
-                    ) {
-                        Text(stringResource(R.string.setting_tts_page_azure_filter_neural), style = MaterialTheme.typography.labelSmall)
-                    }
-                    SegmentedButton(
-                        selected = filterType == 2,
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            filterType = 2
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
-                    ) {
-                        Text(stringResource(R.string.setting_tts_page_azure_filter_standard), style = MaterialTheme.typography.labelSmall)
+
+                    // 性别维度
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = filterGender == 0,
+                            onClick = { haptics.perform(HapticPattern.Pop); filterGender = 0 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                        ) { Text(stringResource(R.string.setting_tts_page_azure_filter_gender_all), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(
+                            selected = filterGender == 1,
+                            onClick = { haptics.perform(HapticPattern.Pop); filterGender = 1 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                        ) { Text(stringResource(R.string.setting_tts_page_azure_filter_male), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(
+                            selected = filterGender == 2,
+                            onClick = { haptics.perform(HapticPattern.Pop); filterGender = 2 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) { Text(stringResource(R.string.setting_tts_page_azure_filter_female), style = MaterialTheme.typography.labelSmall) }
                     }
                 }
 
@@ -445,7 +454,7 @@ private fun AzureVoicePicker(
                             },
                             supportingContent = {
                                 Text(
-                                    text = "${voice.locale ?: ""} | ${if (isNeural) "Neural" else "Standard"} | ${voice.id}",
+                                    text = "${voice.locale ?: ""} | ${if (isNeural) "Neural" else "Standard"} | ${voice.gender ?: ""} | ${voice.id}",
                                     style = MaterialTheme.typography.labelSmall
                                 )
                             },
@@ -591,7 +600,6 @@ private fun OpenAITTSConfiguration(
     setting: TTSProviderSetting.OpenAI,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
-    // API Key
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -618,7 +626,6 @@ private fun OpenAITTSConfiguration(
         )
     }
 
-    // Base URL
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
@@ -633,7 +640,6 @@ private fun OpenAITTSConfiguration(
         )
     }
 
-    // Model
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
         description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
@@ -648,7 +654,6 @@ private fun OpenAITTSConfiguration(
         )
     }
 
-    // Voice
     var voiceExpanded by remember { mutableStateOf(false) }
     val voices = listOf("alloy", "echo", "fable", "onyx", "nova", "shimmer")
 
@@ -695,7 +700,6 @@ private fun MiniMaxTTSConfiguration(
     setting: TTSProviderSetting.MiniMax,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
-    // API Key
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -721,7 +725,6 @@ private fun MiniMaxTTSConfiguration(
         )
     }
 
-    // Base URL
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
@@ -736,7 +739,6 @@ private fun MiniMaxTTSConfiguration(
         )
     }
 
-    // Model
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
         description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
@@ -751,7 +753,6 @@ private fun MiniMaxTTSConfiguration(
         )
     }
 
-    // Voice ID
     var voiceIdExpanded by remember { mutableStateOf(false) }
     val voiceIds = listOf(
         "male-qn-qingse",
@@ -804,7 +805,6 @@ private fun MiniMaxTTSConfiguration(
         }
     }
 
-    // Emotion
     var emotionExpanded by remember { mutableStateOf(false) }
     val emotions = listOf("calm", "happy", "sad", "angry", "fearful", "disgusted", "surprised")
 
@@ -845,7 +845,6 @@ private fun MiniMaxTTSConfiguration(
         }
     }
 
-    // Speed
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_speed)) },
         description = { Text(stringResource(R.string.setting_tts_page_speed_description)) }
@@ -868,7 +867,6 @@ private fun GeminiTTSConfiguration(
     setting: TTSProviderSetting.Gemini,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
-    // API Key
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -895,7 +893,6 @@ private fun GeminiTTSConfiguration(
         )
     }
 
-    // Base URL
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
@@ -910,7 +907,6 @@ private fun GeminiTTSConfiguration(
         )
     }
 
-    // Model
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
         description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
@@ -925,7 +921,6 @@ private fun GeminiTTSConfiguration(
         )
     }
 
-    // Voice Name
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_voice_name)) },
         description = { Text(stringResource(R.string.setting_tts_page_voice_name_description)) }
@@ -946,7 +941,6 @@ private fun ElevenLabsTTSConfiguration(
     setting: TTSProviderSetting.ElevenLabs,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
-    // API Key
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -973,7 +967,6 @@ private fun ElevenLabsTTSConfiguration(
         )
     }
 
-    // Voice ID
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_voice_id)) },
         description = { Text(stringResource(R.string.setting_tts_page_voice_id_description)) }
@@ -988,7 +981,6 @@ private fun ElevenLabsTTSConfiguration(
         )
     }
 
-    // Model ID
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model_id)) },
         description = { Text(stringResource(R.string.setting_tts_page_model_id_description)) }
@@ -1025,7 +1017,6 @@ private fun SystemTTSConfiguration(
         }
     }
 
-    // Speech Rate
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_speech_rate)) },
         description = { Text(stringResource(R.string.setting_tts_page_speech_rate_description)) }
@@ -1042,7 +1033,6 @@ private fun SystemTTSConfiguration(
         )
     }
 
-    // Pitch
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_pitch)) },
         description = { Text(stringResource(R.string.setting_tts_page_pitch_description)) }
@@ -1059,7 +1049,6 @@ private fun SystemTTSConfiguration(
         )
     }
 
-    // Voice Name
     var voiceExpanded by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_voice_name)) },
