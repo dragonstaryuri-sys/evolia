@@ -1481,4 +1481,7 @@
   <string name="setting_tts_page_azure_filter_gender_all">所有性别</string>
   <string name="setting_tts_page_azure_filter_male">男声</string>
   <string name="setting_tts_page_azure_filter_female">女声</string>
+  <!-- MiniMax TTS 选择器 -->
+  <string name="setting_tts_page_minimax_voice_picker_title">选择 MiniMax 语音</string>
+  <string name="setting_tts_page_minimax_style_picker_title">选择 MiniMax 情感风格</string>
 </resources>

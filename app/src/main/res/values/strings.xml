@@ -1524,5 +1524,8 @@
   <string name="setting_tts_page_azure_filter_gender_all">All genders</string>
   <string name="setting_tts_page_azure_filter_male">Male voice</string>
   <string name="setting_tts_page_azure_filter_female">Female voice</string>
+  <!-- MiniMax TTS Picker -->
+  <string name="setting_tts_page_minimax_voice_picker_title">Select MiniMax Voice</string>
+  <string name="setting_tts_page_minimax_style_picker_title">Select MiniMax Style</string>
 
 </resources>

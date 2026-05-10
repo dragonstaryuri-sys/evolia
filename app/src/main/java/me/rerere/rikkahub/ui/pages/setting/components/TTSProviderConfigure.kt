@@ -302,6 +302,271 @@ private fun AzureTTSConfiguration(
     }
 }
 
+@Composable
+private fun MiniMaxTTSConfiguration(
+    setting: TTSProviderSetting.MiniMax,
+    onValueChange: (TTSProviderSetting) -> Unit
+) {
+    val tts = LocalTTSState.current
+    var voices by remember { mutableStateOf<List<TTSVoice>>(emptyList()) }
+    var isLoadingVoices by remember { mutableStateOf(false) }
+
+    var localApiKey by remember(setting.apiKey) { mutableStateOf(setting.apiKey) }
+    var localBaseUrl by remember(setting.baseUrl) { mutableStateOf(setting.baseUrl) }
+    var localModel by remember(setting.model) { mutableStateOf(setting.model) }
+    var localVoiceId by remember(setting.voiceId) { mutableStateOf(setting.voiceId) }
+    var localEmotion by remember(setting.emotion) { mutableStateOf(setting.emotion) }
+    var localSpeed by remember(setting.speed) { mutableStateOf(setting.speed) }
+
+    val currentVoice = remember(localVoiceId, voices) { voices.find { it.id == localVoiceId } }
+    val supportedStyles = remember(currentVoice) { currentVoice?.styles ?: listOf("calm") }
+
+    LaunchedEffect(localApiKey, localBaseUrl, localModel, localVoiceId, localEmotion, localSpeed) {
+        if (localApiKey != setting.apiKey || localBaseUrl != setting.baseUrl ||
+            localModel != setting.model || localVoiceId != setting.voiceId ||
+            localEmotion != setting.emotion || localSpeed != setting.speed) {
+            delay(500)
+            onValueChange(setting.copy(
+                apiKey = localApiKey,
+                baseUrl = localBaseUrl,
+                model = localModel,
+                voiceId = localVoiceId,
+                emotion = localEmotion,
+                speed = localSpeed
+            ))
+        }
+    }
+
+    LaunchedEffect(localApiKey) {
+        if (localApiKey.isNotBlank()) {
+            isLoadingVoices = true
+            try {
+                voices = tts.getVoices(setting.copy(apiKey = localApiKey))
+            } catch (e: Exception) {
+                Log.e(TAG, "MiniMax: Fetch voices failed", e)
+            } finally {
+                isLoadingVoices = false
+            }
+        }
+    }
+
+    var apiKeyVisible by remember { mutableStateOf(false) }
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
+        description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
+    ) {
+        OutlinedTextField(
+            value = localApiKey,
+            onValueChange = { localApiKey = it.trim() },
+            modifier = Modifier.fillMaxWidth().onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
+            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                    Icon(imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility, contentDescription = null)
+                }
+            }
+        )
+    }
+
+    FormItem(label = { Text(stringResource(R.string.setting_tts_page_base_url)) }) {
+        OutlinedTextField(value = localBaseUrl, onValueChange = { localBaseUrl = it }, modifier = Modifier.fillMaxWidth())
+    }
+
+    FormItem(label = { Text(stringResource(R.string.setting_tts_page_model)) }) {
+        OutlinedTextField(value = localModel, onValueChange = { localModel = it }, modifier = Modifier.fillMaxWidth())
+    }
+
+    var showVoicePicker by remember { mutableStateOf(false) }
+    FormItem(label = { Text(stringResource(R.string.setting_tts_page_voice_id)) }) {
+        OutlinedTextField(
+            value = localVoiceId,
+            onValueChange = { localVoiceId = it },
+            modifier = Modifier.fillMaxWidth(),
+            trailingIcon = {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
+                    if (isLoadingVoices) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    IconButton(onClick = { showVoicePicker = true }) { Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Voice") }
+                }
+            }
+        )
+    }
+
+    var showStylePicker by remember { mutableStateOf(false) }
+    val hasStyles = supportedStyles.size > 1
+    FormItem(label = { Text(stringResource(R.string.setting_tts_page_emotion)) }) {
+        OutlinedTextField(
+            value = if (hasStyles) localEmotion else "calm",
+            onValueChange = { if (hasStyles) localEmotion = it },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = hasStyles,
+            trailingIcon = {
+                if (hasStyles) {
+                    IconButton(onClick = { showStylePicker = true }) { Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style") }
+                }
+            }
+        )
+    }
+
+    FormItem(label = { Text(stringResource(R.string.setting_tts_page_speed)) }) {
+        OutlinedNumberInput(
+            value = localSpeed,
+            onValueChange = { if (it in 0.25f..4.0f) localSpeed = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = stringResource(R.string.setting_tts_page_speed)
+        )
+    }
+
+    if (showVoicePicker) {
+        MiniMaxVoicePicker(
+            voices = voices,
+            currentVoiceId = localVoiceId,
+            onSelect = {
+                localVoiceId = it.id
+                localEmotion = it.styles.firstOrNull() ?: "calm"
+                showVoicePicker = false
+                onValueChange(setting.copy(voiceId = it.id, emotion = localEmotion))
+            },
+            onDismiss = { showVoicePicker = false }
+        )
+    }
+
+    if (showStylePicker) {
+        MiniMaxStylePicker(
+            currentStyle = localEmotion,
+            supportedStyles = supportedStyles,
+            onSelect = {
+                localEmotion = it
+                showStylePicker = false
+                onValueChange(setting.copy(emotion = it))
+            },
+            onDismiss = { showStylePicker = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MiniMaxVoicePicker(
+    voices: List<TTSVoice>,
+    currentVoiceId: String,
+    onSelect: (TTSVoice) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptics = rememberPremiumHaptics()
+    var searchQuery by remember { mutableStateOf("") }
+    var filterGender by remember { mutableIntStateOf(0) } // 0: All, 1: Male, 2: Female
+
+    val filteredVoices by remember(voices, searchQuery, filterGender) {
+        derivedStateOf {
+            voices.filter { voice ->
+                val matchesSearch = if (searchQuery.isBlank()) true
+                else voice.name.contains(searchQuery, ignoreCase = true) || voice.id.contains(searchQuery, ignoreCase = true)
+
+                val voiceGender = voice.gender?.lowercase() ?: ""
+                val matchesGender = when (filterGender) {
+                    1 -> voiceGender == "male"
+                    2 -> voiceGender == "female"
+                    else -> true
+                }
+                matchesSearch && matchesGender
+            }
+        }
+    }
+
+    BasicAlertDialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.85f), shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surface, tonalElevation = 6.dp) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = stringResource(R.string.setting_tts_page_minimax_voice_picker_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp, start = 8.dp))
+                OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), placeholder = { Text(stringResource(R.string.setting_tts_page_azure_voice_picker_search_placeholder)) }, leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) }, singleLine = true, shape = MaterialTheme.shapes.medium)
+                Spacer(Modifier.height(12.dp))
+
+                // 维度矩阵
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(selected = filterGender == 0, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 0 }, shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)) { Text(stringResource(R.string.setting_tts_page_azure_filter_gender_all), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(selected = filterGender == 1, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 1 }, shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)) { Text(stringResource(R.string.setting_tts_page_azure_filter_male), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(selected = filterGender == 2, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 2 }, shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)) { Text(stringResource(R.string.setting_tts_page_azure_filter_female), style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(filteredVoices) { voice ->
+                        val isSelected = voice.id == currentVoiceId
+                        ListItem(
+                            modifier = Modifier.clickable { haptics.perform(HapticPattern.Pop); onSelect(voice) },
+                            headlineContent = { Text(voice.name, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            supportingContent = { Text("${voice.gender ?: ""} | ${voice.id} | ${voice.description ?: ""}", style = MaterialTheme.typography.labelSmall) },
+                            trailingContent = if (isSelected) { { Icon(Icons.Rounded.Visibility, tint = MaterialTheme.colorScheme.primary, contentDescription = null) } } else null,
+                            colors = ListItemDefaults.colors(containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface)
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MiniMaxStylePicker(
+    currentStyle: String,
+    supportedStyles: List<String>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val haptics = rememberPremiumHaptics()
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredStyles by remember(searchQuery, supportedStyles) {
+        derivedStateOf {
+            if (searchQuery.isBlank()) supportedStyles
+            else supportedStyles.filter { it.contains(searchQuery, ignoreCase = true) }
+        }
+    }
+
+    BasicAlertDialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxWidth(0.9f).fillMaxHeight(0.85f), shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surface, tonalElevation = 6.dp) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(text = stringResource(R.string.setting_tts_page_minimax_style_picker_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 16.dp, start = 8.dp))
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    placeholder = { Text(stringResource(R.string.setting_tts_page_azure_style_picker_search_placeholder)) },
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, contentDescription = null) } }
+                    } else null,
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(filteredStyles) { style ->
+                        val isSelected = style == currentStyle
+                        ListItem(
+                            modifier = Modifier.clickable { haptics.perform(HapticPattern.Pop); onSelect(style) },
+                            headlineContent = { Text(style, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            trailingContent = if (isSelected) { { Icon(Icons.Rounded.Visibility, tint = MaterialTheme.colorScheme.primary, contentDescription = null) } } else null,
+                            colors = ListItemDefaults.colors(containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface)
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f) )
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AzureVoicePicker(
@@ -692,173 +957,6 @@ private fun OpenAITTSConfiguration(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MiniMaxTTSConfiguration(
-    setting: TTSProviderSetting.MiniMax,
-    onValueChange: (TTSProviderSetting) -> Unit
-) {
-    var apiKeyVisible by remember { mutableStateOf(false) }
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
-        description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
-    ) {
-        OutlinedTextField(
-            value = setting.apiKey,
-            onValueChange = { newApiKey ->
-                onValueChange(setting.copy(apiKey = newApiKey))
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
-            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                    Icon(
-                        imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                        contentDescription = "Toggle Visibility"
-                    )
-                }
-            }
-        )
-    }
-
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
-        description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
-    ) {
-        OutlinedTextField(
-            value = setting.baseUrl,
-            onValueChange = { newBaseUrl ->
-                onValueChange(setting.copy(baseUrl = newBaseUrl))
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
-        )
-    }
-
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_model)) },
-        description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
-    ) {
-        OutlinedTextField(
-            value = setting.model,
-            onValueChange = { newModel ->
-                onValueChange(setting.copy(model = newModel))
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("speech-2.5-hd-preview") }
-        )
-    }
-
-    var voiceIdExpanded by remember { mutableStateOf(false) }
-    val voiceIds = listOf(
-        "male-qn-qingse",
-        "male-qn-jingying",
-        "male-qn-badao",
-        "male-qn-daxuesheng",
-        "female-shaonv",
-        "female-yujie",
-        "female-chengshu",
-        "female-tianmei",
-        "audiobook_male_1",
-        "audiobook_female_1",
-        "cartoon_pig"
-    )
-
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_voice_id)) },
-        description = { Text(stringResource(R.string.setting_tts_page_voice_id_description)) }
-    ) {
-        ExposedDropdownMenuBox(
-            expanded = voiceIdExpanded,
-            onExpandedChange = { voiceIdExpanded = !voiceIdExpanded }
-        ) {
-            OutlinedTextField(
-                value = setting.voiceId,
-                onValueChange = { newVoiceId ->
-                    onValueChange(setting.copy(voiceId = newVoiceId))
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceIdExpanded)
-                }
-            )
-            ExposedDropdownMenu(
-                expanded = voiceIdExpanded,
-                onDismissRequest = { voiceIdExpanded = false }
-            ) {
-                voiceIds.forEach { voiceId ->
-                    DropdownMenuItem(
-                        text = { Text(voiceId) },
-                        onClick = {
-                            voiceIdExpanded = false
-                            onValueChange(setting.copy(voiceId = voiceId))
-                        }
-                    )
-                }
-            }
-        }
-    }
-
-    var emotionExpanded by remember { mutableStateOf(false) }
-    val emotions = listOf("calm", "happy", "sad", "angry", "fearful", "disgusted", "surprised")
-
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_emotion)) },
-        description = { Text(stringResource(R.string.setting_tts_page_emotion_description)) }
-    ) {
-        ExposedDropdownMenuBox(
-            expanded = emotionExpanded,
-            onExpandedChange = { emotionExpanded = !emotionExpanded }
-        ) {
-            OutlinedTextField(
-                value = setting.emotion,
-                onValueChange = { newEmotion ->
-                    onValueChange(setting.copy(emotion = newEmotion))
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = emotionExpanded)
-                }
-            )
-            ExposedDropdownMenu(
-                expanded = emotionExpanded,
-                onDismissRequest = { emotionExpanded = false }
-            ) {
-                emotions.forEach { emotion ->
-                    DropdownMenuItem(
-                        text = { Text(emotion) },
-                        onClick = {
-                            emotionExpanded = false
-                            onValueChange(setting.copy(emotion = emotion))
-                        }
-                    )
-                }
-            }
-        }
-    }
-
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_speed)) },
-        description = { Text(stringResource(R.string.setting_tts_page_speed_description)) }
-    ) {
-        OutlinedNumberInput(
-            value = setting.speed,
-            onValueChange = { newSpeed ->
-                if (newSpeed in 0.25f..4.0f) {
-                    onValueChange(setting.copy(speed = newSpeed))
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = stringResource(R.string.setting_tts_page_speed)
-        )
     }
 }
 

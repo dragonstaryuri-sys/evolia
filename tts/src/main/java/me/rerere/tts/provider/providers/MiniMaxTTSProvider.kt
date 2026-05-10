@@ -13,6 +13,7 @@ import me.rerere.common.http.sseFlow
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
+import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSProvider
 import me.rerere.tts.provider.TTSProviderSetting
 import okhttp3.MediaType.Companion.toMediaType
@@ -134,6 +135,28 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
                 }
             }
         }
+    }
+
+    override suspend fun getVoices(
+        context: Context,
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<TTSVoice> {
+        // MiniMax 官方目前没有提供公开的系统语音列表 API，这里返回预定义的精品语音列表
+        val commonEmotions = listOf("calm", "happy", "sad", "angry", "fearful", "disgusted", "surprised")
+
+        return listOf(
+            TTSVoice("female-shaonv", "少女 (Shaonv)", "zh-CN", "Female", "甜美少女音", commonEmotions),
+            TTSVoice("female-yujie", "御姐 (Yujie)", "zh-CN", "Female", "成熟女性音", commonEmotions),
+            TTSVoice("female-chengshu", "成熟女性 (Chengshu)", "zh-CN", "Female", "知性女性音", commonEmotions),
+            TTSVoice("female-tianmei", "甜美女性 (Tianmei)", "zh-CN", "Female", "温柔甜美音", commonEmotions),
+            TTSVoice("male-qn-qingse", "青涩青少 (Qingse)", "zh-CN", "Male", "阳光少年音", commonEmotions),
+            TTSVoice("male-qn-jingying", "精英青年 (Jingying)", "zh-CN", "Male", "稳重青年音", commonEmotions),
+            TTSVoice("male-qn-badao", "霸道总裁 (Badao)", "zh-CN", "Male", "磁性男声", commonEmotions),
+            TTSVoice("male-qn-daxuesheng", "大学生 (Daxuesheng)", "zh-CN", "Male", "清爽男声", commonEmotions),
+            TTSVoice("audiobook_male_1", "叙事男声 (Audiobook)", "zh-CN", "Male", "适合朗读", commonEmotions),
+            TTSVoice("audiobook_female_1", "叙事女声 (Audiobook)", "zh-CN", "Female", "适合朗读", commonEmotions),
+            TTSVoice("cartoon_pig", "猪小屁 (Cartoon)", "zh-CN", "Male", "卡通音", listOf("calm"))
+        )
     }
 }
 
