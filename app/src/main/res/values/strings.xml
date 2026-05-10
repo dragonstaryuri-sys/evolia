@@ -1267,7 +1267,7 @@
   <string name="assistant_memory_enable_consolidation_desc">Periodically summarize conversations into episodic memories</string>
   <string name="assistant_memory_consolidation_delay_title">Consolidation Delay</string>
   <string name="assistant_memory_consolidation_delay_value">%d minutes</string>
-  <string name="assistant_memory_last_consolidation">Last run: %s</string>
+  <string name="assistant_memory_last_consolidation">Last update: %s</string>
   <string name="assistant_memory_consolidation_result">Result: %s</string>
   <string name="assistant_memory_update_masterfile">Update master file</string>
   <string name="assistant_memory_consolidate_now">Consolidate Now</string>

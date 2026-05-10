@@ -162,14 +162,16 @@ class MemoryConsolidationWorker(
             if (increment < 4) {
                 updateLastResult(
                     assistantId = assistant.id,
-                    result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data)
+                    result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data),
+                    wasUpdated = false
                 )
                 return false
             }
         } else if (messageCount < 4) {
             updateLastResult(
                 assistantId = assistant.id,
-                result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data)
+                result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data),
+                wasUpdated = false
             )
             return false
         }
@@ -236,13 +238,15 @@ class MemoryConsolidationWorker(
 
                 updateLastResult(
                     assistantId = assistant.id,
-                    result = "Consolidation Successful"
+                    result = "Consolidation Successful",
+                    wasUpdated = true
                 )
                 true
             } else {
                 updateLastResult(
                     assistantId = assistant.id,
-                    result = "Consolidation Failed: Empty Summary"
+                    result = "Consolidation Failed: Empty Summary",
+                    wasUpdated = false
                 )
                 false
             }
@@ -250,7 +254,8 @@ class MemoryConsolidationWorker(
             Log.e(TAG, "Manual consolidation failed", e)
             updateLastResult(
                 assistantId = assistant.id,
-                result = "Consolidation Failed: ${e.message}"
+                result = "Consolidation Failed: ${e.message}",
+                wasUpdated = false
             )
             false
         }
@@ -437,7 +442,7 @@ class MemoryConsolidationWorker(
             assistants = finalSettings.assistants.map { assistantItem ->
                 if (currentAssistant.id == assistantItem.id) {
                     assistantItem.copy(
-                        lastConsolidationTime = now,
+                        lastConsolidationTime = if (episodicSuccessCount > 0) now else assistantItem.lastConsolidationTime,
                         lastConsolidationResult = when {
                             updatedMasterContent != null -> "Master Memory updated manually"
                             episodicSuccessCount > 0 -> "Consolidated $episodicSuccessCount items automatically"
@@ -520,13 +525,14 @@ class MemoryConsolidationWorker(
         }
     }
 
-    private suspend fun updateLastResult(assistantId: Uuid, result: String) {
+    private suspend fun updateLastResult(assistantId: Uuid, result: String, wasUpdated: Boolean) {
         val settings = settingsStore.settingsFlow.first()
+        val now = System.currentTimeMillis()
         val updated = settings.copy(
             assistants = settings.assistants.map { assistantItem ->
                 if (assistantItem.id == assistantId) {
                     assistantItem.copy(
-                        lastConsolidationTime = System.currentTimeMillis(),
+                        lastConsolidationTime = if (wasUpdated) now else assistantItem.lastConsolidationTime,
                         lastConsolidationResult = result
                     )
                 } else {
@@ -634,7 +640,7 @@ class MemoryConsolidationWorker(
             ${existingArchive.ifBlank { "(Empty)" }}
 
             # New Conversation Context:
-            $newContext
+            ${newContext}
 
             Please provide the fully updated Memory Archive incorporating all relevant new information.
             Note: Only provide the final archive content. Do not include your thinking process in the output.

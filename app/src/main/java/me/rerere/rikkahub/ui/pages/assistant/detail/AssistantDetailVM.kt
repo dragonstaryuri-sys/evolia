@@ -313,7 +313,7 @@ class AssistantDetailVM(
                     assistants = currentSettings.assistants.map {
                         if (it.id == currentAssistant.id) {
                             it.copy(
-                                lastConsolidationTime = now,
+                                lastConsolidationTime = if (episodicSuccessCount > 0) now else it.lastConsolidationTime,
                                 lastConsolidationResult = resultDesc,
                                 masterMemoryContent = updatedMasterContent ?: it.masterMemoryContent,
                                 lastMasterMemoryUpdate = if (updatedMasterContent != null) now else it.lastMasterMemoryUpdate
