@@ -18,6 +18,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -110,13 +112,14 @@ private fun getMemoryMode(assistant: Assistant): MemoryMode {
         !assistant.enableMemory -> MemoryMode.OFF
         assistant.enableMemoryConsolidation -> MemoryMode.ADVANCED
         assistant.useRagMemoryRetrieval -> {
-            when(assistant.memoryRetrievalMode) {
+            when (assistant.memoryRetrievalMode) {
                 MemoryRetrievalMode.HYBRID -> MemoryMode.HYBRID
                 MemoryRetrievalMode.KEYWORD -> MemoryMode.KEYWORD
                 MemoryRetrievalMode.SEMANTIC -> MemoryMode.SEMANTIC
                 MemoryRetrievalMode.OFF -> MemoryMode.BASIC
             }
         }
+
         assistant.enableRecentChatsReference -> MemoryMode.BASIC_RECENT
         else -> MemoryMode.BASIC
     }
@@ -174,7 +177,7 @@ fun AssistantMemorySettings(
         mutableFloatStateOf(assistant.detailMemoryThreshold.toFloat())
     }
 
-    // Embedding progress dialog
+    // [弹窗逻辑保持原样...]
     if (embeddingProgress != null && embeddingProgress.isRunning) {
         AlertDialog(
             onDismissRequest = { },
@@ -192,7 +195,6 @@ fun AssistantMemorySettings(
         )
     }
 
-    // Optimization progress dialog
     if (isOptimizing) {
         AlertDialog(
             onDismissRequest = { },
@@ -211,7 +213,6 @@ fun AssistantMemorySettings(
         )
     }
 
-    // Consolidation progress dialog
     if (isConsolidating) {
         AlertDialog(
             onDismissRequest = { assistantDetailVM.cancelConsolidation() },
@@ -235,7 +236,6 @@ fun AssistantMemorySettings(
         )
     }
 
-    // Memory edit dialog
     memoryDialogState.EditStateContent { memory, update ->
         AlertDialog(
             onDismissRequest = { memoryDialogState.dismiss() },
@@ -266,267 +266,159 @@ fun AssistantMemorySettings(
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
 
-    // Get all models for summarizer picker
-    val providers by assistantDetailVM.providers.collectAsStateWithLifecycle()
-    val allModels = remember(providers) { providers.flatMap { it.models } }
-    val selectedModel = allModels.find { it.id == assistant.summarizerModelId }
-
-    Column(
+    // 🌟 重点优化：LazyColumn 结构开始
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState()),
+            .imePadding(),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Mode Indicator
-            MemoryModeIndicator(mode = currentMode)
+        // 1. 顶部模式指示器
+        item { MemoryModeIndicator(mode = currentMode) }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // SETTINGS GROUP
-            // ═══════════════════════════════════════════════════════════════════
-            SettingsGroupHeader(title = stringResource(R.string.assistant_memory_group_settings))
+        // 2. 基础设置组
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                SettingsGroupHeader(title = stringResource(R.string.assistant_memory_group_settings))
 
-            Column(
-                modifier = Modifier.clip(RoundedCornerShape(24.dp)),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Master Toggle - Enable Memory
-                MemorySettingsItem(
-                    title = stringResource(R.string.assistant_memory_enable_title),
-                    subtitle = stringResource(R.string.assistant_memory_enable_desc),
-                    position = if (!assistant.enableMemory) "ONLY" else "FIRST",
-                    trailing = {
-                        HapticSwitch(
-                            checked = assistant.enableMemory,
-                            onCheckedChange = { enabled ->
-                                if (!enabled) {
-                                    onUpdateAssistant(assistant.copy(
-                                        enableMemory = false,
-                                        enableMasterMemory = false
-                                    ))
-                                } else {
-                                    onUpdateAssistant(assistant.copy(enableMemory = true))
-                                }
-                            }
-                        )
-                    }
-                )
-
-                // 🌟 Retrieval Strategy Picker (Replaces old RAG Switch)
-                AnimatedVisibility(
-                    visible = assistant.enableMemory,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
+                Column(
+                    modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    var showStrategyMenu by remember { mutableStateOf(false) }
-                    val currentStrategyLabel = when {
-                        !assistant.useRagMemoryRetrieval -> stringResource(R.string.memory_mode_off)
-                        else -> when(assistant.memoryRetrievalMode) {
-                            MemoryRetrievalMode.HYBRID -> stringResource(R.string.memory_mode_hybrid)
-                            MemoryRetrievalMode.KEYWORD -> stringResource(R.string.memory_mode_keyword)
-                            MemoryRetrievalMode.SEMANTIC -> stringResource(R.string.memory_mode_semantic)
-                            MemoryRetrievalMode.OFF -> stringResource(R.string.memory_mode_off)
-                        }
-                    }
-
+                    // 主开关
                     MemorySettingsItem(
-                        title = stringResource(R.string.memory_retrieval_strategy_title),
-                        subtitle = stringResource(R.string.memory_retrieval_strategy_desc),
-                        position = "MIDDLE",
-                        onClick = { showStrategyMenu = true },
-                        trailing = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = currentStrategyLabel,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Icon(Icons.Rounded.ArrowDropDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                                DropdownMenu(
-                                    expanded = showStrategyMenu,
-                                    onDismissRequest = { showStrategyMenu = false }
-                                ) {
-                                    // Option: Off
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.memory_mode_off)) },
-                                        onClick = {
-                                            showStrategyMenu = false
-                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = false, enableMemoryConsolidation = false))
-                                        },
-                                        leadingIcon = { if(!assistant.useRagMemoryRetrieval) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                    // Option: Hybrid
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.memory_mode_hybrid)) },
-                                        onClick = {
-                                            showStrategyMenu = false
-                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.HYBRID))
-                                        },
-                                        leadingIcon = { if(assistant.useRagMemoryRetrieval && assistant.memoryRetrievalMode == MemoryRetrievalMode.HYBRID) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                    // Option: Keyword
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.memory_mode_keyword)) },
-                                        onClick = {
-                                            showStrategyMenu = false
-                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.KEYWORD))
-                                        },
-                                        leadingIcon = { if(assistant.useRagMemoryRetrieval && assistant.memoryRetrievalMode == MemoryRetrievalMode.KEYWORD) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                    // Option: Semantic
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.memory_mode_semantic)) },
-                                        onClick = {
-                                            showStrategyMenu = false
-                                            onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.SEMANTIC))
-                                        },
-                                        leadingIcon = { if(assistant.useRagMemoryRetrieval && assistant.memoryRetrievalMode == MemoryRetrievalMode.SEMANTIC) Icon(Icons.Rounded.Checklist, null, tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                }
-                            }
-                        }
-                    )
-                }
-
-                // Recent Chats Toggle
-                AnimatedVisibility(
-                    visible = assistant.enableMemory,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    val isLockedByConsolidation = assistant.enableMemoryConsolidation
-
-                    MemorySettingsItem(
-                        title = stringResource(R.string.assistant_page_recent_chats),
-                        subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
-                        position = "MIDDLE",
-                        trailing = {
-                            val toggleAlpha by animateFloatAsState(
-                                targetValue = if (isLockedByConsolidation) 0.75f else 1f,
-                                animationSpec = spring(stiffness = 300f),
-                                label = "toggle_alpha"
-                            )
-                            Box(modifier = Modifier.graphicsLayer { alpha = toggleAlpha }) {
-                                HapticSwitch(
-                                    checked = assistant.enableRecentChatsReference || isLockedByConsolidation,
-                                    onCheckedChange = {
-                                        if (!isLockedByConsolidation) {
-                                            onUpdateAssistant(assistant.copy(enableRecentChatsReference = it))
-                                        }
-                                    },
-                                    enabled = !isLockedByConsolidation
-                                )
-                            }
-                        }
-                    )
-                }
-
-                // Memory Consolidation Toggle (requires Retrieval enabled)
-                AnimatedVisibility(
-                    visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    MemorySettingsItem(
-                        title = stringResource(R.string.assistant_memory_enable_consolidation_title),
-                        subtitle = stringResource(R.string.assistant_memory_enable_consolidation_desc),
-                        position = if (assistant.enableMemoryConsolidation) "MIDDLE" else "LAST",
+                        title = stringResource(R.string.assistant_memory_enable_title),
+                        subtitle = stringResource(R.string.assistant_memory_enable_desc),
+                        position = if (!assistant.enableMemory) "ONLY" else "FIRST",
                         trailing = {
                             HapticSwitch(
-                                checked = assistant.enableMemoryConsolidation,
+                                checked = assistant.enableMemory,
                                 onCheckedChange = { enabled ->
                                     if (!enabled) {
-                                        onUpdateAssistant(assistant.copy(
-                                            enableMemoryConsolidation = false,
-                                            enableDetailMemory = false // 同时关闭细节记忆
-                                        ))
+                                        onUpdateAssistant(assistant.copy(enableMemory = false, enableMasterMemory = false))
                                     } else {
-                                        onUpdateAssistant(assistant.copy(
-                                            enableMemoryConsolidation = true,
-                                            enableRecentChatsReference = true
-                                        ))
+                                        onUpdateAssistant(assistant.copy(enableMemory = true))
                                     }
                                 }
                             )
                         }
                     )
-                }
 
-                // 🌟 Detail Memory Toggle & Slider
-                AnimatedVisibility(
-                    visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && assistant.enableMemoryConsolidation,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    Column {
-                        MemorySettingsItem(
-                            title = stringResource(R.string.detail_memory_title),
-                            subtitle = stringResource(R.string.detail_memory_desc),
-                            position = if (assistant.enableDetailMemory) "MIDDLE" else "LAST",
-                            trailing = {
-                                HapticSwitch(
-                                    checked = assistant.enableDetailMemory,
-                                    onCheckedChange = { onUpdateAssistant(assistant.copy(enableDetailMemory = it)) }
-                                )
+                    // 记忆功能展开后的子项
+                    AnimatedVisibility(
+                        visible = assistant.enableMemory,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // 检索策略 Picker
+                            var showStrategyMenu by remember { mutableStateOf(false) }
+                            val currentStrategyLabel = when {
+                                !assistant.useRagMemoryRetrieval -> stringResource(R.string.memory_mode_off)
+                                else -> when(assistant.memoryRetrievalMode) {
+                                    MemoryRetrievalMode.HYBRID -> stringResource(R.string.memory_mode_hybrid)
+                                    MemoryRetrievalMode.KEYWORD -> stringResource(R.string.memory_mode_keyword)
+                                    MemoryRetrievalMode.SEMANTIC -> stringResource(R.string.memory_mode_semantic)
+                                    MemoryRetrievalMode.OFF -> stringResource(R.string.memory_mode_off)
+                                }
                             }
-                        )
+                            MemorySettingsItem(
+                                title = stringResource(R.string.memory_retrieval_strategy_title),
+                                subtitle = stringResource(R.string.memory_retrieval_strategy_desc),
+                                position = "MIDDLE",
+                                onClick = { showStrategyMenu = true },
+                                trailing = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = currentStrategyLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                        Icon(Icons.Rounded.ArrowDropDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        DropdownMenu(expanded = showStrategyMenu, onDismissRequest = { showStrategyMenu = false }) {
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_off)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = false, enableMemoryConsolidation = false)) })
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_hybrid)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.HYBRID)) })
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_keyword)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.KEYWORD)) })
+                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_semantic)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.SEMANTIC)) })
+                                        }
+                                    }
+                                }
+                            )
 
-                        AnimatedVisibility(visible = assistant.enableDetailMemory) {
-                            Surface(
-                                color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                    Text(
-                                        text = stringResource(R.string.detail_memory_hint),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(bottom = 8.dp)
+                            // 最近聊天开关
+                            val isLockedByConsolidation = assistant.enableMemoryConsolidation
+                            MemorySettingsItem(
+                                title = stringResource(R.string.assistant_page_recent_chats),
+                                subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
+                                position = "MIDDLE",
+                                trailing = {
+                                    HapticSwitch(
+                                        checked = assistant.enableRecentChatsReference || isLockedByConsolidation,
+                                        onCheckedChange = { if (!isLockedByConsolidation) onUpdateAssistant(assistant.copy(enableRecentChatsReference = it)) },
+                                        enabled = !isLockedByConsolidation
                                     )
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.detail_memory_threshold),
-                                            style = MaterialTheme.typography.titleSmall
-                                        )
-                                        Text(
-                                            text = localDetailThreshold.toInt().toString(),
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.primary
+                                }
+                            )
+
+                            // 记忆整合开关
+                            if (assistant.useRagMemoryRetrieval) {
+                                MemorySettingsItem(
+                                    title = stringResource(R.string.assistant_memory_enable_consolidation_title),
+                                    subtitle = stringResource(R.string.assistant_memory_enable_consolidation_desc),
+                                    position = if (assistant.enableMemoryConsolidation) "MIDDLE" else "LAST",
+                                    trailing = {
+                                        HapticSwitch(
+                                            checked = assistant.enableMemoryConsolidation,
+                                            onCheckedChange = { enabled ->
+                                                if (!enabled) {
+                                                    onUpdateAssistant(assistant.copy(enableMemoryConsolidation = false, enableDetailMemory = false))
+                                                } else {
+                                                    onUpdateAssistant(assistant.copy(enableMemoryConsolidation = true, enableRecentChatsReference = true))
+                                                }
+                                            }
                                         )
                                     }
-                                    Slider(
-                                        value = localDetailThreshold,
-                                        onValueChange = {
-                                            if (it != localDetailThreshold) {
-                                                localDetailThreshold = it
-                                                haptics.perform(HapticPattern.Pop)
-                                            }
-                                        },
-                                        onValueChangeFinished = {
-                                            onUpdateAssistant(assistant.copy(detailMemoryThreshold = localDetailThreshold.toInt()))
-                                        },
-                                        valueRange = 10f..50f,
-                                        steps = 3
+                                )
+                            }
+
+                            // 细节记忆
+                            if (assistant.useRagMemoryRetrieval && assistant.enableMemoryConsolidation) {
+                                Column {
+                                    MemorySettingsItem(
+                                        title = stringResource(R.string.detail_memory_title),
+                                        subtitle = stringResource(R.string.detail_memory_desc),
+                                        position = if (assistant.enableDetailMemory) "MIDDLE" else "LAST",
+                                        trailing = {
+                                            HapticSwitch(checked = assistant.enableDetailMemory, onCheckedChange = { onUpdateAssistant(assistant.copy(enableDetailMemory = it)) })
+                                        }
                                     )
+                                    AnimatedVisibility(visible = assistant.enableDetailMemory) {
+                                        Surface(
+                                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                                Text(text = stringResource(R.string.detail_memory_hint), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(text = stringResource(R.string.detail_memory_threshold), style = MaterialTheme.typography.titleSmall)
+                                                    Text(text = localDetailThreshold.toInt().toString(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                                }
+                                                Slider(
+                                                    value = localDetailThreshold,
+                                                    onValueChange = { if (it != localDetailThreshold) { localDetailThreshold = it; haptics.perform(HapticPattern.Pop) } },
+                                                    onValueChangeFinished = { onUpdateAssistant(assistant.copy(detailMemoryThreshold = localDetailThreshold.toInt())) },
+                                                    valueRange = 10f..50f, steps = 3
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // RAG SETTINGS (when any retrieval is enabled)
-            // ═══════════════════════════════════════════════════════════════════
+        // 3. RAG 设置卡片
+        item {
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
                 enter = fadeIn() + expandVertically(),
@@ -537,10 +429,10 @@ fun AssistantMemorySettings(
                     RagSettingsCard(assistant = assistant, onUpdateAssistant = onUpdateAssistant)
                 }
             }
+        }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // MASTER MEMORY
-            // ═══════════════════════════════════════════════════════════════════
+        // 4. 主记忆卡片
+        item {
             AnimatedVisibility(
                 visible = assistant.enableMemory,
                 enter = fadeIn() + expandVertically(),
@@ -555,10 +447,10 @@ fun AssistantMemorySettings(
                     )
                 }
             }
+        }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // CONSOLIDATION SETTINGS
-            // ═══════════════════════════════════════════════════════════════════
+        // 5. 整合设置卡片
+        item {
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
                 enter = fadeIn() + expandVertically(),
@@ -566,7 +458,6 @@ fun AssistantMemorySettings(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     SettingsGroupHeader(title = stringResource(R.string.assistant_memory_group_consolidation))
-
                     ConsolidationSettingsCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
@@ -576,11 +467,10 @@ fun AssistantMemorySettings(
                     )
                 }
             }
+        }
 
-
-            // ═══════════════════════════════════════════════════════════════════
-            // MEMORY STATISTICS
-            // ═══════════════════════════════════════════════════════════════════
+        // 6. 统计卡片
+        item {
             AnimatedVisibility(
                 visible = assistant.enableMemory,
                 enter = fadeIn() + expandVertically(),
@@ -592,10 +482,10 @@ fun AssistantMemorySettings(
                     estimatedMemoryCapacity = estimatedMemoryCapacity
                 )
             }
+        }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // MANAGE MEMORIES
-            // ═══════════════════════════════════════════════════════════════════
+        // 7. 记忆管理区域
+        item {
             AnimatedVisibility(
                 visible = assistant.enableMemory,
                 enter = fadeIn() + expandVertically(),
@@ -618,10 +508,10 @@ fun AssistantMemorySettings(
                     scrollToMemoryId = scrollToMemoryId
                 )
             }
+        }
 
-            // ═══════════════════════════════════════════════════════════════════
-            // MEMORY DEBUGGER
-            // ═══════════════════════════════════════════════════════════════════
+        // 8. 调试器
+        item {
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
                 enter = fadeIn() + expandVertically(),
@@ -630,10 +520,7 @@ fun AssistantMemorySettings(
                 if (onTestRetrieval != null) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         SettingsGroupHeader(title = stringResource(R.string.memory_debugger_group))
-                        MemoryDebugger(
-                            onTestRetrieval = onTestRetrieval,
-                            retrievalResults = retrievalResults
-                        )
+                        MemoryDebugger(onTestRetrieval = onTestRetrieval, retrievalResults = retrievalResults)
                     }
                 }
             }
@@ -718,7 +605,9 @@ private fun MemorySettingsItem(
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Column(
-                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
@@ -858,7 +747,10 @@ private fun RagSettingsCard(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(stringResource(R.string.assistant_memory_similarity_threshold_title), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                stringResource(R.string.assistant_memory_similarity_threshold_title),
+                                style = MaterialTheme.typography.titleMedium
+                            )
                             Text(
                                 text = String.format("%.2f", localThreshold),
                                 style = MaterialTheme.typography.labelLarge,
@@ -884,8 +776,16 @@ private fun RagSettingsCard(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(stringResource(R.string.similarity_all) + " (0.0)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(stringResource(R.string.similarity_exact) + " (1.0)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                stringResource(R.string.similarity_all) + " (0.0)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                stringResource(R.string.similarity_exact) + " (1.0)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -948,7 +848,14 @@ private fun MasterMemoryCard(
                     showBackupDialog = false
                     if (assistant.masterMemoryContent.isNotBlank()) {
                         scope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Master Memory", assistant.masterMemoryContent)))
+                            clipboard.setClipEntry(
+                                ClipEntry(
+                                    ClipData.newPlainText(
+                                        "Master Memory",
+                                        assistant.masterMemoryContent
+                                    )
+                                )
+                            )
                         }
                     }
                     onConsolidate()
@@ -1007,12 +914,28 @@ private fun MasterMemoryCard(
                 // Master Memory Content
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) RoundedCornerShape(10.dp) else RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+                    shape = if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) RoundedCornerShape(10.dp) else RoundedCornerShape(
+                        bottomStart = 24.dp,
+                        bottomEnd = 24.dp,
+                        topStart = 10.dp,
+                        topEnd = 10.dp
+                    )
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Rounded.HistoryEdu, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
-                            Text(stringResource(R.string.assistant_memory_master_content_title), style = MaterialTheme.typography.titleSmall)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.HistoryEdu,
+                                null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                            Text(
+                                stringResource(R.string.assistant_memory_master_content_title),
+                                style = MaterialTheme.typography.titleSmall
+                            )
                         }
 
                         if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
@@ -1029,7 +952,9 @@ private fun MasterMemoryCard(
                                 text = assistant.masterMemoryContent.ifBlank { stringResource(R.string.assistant_memory_master_never_updated) },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
                             )
                         }
 
@@ -1057,7 +982,12 @@ private fun MasterMemoryCard(
                 if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
                     Surface(
                         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+                        shape = RoundedCornerShape(
+                            bottomStart = 24.dp,
+                            bottomEnd = 24.dp,
+                            topStart = 10.dp,
+                            topEnd = 10.dp
+                        )
                     ) {
                         Box(modifier = Modifier.padding(16.dp)) {
                             Button(
@@ -1112,7 +1042,9 @@ private fun ConsolidationSettingsCard(
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1145,7 +1077,10 @@ private fun ConsolidationSettingsCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(stringResource(R.string.assistant_memory_consolidation_delay_title), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.assistant_memory_consolidation_delay_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
                     Text(
                         text = stringResource(R.string.assistant_memory_consolidation_delay_value, localDelay.toInt()),
                         style = MaterialTheme.typography.labelLarge,
@@ -1350,14 +1285,17 @@ private fun ManageMemoriesSection(
     val episodicMemories = memories.filter { it.type == 1 }
 
     // Filter and sort based on current settings
-    val displayMemories = if (showMemoryTypes) {
+    val displayMemories = remember(memories, selectedTab, memorySearchQuery, sortOrder, showMemoryTypes) {
+
+    val baseList = if (showMemoryTypes) {
         when (selectedTab) {
             0 -> coreMemories
             else -> episodicMemories
         }
     } else {
         memories
-    }.filter { memory ->
+    }
+        baseList.filter { memory ->
         memorySearchQuery.isBlank() || memory.content.contains(memorySearchQuery, ignoreCase = true)
     }.let { list ->
         when (sortOrder) {
@@ -1366,6 +1304,7 @@ private fun ManageMemoriesSection(
             MemorySortOrder.ALPHABETICAL -> list.sortedBy { it.content.lowercase() }
         }
     }
+        }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Header
@@ -1385,7 +1324,10 @@ private fun ManageMemoriesSection(
                 // Only show optimization button for core memories
                 if (selectedTab == 0) {
                     IconButton(onClick = onOptimizeMemories) {
-                        Icon(Icons.Rounded.CleanHands, contentDescription = stringResource(R.string.memory_action_optimize))
+                        Icon(
+                            Icons.Rounded.CleanHands,
+                            contentDescription = stringResource(R.string.memory_action_optimize)
+                        )
                     }
                 }
 
@@ -1417,7 +1359,10 @@ private fun ManageMemoriesSection(
 
                 if (onRegenerateEmbeddings != null && assistant.useRagMemoryRetrieval && needsEmbeddingRegeneration) {
                     IconButton(onClick = onRegenerateEmbeddings) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = stringResource(R.string.memory_action_regenerate_embeddings))
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            contentDescription = stringResource(R.string.memory_action_regenerate_embeddings)
+                        )
                     }
                 }
                 IconButton(onClick = onAddMemory) {
@@ -1501,7 +1446,9 @@ private fun ManageMemoriesSection(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = if (memorySearchQuery.isBlank()) stringResource(R.string.no_memories_yet) else stringResource(R.string.no_matching_memories),
+                        text = if (memorySearchQuery.isBlank()) stringResource(R.string.no_memories_yet) else stringResource(
+                            R.string.no_matching_memories
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(24.dp)
@@ -1615,7 +1562,9 @@ private fun MemoryItem(
                                 shape = MaterialTheme.shapes.extraSmall
                             ) {
                                 Text(
-                                    text = if (memory.type == 0) stringResource(R.string.memory_type_core) else stringResource(R.string.memory_type_episodic),
+                                    text = if (memory.type == 0) stringResource(R.string.memory_type_core) else stringResource(
+                                        R.string.memory_type_episodic
+                                    ),
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                     color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
@@ -1738,7 +1687,11 @@ private fun MemoryDebugger(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("#${index + 1}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        "#${index + 1}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                     Text(
                                         stringResource(R.string.retrieval_score, String.format("%.4f", score)),
                                         style = MaterialTheme.typography.labelMedium,
@@ -1768,7 +1721,9 @@ private fun FormItem(
     tail: @Composable (() -> Unit)? = null,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -1783,7 +1738,8 @@ private fun FormItem(
             }
             if (description != null) {
                 Box(modifier = Modifier.padding(top = 2.dp)) {
-                    val style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val style =
+                        MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
                     androidx.compose.runtime.CompositionLocalProvider(
                         androidx.compose.material3.LocalTextStyle provides style
                     ) {

@@ -57,7 +57,7 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // MESSAGE HISTORY & L0 SLIDING WINDOW
+        // MESSAGE HISTORY & L1 MEMORY
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_message_history_title)) {
             val historyLimit = assistant.maxHistoryMessages ?: 0
@@ -71,7 +71,11 @@ fun AssistantContextManagementSubPage(
                 },
                 value = sliderValue,
                 valueText = if (sliderValue.roundToInt() == 0) "" else stringResource(R.string.assistant_context_history_limit_value, sliderValue.roundToInt()),
-                description = stringResource(R.string.context_max_messages_desc),
+                description = if (assistant.enableDetailMemory) {
+                    stringResource(R.string.assistant_context_history_limit_desc)
+                } else {
+                    stringResource(R.string.context_max_messages_desc)
+                },
                 onValueChange = { sliderValue = it },
                 onValueChangeFinished = {
                     val newValue = sliderValue.roundToInt()
@@ -83,7 +87,6 @@ fun AssistantContextManagementSubPage(
                 steps = 99
             )
 
-            // 如果开启了细节记忆但未设置总结模型，显示警告（因为 L1 自动归档依赖总结模型）
             val needsSummarizerWarning = assistant.enableDetailMemory && assistant.summarizerModelId == null
             AnimatedVisibility(
                 visible = needsSummarizerWarning,
@@ -91,6 +94,47 @@ fun AssistantContextManagementSubPage(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 SummarizerWarningBanner(onClick = onNavigateToModels)
+            }
+
+            // 🌟 重新加回：上下文刷新开关 (控制片段注入)
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_context_refresh_title),
+                subtitle = stringResource(R.string.assistant_context_refresh_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.enableContextRefresh,
+                        onCheckedChange = { enabled ->
+                            onUpdate(assistant.copy(enableContextRefresh = enabled))
+                        }
+                    )
+                },
+                onClick = {
+                    onUpdate(assistant.copy(enableContextRefresh = !assistant.enableContextRefresh))
+                }
+            )
+
+            // 🌟 重新加回：片段数量滑块
+            AnimatedVisibility(
+                visible = assistant.enableContextRefresh,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                val tempLimit = assistant.maxTemporarySummariesToInclude
+                var tempSliderValue by remember(tempLimit) { mutableFloatStateOf(tempLimit.toFloat()) }
+
+                SliderSettingCard(
+                    title = stringResource(R.string.assistant_context_episodic_limit_title),
+                    value = tempSliderValue,
+                    valueText = stringResource(R.string.assistant_context_episodic_limit_value, tempSliderValue.roundToInt()),
+                    description = stringResource(R.string.assistant_context_episodic_limit_desc),
+                    onValueChange = { tempSliderValue = it },
+                    onValueChangeFinished = {
+                        val newValue = tempSliderValue.roundToInt()
+                        onUpdate(assistant.copy(maxTemporarySummariesToInclude = newValue))
+                    },
+                    valueRange = 0f..20f,
+                    steps = 20
+                )
             }
         }
 

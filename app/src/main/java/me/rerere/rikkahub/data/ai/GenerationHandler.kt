@@ -599,10 +599,32 @@ class GenerationHandler(
             baseSystemPromptBuilder.append(assistant.masterMemoryContent)
             baseSystemPromptBuilder.append("\n\n")
         }
+
         // --- Semi-stable Section: Context Summary (L1) ---
-        // Only Global Summary is included now. Segments are removed for prompt purity.
+        // 1. 全局总结始终尝试注入 (L1 Global Summary)
         if (!contextSummary.isNullOrBlank()) {
             baseSystemPromptBuilder.append("\n## Overall Conversation Summary\n").append(contextSummary).appendLine()
+        }
+
+        // 2. 片段总结受 enableContextRefresh 开关控制 (L1 Segments)
+        if (assistant.enableContextRefresh) {
+            val finalSegments = if (conversationId != null) {
+                val limit = assistant.maxTemporarySummariesToInclude
+                if (limit > 0) {
+                    chatSegmentDAO.getSegmentsByConversation(conversationId.toString())
+                        .takeLast(limit)
+                        .map { it.content }
+                } else emptyList()
+            } else {
+                temporarySummaries.takeLast(assistant.maxTemporarySummariesToInclude)
+            }
+
+            if (finalSegments.isNotEmpty()) {
+                baseSystemPromptBuilder.append("\n## Recent Context Highlights\n")
+                finalSegments.forEachIndexed { index, s ->
+                    baseSystemPromptBuilder.append("${index + 1}. $s\n")
+                }
+            }
         }
 
         val baseSystemPrompt = baseSystemPromptBuilder.toString()

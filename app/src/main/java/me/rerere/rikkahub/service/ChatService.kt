@@ -808,13 +808,13 @@ class ChatService(
 
                             add(
                                 Tool(
-                                name = sanitizedName,
-                                description = mcpTool.description ?: "",
-                                parameters = { mcpTool.inputSchema },
-                                execute = {
-                                    mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
-                                }
-                            ))
+                                    name = sanitizedName,
+                                    description = mcpTool.description ?: "",
+                                    parameters = { mcpTool.inputSchema },
+                                    execute = {
+                                        mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
+                                    }
+                                ))
                         }
                     }
                 },
