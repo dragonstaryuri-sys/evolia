@@ -515,13 +515,6 @@ class GenerationHandler(
             assistant.languageStyleExamples
         }
 
-        if (styleExamples.isNotEmpty()) {
-            staticSystemPromptBuilder.append("## Language Style Examples\n")
-            styleExamples.forEach { example ->
-                staticSystemPromptBuilder.append("- $example\n")
-            }
-            staticSystemPromptBuilder.appendLine()
-        }
 
         if (assistant.isVirtualWorldMode) {
             staticSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT)
@@ -970,9 +963,16 @@ class GenerationHandler(
                                     ", Interval since your last reply: $formatted"
                                 }.getOrNull()
                             } ?: ""
-                            appendLine("# Current Time Information")
                             appendLine("- Current Time: $timeStr$intervalInfo")
                             appendLine("Fabricating time will result in punishment.")
+                            appendLine()
+                        }
+                        // D. Style Reference (核心优化点)
+                        if (styleExamples.isNotEmpty()) {
+                            appendLine("# 语言风格参考")
+                            styleExamples.forEach { example ->
+                                appendLine("- $example")
+                            }
                             appendLine()
                         }
                     }
