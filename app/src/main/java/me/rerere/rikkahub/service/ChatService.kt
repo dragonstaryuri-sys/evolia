@@ -161,9 +161,8 @@ class ChatService(
 
     private var lastConversationId: Uuid? = null
 
-    // 保留：归档中的会话锁
+    // 并发防抖锁集合
     private val archivingConversations = ConcurrentHashMap.newKeySet<Uuid>()
-    // 新增：正在总结 L1 的会话锁
     private val summarizingConversations = ConcurrentHashMap.newKeySet<Uuid>()
 
     private val lifecycleObserver = LifecycleEventObserver { _, event ->
@@ -431,14 +430,7 @@ class ChatService(
      */
     @Suppress("UNCHECKED_CAST")
     suspend fun archiveConversation(conversationId: Uuid, force: Boolean = false) {
-        if (temporaryConversations.contains(conversationId)) return
-
-        // 并发防抖：如果该会话已经在归档中，则直接返回
-        if (archivingConversations.contains(conversationId)) {
-            Log.d(TAG, "archiveConversation: $conversationId is already archiving, skipping.")
-            return
-        }
-        archivingConversations.add(conversationId)
+        if (!archivingConversations.add(conversationId)) return
 
         try {
             val conv = conversationRepo.getConversationById(conversationId) ?: return
@@ -468,7 +460,7 @@ class ChatService(
 
             // 3. 选取最佳基准 (滚动式逻辑)
             // 对比 L1 和 L2，谁涵盖的消息多就用谁做基准
-            val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
+            val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance && !conv.contextSummary.isNullOrBlank()) {
                 conv.contextSummary to summarySignificance
             } else {
                 existingEpisode?.content to episodeSignificance
