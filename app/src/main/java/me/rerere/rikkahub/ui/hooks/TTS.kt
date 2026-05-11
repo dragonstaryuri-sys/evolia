@@ -29,8 +29,8 @@ import org.koin.core.component.inject
 
 private const val TAG = "TTS"
 
-// Regex to match common emojis and symbols that TTS often reads out
-private val EMOJI_REGEX = Regex("[\\uD83C-\\uDBFF\\uDC00-\\uDFFF]|\\p{So}")
+// Refined regex to match emojis without being too aggressive on standard full-width punctuation
+private val EMOJI_REGEX = Regex("[\\uD83C-\\uDBFF\\uDC00-\\uDFFF]|[\\u2600-\\u27BF]")
 
 /**
  * Composable function to remember and manage custom TTS state.
@@ -145,71 +145,134 @@ private class CustomTtsStateImpl(
     }
 
     override fun speak(text: String, flushCalled: Boolean, overrideSetting: TTSProviderSetting?) {
-        // Apply TTS filters (Now fully controlled by user-defined rules)
+        Log.d(TAG, "[Speak] Raw input: \"$text\"")
+
+        // Step 1: Apply TTS filters (Robust matching for all bracket types)
         val filtered = applyTtsTextFilters(text)
 
-        // Removed hardcoded parenthesis and asterisk filtering.
-        // Users can now define their own rules in TTS settings.
+        // Step 2: Strip Markdown syntax
         val processed = filtered.stripMarkdown()
 
         if (processed.isBlank()) {
-            Log.d(TAG, "Text fully filtered, nothing to speak")
+            Log.d(TAG, "[Speak] Text fully filtered, nothing to speak")
             return
         }
 
         if (overrideSetting != null) {
+            Log.d(TAG, "[Speak] Speaking with override: \"$processed\"")
             controller.speakWithProvider(processed, overrideSetting, flushCalled)
         } else {
+            Log.d(TAG, "[Speak] Speaking: \"$processed\"")
             controller.speak(processed, flushCalled)
         }
     }
 
     /**
      * Apply TTS text filter rules to the text.
-     * - SKIP rules: Remove text matching the pattern
-     * - ONLY_READ rules: Extract only text matching the pattern
      */
     private fun applyTtsTextFilters(text: String): String {
+        Log.d(TAG, "[Filter] Start. Input: \"$text\"")
         val settings = settingsStore.settingsFlow.value
         val rules = settings.displaySetting.ttsTextFilterRules.filter { it.enabled }
         val filterEmojis = settings.displaySetting.filterEmojis
 
         var result = text
 
-        // Filter emojis if enabled
-        if (filterEmojis) {
-            result = result.replace(EMOJI_REGEX, "")
+        // Helper to get flexible regex pattern for single char or escaped string
+        fun toFlex(s: String): String {
+            return when (val trimmed = s.trim()) {
+                "(", "（" -> "[\\(\\（]"
+                ")", "）" -> "[\\)\\）]"
+                "[", "【" -> "[\\[\\【]"
+                "]", "】" -> "[\\]\\】]"
+                "{", "｛" -> "[\\{\\｛]"
+                "}", "｝" -> "[\\}\\｝]"
+                "<", "《" -> "[\\<\\《]"
+                ">", "》" -> "[\\>\\》]"
+                else -> Regex.escape(trimmed)
+            }
         }
 
-        if (rules.isEmpty()) return result.trim()
+        // Helper to resolve start/end patterns intelligently
+        fun resolvePatterns(rule: me.rerere.rikkahub.data.datastore.TtsTextFilterRule): Pair<String, String> {
+            val p = rule.pattern.trim()
+            val ep = rule.endPattern?.trim()?.takeIf { it.isNotBlank() }
 
-        // Check for ONLY_READ rules first (they take precedence)
+            var startPart = p
+            var endPart = ep ?: p
+
+            if (ep == null) {
+                // If single bracket char, find its pair
+                if (p.length == 1) {
+                    endPart = when (p) {
+                        "(" -> ")"; "（" -> "）"; "[" -> "]"; "【" -> "】"
+                        "{" -> "}"; "｛" -> "｝"; "<" -> ">"; "《" -> "》"
+                        else -> p
+                    }
+                }
+                // If pair string like "()" or "（ ）" or "( )"
+                else if (p.contains(" ") || p.length == 2) {
+                    val parts = if (p.contains(" ")) p.split(Regex("\\s+")) else listOf(p[0].toString(), p[1].toString())
+                    if (parts.size == 2) {
+                        startPart = parts[0]
+                        endPart = parts[1]
+                    }
+                }
+            }
+
+            return toFlex(startPart) to toFlex(endPart)
+        }
+
+        // 1. Apply ONLY_READ rules first (while brackets are still present)
         val onlyReadRules = rules.filter { it.mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.ONLY_READ }
         if (onlyReadRules.isNotEmpty()) {
-            // Extract only matched content from ONLY_READ rules
             val extracted = StringBuilder()
             for (rule in onlyReadRules) {
-                val startPattern = Regex.escape(rule.pattern)
-                val endPattern = Regex.escape(rule.endPattern ?: rule.pattern)
-                val regex = Regex("$startPattern(.*?)$endPattern")
-                val matches = regex.findAll(result)
-                for (match in matches) {
+                val (s, e) = resolvePatterns(rule)
+                val regex = Regex("$s(.*?)$e", RegexOption.DOT_MATCHES_ALL)
+                val matches = regex.findAll(result).toList()
+                Log.d(TAG, "[Filter] ONLY_READ Rule '${rule.pattern}': matched ${matches.size} times")
+                matches.forEach { match ->
                     if (extracted.isNotEmpty()) extracted.append(" ")
                     extracted.append(match.groupValues[1])
                 }
             }
-            result = extracted.toString()
+            if (extracted.isNotEmpty()) {
+                result = extracted.toString()
+                Log.d(TAG, "[Filter] Result after ONLY_READ: \"$result\"")
+            } else if (onlyReadRules.any { it.enabled }) {
+                result = ""
+                Log.d(TAG, "[Filter] ONLY_READ matched nothing, clearing text")
+            }
         }
 
-        // Apply SKIP rules
+        // 2. Apply SKIP rules (while brackets are still present)
         val skipRules = rules.filter { it.mode == me.rerere.rikkahub.data.datastore.TtsFilterMode.SKIP }
         for (rule in skipRules) {
-            val startPattern = Regex.escape(rule.pattern)
-            val endPattern = Regex.escape(rule.endPattern ?: rule.pattern)
-            val regex = Regex("$startPattern.*?$endPattern")
-            result = result.replace(regex, "")
+            val (s, e) = resolvePatterns(rule)
+            val regex = Regex("$s.*?$e", RegexOption.DOT_MATCHES_ALL)
+            var lastResult: String
+            var count = 0
+            do {
+                lastResult = result
+                result = result.replace(regex, "")
+                if (result != lastResult) count++
+            } while (result != lastResult)
+            if (count > 0) {
+                Log.d(TAG, "[Filter] SKIP Rule '${rule.pattern}': applied $count times. Current result: \"$result\"")
+            }
         }
 
+        // 3. Filter emojis LAST. This ensures brackets are intact for rules matching above.
+        if (filterEmojis) {
+            val beforeEmoji = result
+            result = result.replace(EMOJI_REGEX, "")
+            if (beforeEmoji != result) {
+                Log.d(TAG, "[Filter] After Emoji removal: \"$result\"")
+            }
+        }
+
+        Log.d(TAG, "[Filter] Final output: \"${result.trim()}\"")
         return result.trim()
     }
 
@@ -219,12 +282,10 @@ private class CustomTtsStateImpl(
 
     override fun pause() {
         controller.pause()
-        Log.d("CustomTtsState", "TTS paused")
     }
 
     override fun resume() {
         controller.resume()
-        Log.d("CustomTtsState", "TTS resumed")
     }
 
     override fun skipNext() {
