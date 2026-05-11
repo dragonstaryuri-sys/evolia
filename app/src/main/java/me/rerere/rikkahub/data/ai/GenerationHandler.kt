@@ -581,6 +581,13 @@ class GenerationHandler(
                     """.trimIndent()
             )
         }
+        if (styleExamples.isNotEmpty()) {
+            staticSystemPromptBuilder.append("# Language Style Examples")
+            styleExamples.forEach { example ->
+                staticSystemPromptBuilder.append("# Language Style Examples")
+            }
+            staticSystemPromptBuilder.appendLine()
+        }
         beforeSystemModes.filter { it.prompt.isNotBlank() }.forEach { mode ->
             staticSystemPromptBuilder.append(mode.prompt)
             staticSystemPromptBuilder.appendLine()
@@ -973,14 +980,7 @@ class GenerationHandler(
                             appendLine("Fabricating time will result in punishment.")
                             appendLine()
                         }
-                        // D. Style Reference (核心优化点)
-                        if (styleExamples.isNotEmpty()) {
-                            appendLine("# Language Style Examples")
-                            styleExamples.forEach { example ->
-                                appendLine("- $example")
-                            }
-                            appendLine()
-                        }
+
                     }
 
                     if (dynamicContext.isNotBlank()) {
