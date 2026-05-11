@@ -498,6 +498,11 @@ class GenerationHandler(
 
         val staticSystemPromptBuilder = StringBuilder()
         staticSystemPromptBuilder.append("The default user gender is female.\n")
+        //Lorebook
+        beforeSystemEntries.filter { it.prompt.isNotBlank() }.forEach { entry ->
+            staticSystemPromptBuilder.append(entry.prompt)
+            staticSystemPromptBuilder.appendLine()
+        }
 
         if (assistant.systemPrompt.isNotBlank()) {
             staticSystemPromptBuilder.append(
@@ -530,6 +535,12 @@ class GenerationHandler(
                     )
             )
             staticSystemPromptBuilder.appendLine("\n")
+        }
+
+        if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
+            staticSystemPromptBuilder.append("## Memory Archive\n")
+            staticSystemPromptBuilder.append(assistant.masterMemoryContent)
+            staticSystemPromptBuilder.append("\n\n")
         }
 
 
@@ -570,30 +581,19 @@ class GenerationHandler(
                     """.trimIndent()
             )
         }
+        beforeSystemModes.filter { it.prompt.isNotBlank() }.forEach { mode ->
+            staticSystemPromptBuilder.append(mode.prompt)
+            staticSystemPromptBuilder.appendLine()
+        }
+
+        afterSystemModes.filter { it.prompt.isNotBlank() }.forEach { mode ->
+            staticSystemPromptBuilder.appendLine()
+            staticSystemPromptBuilder.append(mode.prompt)
+        }
+
+
+
         val summaryPromptBuilder = StringBuilder()
-        beforeSystemModes.forEach { mode ->
-            staticSystemPromptBuilder.append(mode.prompt)
-            staticSystemPromptBuilder.appendLine()
-        }
-        beforeSystemEntries.forEach { entry ->
-            staticSystemPromptBuilder.append(entry.prompt)
-            staticSystemPromptBuilder.appendLine()
-        }
-
-        afterSystemModes.forEach { mode ->
-            staticSystemPromptBuilder.appendLine()
-            staticSystemPromptBuilder.append(mode.prompt)
-        }
-        afterSystemEntries.forEach { entry ->
-            staticSystemPromptBuilder.appendLine()
-            staticSystemPromptBuilder.append(entry.prompt)
-        }
-        if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
-            summaryPromptBuilder.append("## Memory Archive\n")
-            summaryPromptBuilder.append(assistant.masterMemoryContent)
-            summaryPromptBuilder.append("\n\n")
-        }
-
         // --- Semi-stable Section: Context Summary (L1) ---
         // 1. 全局总结始终尝试注入 (L1 Global Summary)
         if (!contextSummary.isNullOrBlank()) {
@@ -619,6 +619,12 @@ class GenerationHandler(
                     summaryPromptBuilder.append("${index + 1}. $s\n")
                 }
             }
+        }
+
+        //lorebook
+        afterSystemEntries.filter { it.prompt.isNotBlank() }.forEach { entry ->
+            summaryPromptBuilder.appendLine()
+            summaryPromptBuilder.append(entry.prompt)
         }
 
         val staticSystemPrompt = staticSystemPromptBuilder.toString()
@@ -886,20 +892,20 @@ class GenerationHandler(
                     // 构造动态系统信息 (L2 记忆, 变量, 时间)
                     val dynamicContext = buildString {
                         if (summarySystemPrompt.isNotBlank()) {
-                            appendLine("# Context Summary")
+                            appendLine("# Context Summary & Relevant entries")
                             appendLine(summarySystemPrompt)
                             appendLine()
                         }
                         // A. L2: Memories (RAG retrieved facts)
                         if (selectedMemories.isNotEmpty()) {
-                            appendLine("# 你的相关记忆")
+                            appendLine("# Relevant Memories")
                             appendLine(buildMemoryPrompt(selectedMemories))
                             appendLine()
                         }
 
                         // B. Reference Variables
                         if (assistant.referenceVariables.isNotBlank()) {
-                            appendLine("# 可参考的信息")
+                            appendLine("# Reference Variables")
                             appendLine(
                                 assistant.referenceVariables.applyPlaceholders(
                                     "char" to assistant.name,
@@ -969,7 +975,7 @@ class GenerationHandler(
                         }
                         // D. Style Reference (核心优化点)
                         if (styleExamples.isNotEmpty()) {
-                            appendLine("# 语言风格参考")
+                            appendLine("# Language Style Examples")
                             styleExamples.forEach { example ->
                                 appendLine("- $example")
                             }
