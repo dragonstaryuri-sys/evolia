@@ -1020,10 +1020,8 @@ class ChatService(
                         }
                     }))
                 }
-            }, systemPrompt = { _, msgs ->
-                if (msgs.any {
-                        it.getToolCalls().any { tc -> tc.toolName == "search_web" }
-                    }) "## tool: search_web\n\nUse `[citation,domain](id)` after facts." else "## tool: search_web"
+            }, systemPrompt = { _, _ ->
+                 "## tool: search_web\\n\\nUse `[citation,domain](id)` after facts if you used search results."
             }))
         }
     }
