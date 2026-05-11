@@ -496,17 +496,17 @@ class GenerationHandler(
         val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
-        val baseSystemPromptBuilder = StringBuilder()
-        baseSystemPromptBuilder.append("The default user gender is female.\n")
+        val staticSystemPromptBuilder = StringBuilder()
+        staticSystemPromptBuilder.append("The default user gender is female.\n")
 
         if (assistant.systemPrompt.isNotBlank()) {
-            baseSystemPromptBuilder.append(
+            staticSystemPromptBuilder.append(
                 assistant.systemPrompt.applyPlaceholders(
                     "char" to assistant.name,
                     "locale" to Locale.getDefault().displayName
                 )
             )
-            baseSystemPromptBuilder.appendLine("\n")
+            staticSystemPromptBuilder.appendLine("\n")
         }
 
         val styleExamples = if (assistant.isMain && assistant.isVirtualWorldMode) {
@@ -516,51 +516,34 @@ class GenerationHandler(
         }
 
         if (styleExamples.isNotEmpty()) {
-            baseSystemPromptBuilder.append("## Language Style Examples\n")
+            staticSystemPromptBuilder.append("## Language Style Examples\n")
             styleExamples.forEach { example ->
-                baseSystemPromptBuilder.append("- $example\n")
+                staticSystemPromptBuilder.append("- $example\n")
             }
-            baseSystemPromptBuilder.appendLine()
+            staticSystemPromptBuilder.appendLine()
         }
 
         if (assistant.isVirtualWorldMode) {
-             baseSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT)
-             baseSystemPromptBuilder.appendLine("\n")
+            staticSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT)
+            staticSystemPromptBuilder.appendLine("\n")
         }
 
         if (assistant.learningMode) {
-            baseSystemPromptBuilder.append(
+            staticSystemPromptBuilder.append(
                 settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT }
                     .applyPlaceholders(
                         "char" to assistant.name,
                         "locale" to Locale.getDefault().displayName
                     )
             )
-            baseSystemPromptBuilder.appendLine("\n")
+            staticSystemPromptBuilder.appendLine("\n")
         }
 
-        beforeSystemModes.forEach { mode ->
-            baseSystemPromptBuilder.append(mode.prompt)
-            baseSystemPromptBuilder.appendLine()
-        }
-        beforeSystemEntries.forEach { entry ->
-            baseSystemPromptBuilder.append(entry.prompt)
-            baseSystemPromptBuilder.appendLine()
-        }
 
-        afterSystemModes.forEach { mode ->
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(mode.prompt)
-        }
-        afterSystemEntries.forEach { entry ->
-            baseSystemPromptBuilder.appendLine()
-            baseSystemPromptBuilder.append(entry.prompt)
-        }
-
-        tools.forEach { baseSystemPromptBuilder.appendLine().append(it.systemPrompt(model, messages)) }
+        tools.forEach { staticSystemPromptBuilder.appendLine().append(it.systemPrompt(model, messages)) }
 
         if (model.abilities.contains(ModelAbility.TOOL) && assistant.enableMemory) {
-            baseSystemPromptBuilder.appendLine().append(
+            staticSystemPromptBuilder.appendLine().append(
                 """
 
                         ## Memory Tool
@@ -594,17 +577,34 @@ class GenerationHandler(
                     """.trimIndent()
             )
         }
+        val summaryPromptBuilder = StringBuilder()
+        beforeSystemModes.forEach { mode ->
+            staticSystemPromptBuilder.append(mode.prompt)
+            staticSystemPromptBuilder.appendLine()
+        }
+        beforeSystemEntries.forEach { entry ->
+            staticSystemPromptBuilder.append(entry.prompt)
+            staticSystemPromptBuilder.appendLine()
+        }
 
+        afterSystemModes.forEach { mode ->
+            staticSystemPromptBuilder.appendLine()
+            staticSystemPromptBuilder.append(mode.prompt)
+        }
+        afterSystemEntries.forEach { entry ->
+            staticSystemPromptBuilder.appendLine()
+            staticSystemPromptBuilder.append(entry.prompt)
+        }
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
-            baseSystemPromptBuilder.append("## Memory Archive\n")
-            baseSystemPromptBuilder.append(assistant.masterMemoryContent)
-            baseSystemPromptBuilder.append("\n\n")
+            summaryPromptBuilder.append("## Memory Archive\n")
+            summaryPromptBuilder.append(assistant.masterMemoryContent)
+            summaryPromptBuilder.append("\n\n")
         }
 
         // --- Semi-stable Section: Context Summary (L1) ---
         // 1. 全局总结始终尝试注入 (L1 Global Summary)
         if (!contextSummary.isNullOrBlank()) {
-            baseSystemPromptBuilder.append("\n## Overall Conversation Summary\n").append(contextSummary).appendLine()
+            summaryPromptBuilder.append("\n## Overall Conversation Summary\n").append(contextSummary).appendLine()
         }
 
         // 2. 片段总结受 enableContextRefresh 开关控制 (L1 Segments)
@@ -621,15 +621,18 @@ class GenerationHandler(
             }
 
             if (finalSegments.isNotEmpty()) {
-                baseSystemPromptBuilder.append("\n## Recent Context Highlights\n")
+                summaryPromptBuilder.append("\n## Recent Context Highlights\n")
                 finalSegments.forEachIndexed { index, s ->
-                    baseSystemPromptBuilder.append("${index + 1}. $s\n")
+                    summaryPromptBuilder.append("${index + 1}. $s\n")
                 }
             }
         }
 
-        val baseSystemPrompt = baseSystemPromptBuilder.toString()
-        currentTokens += estimateTokens(baseSystemPrompt)
+        val staticSystemPrompt = staticSystemPromptBuilder.toString()
+        val summarySystemPrompt = summaryPromptBuilder.toString()
+
+        currentTokens += estimateTokens(staticSystemPrompt)
+        currentTokens += estimateTokens(summarySystemPrompt)
 
         val contextCandidates = if (includeSkipContextMessages) {
             messages
@@ -870,8 +873,8 @@ class GenerationHandler(
         val builtMessages = buildList {
             // 1. Stable & Semi-stable System Prompt
             // Includes personality, tools, Master Memory (L3), and Global Summary (L1).
-            if (baseSystemPrompt.isNotBlank()) {
-                add(UIMessage.system(baseSystemPrompt))
+            if (staticSystemPrompt.isNotBlank()) {
+                add(UIMessage.system(staticSystemPrompt))
             }
 
             // 2. Attachments
@@ -883,90 +886,117 @@ class GenerationHandler(
             }
 
             // 3. Chat History (L0)
-            addAll(selectedMessages.sortedBy { messages.indexOf(it) })
+            val sortedSelectedMessages = selectedMessages.sortedBy { messages.indexOf(it) }
+            val lastUserMessageIndex = sortedSelectedMessages.indexOfLast { it.role == CoreMessageRole.USER }
+            sortedSelectedMessages.forEachIndexed { index, msg ->
+                if (index == lastUserMessageIndex) {
+                    // 构造动态系统信息 (L2 记忆, 变量, 时间)
+                    val dynamicContext = buildString {
+                        if (summarySystemPrompt.isNotBlank()) {
+                            appendLine("# Context Summary")
+                            appendLine(summarySystemPrompt)
+                            appendLine()
+                        }
+                        // A. L2: Memories (RAG retrieved facts)
+                        if (selectedMemories.isNotEmpty()) {
+                            appendLine("# 你的相关记忆")
+                            appendLine(buildMemoryPrompt(selectedMemories))
+                            appendLine()
+                        }
 
-            // 4. Instant Dynamic System Information
-            // Only contains high-frequency changes: RAG Memories (L2), Variables and Time.
-            val dynamicSystemPrompt = buildString {
-                // A. L2: Memories (RAG retrieved facts)
-                if (selectedMemories.isNotEmpty()) {
-                    appendLine()
-                    append(buildMemoryPrompt(selectedMemories))
-                }
-
-                // B. Reference Variables
-                if (assistant.referenceVariables.isNotBlank()) {
-                    appendLine()
-                    append(
-                        assistant.referenceVariables.applyPlaceholders(
-                            "char" to assistant.name,
-                            "locale" to Locale.getDefault().displayName
-                        )
-                    )
-                }
-
-                // C. Time Information
-                if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
-                    val now = LocalDateTime.now()
-                    val month = now.monthValue
-                    val day = now.dayOfMonth
-                    val holiday = when {
-                        month == 1 && day == 1 -> "New Year's Day"
-                        month == 3 && day == 8 -> "Women's Day"
-                        month == 3 && day == 12 -> "Arbor Day"
-                        month == 4 && (day in 4..6) -> "Qingming Festival"
-                        month == 5 && (day == 1 ||day == 2 ||day == 3 || day == 5) -> "legal holiday for Labour Day"
-                        month == 5 && day == 4 -> "legal holiday for Labour Day&Youth Day"
-                        month == 6 && day == 1 -> "Children's Day"
-                        month == 7 && day == 1 -> "CPC Founding Day"
-                        month == 8 && day == 1 -> "Army Day"
-                        month == 9 && day == 10 -> "Teachers' Day"
-                        month == 11 && day == 8 -> "Journalists' Day"
-                        month == 12 && day == 25 -> "Christmas"
-                        else -> null
-                    }
-                    val dayOfWeek = now.dayOfWeek
-                    val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
-                    val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "restday" else "workday"
-                    val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-                    val timeStr = "$dayName.($dayType), $formattedTime"
-
-                    val lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT }
-                    val intervalInfo = lastAiMessage?.let {
-                        runCatching {
-                            @Suppress("DEPRECATION")
-                            val prevJavaDateTime = LocalDateTime.of(
-                                it.createdAt.year,
-                                it.createdAt.monthNumber,
-                                it.createdAt.dayOfMonth,
-                                it.createdAt.hour,
-                                it.createdAt.minute,
-                                it.createdAt.second,
-                                it.createdAt.nanosecond
+                        // B. Reference Variables
+                        if (assistant.referenceVariables.isNotBlank()) {
+                            appendLine("# 可参考的信息")
+                            appendLine(
+                                assistant.referenceVariables.applyPlaceholders(
+                                    "char" to assistant.name,
+                                    "locale" to Locale.getDefault().displayName
+                                )
                             )
-                            val prevInstant = prevJavaDateTime.atZone(ZoneId.systemDefault()).toInstant()
-                            val currentInstant = Instant.now()
-                            val duration = Duration.between(prevInstant, currentInstant)
-                            val seconds = duration.seconds
-                            val absSeconds = kotlin.math.abs(seconds)
-                            val sign = if (seconds >= 0) "+" else "-"
-                            val formatted = when {
-                                absSeconds < 60 -> "${sign}${absSeconds}s"
-                                absSeconds < 3600 -> "${sign}${absSeconds / 60}m"
-                                absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
-                                else -> "${sign}${absSeconds / 86400}d"
+                            appendLine()
+                        }
+
+                        // C. Time Information
+                        if (assistant.localTools.any { it is LocalToolOption.TimeSense }) {
+                            val now = LocalDateTime.now()
+                            val month = now.monthValue
+                            val day = now.dayOfMonth
+                            val holiday = when {
+                                month == 1 && day == 1 -> "New Year's Day"
+                                month == 3 && day == 8 -> "Women's Day"
+                                month == 3 && day == 12 -> "Arbor Day"
+                                month == 4 && (day in 4..6) -> "Qingming Festival"
+                                month == 5 && (day == 1 || day == 2 || day == 3 || day == 5) -> "legal holiday for Labour Day"
+                                month == 5 && day == 4 -> "legal holiday for Labour Day&Youth Day"
+                                month == 6 && day == 1 -> "Children's Day"
+                                month == 7 && day == 1 -> "CPC Founding Day"
+                                month == 8 && day == 1 -> "Army Day"
+                                month == 9 && day == 10 -> "Teachers' Day"
+                                month == 11 && day == 8 -> "Journalists' Day"
+                                month == 12 && day == 25 -> "Christmas"
+                                else -> null
                             }
-                            ", Interval since your last reply: $formatted"
-                        }.getOrNull()
-                    } ?: ""
+                            val dayOfWeek = now.dayOfWeek
+                            val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+                            val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "restday" else "workday"
+                            val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                            val timeStr = "$dayName.($dayType), $formattedTime"
 
-                    appendLine()
-                    append("\n## Current Time Information\n- Current Time: $timeStr$intervalInfo\n\n Fabricating time will result in punishment.")
+                            val lastAiMessage = messages.lastOrNull { it.role == CoreMessageRole.ASSISTANT }
+                            val intervalInfo = lastAiMessage?.let {
+                                runCatching {
+                                    @Suppress("DEPRECATION")
+                                    val prevJavaDateTime = LocalDateTime.of(
+                                        it.createdAt.year,
+                                        it.createdAt.monthNumber,
+                                        it.createdAt.dayOfMonth,
+                                        it.createdAt.hour,
+                                        it.createdAt.minute,
+                                        it.createdAt.second,
+                                        it.createdAt.nanosecond
+                                    )
+                                    val prevInstant = prevJavaDateTime.atZone(ZoneId.systemDefault()).toInstant()
+                                    val currentInstant = Instant.now()
+                                    val duration = Duration.between(prevInstant, currentInstant)
+                                    val seconds = duration.seconds
+                                    val absSeconds = kotlin.math.abs(seconds)
+                                    val sign = if (seconds >= 0) "+" else "-"
+                                    val formatted = when {
+                                        absSeconds < 60 -> "${sign}${absSeconds}s"
+                                        absSeconds < 3600 -> "${sign}${absSeconds / 60}m"
+                                        absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
+                                        else -> "${sign}${absSeconds / 86400}d"
+                                    }
+                                    ", Interval since your last reply: $formatted"
+                                }.getOrNull()
+                            } ?: ""
+                            appendLine("# Current Time Information")
+                            appendLine("- Current Time: $timeStr$intervalInfo")
+                            appendLine("Fabricating time will result in punishment.")
+                            appendLine()
+                        }
+                    }
+
+                    if (dynamicContext.isNotBlank()) {
+                        // 拼接最后一条 User 消息
+                        val originalText = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+                        val otherParts = msg.parts.filter { it !is UIMessagePart.Text }
+
+                        val newTextPart = UIMessagePart.Text(
+                            text = buildString {
+                                append(dynamicContext)
+                                appendLine("# My Current Question")
+                                append(originalText)
+                            }
+                        )
+
+                        add(msg.copy(parts = listOf(newTextPart) + otherParts))
+                    } else {
+                        add(msg)
+                    }
+                } else {
+                    add(msg)
                 }
-            }
-
-            if (dynamicSystemPrompt.isNotBlank()) {
-                add(UIMessage.system(dynamicSystemPrompt))
             }
         }
 
@@ -1207,16 +1237,46 @@ class GenerationHandler(
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
 
-        Log.i(TAG, ">>> START LLM PAYLOAD [${internalMessages.size} messages] <<<")
-        Log.i(TAG, "  Available Tools: ${tools.joinToString { it.name }}")
-        internalMessages.forEach { msg ->
-             val preview = msg.toContentText().take(60).replace("\n", " ")
-             Log.i(TAG, "  [${msg.role}] -> $preview...")
-             if (msg.role == CoreMessageRole.SYSTEM) {
-                 Log.v(TAG, "  Full System Content: \n${msg.toText()}")
-             }
+        // ==================== 核心 Payload 日志开始 ====================
+        Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        Log.i(TAG, "🚀 [FINAL LLM REQUEST STRUCTURE]")
+
+        // 1. 打印 Native Tools (这是独立于 Messages 的字段)
+        if (tools.isNotEmpty()) {
+            Log.i(TAG, "📦 [FIELD: tools] (Native Function Calling Definitions)")
+            tools.forEach { tool ->
+                val schema = try { tool.parameters().toString() } catch (e: Exception) { "Error: ${e.message}" }
+                Log.i(TAG, "  📍 Tool: ${tool.name}")
+                Log.i(TAG, "     Description: ${tool.description}")
+                Log.i(TAG, "     Schema: $schema")
+            }
+        } else {
+            Log.i(TAG, "📦 [FIELD: tools] -> EMPTY (Model will not use function calling)")
         }
-        Log.i(TAG, ">>> END LLM PAYLOAD <<<")
+
+        // 2. 打印 Messages 数组 (这是最关键的缓存匹配序列)
+        Log.i(TAG, "💬 [FIELD: messages] (Sequence for Context Caching)")
+        internalMessages.forEachIndexed { index, msg ->
+            val layerTag = when {
+                msg.role == CoreMessageRole.SYSTEM && index == 0 -> "LAYER 0: STATIC PRESET"
+                msg.role == CoreMessageRole.SYSTEM && index == 1 && internalMessages.size > 2 -> "LAYER 1: SEMI-STATIC (Summary/Lorebook)"
+                msg.role == CoreMessageRole.SYSTEM && index == internalMessages.lastIndex -> "LAYER 2: DYNAMIC (Time/RAG/Tools)"
+                msg.role == CoreMessageRole.USER -> "USER:"
+                msg.role == CoreMessageRole.ASSISTANT -> "ASSISTANT:"
+                else -> "MSG #${index} (${msg.role.name})"
+            }
+
+            Log.i(TAG, "  序号: $index | 角色: ${msg.role} | 类型: $layerTag")
+            Log.i(TAG, "  内容预览: >>>")
+            // 这里的 msg.toText() 就是 AI 真正收到的原始字符串内容
+            msg.toText().chunked(100).forEach { Log.i(TAG, "    $it") }
+            Log.i(TAG, "  <<< [内容结束]")
+        }
+
+        // 3. 打印其他关键参数
+        Log.i(TAG, "⚙️ [FIELD: params] -> Temp: ${assistant.temperature}, TopP: ${assistant.topP}, Stream: $stream")
+        Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        // ==================== 核心 Payload 日志结束 ====================
 
         val usedLorebookEntries = buildResult.activatedLorebookEntries
         val usedModes = buildResult.usedModes
