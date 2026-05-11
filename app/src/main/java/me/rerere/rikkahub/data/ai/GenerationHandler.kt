@@ -991,7 +991,7 @@ class GenerationHandler(
                         val newTextPart = UIMessagePart.Text(
                             text = buildString {
                                 append(dynamicContext)
-                                appendLine("# My Current Question")
+                                appendLine("# USER_QUESTION")
                                 append(originalText)
                             }
                         )
