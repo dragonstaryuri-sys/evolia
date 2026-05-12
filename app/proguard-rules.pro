@@ -26,4 +26,16 @@
 # keep jlatexmath
 -keep class org.scilab.forge.jlatexmath.** {*;}
 
+# JavaMail / Jakarta Mail rules to prevent connection failures in Release builds
+# These ensure that protocol providers (like imaps) can be loaded via reflection
+-keep class javax.mail.** {*;}
+-keep class com.sun.mail.** {*;}
+-keep class jakarta.mail.** {*;}
+-dontwarn javax.mail.**
+-dontwarn com.sun.mail.**
+-dontwarn jakarta.mail.**
+
+# Keep generic signatures for reflection (often needed by mail libraries)
+-keepattributes Signature,InnerClasses,EnclosingMethod
+
 -dontobfuscate

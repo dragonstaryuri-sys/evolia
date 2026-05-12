@@ -1056,7 +1056,7 @@
   <string name="assistant_context_auto_summarize_desc">Automatically summarize when history limit is reached</string>
   <string name="assistant_context_history_limit_title">History limit</string>
   <string name="assistant_context_history_limit_value">%d messages</string>
-  <string name="assistant_context_history_limit_desc">Number of messages before auto-summarization triggers</string>
+  <string name="assistant_context_history_limit_desc">Number of session histories passed to the large language model</string>
   <string name="assistant_context_episodic_limit_title">Episodic summaries to include</string>
   <string name="assistant_context_episodic_limit_value">%d summaries</string>
   <string name="assistant_context_episodic_limit_desc">Number of recent segment summaries to include as historical background</string>
@@ -1373,6 +1373,10 @@
   <string name="assistant_page_local_tools_email_service_desc">Allow AI to send and receive emails</string>
   <string name="assistant_tools_email_not_configured_warning">Email Service Not Configured</string>
   <string name="assistant_tools_email_not_configured_warning_desc">No email account or authorization code detected. The email tool will not work. Tap to configure.</string>
+  <string name="email_test_connection_failed">Connection failed: %1$s</string>
+  <string name="email_test_connection_success">Connection successful!</string>
+  <string name="email_error_protocol">Protocol loading failed. Please check the Release obfuscation configuration.</string>
+  <string name="email_error_auth">Authentication failed. Please check the authorization code.</string>
   <!-- Scheduled Tasks -->
   <string name="agent_task_manager">Scheduled Task Management</string>
   <string name="agent_task_empty">No scheduled tasks yet</string>
