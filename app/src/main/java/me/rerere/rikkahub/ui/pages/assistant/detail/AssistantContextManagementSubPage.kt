@@ -139,34 +139,6 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // MEMORY RETRIEVAL (RAG)
-        // ═══════════════════════════════════════════════════════════════════
-        AnimatedVisibility(
-            visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            SettingsGroup(title = stringResource(R.string.assistant_memory_group_settings)) {
-                val ragLimit = assistant.ragLimit
-                var ragSliderValue by remember(ragLimit) { mutableFloatStateOf(ragLimit.toFloat()) }
-
-                SliderSettingCard(
-                    title = stringResource(R.string.assistant_memory_rag_limit_title),
-                    value = ragSliderValue,
-                    valueText = stringResource(R.string.assistant_memory_rag_limit_value, ragSliderValue.roundToInt()),
-                    description = stringResource(R.string.assistant_memory_rag_limit_desc),
-                    onValueChange = { ragSliderValue = it },
-                    onValueChangeFinished = {
-                        val newValue = ragSliderValue.roundToInt()
-                        onUpdate(assistant.copy(ragLimit = newValue))
-                    },
-                    valueRange = 1f..50f,
-                    steps = 49
-                )
-            }
-        }
-
-        // ═══════════════════════════════════════════════════════════════════
         // SEARCH RESULTS
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_search_results_title)) {

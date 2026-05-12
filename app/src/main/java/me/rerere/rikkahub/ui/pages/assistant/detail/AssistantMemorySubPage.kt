@@ -731,8 +731,8 @@ private fun RagSettingsCard(
                         onValueChangeFinished = {
                             onUpdateAssistant(assistant.copy(ragLimit = localLimit.toInt()))
                         },
-                        valueRange = 1f..10f,
-                        steps = 9
+                        valueRange = 0f..10f,
+                        steps = 10
                     )
                 }
 
