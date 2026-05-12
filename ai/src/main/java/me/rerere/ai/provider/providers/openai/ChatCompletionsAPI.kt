@@ -407,6 +407,21 @@ class ChatCompletionsAPI(
                     put("role", JsonPrimitive(message.role.name.lowercase()))
                     val toolCalls = message.getToolCalls()
 
+                    // reasoning
+                    val reasoningParts = message.parts.filter { it is UIMessagePart.Reasoning || it is UIMessagePart.Thinking }
+                    if (reasoningParts.isNotEmpty()) {
+                        val reasoningText = reasoningParts.joinToString("\n") {
+                            when (it) {
+                                is UIMessagePart.Reasoning -> it.reasoning
+                                is UIMessagePart.Thinking -> it.thinking
+                                else -> ""
+                            }
+                        }
+                        if (reasoningText.isNotBlank()) {
+                            put("reasoning_content", reasoningText)
+                        }
+                    }
+
                     // content
                     val textParts = message.parts.filterIsInstance<UIMessagePart.Text>()
                         .filter { it.text.isNotBlank() }

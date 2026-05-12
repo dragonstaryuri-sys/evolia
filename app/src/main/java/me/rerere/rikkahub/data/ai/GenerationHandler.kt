@@ -228,6 +228,14 @@ class GenerationHandler(
                 settings = settings,
                 messages = currentMessages,
                 onUpdateMessages = {updatedFromChunk ->
+                    val processedMessages = if (skipContextForResponse) {
+                        updatedFromChunk.mapIndexed { index, uiMessage ->
+                            if (index == updatedFromChunk.lastIndex && uiMessage.role == CoreMessageRole.ASSISTANT) {
+                                uiMessage.copy(skipContext = true)
+                            } else uiMessage
+                        }
+                    } else updatedFromChunk
+
                     currentMessages = updatedFromChunk.transforms(
                         transformers = outputTransformers,
                         context = context,
@@ -534,7 +542,13 @@ class GenerationHandler(
                         "locale" to Locale.getDefault().displayName
                     )
             )
-            staticSystemPromptBuilder.appendLine("\n")
+            if (styleExamples.isNotEmpty()) {
+                staticSystemPromptBuilder.append("# Language Style Examples")
+                styleExamples.forEach { example ->
+                    staticSystemPromptBuilder.append("- ").appendLine(example)
+                }
+                staticSystemPromptBuilder.appendLine()
+            }
         }
 
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
@@ -581,13 +595,6 @@ class GenerationHandler(
                     """.trimIndent()
             )
         }
-        if (styleExamples.isNotEmpty()) {
-            staticSystemPromptBuilder.append("# Language Style Examples")
-            styleExamples.forEach { example ->
-                staticSystemPromptBuilder.append("# Language Style Examples")
-            }
-            staticSystemPromptBuilder.appendLine()
-        }
         beforeSystemModes.filter { it.prompt.isNotBlank() }.forEach { mode ->
             staticSystemPromptBuilder.append(mode.prompt)
             staticSystemPromptBuilder.appendLine()
@@ -601,13 +608,8 @@ class GenerationHandler(
 
 
         val summaryPromptBuilder = StringBuilder()
-        // --- Semi-stable Section: Context Summary (L1) ---
-        // 1. 全局总结始终尝试注入 (L1 Global Summary)
-        if (!contextSummary.isNullOrBlank()) {
-            summaryPromptBuilder.append("\n## Overall Conversation Summary\n").append(contextSummary).appendLine()
-        }
 
-        // 2. 片段总结受 enableContextRefresh 开关控制 (L1 Segments)
+        // 1. 片段总结受 enableContextRefresh 开关控制 (L1 Segments)
         if (assistant.enableContextRefresh) {
             val finalSegments = if (conversationId != null) {
                 val limit = assistant.maxTemporarySummariesToInclude

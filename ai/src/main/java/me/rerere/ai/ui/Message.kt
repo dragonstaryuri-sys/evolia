@@ -198,7 +198,9 @@ data class UIMessage(
         it is UIMessagePart.ToolResult ||
         it is UIMessagePart.Document ||
         it is UIMessagePart.Video ||
-        it is UIMessagePart.Audio
+        it is UIMessagePart.Audio ||
+        it is UIMessagePart.Reasoning ||
+        it is UIMessagePart.Thinking
     }
 
     inline fun <reified P : UIMessagePart> hasPart(): Boolean {
