@@ -1073,6 +1073,11 @@ class ChatService(
 
             val lastIdx = (messages.size - 1).coerceAtLeast(0)
             val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
+
+            if (startIdx >= lastIdx || lastIdx - startIdx < 2) {
+                return@withContext ContextRefreshResult(false)
+            }
+
             val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()
 
             if (toSummarize.isEmpty()) {
@@ -1146,8 +1151,14 @@ class ChatService(
                 Log.i(TAG, "Persistent contextual segment (L1) saved for conversation $id (Format: Structured)")
             }
             if (onlySegments) {
-                // 如果只更新片段，我们只需返回成功，不需要再跑 AI 生成全量总结了
-                return@withContext ContextRefreshResult(true, summary = "Segments updated")
+                val currentConv = conversationRepo.getConversationById(id) ?: conv
+                val updated = currentConv.copy(
+                    contextSummaryUpToIndex = lastIdx, // 更新进度！
+                    lastRefreshTime = System.currentTimeMillis()
+                )
+                conversationRepo.updateConversation(updated)
+                updateConversation(id, updated)
+                return@withContext ContextRefreshResult(true, summary = "Segments updated, index advanced")
             }
             // 2. 生成全量背景总结 (L1 Global Summary)
             val currentSummary = conv.contextSummary
@@ -1174,12 +1185,12 @@ class ChatService(
                     false
                 )
 
-            val updated = conv.copy(
+            val finalConv = conversationRepo.getConversationById(id) ?: conv
+            val updated = finalConv.copy(
                 contextSummary = fullSum,
                 contextSummaryUpToIndex = lastIdx,
                 lastRefreshTime = System.currentTimeMillis()
             )
-
             conversationRepo.updateConversation(updated)
             updateConversation(id, updated)
             ContextRefreshResult(true, fullSum, toSummarize.size)
