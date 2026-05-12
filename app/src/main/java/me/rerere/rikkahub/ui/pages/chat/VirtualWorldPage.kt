@@ -3,6 +3,8 @@ package me.rerere.rikkahub.ui.pages.chat
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -12,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -195,6 +198,9 @@ fun VirtualWorldPage(id: Uuid) {
                         },
                         previewMode = previewMode,
                         onBack = { navController.navigateUp() },
+                        onTitleClick = {
+                            navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                        },
                         onNewTopic = { vm.startNewTopic() },
                         onTogglePreview = { previewMode = !previewMode },
                         onUpdateSettings = { vm.updateSettings(it) }
@@ -322,6 +328,7 @@ private fun VirtualTopBar(
     hasMessages: Boolean,
     previewMode: Boolean,
     onBack: () -> Unit,
+    onTitleClick: () -> Unit,
     onNewTopic: () -> Unit,
     onTogglePreview: () -> Unit,
     onUpdateSettings: (Settings) -> Unit
@@ -367,7 +374,15 @@ private fun VirtualTopBar(
                 text = assistantName,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
                 maxLines = 1,
-                modifier = Modifier.align(Alignment.CenterVertically)
+                modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(),
+                        onClick = onTitleClick
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             )
 
             Spacer(Modifier.weight(1f))
