@@ -403,7 +403,8 @@ private fun SettingProviderConfigPage(
 ) {
     var internalProvider by remember(provider) { mutableStateOf(provider) }
     val scope = rememberCoroutineScope()
-    var showTutorial by remember { mutableStateOf(false) }
+    var showTutorial_silicon by remember { mutableStateOf(false) }
+    var showTutorial_zhipu by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -436,7 +437,42 @@ private fun SettingProviderConfigPage(
             // SiliconFlow Tutorial Button
             if (provider is ProviderSetting.OpenAI && provider.baseUrl.contains("siliconflow.cn")) {
                 OutlinedCard(
-                    onClick = { showTutorial = true },
+                    onClick = { showTutorial_silicon = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.HelpOutline,
+                            null,
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(
+                            text = stringResource(R.string.setting_provider_tutorial_button),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            Icons.Rounded.AutoAwesome,
+                            null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+            // Zhipu Tutorial Button
+            if (provider is ProviderSetting.OpenAI && provider.baseUrl.contains("bigmodel.cn")) {
+                OutlinedCard(
+                    onClick = { showTutorial_zhipu = true },
                     modifier = Modifier.fillMaxWidth(),
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                     colors = CardDefaults.outlinedCardColors(
@@ -540,9 +576,14 @@ private fun SettingProviderConfigPage(
         )
     }
 
-    if (showTutorial) {
+    if (showTutorial_silicon) {
         SiliconFlowTutorialBottomSheet(
-            onDismissRequest = { showTutorial = false }
+            onDismissRequest = { showTutorial_silicon = false }
+        )
+    }
+    if (showTutorial_zhipu) {
+        ZhipuTutorialBottomSheet(
+            onDismissRequest = { showTutorial_zhipu = false }
         )
     }
 }
@@ -623,6 +664,110 @@ private fun SiliconFlowTutorialBottomSheet(
             ) {
                 Text(
                     text = stringResource(R.string.setting_provider_siliconflow_register_hint),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Page Indicator
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(tutorialImages.size) { index ->
+                    val isSelected = pagerState.currentPage == index
+                    Box(
+                        modifier = Modifier
+                            .size(if (isSelected) 10.dp else 8.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant
+                            )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZhipuTutorialBottomSheet(
+    onDismissRequest: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    // 1. 将资源 ID 转换为组件支持的 String 路径
+    val tutorialImages = remember {
+        listOf(
+            R.drawable.tutorial_glm,
+            R.drawable.tutorial_glm1,
+            R.drawable.tutorial_glm2,
+            R.drawable.tutorial_glm3,
+            R.drawable.tutorial_glm4,
+        ).map { "android.resource://${context.packageName}/$it" }
+    }
+    val pagerState = rememberPagerState { tutorialImages.size }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        dragHandle = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(width = 40.dp, height = 4.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
+                )
+                Text(
+                    text = stringResource(R.string.setting_provider_tutorial_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth().height(500.dp),
+                contentPadding = PaddingValues(horizontal = 32.dp),
+                pageSpacing = 16.dp
+            ) { page ->
+                Card(
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    // 2. 关键修改点：使用 ZoomableAsyncImage 替换原有的 Image
+                    ZoomableAsyncImage(
+                        model = tutorialImages[page],
+                        contentDescription = "Tutorial Step ${page + 1}",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+
+            val uriHandler = LocalUriHandler.current
+            Spacer(modifier = Modifier.height(16.dp))
+            TextButton(
+                onClick = {
+                    uriHandler.openUri("https://www.bigmodel.cn/invite?icode=bdZwZQ065gxxPhmwAl1V4eZLO2QH3C0EBTSr%2BArzMw4%3D")
+                }
+            ) {
+                Text(
+                    text = stringResource(R.string.setting_provider_zhipu_register_hint),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Bold

@@ -1471,7 +1471,7 @@
   <string name="setting_tts_page_voice_name_default">系统默认</string>
 
   <string name="provider_type_hint">提示：大多数提供商（包括 DeepSeek、智谱、以及各大中转站）都兼容 OpenAI 格式。只有在直接连接 Google 或 Anthropic 官方 API 时才需选择对应选项。如果是从中转站调用 Gemini/Claude，请依然选择 OpenAI。</string>
-
+  <string name="setting_provider_zhipu_register_hint">没有账号？点击此处注册 智谱 AI (赠送2000万Token)</string>
   <!-- Azure TTS 选择器 -->
   <string name="setting_tts_page_azure_voice_picker_title">选择 Azure 语音</string>
   <string name="setting_tts_page_azure_voice_picker_search_placeholder">搜索名称或 ID...</string>

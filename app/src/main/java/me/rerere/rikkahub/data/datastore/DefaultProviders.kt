@@ -39,4 +39,16 @@ val DEFAULT_PROVIDERS = listOf(
             resultPath = "data.total_credits - data.total_usage",
         )
     ),
+    ProviderSetting.OpenAI(
+        id = Uuid.parse("637e6d0a-1910-449e-862d-068303f27361"),
+        name = "智谱 AI",
+        baseUrl = "https://open.bigmodel.cn/api/paas/v4",
+        apiKey = "",
+        builtIn = true,
+        balanceOption = BalanceOption(
+            enabled = false,
+            apiPath = "",
+            resultPath = "",
+        )
+    ),
 )
