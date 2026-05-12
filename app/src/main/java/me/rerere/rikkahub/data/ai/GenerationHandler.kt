@@ -701,25 +701,43 @@ class GenerationHandler(
 
                 if (isFromToday && lastConv != null) {
                     val currentIsVirtual = assistant.isVirtualWorldMode
-                    val lastIsVirtual = lastConv.isVirtual
                     val memoriesToInject = mutableListOf<AssistantMemory>()
 
+                    // 1. Episode Summary: 开启新话题时，带入本模式下的今天最后一个会话的总结
                     if (messages.size <= 2) {
-                        val episode = memoryRepo.getEpisodeByConversationId(lastConv.id.toString())
-                        if (episode != null) {
-                            Log.i(TAG, "Injecting context summary for new conversation.")
-                            memoriesToInject.add(
-                                AssistantMemory(
-                                    id = 0,
-                                    content = "Summary of your last conversation today: ${episode.content}",
-                                    type = 2,
-                                    timestamp = episode.endTime
-                                )
-                            )
+                        val lastConvOfSameMode = if (lastConv.isVirtual == currentIsVirtual) {
+                            lastConv
+                        } else {
+                            // 如果上个会话不是当前模式（刚切换模式），则查询当前模式下的最后一个会话
+                            conversationRepo.getLatestConversations(
+                                assistantId = assistant.id,
+                                limit = 1,
+                                isVirtual = currentIsVirtual
+                            ).firstOrNull()?.takeIf { it.id.toString() != conversationId?.toString() }
+                        }
+
+                        if (lastConvOfSameMode != null) {
+                            val isSameModeFromToday = lastConvOfSameMode.updateAt.atZone(zoneId).toLocalDate() == today
+                            if (isSameModeFromToday) {
+                                val episode = memoryRepo.getEpisodeByConversationId(lastConvOfSameMode.id.toString())
+                                if (episode != null) {
+                                    Log.i(TAG, "Injecting context summary for new conversation (Mode Match).")
+                                    memoriesToInject.add(
+                                        AssistantMemory(
+                                            id = 0,
+                                            content = "Summary of your last conversation today: ${episode.content}",
+                                            type = 2,
+                                            timestamp = episode.endTime
+                                        )
+                                    )
+                                }
+                            }
                         }
                     }
 
-                    if (currentIsVirtual != lastIsVirtual) {
+                    // 2. Mode Transition: 带入另一模式的聊天记录用于衔接
+                    val isLastFromToday = lastConv.updateAt.atZone(zoneId).toLocalDate() == today
+                    if (isLastFromToday && currentIsVirtual != lastConv.isVirtual) {
                         val transitionPrompt = if (currentIsVirtual) {
                             VIRTUAL_TRANSITION_TO_VIRTUAL
                         } else {
