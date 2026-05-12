@@ -342,44 +342,36 @@ fun AssistantMemorySettings(
                                 }
                             )
 
-                            // 最近聊天开关
-                            val isLockedByConsolidation = assistant.enableMemoryConsolidation
+                            // 最近聊天开关 (解耦后)
                             MemorySettingsItem(
                                 title = stringResource(R.string.assistant_page_recent_chats),
                                 subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
                                 position = "MIDDLE",
                                 trailing = {
                                     HapticSwitch(
-                                        checked = assistant.enableRecentChatsReference || isLockedByConsolidation,
-                                        onCheckedChange = { if (!isLockedByConsolidation) onUpdateAssistant(assistant.copy(enableRecentChatsReference = it)) },
-                                        enabled = !isLockedByConsolidation
+                                        checked = assistant.enableRecentChatsReference,
+                                        onCheckedChange = { onUpdateAssistant(assistant.copy(enableRecentChatsReference = it)) }
                                     )
                                 }
                             )
 
-                            // 记忆整合开关
+                            // 记忆整合开关 (解耦后)
                             if (assistant.useRagMemoryRetrieval) {
                                 MemorySettingsItem(
                                     title = stringResource(R.string.assistant_memory_enable_consolidation_title),
                                     subtitle = stringResource(R.string.assistant_memory_enable_consolidation_desc),
-                                    position = if (assistant.enableMemoryConsolidation) "MIDDLE" else "LAST",
+                                    position = "MIDDLE",
                                     trailing = {
                                         HapticSwitch(
                                             checked = assistant.enableMemoryConsolidation,
-                                            onCheckedChange = { enabled ->
-                                                if (!enabled) {
-                                                    onUpdateAssistant(assistant.copy(enableMemoryConsolidation = false, enableDetailMemory = false))
-                                                } else {
-                                                    onUpdateAssistant(assistant.copy(enableMemoryConsolidation = true, enableRecentChatsReference = true))
-                                                }
-                                            }
+                                            onCheckedChange = { onUpdateAssistant(assistant.copy(enableMemoryConsolidation = it)) }
                                         )
                                     }
                                 )
                             }
 
-                            // 细节记忆
-                            if (assistant.useRagMemoryRetrieval && assistant.enableMemoryConsolidation) {
+                            // 细节记忆 (解耦后，仅依赖 RAG)
+                            if (assistant.useRagMemoryRetrieval) {
                                 Column {
                                     MemorySettingsItem(
                                         title = stringResource(R.string.detail_memory_title),
