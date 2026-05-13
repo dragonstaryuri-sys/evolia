@@ -378,8 +378,9 @@ class MemoryConsolidationWorker(
         // --- Process Master Memory ---
         var updatedMasterContent: String? = null
         var wasCompressed = false
-        // 修改点：支持 incrementalMaster 触发 L3 更新
-        if (forceMaster || incrementalMaster || (currentAssistant.enableMasterMemory && episodicSuccessCount > 0)) {
+        // 修改：L3 记忆不再随周期性任务自动触发 (episodicSuccessCount > 0 也不再自动触发)
+        // 仅在明确传入 forceMaster 或 incrementalMaster 标识时才更新，实现完全的“事件/手动”驱动
+        if (forceMaster || incrementalMaster) {
             val newConversations = conversations.filter {
                 val updateTime = it.updateAt.toEpochMilli()
                 // forceMaster -> 全量更新；否则 -> 增量更新（仅包含上次更新后的对话）

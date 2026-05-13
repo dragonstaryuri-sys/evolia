@@ -113,30 +113,6 @@ class EvoliaApp : Application() {
                 .build()
         )
 
-        get<AppScope>().launch {
-            get<SettingsStore>().settingsFlow
-                .map { it.consolidationWorkerIntervalMinutes to it.consolidationRequiresDeviceIdle }
-                .distinctUntilChanged()
-                .collect { (interval, idle) ->
-                    val constraints = Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .apply {
-                            if (idle) setRequiresDeviceIdle(true)
-                        }
-                        .build()
-
-                    WorkManager.getInstance(this@EvoliaApp).enqueueUniquePeriodicWork(
-                        "memory_consolidation",
-                        ExistingPeriodicWorkPolicy.UPDATE,
-                        PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(
-                            interval.toLong().coerceAtLeast(300), TimeUnit.MINUTES
-                        )
-                            .setConstraints(constraints)
-                            .build()
-                    )
-                }
-        }
-
         val appShortcutManager = me.rerere.rikkahub.utils.AppShortcutManager(this)
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
