@@ -487,14 +487,8 @@ class MemoryConsolidationWorker(
         existingEpisode: ChatEpisodeEntity?
     ): String {
         val episodeSignificance = existingEpisode?.significance ?: 0
-        val summarySignificance = if (conv.contextSummary != null) conv.contextSummaryUpToIndex + 1 else 0
-
-        val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance) {
-            conv.contextSummary to summarySignificance
-        } else {
-            existingEpisode?.content to episodeSignificance
-        }
-
+        val baseSummary = existingEpisode?.content
+        val skipCount = episodeSignificance
         val newMessages = conv.currentMessages.drop(skipCount)
 
         return if (newMessages.isEmpty() && baseSummary != null) {

@@ -184,7 +184,12 @@ fun ChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
-    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
+    onRefreshContext: suspend () -> ChatService.ContextRefreshResult = {
+        ChatService.ContextRefreshResult(
+            false,
+            errorMessage = "Not configured"
+        )
+    },
     onDeleteFile: (Uri) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -367,7 +372,10 @@ fun ChatInput(
                         enter = androidx.compose.animation.fadeIn(
                             animationSpec = androidx.compose.animation.core.tween(150)
                         ) + androidx.compose.animation.expandHorizontally(
-                            animationSpec = androidx.compose.animation.core.tween(200, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                            animationSpec = androidx.compose.animation.core.tween(
+                                200,
+                                easing = androidx.compose.animation.core.FastOutSlowInEasing
+                            )
                         ),
                         exit = androidx.compose.animation.fadeOut(
                             animationSpec = androidx.compose.animation.core.tween(100)
@@ -425,7 +433,10 @@ fun ChatInput(
                                         onUpdateAssistant(assistant.copy(thinkingBudget = it))
                                     },
                                     onlyIcon = true,
-                                    contentColor = if (ReasoningLevel.fromBudgetTokens(assistant.thinkingBudget ?: 0).isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    contentColor = if (ReasoningLevel.fromBudgetTokens(
+                                            assistant.thinkingBudget ?: 0
+                                        ).isEnabled
+                                    ) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -433,10 +444,11 @@ fun ChatInput(
 
                     // Inner Capsule (Text Input Field + Model Picker + Send Button)
                     val amoledMode by rememberAmoledDarkMode()
-                    val containerColor = if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    val containerColor =
+                        if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
                     val elevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
 
-                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
+                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Surface(
                             shape = RoundedCornerShape(innerCornerSize), // Dynamic Inner Shape
                             color = containerColor,
@@ -465,9 +477,15 @@ fun ChatInput(
                                                 targetState = showSendButton,
                                                 transitionSpec = {
                                                     androidx.compose.animation.fadeIn(
-                                                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
+                                                        animationSpec = androidx.compose.animation.core.spring(
+                                                            dampingRatio = 0.6f,
+                                                            stiffness = 400f
+                                                        )
                                                     ) togetherWith androidx.compose.animation.fadeOut(
-                                                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 400f)
+                                                        animationSpec = androidx.compose.animation.core.spring(
+                                                            dampingRatio = 0.6f,
+                                                            stiffness = 400f
+                                                        )
                                                     )
                                                 },
                                                 label = "button_crossfade"
@@ -525,14 +543,27 @@ fun ChatInput(
                                                     ) {
                                                         val contentColor = when {
                                                             state.loading -> MaterialTheme.colorScheme.onErrorContainer
-                                                            state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                                            state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(
+                                                                alpha = 0.38f
+                                                            )
+
                                                             else -> MaterialTheme.colorScheme.onPrimary
                                                         }
                                                         if (state.loading) {
                                                             KeepScreenOn()
-                                                            Icon(Icons.Rounded.Stop, stringResource(R.string.stop), tint = contentColor, modifier = Modifier.size(20.dp))
+                                                            Icon(
+                                                                Icons.Rounded.Stop,
+                                                                stringResource(R.string.stop),
+                                                                tint = contentColor,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
                                                         } else {
-                                                            Icon(Icons.Rounded.ArrowUpward, stringResource(R.string.send), tint = contentColor, modifier = Modifier.size(20.dp))
+                                                            Icon(
+                                                                Icons.Rounded.ArrowUpward,
+                                                                stringResource(R.string.send),
+                                                                tint = contentColor,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
                                                         }
                                                     }
                                                 } else {
@@ -596,7 +627,6 @@ fun ChatInput(
         }
     }
 }
-
 
 
 @Composable
@@ -813,7 +843,10 @@ private fun TextInputRow(
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                         imeAction = androidx.compose.ui.text.input.ImeAction.None
                     ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 16.dp,
+                        vertical = 16.dp
+                    ),
                     colors = TextFieldDefaults.colors().copy(
                         unfocusedIndicatorColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
@@ -1064,7 +1097,7 @@ private fun ChatSuggestionsRow(
                 // Handle disappearance after selection animation
                 // When selected, wait for animation then trigger callback
                 LaunchedEffect(isSelected) {
-                    if(isSelected) {
+                    if (isSelected) {
                         kotlinx.coroutines.delay(200) // Wait for spring up
                         onClickSuggestion(suggestion)
                         //Reset state is handled by parent recomposition usually,
@@ -1132,7 +1165,8 @@ internal fun FilesPicker(
 
     val isDarkMode = LocalDarkMode.current
     val isKeyboardVisible = WindowInsets.isImeVisible
-    val showContextRefresh = assistant.enableContextRefresh && !isKeyboardVisible && conversation.currentMessages.size > 2
+    val showContextRefresh =
+        assistant.enableContextRefresh && !isKeyboardVisible && conversation.currentMessages.size > 2
 
     // Shapes for 3-button row - different based on keyboard visibility
     val topLeftShape = if (isKeyboardVisible) {
@@ -1149,8 +1183,18 @@ internal fun FilesPicker(
     // Shapes for modes/lorebooks row - middle if context refresh enabled, bottom if not
     val middleLeftShape = RoundedCornerShape(10.dp)
     val middleRightShape = RoundedCornerShape(10.dp)
-    val bottomLeftShape = if (showContextRefresh) middleLeftShape else RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 10.dp)
-    val bottomRightShape = if (showContextRefresh) middleRightShape else RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
+    val bottomLeftShape = if (showContextRefresh) middleLeftShape else RoundedCornerShape(
+        topStart = 10.dp,
+        topEnd = 10.dp,
+        bottomStart = 24.dp,
+        bottomEnd = 10.dp
+    )
+    val bottomRightShape = if (showContextRefresh) middleRightShape else RoundedCornerShape(
+        topStart = 10.dp,
+        topEnd = 10.dp,
+        bottomStart = 10.dp,
+        bottomEnd = 24.dp
+    )
     // Full-width bottom row shape for context refresh
     val fullBottomShape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
 
@@ -1165,22 +1209,30 @@ internal fun FilesPicker(
     ) {
         // File upload buttons row: Capture, Photo Library, Files
         Row(
-            modifier = Modifier.fillMaxWidth().height(80.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(80.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            Box(modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()) {
                 TakePicButton(shape = topLeftShape) {
                     state.addImages(it)
                     onDismiss()
                 }
             }
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            Box(modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()) {
                 ImagePickButton(shape = topMiddleShape) {
                     state.addImages(it)
                     onDismiss()
                 }
             }
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            Box(modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()) {
                 // Check if Python is enabled for this assistant
                 val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
                 FilePickButton(
@@ -1211,12 +1263,14 @@ internal fun FilesPicker(
             val activeLorebookCount = assistant.enabledLorebookIds.size
 
             Row(
-                modifier = Modifier.fillMaxWidth().height(80.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 // Modes button (left half) - matches BigIconTextButton pattern
                 val modesActive = activeModeCount > 0
-                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.weight(1f),
                         shape = bottomLeftShape,
@@ -1257,7 +1311,7 @@ internal fun FilesPicker(
 
                 // Lorebooks button (right half) - matches BigIconTextButton pattern
                 val lorebooksActive = activeLorebookCount > 0
-                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.weight(1f),
                         shape = bottomRightShape,
@@ -1301,7 +1355,7 @@ internal fun FilesPicker(
             if (showContextRefresh) {
                 val totalMessages = conversation.currentMessages.size
                 val lastSummaryIndex = conversation.contextSummaryUpToIndex
-                val hasPreviousSummary = !conversation.contextSummary.isNullOrBlank() && lastSummaryIndex >= 0
+                val hasPreviousSummary = lastSummaryIndex >= 0
                 val messagesToKeep = 2 // Keep last user+assistant exchange
                 val newMessageCount = if (hasPreviousSummary && lastSummaryIndex < totalMessages) {
                     // Messages after last summary, minus the ones we keep
@@ -1311,16 +1365,20 @@ internal fun FilesPicker(
                     (totalMessages - messagesToKeep).coerceAtLeast(0)
                 }
 
-                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
                         shape = fullBottomShape,
                         color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
                         onClick = { showContextRefreshDialog = true }
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .fillMaxSize(),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -1384,6 +1442,7 @@ internal fun FilesPicker(
         }
     }
 }
+
 @Composable
 private fun FullScreenEditor(
     state: ChatInputState,
@@ -1631,7 +1690,6 @@ fun VideoPickButton(
 }
 
 
-
 @Composable
 fun FilePickButton(
     shape: Shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
@@ -1750,7 +1808,7 @@ private fun BigIconTextButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
+        CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
             Surface(
                 shape = shape,
                 color = if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1777,7 +1835,7 @@ private fun BigIconTextButtonPreview() {
     ) {
         BigIconTextButton(
             icon = {
-            Icon(Icons.Rounded.Photo, null)
+                Icon(Icons.Rounded.Photo, null)
             }
         ) {}
     }
@@ -1868,6 +1926,7 @@ internal fun ModesPickerSheet(
                             topStart = cornerRadius, topEnd = cornerRadius,
                             bottomStart = smallCorner, bottomEnd = smallCorner
                         )
+
                         me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
                         me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
                             topStart = smallCorner, topEnd = smallCorner,
@@ -1875,7 +1934,7 @@ internal fun ModesPickerSheet(
                         )
                     }
 
-                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
@@ -2006,6 +2065,7 @@ internal fun LorebooksPickerSheet(
                             topStart = cornerRadius, topEnd = cornerRadius,
                             bottomStart = smallCorner, bottomEnd = smallCorner
                         )
+
                         me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(smallCorner)
                         me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
                             topStart = smallCorner, topEnd = smallCorner,
@@ -2013,7 +2073,7 @@ internal fun LorebooksPickerSheet(
                         )
                     }
 
-                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if(amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
@@ -2021,97 +2081,104 @@ internal fun LorebooksPickerSheet(
                             shape = shape,
                             onClick = { onNavigateToLorebook(lorebook.id.toString()) }
                         ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Book cover or letter fallback
-                            val bookShape = when (position) {
-                                me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY -> RoundedCornerShape(
-                                    topStart = 16.dp, topEnd = 6.dp,
-                                    bottomStart = 16.dp, bottomEnd = 6.dp
-                                )
-                                me.rerere.rikkahub.ui.components.ui.ItemPosition.FIRST -> RoundedCornerShape(
-                                    topStart = 16.dp, topEnd = 6.dp,
-                                    bottomStart = 6.dp, bottomEnd = 6.dp
-                                )
-                                me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
-                                me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
-                                    topStart = 6.dp, topEnd = 6.dp,
-                                    bottomStart = 16.dp, bottomEnd = 6.dp
-                                )
-                            }
-                            Surface(
-                                shape = bookShape,
-                                color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.size(width = 40.dp, height = 56.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    when (val cover = lorebook.cover) {
-                                        is Avatar.Image -> {
-                                            AsyncImage(
-                                                model = cover.url,
-                                                contentDescription = null,
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                            )
-                                        }
-                                        is Avatar.Emoji -> {
-                                            Text(
-                                                text = cover.content,
-                                                fontSize = 20.sp
-                                            )
-                                        }
-                                        else -> {
-                                            // Letter fallback
-                                            Text(
-                                                text = lorebook.name.take(1).uppercase().ifEmpty { "L" },
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                // Book cover or letter fallback
+                                val bookShape = when (position) {
+                                    me.rerere.rikkahub.ui.components.ui.ItemPosition.ONLY -> RoundedCornerShape(
+                                        topStart = 16.dp, topEnd = 6.dp,
+                                        bottomStart = 16.dp, bottomEnd = 6.dp
+                                    )
+
+                                    me.rerere.rikkahub.ui.components.ui.ItemPosition.FIRST -> RoundedCornerShape(
+                                        topStart = 16.dp, topEnd = 6.dp,
+                                        bottomStart = 6.dp, bottomEnd = 6.dp
+                                    )
+
+                                    me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
+                                    me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
+                                        topStart = 6.dp, topEnd = 6.dp,
+                                        bottomStart = 16.dp, bottomEnd = 6.dp
+                                    )
+                                }
+                                Surface(
+                                    shape = bookShape,
+                                    color = if (isEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.size(width = 40.dp, height = 56.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        when (val cover = lorebook.cover) {
+                                            is Avatar.Image -> {
+                                                AsyncImage(
+                                                    model = cover.url,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                )
+                                            }
+
+                                            is Avatar.Emoji -> {
+                                                Text(
+                                                    text = cover.content,
+                                                    fontSize = 20.sp
+                                                )
+                                            }
+
+                                            else -> {
+                                                // Letter fallback
+                                                Text(
+                                                    text = lorebook.name.take(1).uppercase().ifEmpty { "L" },
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    color = if (isEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            // Lorebook info
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Text(
-                                    text = lorebook.name.ifEmpty { stringResource(R.string.lorebooks_page_unnamed) },
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = stringResource(R.string.lorebooks_page_entries_count, lorebook.entries.size),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            // Toggle
-                            me.rerere.rikkahub.ui.components.ui.HapticSwitch(
-                                checked = isEnabled,
-                                onCheckedChange = { newEnabled ->
-                                    val newIds = if (newEnabled) {
-                                        localEnabledIds + lorebook.id
-                                    } else {
-                                        localEnabledIds - lorebook.id
-                                    }
-                                    // Update local state immediately for UI feedback
-                                    localEnabledIds = newIds
-                                    // Persist change via callback
-                                    onUpdateAssistant(assistant.copy(enabledLorebookIds = newIds))
+                                // Lorebook info
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = lorebook.name.ifEmpty { stringResource(R.string.lorebooks_page_unnamed) },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.lorebooks_page_entries_count,
+                                            lorebook.entries.size
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                            )
-                        }
+
+                                // Toggle
+                                me.rerere.rikkahub.ui.components.ui.HapticSwitch(
+                                    checked = isEnabled,
+                                    onCheckedChange = { newEnabled ->
+                                        val newIds = if (newEnabled) {
+                                            localEnabledIds + lorebook.id
+                                        } else {
+                                            localEnabledIds - lorebook.id
+                                        }
+                                        // Update local state immediately for UI feedback
+                                        localEnabledIds = newIds
+                                        // Persist change via callback
+                                        onUpdateAssistant(assistant.copy(enabledLorebookIds = newIds))
+                                    }
+                                )
+                            }
                         }
                     }
                 }

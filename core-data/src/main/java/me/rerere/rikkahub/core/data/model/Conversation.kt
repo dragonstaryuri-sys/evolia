@@ -25,8 +25,9 @@ data class Conversation(
     @Serializable(with = InstantSerializer::class)
     val updateAt: Instant = Instant.now(),
     val isConsolidated: Boolean = false,
-    val contextSummary: String? = null,
     val temporarySummaries: List<String> = emptyList(),
+    @Deprecated("Use ChatEpisode instead")
+    val contextSummary: String? = null,
     val contextSummaryUpToIndex: Int = -1,
     val lastPruneTime: Long = 0L,
     val lastPruneMessageCount: Int = 0,

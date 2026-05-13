@@ -228,6 +228,7 @@ class GenerationHandler(
                 settings = settings,
                 messages = currentMessages,
                 onUpdateMessages = {updatedFromChunk ->
+                    // 根据 skipContextForResponse 决定是否隐藏 AI 的回复
                     val processedMessages = if (skipContextForResponse) {
                         updatedFromChunk.mapIndexed { index, uiMessage ->
                             if (index == updatedFromChunk.lastIndex && uiMessage.role == CoreMessageRole.ASSISTANT) {
@@ -236,7 +237,8 @@ class GenerationHandler(
                         }
                     } else updatedFromChunk
 
-                    currentMessages = updatedFromChunk.transforms(
+                    // 应用转换器
+                    currentMessages = processedMessages.transforms(
                         transformers = outputTransformers,
                         context = context,
                         model = model,

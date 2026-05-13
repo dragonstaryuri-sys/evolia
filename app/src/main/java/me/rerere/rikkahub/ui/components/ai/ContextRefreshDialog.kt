@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -44,9 +45,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import org.koin.compose.koinInject
 
 enum class RefreshDialogState {
     CONFIRM,
@@ -61,40 +64,27 @@ fun ContextRefreshDialog(
     onRefresh: suspend () -> ChatService.ContextRefreshResult,
     onDismiss: () -> Unit
 ) {
+    val chatEpisodeDAO: ChatEpisodeDAO = koinInject()
     val scope = rememberCoroutineScope()
     var state by remember { mutableStateOf(RefreshDialogState.CONFIRM) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var summarizedCount by remember { mutableIntStateOf(0) }
     var tokensSaved by remember { mutableIntStateOf(0) }
 
-    val messageCount = conversation.currentMessages.size
-    val estimatedTokens = conversation.currentMessages.sumOf { msg ->
-        msg.parts.sumOf { part ->
-            when (part) {
-                is me.rerere.ai.ui.UIMessagePart.Text -> part.text.length / 4
-                else -> 50
-            }
-        }
+    // 异步加载该会话的最新 Episode 内容
+    val episodeSummary by produceState<String?>(initialValue = null, conversation.id) {
+        value = chatEpisodeDAO.getEpisodeByConversationId(conversation.id.toString())?.content
     }
+
+    val messageCount = conversation.currentMessages.size
 
     // Calculate messages since last summary
     val lastSummaryIndex = conversation.contextSummaryUpToIndex
-    val messagesSinceSummary = if (lastSummaryIndex >= 0) {
-        (messageCount - lastSummaryIndex - 1).coerceAtLeast(0)
-    } else {
-        messageCount // No previous summary
-    }
-    val hasPreviousSummary = !conversation.contextSummary.isNullOrBlank()
-
-    // Smooth spring animation spec
-    val springSpec = spring<Float>(
-        dampingRatio = Spring.DampingRatioMediumBouncy,
-        stiffness = Spring.StiffnessLow
-    )
+    val hasPreviousSummary = !episodeSummary.isNullOrBlank()
 
     AlertDialog(
         onDismissRequest = { if (state != RefreshDialogState.LOADING) onDismiss() },
-        modifier = Modifier.padding(horizontal = 24.dp),  // Padding from screen edges
+        modifier = Modifier.padding(horizontal = 24.dp),
         shape = RoundedCornerShape(28.dp),
         containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
         title = {
@@ -169,7 +159,7 @@ fun ContextRefreshDialog(
                             val lastIndexToSummarize = (messageCount - messagesToKeep - 1).coerceAtLeast(0)
 
                             // Calculate actual messages to summarize (excluding kept messages)
-                            val startIndex = if (hasPreviousSummary && lastSummaryIndex >= 0 && lastSummaryIndex < messageCount) {
+                            val startIndex = if (lastSummaryIndex >= 0 && lastSummaryIndex < messageCount) {
                                 (lastSummaryIndex + 1).coerceAtMost(messageCount)
                             } else {
                                 0
@@ -212,7 +202,7 @@ fun ContextRefreshDialog(
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = conversation.contextSummary?.take(100) + if ((conversation.contextSummary?.length ?: 0) > 200) "..." else "",
+                                    text = (episodeSummary?.take(100) ?: "") + if ((episodeSummary?.length ?: 0) > 100) "..." else "",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 6

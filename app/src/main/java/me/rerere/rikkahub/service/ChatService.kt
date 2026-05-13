@@ -318,7 +318,7 @@ class ChatService(
                         handleMessageComplete(
                             conversationId = conversationId,
                             assistantOverride = originalAssistant,
-                            skipContextForResponse = true
+                            skipContextForResponse = false // 辅助参数：不要隐藏 AI 的回复，以便后续参考
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "自动化任务生成失败", e)
@@ -352,7 +352,7 @@ class ChatService(
                 Conversation.ofId(
                     id = conversationId,
                     assistantId = currentAssistant.id,
-                    isVirtual = currentAssistant.isVirtualWorldMode // 修复：默认创建时根据助理当前模式同步 isVirtual
+                    isVirtual = currentAssistant.isVirtualWorldMode
                 )
             )
         }
@@ -386,11 +386,13 @@ class ChatService(
 
                     // 1. L2 情节记忆归档
                     archiveConversation(oldId, force = true)
+
                     // 2. L1 细节记忆：清算剩余消息
                     if (assistant.enableDetailMemory) {
                         summarizeAndRefresh(oldId, onlySegments = true)
                     }
-                    // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3（新增逻辑）
+
+                    // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3
                     if (assistant.enableMasterMemory) {
                         val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
                             .setInputData(
@@ -426,10 +428,13 @@ class ChatService(
 
     /**
      * 将会话存档为唯一的情节记忆 (1:1 映射)
-     * @param force 如果为 true，则无视消息数量限制，立即更新记忆
      */
     @Suppress("UNCHECKED_CAST")
-    suspend fun archiveConversation(conversationId: Uuid, force: Boolean = false) {
+    suspend fun archiveConversation(
+        conversationId: Uuid,
+        force: Boolean = false,
+        skipEmbedding: Boolean = false
+    ) {
         if (!archivingConversations.add(conversationId)) return
 
         try {
@@ -437,15 +442,8 @@ class ChatService(
             val messages = conv.currentMessages
             val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
-            // 1. 获取当前所有总结的进度
             val episodeSignificance = existingEpisode?.significance ?: 0
-            val summarySignificance = if (conv.contextSummary != null) {
-                conv.contextSummaryUpToIndex + 1
-            } else {
-                0
-            }
 
-            // 2. 校验：除非强制触发，否则新消息需达到阈值 (4条) 才更新
             if (!force) {
                 if (existingEpisode != null) {
                     if (messages.size - episodeSignificance < 4) return
@@ -456,24 +454,16 @@ class ChatService(
 
             val settings = settingsStore.settingsFlow.first()
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
+
             if (!assistant.enableMemoryConsolidation && !force) return
 
-            // 3. 选取最佳基准 (滚动式逻辑)
-            // 对比 L1 和 L2，谁涵盖的消息多就用谁做基准
-            val (baseSummary, skipCount) = if (summarySignificance >= episodeSignificance && !conv.contextSummary.isNullOrBlank()) {
-                conv.contextSummary to summarySignificance
-            } else {
-                existingEpisode?.content to episodeSignificance
-            }
+            val baseSummary = existingEpisode?.content
+            val newMessages = messages.drop(episodeSignificance)
 
-            val newMessages = messages.drop(skipCount)
-
-            // 如果没有新消息且已有基准，且不是强制刷新，则无需重新生成
             if (newMessages.isEmpty() && baseSummary != null && !force) {
                 return
             }
 
-            // 4. 模型准备
             val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
@@ -484,20 +474,15 @@ class ChatService(
             val backgroundProvider = backgroundModel.findProvider(settings.providers) ?: provider
             val backgroundHandler = providerManager.getProviderByType(backgroundProvider)
 
-            // 5. 生成摘要 (合并总结逻辑)
             val summary = if (newMessages.isEmpty() && baseSummary != null) {
                 baseSummary
             } else {
                 val messagesText = newMessages.joinToString("\n") {
                     val content = it.toContentText()
-                    val displayed = if (content.length > 400) {
-                        "${content.take(200)}...${content.takeLast(200)}"
-                    } else content
-                    "${it.role}: $displayed"
+                    "${it.role}: $content"
                 }
                 val locale = Locale.getDefault().displayName
 
-                // 使用合并后的统一提示词
                 val prompt = DEFAULT_FULL_SUMMARY_PROMPT
                     .replace("{{previous_summary}}", baseSummary ?: "None")
                     .replace("{{new_messages}}", messagesText)
@@ -517,7 +502,6 @@ class ChatService(
             }
 
             if (summary.isNotBlank()) {
-                // 6. 提取关键词与处理向量
                 val aiKeywords = extractKeywords(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
@@ -528,17 +512,20 @@ class ChatService(
                 val localKeywords = KeywordExtractor.extract(summary)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
 
-                val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $summary" else summary
-                val embeddingResult = try {
-                    embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to generate embedding for archived episode", e)
+                val embeddingResult = if (skipEmbedding) {
                     null
+                } else {
+                    val effectiveContent = if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $summary" else summary
+                    try {
+                        embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to generate embedding for archived episode", e)
+                        null
+                    }
                 }
 
-                // 7. 保存/覆盖 Episode
                 val episode = ChatEpisodeEntity(
-                    id = existingEpisode?.id ?: 0, // 核心：保留原 ID 以触发 REPLACE 覆盖，防止重复
+                    id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conversationId.toString(),
                     content = summary,
@@ -547,13 +534,13 @@ class ChatService(
                     embeddingModelId = embeddingResult?.modelId,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
-                    significance = messages.size, // 记录当前总结到的消息总数
+                    significance = messages.size,
                     lastAccessedAt = System.currentTimeMillis()
                 )
                 chatEpisodeDAO.insertEpisode(episode)
                 Log.i(
                     TAG,
-                    "Archived/Updated episodic memory (L2) for $conversationId (Inc: ${newMessages.size} messages)"
+                    "Archived episodic memory (L2) for $conversationId. skipEmbedding=$skipEmbedding, messages=${messages.size}"
                 )
             }
         } catch (e: Exception) {
@@ -574,7 +561,6 @@ class ChatService(
 
         val job = appScope.launch {
             try {
-                // 确保数据 from 数据库 or 正确初始化开始
                 initializeConversation(conversationId)
 
                 val currentConversation = getConversationFlow(conversationId).value
@@ -695,7 +681,7 @@ class ChatService(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null,
         assistantOverride: Assistant? = null,
-        skipContextForResponse: Boolean = false // 新增参数
+        skipContextForResponse: Boolean = false
     ) {
         val settings = settingsStore.settingsFlow.first()
         runCatching {
@@ -714,13 +700,11 @@ class ChatService(
             }
 
             checkInvalidMessages(conversationId)
-            // 💡 提取记忆检索逻辑并增加超时保护，防止 Embedding 挂起
             val retrievedMemories = withContext(Dispatchers.IO) {
                 if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(
                         conversationId
                     )
                 ) {
-                    // 设置 8 秒超时，如果接口没响应就跳过记忆，保证聊天不卡死
                     kotlinx.coroutines.withTimeoutOrNull(8000) {
                         if (assistant.useRagMemoryRetrieval) {
                             val lastUserMsg =
@@ -754,9 +738,12 @@ class ChatService(
                                 emptyList()
                             }
                         } else memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-                    } ?: emptyList() // 超时返回空列表
+                    } ?: emptyList()
                 } else emptyList()
             }
+
+            // 【核心修改】：由于 contextSummary 不再存储在 Conversation 中，此处从 Episode DB 获取最新总结
+            val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
             generationHandler.generateText(
                 settings = settings,
@@ -830,7 +817,7 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-                contextSummary = conversation.contextSummary, // 传入全量总结
+                contextSummary = currentEpisode?.content, // 传入最新的 L2 全量总结
                 temporarySummaries = emptyList(), // 不再传递内存列表，由 GenerationHandler 自行查询 DB
                 skipContextForResponse = skipContextForResponse, // 传递参数
                 conversationId = conversationId // 传递会话 ID
@@ -1030,7 +1017,7 @@ class ChatService(
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
 
-        // 【核心修改】L1 归档完全由“细节记忆”独占控制，若关闭则不归档
+        // L1 归档完全由“细节记忆”独占控制，若关闭则不归档
         if (!assistant.enableDetailMemory) return
         val max = assistant.detailMemoryThreshold
 
@@ -1044,13 +1031,14 @@ class ChatService(
         if (count >= max) summarizeAndRefresh(id)
     }
 
+    /**
+     * 执行 L1 片段刷新，并同步触发 L2 全量总结文本更新 (延迟 Embedding)
+     */
     suspend fun summarizeAndRefresh(
         id: Uuid,
         onlySegments: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
-        // 并发防抖：如果该会话正在进行 L1 总结，则直接返回
         if (summarizingConversations.contains(id)) {
-            Log.d(TAG, "summarizeAndRefresh: $id is already summarizing, skipping.")
             return@withContext ContextRefreshResult(false, errorMessage = "Already summarizing")
         }
         summarizingConversations.add(id)
@@ -1084,13 +1072,11 @@ class ChatService(
                 return@withContext ContextRefreshResult(false)
             }
 
-            // 使用 toContentText() 排除推理过程
+            // 1. 生成背景总结 (L1 Segment Background)
             val text = toSummarize.joinToString("\n") {
                 "${it.role}: ${it.toContentText().take(500)}"
             }
             val locale = Locale.getDefault().displayName
-
-            // 1. 生成背景总结 (L1 Segment Background + Keywords)
             val tempPrompt = DEFAULT_TEMP_SUMMARY_PROMPT
                 .replace("{{new_messages}}", text)
                 .replace("{{locale}}", locale)
@@ -1106,94 +1092,53 @@ class ChatService(
             val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
             if (aiResponse.isNotBlank()) {
-                // --- 增强型结构化解析逻辑 ---
                 val backgroundRegex = Regex("""\[Background\]:\s*(.*)""", RegexOption.IGNORE_CASE)
                 val keywordsRegex = Regex("""\[Keywords\]:\s*(.*)""", RegexOption.IGNORE_CASE)
 
                 val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
                 val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
 
-                // 智能降级回退：如果正则没匹配到，尝试按行取第一行作为背景
-                val finalBackground =
-                    backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
-                    ?: aiResponse
+                val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
                 val aiKeywords = keywordsMatch ?: ""
 
-                // 构建 拼接内容 (Background + Original Text)
                 val fullContextualContent = """
                     [Background]: $finalBackground
                     [Original Text]:
                     $text
                 """.trimIndent()
 
-                // 合并 AI 提取的和本地分词的关键词
                 val localKeywords = KeywordExtractor.extract(finalBackground)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
 
                 val embedding = try {
-                    // 对背景+原文进行向量化
                     embeddingService.embed(fullContextualContent, assistant.id.toString())
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to generate embedding for segment", e)
-                    null
-                }
+                } catch (e: Exception) { null }
 
                 val segment = ChatSegmentEntity(
                     assistantId = assistant.id.toString(),
                     conversationId = id.toString(),
-                    content = finalBackground, // 只存储背景
+                    content = finalBackground,
                     keywords = keywords,
                     startMessageIndex = startIdx,
                     endMessageIndex = lastIdx,
                     embedding = embedding?.let { JsonInstant.encodeToString(it) }
                 )
                 memoryRepository.saveSegment(segment)
-                Log.i(TAG, "Persistent contextual segment (L1) saved for conversation $id (Format: Structured)")
             }
-            if (onlySegments) {
-                val currentConv = conversationRepo.getConversationById(id) ?: conv
-                val updated = currentConv.copy(
-                    contextSummaryUpToIndex = lastIdx, // 更新进度！
-                    lastRefreshTime = System.currentTimeMillis()
-                )
-                conversationRepo.updateConversation(updated)
-                updateConversation(id, updated)
-                return@withContext ContextRefreshResult(true, summary = "Segments updated, index advanced")
-            }
-            // 2. 生成全量背景总结 (L1 Global Summary)
-            val currentSummary = conv.contextSummary
-            // 统一使用 DEFAULT_FULL_SUMMARY_PROMPT，并处理空值
-            val fullPrompt = DEFAULT_FULL_SUMMARY_PROMPT
-                .replace("{{previous_summary}}", currentSummary ?: "None")
-                .replace("{{new_messages}}", text)
-                .replace("{{locale}}", locale)
-                .replace("{{char}}", assistant.name)
 
-            Log.d(TAG, "Summarize L1 Full Context Prompt:\n$fullPrompt")
-
-            val fullResp = retryIO(times = 1) {
-                handler.generateText(
-                    providerSetting = provider,
-                    messages = listOf(UIMessage.user(fullPrompt)),
-                    params = TextGenerationParams(model, 0.3f, 1.0f)
-                )
-            }
-            fullResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
-
-            val fullSum =
-                fullResp.choices.firstOrNull()?.message?.toContentText() ?: return@withContext ContextRefreshResult(
-                    false
-                )
-
-            val finalConv = conversationRepo.getConversationById(id) ?: conv
-            val updated = finalConv.copy(
-                contextSummary = fullSum,
+            // 更新 L1 进度
+            val currentConv = conversationRepo.getConversationById(id) ?: conv
+            val updated = currentConv.copy(
                 contextSummaryUpToIndex = lastIdx,
                 lastRefreshTime = System.currentTimeMillis()
             )
             conversationRepo.updateConversation(updated)
             updateConversation(id, updated)
-            ContextRefreshResult(true, fullSum, toSummarize.size)
+
+            // 2. 同步触发 L2 全量归档逻辑 (不进行嵌入，只更新文本摘要)
+            archiveConversation(id, force = true, skipEmbedding = true)
+
+            ContextRefreshResult(true, "Segments & Episode Summary updated", toSummarize.size)
         } catch (e: Exception) {
             ContextRefreshResult(false, errorMessage = e.message)
         } finally {
@@ -1246,8 +1191,6 @@ class ChatService(
         }
         updateConversation(id, conversation)
 
-        // In virtual mode, we allow saving empty conversations to ensure session partitioning
-        // is preserved when "Start New Topic" is clicked.
         if (conversation.title.isBlank() && conversation.messageNodes.isEmpty() && !conversation.isVirtual) return
 
         if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(
@@ -1272,8 +1215,6 @@ class ChatService(
                             it
                         )
                     }.collect {}
-                    // We don't record usage for translateText because currently translateText flow only returns String.
-                    // If needed, we'd need to modify translateText to return usage too.
                     saveConversation(id, getConversationFlow(id).value)
                 }
             } catch (e: Exception) {
@@ -1404,13 +1345,12 @@ class ChatService(
     private fun sendGenerationDoneNotification(conversationId: Uuid) {
         val conversation = getConversationFlow(conversationId).value
         val settings = settingsStore.settingsFlow.value
-        // 获取当前会话对应的智能体
         val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
         val lastMsg = conversation.currentMessages.lastOrNull()
         val msg = lastMsg?.toContentText()?.take(50) ?: ""
         val notification = NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
-            .setContentTitle(assistant.name) // 设置标题为智能体名称
-            .setContentText(msg)            // 设置内容（已过滤思考过程）
+            .setContentTitle(assistant.name)
+            .setContentText(msg)
             .setSmallIcon(R.drawable.about_logo)
             .setAutoCancel(true)
             .setContentIntent(getPendingIntent(context, conversationId))

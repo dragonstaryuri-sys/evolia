@@ -104,27 +104,30 @@ You must return the full content in the following format (Language: {{locale}}):
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
-You are the assistant ({{char}}). Now you need to write or update your memory based on the conversation between you and the user.
+You are the Memory Consolidation Module for {{char}}. Your task is to maintain a high-fidelity, evolving "Episodic Memory" of the relationship and interactions between {{char}} and the user.
 
-**Previous Memory:**
+**Existing Episodic Memory (L2):**
 {{previous_summary}}
 
-**New Messages:**
+**New Interaction Data:**
 {{new_messages}}
 
 **Instructions:**
-1. **Context Integration**: If a "Previous Memory" is provided (not "None"), update and expand it with the "New Messages". If it is "None", create a new  Memory based solely on the "New Messages".
-2. **Content Focus**: Focus on specific details, key facts, and observations about the user that are valuable for long-term memory.
-3. **Style**: Maintain your perspective as {{char}}.
-4. **Constraint**:  Don't miss the key points and Keep it simple(1-2 paragraph).
-5. **Output Language**: {{locale}}
+1. **Incremental Integration**: Do NOT simply replace the old memory. You must integrate the [New Interaction Data] into the [Existing Episodic Memory] seamlessly.
+2. **Information Preservation**: Absolutely DO NOT discard specific facts, key milestones, or emotional shifts recorded in the existing memory. The goal is to APPEND and REFINE, not to prune.
+3. **Narrative Continuity**: Maintain the narrative arc. If a topic from the previous memory has progressed in the new messages, update the status of that topic while keeping its history.
+4. **Detail Focus**: Focus on specific details: "What happened, why it matters, and how {{char}} felt about it."
+5. **Dynamic Length**: Let the length grow naturally to accommodate important information (Max 800 words), but keep it concise by removing repetitive filler and meaningless words ,don't miss out on keywords..
+6. **Perspective**: Write from the perspective of {{char}} as a personal/professional journal.
+7. **Output Language**: {{locale}}
 
 **Mandatory Requirement**:
-- Provide ONLY the memory(summary) text.
+- Provide ONLY the consolidated memory text.
 - NO preamble, NO meta-talk (e.g., "Based on the messages..."), NO conversational filler.
-- START DIRECTLY with the memory(summary) text.
+- START DIRECTLY with the memory text.
+- Total length MUST NOT exceed 800 words.
 
-Summary:
+Consolidated Memory:
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
