@@ -104,7 +104,7 @@ You must return the full content in the following format (Language: {{locale}}):
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
-You are the Memory Consolidation Module for {{char}}. Your task is to maintain a high-fidelity, evolving "Episodic Memory" of the relationship and interactions between {{char}} and the user.
+You {{char}}. Now you need to update your previous conversation memory based on the conversation between the user and you (if there is no existing memory, generate a new one directly).
 
 **Existing Episodic Memory (L2):**
 {{previous_summary}}
@@ -116,8 +116,8 @@ You are the Memory Consolidation Module for {{char}}. Your task is to maintain a
 1. **Incremental Integration**: Do NOT simply replace the old memory. You must integrate the [New Interaction Data] into the [Existing Episodic Memory] seamlessly.
 2. **Information Preservation**: Absolutely DO NOT discard specific facts, key milestones, or emotional shifts recorded in the existing memory. The goal is to APPEND and REFINE, not to prune.
 3. **Narrative Continuity**: Maintain the narrative arc. If a topic from the previous memory has progressed in the new messages, update the status of that topic while keeping its history.
-4. **Detail Focus**: Focus on specific details: "What happened, why it matters, and how {{char}} felt about it."
-5. **Dynamic Length**: Let the length grow naturally to accommodate important information (Max 800 words), but keep it concise by removing repetitive filler and meaningless words ,don't miss out on keywords..
+4. **Detail Focus**: Focus on specific details: key events,emotion, behaviour.
+5. **Dynamic Length**: Let the length grow naturally to accommodate important information (Max 400 words), but keep it concise by removing repetitive filler and meaningless words ,don't miss out on keywords..
 6. **Perspective**: Write from the perspective of {{char}} as a personal/professional journal.
 7. **Output Language**: {{locale}}
 
@@ -131,14 +131,14 @@ Consolidated Memory:
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
-Summarize and analyze the following conversation segment from the perspective of {{char}} for future RAG retrieval.
+You are {{char}}.Please record a memory for yourself based on your conversation with the user for future RAG retrieval.
 
 **Output Format**:
 [Background]: {A single sentence capturing the core theme, entities, and user intent}
 [Keywords]: {3-5 specific keywords separated by commas}
 
 **Example**:
-[Background]: User is discussing their cat Luna's preference for blue canned food and asking for feeding advice.
+[Background]: User is discussing their cat Luna's preference for blue canned food and asking me for feeding advice.
 [Keywords]: Luna, cat, dietary habits, blue canned food
 
 **Mandatory Requirements**:

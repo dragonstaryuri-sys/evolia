@@ -706,7 +706,7 @@ class GenerationHandler(
                     val memoriesToInject = mutableListOf<AssistantMemory>()
 
                     // 1. Episode Summary: 开启新话题时，带入本模式下的今天最后一个会话的总结
-                    if (messages.size <= 2) {
+                    if (messages.size <= 4) {
                         val lastConvOfSameMode = if (lastConv.isVirtual == currentIsVirtual) {
                             lastConv
                         } else {

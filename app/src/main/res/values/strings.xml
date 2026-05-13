@@ -1539,4 +1539,5 @@
   <string name="setting_provider_zhipu_register_hint">Don\'t have an account? Click here to register for Zhipu AI (20 million Tokens gifted)</string>
   <string name="tts_filter_rules_filter_emojis_title">Filter Emojis</string>
   <string name="tts_filter_rules_filter_emojis_desc">When enabled, emojis (e.g. 🤯) will not be read out by TTS.</string>
+  <string name="syncing_context_animation_hint">He/She is trying hard to run to the new session window~</string>
 </resources>

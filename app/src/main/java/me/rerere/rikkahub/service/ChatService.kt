@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -137,7 +138,7 @@ class ChatService(
     private val localTools: LocalTools,
     val mcpManager: McpManager,
     private val chatEpisodeDAO: ChatEpisodeDAO,
-    private val embeddingService: EmbeddingService, // 注入 EmbeddingService
+    private val embeddingService: EmbeddingService,
 ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -158,6 +159,9 @@ class ChatService(
     val generationDoneFlow: SharedFlow<Uuid> = _generationDoneFlow.asSharedFlow()
     private val _isForeground = MutableStateFlow(false)
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
+
+    private val _syncingConversationIds = MutableStateFlow<Set<Uuid>>(emptySet())
+    val syncingConversationIds: StateFlow<Set<Uuid>> = _syncingConversationIds.asStateFlow()
 
     private var lastConversationId: Uuid? = null
 
@@ -376,41 +380,59 @@ class ChatService(
     }
 
     suspend fun initializeConversation(conversationId: Uuid) {
+        val currentConvInDb = conversationRepo.getConversationById(conversationId)
+        val currentAssistantId = currentConvInDb?.assistantId ?: settingsStore.settingsFlowRaw.first().getCurrentAssistant().id
+
         // 当切换会话时，尝试对上一个会话进行记忆归档
         lastConversationId?.let { oldId ->
             if (oldId != conversationId) {
-                appScope.launch {
-                    val settings = settingsStore.settingsFlow.first()
-                    val oldConv = conversationRepo.getConversationById(oldId) ?: return@launch
-                    val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
+                val oldConv = conversationRepo.getConversationById(oldId)
 
-                    // 1. L2 情节记忆归档
-                    archiveConversation(oldId, force = true)
+                // 核心修复：只有当切换发生在同一个 Agent 内部（如“开启新话题”或“模式切换”）时，才触发归档阻塞
+                if (oldConv != null && oldConv.assistantId == currentAssistantId) {
+                    appScope.launch {
+                        val settings = settingsStore.settingsFlow.first()
+                        val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
 
-                    // 2. L1 细节记忆：清算剩余消息
-                    if (assistant.enableDetailMemory) {
-                        summarizeAndRefresh(oldId, onlySegments = true)
-                    }
+                        val shouldSync = assistant.enableRecentChatsReference
+                        if (shouldSync) {
+                            _syncingConversationIds.update { it + conversationId }
+                        }
 
-                    // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3
-                    if (assistant.enableMasterMemory) {
-                        val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
-                            .setInputData(
-                                workDataOf(
-                                    "ASSISTANT_ID" to assistant.id.toString(),
-                                    "INCREMENTAL_MASTER" to true
+                        try {
+                            // 1. L2 情节记忆归档 (耗时 LLM)
+                            archiveConversation(oldId, force = true)
+
+                            // 2. L1 细节记忆：清算剩余消息 (耗时 LLM)
+                            if (assistant.enableDetailMemory) {
+                                summarizeAndRefresh(oldId, onlySegments = true)
+                            }
+                        } finally {
+                            if (shouldSync) {
+                                _syncingConversationIds.update { it - conversationId }
+                            }
+                        }
+
+                        // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3
+                        if (assistant.enableMasterMemory) {
+                            val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>()
+                                .setInputData(
+                                    workDataOf(
+                                        "ASSISTANT_ID" to assistant.id.toString(),
+                                        "INCREMENTAL_MASTER" to true
+                                    )
                                 )
-                            )
-                            .build()
-                        WorkManager.getInstance(context).enqueue(request)
-                        Log.i(TAG, "New Topic: Enqueued incremental L3 update for ${assistant.name}")
+                                .build()
+                            WorkManager.getInstance(context).enqueue(request)
+                            Log.i(TAG, "New Topic: Enqueued incremental L3 update (Background).")
+                        }
                     }
                 }
             }
         }
         lastConversationId = conversationId
 
-        val conversation = conversationRepo.getConversationById(conversationId)
+        val conversation = currentConvInDb
         if (conversation != null) {
             updateConversation(conversationId, conversation)
             settingsStore.updateAssistant(conversation.assistantId)
@@ -742,7 +764,6 @@ class ChatService(
                 } else emptyList()
             }
 
-            // 【核心修改】：由于 contextSummary 不再存储在 Conversation 中，此处从 Episode DB 获取最新总结
             val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
             generationHandler.generateText(
@@ -759,7 +780,6 @@ class ChatService(
                 inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
                 outputTransformers = outputTransformers,
                 tools = buildList {
-                    // --- 工具权限过滤核心逻辑 ---
                     val isMain = assistant.isMain
                     val isVirtual = conversation.isVirtual
 
@@ -768,19 +788,15 @@ class ChatService(
                     val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
                     val searchMode = assistant.searchMode
 
-                    // 1. 搜索工具 (Web Search)：所有人都有权使用
                     if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) {
                         addAll(createSearchTool(settings, assistant, searchMode.index))
                     }
 
-                    // 2. 本地工具 (Local Tools)
                     val targetOptions = if (isVirtual) {
-                        // 虚拟模式：仅保留 Memory, WebSearch (已在上面处理), TimeSense
                         assistant.localTools.filter { it is LocalToolOption.TimeSense }
                     } else if (isMain) {
                         assistant.localTools
                     } else {
-                        // 非主智能体：仅保留 TimeSense（时间观念）
                         assistant.localTools.filter { it is LocalToolOption.TimeSense }
                     }
 
@@ -794,7 +810,6 @@ class ChatService(
                         )
                     )
 
-                    // 3. MCP 外部工具：只有主智能体且非虚拟模式可以使用
                     if (isMain && !isVirtual) {
                         val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
                         mcpManager.getAllAvailableTools().forEach { mcpTool ->
@@ -817,10 +832,10 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-                contextSummary = currentEpisode?.content, // 传入最新的 L2 全量总结
-                temporarySummaries = emptyList(), // 不再传递内存列表，由 GenerationHandler 自行查询 DB
-                skipContextForResponse = skipContextForResponse, // 传递参数
-                conversationId = conversationId // 传递会话 ID
+                contextSummary = currentEpisode?.content,
+                temporarySummaries = emptyList(),
+                skipContextForResponse = skipContextForResponse,
+                conversationId = conversationId
             ).onCompletion {
                 val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
                 val current = getConversationFlow(conversationId).value
@@ -845,14 +860,11 @@ class ChatService(
                 )
             }
         }.onFailure { e ->
-            // 【核心修复】：无论何种错误（取消、超时、解析错误），都保存当前已生成的半截内容到数据库，防止消息丢失
             Log.d(TAG, "Generation failed/cancelled for $conversationId, saving current state. Error: ${e.message}")
             val finalConv = getConversationFlow(conversationId).value
             appScope.launch {
-                // 1. 保存对话内容（包含 AI 可能生成到一半的部分）
                 saveConversation(conversationId, finalConv)
 
-                // 2. 同时更新助手的最后通话 ID，确保下次进入或归档时能关联上
                 val currentSettings = settingsStore.settingsFlow.value
                 val updatedAssistants = currentSettings.assistants.map {
                     if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
@@ -861,7 +873,6 @@ class ChatService(
             }
 
             if (e !is kotlinx.coroutines.CancellationException) {
-                // 普通错误仍需上报 UI
                 _errorFlow.emit(e)
                 Logging.log(TAG, "handleMessageComplete: $e")
             }
@@ -870,9 +881,8 @@ class ChatService(
                 val finalConv = getConversationFlow(conversationId).value
                 saveConversation(conversationId, finalConv)
 
-                // Record Token Usage from the last generation
-                val lastAssistantMsg = finalConv.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
-                lastAssistantMsg?.usage?.let { usage ->
+                val lastAssistantMsg = finalConv.currentMessages.lastOrNull() ?: return@onSuccess
+                lastAssistantMsg.usage?.let { usage ->
                     appScope.launch {
                         conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage)
                     }
@@ -882,11 +892,9 @@ class ChatService(
                     val currentSettings = settingsStore.settingsFlow.value
                     val updatedAssistants = currentSettings.assistants.map {
                         if (it.id == finalConv.assistantId) {
-                            // 将该助手的 lastConversationId 更新为当前会话 ID
                             it.copy(lastConversationId = conversationId.toString())
                         } else it
                     }
-                    // 持久化更新后的助手列表
                     settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                 }
                 addConversationReference(conversationId)
@@ -911,8 +919,6 @@ class ChatService(
                 SearchService.getService(opt).parameters
             }, execute = {
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
-
-                // 1. 强制固定返回 6 条搜索结果
                 val resultSize = 6
                 val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
 
@@ -924,13 +930,11 @@ class ChatService(
                     Log.v(TAG, "Raw Item [$i]: ${item.title} (${item.url})")
                 }
 
-                // 2. 过滤网页标签 (使用 Regex 清理 HTML)
                 val htmlRegex = Regex("<[^>]*>")
                 val cleanedItems = searchResult.items.take(resultSize).map { item ->
                     item.copy(text = item.text.replace(htmlRegex, "").trim())
                 }
 
-                // 3. Background model 处理
                 val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
                 val backgroundModel = settings.findModelById(backgroundModelId) ?: settings.getCurrentChatModel()
 
@@ -1016,12 +1020,9 @@ class ChatService(
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
-
-        // L1 归档完全由“细节记忆”独占控制，若关闭则不归档
         if (!assistant.enableDetailMemory) return
         val max = assistant.detailMemoryThreshold
 
-        // 触发逻辑：当前消息数减去最后一条已总结消息的索引，超过阈值即触发
         val count = if (conv.contextSummaryUpToIndex >= 0) {
             conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1)
         } else {
@@ -1031,9 +1032,6 @@ class ChatService(
         if (count >= max) summarizeAndRefresh(id)
     }
 
-    /**
-     * 执行 L1 片段刷新，并同步触发 L2 全量总结文本更新 (延迟 Embedding)
-     */
     suspend fun summarizeAndRefresh(
         id: Uuid,
         onlySegments: Boolean = false
@@ -1072,7 +1070,6 @@ class ChatService(
                 return@withContext ContextRefreshResult(false)
             }
 
-            // 1. 生成背景总结 (L1 Segment Background)
             val text = toSummarize.joinToString("\n") {
                 "${it.role}: ${it.toContentText().take(500)}"
             }
@@ -1126,7 +1123,6 @@ class ChatService(
                 memoryRepository.saveSegment(segment)
             }
 
-            // 更新 L1 进度
             val currentConv = conversationRepo.getConversationById(id) ?: conv
             val updated = currentConv.copy(
                 contextSummaryUpToIndex = lastIdx,
@@ -1135,7 +1131,6 @@ class ChatService(
             conversationRepo.updateConversation(updated)
             updateConversation(id, updated)
 
-            // 2. 同步触发 L2 全量归档逻辑 (不进行嵌入，只更新文本摘要)
             archiveConversation(id, force = true, skipEmbedding = true)
 
             ContextRefreshResult(true, "Segments & Episode Summary updated", toSummarize.size)
@@ -1306,7 +1301,7 @@ class ChatService(
                 ),
                 TextGenerationParams(model, 1.0f, 1.0f)
             )
-            result.usage?.let { conversationRepo.recordTokenUsage(conversation.assistantId.toString(), it) }
+            result.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
             val suggestions =
                 result.choices[0].message?.toContentText()?.split("\n")?.map { it.trim() }?.filter { it.isNotBlank() }
                     ?: emptyList()

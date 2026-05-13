@@ -7,7 +7,6 @@
 **The "Fidget Toy" Philosophy:**
 Evolia is designed to be a "fidget toy".
 -   **Feel:** Interactions must be playful and deeply satisfying.
--   **Tactile Feedback:** High-quality haptics are non-negotiable. Every tap, toggle, and drag must have appropriate feedback.
 
 ## 2. Vision & Purpose
 **“We are not born complete; it is in the collision with the world that we constantly evolve into better versions of ourselves.”**

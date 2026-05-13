@@ -7,9 +7,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.runtime.*
@@ -29,6 +31,8 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.CubicBezierEasing
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -268,6 +272,7 @@ private fun ChatPageContent(
     val topMessagePadding = 72.dp
 
     val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
+    val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
 
     // --- 核心优化：流式自动朗读逻辑 ---
     val tts = LocalTTSState.current
@@ -647,7 +652,118 @@ private fun ChatPageContent(
                         )
                     }
                 }
+
+                AnimatedVisibility(
+                    visible = isSyncingContext,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "sync_background_breathing")
+                    val breathingAlpha by infiniteTransition.animateFloat(
+                        initialValue = 0.6f,
+                        targetValue = 0.85f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "breathing_alpha"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background.copy(alpha = breathingAlpha))
+                            .clickable(enabled = true, onClick = {}),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            RunningCircleAnimation(modifier = Modifier.padding(bottom = 24.dp))
+                            Text(
+                                text = stringResource(R.string.syncing_context_animation_hint),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
                 }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RunningCircleAnimation(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "running_circle")
+
+    val bounce by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 600, easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bounce"
+    )
+
+    val horizontalOffset by infiniteTransition.animateFloat(
+        initialValue = -50f,
+        targetValue = 50f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "horizontal"
+    )
+
+    Box(modifier = modifier.height(100.dp).width(150.dp), contentAlignment = Alignment.Center) {
+        // Shadow
+        val shadowScale by animateFloatAsState(
+            targetValue = 0.5f + (0.5f * (1f - bounce)),
+            animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
+            label = "shadow_scale"
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(x = horizontalOffset.dp, y = (-10).dp)
+                .size(width = 40.dp, height = 10.dp)
+                .graphicsLayer {
+                    scaleX = shadowScale
+                    alpha = 0.3f * (1f - bounce)
+                }
+                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50))
+        )
+
+        // Circle "TA"
+        val verticalOffset = -60f * bounce
+        val squeeze = if (bounce < 0.15f) 1f - (0.3f * (1f - bounce / 0.15f)) else 1f
+        val stretch = if (bounce > 0.15f) 1f + (0.1f * bounce) else 1f
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(x = horizontalOffset.dp, y = (verticalOffset - 15).dp)
+                .size(40.dp)
+                .graphicsLayer {
+                    scaleX = stretch
+                    scaleY = squeeze
+                    rotationZ = horizontalOffset * 2
+                }
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.primaryContainer
+                        )
+                    ),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(4.dp).background(MaterialTheme.colorScheme.onPrimary, CircleShape))
+                Box(Modifier.size(4.dp).background(MaterialTheme.colorScheme.onPrimary, CircleShape))
             }
         }
     }

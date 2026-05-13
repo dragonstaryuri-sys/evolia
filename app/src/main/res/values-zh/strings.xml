@@ -1497,4 +1497,6 @@
 
   <string name="tts_filter_rules_filter_emojis_title">过滤表情符号</string>
   <string name="tts_filter_rules_filter_emojis_desc">开启后，TTS 将不再念出文本中的表情符号（如 🤯）</string>
+
+  <string name="syncing_context_animation_hint">TA正在努力跑到新的会话窗口~</string>
 </resources>

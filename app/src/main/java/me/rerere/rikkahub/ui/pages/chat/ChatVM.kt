@@ -45,6 +45,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
+import androidx.compose.runtime.derivedStateOf
+
 
 private const val TAG = "ChatVM"
 
@@ -74,6 +76,15 @@ class ChatVM(
     // Track if conversation data has been loaded from the service
     private val _isConversationLoaded = MutableStateFlow(false)
     val isConversationLoaded: StateFlow<Boolean> = _isConversationLoaded
+
+    // 上下文同步状态：只有当前会话在同步名单里时才显示动画
+    val isSyncingContext: StateFlow<Boolean> = combine(
+        _currentActiveId,
+        chatService.syncingConversationIds
+    ) { activeId, syncingIds ->
+        syncingIds.contains(activeId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
 
     // 核心会话 Flow：现在它会跟随 _currentActiveId 的变化而切换观察目标
     val conversation: StateFlow<Conversation> = _currentActiveId
@@ -402,6 +413,7 @@ class ChatVM(
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
         if (parts.isEmptyInputMessage()) return
+
         val assistant = settings.value.assistants.find { it.id == settings.value.assistantId }
         val processedParts = if (assistant != null) {
             parts.map { part -> when (part) { is UIMessagePart.Text -> part.copy(text = part.text.replaceRegexes(assistant = assistant, scope = AssistantAffectScope.USER, visual = false)); else -> part } }
@@ -435,6 +447,8 @@ class ChatVM(
     }
 
     fun startNewTopic() {
+        if (isSyncingContext.value) return // 正在同步时禁止开启新话题
+
         viewModelScope.launch {
             val currentConv = conversation.value
             val assistantId = currentConv.assistantId
@@ -550,6 +564,7 @@ class ChatVM(
     }
 
     fun regenerateAtMessage(message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false) {
+
         viewModelScope.launch {
             val allConvs = if (conversation.value.isVirtual) {
                 conversationRepo.getVirtualConversationsOfAssistant(conversation.value.assistantId).first()
