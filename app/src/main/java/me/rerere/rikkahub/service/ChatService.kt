@@ -913,11 +913,19 @@ class ChatService(
 
     private fun createSearchTool(settings: Settings, assistant: Assistant, providerIndex: Int? = null): Set<Tool> {
         val idx = providerIndex ?: settings.searchServiceSelected
+        var callCount = 0 // 闭包内的计数器
         return buildSet {
             add(Tool(name = "search_web", description = "search web", parameters = {
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 SearchService.getService(opt).parameters
             }, execute = {
+                if (callCount >= 1) {
+                    // 如果 AI 尝试第二次调用，直接拦截并返回提示
+                    return@Tool buildJsonObject {
+                        put("error", "Search limit reached (1/1). Do not attempt to search again in this turn. Please summarize what you have or ask the user for clarification.")
+                    }
+                }
+                callCount++
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 val resultSize = 6
                 val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
@@ -930,76 +938,14 @@ class ChatService(
                     Log.v(TAG, "Raw Item [$i]: ${item.title} (${item.url})")
                 }
 
+                // 清洗 HTML 标签
                 val htmlRegex = Regex("<[^>]*>")
                 val cleanedItems = searchResult.items.take(resultSize).map { item ->
                     item.copy(text = item.text.replace(htmlRegex, "").trim())
                 }
 
-                val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
-                val backgroundModel = settings.findModelById(backgroundModelId) ?: settings.getCurrentChatModel()
-
-                if (backgroundModel != null) {
-                    val providerSetting = backgroundModel.findProvider(settings.providers)
-                    if (providerSetting != null) {
-                        try {
-                            val handler = providerManager.getProviderByType(providerSetting)
-                            val locale = Locale.getDefault().displayName
-
-                            val searchContent = cleanedItems.joinToString("\n") { item ->
-                                "Title: ${item.title}\nURL: ${item.url}\nContent: ${item.text}"
-                            }
-
-                            val prompt = """
-                                你是一个专业的信息密度压缩引擎。你的任务是将网页搜索结果处理成供大模型阅读的精炼摘要。
-                                注意：该摘要是给 AI 阅读的，不是给人阅读的。
-                                要求：
-                                1. 信息密度拉满，只保留核心事实、关键数据和结论。
-                                2. 情绪价值拉到最低，去除所有修饰词、客气话和主观色彩。保持 factual 和高效。
-                                3. 在事实陈述后保留原始搜索结果的索引（如 [1], [2]）。
-                                4. 保持机器友好的逻辑结构。
-                                5. 语言：使用 $locale。
-
-                                搜索内容：
-                                $searchContent
-                            """.trimIndent()
-
-                            @Suppress("UNCHECKED_CAST")
-                            val h = handler as Provider<ProviderSetting>
-                            val resp = h.generateText(
-                                providerSetting,
-                                listOf(UIMessage.user(prompt)),
-                                TextGenerationParams(backgroundModel, 0.3f, 0.5f)
-                            )
-                            resp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
-                            val summary = resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
-
-                            if (summary.isNotBlank()) {
-                                Log.i(
-                                    TAG,
-                                    "Web Search Background Summary (Model: ${backgroundModel.modelId}):\n$summary"
-                                )
-                                Log.i(TAG, "Background Model Token Usage: ${resp.usage ?: "unknown"}")
-                                return@Tool buildJsonObject {
-                                    put("summary", summary)
-                                    put("note", "This summary is processed by a background model for efficiency.")
-                                    put("items", JsonArray(cleanedItems.mapIndexed { i, item ->
-                                        buildJsonObject {
-                                            put("id", Uuid.random().toString().take(6))
-                                            put("index", i + 1)
-                                            put("title", item.title)
-                                            put("url", item.url)
-                                        }
-                                    }))
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Search background summary failed", e)
-                        }
-                    }
-                }
-
-                // Fallback: 返回原始的前 6 条（已清洗内容）
-                Log.w(TAG, "Background model summary failed, falling back to raw cleaned content.")
+                // 直接返回清洗后的搜索结果，不经过任何摘要模型
+                Log.i(TAG, "Return raw search results directly (no summary model)")
                 buildJsonObject {
                     put("items", JsonArray(cleanedItems.mapIndexed { i, item ->
                         buildJsonObject {
@@ -1012,7 +958,7 @@ class ChatService(
                     }))
                 }
             }, systemPrompt = { _, _ ->
-                 "## tool: search_web\\n\\nUse `[citation,domain](id)` after facts if you used search results."
+                "## ## tool: search_web\\n\\nNote: Only 1 search allowed per turn. If search fails, inform user."
             }))
         }
     }

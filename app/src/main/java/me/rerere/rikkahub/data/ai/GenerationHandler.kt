@@ -296,12 +296,12 @@ class GenerationHandler(
             val results = arrayListOf<UIMessagePart.ToolResult>()
             toolCalls.forEach { toolCall ->
                 runCatching {
-                    if (toolCall.toolName == "search_web" && searchCount > 3) {
+                    if (toolCall.toolName == "search_web" && searchCount > 1) {
                         results += UIMessagePart.ToolResult(
                             toolName = toolCall.toolName,
                             toolCallId = toolCall.toolCallId,
                             content = buildJsonObject {
-                                put("error", JsonPrimitive("已达到搜索次数上限（3次）。如果仍然没有找到相关信息，请直接告知用户在当前搜索中未找到匹配内容。"))
+                                put("error", JsonPrimitive("已达到搜索次数上限（1次）。如果仍然没有找到相关信息，请直接告知用户在当前搜索中未找到匹配内容，或者问用户要不要继续搜索。"))
                             },
                             arguments = runCatching {
                                 json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
