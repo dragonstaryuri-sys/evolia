@@ -100,6 +100,8 @@ import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.service.AgentTaskScheduler
 import kotlin.uuid.Uuid
+import android.app.NotificationManager
+import android.content.Context
 
 private const val TAG = "RouteActivity"
 
@@ -128,6 +130,7 @@ class RouteActivity : AppCompatActivity() {
         disableNavigationBarContrast()
         super.onCreate(savedInstanceState)
 
+        cancelAllNotifications()
         // 启动自动任务心跳闹钟，并立即检查是否有过期任务
         agentTaskScheduler.setupHeartbeatAlarm()
         agentTaskScheduler.checkAndRescheduleOverdueTasks()
@@ -290,6 +293,7 @@ class RouteActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        cancelAllNotifications()
         intent.getStringExtra("conversationId")?.let { text ->
             navStack?.navigate(Screen.Chat(text))
         }
@@ -311,6 +315,10 @@ class RouteActivity : AppCompatActivity() {
         }
     }
 
+    private fun cancelAllNotifications() {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancelAll()
+    }
     @Composable
     fun AppRoutes(navBackStack: NavHostController) {
         val toastState = rememberAppToasterState()
