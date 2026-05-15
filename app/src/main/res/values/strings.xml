@@ -1263,8 +1263,8 @@
   <string name="update_dialog_later">Later</string>
   <!-- Master File -->
   <string name="assistant_memory_group_consolidation">Consolidation</string>
-  <string name="assistant_memory_enable_consolidation_title">Auto Consolidation</string>
-  <string name="assistant_memory_enable_consolidation_desc">Automatically recall each conversation and form memory segments for each conversation</string>
+  <string name="assistant_memory_enable_consolidation_title">Regular recollection</string>
+  <string name="assistant_memory_enable_consolidation_desc">Regularly recall each conversation to form memory segments for each conversation. (If cross-window conversation coherence is enabled, memory segments will be generated even without this button being turned on.)</string>
   <string name="assistant_memory_consolidation_delay_title">Consolidation Delay</string>
   <string name="assistant_memory_consolidation_delay_value">%d minutes</string>
   <string name="assistant_memory_last_consolidation">Last update: %s</string>
