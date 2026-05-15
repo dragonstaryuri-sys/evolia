@@ -55,7 +55,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -64,6 +63,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -94,7 +94,6 @@ import me.rerere.rikkahub.common.FeatureConfig
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.hooks.EditStateContent
@@ -177,7 +176,6 @@ fun AssistantMemorySettings(
         mutableFloatStateOf(assistant.detailMemoryThreshold.toFloat())
     }
 
-    // [弹窗逻辑保持原样...]
     if (embeddingProgress != null && embeddingProgress.isRunning) {
         AlertDialog(
             onDismissRequest = { },
@@ -266,7 +264,6 @@ fun AssistantMemorySettings(
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
 
-    // 🌟 重点优化：LazyColumn 结构开始
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -274,10 +271,8 @@ fun AssistantMemorySettings(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // 1. 顶部模式指示器
         item { MemoryModeIndicator(mode = currentMode) }
 
-        // 2. 基础设置组
         item {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_group_settings))
@@ -286,7 +281,6 @@ fun AssistantMemorySettings(
                     modifier = Modifier.clip(RoundedCornerShape(24.dp)),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // 主开关
                     MemorySettingsItem(
                         title = stringResource(R.string.assistant_memory_enable_title),
                         subtitle = stringResource(R.string.assistant_memory_enable_desc),
@@ -296,7 +290,12 @@ fun AssistantMemorySettings(
                                 checked = assistant.enableMemory,
                                 onCheckedChange = { enabled ->
                                     if (!enabled) {
-                                        onUpdateAssistant(assistant.copy(enableMemory = false, enableMasterMemory = false))
+                                        onUpdateAssistant(
+                                            assistant.copy(
+                                                enableMemory = false,
+                                                enableMasterMemory = false
+                                            )
+                                        )
                                     } else {
                                         onUpdateAssistant(assistant.copy(enableMemory = true))
                                     }
@@ -305,18 +304,16 @@ fun AssistantMemorySettings(
                         }
                     )
 
-                    // 记忆功能展开后的子项
                     AnimatedVisibility(
                         visible = assistant.enableMemory,
                         enter = fadeIn() + expandVertically(),
                         exit = fadeOut() + shrinkVertically()
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            // 检索策略 Picker
                             var showStrategyMenu by remember { mutableStateOf(false) }
                             val currentStrategyLabel = when {
                                 !assistant.useRagMemoryRetrieval -> stringResource(R.string.memory_mode_off)
-                                else -> when(assistant.memoryRetrievalMode) {
+                                else -> when (assistant.memoryRetrievalMode) {
                                     MemoryRetrievalMode.HYBRID -> stringResource(R.string.memory_mode_hybrid)
                                     MemoryRetrievalMode.KEYWORD -> stringResource(R.string.memory_mode_keyword)
                                     MemoryRetrievalMode.SEMANTIC -> stringResource(R.string.memory_mode_semantic)
@@ -330,19 +327,64 @@ fun AssistantMemorySettings(
                                 onClick = { showStrategyMenu = true },
                                 trailing = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(text = currentStrategyLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                        Icon(Icons.Rounded.ArrowDropDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        DropdownMenu(expanded = showStrategyMenu, onDismissRequest = { showStrategyMenu = false }) {
-                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_off)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = false, enableMemoryConsolidation = false)) })
-                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_hybrid)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.HYBRID)) })
-                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_keyword)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.KEYWORD)) })
-                                            DropdownMenuItem(text = { Text(stringResource(R.string.memory_mode_semantic)) }, onClick = { showStrategyMenu = false; onUpdateAssistant(assistant.copy(useRagMemoryRetrieval = true, memoryRetrievalMode = MemoryRetrievalMode.SEMANTIC)) })
+                                        Text(
+                                            text = currentStrategyLabel,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Icon(
+                                            Icons.Rounded.ArrowDropDown,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        DropdownMenu(
+                                            expanded = showStrategyMenu,
+                                            onDismissRequest = { showStrategyMenu = false }) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.memory_mode_off)) },
+                                                onClick = {
+                                                    showStrategyMenu = false; onUpdateAssistant(
+                                                    assistant.copy(
+                                                        useRagMemoryRetrieval = false,
+                                                        enableMemoryConsolidation = false
+                                                    )
+                                                )
+                                                })
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.memory_mode_hybrid)) },
+                                                onClick = {
+                                                    showStrategyMenu = false; onUpdateAssistant(
+                                                    assistant.copy(
+                                                        useRagMemoryRetrieval = true,
+                                                        memoryRetrievalMode = MemoryRetrievalMode.HYBRID
+                                                    )
+                                                )
+                                                })
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.memory_mode_keyword)) },
+                                                onClick = {
+                                                    showStrategyMenu = false; onUpdateAssistant(
+                                                    assistant.copy(
+                                                        useRagMemoryRetrieval = true,
+                                                        memoryRetrievalMode = MemoryRetrievalMode.KEYWORD
+                                                    )
+                                                )
+                                                })
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.memory_mode_semantic)) },
+                                                onClick = {
+                                                    showStrategyMenu = false; onUpdateAssistant(
+                                                    assistant.copy(
+                                                        useRagMemoryRetrieval = true,
+                                                        memoryRetrievalMode = MemoryRetrievalMode.SEMANTIC
+                                                    )
+                                                )
+                                                })
                                         }
                                     }
                                 }
                             )
 
-                            // 最近聊天开关 (解耦后)
                             MemorySettingsItem(
                                 title = stringResource(R.string.assistant_page_recent_chats),
                                 subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
@@ -355,7 +397,6 @@ fun AssistantMemorySettings(
                                 }
                             )
 
-                            // 记忆整合开关 (解耦后)
                             if (assistant.useRagMemoryRetrieval) {
                                 MemorySettingsItem(
                                     title = stringResource(R.string.assistant_memory_enable_consolidation_title),
@@ -364,13 +405,18 @@ fun AssistantMemorySettings(
                                     trailing = {
                                         HapticSwitch(
                                             checked = assistant.enableMemoryConsolidation,
-                                            onCheckedChange = { onUpdateAssistant(assistant.copy(enableMemoryConsolidation = it)) }
+                                            onCheckedChange = {
+                                                onUpdateAssistant(
+                                                    assistant.copy(
+                                                        enableMemoryConsolidation = it
+                                                    )
+                                                )
+                                            }
                                         )
                                     }
                                 )
                             }
 
-                            // 细节记忆 (解耦后，仅依赖 RAG)
                             if (assistant.useRagMemoryRetrieval) {
                                 Column {
                                     MemorySettingsItem(
@@ -378,24 +424,58 @@ fun AssistantMemorySettings(
                                         subtitle = stringResource(R.string.detail_memory_desc),
                                         position = if (assistant.enableDetailMemory) "MIDDLE" else "LAST",
                                         trailing = {
-                                            HapticSwitch(checked = assistant.enableDetailMemory, onCheckedChange = { onUpdateAssistant(assistant.copy(enableDetailMemory = it)) })
+                                            HapticSwitch(
+                                                checked = assistant.enableDetailMemory,
+                                                onCheckedChange = { onUpdateAssistant(assistant.copy(enableDetailMemory = it)) })
                                         }
                                     )
                                     AnimatedVisibility(visible = assistant.enableDetailMemory) {
                                         Surface(
                                             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
+                                            shape = RoundedCornerShape(
+                                                bottomStart = 24.dp,
+                                                bottomEnd = 24.dp,
+                                                topStart = 10.dp,
+                                                topEnd = 10.dp
+                                            )
                                         ) {
                                             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                                Text(text = stringResource(R.string.detail_memory_hint), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
-                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(text = stringResource(R.string.detail_memory_threshold), style = MaterialTheme.typography.titleSmall)
-                                                    Text(text = localDetailThreshold.toInt().toString(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                                                Text(
+                                                    text = stringResource(R.string.detail_memory_hint),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(bottom = 8.dp)
+                                                )
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = stringResource(R.string.detail_memory_threshold),
+                                                        style = MaterialTheme.typography.titleSmall
+                                                    )
+                                                    Text(
+                                                        text = localDetailThreshold.toInt().toString(),
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
                                                 }
                                                 Slider(
                                                     value = localDetailThreshold,
-                                                    onValueChange = { if (it != localDetailThreshold) { localDetailThreshold = it; haptics.perform(HapticPattern.Pop) } },
-                                                    onValueChangeFinished = { onUpdateAssistant(assistant.copy(detailMemoryThreshold = localDetailThreshold.toInt())) },
+                                                    onValueChange = {
+                                                        if (it != localDetailThreshold) {
+                                                            localDetailThreshold =
+                                                                it; haptics.perform(HapticPattern.Pop)
+                                                        }
+                                                    },
+                                                    onValueChangeFinished = {
+                                                        onUpdateAssistant(
+                                                            assistant.copy(
+                                                                detailMemoryThreshold = localDetailThreshold.toInt()
+                                                            )
+                                                        )
+                                                    },
                                                     valueRange = 10f..50f, steps = 3
                                                 )
                                             }
@@ -409,7 +489,6 @@ fun AssistantMemorySettings(
             }
         }
 
-        // 3. RAG 设置卡片
         item {
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.useRagMemoryRetrieval,
@@ -423,7 +502,6 @@ fun AssistantMemorySettings(
             }
         }
 
-        // 4. 主记忆卡片
         item {
             AnimatedVisibility(
                 visible = assistant.enableMemory,
@@ -435,13 +513,17 @@ fun AssistantMemorySettings(
                     MasterMemoryCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
-                        onConsolidate = { assistantDetailVM.runManualConsolidation(consolidateEpisodes = false, updateMaster = true) }
+                        onConsolidate = {
+                            assistantDetailVM.runManualConsolidation(
+                                consolidateEpisodes = false,
+                                updateMaster = true
+                            )
+                        }
                     )
                 }
             }
         }
 
-        // 5. 整合设置卡片
         item {
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
@@ -453,7 +535,12 @@ fun AssistantMemorySettings(
                     ConsolidationSettingsCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
-                        onConsolidate = { assistantDetailVM.runManualConsolidation(consolidateEpisodes = true, updateMaster = false) },
+                        onConsolidate = {
+                            assistantDetailVM.runManualConsolidation(
+                                consolidateEpisodes = true,
+                                updateMaster = false
+                            )
+                        },
                         showSummarizerWarning = assistant.summarizerModelId == null,
                         onNavigateToModels = onNavigateToModels
                     )
@@ -461,7 +548,6 @@ fun AssistantMemorySettings(
             }
         }
 
-        // 6. 统计卡片
         item {
             AnimatedVisibility(
                 visible = assistant.enableMemory,
@@ -476,7 +562,6 @@ fun AssistantMemorySettings(
             }
         }
 
-        // 7. 记忆管理区域
         item {
             AnimatedVisibility(
                 visible = assistant.enableMemory,
@@ -495,14 +580,13 @@ fun AssistantMemorySettings(
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
                     memorySearchQuery = memorySearchQuery,
                     currentEmbeddingModelId = currentEmbeddingModelId,
-                    showMemoryTypes = assistant.enableMemoryConsolidation,
+                    showMemoryTypes = true,
                     initialMemoryTab = initialMemoryTab,
                     scrollToMemoryId = scrollToMemoryId
                 )
             }
         }
 
-        // 8. 调试器
         item {
             AnimatedVisibility(
                 visible = assistant.enableMemory && assistant.useRagMemoryRetrieval && onTestRetrieval != null,
@@ -687,7 +771,6 @@ private fun RagSettingsCard(
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit
 ) {
-    // 1. 为 Top K 和 阈值 引入局部状态，避免滑动时由于频繁更新数据库导致的卡顿
     var localLimit by remember(assistant.ragLimit) {
         mutableFloatStateOf(assistant.ragLimit.toFloat())
     }
@@ -700,13 +783,11 @@ private fun RagSettingsCard(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Retrieval Parameters (Top K always visible, Threshold visible for Semantic/Hybrid)
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
         ) {
             Column {
-                //  1. 返回数量设置 (Top K) - 所有模式都需要
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(stringResource(R.string.rag_limit_title), style = MaterialTheme.typography.titleMedium)
@@ -728,9 +809,8 @@ private fun RagSettingsCard(
                     )
                 }
 
-                // 2. Similarity Threshold (Only relevant for Semantic/Hybrid)
                 AnimatedVisibility(
-                    visible = true, // 始终显示，因为在关键词模式下该阈值同样生效
+                    visible = true,
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
@@ -784,7 +864,6 @@ private fun RagSettingsCard(
             }
         }
 
-        // Advanced RAG Settings (Retrieval Scope)
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
@@ -867,7 +946,6 @@ private fun MasterMemoryCard(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Master Toggle
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = if (assistant.enableMasterMemory && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing))
@@ -903,7 +981,6 @@ private fun MasterMemoryCard(
 
         AnimatedVisibility(visible = assistant.enableMasterMemory && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Master Memory Content
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
                     shape = if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) RoundedCornerShape(10.dp) else RoundedCornerShape(
@@ -970,7 +1047,6 @@ private fun MasterMemoryCard(
                     }
                 }
 
-                // Actions
                 if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
                     Surface(
                         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1012,7 +1088,6 @@ private fun ConsolidationSettingsCard(
     showSummarizerWarning: Boolean = false,
     onNavigateToModels: () -> Unit = {}
 ) {
-    // 引入局部状态来处理滑动，避免实时更新导致的卡顿
     var localDelay by remember(assistant.consolidationDelayMinutes) {
         mutableFloatStateOf(assistant.consolidationDelayMinutes.toFloat())
     }
@@ -1022,7 +1097,6 @@ private fun ConsolidationSettingsCard(
         modifier = Modifier.clip(RoundedCornerShape(24.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Warning banner as first item when no summarizer model is set
         AnimatedVisibility(
             visible = showSummarizerWarning,
             enter = fadeIn() + expandVertically(),
@@ -1055,7 +1129,6 @@ private fun ConsolidationSettingsCard(
             }
         }
 
-        // Consolidation Delay - corners depend on whether warning banner is shown
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = if (showSummarizerWarning) {
@@ -1084,28 +1157,24 @@ private fun ConsolidationSettingsCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                // 3. 优化后的 Slider
                 Slider(
                     value = localDelay,
                     onValueChange = {
                         if (it != localDelay) {
                             localDelay = it
-                            // 触感反馈：每滑动到一个步进点触发一次
                             haptics.perform(HapticPattern.Pop)
                         }
                     },
                     onValueChangeFinished = {
-                        // 仅在手指离开屏幕时才真正保存数据
                         onUpdateAssistant(assistant.copy(consolidationDelayMinutes = localDelay.toInt()))
                     },
-                    valueRange = 30f..300f, // 最小 30min，最大 300min
-                    steps = 26,             // (300-30)/10 - 1 = 26，实现 10 分钟一个步进
+                    valueRange = 30f..300f,
+                    steps = 26,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
         }
 
-        // Manual consolidation
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
@@ -1169,7 +1238,6 @@ private fun MemoryStatisticsCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                // Only show Core/Episodic split when consolidation is enabled
                 if (assistant.enableMemoryConsolidation) {
                     StatItem(
                         value = coreMemories.toString(),
@@ -1189,7 +1257,6 @@ private fun MemoryStatisticsCard(
                     )
                 }
 
-                // Show embeddings when any retrieval is enabled
                 AnimatedVisibility(visible = assistant.useRagMemoryRetrieval) {
                     StatItem(
                         value = withEmbeddings.toString(),
@@ -1251,19 +1318,16 @@ private fun ManageMemoriesSection(
     initialMemoryTab: Int? = null,
     scrollToMemoryId: Int? = null
 ) {
-    // Use initialMemoryTab if provided, otherwise default to 0
     var selectedTab by remember { mutableIntStateOf(initialMemoryTab ?: 0) }
     var sortOrder by remember { mutableStateOf(MemorySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
 
-    // Auto-select tab when navigating from context sources
     LaunchedEffect(initialMemoryTab) {
         if (initialMemoryTab != null) {
             selectedTab = initialMemoryTab
         }
     }
 
-    // Auto-open memory editor when navigating from context sources
     LaunchedEffect(scrollToMemoryId, memories) {
         if (scrollToMemoryId != null && memories.isNotEmpty()) {
             val targetMemory = memories.find { it.id == scrollToMemoryId }
@@ -1276,30 +1340,27 @@ private fun ManageMemoriesSection(
     val coreMemories = memories.filter { it.type == 0 }
     val episodicMemories = memories.filter { it.type == 1 }
 
-    // Filter and sort based on current settings
     val displayMemories = remember(memories, selectedTab, memorySearchQuery, sortOrder, showMemoryTypes) {
-
-    val baseList = if (showMemoryTypes) {
-        when (selectedTab) {
-            0 -> coreMemories
-            else -> episodicMemories
+        val baseList = if (showMemoryTypes) {
+            when (selectedTab) {
+                0 -> coreMemories
+                else -> episodicMemories
+            }
+        } else {
+            memories
         }
-    } else {
-        memories
-    }
         baseList.filter { memory ->
-        memorySearchQuery.isBlank() || memory.content.contains(memorySearchQuery, ignoreCase = true)
-    }.let { list ->
-        when (sortOrder) {
-            MemorySortOrder.NEWEST_FIRST -> list.sortedByDescending { it.timestamp }
-            MemorySortOrder.OLDEST_FIRST -> list.sortedBy { it.timestamp }
-            MemorySortOrder.ALPHABETICAL -> list.sortedBy { it.content.lowercase() }
+            memorySearchQuery.isBlank() || memory.content.contains(memorySearchQuery, ignoreCase = true)
+        }.let { list ->
+            when (sortOrder) {
+                MemorySortOrder.NEWEST_FIRST -> list.sortedByDescending { it.timestamp }
+                MemorySortOrder.OLDEST_FIRST -> list.sortedBy { it.timestamp }
+                MemorySortOrder.ALPHABETICAL -> list.sortedBy { it.content.lowercase() }
+            }
         }
     }
-        }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1312,8 +1373,6 @@ private fun ManageMemoriesSection(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Optimization button
-                // Only show optimization button for core memories
                 if (selectedTab == 0) {
                     IconButton(onClick = onOptimizeMemories) {
                         Icon(
@@ -1323,7 +1382,6 @@ private fun ManageMemoriesSection(
                     }
                 }
 
-                // Sort button
                 Box {
                     IconButton(onClick = { showSortMenu = true }) {
                         Icon(Icons.Rounded.Sort, contentDescription = stringResource(R.string.memory_sort_button_desc))
@@ -1363,7 +1421,6 @@ private fun ManageMemoriesSection(
             }
         }
 
-        // Category Tabs (only when consolidation is enabled)
         AnimatedVisibility(
             visible = showMemoryTypes,
             enter = fadeIn() + expandVertically(),
@@ -1389,7 +1446,6 @@ private fun ManageMemoriesSection(
             }
         }
 
-        // Search
         TextField(
             value = memorySearchQuery,
             onValueChange = onSearchQueryChange,
@@ -1404,7 +1460,6 @@ private fun ManageMemoriesSection(
             )
         )
 
-        // Memory list with animation
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(24.dp))
@@ -1537,13 +1592,11 @@ private fun MemoryItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Time and Badges Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left side: Badges
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -1579,7 +1632,6 @@ private fun MemoryItem(
                         }
                     }
 
-                    // Right side: Timestamp
                     if (memory.timestamp > 0) {
                         Text(
                             text = java.time.Instant.ofEpochMilli(memory.timestamp)
@@ -1600,7 +1652,6 @@ private fun MemoryItem(
                 )
             }
 
-            // Only show delete for core memories (user-created)
             if (memory.type == 0) {
                 IconButton(onClick = {
                     haptics.perform(HapticPattern.Pop)
