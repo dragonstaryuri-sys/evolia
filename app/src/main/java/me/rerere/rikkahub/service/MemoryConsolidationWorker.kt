@@ -412,7 +412,8 @@ class MemoryConsolidationWorker(
                         assistantName = currentAssistant.name,
                         existingArchive = currentAssistant.masterMemoryContent,
                         newContext = recentContext.ifBlank { "No new recent conversations." },
-                        systemPrompt = DEFAULT_MASTER_MEMORY_PROMPT
+                        systemPrompt = DEFAULT_MASTER_MEMORY_PROMPT,
+                        thinkingBudget = 2048
                     )
 
                     if (updatedMasterContent.length > 2500) {
@@ -420,7 +421,8 @@ class MemoryConsolidationWorker(
                             handler = memory.handler,
                             providerSetting = memory.provider,
                             model = memory.model,
-                            archiveToCompress = updatedMasterContent
+                            archiveToCompress = updatedMasterContent,
+                            thinkingBudget = 2048
                         )
                         wasCompressed = true
                     }
@@ -591,7 +593,8 @@ class MemoryConsolidationWorker(
         assistantName: String,
         existingArchive: String,
         newContext: String,
-        systemPrompt: String
+        systemPrompt: String,
+        thinkingBudget: Int?
     ): String {
         val locale = Locale.getDefault().displayName
         val finalSystemPrompt = systemPrompt.applyPlaceholders("char" to assistantName, "locale" to locale)
@@ -608,7 +611,13 @@ class MemoryConsolidationWorker(
             h.generateText(
                 providerSetting = providerSetting,
                 messages = listOf(UIMessage.system(finalSystemPrompt), UIMessage.user(inputPrompt)),
-                params = TextGenerationParams(model = model, temperature = 0.2f, topP = 0.5f, maxTokens = 8000)
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.2f,
+                    topP = 0.5f,
+                    maxTokens = 12000,
+                    thinkingBudget = thinkingBudget
+                )
             )
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
@@ -619,7 +628,8 @@ class MemoryConsolidationWorker(
         handler: me.rerere.ai.provider.Provider<*>,
         providerSetting: me.rerere.ai.provider.ProviderSetting,
         model: me.rerere.ai.provider.Model,
-        archiveToCompress: String
+        archiveToCompress: String,
+        thinkingBudget: Int?
     ): String {
         val locale = Locale.getDefault().displayName
         val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.applyPlaceholders("locale" to locale)
@@ -629,7 +639,13 @@ class MemoryConsolidationWorker(
             h.generateText(
                 providerSetting = providerSetting,
                 messages = listOf(UIMessage.system(sysPrompt), UIMessage.user(userPrompt)),
-                params = TextGenerationParams(model = model, temperature = 0.3f, topP = 0.5f, maxTokens = 4096)
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                    topP = 0.5f,
+                    maxTokens = 6000,
+                    thinkingBudget = thinkingBudget
+                )
             )
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: archiveToCompress
