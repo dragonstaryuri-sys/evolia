@@ -1228,7 +1228,7 @@
   <string name="consolidation_result_master_updated">记忆档案已更新。 </string>
   <string name="consolidation_result_no_new_items">扫描完成，无新增内容。</string>
   <string name="consolidation_started">记忆整合已开始 (全量扫描: %b)</string>
-  <string name="assistant_memory_enable_consolidation_desc">自动回忆每个会话，形成对每个会话的记忆片段</string>
+  <string name="assistant_memory_enable_consolidation_desc">定时回忆每个会话，形成对每个会话的记忆片段（如果开启了跨窗口对话连贯，不需要开启此按钮也会有记忆片段）</string>
   <string name="assistant_memory_consolidation_delay_title">整合延迟时间</string>
 
   <!-- 嵌入生成 -->
@@ -1237,7 +1237,7 @@
   <string name="embedding_gen_none">无需重新生成嵌入。</string>
   <string name="generating_embeddings">生成向量</string>
   <string name="assistant_memory_group_consolidation">整合</string>
-  <string name="assistant_memory_enable_consolidation_title">自动化记忆</string>
+  <string name="assistant_memory_enable_consolidation_title">定期回忆</string>
 
   <!-- Assistant Context Page -->
   <string name="assistant_memory_master_never_updated">从未更新</string>
