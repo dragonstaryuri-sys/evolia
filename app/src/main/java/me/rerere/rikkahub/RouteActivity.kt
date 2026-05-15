@@ -100,8 +100,8 @@ import org.koin.android.ext.android.inject
 import me.rerere.rikkahub.utils.fileSizeToString
 import me.rerere.rikkahub.service.AgentTaskScheduler
 import kotlin.uuid.Uuid
-import android.app.NotificationManager
 import android.content.Context
+import androidx.core.app.NotificationManagerCompat
 
 private const val TAG = "RouteActivity"
 
@@ -131,6 +131,7 @@ class RouteActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         cancelAllNotifications()
+
         // 启动自动任务心跳闹钟，并立即检查是否有过期任务
         agentTaskScheduler.setupHeartbeatAlarm()
         agentTaskScheduler.checkAndRescheduleOverdueTasks()
@@ -202,6 +203,43 @@ class RouteActivity : AppCompatActivity() {
         if (intentConversationId != null) {
             pendingConversationId = intentConversationId
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 只要 Activity 恢复前台并可交互（包括点击图标返回、点击通知进入、冷启动完成），就清理所有通知
+        cancelAllNotifications()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // 处理 singleTop 模式下的新意图进入，优先清理通知
+        cancelAllNotifications()
+
+        intent.getStringExtra("conversationId")?.let { text ->
+            navStack?.navigate(Screen.Chat(text))
+        }
+        intent.getStringExtra("assistantId")?.let { assistantIdStr ->
+            lifecycleScope.launch {
+                try {
+                    val assistantId = Uuid.parse(assistantIdStr)
+                    settingsStore.updateAssistant(assistantId)
+                    settingsStore.markAssistantUsed(assistantId)
+                    // 修改点：先重置到首页，确保返回时回到列表
+                    navStack?.navigate(Screen.Home) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                    navStack?.navigate(Screen.Chat(Uuid.random().toString()))
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    private fun cancelAllNotifications() {
+        // 使用 NotificationManagerCompat 以获得更好的版本兼容性
+        NotificationManagerCompat.from(this).cancelAll()
     }
 
     private fun disableNavigationBarContrast() {
@@ -291,34 +329,6 @@ class RouteActivity : AppCompatActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        cancelAllNotifications()
-        intent.getStringExtra("conversationId")?.let { text ->
-            navStack?.navigate(Screen.Chat(text))
-        }
-        intent.getStringExtra("assistantId")?.let { assistantIdStr ->
-            lifecycleScope.launch {
-                try {
-                    val assistantId = Uuid.parse(assistantIdStr)
-                    settingsStore.updateAssistant(assistantId)
-                    settingsStore.markAssistantUsed(assistantId)
-                    // 修改点：先重置到首页，确保返回时回到列表
-                    navStack?.navigate(Screen.Home) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                    navStack?.navigate(Screen.Chat(Uuid.random().toString()))
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-    }
-
-    private fun cancelAllNotifications() {
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancelAll()
-    }
     @Composable
     fun AppRoutes(navBackStack: NavHostController) {
         val toastState = rememberAppToasterState()
