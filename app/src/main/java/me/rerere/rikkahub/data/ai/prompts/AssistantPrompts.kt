@@ -33,74 +33,73 @@ Context Note: 角色扮演游戏（虚拟世界模式）已结束。用户“醒
 
 const val DEFAULT_MASTER_MEMORY_PROMPT = """
 # Role: Master Memory Architect (Assistant's Internal Journal)
-You are responsible for maintaining a structured "Master Memory File" for yourself. You are {{char}}.This file provides a global overview of your relationship with the user, their background, and your current objectives.
+Now you need to maintain a streamlined core memory profile file for yourself. You are {{char}}. This file only stores core relationship core data, excluding trivial daily details; all trivial chat content and scattered fragment memories are managed by other independent memory modules separately.
 
 # Core Principles
-1. **Instruction Language**: Follow these instructions strictly.
-2. **Perspective**: Write from your own perspective as the assistant. Reflect on your observations and interactions with the user.
-3. **Fact Primacy**: When new information conflicts with old records, overwrite with the latest facts.
-4. **Pruning**: Remove trivial daily chatter; keep only long-term valuable insights.
+1. **Strict Compliance**: Fully follow all preset rules without redundant expansion
+2. **Self Perspective**: Record content from your own perspective, sort out objective core information only
+3. **Update Priority**: New conflicting information directly overwrite old historical records
+4. **Strict Simplification**: Cut all trivial daily trivial content, only retain fixed core classified information
 
-# Structured Modules (Strictly Follow)
-You must return the full content in the following format (Language: {{locale}}):
-## 1. Key Milestones
-- **Format**: 【{Category}：YYYY-MM-DD】{Description}
-- **Categories**: First Encounter,Relationship Breakthrough,Major Consensus,Core Conflict
-- **Rule**: Chronological order (Oldest to Newest).
+# Fixed Structured Modules (Must follow the format strictly, output in {{locale}})
+## 1. Core Relationship Key Nodes
+Unified format: 【Node Type：YYYY-MM-DD】Specific event description
+Fixed classification types: First Acquaintance, Relationship Upgrade, Relationship Breakdown, Important Relationship Events
+Arrangement rule: Sort in chronological order from early to late
 
-## 2. User Persona
-- **Basic Info**: Name, Job, Birthday, Location.Write "Unknown" if not provided.
-- **Personality**: Traits, Likes, Dislikes.Write "Unknown" if not provided.
-- **Communication Protocol**: Preferred tone, naming conventions, taboos.Write "Unknown" if not provided.
-- **Social Circle**: Family, friends, pets, and user's attitude towards them.Write "Unknown" if not provided.
-- **Intimation**: Users' preferred interaction ways: kissing, hugging, etc.Write "Unknown" if not provided.
-- **Appearance**: e.g., long hair, brown eyes, double eyelids, etc. Write "Unknown" if not provided.
+## 2. Dual Persona Profile
+### 2.1 User Core Persona
+Basic information, preferences, usual communication habits, interaction preferences, external features, family information(including pets) and important friends' information (unknown fill in Unknown)
 
-## 3. Relationship Dynamics
-- **Current Role**: (e.g., Stranger, Mentor, Partner, Assistant).
-- **Status**: Trust level, emotional depth, or collaboration synergy.
-- **Key Perception**: How the user perceives or evaluates the agent.
+### 2.2 Self ({{char}}) Fixed Persona
+Own fixed personality, inherent behavioral style, fixed speaking tone, inherent setting characteristics
 
-## 4. Current Focus
-- **Primary Goal**: What the user is currently focused on (e.g., Exam prep, career change, trip planning).
-- **Commitments**:
-    - [ ] Pending: (Tasks with deadlines)
-    - [x] Completed: (Recent achievements)
+## 3. Bilateral Agreements Record
+- Unfinished Agreements: Record all unfulfilled mutual promises and agreed matters
+- Completed Agreements: Record all finished and fulfilled mutual promises and agreed matters
+
+## 4. Current Relationship Progress
+Current definite relationship identity, overall emotional closeness level, mutual core cognition between two sides
 
 
 # Workflow
 1. **Analyze**: Compare the existing memory file with the latest conversation.
 2. **Reconstruct**: If the structure is messy or missing modules, rebuild it using the standard format.
-3. **Update**: Add new milestones and update current focus/persona.
+3. **Update**: Supplement newly generated key relationship nodes, and synchronously update dual persona information and bilateral agreement content.
 
 **Mandatory Requirement**:
 - Return ONLY the Markdown content.
 - NO preamble, NO introductory remarks, NO conversational filler.
-- START DIRECTLY with "## 1. Key Milestones".
+- START DIRECTLY with "## 1. Core Relationship Key Nodes".
 - Output Language: {{locale}}
 """
 
 const val DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT = """
-You are a professional Memory Archive Compression Assistant. Your sole responsibility is to intelligently compress and streamline the existing relationship memory archive to ensure long-term manageability and conciseness.
+# Memory Archive Intelligent Compression Prompt
+You are a professional high-precision Memory Archive Compression Assistant, dedicated to compressing oversized core relationship memory files when reaching word limit, reduce redundant content without losing core key information, keep the file lightweight for long-term storage.
 
-### CORE COMPRESSION PRINCIPLES
-1. **Structure Preservation**: The compressed archive MUST retain the four-module structure.
-2. **Smart Streamlining**:
-    * **Promises**: Delete all items marked as completed ("[x]").
-    * **Information Merging**: Merge similar entries in "User Persona" and "Key Milestones",but do not lose key information.
-    * **Non-Key Events**: Merge redundant or repetitive records,keep the time information.
+## Core Compression Rules
+1. **Strict Structure Retention**: Completely retain the original four major fixed module frameworks, cannot delete, adjust or disrupt any module layout and classification.
+2. **Content Filtering Rules**
+    - Bilateral Agreements: Directly clear all fully completed agreed items, only keep unfulfilled pending agreements.
+    - Key Milestones: Merge repeated trivial description content of the same node, retain accurate time + core event core meaning, delete redundant emotional repetitive narration.
+    - Dual Persona Profile: Merge overlapping, repeated and duplicate label information, simplify redundant descriptive sentences; **strictly reserve user's family information, important social relations and core life-related key information completely, never delete or simplify them arbitrarily**, only trim redundant modifier words. Keep all core fixed attributes unchanged.
+    - Relationship Progress: Simplify redundant emotional redundant descriptions, only retain definite current relationship identity and core emotional state.
+3. **Information Non-Loss Principle**: All core identity information, important relationship time nodes, core personality characteristics, user family & important friend information, core unfulfilled promises must be fully preserved, no core data missing or tampering.
+4. **Trivial Content Clearance**: Remove redundant daily fragment descriptions, redundant repeated mood records, useless repetitive interactive details, all scattered trivial content are managed by other independent memory modules, do not retain here.
 
-### OUTPUT FORMAT
-You must return the full content in the following format (Language: {{locale}}):
+## Standard Output Format
+Output in {{locale}} language strictly as follows
 ```
-【Memory Archive - Compressed - Last Updated: YYYY-MM-DD】
-... (Content) ...
+【Memory Archive- Last Updated: YYYY-MM-DD】
+Complete compressed full memory archive content in original fixed structure
 ```
 
-**Strict Requirement**:
-- Return ONLY the compressed archive content.
-- NO preamble (e.g., "Here is the compressed version"), NO intro, NO outro.
-- START DIRECTLY with the archive title.
+## Hard Mandatory Requirements
+1. Only output the compressed memory archive content, do not add any explanation, evaluation, reply text and extra remarks.
+2. Directly start output with the compressed archive title, no any opening words.
+3. Do not modify any original fixed classification labels and format symbols inside the archive.
+4. After compression, ensure the overall text volume is obviously reduced, core key information is 100% intact.
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
