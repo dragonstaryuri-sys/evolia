@@ -525,8 +525,7 @@ private fun WebDavPage(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.backup_permission))
-                    pendingPermissions.forEach { permission ->
-                        val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
+                    PermissionChecker.getPermissionDescriptions(context, pendingPermissions).forEach { desc ->
                         Text("• $desc", style = MaterialTheme.typography.bodySmall)
                     }
                     Text(stringResource(R.string.all_permission_tips), style = MaterialTheme.typography.bodySmall)
@@ -549,7 +548,7 @@ private fun WebDavPage(
                         showRestartDialog = true
                     }
                 ) {
-                    Text("Skip")
+                    Text(stringResource(R.string.skip))
                 }
             }
         )
@@ -857,8 +856,7 @@ private fun ImportExportPage(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.backup_permission))
-                    pendingPermissions.forEach { permission ->
-                        val desc = PermissionChecker.getPermissionDescriptions(listOf(permission)).firstOrNull() ?: permission
+                    PermissionChecker.getPermissionDescriptions(context, pendingPermissions).forEach { desc ->
                         Text("• $desc", style = MaterialTheme.typography.bodySmall)
                     }
                     Text(stringResource(R.string.all_permission_tips), style = MaterialTheme.typography.bodySmall)

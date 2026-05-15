@@ -1540,4 +1540,12 @@
   <string name="tts_filter_rules_filter_emojis_title">Filter Emojis</string>
   <string name="tts_filter_rules_filter_emojis_desc">When enabled, emojis (e.g. 🤯) will not be read out by TTS.</string>
   <string name="syncing_context_animation_hint">He/She is trying hard to run to the new session window~</string>
+
+  <string name="backup_permission_notification">Send notifications (for device control tools)</string>
+  <string name="backup_permission_location_coarse">Coarse location (for the {{location}} variable)</string>
+  <string name="backup_permission_location_fine">Precise location</string>
+  <string name="backup_permission_camera">Camera permission (for device control tools)</string>
+  <string name="backup_permission_calendar">Calendar permission (for the {{calendar}} variable or schedule management tools)</string>
+  <string name="backup_permission_alarm">Set alarms and reminders (for device control tools)</string>
+  <string name="backup_permission_exact_alarm">Precise alarm permission (for automated task scheduling)</string>
 </resources>
