@@ -475,14 +475,12 @@ private fun ChatPageContent(
                     }
                 }
 
-                val headerStyle = effectiveDisplaySetting.newChatHeaderStyle
-                val contentStyle = effectiveDisplaySetting.newChatContentStyle
-                val showNewChatContent = headerStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE || contentStyle != me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE
-
                 val isKeyboardOpen = WindowInsets.isImeVisible
                 val hasTextInput = inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
+                val isFirstVirtualChat by vm.isFirstVirtualChat.collectAsStateWithLifecycle()
 
-                val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && showNewChatContent && !hasTextInput && !isKeyboardOpen
+                // 仅在首次进入虚拟模式时显示 NewChatContent (因为目前 NewChatContent 内部已处理 VirtualWorldWelcome)
+                val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen && currentAssistant.isVirtualWorldMode && isFirstVirtualChat
                 val errorSelectModelText = stringResource(R.string.error_select_model_first)
                 androidx.compose.animation.AnimatedVisibility(
                     visible = shouldShowNewChatContent,
@@ -492,8 +490,8 @@ private fun ChatPageContent(
                 ) {
                     NewChatContent(
                         assistant = currentAssistant,
-                        headerStyle = headerStyle,
-                        contentStyle = contentStyle,
+                        headerStyle = effectiveDisplaySetting.newChatHeaderStyle,
+                        contentStyle = effectiveDisplaySetting.newChatContentStyle,
                         showAvatarInHeader = effectiveDisplaySetting.newChatShowAvatar,
                         stats = newChatStats,
                         hasBackgroundImage = currentAssistant.background != null,
@@ -536,7 +534,7 @@ private fun ChatPageContent(
                 }
 
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !showNewChatContent,
+                    visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent,
                     enter = androidx.compose.animation.fadeIn(),
                     exit = androidx.compose.animation.fadeOut(),
                     modifier = Modifier.align(Alignment.BottomCenter)

@@ -264,6 +264,16 @@ class ChatVM(
         assistant?.searchMode ?: me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off
     }.stateIn(viewModelScope, SharingStarted.Lazily, me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
 
+    // Check if the user has ever sent a message in virtual mode for the current assistant
+    val isFirstVirtualChat: StateFlow<Boolean> = conversation
+        .map { it.assistantId }
+        .distinctUntilChanged()
+        .flatMapLatest { assistantId ->
+            conversationRepo.getVirtualConversationsOfAssistant(assistantId)
+                .map { convs -> convs.all { it.messageNodes.isEmpty() } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.core.data.model.AssistantSearchMode) {
         viewModelScope.launch {
             val currentSettings = settingsStore.settingsFlow.value

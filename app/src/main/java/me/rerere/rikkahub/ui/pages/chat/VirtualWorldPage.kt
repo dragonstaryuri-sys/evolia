@@ -239,9 +239,10 @@ fun VirtualWorldPage(id: Uuid) {
                     val hasUserSentMessages = remember(conversation.messageNodes) {
                         conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
                     }
+                    val isFirstVirtualChat by vm.isFirstVirtualChat.collectAsStateWithLifecycle()
 
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = isConversationLoaded && !hasUserSentMessages && currentAssistant.presetMessages.isEmpty(),
+                        visible = isConversationLoaded && !hasUserSentMessages && currentAssistant.presetMessages.isEmpty() && isFirstVirtualChat,
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.align(Alignment.Center).offset(y = 28.dp)
@@ -255,13 +256,20 @@ fun VirtualWorldPage(id: Uuid) {
                         )
                     }
 
-                    Box(
-                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(200.dp).background(
-                            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background.copy(alpha = 0.85f))
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = hasUserSentMessages || currentAssistant.presetMessages.isNotEmpty() || !isFirstVirtualChat,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(200.dp).background(
+                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                    colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background.copy(alpha = 0.85f))
+                                )
                             )
                         )
-                    )
+                    }
 
                     MinimalChatInput(
                         modifier = Modifier.align(Alignment.BottomCenter),
