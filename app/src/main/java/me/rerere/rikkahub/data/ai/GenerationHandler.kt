@@ -1030,8 +1030,11 @@ class GenerationHandler(
 
         Log.d(TAG, "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, rawMessagesCount=${selectedMessages.size}")
 
-        val usedMemoriesList = selectedMemories.mapIndexed { index, memory ->
+        val usedMemoriesList = selectedMemories.mapIndexedNotNull { index, memory ->
             val isBoost = memory.type == 2
+            if (isBoost && !me.rerere.rikkahub.BuildConfig.DEBUG) {
+                return@mapIndexedNotNull null
+            }
             val reason = when {
                 isBoost -> context.getString(R.string.context_source_recent_episode_boost)
                 assistant.useRagMemoryRetrieval -> context.getString(R.string.context_source_contextually_relevant)
