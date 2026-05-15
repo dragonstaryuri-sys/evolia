@@ -12,6 +12,9 @@ interface ChatSegmentDAO {
     @Query("SELECT * FROM chat_segments WHERE conversation_id = :conversationId ORDER BY start_index ASC")
     suspend fun getSegmentsByConversation(conversationId: String): List<ChatSegmentEntity>
 
+    @Query("SELECT * FROM chat_segments WHERE assistant_id = :assistantId")
+    suspend fun getSegmentsByAssistant(assistantId: String): List<ChatSegmentEntity>
+
     @Query("SELECT * FROM chat_segments WHERE conversation_id = :conversationId ORDER BY start_index ASC")
     fun getSegmentsByConversationFlow(conversationId: String): Flow<List<ChatSegmentEntity>>
 

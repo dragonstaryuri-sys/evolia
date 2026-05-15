@@ -1507,4 +1507,15 @@
   <string name="backup_permission_calendar">日历权限 (用于 {{calendar}} 变量或日程管理工具)</string>
   <string name="backup_permission_alarm">设置闹钟与提醒</string>
   <string name="backup_permission_exact_alarm">精确闹钟权限 (用于自动任务调度)</string>
+  <string name="assistant_detail_export_options">导出选项</string>
+  <string name="assistant_detail_export_bundle">Evolia捆绑包（.json）</string>
+  <string name="assistant_detail_export_card_v2_json">角色卡片V2（.json）</string>
+  <string name="assistant_detail_export_card_v2_png">角色卡片V2（.png）</string>
+  <string name="assistant_detail_export_failed">导出失败：%s</string>
+  <string name="assistant_detail_export_failed_png">导出失败：无法创建PNG</string>
+  <string name="export_options_include_memories">包含记忆</string>
+  <string name="export_options_include_lorebooks">包含关联的世界书</string>
+  <string name="export_options_always_included_hint">角色设置和个人资料始终会被包含。</string>
+  <string name="export_options_confirm">导出</string>
+
 </resources>

@@ -82,7 +82,6 @@ class AssistantDetailVM(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
         )
 
-    // Token Usage logic
     val tokenUsageHistory: StateFlow<List<TokenUsageEntity>> = conversationRepository
         .getRecentTokenUsageFlow(assistantId.toString(), days = 7)
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -92,7 +91,6 @@ class AssistantDetailVM(
         history.find { it.date == today }
     }.stateIn(viewModelScope, SharingStarted.Lazily, null)
 
-    // Agent Tasks logic
     val agentTasks: StateFlow<List<AgentTaskEntity>> = agentTaskRepository
         .getTasksByAssistant(assistantId.toString())
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -111,15 +109,19 @@ class AssistantDetailVM(
         .map { it.assistantTags }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val hasMemories: StateFlow<Boolean> = memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString())
-        .map { it.isNotEmpty() }
-        .stateIn(viewModelScope, SharingStarted.Lazily, false)
+    val episodes: StateFlow<List<ChatEpisodeEntity>> = chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // 修正：判断是否存在任何级别的记忆 (L1-L3)
+    val hasMemories: StateFlow<Boolean> = combine(
+        memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
+        episodes
+    ) { core, episodic ->
+        core.isNotEmpty() || episodic.isNotEmpty()
+    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     val hasLorebooks: StateFlow<Boolean> = assistant.map { it.enabledLorebookIds.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.Lazily, false)
-
-    val episodes: StateFlow<List<ChatEpisodeEntity>> = chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val episodeStats: StateFlow<EpisodeStats> = combine(
         memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
@@ -189,7 +191,6 @@ class AssistantDetailVM(
         consolidateEpisodes: Boolean = true,
         updateMaster: Boolean = true
     ) {
-        // 异步处理“更新记忆档案”（L3）
         if (updateMaster && !consolidateEpisodes) {
             val request =
                 androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
@@ -206,7 +207,6 @@ class AssistantDetailVM(
             return
         }
 
-        // L2 情节记忆整合逻辑
         if (_isConsolidating.value) return
         consolidationJob = viewModelScope.launch {
             _isConsolidating.value = true
@@ -297,7 +297,7 @@ class AssistantDetailVM(
                             currentAssistant.name,
                             currentAssistant.masterMemoryContent,
                             recentContext,
-                            DEFAULT_MASTER_MEMORY_PROMPT // Changed: Use hardcoded default prompt
+                            DEFAULT_MASTER_MEMORY_PROMPT
                         )
                     }
                 }
@@ -506,7 +506,6 @@ class AssistantDetailVM(
 
         val groupIds = group.map { it.id }
         val groupText = group.joinToString("\n") { "(ID: ${it.id}): ${it.content}" }
-        Log.i(TAG, ">>> [Memory Optimization] Sending Similarity Group (IDs: $groupIds) to AI")
 
         val prompt = DEFAULT_MEMORY_OPTIMIZATION_PROMPT
             .applyPlaceholders(
@@ -518,7 +517,6 @@ class AssistantDetailVM(
             val response =
                 handler.generateText(providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.1f))
             val resultText = response.choices.firstOrNull()?.message?.toContentText() ?: ""
-            Log.i(TAG, "<<< [Memory Optimization] AI Raw Response:\n$resultText")
 
             var jsonString = if (resultText.contains("[") && resultText.contains("]")) {
                 resultText.substring(resultText.indexOf("["), resultText.lastIndexOf("]") + 1)
@@ -533,15 +531,10 @@ class AssistantDetailVM(
             val root = try {
                 json.parseToJsonElement(jsonString)
             } catch (e: Exception) {
-                Log.w(
-                    TAG,
-                    "!!! [Memory Optimization] 不能识别 AI 返回内容的格式 (可能存在语法错误)。跳过此组优化。错误: ${e.message}"
-                )
                 return OptimizationResult(0, 0, 0)
             }
 
             if (root !is JsonArray) {
-                Log.w(TAG, "!!! [Memory Optimization] AI 返回的不是有效的 JSON 数组。跳过。")
                 return OptimizationResult(0, 0, 0)
             }
 
@@ -570,7 +563,6 @@ class AssistantDetailVM(
                             memoryRepository.updateEpisodeContent(-id, contentString ?: "")
                         }
                         updated++
-                        Log.i(TAG, "Executed [UPDATE] on ID: $id")
                     }
 
                     "delete" -> if (id != null) {
@@ -622,7 +614,6 @@ class AssistantDetailVM(
                     if (it.id == assistant.id) assistant else it
                 }
             }
-
             settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
         }
     }
@@ -671,18 +662,17 @@ class AssistantDetailVM(
     private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
     val retrievalResults = _retrievalResults.asStateFlow()
 
-    // 修改 testRetrieval 函数
     fun testRetrieval(query: String) {
         viewModelScope.launch {
-            val currentAssistant = assistant.value // 获取界面上当前的设置
+            val currentAssistant = assistant.value
             val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                 assistantId = assistantId.toString(),
                 query = query,
-                limit = currentAssistant.ragLimit, // 传递界面设置的数量限制
-                similarityThreshold = currentAssistant.ragSimilarityThreshold, // 传递界面设置的阈值
-                includeCore = currentAssistant.ragIncludeCore, // 传递检索范围
+                limit = currentAssistant.ragLimit,
+                similarityThreshold = currentAssistant.ragSimilarityThreshold,
+                includeCore = currentAssistant.ragIncludeCore,
                 includeEpisodes = currentAssistant.ragIncludeEpisodes,
-                mode = currentAssistant.memoryRetrievalMode // 传递检索模式（语义/混合/关键词）
+                mode = currentAssistant.memoryRetrievalMode
             )
             _retrievalResults.value = results.map { it.first.copy(content = it.first.content) to it.second }
         }
@@ -690,13 +680,11 @@ class AssistantDetailVM(
 
     fun regenerateEmbeddings() {
         viewModelScope.launch {
-            _embeddingProgress.value = EmbeddingProgress(
-                0,
-                1,
-                true
-            ); memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t ->
-            _embeddingProgress.value = EmbeddingProgress(c, t, true)
-        }; _embeddingProgress.value = null
+            _embeddingProgress.value = EmbeddingProgress(0, 1, true)
+            memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t ->
+                _embeddingProgress.value = EmbeddingProgress(c, t, true)
+            }
+            _embeddingProgress.value = null
         }
     }
 

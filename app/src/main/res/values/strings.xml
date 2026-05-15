@@ -1548,4 +1548,14 @@
   <string name="backup_permission_calendar">Calendar permission (for the {{calendar}} variable or schedule management tools)</string>
   <string name="backup_permission_alarm">Set alarms and reminders (for device control tools)</string>
   <string name="backup_permission_exact_alarm">Precise alarm permission (for automated task scheduling)</string>
+  <string name="assistant_detail_export_options">Export Options</string>
+  <string name="assistant_detail_export_bundle">Evolia Bundle (.json)</string>
+  <string name="assistant_detail_export_card_v2_json">Character Card V2 (.json)</string>
+  <string name="assistant_detail_export_card_v2_png">Character Card V2 (.png)</string>
+  <string name="assistant_detail_export_failed">Export failed: %s</string>
+  <string name="assistant_detail_export_failed_png">Export failed: Could not create PNG</string>
+  <string name="export_options_include_memories">Include Memories</string>
+  <string name="export_options_include_lorebooks">Include Linked Lorebooks</string>
+  <string name="export_options_always_included_hint">Character settings and profile are always included.</string>
+  <string name="export_options_confirm">Export</string>
 </resources>

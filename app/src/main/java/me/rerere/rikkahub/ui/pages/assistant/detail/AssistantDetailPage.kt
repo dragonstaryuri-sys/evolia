@@ -140,7 +140,7 @@ fun AssistantDetailPage(
                     toaster.show(context.getString(R.string.export_success))
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    toaster.show("Export failed: ${e.message}")
+                    toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                 }
                 pendingExportContent = ""
             }
@@ -160,7 +160,7 @@ fun AssistantDetailPage(
                     toaster.show(context.getString(R.string.export_success))
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    toaster.show("Export failed: ${e.message}")
+                    toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                 }
                 pendingExportBytes = null
             }
@@ -221,7 +221,7 @@ fun AssistantDetailPage(
                             IconButton(onClick = { showExportMenu = true }) {
                                 Icon(
                                     imageVector = Icons.Rounded.Upload,
-                                    contentDescription = "Export"
+                                    contentDescription = stringResource(R.string.export_label)
                                 )
                             }
 
@@ -230,7 +230,7 @@ fun AssistantDetailPage(
                                 onDismissRequest = { showExportMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Evolia Bundle (.json)") },
+                                    text = { Text(stringResource(R.string.assistant_detail_export_bundle)) },
                                     onClick = {
                                         showExportMenu = false
                                         if (hasMemories || hasLorebooks) {
@@ -249,14 +249,14 @@ fun AssistantDetailPage(
                                                     exportLauncher.launch(fileName)
                                                 } catch (e: Exception) {
                                                     e.printStackTrace()
-                                                    toaster.show("Export failed: ${e.message}")
+                                                    toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                                                 }
                                             }
                                         }
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Character Card V2 (.json)") },
+                                    text = { Text(stringResource(R.string.assistant_detail_export_card_v2_json)) },
                                     onClick = {
                                         showExportMenu = false
                                         scope.launch {
@@ -267,13 +267,13 @@ fun AssistantDetailPage(
                                                 exportLauncher.launch(fileName)
                                             } catch (e: Exception) {
                                                 e.printStackTrace()
-                                                toaster.show("Export failed: ${e.message}")
+                                                toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                                             }
                                         }
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Character Card V2 (.png)") },
+                                    text = { Text(stringResource(R.string.assistant_detail_export_card_v2_png)) },
                                     onClick = {
                                         showExportMenu = false
                                         scope.launch {
@@ -284,11 +284,11 @@ fun AssistantDetailPage(
                                                     val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2_png")
                                                     pngExportLauncher.launch(fileName)
                                                 } else {
-                                                    toaster.show("Export failed: Could not create PNG")
+                                                    toaster.show(context.getString(R.string.assistant_detail_export_failed_png))
                                                 }
                                             } catch (e: Exception) {
                                                 e.printStackTrace()
-                                                toaster.show("Export failed: ${e.message}")
+                                                toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                                             }
                                         }
                                     }
@@ -456,7 +456,7 @@ fun AssistantDetailPage(
 
     if (showExportOptionsDialog) {
         me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog(
-            title = "Export Options",
+            title = stringResource(R.string.assistant_detail_export_options),
             onDismissRequest = { showExportOptionsDialog = false },
             showMemoriesOption = hasMemories,
             showLorebooksOption = hasLorebooks,
@@ -475,7 +475,7 @@ fun AssistantDetailPage(
                         exportLauncher.launch(fileName)
                     } catch (e: Exception) {
                         e.printStackTrace()
-                            toaster.show(message = "Export failed: ${e.message}")
+                        toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                     }
                 }
             }

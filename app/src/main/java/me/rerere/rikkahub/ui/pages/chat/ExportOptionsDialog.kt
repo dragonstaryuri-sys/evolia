@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -16,7 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.R
 
 @Composable
 fun ExportOptionsDialog(
@@ -46,10 +49,13 @@ fun ExportOptionsDialog(
                             checked = includeMemories,
                             onCheckedChange = { includeMemories = it }
                         )
-                        Text("Include Memories", modifier = Modifier.padding(start = 8.dp))
+                        Text(
+                            text = stringResource(R.string.export_options_include_memories),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
                 }
-                
+
                 if (showLorebooksOption) {
                     Row(
                         modifier = Modifier
@@ -62,14 +68,18 @@ fun ExportOptionsDialog(
                             checked = includeLorebooks,
                             onCheckedChange = { includeLorebooks = it }
                         )
-                        Text("Include Linked Lorebooks", modifier = Modifier.padding(start = 8.dp))
+                        Text(
+                            text = stringResource(R.string.export_options_include_lorebooks),
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
                 }
-                
+
                 Text(
-                    "Character settings and profile are always included.",
-                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp, start = 4.dp)
+                    text = stringResource(R.string.export_options_always_included_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp, start = 4.dp),
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
         },
@@ -77,12 +87,12 @@ fun ExportOptionsDialog(
             TextButton(
                 onClick = { onConfirm(includeMemories, includeLorebooks) }
             ) {
-                Text("Export")
+                Text(stringResource(R.string.export_options_confirm))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismissRequest) {
-                Text("Cancel")
+                Text(stringResource(R.string.assistant_page_cancel))
             }
         }
     )
