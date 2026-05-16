@@ -92,7 +92,9 @@ fun HomePage() {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()).fillMaxSize()) {
+        Box(modifier = Modifier
+            .padding(bottom = innerPadding.calculateBottomPadding())
+            .fillMaxSize()) {
             AnimatedContent(
                 targetState = currentTab,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -134,10 +136,31 @@ fun AgentListPage() {
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val res = me.rerere.rikkahub.utils.AssistantExportImport.parseImport(uri, context)
-                if (res is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Success) {
-                    assistantVm.addAssistant(res.assistant)
-                    toaster.show("Character Imported")
+                try {
+                    // 添加日志
+                    println("Start parsing import from: $uri")
+                    val res = me.rerere.rikkahub.utils.AssistantExportImport.parseImport(uri, context)
+                    println("Import result: $res")
+
+                    when (res) {
+                        is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Success -> {
+                            assistantVm.addAssistant(res.assistant)
+                            toaster.show("Character Imported")
+                        }
+
+                        is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Configurable -> {
+                            // 修正：Configurable 状态也要处理，或者将其转为 Success
+                            assistantVm.addAssistant(res.assistant)
+                            toaster.show("Character Imported (${res.assistant.name})")
+                        }
+
+                        is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Error -> {
+                            toaster.show("Import Failed: ${res.message}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    toaster.show("Error: ${e.localizedMessage}")
                 }
             }
         }
@@ -176,12 +199,14 @@ fun AgentListPage() {
                             Icon(Icons.Rounded.Search, contentDescription = "Search")
                         }
                         IconButton(onClick = {
-                            createState.open(Assistant(
-                                chatModelId = settings.chatModelId,
-                                embeddingModelId = settings.embeddingModelId,
-                                memoryModelId = settings.memoryModelId,
-                                diaryModelId = settings.diaryModelId,
-                            ))
+                            createState.open(
+                                Assistant(
+                                    chatModelId = settings.chatModelId,
+                                    embeddingModelId = settings.embeddingModelId,
+                                    memoryModelId = settings.memoryModelId,
+                                    diaryModelId = settings.diaryModelId,
+                                )
+                            )
                         }) {
                             Icon(Icons.Rounded.Add, contentDescription = "Add")
                         }
@@ -224,7 +249,10 @@ fun AgentListPage() {
                             onClick = {
                                 scope.launch {
                                     chatVm.selectAssistant(assistant.id)
-                                    val lastConv = repo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
+                                    val lastConv = repo.getConversationsOfAssistant(
+                                        assistant.id,
+                                        isVirtual = assistant.isVirtualWorldMode
+                                    )
                                         .firstOrNull()
                                         ?.firstOrNull()
                                     val chatId = lastConv?.id ?: Uuid.random()
@@ -283,7 +311,10 @@ fun AgentListPage() {
                                 onClick = {
                                     scope.launch {
                                         chatVm.selectAssistant(assistant.id)
-                                        val lastConv = repo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
+                                        val lastConv = repo.getConversationsOfAssistant(
+                                            assistant.id,
+                                            isVirtual = assistant.isVirtualWorldMode
+                                        )
                                             .firstOrNull()
                                             ?.firstOrNull()
                                         val chatId = lastConv?.id ?: Uuid.random()
@@ -493,14 +524,16 @@ fun AgentItem(
         Box {
             if (isVirtual) {
                 Box(
-                    modifier = Modifier.matchParentSize().background(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)
+                                )
                             )
                         )
-                    )
                 )
             }
 
@@ -568,7 +601,9 @@ fun AgentItem(
                             imageVector = if (isVirtual) Icons.Rounded.Public else Icons.Rounded.PublicOff,
                             contentDescription = "Toggle Virtual Mode",
                             modifier = Modifier.size(22.dp),
-                            tint = if (isVirtual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            tint = if (isVirtual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                                alpha = 0.6f
+                            )
                         )
                     }
                 }
