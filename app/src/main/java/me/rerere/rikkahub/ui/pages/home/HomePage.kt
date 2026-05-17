@@ -166,9 +166,14 @@ fun AgentListPage() {
         }
     }
 
-    // 分离主智能体
-    val mainAgents = remember(settings.assistants) { settings.assistants.filter { it.isMain } }
-    val otherAgents = remember(settings.assistants) { settings.assistants.filter { !it.isMain } }
+    // 分离主智能体并确保唯一性，防止 LazyColumn 崩溃
+    val mainAgents = remember(settings.assistants) {
+        settings.assistants.filter { it.isMain }.distinctBy { it.id }
+    }
+    val otherAgents = remember(settings.assistants, mainAgents) {
+        val mainIds = mainAgents.map { it.id }.toSet()
+        settings.assistants.filter { !it.isMain && it.id !in mainIds }.distinctBy { it.id }
+    }
 
     val lazyListState = rememberLazyListState()
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->

@@ -35,14 +35,21 @@ class AssistantVM(
         viewModelScope.launch {
             val settings = settings.value
 
+            // 确保 ID 唯一，防止 LazyColumn 崩溃
+            val assistantWithUniqueId = if (settings.assistants.any { it.id == assistant.id }) {
+                assistant.copy(id = kotlin.uuid.Uuid.random())
+            } else {
+                assistant
+            }
+
             // 自动填入全局模型配置（如果智能体未配置）
-            var newAssistant = assistant.copy(
-                chatModelId = assistant.chatModelId ?: settings.chatModelId,
-                backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId,
-                summarizerModelId = assistant.summarizerModelId ?: settings.summarizerModelId,
-                embeddingModelId = assistant.embeddingModelId ?: settings.embeddingModelId,
-                memoryModelId = assistant.memoryModelId ?: settings.memoryModelId,
-                diaryModelId = assistant.diaryModelId ?: settings.diaryModelId
+            var newAssistant = assistantWithUniqueId.copy(
+                chatModelId = assistantWithUniqueId.chatModelId ?: settings.chatModelId,
+                backgroundModelId = assistantWithUniqueId.backgroundModelId ?: settings.backgroundModelId,
+                summarizerModelId = assistantWithUniqueId.summarizerModelId ?: settings.summarizerModelId,
+                embeddingModelId = assistantWithUniqueId.embeddingModelId ?: settings.embeddingModelId,
+                memoryModelId = assistantWithUniqueId.memoryModelId ?: settings.memoryModelId,
+                diaryModelId = assistantWithUniqueId.diaryModelId ?: settings.diaryModelId
             )
 
             if (newAssistant.name.isBlank()) {

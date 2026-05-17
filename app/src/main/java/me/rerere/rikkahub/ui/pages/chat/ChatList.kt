@@ -317,8 +317,14 @@ private fun SharedTransitionScope.ChatListNormal(
             }
         }
 
-
-
+        // 监听滚动状态来显示/隐藏消息导航按钮
+        LaunchedEffect(state) {
+            snapshotFlow {
+                state.isScrollInProgress || !state.layoutInfo.visibleItemsInfo.isAtBottom()
+            }.collect { shouldShow ->
+                isRecentScroll = shouldShow
+            }
+        }
 
         val needsPhantomLoadingTurn = loading && (
             uiItems.isEmpty() ||
