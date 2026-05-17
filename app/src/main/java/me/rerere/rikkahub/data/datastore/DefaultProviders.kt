@@ -24,7 +24,7 @@ val DEFAULT_PROVIDERS = listOf(
         balanceOption = BalanceOption(
             enabled = true,
             apiPath = "/user/info",
-            resultPath = "data.balance",
+            resultPath = "data.totalBalance",
         )
     ),
     ProviderSetting.OpenAI(

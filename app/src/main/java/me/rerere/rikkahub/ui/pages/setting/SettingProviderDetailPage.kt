@@ -604,6 +604,8 @@ private fun SiliconFlowTutorialBottomSheet(
             R.drawable.tutorial_siliconflow4,
             R.drawable.tutorial_siliconflow5,
             R.drawable.tutorial_siliconflow6,
+            R.drawable.tutorial_siliconflow7,
+            R.drawable.tutorial_siliconflow8,
         ).map { "android.resource://${context.packageName}/$it" }
     }
     val pagerState = rememberPagerState { tutorialImages.size }
