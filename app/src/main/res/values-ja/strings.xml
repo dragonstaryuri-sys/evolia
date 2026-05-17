@@ -349,7 +349,6 @@
   <string name="setting_display_page_code_block_auto_wrap_desc">コードブロック内の長い行を自動的に折り返す</string>
   <string name="setting_display_page_code_block_auto_wrap_title">コードブロックの自動折り返し</string>
   <string name="setting_display_page_create_new_conversation_on_start_desc">アプリ起動時に新しい会話を自動作成する</string>
-  <string name="setting_display_page_create_new_conversation_on_start_title">起動時に新しいチャット</string>
   <string name="setting_display_page_developer_mode">開発者モード</string>
   <string name="setting_display_page_developer_mode_desc">デバッグ機能を追加で表示します。一般ユーザーへの推奨しません。</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">メッセージ生成時に触覚フィードバックを有効にする</string>

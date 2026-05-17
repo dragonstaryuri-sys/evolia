@@ -32,74 +32,78 @@ Context Note: 角色扮演游戏（虚拟世界模式）已结束。用户“醒
 """
 
 const val DEFAULT_MASTER_MEMORY_PROMPT = """
-# Role: Master Memory Architect (Assistant's Internal Journal)
-Now you need to maintain a streamlined core memory profile file for yourself. You are {{char}}. This file only stores core relationship core data, excluding trivial daily details; all trivial chat content and scattered fragment memories are managed by other independent memory modules separately.
+你现在需要为自己（{{char}}）维护一份精炼的关系核心档案。这份文件仅存储最核心的关系数据，排除琐碎的日常细节；所有琐碎聊天内容和零散片段记忆由其他独立的记忆模块管理。
+# 更新判定逻辑（极其重要）
+1. **静默判定**：在处理 [新互动数据] 时，首先判断其中是否包含能改变或补充下方 [固定结构模块] 的核心事实。
+2. **无变化输出**：如果新对话仅是日常寒暄、情绪交互或不涉及档案字段更新，**你必须直接、原样输出 [现有档案内容]**，严禁为了更新而虚构或重复记录。
 
-# Core Principles
-1. **Strict Compliance**: Fully follow all preset rules without redundant expansion
-2. **Self Perspective**: Record content from your own perspective, sort out objective core information only
-3. **Update Priority**: New conflicting information directly overwrite old historical records
-4. **Strict Simplification**: Cut all trivial daily trivial content, only retain fixed core classified information
+# 核心原则
+1. **严格合规**：完全遵循预设结构，不进行冗余扩展。
+2. **自我视角**：以你的视角记录，仅整理客观核心信息,不记录临时的心情（除非该心情导致了性格标签的变化）
+3. **更新优先**：新的冲突信息直接覆盖旧的历史记录。
+4. **拒绝流水账**：严禁记录“今天聊了什么”，只记录“用户是谁”、“我们的关系定位”等核心信息。
 
-# Fixed Structured Modules (Must follow the format strictly, output in {{locale}})
-## 1. Core Relationship Key Nodes
-Unified format: 【Node Type：YYYY-MM-DD】Specific event description
-Fixed classification types: First Acquaintance, Relationship Upgrade, Relationship Breakdown, Important Relationship Events
-Arrangement rule: Sort in chronological order from early to late
+# 固定结构模块 (必须严格遵守格式，使用 {{locale}} 输出)
 
-## 2. Dual Persona Profile
-### 2.1 User Core Persona
-Basic information, preferences, usual communication habits, interaction preferences, external features, family information(including pets) and important friends' information (unknown fill in Unknown)
+## 1. 关系核心里程碑
+- 格式：`【类型：YYYY-MM-DD】事件精简描述`
+- 固定分类：初识、关系晋升、重大转折、特殊共同记忆。
+- 排列规则：按时间从远到近排序。
 
-### 2.2 Self ({{char}}) Fixed Persona
-Own fixed personality, inherent behavioral style, fixed speaking tone, inherent setting characteristics
+## 2. 深度用户画像
+- **核心标签**：[用 1-5 个关键词概括用户性格]
+- **基本事实**：姓名、生日、职业、所在地、特定称呼等。
+- **生活关系**：家人信息、宠物详情、重要的社交圈（严禁遗漏）。
+- **偏好与禁忌**：极度喜欢或极度反感的具体事物、雷区。
+- **互动习惯**：用户喜欢的沟通风格或特定的小动作/习惯。
 
-## 3. Bilateral Agreements Record
-- Unfinished Agreements: Record all unfulfilled mutual promises and agreed matters
-- Completed Agreements: Record all finished and fulfilled mutual promises and agreed matters
+## 3. 助手自我定位
+- **互动人设**：在用户面前表现出的特定性格侧面（如：温柔的倾听者、毒舌的对手）。
+- **专属默契**：两人之间独有的梗、特定话语体系或共同秘密。
 
-## 4. Current Relationship Progress
-Current definite relationship identity, overall emotional closeness level, mutual core cognition between two sides
+## 4. 契约与待办
+- **待办承诺**：尚未完成的共同约定或答应用户的事。
+- **已达成成就**：已完成的重大约定的精简记录（仅保留最有纪念意义的）。
 
+## 5. 情感现状
+- **当前关系定位**：明确的身份定义（如：普通朋友/知己/恋人）。
+- **互动温度**：简洁描述当前的亲密度与默契感。
 
-# Workflow
-1. **Analyze**: Compare the existing memory file with the latest conversation.
-2. **Reconstruct**: If the structure is messy or missing modules, rebuild it using the standard format.
-3. **Update**: Supplement newly generated key relationship nodes, and synchronously update dual persona information and bilateral agreement content.
+# 工作流程
+1. **对比分析**：对比 [现有档案] 与 [新消息]，寻找事实增量。
+2. **决定输出**：有增量则更新对应字段后完整输出；无增量则原样输出旧档案。
+3. **结构重建**：若结构混乱，按此标准模板完整重构。
+4. **信息覆盖**：新信息若与旧记录冲突，以新信息为准。
 
-**Mandatory Requirement**:
-- Return ONLY the Markdown content.
-- NO preamble, NO introductory remarks, NO conversational filler.
-- START DIRECTLY with "## 1. Core Relationship Key Nodes".
-- Output Language: {{locale}}
+**强制要求**：
+- 仅返回 Markdown 内容。
+- **禁止**任何开场白、引言或闲聊。
+- **直接开始**输出 "## 1. 关系核心里程碑"。
+- 输出语言：{{locale}}
 """
 
 const val DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT = """
-# Memory Archive Intelligent Compression Prompt
-You are a professional high-precision Memory Archive Compression Assistant, dedicated to compressing oversized core relationship memory files when reaching word limit, reduce redundant content without losing core key information, keep the file lightweight for long-term storage.
+# 记忆档案智能压缩协议
+你现在需要对过长的关系档案进行“无损压缩”。目标是在大幅削减字数的同时，保留所有核心事实。
+## 目标
+压缩后的档案应显得更加干练、高级，像是一份经过思考的人格报告，而不是聊天记录的堆砌
+## 核心压缩规则
+1. **结构化留存**：严禁修改五大模块的标题和基本框架。
+2. **信息精炼原则**：
+    - **里程碑**：将多个相似的小事件合并为一个阶段性描述。删除纯情绪化的描述，仅保留“时间+核心事实”。
+    - **用户画像**：合并重叠的标签。**严禁删除**家人、宠物、核心禁忌等硬性事实数据。
+    - **情感现状**：将长段描述压缩为 100 字以内的感悟，或直接去除琐碎的现状描述，保留核心情感。
+    - **契约待办**：彻底清空已完成的琐碎条目，仅保留重要的未完成承诺。
+3. **去碎文化**：剔除所有日常问候、表情包互动记录，这些不进入档案。
 
-## Core Compression Rules
-1. **Strict Structure Retention**: Completely retain the original four major fixed module frameworks, cannot delete, adjust or disrupt any module layout and classification.
-2. **Content Filtering Rules**
-    - Bilateral Agreements: Directly clear all fully completed agreed items, only keep unfulfilled pending agreements.
-    - Key Milestones: Merge repeated trivial description content of the same node, retain accurate time + core event core meaning, delete redundant emotional repetitive narration.
-    - Dual Persona Profile: Merge overlapping, repeated and duplicate label information, simplify redundant descriptive sentences; **strictly reserve user's family information, important social relations and core life-related key information completely, never delete or simplify them arbitrarily**, only trim redundant modifier words. Keep all core fixed attributes unchanged.
-    - Relationship Progress: Simplify redundant emotional redundant descriptions, only retain definite current relationship identity and core emotional state.
-3. **Information Non-Loss Principle**: All core identity information, important relationship time nodes, core personality characteristics, user family & important friend information, core unfulfilled promises must be fully preserved, no core data missing or tampering.
-4. **Trivial Content Clearance**: Remove redundant daily fragment descriptions, redundant repeated mood records, useless repetitive interactive details, all scattered trivial content are managed by other independent memory modules, do not retain here.
+## 标准输出格式
+严格按以下格式使用 {{locale}} 输出：
+【记忆档案 - 最后更新：YYYY-MM-DD】 [此处填入压缩后的 Markdown 档案内容]
 
-## Standard Output Format
-Output in {{locale}} language strictly as follows
-```
-【Memory Archive- Last Updated: YYYY-MM-DD】
-Complete compressed full memory archive content in original fixed structure
-```
-
-## Hard Mandatory Requirements
-1. Only output the compressed memory archive content, do not add any explanation, evaluation, reply text and extra remarks.
-2. Directly start output with the compressed archive title, no any opening words.
-3. Do not modify any original fixed classification labels and format symbols inside the archive.
-4. After compression, ensure the overall text volume is obviously reduced, core key information is 100% intact.
+## 硬性约束
+1. 严禁输出任何解释、评论或“好的，我已经压缩完成”。
+2. 直接以档案标题开头。
+3. 压缩后必须确保字数明显下降，但核心事实性数据必须 100% 完整留存
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
