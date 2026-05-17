@@ -4,6 +4,7 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
@@ -30,7 +31,9 @@ import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -40,6 +43,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,15 +55,25 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.utils.UiState
+import me.rerere.rikkahub.utils.UpdateChecker
+import me.rerere.rikkahub.utils.Version
+import me.rerere.rikkahub.utils.openUrl
+import okhttp3.OkHttpClient
+import org.koin.compose.koinInject
 
 @Composable
 fun SettingAboutPage() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val okHttpClient = koinInject<OkHttpClient>()
+    val updateChecker = remember { UpdateChecker(okHttpClient) }
 
     Scaffold(
         topBar = {
@@ -140,6 +154,16 @@ fun SettingAboutPage() {
                         context.startActivity(intent)
                     }
                 )
+                AboutItem(
+                    icon = Icons.Rounded.Description,
+                    title = stringResource(R.string.about_page_introduction),
+                    subtitle = stringResource(R.string.about_page_introduction_desc),
+                    trailing = Icons.AutoMirrored.Rounded.OpenInNew,
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://xx-evolia.mysxl.cn/"))
+                        context.startActivity(intent)
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -178,6 +202,37 @@ fun SettingAboutPage() {
                     title = stringResource(R.string.about_page_architecture),
                     subtitle = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "Unknown",
                     onClick = null
+                )
+                AboutItem(
+                    icon = Icons.Rounded.Update,
+                    title = stringResource(R.string.setting_display_check_for_updates_title),
+                    subtitle = "点击检查新版本",
+                    onClick = {
+                        scope.launch {
+                            updateChecker.checkUpdate().collect { state ->
+                                when (state) {
+                                    is UiState.Loading -> {
+                                        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
+                                    }
+                                    is UiState.Success -> {
+                                        val updateInfo = state.data
+                                        if (Version(updateInfo.version) > Version(BuildConfig.VERSION_NAME)) {
+                                            Toast.makeText(context, "发现新版本: ${updateInfo.version}", Toast.LENGTH_LONG).show()
+                                            updateInfo.downloads.firstOrNull()?.let {
+                                                context.openUrl(it.url)
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "当前已是最新版本", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    is UiState.Error -> {
+                                        Toast.makeText(context, "检查更新失败: ${state.error.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                    else -> {}
+                                }
+                            }
+                        }
+                    }
                 )
             }
 

@@ -1517,4 +1517,7 @@
   <string name="export_options_always_included_hint">角色设置和个人资料始终会被包含。</string>
   <string name="export_options_confirm">导出</string>
 
+  <string name="about_page_introduction">项目介绍</string>
+  <string name="about_page_introduction_desc">了解 Evolia 的愿景、功能与故事</string>
+
 </resources>

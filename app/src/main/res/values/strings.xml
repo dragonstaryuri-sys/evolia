@@ -1557,4 +1557,6 @@
   <string name="export_options_include_lorebooks">Include Linked Lorebooks</string>
   <string name="export_options_always_included_hint">Character settings and profile are always included.</string>
   <string name="export_options_confirm">Export</string>
+  <string name="about_page_introduction">Project Introduction</string>
+  <string name="about_page_introduction_desc">Learn about the vision and story of Evolia</string>
 </resources>

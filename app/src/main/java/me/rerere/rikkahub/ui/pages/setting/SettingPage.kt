@@ -333,7 +333,25 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             )
                         },
                         onClick = {
-                            context.openUrl("https://www.ifdian.net/a/evolia_xx")
+                            val alipayQrUrl = "https://qr.alipay.com/fkx15758hya1ubxd8vd6l36?t=1778995257602"
+                            val fallbackUrl = "https://xx-evolia.mysxl.cn/"
+
+                            try {
+                                // 尝试通过 Scheme 唤起支付宝转账页面
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("alipays://platformapi/startapp?saId=10000007&clientVersion=3.7.0.0718&qrcode=${android.net.Uri.encode(alipayQrUrl)}")
+                                ).apply {
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+
+                                // 弹出感谢提示 (由于无法监听支付结果，我们在跳转瞬间送上祝福)
+                                android.widget.Toast.makeText(context, "感谢支持，祝你和你的小机都越来越好！", android.widget.Toast.LENGTH_LONG).show()
+                            } catch (e: Exception) {
+                                // 如果未安装支付宝或唤起失败，跳转到你指定的网页
+                                context.openUrl(fallbackUrl)
+                            }
                         }
                     )
                     SettingGroupItem(
