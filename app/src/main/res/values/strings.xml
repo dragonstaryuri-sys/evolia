@@ -379,7 +379,6 @@
   <string name="setting_display_page_code_block_auto_wrap_desc">Wrap long lines in code blocks</string>
   <string name="setting_display_page_code_block_auto_wrap_title">Code Block Word Wrap</string>
   <string name="setting_display_page_create_new_conversation_on_start_desc">Create a new conversation when app starts</string>
-  <string name="setting_display_page_create_new_conversation_on_start_title">New Chat on Start</string>
   <string name="setting_display_page_developer_mode">Developer Mode</string>
   <string name="setting_display_page_developer_mode_desc">Show more debug features. Not recommended for normal users.</string>
   <string name="setting_display_page_enable_message_generation_haptic_effect_desc">Enable haptic feedback during message generation</string>

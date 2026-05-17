@@ -153,25 +153,9 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
 
             // Basic Settings
             item {
-                var createNewConversationOnStart by rememberSharedPreferenceBoolean(
-                    "create_new_conversation_on_start",
-                    true
-                )
                 SettingsGroup(
                     title = stringResource(R.string.setting_page_basic_settings)
                 ) {
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_display_page_create_new_conversation_on_start_title),
-                        subtitle = stringResource(R.string.setting_display_page_create_new_conversation_on_start_desc),
-                        trailing = {
-                            HapticSwitch(
-                                checked = createNewConversationOnStart,
-                                onCheckedChange = {
-                                    createNewConversationOnStart = it
-                                }
-                            )
-                        }
-                    )
                     SettingGroupItem(
                         title = stringResource(R.string.setting_display_page_notification_message_generated),
                         subtitle = stringResource(R.string.setting_display_page_notification_message_generated_desc),
