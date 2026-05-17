@@ -1607,9 +1607,12 @@ private fun MemoryItem(
                                 shape = MaterialTheme.shapes.extraSmall
                             ) {
                                 Text(
-                                    text = if (memory.type == 0) stringResource(R.string.memory_type_core) else stringResource(
-                                        R.string.memory_type_episodic
-                                    ),
+                                    text = if (memory.type == 0) {
+                                        stringResource(R.string.memory_type_core)
+                                    } else {
+                                        val label = stringResource(R.string.memory_type_episodic)
+                                        if (BuildConfig.DEBUG) "$label${memory.id}" else label
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                                     color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer

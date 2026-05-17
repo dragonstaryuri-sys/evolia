@@ -538,7 +538,7 @@ class ChatService(
                     content = summary,
                     keywords = keywords,
                     embedding = if (skipEmbedding) {
-                        existingEpisode?.embedding // 如果跳过嵌入，保留旧的嵌入数据
+                        existingEpisode?.embedding
                     } else {
                         embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) }
                     },
