@@ -64,7 +64,7 @@ import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.toLocalString
 
 @Composable
-fun ColumnScope.ChatMessageActionButtons(
+fun ChatMessageActionButtons(
     message: UIMessage,
     node: MessageNode,
     onUpdate: (MessageNode) -> Unit,

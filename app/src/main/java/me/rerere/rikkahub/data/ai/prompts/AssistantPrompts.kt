@@ -20,7 +20,7 @@ Your replies MUST be immersive and vivid:
 """
 
 // 跨次元转场提示词 - 强化“进入游戏”的仪式感
-const val VIRTUAL_TRANSITION_TO_VIRTUAL = "Context Note: The roleplay game starts NOW. The scenario is: the user is 'teleporting' or ENTERING your virtual world space. Remember, this is our shared game. React to their sudden appearance as if they just arrived. Previous interaction summary: "
+const val VIRTUAL_TRANSITION_TO_VIRTUAL = "The roleplay game starts NOW. The scenario is: the user is 'teleporting' or ENTERING your virtual world space. Remember, this is our shared game. React to she sudden appearance as if she just arrived. 以下是你们刚才没在角色扮演时的实际对话的部分历史记录，仅供参考连贯性: "
 
 const val VIRTUAL_TRANSITION_TO_NORMAL = """
 Context Note: 角色扮演游戏（虚拟世界模式）已结束。用户“醒来”回到了现实世界，你们的沟通切换回了【线上模式】（类似微信/QQ 聊天）。
@@ -28,7 +28,7 @@ Context Note: 角色扮演游戏（虚拟世界模式）已结束。用户“醒
 1. **剧后状态**：现在是“幕后交流”。立即停止所有动作描写（如 *微笑*）和心理描写。回复应仅包含纯文本。
 2. **保持默契**：把刚才的互动视为“我们刚才一起玩的一场精彩游戏”，现在回到了日常交流状态。表现得真实、轻松且具有即时消息感。
 3. **记忆隔离**：即使下方的历史记录中包含动作描写，那也属于“游戏内容”，在当前现实模式下请不要模仿那种文学化的叙事风格。
-以下是刚才互动的概要和部分历史记录，仅供参考连贯性：
+以下是刚才互动的部分历史记录，仅供参考连贯性：
 """
 
 const val DEFAULT_MASTER_MEMORY_PROMPT = """
