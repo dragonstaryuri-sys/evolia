@@ -818,7 +818,7 @@ private fun TextInputRow(
                         },
                     shape = RoundedCornerShape(20.dp),
                     placeholder = {
-                        Text(stringResource(R.string.chat_input_placeholder))
+                        // 移除占位文字
                     },
                     // Use SingleLine when collapsed to prevent word wrapping (text extends horizontally)
                     // Use MultiLine when expanded (keyboard open) for normal editing
@@ -1205,7 +1205,7 @@ internal fun FilesPicker(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         // File upload buttons row: Capture, Photo Library, Files
         Row(
@@ -1493,7 +1493,7 @@ private fun FullScreenEditor(
                             .fillMaxSize(),
                         shape = RoundedCornerShape(32.dp),
                         placeholder = {
-                            Text(stringResource(R.string.chat_input_placeholder))
+                            // 移除占位文字
                         },
                         colors = TextFieldDefaults.colors().copy(
                             unfocusedIndicatorColor = Color.Transparent,

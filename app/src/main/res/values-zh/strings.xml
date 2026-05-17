@@ -325,7 +325,7 @@
 <string name="placeholder_nickname">用户昵称</string>
 <string name="placeholder_system_version">系统版本</string>
 <string name="placeholder_timezone">时区</string>
-<string name="placeholder_user">用户</string>
+<string name="placeholder_user">人类</string>
 <string name="reasoning_auto">自动</string>
 <string name="reasoning_auto_desc">让模型自动决定推理级别。</string>
 <string name="reasoning_custom">自定义推理预算</string>
@@ -449,7 +449,7 @@
 <string name="setting_page_data_backup">数据备份</string>
 <string name="setting_page_data_backup_desc">备份和恢复应用数据</string>
 <string name="setting_page_data_settings">数据设置</string>
-<string name="setting_page_default_model">默认模型和提示词</string>
+<string name="setting_page_default_model">默认模型</string>
 <string name="setting_page_default_model_desc">设置各个功能的默认模型</string>
 <string name="setting_page_display_setting">显示设置</string>
 <string name="setting_page_display_setting_desc">管理显示设置</string>

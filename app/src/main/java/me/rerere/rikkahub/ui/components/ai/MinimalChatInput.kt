@@ -343,11 +343,7 @@ fun MinimalChatInput(
                                     .contentReceiver(receiveContentListener)
                                     .onFocusChanged { isFocused = it.isFocused },
                                 placeholder = {
-                                    Text(
-                                        text = "Ask ${assistant.name}",
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    // 移除占位文字
                                 },
                                 lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = 5),  // MultiLine for proper Enter key
                                 colors = TextFieldDefaults.colors().copy(
@@ -463,6 +459,7 @@ fun MinimalChatInput(
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
                 onRefreshContext = onRefreshContext,
+                onDeleteFile = onDeleteFile,
                 onDismiss = { showPicker = false }
             )
         }
@@ -484,6 +481,7 @@ private fun MinimalPickerContent(
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
+    onDeleteFile: (Uri) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current

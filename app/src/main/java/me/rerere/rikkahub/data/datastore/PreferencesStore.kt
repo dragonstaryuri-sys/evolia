@@ -538,8 +538,8 @@ data class DisplaySetting(
     val ttsTextFilterRules: List<TtsTextFilterRule> = emptyList(),
     val filterEmojis: Boolean = false,
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
-    val showContextStacks: Boolean = false,
-    val newChatHeaderStyle: me.rerere.rikkahub.data.datastore.NewChatHeaderStyle = me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING,
+    val showContextStacks: Boolean = true,
+    val newChatHeaderStyle: me.rerere.rikkahub.data.datastore.NewChatHeaderStyle = me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON,
     val newChatContentStyle: me.rerere.rikkahub.data.datastore.NewChatContentStyle = me.rerere.rikkahub.data.datastore.NewChatContentStyle.ACTIONS,
     val newChatShowAvatar: Boolean = true,
     val hasShownProviderGuide: Boolean = false
@@ -625,7 +625,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         name = "Evolia",
         avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
         temperature = 0.6f,
-        systemPrompt = "You are the best generic assistant.",
+        systemPrompt = "你是用户创造的ai",
         isMain = true
     )
 )

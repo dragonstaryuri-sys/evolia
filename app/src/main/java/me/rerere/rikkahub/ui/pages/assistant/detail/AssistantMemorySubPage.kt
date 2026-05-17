@@ -297,7 +297,14 @@ fun AssistantMemorySettings(
                                             )
                                         )
                                     } else {
-                                        onUpdateAssistant(assistant.copy(enableMemory = true))
+                                        // 默认打开跨窗口对话连贯及记忆档案
+                                        onUpdateAssistant(
+                                            assistant.copy(
+                                                enableMemory = true,
+                                                enableRecentChatsReference = true,
+                                                enableMasterMemory = true
+                                            )
+                                        )
                                     }
                                 }
                             )

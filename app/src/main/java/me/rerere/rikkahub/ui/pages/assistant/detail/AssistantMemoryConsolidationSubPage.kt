@@ -84,7 +84,25 @@ fun AssistantMemoryConsolidationSubPage(
                         }
                         HapticSwitch(
                             checked = assistant.enableMemory,
-                            onCheckedChange = { onUpdate(assistant.copy(enableMemory = it)) }
+                            onCheckedChange = { enabled ->
+                                if (!enabled) {
+                                    onUpdate(
+                                        assistant.copy(
+                                            enableMemory = false,
+                                            enableMasterMemory = false
+                                        )
+                                    )
+                                } else {
+                                    // 默认打开跨窗口对话连贯及记忆档案
+                                    onUpdate(
+                                        assistant.copy(
+                                            enableMemory = true,
+                                            enableRecentChatsReference = true,
+                                            enableMasterMemory = true
+                                        )
+                                    )
+                                }
+                            }
                         )
                     }
 
