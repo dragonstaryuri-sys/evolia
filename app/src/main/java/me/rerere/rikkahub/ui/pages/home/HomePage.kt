@@ -228,18 +228,22 @@ fun AgentListPage() {
                 contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                val hasProvider = settings.providers.isNotEmpty()
-                val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
-                if (hasProvider && noDefaultChatModel) {
-                    item {
-                        ChatModelWarningBanner(navController)
-                    }
-                }
-                if (settings.isNotConfigured()) {
+                val isNotConfigured = settings.isNotConfigured()
+                if (isNotConfigured) {
+                    // 优先级 1：提示配置 API
                     item {
                         ProviderConfigWarningCard(navController)
                     }
+                } else {
+                    // 优先级 2：只有配了 API，才检查是否选了默认模型
+                    val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
+                    if (noDefaultChatModel) {
+                        item {
+                            ChatModelWarningBanner(navController)
+                        }
+                    }
                 }
+
 
                 itemsIndexed(mainAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
                     PhysicsSwipeToDelete(

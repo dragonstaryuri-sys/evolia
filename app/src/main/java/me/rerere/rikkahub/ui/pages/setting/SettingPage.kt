@@ -75,16 +75,23 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             contentPadding = innerPadding,
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            val hasProvider = settings.providers.isNotEmpty()
-            val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
-            if (hasProvider && noDefaultChatModel) {
+            val isNotConfigured = settings.isNotConfigured()
+            if (isNotConfigured) {
                 item {
-                    // 这里你可以直接调用上面定义的组件，或者在这里也写一份
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        ChatModelWarningBanner(navController)
+                    ProviderConfigWarningCard(navController)
+                }
+            } else {
+                val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
+                if (noDefaultChatModel) {
+                    item {
+                        // 注意：这里建议加上 padding，保持和 SettingPage 的样式一致
+                        Box(modifier = Modifier.padding(horizontal = 0.dp)) {
+                            ChatModelWarningBanner(navController)
+                        }
                     }
                 }
             }
+
             // User Profile Header (WeChat Style)
             item {
                 Surface(
