@@ -352,6 +352,8 @@ dependencies {
 
     // JavaMail for Android
     implementation(libs.android.mail)
+    // lottie anime
+    implementation("com.airbnb.android:lottie-compose:6.4.0")
 
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)

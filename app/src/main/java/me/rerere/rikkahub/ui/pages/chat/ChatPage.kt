@@ -33,6 +33,9 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.ui.graphics.toArgb
+import com.airbnb.lottie.LottieProperty
+import androidx.compose.ui.graphics.toArgb
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -67,7 +70,7 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
-import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
+import com.airbnb.lottie.compose.*
 
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
@@ -443,7 +446,7 @@ private fun ChatPageContent(
                 val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                 val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
 
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages,
                     enter = androidx.compose.animation.fadeIn(),
                     exit = androidx.compose.animation.fadeOut(),
@@ -482,10 +485,10 @@ private fun ChatPageContent(
                 // 仅在首次进入虚拟模式时显示 NewChatContent (因为目前 NewChatContent 内部已处理 VirtualWorldWelcome)
                 val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen && currentAssistant.isVirtualWorldMode && isFirstVirtualChat
                 val errorSelectModelText = stringResource(R.string.error_select_model_first)
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = shouldShowNewChatContent,
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut(),
+                    enter = fadeIn(),
+                    exit = fadeOut(),
                     modifier = Modifier.align(Alignment.Center).offset(y = 28.dp)
                 ) {
                     NewChatContent(
@@ -533,7 +536,7 @@ private fun ChatPageContent(
                     )
                 }
 
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent,
                     enter = androidx.compose.animation.fadeIn(),
                     exit = androidx.compose.animation.fadeOut(),
@@ -674,7 +677,7 @@ private fun ChatPageContent(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            RunningCircleAnimation(modifier = Modifier.padding(bottom = 24.dp))
+                            RunningPersonAnimation(modifier = Modifier.padding(bottom = 24.dp))
                             Text(
                                 text = stringResource(R.string.syncing_context_animation_hint),
                                 style = MaterialTheme.typography.bodyLarge,
@@ -690,81 +693,27 @@ private fun ChatPageContent(
 }
 
 @Composable
-private fun RunningCircleAnimation(modifier: Modifier = Modifier) {
-    val infiniteTransition = rememberInfiniteTransition(label = "running_circle")
-
-    val bounce by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 600, easing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "bounce"
+private fun RunningPersonAnimation(modifier: Modifier = Modifier) {
+    // 加载 JSON 动画资源
+    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.run))
+    // 设置循环播放
+    val progress by animateLottieCompositionAsState(
+        composition = composition,
+        iterations = LottieConstants.IterateForever
     )
 
-    val horizontalOffset by infiniteTransition.animateFloat(
-        initialValue = -50f,
-        targetValue = 50f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "horizontal"
+    LottieAnimation(
+        composition = composition,
+        progress = { progress },
+        modifier = modifier.size(120.dp),
+        dynamicProperties = rememberLottieDynamicProperties(
+        rememberLottieDynamicProperty(
+            property = LottieProperty.COLOR,
+            value = MaterialTheme.colorScheme.primary.toArgb(),
+            keyPath = arrayOf("**") // 匹配所有路径
+        )
+        )
     )
-
-    Box(modifier = modifier.height(100.dp).width(150.dp), contentAlignment = Alignment.Center) {
-        // Shadow
-        val shadowScale by animateFloatAsState(
-            targetValue = 0.5f + (0.5f * (1f - bounce)),
-            animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
-            label = "shadow_scale"
-        )
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(x = horizontalOffset.dp, y = (-10).dp)
-                .size(width = 40.dp, height = 10.dp)
-                .graphicsLayer {
-                    scaleX = shadowScale
-                    alpha = 0.3f * (1f - bounce)
-                }
-                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50))
-        )
-
-        // Circle "TA"
-        val verticalOffset = -60f * bounce
-        val squeeze = if (bounce < 0.15f) 1f - (0.3f * (1f - bounce / 0.15f)) else 1f
-        val stretch = if (bounce > 0.15f) 1f + (0.1f * bounce) else 1f
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .offset(x = horizontalOffset.dp, y = (verticalOffset - 15).dp)
-                .size(40.dp)
-                .graphicsLayer {
-                    scaleX = stretch
-                    scaleY = squeeze
-                    rotationZ = horizontalOffset * 2
-                }
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ),
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.size(4.dp).background(MaterialTheme.colorScheme.onPrimary, CircleShape))
-                Box(Modifier.size(4.dp).background(MaterialTheme.colorScheme.onPrimary, CircleShape))
-            }
-        }
-    }
 }
 
 private data class TopBarActionState(
