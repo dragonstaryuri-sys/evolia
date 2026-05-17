@@ -507,7 +507,7 @@ class ChatService(
                 resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
             }
 
-            if (summary.isNotBlank()) {
+            if (summary.isNotBlank() && !newMessages.isEmpty()) {
                 val aiKeywords = extractKeywords(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
@@ -537,7 +537,11 @@ class ChatService(
                     conversationId = conversationId.toString(),
                     content = summary,
                     keywords = keywords,
-                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                    embedding = if (skipEmbedding) {
+                        existingEpisode?.embedding // 如果跳过嵌入，保留旧的嵌入数据
+                    } else {
+                        embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) }
+                    },
                     embeddingModelId = embeddingResult?.modelId,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
