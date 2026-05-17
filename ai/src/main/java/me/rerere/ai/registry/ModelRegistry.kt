@@ -16,7 +16,8 @@ object ModelRegistry {
         ModelMatcher.containsRegex("gpt-(?!.*\\.)(?:5)") and ModelMatcher.containsRegex("gpt-5-chat", negated = true)
 
     private val GEMINI_20_FLASH = ModelMatcher.containsRegex("gemini-2.0-flash")
-    val GEMINI_2_5_FLASH = ModelMatcher.containsRegex("gemini-2.5-flash") and ModelMatcher.containsRegex("image", negated = true)
+    val GEMINI_2_5_FLASH =
+        ModelMatcher.containsRegex("gemini-2.5-flash") and ModelMatcher.containsRegex("image", negated = true)
     val GEMINI_2_5_PRO = ModelMatcher.containsRegex("gemini-2.5-pro")
     val GEMINI_2_5_IMAGE = ModelMatcher.containsRegex("gemini-2.5-flash-image")
     val GEMINI_3_PRO = ModelMatcher.containsRegex("gemini-3-pro")
@@ -37,8 +38,11 @@ object ModelRegistry {
     private val DEEPSEEK_R1 = ModelMatcher.containsRegex("deepseek-(r1|reasoner)")
     private val DEEPSEEK_V3_1 = ModelMatcher.containsRegex("deepseek-(v3\\.1)")
     private val DEEPSEEK_V3_2 = ModelMatcher.containsRegex("deepseek-(v3\\.2)")
+    private val DEEPSEEK_V4 = ModelMatcher.containsRegex("deepseek-(v4)")
     private val QWEN_3 = ModelMatcher.containsRegex("qwen-?3")
     private val DOUBAO_1_6 = ModelMatcher.containsRegex("doubao.+1([-.])6")
+
+    private val DOUBAO_SEED = ModelMatcher.containsRegex("doubao-seed.+")
     private val GROK_4 = ModelMatcher.containsRegex("grok-4")
     private val KIMI_K2 = ModelMatcher.containsRegex("kimi-k2")
     private val STEP_3 = ModelMatcher.containsRegex("step-3")
@@ -46,15 +50,24 @@ object ModelRegistry {
     private val GLM_4_5 = ModelMatcher.containsRegex("glm-4.5")
     private val GLM_4_6V = ModelMatcher.containsRegex("glm-4\\.6v")  // Vision models (e.g., glm-4.6v-flash)
     private val GLM_4_6 = ModelMatcher.containsRegex("glm-4\\.6(?!v)")  // Text-only models (excludes vision)
+    private val GLM_4_7 = ModelMatcher.containsRegex("glm-(4\\.7)")
+    private val GLM_5 = ModelMatcher.containsRegex("glm-(5)")
     private val MINIMAX_M2 = ModelMatcher.containsRegex("minimax-m2")
     val QWEN_MT = ModelMatcher.containsRegex("qwen-mt")
 
     val VISION_MODELS =
-        GPT4O + GPT_4_1 + GPT_5 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 + GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V
+        GPT4O + GPT_4_1 + GPT_5 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 +
+            GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + DEEPSEEK_V4 + DOUBAO_SEED
     val TOOL_MODELS =
-        GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + GLM_4_6 + GLM_4_6V + MINIMAX_M2
+        GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + OPENAI_O_MODELS + GEMINI_SERIES +
+            CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 +
+            DEEPSEEK_R1 + DEEPSEEK_V3 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 +
+            GLM_4_6 + GLM_4_6V + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED
     val REASONING_MODELS =
-        GPT_OSS + GPT_5 + OPENAI_O_MODELS + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + GLM_4_6 + MINIMAX_M2
+        GPT_OSS + GPT_5 + OPENAI_O_MODELS + GEMINI_2_5_FLASH + GEMINI_2_5_PRO +
+            GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 +
+            GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 +
+            DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED
     val CHAT_IMAGE_GEN_MODELS = GEMINI_2_5_IMAGE
 
     val MODEL_INPUT_MODALITIES = ModelData { modelId ->
@@ -66,7 +79,7 @@ object ModelRegistry {
     }
 
     val MODEL_OUTPUT_MODALITIES = ModelData { modelId ->
-        if(CHAT_IMAGE_GEN_MODELS.match(modelId)) {
+        if (CHAT_IMAGE_GEN_MODELS.match(modelId)) {
             listOf(Modality.TEXT, Modality.IMAGE)
         } else {
             listOf(Modality.TEXT)
