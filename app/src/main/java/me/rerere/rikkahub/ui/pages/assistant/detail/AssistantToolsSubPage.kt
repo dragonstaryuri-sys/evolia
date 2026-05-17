@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,7 +31,6 @@ import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
-import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ai.McpPickerButton
 import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -129,24 +127,6 @@ fun AssistantToolsSubPage(
         }
 
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
-            // Time Sense
-            SettingGroupItem(
-                title = stringResource(R.string.local_tool_time_sense),
-                subtitle = stringResource(R.string.local_tool_time_sense_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.TimeSense),
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.TimeSense
-                            } else {
-                                assistant.localTools - LocalToolOption.TimeSense
-                            }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                }
-            )
             if (assistant.isMain) {
                 // Schedule Management
                 SettingGroupItem(

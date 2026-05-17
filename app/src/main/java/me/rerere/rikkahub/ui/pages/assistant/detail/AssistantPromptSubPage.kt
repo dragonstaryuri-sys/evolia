@@ -87,6 +87,7 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantAffectScope
 import me.rerere.rikkahub.core.data.model.AssistantRegex
 import me.rerere.rikkahub.core.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.QuickMessage
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
@@ -393,6 +394,51 @@ fun AssistantPromptSubPage(
             }
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        // TIME SENSE
+        // ═══════════════════════════════════════════════════════════════════
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.local_tool_time_sense),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.local_tool_time_sense_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.TimeSense),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.TimeSense
+                            } else {
+                                assistant.localTools - LocalToolOption.TimeSense
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            }
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // MESSAGE TEMPLATE
