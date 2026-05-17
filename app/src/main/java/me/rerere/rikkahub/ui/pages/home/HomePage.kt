@@ -541,7 +541,7 @@ fun AgentItem(
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = "虚拟模式",
+                                    text = "虚拟",
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
