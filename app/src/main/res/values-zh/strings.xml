@@ -412,7 +412,7 @@
 <string name="setting_model_page_learning_mode">学习模式提示词</string>
 <string name="setting_model_page_learning_mode_desc">配置用于学习模式的提示词</string>
 <string name="setting_model_page_ocr_model">OCR 模型</string>
-<string name="setting_model_page_ocr_model_desc">用于图像光学字符识别的模型</string>
+<string name="setting_model_page_ocr_model_desc">用于图像识别的模型</string>
 <string name="setting_model_page_ocr_prompt_vars">变量：图像数据：{images}</string>
 <string name="setting_model_page_prompt">提示词</string>
 <string name="setting_model_page_reset_to_default">重置为默认</string>
@@ -674,7 +674,7 @@
   <string name="theme_name_nightsky_blue">夜空蓝</string>
   <string name="undo">撤销</string>
   <string name="setting_model_page_embedding_model">嵌入模型 (Embedding)</string>
-  <string name="setting_model_page_embedding_model_desc">用于文本嵌入的模型（例如用于记忆功能）。</string>
+  <string name="setting_model_page_embedding_model_desc">用于文本嵌入的模型（所有记忆相关的功能都需要此模型）。</string>
   <string name="temporary_chat_title">临时对话</string>
   <string name="temporary_chat_description">助手不会记住此对话，一旦关闭将无法再次访问。</string>
   <string name="delete_memory_confirmation">确定要删除这条记忆吗？此操作无法撤销。</string>
@@ -1036,9 +1036,9 @@
   <!-- Assistant Model Page -->
   <string name="assistant_model_group_models">模型</string>
   <string name="assistant_model_background_model">后台模型</string>
-  <string name="assistant_model_background_model_desc">用于通知/后台任务及搜索摘要,建议选择便宜快速的模型</string>
+  <string name="assistant_model_background_model_desc">用于通知/后台任务,建议选择便宜快速的模型</string>
   <string name="assistant_model_summarizer_model">摘要模型</string>
-  <string name="assistant_model_summarizer_model_desc">用于消息总结的模型</string>
+  <string name="assistant_model_summarizer_model_desc">用于生成片段记忆的模型</string>
   <string name="assistant_model_group_generation">生成参数</string>
   <string name="assistant_model_temp_strict">严谨（%s）</string>
   <string name="assistant_model_temp_balanced">均衡（%s）</string>
@@ -1519,5 +1519,9 @@
 
   <string name="about_page_introduction">项目介绍</string>
   <string name="about_page_introduction_desc">了解 Evolia 的愿景、功能与故事</string>
+
+  <!-- 在文件末尾添加 -->
+  <string name="warning_no_default_chat_model">请设置默认聊天模型</string>
+  <string name="warning_no_embedding_model">请配置嵌入模型，否则记忆功能无法正常使用</string>
 
 </resources>

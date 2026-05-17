@@ -4,14 +4,12 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +34,10 @@ import org.koin.compose.koinInject
 import okhttp3.OkHttpClient
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.BuildConfig
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
+import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,6 +75,16 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
             contentPadding = innerPadding,
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
+            val hasProvider = settings.providers.isNotEmpty()
+            val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
+            if (hasProvider && noDefaultChatModel) {
+                item {
+                    // 这里你可以直接调用上面定义的组件，或者在这里也写一份
+                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        ChatModelWarningBanner(navController)
+                    }
+                }
+            }
             // User Profile Header (WeChat Style)
             item {
                 Surface(

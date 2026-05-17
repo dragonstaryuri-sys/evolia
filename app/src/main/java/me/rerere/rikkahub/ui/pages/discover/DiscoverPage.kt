@@ -26,9 +26,11 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.discover.ui.components.ScheduleCard
 import me.rerere.rikkahub.discover.ui.ScheduleViewModel
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
-import me.rerere.rikkahub.ui.pages.setting.ProviderConfigWarningCard
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
+import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -68,6 +70,14 @@ fun DiscoverPage() {
             if (settings.isNotConfigured()) {
                 item {
                     ProviderConfigWarningCard(navController)
+                }
+            }else {
+                // 如果已经配置了 Provider，但默认聊天模型无效（比如被删了或者没选）
+                val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
+                if (noDefaultChatModel) {
+                    item {
+                        ChatModelWarningBanner(navController)
+                    }
                 }
             }
 

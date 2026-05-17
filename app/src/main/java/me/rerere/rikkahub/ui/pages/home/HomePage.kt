@@ -3,13 +3,11 @@ package me.rerere.rikkahub.ui.pages.home
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -19,7 +17,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -50,16 +47,15 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantCreationSheet
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
-import me.rerere.rikkahub.ui.pages.setting.ProviderConfigWarningCard
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
 import com.airbnb.lottie.compose.*
-import com.airbnb.lottie.LottieProperty
-import androidx.compose.ui.graphics.toArgb
-
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
+import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
 enum class HomeTab {
     CHATS, DISCOVER, ME
 }
@@ -232,6 +228,13 @@ fun AgentListPage() {
                 contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
+                val hasProvider = settings.providers.isNotEmpty()
+                val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
+                if (hasProvider && noDefaultChatModel) {
+                    item {
+                        ChatModelWarningBanner(navController)
+                    }
+                }
                 if (settings.isNotConfigured()) {
                     item {
                         ProviderConfigWarningCard(navController)

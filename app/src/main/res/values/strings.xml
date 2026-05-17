@@ -1559,4 +1559,6 @@
   <string name="export_options_confirm">Export</string>
   <string name="about_page_introduction">Project Introduction</string>
   <string name="about_page_introduction_desc">Learn about the vision and story of Evolia</string>
+  <string name="warning_no_default_chat_model">Please set the default chat model.</string>
+  <string name="warning_no_embedding_model">Please configure the embedding model, otherwise the memory function will not work properly.</string>
 </resources>

@@ -94,8 +94,10 @@ import me.rerere.rikkahub.common.FeatureConfig
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
+import me.rerere.rikkahub.ui.components.ui.EmbeddingModelWarningBanner
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -263,7 +265,7 @@ fun AssistantMemorySettings(
     val memorySearchQuery by assistantDetailVM.memorySearchQuery.collectAsState()
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
-
+    val settings by assistantDetailVM.settings.collectAsStateWithLifecycle()
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -271,6 +273,12 @@ fun AssistantMemorySettings(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item {
+            val hasEmbeddingModel = settings.findModelById(settings.embeddingModelId) != null
+            if (assistant.enableMemory && !hasEmbeddingModel) {
+                EmbeddingModelWarningBanner(onNavigateToModels = onNavigateToModels)
+            }
+        }
         item { MemoryModeIndicator(mode = currentMode) }
 
         item {
