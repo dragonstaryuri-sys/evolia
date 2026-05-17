@@ -463,11 +463,6 @@ class ChatVM(
             val currentConv = conversation.value
             val assistantId = currentConv.assistantId
 
-            // 1. 归档：改为异步执行，避免阻塞新会话创建导致 UI 卡顿
-            appScope.launch {
-                chatService.archiveConversation(currentConv.id, force = true)
-            }
-
             // 2. 生成新 ID
             val newId = Uuid.random()
             val isVirtual = currentConv.isVirtual
