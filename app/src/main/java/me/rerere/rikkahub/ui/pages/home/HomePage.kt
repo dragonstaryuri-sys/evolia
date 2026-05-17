@@ -56,6 +56,9 @@ import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
+import com.airbnb.lottie.compose.*
+import com.airbnb.lottie.LottieProperty
+import androidx.compose.ui.graphics.toArgb
 
 enum class HomeTab {
     CHATS, DISCOVER, ME
@@ -92,9 +95,11 @@ fun HomePage() {
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow
     ) { innerPadding ->
-        Box(modifier = Modifier
-            .padding(bottom = innerPadding.calculateBottomPadding())
-            .fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .padding(bottom = innerPadding.calculateBottomPadding())
+                .fillMaxSize()
+        ) {
             AnimatedContent(
                 targetState = currentTab,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -137,11 +142,7 @@ fun AgentListPage() {
         if (uri != null) {
             scope.launch {
                 try {
-                    // 添加日志
-                    println("Start parsing import from: $uri")
                     val res = me.rerere.rikkahub.utils.AssistantExportImport.parseImport(uri, context)
-                    println("Import result: $res")
-
                     when (res) {
                         is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Success -> {
                             assistantVm.addAssistant(res.assistant)
@@ -149,7 +150,6 @@ fun AgentListPage() {
                         }
 
                         is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Configurable -> {
-                            // 修正：Configurable 状态也要处理，或者将其转为 Success
                             assistantVm.addAssistant(res.assistant)
                             toaster.show("Character Imported (${res.assistant.name})")
                         }
@@ -166,7 +166,6 @@ fun AgentListPage() {
         }
     }
 
-    // 分离主智能体并确保唯一性，防止 LazyColumn 崩溃
     val mainAgents = remember(settings.assistants) {
         settings.assistants.filter { it.isMain }.distinctBy { it.id }
     }
@@ -239,7 +238,6 @@ fun AgentListPage() {
                     }
                 }
 
-                // 1. 渲染主智能体
                 itemsIndexed(mainAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
                     PhysicsSwipeToDelete(
                         onDelete = {},
@@ -279,7 +277,6 @@ fun AgentListPage() {
                     item { Spacer(Modifier.height(12.dp)) }
                 }
 
-                // 2. 渲染其他智能体
                 itemsIndexed(otherAgents, key = { _, assistant -> assistant.id }) { index, assistant ->
                     val position = when {
                         otherAgents.size == 1 -> ItemPosition.ONLY
@@ -379,10 +376,9 @@ fun AgentListPage() {
             }
         }
 
-        // === 关键修复：全屏模式切换转场动画层 ===
         TransitionOverlay(
             visible = isSwitchingMode,
-            assistant = mainAgents.firstOrNull() // 默认展示主智能体
+            assistant = mainAgents.firstOrNull()
         )
     }
 
@@ -405,16 +401,13 @@ private fun TransitionOverlay(
         enter = fadeIn(tween(400)),
         exit = fadeOut(tween(600))
     ) {
-        val infiniteTransition = rememberInfiniteTransition(label = "portal")
-        val scale by infiniteTransition.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.15f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "scale"
+        val lottieComposition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.world_change))
+        val lottieProgress by animateLottieCompositionAsState(
+            composition = lottieComposition,
+            iterations = LottieConstants.IterateForever
         )
+
+        val infiniteTransition = rememberInfiniteTransition(label = "portal")
         val alpha by infiniteTransition.animateFloat(
             initialValue = 0.6f,
             targetValue = 1f,
@@ -428,63 +421,35 @@ private fun TransitionOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                .blur(16.dp)
-                .clickable(enabled = false) {}, // 拦截点击
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                .clickable(enabled = false) {},
             contentAlignment = Alignment.Center
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 呼吸效果的头像
-                Box(contentAlignment = Alignment.Center) {
-                    // 背景光晕
-                    Box(
-                        modifier = Modifier
-                            .size(140.dp)
-                            .scale(scale)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                                        Color.Transparent
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
-                    )
-
-                    if (assistant != null) {
-                        UIAvatar(
-                            name = assistant.name,
-                            value = assistant.avatar,
-                            modifier = Modifier
-                                .size(100.dp)
-                                .scale(scale)
-                                .clip(CircleShape)
-                                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape)
-                        )
-                    }
-                }
+                // 使用原色彩渲染 Lottie 动画
+                LottieAnimation(
+                    composition = lottieComposition,
+                    progress = { lottieProgress },
+                    modifier = Modifier.size(200.dp)
+                )
 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = if (assistant?.isVirtualWorldMode == true) "正在返回现实世界..." else "正在构筑虚拟空间...",
+                        text = if (assistant?.isVirtualWorldMode == true) "正在进入虚拟模式..." else "正在返回现实世界...",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.alpha(alpha)
                     )
-                    Text(
-                        text = "正在同步灵魂记忆",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
                 }
+
+                Spacer(Modifier.height(16.dp))
 
                 LinearProgressIndicator(
                     modifier = Modifier
@@ -509,15 +474,11 @@ fun AgentItem(
     dragHandle: (@Composable () -> Unit)? = null
 ) {
     val haptics = rememberPremiumHaptics()
-
-    // 背景色动画
     val isVirtual = assistant.isVirtualWorldMode
-    val targetBackgroundColor = if (isVirtual) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-    } else {
-        Color.Transparent
-    }
-    val animatedColor by animateColorAsState(targetBackgroundColor, label = "bg_color")
+    val animatedColor by animateColorAsState(
+        if (isVirtual) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
+        label = "bg_color"
+    )
 
     Surface(
         modifier = Modifier
@@ -580,7 +541,7 @@ fun AgentItem(
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = "Virtual",
+                                    text = "虚拟模式",
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
@@ -623,7 +584,6 @@ fun AgentItem(
                         )
                     }
                 }
-
                 dragHandle?.invoke()
             }
         }
