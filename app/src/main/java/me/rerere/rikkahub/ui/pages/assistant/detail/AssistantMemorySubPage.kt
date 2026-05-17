@@ -98,13 +98,14 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.EmbeddingModelWarningBanner
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toLocalString
-
+import me.rerere.rikkahub.Screen
 /**
  * Memory mode based on current settings
  */
@@ -276,7 +277,11 @@ fun AssistantMemorySettings(
         item {
             val hasEmbeddingModel = settings.findModelById(settings.embeddingModelId) != null
             if (assistant.enableMemory && !hasEmbeddingModel) {
-                EmbeddingModelWarningBanner(onNavigateToModels = onNavigateToModels)
+                // 直接使用 LocalNavController 跳转到全局模型设置
+                val navController = LocalNavController.current
+                EmbeddingModelWarningBanner(onNavigateToModels = {
+                    navController.navigate(Screen.SettingModels)
+                })
             }
         }
         item { MemoryModeIndicator(mode = currentMode) }

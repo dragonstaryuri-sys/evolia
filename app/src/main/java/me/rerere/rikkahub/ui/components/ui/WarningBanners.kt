@@ -94,7 +94,7 @@ fun EmbeddingModelWarningBanner(onNavigateToModels: () -> Unit) {
         onClick = onNavigateToModels,
         color = MaterialTheme.colorScheme.errorContainer,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
