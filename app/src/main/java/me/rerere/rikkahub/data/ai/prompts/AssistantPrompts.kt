@@ -128,7 +128,7 @@ You {{char}}. Now you need to update your previous conversation memory based on 
 - Provide ONLY the consolidated memory text.
 - NO preamble, NO meta-talk (e.g., "Based on the messages..."), NO conversational filler.
 - START DIRECTLY with the memory text.
-- Total length MUST NOT exceed 800 words.
+- Total length MUST NOT exceed 500 words.
 
 Consolidated Memory:
 """

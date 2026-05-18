@@ -40,6 +40,7 @@ import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
+import java.io.IOException
 
 private val TAG = "MemoryConsolidation"
 
@@ -112,7 +113,8 @@ class MemoryConsolidationWorker(
             val assistants = if (assistantIdString != null) {
                 settings.assistants.filter { it.id.toString() == assistantIdString }
             } else {
-                settings.assistants.filter { it.enableMemoryConsolidation }
+                // 如果是定时器触发，筛选开启了任一记忆整合功能的助理
+                settings.assistants.filter { it.enableMemoryConsolidation || it.enableMasterMemory }
             }
 
             if (assistants.isEmpty()) {
@@ -127,6 +129,10 @@ class MemoryConsolidationWorker(
             return Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Consolidation failed", e)
+            if (e is IOException || e.cause is IOException) {
+                Log.w(TAG, "Network error detected, scheduling retry.")
+                return Result.retry()
+            }
             return Result.failure()
         }
     }
@@ -309,8 +315,8 @@ class MemoryConsolidationWorker(
             resolveModel(currentAssistant.memoryModelId ?: currentSettings.memoryModelId, currentSettings) ?: summarizer
 
         var episodicSuccessCount = 0
-        // 如果不是手动触发 updateMaster，才执行情节记忆整合
-        if (!forceMaster && !incrementalMaster) {
+        // 仅在非 L3 专项更新时，才执行情节记忆整合
+        if (!forceMaster && !incrementalMaster && currentAssistant.enableMemoryConsolidation) {
             for (conv in toConsolidateEpisodes) {
                 val convIdString = conv.id.toString()
                 if (!tryLock(convIdString)) {
@@ -375,12 +381,11 @@ class MemoryConsolidationWorker(
             }
         }
 
-        // --- Process Master Memory ---
+        // --- Process Master Memory (L3) ---
         var updatedMasterContent: String? = null
         var wasCompressed = false
-        // 修改：L3 记忆不再随周期性任务自动触发 (episodicSuccessCount > 0 也不再自动触发)
-        // 仅在明确传入 forceMaster 或 incrementalMaster 标识时才更新，实现完全的“事件/手动”驱动
-        if (forceMaster || incrementalMaster) {
+        // 仅在明确传入指令且开启了功能时更新
+        if ((forceMaster || incrementalMaster) && currentAssistant.enableMasterMemory) {
             val newConversations = conversations.filter {
                 val updateTime = it.updateAt.toEpochMilli()
                 // forceMaster -> 全量更新；否则 -> 增量更新（仅包含上次更新后的对话）
@@ -428,6 +433,7 @@ class MemoryConsolidationWorker(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Master Memory", e)
+                    if (e is IOException || e.cause is IOException) throw e
                 }
             }
         }
@@ -443,7 +449,7 @@ class MemoryConsolidationWorker(
                         lastConsolidationTime = if (episodicSuccessCount > 0) now else assistantItem.lastConsolidationTime,
                         lastConsolidationResult = when {
                             updatedMasterContent != null && forceMaster -> "Master Memory updated manually"
-                            updatedMasterContent != null && incrementalMaster -> "Master Memory updated (Session End)"
+                            updatedMasterContent != null && incrementalMaster -> "Daily Master Memory sync successful"
                             episodicSuccessCount > 0 -> "Consolidated $episodicSuccessCount items automatically"
                             else -> assistantItem.lastConsolidationResult
                         },

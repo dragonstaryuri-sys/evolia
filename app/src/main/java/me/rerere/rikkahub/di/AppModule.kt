@@ -24,6 +24,7 @@ import me.rerere.rikkahub.service.AgentTaskScheduler
 import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.service.DiarySchedulerWorker
 import me.rerere.rikkahub.service.AgentTaskWorker
+import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.tts.provider.TTSManager
 import org.koin.androidx.workmanager.dsl.workerOf
@@ -85,7 +86,8 @@ val appModule = module {
     workerOf(::BackupWorker)
     workerOf(::DiaryWorker)
     workerOf(::DiarySchedulerWorker)
-    workerOf(::AgentTaskWorker) // 新增：注册自动化任务 Worker
+    workerOf(::AgentTaskWorker)
+    workerOf(::MemoryConsolidationWorker) // 注册记忆整合 Worker
 
 
 }

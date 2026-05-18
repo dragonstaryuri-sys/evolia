@@ -448,7 +448,7 @@ private fun TransitionOverlay(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = if (assistant?.isVirtualWorldMode == true) "正在进入虚拟模式..." else "正在返回现实世界...",
+                        text = if (assistant?.isVirtualWorldMode == true) "正在返回现实世界..." else "正在进入虚拟世界...",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary,

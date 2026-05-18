@@ -34,6 +34,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.ExistingWorkPolicy
+import androidx.work.workDataOf
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.SpontaneousWorker
 import me.rerere.rikkahub.service.BackupWorker
@@ -47,6 +48,7 @@ import com.chaquo.python.android.AndroidPlatform
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.Calendar
 
 private const val TAG = "EvoliaApp"
 
@@ -113,6 +115,9 @@ class EvoliaApp : Application() {
                 .build()
         )
 
+        // Schedule Master Memory (L3) Daily Consolidation at 3:00 AM
+        scheduleDailyMasterMemorySync()
+
         val appShortcutManager = me.rerere.rikkahub.utils.AppShortcutManager(this)
         get<AppScope>().launch {
             get<SettingsStore>().settingsFlow
@@ -162,6 +167,38 @@ class EvoliaApp : Application() {
                 }
             }
         }
+    }
+
+    private fun scheduleDailyMasterMemorySync() {
+        val calendar = Calendar.getInstance()
+        val now = calendar.timeInMillis
+        calendar.set(Calendar.HOUR_OF_DAY, 3)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        if (calendar.timeInMillis <= now) {
+            calendar.add(Calendar.DAY_OF_MONTH, 1)
+        }
+        val initialDelay = calendar.timeInMillis - now
+
+        val masterMemoryWork = PeriodicWorkRequestBuilder<MemoryConsolidationWorker>(1, TimeUnit.DAYS)
+            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setInputData(workDataOf("INCREMENTAL_MASTER" to true))
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiresBatteryNotLow(true)
+                    .build()
+            )
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "master_memory_daily_sync",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            masterMemoryWork
+        )
+        Log.i(TAG, "Scheduled Master Memory daily sync at 3:00 AM (Initial delay: ${initialDelay / 1000 / 60} mins)")
     }
 
     private fun deleteTempFiles() {

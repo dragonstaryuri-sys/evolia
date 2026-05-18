@@ -406,17 +406,6 @@ class ChatService(
                                 _syncingConversationIds.update { it - conversationId }
                             }
                         }
-
-                        // 3. L3 大师记忆：开启新话题时，将未同步的 L2 摘要增量更新到 L3
-                        if (assistant.enableMasterMemory) {
-                            val request = OneTimeWorkRequestBuilder<MemoryConsolidationWorker>().setInputData(
-                                    workDataOf(
-                                        "ASSISTANT_ID" to assistant.id.toString(), "INCREMENTAL_MASTER" to true
-                                    )
-                                ).build()
-                            WorkManager.getInstance(context).enqueue(request)
-                            Log.i(TAG, "New Topic: Enqueued incremental L3 update (Background).")
-                        }
                     }
                 }
             }
