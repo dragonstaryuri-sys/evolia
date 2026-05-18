@@ -507,7 +507,14 @@ class GenerationHandler(
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
         val staticSystemPromptBuilder = StringBuilder()
-        staticSystemPromptBuilder.append("The default user gender is female.\n")
+        staticSystemPromptBuilder.append("用户默认为女性。\n")
+        val mode_description = if (assistant.isMain && assistant.isVirtualWorldMode) {
+            "用户和你现在在你的电子（虚拟）世界。\n"
+        }
+        else {
+            "你和用户正通过手机/电脑对话，无法接触到彼此。\n"
+        }
+        staticSystemPromptBuilder.append(mode_description)
         //Lorebook
         beforeSystemEntries.filter { it.prompt.isNotBlank() }.forEach { entry ->
             staticSystemPromptBuilder.append(entry.prompt)
