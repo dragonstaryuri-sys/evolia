@@ -561,7 +561,7 @@ class GenerationHandler(
         }
 
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
-            staticSystemPromptBuilder.append("## Memory Archive\n")
+            staticSystemPromptBuilder.append("## 记忆档案\n")
             staticSystemPromptBuilder.append(assistant.masterMemoryContent)
             staticSystemPromptBuilder.append("\n\n")
         }
@@ -632,7 +632,7 @@ class GenerationHandler(
             }
 
             if (finalSegments.isNotEmpty()) {
-                summaryPromptBuilder.append("\n## Recent Context Highlights\n")
+                summaryPromptBuilder.append("\n## 近期对话细节\n")
                 finalSegments.forEachIndexed { index, s ->
                     summaryPromptBuilder.append("${index + 1}. $s\n")
                 }
@@ -734,7 +734,7 @@ class GenerationHandler(
                                     memoriesToInject.add(
                                         AssistantMemory(
                                             id = 0,
-                                            content = "Summary of your last conversation today: ${episode.content}",
+                                            content = "今天的最近一次对话内容梗概: ${episode.content}",
                                             type = 2,
                                             timestamp = episode.endTime
                                         )
@@ -928,20 +928,20 @@ class GenerationHandler(
                     // 构造动态系统信息 (L2 记忆, 变量, 时间)
                     val dynamicContext = buildString {
                         if (summarySystemPrompt.isNotBlank()) {
-                            appendLine("# Context Summary & Relevant entries")
+                            appendLine("# 对话梗概和动态信息")
                             appendLine(summarySystemPrompt)
                             appendLine()
                         }
                         // A. L2: Memories (RAG retrieved facts)
                         if (selectedMemories.isNotEmpty()) {
-                            appendLine("# Relevant Memories")
+                            appendLine("# 相关记忆片段")
                             appendLine(buildMemoryPrompt(selectedMemories))
                             appendLine()
                         }
 
                         // B. Reference Variables
                         if (assistant.referenceVariables.isNotBlank()) {
-                            appendLine("# Reference Variables")
+                            appendLine("# 系统引用的变量信息")
                             appendLine(
                                 assistant.referenceVariables.applyPlaceholders(
                                     "char" to assistant.name,
@@ -1020,7 +1020,7 @@ class GenerationHandler(
                         val newTextPart = UIMessagePart.Text(
                             text = buildString {
                                 append(dynamicContext)
-                                appendLine("# USER_QUESTION")
+                                appendLine("# 用户问题")
                                 append(originalText)
                             }
                         )
