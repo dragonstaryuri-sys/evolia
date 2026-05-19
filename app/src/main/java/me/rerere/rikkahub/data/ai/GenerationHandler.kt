@@ -551,13 +551,6 @@ class GenerationHandler(
                         "locale" to Locale.getDefault().displayName
                     )
             )
-            if (styleExamples.isNotEmpty()) {
-                staticSystemPromptBuilder.append("# Language Style Examples")
-                styleExamples.forEach { example ->
-                    staticSystemPromptBuilder.append("- ").appendLine(example)
-                }
-                staticSystemPromptBuilder.appendLine()
-            }
         }
 
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
@@ -932,14 +925,13 @@ class GenerationHandler(
                             appendLine(summarySystemPrompt)
                             appendLine()
                         }
-                        // A. L2: Memories (RAG retrieved facts)
+                        // Memories (RAG retrieved facts)
                         if (selectedMemories.isNotEmpty()) {
                             appendLine("# 相关记忆片段")
                             appendLine(buildMemoryPrompt(selectedMemories))
                             appendLine()
                         }
-
-                        // B. Reference Variables
+                        // Reference Variables
                         if (assistant.referenceVariables.isNotBlank()) {
                             appendLine("# 系统引用的变量信息")
                             appendLine(
@@ -1008,6 +1000,12 @@ class GenerationHandler(
                             appendLine("- Current Time: $timeStr$intervalInfo")
                             appendLine("Fabricating time will result in punishment.")
                             appendLine()
+                        }
+                        if (styleExamples.isNotEmpty()) {
+                            appendLine("# 语言风格示例")
+                            styleExamples.forEach { example ->
+                                append("- ").appendLine(example)
+                            }
                         }
 
                     }
