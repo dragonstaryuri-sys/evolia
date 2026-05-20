@@ -60,12 +60,12 @@ data class Assistant(
     val diaryModelId: Uuid? = null,
     val suggestionModelId: Uuid? = null,
     val streamOutput: Boolean = true,
-    val enableMemory: Boolean = false,
+    val enableMemory: Boolean = true,
     val useRagMemoryRetrieval: Boolean = true,
     val memoryRetrievalMode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID,
     val ragSimilarityThreshold: Float = 0.4f,
     val ragLimit: Int = 3,
-    val enableRecentChatsReference: Boolean = false,
+    val enableRecentChatsReference: Boolean = true,
     val ragIncludeEpisodes: Boolean = true,
     val ragIncludeCore: Boolean = true,
     val enableRagLogging: Boolean = false,
@@ -134,7 +134,7 @@ data class Assistant(
     val lastConversationId: String? = null,
 
     // Detail Memory (L1 Trigger Control)
-    val enableDetailMemory: Boolean = false,
+    val enableDetailMemory: Boolean = true,
     val detailMemoryThreshold: Int = 20,
 
 )
