@@ -464,11 +464,9 @@ class ChatService(
                 return
             }
 
-            val modelId = assistant.summarizerModelId
-                ?: settings.summarizerModelId
-                ?: assistant.chatModelId
-                ?: settings.chatModelId
+            val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId)
+                ?: assistant.chatModelId?.let { settings.findModelById(it) }
                 ?: settings.getCurrentChatModel()
                 ?: return
             val provider = model.findProvider(settings.providers) ?: return
@@ -961,11 +959,9 @@ class ChatService(
             val messages = conv.currentMessages
 
             if (messages.isEmpty()) return@withContext ContextRefreshResult(false)
-            val modelId = assistant.summarizerModelId
-                ?: settings.summarizerModelId
-                ?: assistant.chatModelId
-                ?: settings.chatModelId
+            val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId)
+                ?: assistant.chatModelId?.let { settings.findModelById(it) }
                 ?: settings.getCurrentChatModel()
                 ?: return@withContext ContextRefreshResult(false, errorMessage = "没有找到可用模型")
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
