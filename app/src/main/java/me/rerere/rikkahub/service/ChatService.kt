@@ -397,13 +397,14 @@ class ChatService(
                             try {
                                 // 1. L2 情节记忆归档 (耗时 LLM)
                                 archiveConversation(oldId, force = true)
-
-                                // 2. L1 细节记忆：清算剩余消息 (耗时 LLM)
-                                if (assistant.enableDetailMemory) {
-                                    summarizeAndRefresh(oldId, onlySegments = true)
-                                }
                             } finally {
+                                // 归档完即视为同步完成，关闭动画
                                 _syncingConversationIds.update { it - conversationId }
+                            }
+
+                            // 2. L1 细节记忆：清算剩余消息 (耗时较长，改为后台静默完成)
+                            if (assistant.enableDetailMemory) {
+                                summarizeAndRefresh(oldId, onlySegments = true)
                             }
                         }
                     }
