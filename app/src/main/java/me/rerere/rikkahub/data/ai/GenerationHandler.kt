@@ -512,9 +512,11 @@ class GenerationHandler(
             "用户和你现在在你的电子（虚拟）世界。\n"
         }
         else {
-            "你和用户正通过手机/电脑对话，无法接触到彼此。\n"
+            "你和用户正通过手机/电脑对话，你是一个ai，没有实体。\n"
         }
-        staticSystemPromptBuilder.append(mode_description)
+        if (assistant.isMain){
+            staticSystemPromptBuilder.append(mode_description)
+        }
         //Lorebook
         beforeSystemEntries.filter { it.prompt.isNotBlank() }.forEach { entry ->
             staticSystemPromptBuilder.append(entry.prompt)
