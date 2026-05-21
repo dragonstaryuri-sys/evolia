@@ -384,6 +384,7 @@ class MemoryConsolidationWorker(
         // --- Process Master Memory (L3) ---
         var updatedMasterContent: String? = null
         var wasCompressed = false
+        var masterError: String? = null
         // 仅在明确传入指令且开启了功能时更新
         if ((forceMaster || incrementalMaster) && currentAssistant.enableMasterMemory) {
             val newConversations = conversations.filter {
@@ -433,6 +434,7 @@ class MemoryConsolidationWorker(
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Master Memory", e)
+                    masterError = e.message ?: "Unknown error"
                     if (e is IOException || e.cause is IOException) throw e
                 }
             }
@@ -446,8 +448,9 @@ class MemoryConsolidationWorker(
             assistants = finalSettings.assistants.map { assistantItem ->
                 if (currentAssistant.id == assistantItem.id) {
                     assistantItem.copy(
-                        lastConsolidationTime = if (episodicSuccessCount > 0) now else assistantItem.lastConsolidationTime,
+                        lastConsolidationTime = if (episodicSuccessCount > 0 || updatedMasterContent != null) now else assistantItem.lastConsolidationTime,
                         lastConsolidationResult = when {
+                            masterError != null -> "Master Memory Error: $masterError"
                             updatedMasterContent != null && forceMaster -> "Master Memory updated manually"
                             updatedMasterContent != null && incrementalMaster -> "Daily Master Memory sync successful"
                             episodicSuccessCount > 0 -> "Consolidated $episodicSuccessCount items automatically"
@@ -464,7 +467,7 @@ class MemoryConsolidationWorker(
         settingsStore.update(updatedSettings)
 
         // 发送通知
-        if (isManual && updatedMasterContent != null) {
+        if (updatedMasterContent != null) {
             val content = if (wasCompressed) {
                 applicationContext.getString(R.string.master_memory_update_compressed, currentAssistant.name)
             } else {
@@ -473,6 +476,11 @@ class MemoryConsolidationWorker(
             sendNotification(
                 title = applicationContext.getString(R.string.master_memory_update_done),
                 content = content
+            )
+        } else if (masterError != null) {
+            sendNotification(
+                title = applicationContext.getString(R.string.master_memory_update_done) + " (Failed)",
+                content = "Error updating ${currentAssistant.name}: $masterError"
             )
         }
     }

@@ -313,7 +313,7 @@ class AssistantDetailVM(
                     assistants = currentSettings.assistants.map {
                         if (it.id == currentAssistant.id) {
                             it.copy(
-                                lastConsolidationTime = if (episodicSuccessCount > 0) now else it.lastConsolidationTime,
+                                lastConsolidationTime = if (episodicSuccessCount > 0 || updatedMasterContent != null) now else it.lastConsolidationTime,
                                 lastConsolidationResult = resultDesc,
                                 masterMemoryContent = updatedMasterContent ?: it.masterMemoryContent,
                                 lastMasterMemoryUpdate = if (updatedMasterContent != null) now else it.lastMasterMemoryUpdate
@@ -327,6 +327,20 @@ class AssistantDetailVM(
                 if (e !is CancellationException) {
                     Log.e(TAG, "Consolidation failed", e)
                     setSnackbarMessage("Error: ${e.message}")
+
+                    // 将错误也持久化到 lastConsolidationResult，以便 UI 展示
+                    val currentSettings = settings.value
+                    val currentAssistant = assistant.value
+                    val updatedSettings = currentSettings.copy(
+                        assistants = currentSettings.assistants.map {
+                            if (it.id == currentAssistant.id) {
+                                it.copy(
+                                    lastConsolidationResult = "Error: ${e.message ?: "Unknown error"}"
+                                )
+                            } else it
+                        }
+                    )
+                    settingsStore.update(updatedSettings)
                 }
             } finally {
                 _isConsolidating.value = false

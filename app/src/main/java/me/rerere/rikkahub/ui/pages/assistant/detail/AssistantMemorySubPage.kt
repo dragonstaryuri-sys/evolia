@@ -991,6 +991,20 @@ private fun MasterMemoryCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    // 对所有模式下的用户展示最近更新时间
+                    if (assistant.enableMasterMemory && assistant.lastMasterMemoryUpdate > 0) {
+                        val time = java.time.Instant.ofEpochMilli(assistant.lastMasterMemoryUpdate)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDateTime()
+                            .toLocalString()
+                        Text(
+                            text = stringResource(R.string.assistant_memory_master_last_update, time),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
                 HapticSwitch(
                     checked = assistant.enableMasterMemory,
@@ -1047,17 +1061,7 @@ private fun MasterMemoryCard(
                             )
                         }
 
-                        if (assistant.lastMasterMemoryUpdate > 0) {
-                            val time = java.time.Instant.ofEpochMilli(assistant.lastMasterMemoryUpdate)
-                                .atZone(java.time.ZoneId.systemDefault())
-                                .toLocalDateTime()
-                                .toLocalString()
-                            Text(
-                                text = stringResource(R.string.assistant_memory_master_last_update, time),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
+                        if (assistant.lastMasterMemoryUpdate <= 0 && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing)) {
                             Text(
                                 text = stringResource(R.string.assistant_memory_master_never_updated),
                                 style = MaterialTheme.typography.labelSmall,
