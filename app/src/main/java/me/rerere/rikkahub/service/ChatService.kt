@@ -486,7 +486,7 @@ class ChatService(
                 }
                 val locale = Locale.getDefault().displayName
 
-                val prompt = DEFAULT_FULL_SUMMARY_PROMPT.replace("{{previous_summary}}", baseSummary ?: "None")
+                val prompt = DEFAULT_FULL_SUMMARY_PROMPT.replace("{{previous_summary}}", baseSummary?.removePrefix("虚拟世界：") ?: "None")
                     .replace("{{new_messages}}", messagesText).replace("{{locale}}", locale)
                     .replace("{{char}}", assistant.name)
 
@@ -528,7 +528,7 @@ class ChatService(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conversationId.toString(),
-                    content = summary,
+                    content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
                     keywords = keywords,
                     embedding = if (skipEmbedding) {
                         existingEpisode?.embedding
@@ -794,7 +794,7 @@ class ChatService(
                 },
                 truncateIndex = conversation.truncateIndex,
                 enabledModeIds = conversation.enabledModeIds,
-                contextSummary = currentEpisode?.content,
+                contextSummary = currentEpisode?.content?.removePrefix("虚拟世界："),
                 temporarySummaries = emptyList(),
                 skipContextForResponse = skipContextForResponse,
                 conversationId = conversationId

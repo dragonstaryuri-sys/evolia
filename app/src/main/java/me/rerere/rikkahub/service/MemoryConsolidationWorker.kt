@@ -235,7 +235,7 @@ class MemoryConsolidationWorker(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conv.id.toString(),
-                    content = summary,
+                    content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
                     keywords = mergedKeywords,
                     embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
                     embeddingModelId = embeddingResult?.modelId,
@@ -358,7 +358,7 @@ class MemoryConsolidationWorker(
                             id = existingEpisode?.id ?: 0,
                             assistantId = currentAssistant.id.toString(),
                             conversationId = convIdString,
-                            content = summary,
+                            content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
                             keywords = mergedKeywords,
                             embedding = embeddingResult?.embeddings?.firstOrNull()
                                 ?.let { JsonInstant.encodeToString(it) },
@@ -399,7 +399,7 @@ class MemoryConsolidationWorker(
                     for (conv in newConversations) {
                         val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
                         if (!summary.isNullOrBlank()) {
-                            contextParts.add("Conversation Summary: $summary")
+                            contextParts.add("Conversation Summary: ${summary.removePrefix("虚拟世界：")}")
                         } else {
                             val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
                                 "${it.role}: ${it.toContentText().take(1000)}"
@@ -546,7 +546,7 @@ class MemoryConsolidationWorker(
         }
         val locale = Locale.getDefault().displayName
         val prompt = DEFAULT_FULL_SUMMARY_PROMPT.applyPlaceholders(
-            "previous_summary" to (previousSummary ?: "None"),
+            "previous_summary" to (previousSummary?.removePrefix("虚拟世界：") ?: "None"),
             "new_messages" to messagesText,
             "locale" to locale,
             "char" to assistantName
