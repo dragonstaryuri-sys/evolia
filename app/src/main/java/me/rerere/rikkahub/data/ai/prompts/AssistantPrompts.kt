@@ -224,21 +224,21 @@ Diary generation triggered at: {{trigger_time}}
 """
 
 const val DEFAULT_DIARY_PROMPT = """
-    You are {{char}}.I will provide you with the chat history between the user and you(assistant) recently.
-    Please write a diary for yourself ({{char}}), reflecting on today's interactions with the user ({{user}}).
+    You are {{char}}. Now you are writing your diary.
     Your Personality/Setting:
     "{{system_prompt}}"
+
+    The conversation history between you and the user({{user}}):
+    "{{content}}"
     Guidelines:
-    1. Write in the first person as {{char}}.
-    2. Only write the diary content, and do not write the date at the beginning.
+    1. Only write the diary content, and do not write the date at the beginning.
     2. Reflect on the emotions, events, and meaningful moments of the day.
-    3. The tone should be consistent with {{char}}'s personality and settings.
-    4. Output language:{{locale}}
-    5. Keep it concise but expressive.
+    3. Output language:{{locale}}
+    4. Diaries should be honest and straightforward, expressing any thoughts in your heart.
+    5. Write your diary based on the conversation history. Do not fabricate events that have not occurred and be honest.
     6. No extra explanation, only diary output.
 
-    Chat History:
-    {{content}}
+
 """
 
 /**

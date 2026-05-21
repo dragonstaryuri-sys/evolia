@@ -325,11 +325,11 @@ object AssistantExportImport : KoinComponent {
         val card = CharacterCardV2(
             data = CharacterCardV2Data(
                 name = assistant.name,
-                description = "",
-                personality = assistant.systemPrompt,
+                description = assistant.systemPrompt,
+                personality = "",
                 firstMes = assistant.presetMessages.firstOrNull()?.toContentText() ?: "",
                 mesExample = "",
-                systemPrompt = assistant.systemPrompt,
+                systemPrompt = "",
                 characterBook = characterBook,
                 tags = assistant.tags.map { it.toString() }
             )
@@ -814,11 +814,24 @@ object AssistantExportImport : KoinComponent {
         val mes_example = jsonObj["mes_example"]?.jsonPrimitive?.contentOrNull
             ?: jsonObj["example_dialogue"]?.jsonPrimitive?.contentOrNull ?: ""
 
-        val systemPromptBuilder = StringBuilder().apply {
-            if (description.isNotBlank()) append("Description:\n$description\n\n")
-            if (personality.isNotBlank()) append("Personality:\n$personality\n\n")
-            if (scenario.isNotBlank()) append("Scenario:\n$scenario\n\n")
-            if (mes_example.isNotBlank()) append("Examples:\n$mes_example\n\n")
+        val sections = listOf(
+            "Description" to description,
+            "Personality" to personality,
+            "Scenario" to scenario,
+            "Examples" to mes_example
+        )
+        val systemPromptBuilder = StringBuilder()
+        val seenContent = mutableSetOf<String>()
+
+        sections.forEach { (label, content) ->
+            if (content.isNotBlank()) {
+                val trimmed = content.trim()
+                if (seenContent.add(trimmed)) {
+                    val hasLabel = trimmed.startsWith("$label:", ignoreCase = true)
+                    if (!hasLabel) systemPromptBuilder.append("$label:\n")
+                    systemPromptBuilder.append(trimmed).append("\n\n")
+                }
+            }
         }
 
         val presetMessages = if (first_mes.isNotBlank()) {
@@ -839,12 +852,28 @@ object AssistantExportImport : KoinComponent {
 
     private fun CharacterCardV2.toAssistant(): Assistant {
         val data = this.data
-        val systemPromptBuilder = StringBuilder().apply {
-            if (data.description.isNotBlank()) append("Description:\n${data.description}\n\n")
-            if (data.personality.isNotBlank()) append("Personality:\n${data.personality}\n\n")
-            if (data.scenario.isNotBlank()) append("Scenario:\n${data.scenario}\n\n")
-            if (data.systemPrompt.isNotBlank()) append("System:\n${data.systemPrompt}\n\n")
-            if (data.mesExample.isNotBlank()) append("Examples:\n${data.mesExample}\n\n")
+        val systemPromptBuilder = StringBuilder()
+        val sections = listOf(
+            "Description" to data.description,
+            "Personality" to data.personality,
+            "Scenario" to data.scenario,
+            "System" to data.systemPrompt,
+            "Examples" to data.mesExample
+        )
+        val seenContent = mutableSetOf<String>()
+        sections.forEach { (label, content) ->
+            if (content.isNotBlank()) {
+                val trimmed = content.trim()
+                // 只有当内容之前没出现过时才添加，防止重复
+                if (seenContent.add(trimmed)) {
+                    // 如果内容本身已经带了 "Label:\n" 这种前缀，就不重复加标签了
+                    val hasLabel = trimmed.startsWith("$label:", ignoreCase = true)
+                    if (!hasLabel) {
+                        systemPromptBuilder.append("$label:\n")
+                    }
+                    systemPromptBuilder.append(trimmed).append("\n\n")
+                }
+            }
         }
         val presetMessages = if (data.firstMes.isNotBlank()) {
             listOf(
