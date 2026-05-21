@@ -934,7 +934,7 @@ class GenerationHandler(
                             appendLine()
                         }
                         // Reference Variables
-                        if (assistant.referenceVariables.isNotBlank()) {
+                        if (!assistant.isVirtualWorldMode && assistant.referenceVariables.isNotBlank()) {
                             appendLine("# 系统引用的变量信息")
                             appendLine(
                                 assistant.referenceVariables.applyPlaceholders(
