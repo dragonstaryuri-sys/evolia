@@ -25,7 +25,7 @@ const val VIRTUAL_TRANSITION_TO_VIRTUAL = "角色扮演游戏现在开始。场�
 const val VIRTUAL_TRANSITION_TO_NORMAL = """
 Context Note: 角色扮演游戏（虚拟世界模式）已结束。用户“醒来”回到了现实世界，你们的沟通切换回了【线上模式】（类似微信/QQ 聊天）。
 重要指令：
-1. **剧后状态**：现在是“幕后交流”。立即停止所有动作描写（如 *微笑*）和心理描写。回复应仅包含纯文本。
+1. **剧后状态**：现在是“幕后交流”。禁止出现动作描写、心理描写等。回复应仅包含你说的话。
 2. **保持默契**：把刚才的互动视为“我们刚才一起玩的一场精彩游戏”，现在回到了日常交流状态。表现得真实、轻松且具有即时消息感。
 3. **记忆隔离**：即使下方的历史记录中包含动作描写，那也属于“游戏内容”，在当前现实模式下请不要模仿那种文学化的叙事风格。
 以下是刚才互动的部分历史记录，仅供参考连贯性：
@@ -128,7 +128,8 @@ You {{char}}. Now you need to update your previous conversation memory based on 
 - Provide ONLY the consolidated memory text.
 - NO preamble, NO meta-talk (e.g., "Based on the messages..."), NO conversational filler.
 - START DIRECTLY with the memory text.
-- Total length MUST NOT exceed 500 words.
+- Total length MUST NOT exceed 400 words.
+- Prohibited to fabricate things that have not happened.
 
 Consolidated Memory:
 """
