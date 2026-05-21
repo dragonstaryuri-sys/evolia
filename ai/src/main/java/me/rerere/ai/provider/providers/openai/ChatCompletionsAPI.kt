@@ -320,11 +320,24 @@ class ChatCompletionsAPI(
                         if (level != ReasoningLevel.AUTO) put("thinking_budget", params.thinkingBudget ?: 0)
                     }
 
-                    "ark.cn-beijing.volces.com" -> {
-                        // 豆包 (火山)
+                    "ark.cn-beijing.volces.com", "open.bigmodel.cn", "api.deepseek.com", "api.moonshot.cn" -> {
+                        // 豆包 (火山) / 智谱 (GLM) / DeepSeek / Kimi
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })
+                        // 如果开启了思考且指定了强度
+                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                            val effort = if (host == "api.deepseek.com") {
+                                when (level) {
+                                    ReasoningLevel.LOW, ReasoningLevel.MEDIUM -> "high"
+                                    ReasoningLevel.HIGH -> "max"
+                                    else -> level.effort
+                                }
+                            } else {
+                                level.effort
+                            }
+                            put("reasoning_effort", effort)
+                        }
                     }
 
                     "api.mistral.ai" -> {
@@ -345,15 +358,9 @@ class ChatCompletionsAPI(
                         }
                     }
 
-                    "open.bigmodel.cn" -> {
-                        put("thinking", buildJsonObject {
-                            put("type", if (!level.isEnabled) "disabled" else "enabled")
-                        })
-                    }
-
                     else -> {
                         // OpenAI 官方
-                        // 文档中，只支持 "low", "medium", "high"
+                        // 文档中，支持 "low", "medium", "high"
                         if (level != ReasoningLevel.AUTO) {
                             put("reasoning_effort", if (level.effort == "minimal") "low" else level.effort)
                         }
@@ -498,7 +505,7 @@ class ChatCompletionsAPI(
             jsonObject["role"]?.jsonPrimitive?.contentOrNull?.uppercase() ?: "ASSISTANT"
         )
 
-        // 也许支持其他模态的输出content? 暂时只支持文本吧
+        // 也许支持其他模态 of 输出content? 暂时只支持文本吧
         val content = jsonObject["content"]?.jsonPrimitive?.contentOrNull ?: ""
         val reasoning = jsonObject["reasoning_content"]?.jsonPrimitive?.contentOrNull
             ?: jsonObject["reasoning"]?.jsonPrimitive?.contentOrNull

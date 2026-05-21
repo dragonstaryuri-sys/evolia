@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -56,6 +57,7 @@ import com.airbnb.lottie.compose.*
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
 import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
+
 enum class HomeTab {
     CHATS, DISCOVER, ME
 }
@@ -266,16 +268,16 @@ fun AgentListPage() {
                                         .firstOrNull()
                                         ?.firstOrNull()
                                     val chatId = lastConv?.id ?: Uuid.random()
-                                    if (assistant.isVirtualWorldMode) {
+                                    if (assistant.isVirtualWorldMode && BuildConfig.DEBUG) {
                                         navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
                                     } else {
                                         navController.navigate(Screen.Chat(id = chatId.toString()))
                                     }
                                 }
                             },
-                            onModeToggle = {
-                                chatVm.toggleVirtualMode(assistant)
-                            }
+                            onModeToggle = if (BuildConfig.DEBUG) {
+                                { chatVm.toggleVirtualMode(assistant) }
+                            } else null
                         )
                     }
                 }
@@ -327,7 +329,7 @@ fun AgentListPage() {
                                             .firstOrNull()
                                             ?.firstOrNull()
                                         val chatId = lastConv?.id ?: Uuid.random()
-                                        if (assistant.isVirtualWorldMode) {
+                                        if (assistant.isVirtualWorldMode && BuildConfig.DEBUG) {
                                             navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
                                         } else {
                                             navController.navigate(Screen.Chat(id = chatId.toString()))
@@ -481,7 +483,7 @@ fun AgentItem(
     dragHandle: (@Composable () -> Unit)? = null
 ) {
     val haptics = rememberPremiumHaptics()
-    val isVirtual = assistant.isVirtualWorldMode
+    val isVirtual = assistant.isVirtualWorldMode && BuildConfig.DEBUG
     val animatedColor by animateColorAsState(
         if (isVirtual) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
         label = "bg_color"
@@ -565,7 +567,7 @@ fun AgentItem(
                     )
                 }
 
-                if (onModeToggle != null && assistant.isMain) {
+                if (onModeToggle != null && assistant.isMain && BuildConfig.DEBUG) {
                     IconButton(onClick = {
                         haptics.perform(HapticPattern.Pop)
                         onModeToggle()

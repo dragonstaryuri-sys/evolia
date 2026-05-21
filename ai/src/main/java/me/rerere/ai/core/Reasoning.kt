@@ -15,7 +15,10 @@ enum class ReasoningLevel(
 
     companion object {
         fun fromBudgetTokens(budgetTokens: Int?): ReasoningLevel {
-            return entries.minByOrNull { kotlin.math.abs(it.budgetTokens - (budgetTokens ?: AUTO.budgetTokens)) } ?: AUTO
+            if (budgetTokens == null) return AUTO
+            if (budgetTokens == 0) return OFF
+            return entries.filter { it != AUTO && it != OFF }
+                .minByOrNull { kotlin.math.abs(it.budgetTokens - budgetTokens) } ?: AUTO
         }
     }
 }

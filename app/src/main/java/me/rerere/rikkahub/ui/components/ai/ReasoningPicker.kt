@@ -117,7 +117,7 @@ fun ReasoningPicker(
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
-    
+
     ModalBottomSheet(
         onDismissRequest = {
             onDismissRequest()
@@ -154,10 +154,10 @@ fun ReasoningPicker(
                     isAmoled = isAmoled
                 )
             }
-            
+
             // Spacer between groups
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Group 2: LOW, MEDIUM, HIGH (3 items)
             Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -214,7 +214,7 @@ private fun ReasoningOptionItem(
     isAmoled: Boolean  // Only use Color.Black when actually in OLED mode
 ) {
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
-    
+
     // Animated corner radius - selected items animate to fully round
     val topCorner by androidx.compose.animation.core.animateDpAsState(
         targetValue = if (selected) 50.dp else when (position) {
@@ -232,12 +232,12 @@ private fun ReasoningOptionItem(
         animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 200f),
         label = "bottomCorner"
     )
-    
+
     val itemShape = RoundedCornerShape(
         topStart = topCorner, topEnd = topCorner,
         bottomStart = bottomCorner, bottomEnd = bottomCorner
     )
-    
+
     // Use Row with clip+background like ModelItem does (Surface may apply M3 color transformations)
     Row(
         modifier = Modifier
@@ -292,13 +292,13 @@ private fun ReasoningLevelCard(
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
-    
+
     val defaultContainerColor = if (isAmoled) Color.Black else MaterialTheme.colorScheme.surfaceContainer
     val resolvedContainerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else (containerColor ?: defaultContainerColor)
-    
+
     val defaultContentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
     val resolvedContentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else defaultContentColor
-    
+
     val elevation = if (isAmoled) 0.dp else 6.dp
     val tonalElevation = if (isAmoled) 0.dp else LocalAbsoluteTonalElevation.current
 
