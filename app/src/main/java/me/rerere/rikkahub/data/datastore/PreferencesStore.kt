@@ -567,7 +567,7 @@ data class WebDavConfig(
 }
 
 @Serializable
-data class EmailConfig(val account: String = "", val password: String = "", val enabled: Boolean = false)
+data class EmailConfig(val account: String = "", val password: String = "", val enabled: Boolean = true)
 
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 fun Settings.findModelById(uuid: Uuid): Model? = this.providers.findModelById(uuid)

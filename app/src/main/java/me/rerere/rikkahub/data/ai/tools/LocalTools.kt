@@ -690,7 +690,7 @@ class LocalTools(
                     val emailAccount = settings.emailConfig.account
                     val authCode = secretKeyManager.getEmailPassword("")
 
-                    if (!settings.emailConfig.enabled || emailAccount.isBlank() || authCode.isBlank()) {
+                    if (emailAccount.isBlank() || authCode.isBlank()) {
                         return@Tool buildJsonObject { put("error", "Email service not configured.") }
                     }
 
