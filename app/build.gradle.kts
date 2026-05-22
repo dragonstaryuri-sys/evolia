@@ -22,12 +22,11 @@ android {
     val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
 
     defaultConfig {
-        // 保持包名不变，确保老用户可以覆盖升级
         applicationId = "ailand.lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
