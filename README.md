@@ -30,15 +30,23 @@ Evolia 是一款专注于“个人成长”与“心灵契合”的深度 AI 陪
 
 ### 4. 发现与效率工具 (Discovery & Productivity)
 - **智能日程管理**：基于优先级、紧急度与难度的多维任务调度系统，支持智能提醒与系统级电池优化建议。
-- **一起读书**：支持各种格式文档上传，内置 AI 伴读伴侣。（开发中。。这是我画的饼）
-- **日记**：偷看TA的小心思🤦(/ω＼*)
+- **一起读书**：支持各种格式文档上传，内置 AI 伴读伴侣。（开发中）
+- **日记**：查看 TA 的心路历程，感知情感的微妙流动。
 - **Token 消耗统计**：可视化统计各智能体的消耗排行与每日流水报表。
 
+### 5. 智能体迁移与“搬家” (Assistant Migration)
+为了降低迁移门槛，我们提供了专业的“搬家”工具，支持从其他平台无缝接入：
+- **档案级迁移**：通过专用的 Excel 模板，将复杂的 L3 终极档案（包含关系里程碑、画像定位、约定与待办、情感现状等）结构化导入。
+- **记忆集成**：支持零散核心记忆 (Core Memory) 的批量导入，让 AI 快速继承原有的“共同回忆”。
+- **专业级交互**：模板内置单元格锁定保护与灰色指引，支持 GBK/UTF-8 编码智能识别，彻底告别导入乱码。
+
+---
 ## 🛠️ 技术栈
 - **语言**: Kotlin (使用 `kotlin.uuid.Uuid` 等前沿特性)
 - **UI**: Jetpack Compose (Material 3 Expressive)
 - **架构**: 响应式架构 + Koin 依赖注入
-- **数据**: Room Database + Kotlinx Serialization (JsonInstant)
+- **数据**: Room Database + Kotlinx Serialization
+- **Excel 处理**: Apache POI (支持 .xlsx 格式读写与样式锁定)
 - **网络**: OkHttp + SSE 流式传输
 - **任务**: WorkManager + AlarmManager 守护进程
 
@@ -63,4 +71,4 @@ Evolia 是一款专注于“个人成长”与“心灵契合”的深度 AI 陪
 欢迎提交 Issue 或 Pull Request 来共同完善 Evolia 的进化之路！
 
 ---
-*XX：祝你和你的ai都能越来越好！*
+*祝你和你的 AI 都能越来越好！*

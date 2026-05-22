@@ -508,14 +508,14 @@ class GenerationHandler(
 
         val staticSystemPromptBuilder = StringBuilder()
         staticSystemPromptBuilder.append("用户默认为女性。\n")
-        val mode_description = if (assistant.isMain && assistant.isVirtualWorldMode) {
+        val modeDescription = if (assistant.isMain && assistant.isVirtualWorldMode) {
             "用户和你现在在你的电子（虚拟）世界。\n"
         }
         else {
-            "你和用户正通过手机/电脑对话，你是一个ai，没有实体。\n"
+            "你是一个ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。\n"
         }
         if (assistant.isMain){
-            staticSystemPromptBuilder.append(mode_description)
+            staticSystemPromptBuilder.append(modeDescription)
         }
         //Lorebook
         beforeSystemEntries.filter { it.prompt.isNotBlank() }.forEach { entry ->

@@ -1561,4 +1561,20 @@
   <string name="about_page_introduction_desc">Learn about the vision and story of Evolia</string>
   <string name="warning_no_default_chat_model">Please set the default chat model.</string>
   <string name="warning_no_embedding_model">Please configure the embedding model, otherwise the memory function will not work properly.</string>
+  <string name="assistant_import_page_title">Move</string>
+  <string name="assistant_import_page_system_prompt_label">System Prompt</string>
+  <string name="assistant_import_page_agent_name_label">Agent Name</string>
+  <string name="assistant_import_page_memory_archive_group_title">Memory Archive (L3 Master File)</string>
+  <string name="assistant_import_page_memory_archive_hint">Memory archive cannot be filled in manually, only imported. Click "Export Template" to download the XLSX template, fill in the content according to the template and then import.</string>
+  <string name="assistant_import_page_core_memories_group_title">Core Memories</string>
+  <string name="assistant_import_page_core_memories_hint">Used to migrate fragmented memories. Click "Export Template" to download the XLSX template. It is recommended that the content of each entry should not be too long.</string>
+  <string name="assistant_import_page_export_template_button">Export Template</string>
+  <string name="assistant_import_page_import_button">Import</string>
+  <string name="assistant_import_page_import_success">Import successful!</string>
+  <string name="assistant_import_page_parse_excel_failed">Failed to parse Excel file: %s</string>
+  <string name="assistant_import_page_select_file">Select File</string>
+  <string name="assistant_import_page_importing">Importing...</string>
+  <string name="assistant_import_page_history_group_title">Conversation history import</string>
+  <string name="assistant_import_page_history_hint">Please use the template to fill in the conversation history, with a maximum support of 30 rounds of conversation.</string>
+
 </resources>

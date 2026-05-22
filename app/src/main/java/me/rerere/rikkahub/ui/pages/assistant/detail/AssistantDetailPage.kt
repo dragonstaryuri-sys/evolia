@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Upload
+import androidx.compose.material.icons.rounded.MoveToInbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -88,6 +89,7 @@ private object AssistantDetailRoutes {
     const val MEMORY = "memory"
     const val UI = "ui"
     const val ADVANCED = "advanced"
+    const val IMPORT = "import"
 }
 
 @Composable
@@ -201,9 +203,12 @@ fun AssistantDetailPage(
                         exit = fadeOut(animationSpec = tween(0)) // Instant exit to avoid fade artifact
                     ) {
                         Text(
-                            text = assistant.name.ifBlank {
-                                stringResource(R.string.assistant_page_default_assistant)
-                            },
+                            text = if (currentRoute == AssistantDetailRoutes.IMPORT)
+                                stringResource(R.string.assistant_import_page_title)
+                            else
+                                assistant.name.ifBlank {
+                                    stringResource(R.string.assistant_page_default_assistant)
+                                },
                             maxLines = 1,
                         )
                     }
@@ -217,35 +222,54 @@ fun AssistantDetailPage(
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
-                        Box {
-                            IconButton(onClick = { showExportMenu = true }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Upload,
-                                    contentDescription = stringResource(R.string.export_label)
-                                )
-                            }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                IconButton(onClick = { showExportMenu = true }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Upload,
+                                        contentDescription = stringResource(R.string.export_label)
+                                    )
+                                }
 
-                            DropdownMenu(
-                                expanded = showExportMenu,
-                                onDismissRequest = { showExportMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.assistant_detail_export_bundle)) },
-                                    onClick = {
-                                        showExportMenu = false
-                                        if (hasMemories || hasLorebooks) {
-                                            showExportOptionsDialog = true
-                                        } else {
+                                DropdownMenu(
+                                    expanded = showExportMenu,
+                                    onDismissRequest = { showExportMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.assistant_detail_export_bundle)) },
+                                        onClick = {
+                                            showExportMenu = false
+                                            if (hasMemories || hasLorebooks) {
+                                                showExportOptionsDialog = true
+                                            } else {
+                                                scope.launch {
+                                                    try {
+                                                        val content = AssistantExportImport.exportToEvoliaBundle(
+                                                            assistant = assistant,
+                                                            context = context,
+                                                            includeMemories = false,
+                                                            includeLorebooks = false
+                                                        )
+                                                        pendingExportContent = content
+                                                        val fileName = AssistantExportImport.getSuggestedFileName(assistant, "evolia")
+                                                        exportLauncher.launch(fileName)
+                                                    } catch (e: Exception) {
+                                                        e.printStackTrace()
+                                                        toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.assistant_detail_export_card_v2_json)) },
+                                        onClick = {
+                                            showExportMenu = false
                                             scope.launch {
                                                 try {
-                                                    val content = AssistantExportImport.exportToEvoliaBundle(
-                                                        assistant = assistant,
-                                                        context = context,
-                                                        includeMemories = false,
-                                                        includeLorebooks = false
-                                                    )
+                                                    val content = AssistantExportImport.exportToCharacterCardV2(assistant, context)
                                                     pendingExportContent = content
-                                                    val fileName = AssistantExportImport.getSuggestedFileName(assistant, "evolia")
+                                                    val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2")
                                                     exportLauncher.launch(fileName)
                                                 } catch (e: Exception) {
                                                     e.printStackTrace()
@@ -253,45 +277,36 @@ fun AssistantDetailPage(
                                                 }
                                             }
                                         }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.assistant_detail_export_card_v2_json)) },
-                                    onClick = {
-                                        showExportMenu = false
-                                        scope.launch {
-                                            try {
-                                                val content = AssistantExportImport.exportToCharacterCardV2(assistant, context)
-                                                pendingExportContent = content
-                                                val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2")
-                                                exportLauncher.launch(fileName)
-                                            } catch (e: Exception) {
-                                                e.printStackTrace()
-                                                toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
-                                            }
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.assistant_detail_export_card_v2_png)) },
-                                    onClick = {
-                                        showExportMenu = false
-                                        scope.launch {
-                                            try {
-                                                val bytes = AssistantExportImport.exportToCharacterCardPng(assistant, context)
-                                                if (bytes != null) {
-                                                    pendingExportBytes = bytes
-                                                    val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2_png")
-                                                    pngExportLauncher.launch(fileName)
-                                                } else {
-                                                    toaster.show(context.getString(R.string.assistant_detail_export_failed_png))
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.assistant_detail_export_card_v2_png)) },
+                                        onClick = {
+                                            showExportMenu = false
+                                            scope.launch {
+                                                try {
+                                                    val bytes = AssistantExportImport.exportToCharacterCardPng(assistant, context)
+                                                    if (bytes != null) {
+                                                        pendingExportBytes = bytes
+                                                        val fileName = AssistantExportImport.getSuggestedFileName(assistant, "card_v2_png")
+                                                        pngExportLauncher.launch(fileName)
+                                                    } else {
+                                                        toaster.show(context.getString(R.string.assistant_detail_export_failed_png))
+                                                    }
+                                                } catch (e: Exception) {
+                                                    e.printStackTrace()
+                                                    toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                                                 }
-                                            } catch (e: Exception) {
-                                                e.printStackTrace()
-                                                toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                                             }
                                         }
-                                    }
+                                    )
+                                }
+                            }
+
+                            // 迁移（搬家）按钮 - 放在导出按钮右侧
+                            IconButton(onClick = { navController.navigate(AssistantDetailRoutes.IMPORT) }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MoveToInbox,
+                                    contentDescription = stringResource(R.string.assistant_import_page_title)
                                 )
                             }
                         }
@@ -449,10 +464,16 @@ fun AssistantDetailPage(
                 AssistantAgentTaskPage(assistantId = id)
             }
 
+            // 搬家页面入口
+            composable(AssistantDetailRoutes.IMPORT) {
+                AssistantImportPage(
+                    assistant = assistant,
+                    onUpdate = ::onUpdate,
+                    vm = vm
+                )
+            }
         }
     }
-
-
 
     if (showExportOptionsDialog) {
         me.rerere.rikkahub.ui.pages.chat.ExportOptionsDialog(

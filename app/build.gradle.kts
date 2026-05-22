@@ -355,6 +355,11 @@ dependencies {
     // lottie anime
     implementation("com.airbnb.android:lottie-compose:6.4.0")
 
+    implementation("com.github.doyaaaaaken:kotlin-csv-jvm:1.10.0")
+
+    // Excel 处理库
+    implementation("org.apache.poi:poi-ooxml:5.2.5")
+
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)
 

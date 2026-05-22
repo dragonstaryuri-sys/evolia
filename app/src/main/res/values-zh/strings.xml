@@ -1524,4 +1524,21 @@
   <string name="warning_no_default_chat_model">请设置默认聊天模型</string>
   <string name="warning_no_embedding_model">请配置嵌入模型，否则记忆功能无法正常使用</string>
 
+  <string name="assistant_import_page_title">搬家</string>
+  <string name="assistant_import_page_system_prompt_label">系统提示词</string>
+  <string name="assistant_import_page_agent_name_label">智能体名称</string>
+  <string name="assistant_import_page_memory_archive_group_title">记忆档案 (L3 Master File)</string>
+  <string name="assistant_import_page_memory_archive_hint">记忆档案不允许手工填写，只能导入。点击“导出模板”下载 XLSX 模板，按模板内容填写后导入。</string>
+  <string name="assistant_import_page_core_memories_group_title">核心记忆</string>
+  <string name="assistant_import_page_core_memories_hint">用于迁移零散的碎片记忆。点击“导出模板”下载 XLSX 模板，建议每个条目内容不宜过长。</string>
+  <string name="assistant_import_page_export_template_button">导出模板</string>
+  <string name="assistant_import_page_import_button">导入</string>
+  <string name="assistant_import_page_import_success">导入成功！</string>
+  <string name="assistant_import_page_parse_excel_failed">解析 Excel 文件失败: %s</string>
+  <string name="assistant_import_page_select_file">选择文件</string>
+  <string name="assistant_import_page_importing">正在导入...</string>
+  <string name="assistant_import_page_history_group_title">会话历史导入</string>
+  <string name="assistant_import_page_history_hint">请使用模板填写对话历史，最多支持 30 轮对话。</string>
+
+
 </resources>

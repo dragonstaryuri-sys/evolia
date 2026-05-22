@@ -45,6 +45,9 @@ import java.util.Locale
 import java.time.LocalDate
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
+import me.rerere.rikkahub.core.data.model.toMessageNode
+import me.rerere.rikkahub.core.data.model.Conversation
+import java.time.Instant
 
 private const val TAG = "AssistantDetailVM"
 
@@ -699,6 +702,21 @@ class AssistantDetailVM(
                 _embeddingProgress.value = EmbeddingProgress(c, t, true)
             }
             _embeddingProgress.value = null
+        }
+    }
+
+    fun importConversation(title: String, messages: List<UIMessage>) {
+        viewModelScope.launch {
+            // 使用项目中已导入的 me.rerere.rikkahub.core.data.model.Conversation
+            val conversation = Conversation(
+                assistantId = assistantId,
+                title = title,
+                messageNodes = messages.map { it.toMessageNode() },
+                createAt = Instant.now(),
+                updateAt = Instant.now()
+            )
+            conversationRepository.insertConversation(conversation)
+            setSnackbarMessage("会话导入成功")
         }
     }
 
