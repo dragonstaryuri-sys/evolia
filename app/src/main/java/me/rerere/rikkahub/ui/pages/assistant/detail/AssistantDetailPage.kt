@@ -302,12 +302,14 @@ fun AssistantDetailPage(
                                 }
                             }
 
-                            // 迁移（搬家）按钮 - 放在导出按钮右侧
-                            IconButton(onClick = { navController.navigate(AssistantDetailRoutes.IMPORT) }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MoveToInbox,
-                                    contentDescription = stringResource(R.string.assistant_import_page_title)
-                                )
+                            // 迁移（搬家）按钮 - 只有主智能体显示
+                            if (assistant.isMain) {
+                                IconButton(onClick = { navController.navigate(AssistantDetailRoutes.IMPORT) }) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.MoveToInbox,
+                                        contentDescription = stringResource(R.string.assistant_import_page_title)
+                                    )
+                                }
                             }
                         }
                     }

@@ -22,17 +22,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PriorityHigh
-import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -42,7 +38,6 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.core.data.model.ContextPriority
-import me.rerere.rikkahub.ui.context.LocalToaster
 
 /**
  * Advanced tab - Notifications and custom request settings.
@@ -53,7 +48,6 @@ fun AssistantAdvancedSubPage(
     onUpdate: (Assistant) -> Unit,
     onNavigateToAgentTasks: () -> Unit
 ) {
-    val toaster = LocalToaster.current
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -67,36 +61,6 @@ fun AssistantAdvancedSubPage(
             .imePadding(),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        // ═══════════════════════════════════════════════════════════════════
-        // MASTER ASSISTANT SETTING
-        // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = stringResource(R.string.assistant_advanced_group_master)) {
-             SettingGroupItem(
-                title = stringResource(R.string.assistant_advanced_master_title),
-                subtitle = stringResource(R.string.assistant_advanced_master_desc),
-                icon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Star,
-                        contentDescription = null,
-                        tint = if (assistant.isMain) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
-                trailing = {
-                    val lockedHint = stringResource(R.string.assistant_advanced_master_locked_hint)
-                    HapticSwitch(
-                        checked = assistant.isMain,
-                        onCheckedChange = { checked ->
-                            // 核心保护：如果已经是主智能体，点击关闭时给予提示并不予操作
-                            if (!checked && assistant.isMain) {
-                                toaster.show(lockedHint)
-                            } else {
-                                onUpdate(assistant.copy(isMain = checked))
-                            }
-                        }
-                    )
-                }
-            )
-        }
         if (assistant.isMain) {
             // ═══════════════════════════════════════════════════════════════════
             // AUTOMATION GROUP
