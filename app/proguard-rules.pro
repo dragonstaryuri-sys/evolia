@@ -39,3 +39,13 @@
 -keepattributes Signature,InnerClasses,EnclosingMethod
 
 -dontobfuscate
+
+# Fix R8 missing classes for Apache POI and other libraries
+-dontwarn java.awt.**
+-dontwarn javax.xml.stream.**
+-dontwarn net.sf.saxon.**
+-dontwarn org.apache.batik.**
+-dontwarn org.osgi.framework.**
+-dontwarn aQute.bnd.annotation.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn com.microsoft.schemas.office.drawing.x2008.diagram.**

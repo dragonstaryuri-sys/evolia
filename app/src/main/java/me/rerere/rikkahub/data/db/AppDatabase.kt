@@ -27,7 +27,7 @@ import kotlinx.serialization.decodeFromString
         BookEntity::class,
         BookProgressEntity::class
     ],
-    version = 1, // 重置为 1.0.0 创世版本
+    version = 1,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class)
