@@ -111,6 +111,7 @@ fun AssistantDetailPage(
     val currentRoute = navBackStackEntry?.destination?.route
     val mcpServerConfigs by vm.mcpServerConfigs.collectAsStateWithLifecycle()
     val assistant by vm.assistant.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
     val providers by vm.providers.collectAsStateWithLifecycle()
     val tags by vm.tags.collectAsStateWithLifecycle()
@@ -376,6 +377,7 @@ fun AssistantDetailPage(
             composable(AssistantDetailRoutes.MODEL) {
                 AssistantModelSubPage(
                     assistant = assistant,
+                    globalSettings = settings,
                     providers = providers,
                     onUpdate = ::onUpdate
                 )

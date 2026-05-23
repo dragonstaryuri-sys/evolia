@@ -30,6 +30,7 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.ai.ReasoningButton
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -39,6 +40,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toFixed
+import kotlin.uuid.Uuid
 
 /**
  * Model tab - All model and generation-related settings.
@@ -47,6 +49,7 @@ import me.rerere.rikkahub.utils.toFixed
 @Composable
 fun AssistantModelSubPage(
     assistant: Assistant,
+    globalSettings: Settings,
     providers: List<ProviderSetting>,
     onUpdate: (Assistant) -> Unit
 ) {
@@ -85,10 +88,11 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ModelSelector(
-                        modelId = assistant.chatModelId,
+                        modelId = assistant.chatModelId ?: globalSettings.chatModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(chatModelId = it.id)) },
+                        onSelect = { onUpdate(assistant.copy(chatModelId = if (it.id == Uuid.NIL) null else it.id)) },
+                        allowClear = assistant.chatModelId != null,
                     )
                 }
             }
@@ -117,10 +121,11 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ModelSelector(
-                        modelId = assistant.backgroundModelId,
+                        modelId = assistant.backgroundModelId ?: globalSettings.backgroundModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(backgroundModelId = it.id)) },
+                        onSelect = { onUpdate(assistant.copy(backgroundModelId = if (it.id == Uuid.NIL) null else it.id)) },
+                        allowClear = assistant.backgroundModelId != null,
                     )
                 }
             }
@@ -149,10 +154,11 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ModelSelector(
-                        modelId = assistant.summarizerModelId,
+                        modelId = assistant.summarizerModelId ?: globalSettings.summarizerModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(summarizerModelId = it.id)) },
+                        onSelect = { onUpdate(assistant.copy(summarizerModelId = if (it.id == Uuid.NIL) null else it.id)) },
+                        allowClear = assistant.summarizerModelId != null,
                     )
                 }
             }
@@ -181,10 +187,11 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ModelSelector(
-                        modelId = assistant.memoryModelId,
+                        modelId = assistant.memoryModelId ?: globalSettings.memoryModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(memoryModelId = it.id)) },
+                        onSelect = { onUpdate(assistant.copy(memoryModelId = if (it.id == Uuid.NIL) null else it.id)) },
+                        allowClear = assistant.memoryModelId != null,
                     )
                 }
             }
@@ -213,10 +220,11 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ModelSelector(
-                        modelId = assistant.diaryModelId,
+                        modelId = assistant.diaryModelId ?: globalSettings.diaryModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(diaryModelId = it.id)) },
+                        onSelect = { onUpdate(assistant.copy(diaryModelId = if (it.id == Uuid.NIL) null else it.id)) },
+                        allowClear = assistant.diaryModelId != null,
                     )
                 }
             }
@@ -245,11 +253,11 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ModelSelector(
-                        modelId = assistant.suggestionModelId,
+                        modelId = assistant.suggestionModelId ?: globalSettings.suggestionModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(suggestionModelId = it.id)) },
-                        allowClear = true,
+                        onSelect = { onUpdate(assistant.copy(suggestionModelId = if (it.id == Uuid.NIL) null else it.id)) },
+                        allowClear = assistant.suggestionModelId != null,
                     )
                 }
             }
@@ -372,6 +380,7 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // OUTPUT GROUP
         // ═══════════════════════════════════════════════════════════════════
+        // ... (保持不变)
         SettingsGroup(title = stringResource(R.string.assistant_model_group_output)) {
             // Stream Output
             SettingGroupItem(

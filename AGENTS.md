@@ -146,5 +146,18 @@ To maximize Prefix Caching efficiency, the payload adopts a **"Stable-Front, Dyn
 The `agent_task_manager` allows an Assistant to schedule instructions for its "future self".
 
 ### 7.2 Core Logic
-- **Strict Creation Constraints**: Tasks are persisted and scheduled via `WorkManager`.
-- **Smart Session Routing**: Automatic detection of the most relevant conversation for execution.
+- **Scheduling**: Reliable execution via `WorkManager`. Tasks are persisted in `AgentTaskEntity` (Room).
+- **Smart Session Routing**: Automatic detection of the most relevant conversation for execution, prioritizing active or recently updated sessions.
+
+### 7.3 Execution Modes & Visibility
+- **Type: EMAIL / AGENT_TASK**: 
+    - **Trigger**: System sends a "Virtual Instruction" message to the AI.
+    - **Visibility**: The trigger instruction uses `skipContext = true` and is invisible to the user in the chat UI to maintain cleanliness.
+    - **Feedback**: The AI's response to the instruction is visible, providing a natural confirmation that the task was executed.
+- **Type: NOTIFICATION**: Directly pushes a system notification using the specified title and content data.
+- **Type: DIARY**: Automatically records an entry into the Agent's internal diary database.
+
+### 7.4 Reliability & Lifecycle
+- **Background Wake-up**: If the app is closed, the system wakes it up to execute the worker.
+- **Persistence**: AI reasoning during background tasks is protected by `ChatForegroundService` (Status bar notification) to ensure completion even if the app is not in focus.
+- **Notification Feedback**: If executed while the app is in the background, a system notification is sent upon AI response completion to alert the user.
