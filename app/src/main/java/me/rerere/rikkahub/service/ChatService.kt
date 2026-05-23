@@ -45,6 +45,7 @@ import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.finishReasoning
@@ -576,7 +577,7 @@ class ChatService(
                 if (answer) handleMessageComplete(conversationId)
                 _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
-                _errorFlow.emit(e)
+                _errorFlow.emit(translateError(e))
             }
         }
         setGenerationJob(conversationId, job)
@@ -656,7 +657,7 @@ class ChatService(
                 }
                 _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
-                _errorFlow.emit(e)
+                _errorFlow.emit(translateError(e))
             }
         }
         setGenerationJob(conversationId, job)
@@ -749,7 +750,7 @@ class ChatService(
                     val isVirtual = conversation.isVirtual
 
                     val supportsBuiltIn =
-                        model.tools.isNotEmpty() || me.rerere.ai.registry.ModelRegistry.GEMINI_SERIES.match(model.modelId)
+                        model.tools.isNotEmpty() || ModelRegistry.GEMINI_SERIES.match(model.modelId)
                     val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
                     val searchMode = assistant.searchMode
 
@@ -834,8 +835,9 @@ class ChatService(
             }
 
             if (e !is kotlinx.coroutines.CancellationException) {
-                _errorFlow.emit(e)
-                Logging.log(TAG, "handleMessageComplete: $e")
+                val friendlyError = translateError(e)
+                _errorFlow.emit(friendlyError)
+                Logging.log(TAG, "handleMessageComplete: $friendlyError")
             }
         }.onSuccess {
                 val finalConv = getConversationFlow(conversationId).value
@@ -869,6 +871,26 @@ class ChatService(
                     }
                 }.invokeOnCompletion { removeConversationReference(conversationId) }
             }
+    }
+
+    private fun translateError(e: Throwable): Throwable {
+        val message = e.message ?: ""
+        return when {
+            // 匹配 JSON 解析 HTML 的特征 (Unexpected JSON token at offset ... had < instead)
+            message.contains("Unexpected JSON token") && message.contains("< instead") -> {
+                IllegalStateException("请求地址有误或 API 服务异常（收到了 HTML 错误页），请检查提供商设置页面的 API 配置是否正确。", e)
+            }
+            message.contains("400 Bad Request", ignoreCase = true) -> {
+                IllegalStateException("请求参数错误 (400)，请确认 API Key 是否有效或模型名称是否正确。", e)
+            }
+            message.contains("401 Unauthorized", ignoreCase = true) -> {
+                IllegalStateException("认证失败 (401)，请在提供商设置页面检查 API Key。", e)
+            }
+            message.contains("404 Not Found", ignoreCase = true) -> {
+                IllegalStateException("服务地址未找到 (404)，请检查 API 基础地址是否正确。", e)
+            }
+            else -> e
+        }
     }
 
     private fun createSearchTool(settings: Settings, assistant: Assistant, providerIndex: Int? = null): Set<Tool> {
@@ -1114,7 +1136,7 @@ class ChatService(
                     saveConversation(id, getConversationFlow(id).value)
                 }
             } catch (e: Exception) {
-                updateTranslationField(id, message.id, null); _errorFlow.emit(e)
+                updateTranslationField(id, message.id, null); _errorFlow.emit(translateError(e))
             }
         }
     }
