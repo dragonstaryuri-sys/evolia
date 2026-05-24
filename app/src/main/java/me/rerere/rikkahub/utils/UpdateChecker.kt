@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.common.http.await
@@ -18,7 +19,7 @@ import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val GITHUB_API_URL = "https://api.github.com/repos/dragonstaryuri-sys/evolia/releases/latest"
+private const val GITEE_API_URL = "https://gitee.com/api/v5/repos/s0416/evolia_apk/releases/latest"
 
 class UpdateChecker(private val client: OkHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -30,9 +31,8 @@ class UpdateChecker(private val client: OkHttpClient) {
                 data = try {
                     val response = client.newCall(
                         Request.Builder()
-                            .url(GITHUB_API_URL)
+                            .url(GITEE_API_URL)
                             .get()
-                            .addHeader("Accept", "application/vnd.github+json")
                             .addHeader(
                                 "User-Agent",
                                 "Evolia ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
@@ -40,16 +40,16 @@ class UpdateChecker(private val client: OkHttpClient) {
                             .build()
                     ).await()
                     if (response.isSuccessful) {
-                        val release = json.decodeFromString<GitHubRelease>(response.body.string())
+                        val release = json.decodeFromString<GiteeRelease>(response.body.string())
 
-                        // Convert GitHub release to UpdateInfo
+                        // Convert Gitee release to UpdateInfo
                         val arch = getDeviceArchitecture()
                         val downloads = release.assets
                             .filter { it.name.endsWith(".apk") }
                             .map { asset ->
                                 UpdateDownload(
                                     name = asset.name,
-                                    url = asset.browser_download_url,
+                                    url = asset.browserDownloadUrl,
                                     size = formatFileSize(asset.size)
                                 )
                             }
@@ -64,9 +64,9 @@ class UpdateChecker(private val client: OkHttpClient) {
                         }
 
                         UpdateInfo(
-                            version = release.tag_name.removePrefix("v"),
-                            publishedAt = release.published_at,
-                            changelog = release.body,
+                            version = release.tagName.removePrefix("v"),
+                            publishedAt = release.createdAt,
+                            changelog = release.body ?: "",
                             downloads = sortedDownloads
                         )
                     } else {
@@ -120,19 +120,19 @@ class UpdateChecker(private val client: OkHttpClient) {
 }
 
 @Serializable
-data class GitHubRelease(
-    val tag_name: String,
-    val name: String,
-    val body: String,
-    val published_at: String,
-    val assets: List<GitHubAsset>
+data class GiteeRelease(
+    @SerialName("tag_name") val tagName: String,
+    @SerialName("name") val name: String,
+    @SerialName("body") val body: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("assets") val assets: List<GiteeAsset> = emptyList()
 )
 
 @Serializable
-data class GitHubAsset(
-    val name: String,
-    val browser_download_url: String,
-    val size: Long
+data class GiteeAsset(
+    @SerialName("name") val name: String,
+    @SerialName("browser_download_url") val browserDownloadUrl: String,
+    @SerialName("size") val size: Long
 )
 
 @Serializable
