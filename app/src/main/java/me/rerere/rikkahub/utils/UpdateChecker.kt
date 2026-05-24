@@ -19,7 +19,10 @@ import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-private const val GITEE_API_URL = "https://gitee.com/api/v5/repos/s0416/evolia_apk/releases/latest"
+// GitHub API 地址
+private const val GITHUB_API_URL = "https://api.github.com/repos/dragonstaryuri-sys/evolia/releases/latest"
+// GitHub 下载加速前缀
+private const val GH_PROXY = "https://mirror.ghproxy.com/"
 
 class UpdateChecker(private val client: OkHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -31,8 +34,9 @@ class UpdateChecker(private val client: OkHttpClient) {
                 data = try {
                     val response = client.newCall(
                         Request.Builder()
-                            .url(GITEE_API_URL)
+                            .url(GITHUB_API_URL)
                             .get()
+                            .addHeader("Accept", "application/vnd.github+json")
                             .addHeader(
                                 "User-Agent",
                                 "Evolia ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
@@ -40,21 +44,22 @@ class UpdateChecker(private val client: OkHttpClient) {
                             .build()
                     ).await()
                     if (response.isSuccessful) {
-                        val release = json.decodeFromString<GiteeRelease>(response.body.string())
+                        val release = json.decodeFromString<GitHubRelease>(response.body.string())
 
-                        // Convert Gitee release to UpdateInfo
+                        // 获取架构信息
                         val arch = getDeviceArchitecture()
                         val downloads = release.assets
                             .filter { it.name.endsWith(".apk") }
                             .map { asset ->
                                 UpdateDownload(
                                     name = asset.name,
-                                    url = asset.browserDownloadUrl,
+                                    // 拼接加速镜像地址
+                                    url = GH_PROXY + asset.browserDownloadUrl,
                                     size = formatFileSize(asset.size)
                                 )
                             }
 
-                        // Sort downloads to prioritize architecture match
+                        // 排序：优先匹配当前架构
                         val sortedDownloads = downloads.sortedByDescending { download ->
                             when {
                                 download.name.contains(arch, ignoreCase = true) -> 2
@@ -65,7 +70,7 @@ class UpdateChecker(private val client: OkHttpClient) {
 
                         UpdateInfo(
                             version = release.tagName.removePrefix("v"),
-                            publishedAt = release.createdAt,
+                            publishedAt = release.publishedAt,
                             changelog = release.body ?: "",
                             downloads = sortedDownloads
                         )
@@ -120,16 +125,16 @@ class UpdateChecker(private val client: OkHttpClient) {
 }
 
 @Serializable
-data class GiteeRelease(
+data class GitHubRelease(
     @SerialName("tag_name") val tagName: String,
     @SerialName("name") val name: String,
     @SerialName("body") val body: String? = null,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("assets") val assets: List<GiteeAsset> = emptyList()
+    @SerialName("published_at") val publishedAt: String,
+    @SerialName("assets") val assets: List<GitHubAsset> = emptyList()
 )
 
 @Serializable
-data class GiteeAsset(
+data class GitHubAsset(
     @SerialName("name") val name: String,
     @SerialName("browser_download_url") val browserDownloadUrl: String,
     @SerialName("size") val size: Long
@@ -151,51 +156,29 @@ data class UpdateInfo(
 )
 
 /**
- * 版本号值类，封装版本号字符串并提供比较功能
+ * 版本号值类
  */
 @JvmInline
 value class Version(val value: String) : Comparable<Version> {
+    private fun parseVersion(): List<Int> = value.split(".").map { it.toIntOrNull() ?: 0 }
 
-    /**
-     * 将版本号分解为数字数组
-     */
-    private fun parseVersion(): List<Int> {
-        return value.split(".")
-            .map { it.toIntOrNull() ?: 0 }
-    }
-
-    /**
-     * 实现 Comparable 接口的比较方法
-     */
     override fun compareTo(other: Version): Int {
         val thisParts = this.parseVersion()
         val otherParts = other.parseVersion()
-
         val maxLength = maxOf(thisParts.size, otherParts.size)
-
         for (i in 0 until maxLength) {
             val thisPart = if (i < thisParts.size) thisParts[i] else 0
             val otherPart = if (i < otherParts.size) otherParts[i] else 0
-
-            when {
-                thisPart > otherPart -> return 1
-                thisPart < otherPart -> return -1
-            }
+            if (thisPart > otherPart) return 1
+            if (thisPart < otherPart) return -1
         }
-
         return 0
     }
 
     companion object {
-        /**
-         * 比较两个版本号字符串
-         */
-        fun compare(version1: String, version2: String): Int {
-            return Version(version1).compareTo(Version(version2))
-        }
+        fun compare(version1: String, version2: String): Int = Version(version1).compareTo(Version(version2))
     }
 }
 
-// 扩展操作符函数，使比较更直观
 operator fun String.compareTo(other: Version): Int = Version(this).compareTo(other)
 operator fun Version.compareTo(other: String): Int = this.compareTo(Version(other))
