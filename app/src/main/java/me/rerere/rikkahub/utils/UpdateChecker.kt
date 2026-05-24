@@ -21,8 +21,6 @@ import okhttp3.Request
 
 // GitHub API 地址
 private const val GITHUB_API_URL = "https://api.github.com/repos/dragonstaryuri-sys/evolia/releases/latest"
-// GitHub 下载加速前缀
-private const val GH_PROXY = "https://mirror.ghproxy.com/"
 
 class UpdateChecker(private val client: OkHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -53,8 +51,8 @@ class UpdateChecker(private val client: OkHttpClient) {
                             .map { asset ->
                                 UpdateDownload(
                                     name = asset.name,
-                                    // 拼接加速镜像地址
-                                    url = GH_PROXY + asset.browserDownloadUrl,
+                                    // 直接使用 GitHub 原始链接
+                                    url = asset.browserDownloadUrl,
                                     size = formatFileSize(asset.size)
                                 )
                             }
