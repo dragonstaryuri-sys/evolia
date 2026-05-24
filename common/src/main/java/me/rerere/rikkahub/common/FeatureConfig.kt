@@ -31,6 +31,7 @@ object FeatureConfig {
     val enableSoulfulReading: Boolean = isExperimentalEnabled && false
 
     // 记忆档案编辑与更新开关
+    // 保持原来的逻辑：即使在 Debug 模式下也默认关闭（通过 && false），确保 Release 版绝对不可见
     val enableMasterMemoryEditing: Boolean = isExperimentalEnabled && false
 
     /**

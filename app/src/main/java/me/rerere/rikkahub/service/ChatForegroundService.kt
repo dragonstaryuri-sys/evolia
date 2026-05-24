@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.util.Log
 import android.os.IBinder
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
@@ -20,10 +21,15 @@ class ChatForegroundService : Service() {
 
         fun start(context: Context) {
             val intent = Intent(context, ChatForegroundService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                // 核心修复：捕获 Android 12+ 后台启动限制异常，防止闪退
+                Log.e("ChatForegroundService", "Failed to start foreground service: ${e.message}")
             }
         }
 
@@ -37,16 +43,20 @@ class ChatForegroundService : Service() {
         createNotificationChannel()
         val notification = createNotification()
 
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            notification,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            } else {
-                0
-            }
-        )
+        try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                } else {
+                    0
+                }
+            )
+        } catch (e: Exception) {
+            Log.e("ChatForegroundService", "Failed to startForeground within service: ${e.message}")
+        }
 
         return START_NOT_STICKY
     }

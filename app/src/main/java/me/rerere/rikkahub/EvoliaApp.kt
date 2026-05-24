@@ -45,6 +45,7 @@ import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.tencent.bugly.crashreport.CrashReport
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -59,6 +60,16 @@ class EvoliaApp : Application() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Application onCreate started!")
+
+        // 安全初始化：从 BuildConfig 读取由 local.properties 注入的 ID
+        val buglyAppId = BuildConfig.BUGLY_APP_ID
+        if (buglyAppId.isNotBlank()) {
+            // 第三个参数为是否开启调试模式，建议在 Debug 包开启以查看上报日志
+            CrashReport.initCrashReport(applicationContext, buglyAppId, BuildConfig.DEBUG)
+            Log.d(TAG, "Bugly initialized with ID from local.properties")
+        } else {
+            Log.w(TAG, "Bugly App ID is missing! Please add 'bugly.appid' to your local.properties file.")
+        }
 
         startKoin {
             androidLogger()

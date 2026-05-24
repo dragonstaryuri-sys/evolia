@@ -49,3 +49,7 @@
 -dontwarn aQute.bnd.annotation.**
 -dontwarn org.apache.logging.log4j.**
 -dontwarn com.microsoft.schemas.office.drawing.x2008.diagram.**
+
+# Bugly 混淆规则
+-keep class com.tencent.bugly.** { *; }
+-dontwarn com.tencent.bugly.**

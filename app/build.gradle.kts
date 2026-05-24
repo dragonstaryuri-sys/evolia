@@ -21,6 +21,15 @@ android {
     compileSdk = 36
     val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
 
+    // 安全读取 local.properties
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localProperties.load(FileInputStream(localPropertiesFile))
+    }
+    val buglyAppId = localProperties.getProperty("bugly.appid") ?: ""
+    val buglyAppKey = localProperties.getProperty("bugly.appkey") ?: ""
+
     defaultConfig {
         applicationId = "ailand.lastchat.rikkafork.cocolal"
         minSdk = 28
@@ -31,12 +40,16 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "x86_64", "armeabi-v7a")
         }
 
         manifestPlaceholders["extractNativeLibs"] = "true"
         // 默认启用
         resValue("bool", "text_selection_enabled", "true")
+
+        // 将读取到的 Bugly ID/Key 注入 BuildConfig
+        buildConfigField("String", "BUGLY_APP_ID", "\"$buglyAppId\"")
+        buildConfigField("String", "BUGLY_APP_KEY", "\"$buglyAppKey\"")
     }
 
     packaging {
@@ -61,22 +74,16 @@ android {
 
     splits {
         abi {
-
             isEnable = !isBuildingBundle
             reset()
-            include("arm64-v8a", "x86_64")
+            include("arm64-v8a", "x86_64", "armeabi-v7a")
             isUniversalApk = true
         }
     }
 
     signingConfigs {
         create("release") {
-            val localProperties = Properties()
-            val localPropertiesFile = rootProject.file("local.properties")
-
-            if (localPropertiesFile.exists()) {
-                localProperties.load(FileInputStream(localPropertiesFile))
-
+            if (localProperties.getProperty("storeFile") != null) {
                 val storeFilePath = localProperties.getProperty("storeFile")
                 val storePasswordValue = localProperties.getProperty("storePassword")
                 val keyAliasValue = localProperties.getProperty("keyAlias")
@@ -102,7 +109,6 @@ android {
             } else {
                 signingConfig = signingConfigs.getByName("debug")
             }
-            //isDebuggable = true
 
             isMinifyEnabled = true
             isShrinkResources = true
@@ -241,6 +247,10 @@ dependencies {
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.config)
 
+    // Bugly
+    implementation(libs.bugly.crashreport)
+    implementation(libs.bugly.nativecrashreport)
+
     // DataStore
     implementation(libs.androidx.datastore.preferences)
 
@@ -248,7 +258,6 @@ dependencies {
     implementation(libs.androidx.security.crypto)
 
     // Image metadata extractor
-    // https://github.com/drewnoakes/metadata-extractor
     implementation(libs.metadata.extractor)
 
     // koin
@@ -315,7 +324,7 @@ dependencies {
     // Toast (Sonner)
     implementation(libs.sonner)
 
-    // Reorderable (https://github.com/Calvin-LL/Reorderable/)
+    // Reorderable
     implementation(libs.reorderable)
 
     // lucide icons
@@ -325,7 +334,6 @@ dependencies {
     implementation(libs.image.viewer)
 
     // JLatexMath
-    // https://github.com/rikkahub/jlatexmath-android
     implementation(libs.jlatexmath)
     implementation(libs.jlatexmath.font.greek)
     implementation(libs.jlatexmath.font.cyrillic)
@@ -358,9 +366,6 @@ dependencies {
 
     // Excel 处理库
     implementation("org.apache.poi:poi-ooxml:5.2.5")
-
-    // Leak Canary
-    // debugImplementation(libs.leakcanary.android)
 
     // tests
     testImplementation(libs.junit)

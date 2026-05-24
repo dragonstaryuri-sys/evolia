@@ -69,7 +69,7 @@ data class Assistant(
     val ragIncludeEpisodes: Boolean = true,
     val ragIncludeCore: Boolean = true,
     val enableRagLogging: Boolean = false,
-    val enableMemoryConsolidation: Boolean = false,
+    val enableMemoryConsolidation: Boolean = true,
     val messageTemplate: String = "{{ message }}",
     val presetMessages: List<UIMessage> = emptyList(),
     val quickMessages: List<QuickMessage> = emptyList(),
@@ -114,7 +114,7 @@ data class Assistant(
     val lastConsolidationResult: String = "",
 
     // Master Memory (Memory Archive)
-    val enableMasterMemory: Boolean = false,
+    val enableMasterMemory: Boolean = true,
     val masterMemoryPrompt: String = "",
     val masterMemoryContent: String = "",
     val lastMasterMemoryUpdate: Long = 0L,

@@ -185,7 +185,12 @@ class ChatService(
         appScope.launch {
             generationJobs.collect { jobs ->
                 if (jobs.isNotEmpty()) {
-                    ChatForegroundService.start(context)
+                    // 核心修复：只有在应用处于前台时才尝试开启前台服务，避免 Android 12+ 后台启动限制
+                    if (_isForeground.value) {
+                        ChatForegroundService.start(context)
+                    } else {
+                        Log.d(TAG, "App is in background, skipping ForegroundService start to avoid crash")
+                    }
                 } else {
                     ChatForegroundService.stop(context)
                 }
@@ -1080,7 +1085,7 @@ class ChatService(
         assistantId: String
     ): String {
         return try {
-            val locale = Locale.getDefault().displayName
+            val locale = Locale.getDefault().getDisplayName(Locale.ROOT)
             val prompt = DEFAULT_KEYWORD_EXTRACTION_PROMPT.replace("{{summary}}", summary).replace("{{locale}}", locale)
 
             val h = handler as Provider<ProviderSetting>

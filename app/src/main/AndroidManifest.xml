@@ -3,6 +3,9 @@
   xmlns:tools="http://schemas.android.com/tools">
 
   <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+  <uses-permission android:name="android.permission.READ_PHONE_STATE" />
   <uses-permission android:name="android.permission.CAMERA" />
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
   <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
@@ -17,7 +20,6 @@
   <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
   <uses-permission android:name="android.permission.READ_CALENDAR" />
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-  <uses-permission android:name="android.permission.READ_PHONE_STATE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
 
   <uses-feature
@@ -159,7 +161,7 @@
     <!-- 自动任务兜底心跳广播 -->
     <receiver
         android:name=".service.AgentTaskReceiver"
-        android:exported="false">
+        android:exported="true">
         <intent-filter>
             <action android:name="me.rerere.rikkahub.ACTION_CHECK_TASKS" />
             <action android:name="android.intent.action.BOOT_COMPLETED" />
