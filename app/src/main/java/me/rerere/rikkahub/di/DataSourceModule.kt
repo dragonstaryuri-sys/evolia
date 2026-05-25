@@ -65,6 +65,7 @@ val dataSourceModule = module {
 
     single {
         Room.databaseBuilder(get(), AppDatabase::class.java, "rikka_hub")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
             .build()
     }
 

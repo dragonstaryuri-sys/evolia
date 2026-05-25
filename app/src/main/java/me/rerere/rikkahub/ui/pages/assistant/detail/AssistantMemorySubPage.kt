@@ -106,6 +106,7 @@ import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.core.data.db.entity.MemoryType
 /**
  * Memory mode based on current settings
  */
@@ -1248,7 +1249,7 @@ private fun MemoryStatisticsCard(
     estimatedMemoryCapacity: Int
 ) {
     val coreMemories = memories.count { it.type == 0 }
-    val episodicMemories = memories.count { it.type == 1 }
+    val episodicMemories = memories.count { it.type == 3 } // 改为统计 L1 (type=3)
     val withEmbeddings = memories.count { it.hasEmbedding }
 
     Surface(
@@ -1374,7 +1375,7 @@ private fun ManageMemoriesSection(
     }
 
     val coreMemories = memories.filter { it.type == 0 }
-    val episodicMemories = memories.filter { it.type == 1 }
+    val episodicMemories = memories.filter { it.type == 3 } // 改为显示 L1 (type=3)
 
     val displayMemories = remember(memories, selectedTab, memorySearchQuery, sortOrder, showMemoryTypes) {
         val baseList = if (showMemoryTypes) {
@@ -1645,9 +1646,12 @@ private fun MemoryItem(
                                 Text(
                                     text = if (memory.type == 0) {
                                         stringResource(R.string.memory_type_core)
-                                    } else {
+                                    } else if (memory.type == MemoryType.SEGMENT) {
                                         val label = stringResource(R.string.memory_type_episodic)
                                         if (BuildConfig.DEBUG) "$label${memory.id}" else label
+                                    } else {
+                                        // 兜底显示
+                                        "L${memory.type}"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
@@ -1691,7 +1695,8 @@ private fun MemoryItem(
                 )
             }
 
-            if (memory.type == 0) {
+            // 允许删除 L1 (type 3) 和 Core (type 0)
+            if (memory.type == 0 || memory.type == MemoryType.SEGMENT) {
                 IconButton(onClick = {
                     haptics.perform(HapticPattern.Pop)
                     showDeleteConfirmation = true

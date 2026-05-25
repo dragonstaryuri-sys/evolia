@@ -34,6 +34,7 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
+import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
@@ -115,12 +116,15 @@ class AssistantDetailVM(
     val episodes: StateFlow<List<ChatEpisodeEntity>> = chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId.toString())
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    val segments: StateFlow<List<AssistantMemory>> = memoryRepository.getSegmentsOfAssistantFlow(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
     // 修正：判断是否存在任何级别的记忆 (L1-L3)
     val hasMemories: StateFlow<Boolean> = combine(
         memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
-        episodes
-    ) { core, episodic ->
-        core.isNotEmpty() || episodic.isNotEmpty()
+        segments
+    ) { core, segs ->
+        core.isNotEmpty() || segs.isNotEmpty()
     }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     val hasLorebooks: StateFlow<Boolean> = assistant.map { it.enabledLorebookIds.isNotEmpty() }
@@ -128,11 +132,11 @@ class AssistantDetailVM(
 
     val episodeStats: StateFlow<EpisodeStats> = combine(
         memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
-        episodes
-    ) { core, episodic ->
+        segments
+    ) { core, segs ->
         EpisodeStats(
-            totalEpisodes = episodic.size,
-            averageSignificance = episodic.map { it.significance ?: 0 }.average(),
+            totalEpisodes = segs.size,
+            averageSignificance = 0.0, // Segments don't have significance in the same way
             coreMemoryCount = core.size
         )
     }.stateIn(viewModelScope, SharingStarted.Lazily, EpisodeStats(0, 0.0, 0))
@@ -149,22 +153,14 @@ class AssistantDetailVM(
 
     val memories: StateFlow<List<AssistantMemory>> = combine(
         memoryRepository.getMemoriesOfAssistantFlow(assistantId.toString()),
-        episodes,
+        segments,
         _memorySearchQuery
-    ) { coreMemories, episodesList, query ->
+    ) { coreMemories, segmentList, query ->
         val core = coreMemories.map { it.copy(content = it.content) }
-        val episodic = episodesList.map {
-            AssistantMemory(
-                id = -it.id,
-                content = it.content,
-                type = 1,
-                hasEmbedding = it.embedding != null,
-                embeddingModelId = it.embeddingModelId,
-                timestamp = it.startTime,
-                significance = it.significance
-            )
+        val l1Memories = segmentList.map {
+            it.copy(id = -it.id) // Use negative ID for segments in the list to distinguish from core
         }
-        val allMemories = core + episodic
+        val allMemories = core + l1Memories
         if (query.isBlank()) allMemories else allMemories.filter { it.content.contains(query, ignoreCase = true) }
     }.stateIn(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
@@ -453,6 +449,17 @@ class AssistantDetailVM(
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
+    private suspend fun generateSegmentSummary(
+        handler: me.rerere.ai.provider.Provider<*>,
+        providerSetting: me.rerere.ai.provider.ProviderSetting,
+        model: me.rerere.ai.provider.Model,
+        assistantName: String,
+        messages: List<UIMessage>
+    ): String {
+        // Implement segment summarization if needed
+        return ""
+    }
+
     private suspend fun updateMasterMemory(
         handler: me.rerere.ai.provider.Provider<*>,
         providerSetting: me.rerere.ai.provider.ProviderSetting,
@@ -577,7 +584,11 @@ class AssistantDetailVM(
                         if (id > 0) {
                             memoryRepository.updateContent(id, contentString ?: "")
                         } else {
-                            memoryRepository.updateEpisodeContent(-id, contentString ?: "")
+                            // Map negative ID back to positive for Segment or Episode
+                             val positiveId = kotlin.math.abs(id)
+                             // How to know if it was a segment or episode from the AI?
+                             // In this VM, we only display Segments as negative IDs now.
+                             memoryRepository.updateSegmentContent(positiveId, contentString ?: "")
                         }
                         updated++
                     }
@@ -610,7 +621,8 @@ class AssistantDetailVM(
         if (id > 0) {
             memoryRepository.deleteMemory(id)
         } else {
-            chatEpisodeDAO.deleteEpisode(-id)
+            // Negative IDs in UI represent Segments (L1) now
+            memoryRepository.deleteSegment(kotlin.math.abs(id))
         }
     }
 
@@ -653,10 +665,14 @@ class AssistantDetailVM(
 
     fun updateMemory(memory: AssistantMemory) {
         viewModelScope.launch {
-            if (memory.id < 0) memoryRepository.updateEpisodeContent(
-                -memory.id,
-                memory.content
-            ) else memoryRepository.updateContent(memory.id, memory.content)
+            if (memory.type == MemoryType.SEGMENT) {
+                memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
+            } else if (memory.id < 0) {
+                 // Fallback for negative IDs if type is not set correctly
+                 memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
+            } else {
+                memoryRepository.updateContent(memory.id, memory.content)
+            }
         }
     }
 

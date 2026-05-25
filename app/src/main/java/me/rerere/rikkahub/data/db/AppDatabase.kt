@@ -4,6 +4,8 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.core.data.db.dao.*
 import me.rerere.rikkahub.core.data.db.entity.*
@@ -27,7 +29,7 @@ import kotlinx.serialization.decodeFromString
         BookEntity::class,
         BookProgressEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class)
@@ -58,6 +60,13 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 为 chat_segments 表增加 embedding_model_id 字段
+                db.execSQL("ALTER TABLE chat_segments ADD COLUMN embedding_model_id TEXT DEFAULT ''")
+            }
+        }
     }
 }
 
