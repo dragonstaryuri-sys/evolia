@@ -1138,52 +1138,42 @@ class GenerationHandler(
         }
 
         val coreMemories = memories.filter { it.type == MemoryType.CORE }
-        val episodicMemories = memories.filter { it.type == MemoryType.EPISODIC }
         val segmentMemories = memories.filter { it.type == MemoryType.SEGMENT }
         val boostedMemories = memories.filter { it.type == 2 }
 
         fun formatMemoryDate(timestamp: Long): String {
             if (timestamp <= 0) return "Unknown Date"
-            return Instant.ofEpochMilli(timestamp)
-                .atZone(ZoneId.systemDefault())
-                .toLocalDate()
-                .toString()
+            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                .withZone(ZoneId.systemDefault())
+            return formatter.format(Instant.ofEpochMilli(timestamp))
         }
 
         return buildString {
             append("## Memories\n").append("These are memories that you can reference. If a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID, please call `retrieve_memory_details(segment_id)`.\n")
 
             if (boostedMemories.isNotEmpty()) {
-                append("### Recent Interaction Reference\n")
+                append("### 今日会话梗概\n")
                 boostedMemories.forEach { memory ->
-                    append("- ${memory.content}\n")
+                    val dateStr = formatMemoryDate(memory.timestamp)
+                    append("- [时间: $dateStr] ${memory.content}\n")
                 }
             }
 
             if (coreMemories.isNotEmpty()) {
-                append("### Core Memories\n")
+                append("### 核心记忆\n")
                 coreMemories.forEach { memory ->
                     val dateStr = formatMemoryDate(memory.timestamp)
-                    append("- [Date: $dateStr] ${memory.content}\n")
+                    append("- [日期: $dateStr] ${memory.content}\n")
                 }
             }
 
             if (segmentMemories.isNotEmpty()) {
-                append("### Historical Message Segments\n")
-                segmentMemories.forEach { memory ->
-                    val dateStr = formatMemoryDate(memory.timestamp)
-                    append("- [Segment ID: ${memory.id}, Date: $dateStr] ${memory.content}\n")
-                }
-            }
-
-            if (episodicMemories.isNotEmpty()) {
-                append("### Episodic Summaries\n")
-
+                append("### 历史记忆片段\n")
                 val now = java.time.LocalDate.now()
                 val yesterday = now.minusDays(1)
                 val lastWeek = now.minusWeeks(1)
 
-                val groupedEpisodes = episodicMemories.groupBy { memory ->
+                val groupedSegments = segmentMemories.groupBy { memory ->
                     val date = Instant.ofEpochMilli(memory.timestamp)
                         .atZone(ZoneId.systemDefault())
                         .toLocalDate()
@@ -1197,12 +1187,12 @@ class GenerationHandler(
                 }
 
                 listOf("Today", "Yesterday", "This Week", "Older").forEach { group ->
-                    val memoriesInGroup = groupedEpisodes[group]
+                    val memoriesInGroup = groupedSegments[group]
                     if (!memoriesInGroup.isNullOrEmpty()) {
                         append("#### $group\n")
                         memoriesInGroup.sortedByDescending { it.timestamp }.forEach { memory ->
                             val dateStr = formatMemoryDate(memory.timestamp)
-                            append("- [ID: ${memory.id}, Date: $dateStr] ${memory.content}\n")
+                            append("- [ID: ${memory.id}, 日期: $dateStr] ${memory.content}\n")
                         }
                     }
                 }
