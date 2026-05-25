@@ -1491,7 +1491,7 @@
 
   <string name="detail_memory_title">细节记忆</string>
   <string name="detail_memory_desc">根据消息条数精确触发记忆归档</string>
-  <string name="detail_memory_hint">控制TA记忆的细节程度，数值越小，精度越高，但消耗的token也越多。</string>
+  <string name="detail_memory_hint">控制每多少条对话消息就进行记忆切片，这个数值越小，记忆越细，片段记忆数量会越多，建议设置在20~50</string>
   <string name="detail_memory_threshold">归档触发阈值</string>
 
   <string name="tts_filter_rules_filter_emojis_title">过滤表情符号</string>

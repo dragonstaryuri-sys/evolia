@@ -179,6 +179,13 @@ fun AssistantMemorySettings(
         mutableFloatStateOf(assistant.detailMemoryThreshold.toFloat())
     }
 
+    // 强制开启细节记忆逻辑：只要启用记忆，就强制开启细节记忆并处理旧用户迁移
+    LaunchedEffect(assistant.enableMemory) {
+        if (assistant.enableMemory && !assistant.enableDetailMemory) {
+            onUpdateAssistant(assistant.copy(enableDetailMemory = true))
+        }
+    }
+
     if (embeddingProgress != null && embeddingProgress.isRunning) {
         AlertDialog(
             onDismissRequest = { },
@@ -315,7 +322,8 @@ fun AssistantMemorySettings(
                                             assistant.copy(
                                                 enableMemory = true,
                                                 enableRecentChatsReference = true,
-                                                enableMasterMemory = true
+                                                enableMasterMemory = true,
+                                                enableDetailMemory = true
                                             )
                                         )
                                     }
@@ -439,16 +447,20 @@ fun AssistantMemorySettings(
 
                             if (assistant.useRagMemoryRetrieval) {
                                 Column {
-                                    MemorySettingsItem(
-                                        title = stringResource(R.string.detail_memory_title),
-                                        subtitle = stringResource(R.string.detail_memory_desc),
-                                        position = if (assistant.enableDetailMemory) "MIDDLE" else "LAST",
-                                        trailing = {
-                                            HapticSwitch(
-                                                checked = assistant.enableDetailMemory,
-                                                onCheckedChange = { onUpdateAssistant(assistant.copy(enableDetailMemory = it)) })
-                                        }
-                                    )
+                                    if (BuildConfig.DEBUG) {
+                                        MemorySettingsItem(
+                                            title = stringResource(R.string.detail_memory_title),
+                                            subtitle = stringResource(R.string.detail_memory_desc),
+                                            position = "MIDDLE",
+                                            trailing = {
+                                                HapticSwitch(
+                                                    checked = true,
+                                                    onCheckedChange = {},
+                                                    enabled = false
+                                                )
+                                            }
+                                        )
+                                    }
                                     AnimatedVisibility(visible = assistant.enableDetailMemory) {
                                         Surface(
                                             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,

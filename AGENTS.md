@@ -99,13 +99,15 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
     - **Positional Mapping**: It records `startMessageIndex` and `endMessageIndex` to map the summary back to the specific original messages.
     - **High-Fidelity Embedding**: For vector search, the system concatenates `[Background Summary] + [Original Text]` to capture both distilled intent and raw nuances.
     - **Dynamic Reconstruction**: Tools like `retrieve_memory_details` fetch original messages using indices to return a combined payload: `[Background Summary] + [Original Text]`.
-- **Trigger Logic**:
-    - **Auto Check**: Triggered by `ChatService.checkAndAutoSummarize` after each message turn.
-    - **Session Switch (Force)**: Forces an L1 archival for unsummarized messages before moving to L2.
+- **Temporal Grouping**: In the prompt, L1 segments are grouped by "Today", "Yesterday", "This Week", and "Older" to provide clear chronological context.
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
 - **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation.
-- **Tactical Retrieval**: AI can call `retrieve_memory_details(episode_id, query)` for a "deep dive" into L1 Segments associated with that Episode.
+- **Cross-Window Continuity (All-Day L2 Injection)**: 
+    - **Dynamic Tail Injection**: If `enableRecentChatsReference` is on, the system automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
+    - **Non-RAG Resource**: This injection does not consume the RAG retrieval limit, ensuring consistent awareness of all daily interactions across different windows.
+    - **High-Precision Time**: Injected L2 items are prefixed with "Today:" and include `HH:mm` timestamps to help AI sequence daily events.
+- **Tactical Retrieval**: AI can call `retrieve_memory_details(segment_id)` for a "deep dive" into L1 Segments for better resolution on specific historical moments.
 
 ### 6.3 Master Memory (L3 - Personal Archive)
 - **Mechanism**: An evolving "User Profile" that transcends individual conversations.
@@ -114,7 +116,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 ### 6.4 Token Allocation & Context Priority
 - **Hierarchy of Injection**: See 6.5 for detailed order.
 - **Allocation Strategy**: Controlled by `assistant.contextPriority` (CHAT_HISTORY, MEMORIES, or BALANCED).
-- **Cross-Session Continuity**: Early turns inject summaries of today's other chats as "Recent Episode Boosts" in the dynamic tail.
+- **Recent Episode Boost**: Integrated into the All-Day L2 Injection mechanism, providing seamless transitions and memory of recent actions.
 
 ### 6.5 Final Prompt Structure (Prefix Caching Optimized Order)
 To maximize Prefix Caching efficiency, the payload adopts a **"Stable-Front, Dynamic-Tail"** structure. Highly dynamic information is injected into the **last User message** in the sequence, ensuring that the cache for all preceding messages (System + Attachments + History) remains valid across multiple turns.
@@ -133,11 +135,11 @@ To maximize Prefix Caching efficiency, the payload adopts a **"Stable-Front, Dyn
 
 4. **User Message: Augmented Tail** (The Last Message)
     - The final User message is intercepted and injected with a `dynamicContext` header containing:
-        - **L1: Context Highlights**: Recent history Segments (Summaries).
-        - **L2: Memories (RAG)**: Contextually retrieved facts and **Recent Interaction Boosts** (continuity guidance from previous sessions).
+        - **L1: Context Highlights**: Recent history Segments (Summaries), grouped chronologically.
+        - **L2: Memories (RAG)**: Contextually retrieved facts and **Today's Cross-Window L2 Summaries** (full-day awareness).
         - **Lorebook Entries**: `AFTER_SYSTEM` lorebook entries activated by the current context.
         - **Reference Variables**: Global variables applied with placeholders.
-        - **Instant Dynamic Facts**: Current timestamp, holidays, and the interval since the last assistant reply.
+        - **Instant Dynamic Facts**: Current timestamp (HH:mm precision), holidays, and the interval since the last assistant reply.
         - **The Original User Question**: Appended after the injected context header.
 
 ## 7. Agent Automation (Task Manager)
