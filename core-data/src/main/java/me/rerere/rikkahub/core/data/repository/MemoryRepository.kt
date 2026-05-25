@@ -52,7 +52,8 @@ class MemoryRepository(
                         content = it.content,
                         keywords = it.keywords,
                         type = MemoryType.SEGMENT,
-                        hasEmbedding = it.embedding != null,
+                        // 必须同时拥有 embedding 和 modelId 才认为已嵌入
+                        hasEmbedding = !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
                         embeddingModelId = it.embeddingModelId,
                         timestamp = it.timestamp
                     )
@@ -139,7 +140,13 @@ class MemoryRepository(
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
             .map { entities ->
-                entities.map { AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+                entities.map {
+                    AssistantMemory(
+                        it.id, it.content, it.keywords, it.type,
+                        !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                        it.embeddingModelId, it.createdAt
+                    )
+                }
             }
 
     fun getCombinedMemoriesFlow(assistantId: String): Flow<List<AssistantMemory>> =
@@ -148,10 +155,18 @@ class MemoryRepository(
             chatEpisodeDAO.getEpisodesOfAssistantFlow(assistantId)
         ) { memories, episodes ->
             val coreMemories = memories.map {
-                AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt)
+                AssistantMemory(
+                    it.id, it.content, it.keywords, it.type,
+                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embeddingModelId, it.createdAt
+                )
             }
             val episodicMemories = episodes.map {
-                AssistantMemory(-it.id, it.content, it.keywords, MemoryType.EPISODIC, it.embedding != null, it.embeddingModelId, it.startTime, it.significance)
+                AssistantMemory(
+                    -it.id, it.content, it.keywords, MemoryType.EPISODIC,
+                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embeddingModelId, it.startTime, it.significance
+                )
             }
             coreMemories + episodicMemories
         }
@@ -166,7 +181,13 @@ class MemoryRepository(
 
     suspend fun getMemoriesOfAssistant(assistantId: String): List<AssistantMemory> {
         return memoryDAO.getMemoriesOfAssistant(assistantId)
-            .map { AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+            .map {
+                AssistantMemory(
+                    it.id, it.content, it.keywords, it.type,
+                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embeddingModelId, it.createdAt
+                )
+            }
     }
 
     suspend fun getMemoryById(id: Int): AssistantMemory? {
@@ -176,7 +197,7 @@ class MemoryRepository(
             content = memory.content,
             keywords = memory.keywords,
             type = memory.type,
-            hasEmbedding = memory.embedding != null,
+            hasEmbedding = !memory.embedding.isNullOrBlank() && !memory.embeddingModelId.isNullOrBlank(),
             embeddingModelId = memory.embeddingModelId,
             timestamp = memory.createdAt
         )
@@ -194,7 +215,11 @@ class MemoryRepository(
         return chatEpisodeDAO.getEpisodesAfter(assistantId, startTime)
             .filter { it.conversationId != excludeConversationId }
             .map {
-                 AssistantMemory(-it.id, it.content, it.keywords, MemoryType.EPISODIC, it.embedding != null, it.embeddingModelId, it.startTime, it.significance)
+                 AssistantMemory(
+                     -it.id, it.content, it.keywords, MemoryType.EPISODIC,
+                     !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                     it.embeddingModelId, it.startTime, it.significance
+                 )
             }
     }
 
@@ -208,12 +233,24 @@ class MemoryRepository(
             MemoryType.CORE -> {
                 memoryDAO.getMemoriesOfAssistant(assistantId)
                     .filter { it.type == MemoryType.CORE && it.createdAt >= startTime }
-                    .map { AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+                    .map {
+                        AssistantMemory(
+                            it.id, it.content, it.keywords, it.type,
+                            !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                            it.embeddingModelId, it.createdAt
+                        )
+                    }
             }
             MemoryType.SEGMENT -> {
                 chatSegmentDAO.getSegmentsByAssistant(assistantId)
                     .filter { it.timestamp >= startTime }
-                    .map { AssistantMemory(it.id, it.content, it.keywords, MemoryType.SEGMENT, it.embedding != null, it.embeddingModelId, it.timestamp) }
+                    .map {
+                        AssistantMemory(
+                            it.id, it.content, it.keywords, MemoryType.SEGMENT,
+                            !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                            it.embeddingModelId, it.timestamp
+                        )
+                    }
             }
             else -> emptyList()
         }
@@ -298,11 +335,16 @@ class MemoryRepository(
         return AssistantMemory(newMemory.id, newMemory.content, newMemory.keywords, newMemory.type, false, null, newMemory.createdAt)
     }
 
+    suspend fun saveEpisode(episode: ChatEpisodeEntity) {
+        chatEpisodeDAO.insertEpisode(episode)
+        chatEpisodeDAO.trimEpisodes(episode.assistantId, 30)
+    }
+
     suspend fun updateEpisodeContent(id: Int, content: String): AssistantMemory {
         val episode = chatEpisodeDAO.getEpisodeById(id) ?: error("Episode not found")
         val keywords = KeywordExtractor.extract(content)
         val newEpisode = episode.copy(content = content, keywords = keywords, embedding = null)
-        chatEpisodeDAO.insertEpisode(newEpisode)
+        saveEpisode(newEpisode)
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
         return AssistantMemory(-newEpisode.id, newEpisode.content, newEpisode.keywords, MemoryType.EPISODIC, false, null, newEpisode.startTime, newEpisode.significance)
     }
@@ -310,7 +352,7 @@ class MemoryRepository(
     suspend fun updateSegmentContent(id: Int, content: String): AssistantMemory {
         val segment = chatSegmentDAO.getSegmentById(id) ?: error("Segment not found")
         val keywords = KeywordExtractor.extract(content)
-        val newSegment = segment.copy(content = content, keywords = keywords, embedding = null)
+        val newSegment = segment.copy(content = content, keywords = keywords, embedding = null, embeddingModelId = null)
         chatSegmentDAO.insertSegment(newSegment)
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.SEGMENT)
         return AssistantMemory(newSegment.id, newSegment.content, newSegment.keywords, MemoryType.SEGMENT, false, null, newSegment.timestamp)
@@ -538,7 +580,7 @@ class MemoryRepository(
         var successCount = 0
         var failureCount = 0
         val memoriesNeedingEmbedding = memories.filter { it.embedding == null || it.embeddingModelId != currentModelId }
-        val segmentsNeedingEmbedding = segments.filter { it.embedding == null || it.embeddingModelId != currentModelId }
+        val segmentsNeedingEmbedding = segments.count { it.embedding == null || it.embeddingModelId != currentModelId }
 
         memoriesNeedingEmbedding.forEach { memory ->
             try {
@@ -550,7 +592,8 @@ class MemoryRepository(
             } catch (e: Exception) { failureCount++ }
         }
 
-        segmentsNeedingEmbedding.forEach { segment ->
+        // Fix segmentsNeedingEmbedding type error
+        segments.filter { it.embedding == null || it.embeddingModelId != currentModelId }.forEach { segment ->
             try {
                 val effectiveContent = if (!segment.keywords.isNullOrBlank()) "Keywords: ${segment.keywords}\nContent: ${segment.content}" else segment.content
                 val embedding = embeddingService.embed(effectiveContent, assistantId)

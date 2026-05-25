@@ -265,7 +265,7 @@ class AssistantDetailVM(
                                 significance = conv.currentMessages.size,
                                 lastAccessedAt = System.currentTimeMillis()
                             )
-                            chatEpisodeDAO.insertEpisode(episode)
+                            memoryRepository.saveEpisode(episode)
                             conversationRepository.markAsConsolidated(conv.id)
                             episodicSuccessCount++
                         }

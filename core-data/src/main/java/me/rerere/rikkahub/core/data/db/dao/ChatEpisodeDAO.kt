@@ -21,6 +21,18 @@ interface ChatEpisodeDAO {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEpisode(episode: ChatEpisodeEntity): Long
 
+    @Query("""
+        DELETE FROM ChatEpisodeEntity
+        WHERE assistant_id = :assistantId
+        AND id NOT IN (
+            SELECT id FROM ChatEpisodeEntity
+            WHERE assistant_id = :assistantId
+            ORDER BY end_time DESC
+            LIMIT :limit
+        )
+    """)
+    suspend fun trimEpisodes(assistantId: String, limit: Int)
+
     @Query("DELETE FROM ChatEpisodeEntity WHERE id = :id")
     suspend fun deleteEpisode(id: Int)
 

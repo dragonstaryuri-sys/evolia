@@ -245,7 +245,7 @@ class MemoryConsolidationWorker(
                     lastAccessedAt = System.currentTimeMillis()
                 )
 
-                chatEpisodeDAO.insertEpisode(episode)
+                memoryRepository.saveEpisode(episode)
                 conversationRepository.markAsConsolidated(conv.id)
 
                 updateLastResult(
@@ -369,7 +369,7 @@ class MemoryConsolidationWorker(
                             lastAccessedAt = System.currentTimeMillis()
                         )
 
-                        chatEpisodeDAO.insertEpisode(episode)
+                        memoryRepository.saveEpisode(episode)
                         conversationRepository.markAsConsolidated(conv.id)
                         episodicSuccessCount++
                     }

@@ -547,7 +547,7 @@ class ChatService(
                     significance = messages.size,
                     lastAccessedAt = System.currentTimeMillis()
                 )
-                chatEpisodeDAO.insertEpisode(episode)
+                memoryRepository.saveEpisode(episode)
                 Log.i(
                     TAG,
                     "Archived episodic memory (L2) for $conversationId. skipEmbedding=$skipEmbedding, messages=${messages.size}"
