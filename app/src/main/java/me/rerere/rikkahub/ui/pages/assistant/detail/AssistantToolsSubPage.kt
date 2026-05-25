@@ -225,45 +225,6 @@ fun AssistantToolsSubPage(
                     }
                 )
 
-                // Email Service
-                val emailEnabled = assistant.localTools.contains(LocalToolOption.EmailService)
-                SettingGroupItem(
-                    title = stringResource(R.string.assistant_page_local_tools_email_service_title),
-                    subtitle = stringResource(R.string.assistant_page_local_tools_email_service_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = emailEnabled,
-                            onCheckedChange = { enabled ->
-                                val newLocalTools = if (enabled) {
-                                    assistant.localTools + LocalToolOption.EmailService
-                                } else {
-                                    assistant.localTools - LocalToolOption.EmailService
-                                }
-                                onUpdate(assistant.copy(localTools = newLocalTools))
-                            }
-                        )
-                    }
-                )
-
-                // 警告提示：如果开启了邮件工具但没配置全局账号/授权码
-                val isEmailConfigured =
-                    settings.emailConfig.account.isNotBlank() && secretKeyManager.getEmailPassword("").isNotBlank()
-                AnimatedVisibility(visible = emailEnabled && !isEmailConfigured) {
-                    SettingGroupItem(
-                        title = stringResource(R.string.assistant_tools_email_not_configured_warning),
-                        subtitle = stringResource(R.string.assistant_tools_email_not_configured_warning_desc),
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Rounded.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        },
-                        onClick = {
-                            navController.navigate(Screen.SettingEmail)
-                        }
-                    )
-                }
                 val automationEnabled = assistant.localTools.contains(LocalToolOption.AgentAutomation)
                 SettingGroupItem(
                     title = stringResource(R.string.agent_automation_title),
@@ -282,10 +243,47 @@ fun AssistantToolsSubPage(
                         )
                     }
                 )
-
             }
 
+            // Email Service (Available for all assistants)
+            val emailEnabled = assistant.localTools.contains(LocalToolOption.EmailService)
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_email_service_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_email_service_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = emailEnabled,
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.EmailService
+                            } else {
+                                assistant.localTools - LocalToolOption.EmailService
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
 
+            // 警告提示：如果开启了邮件工具但没配置全局账号/授权码
+            val isEmailConfigured =
+                settings.emailConfig.account.isNotBlank() && secretKeyManager.getEmailPassword("").isNotBlank()
+            AnimatedVisibility(visible = emailEnabled && !isEmailConfigured) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_tools_email_not_configured_warning),
+                    subtitle = stringResource(R.string.assistant_tools_email_not_configured_warning_desc),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Rounded.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    },
+                    onClick = {
+                        navController.navigate(Screen.SettingEmail)
+                    }
+                )
+            }
         }
         // ═══════════════════════════════════════════════════════════════════
         // MCP GROUP (only show if servers configured)

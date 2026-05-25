@@ -768,7 +768,10 @@ class ChatService(
                     } else if (isMain) {
                         assistant.localTools
                     } else {
-                        assistant.localTools.filter { it is LocalToolOption.TimeSense }
+                        // 修复：允许其他智能体使用时间观念和邮件服务
+                        assistant.localTools.filter {
+                            it is LocalToolOption.TimeSense || it is LocalToolOption.EmailService
+                        }
                     }
 
                     addAll(
