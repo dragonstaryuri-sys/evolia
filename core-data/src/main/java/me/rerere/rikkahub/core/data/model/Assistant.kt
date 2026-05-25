@@ -29,7 +29,7 @@ data class AssistantUISettings(
 
 @Serializable
 enum class MemoryRetrievalMode {
-    OFF,      // 新增：完全禁用检索
+    OFF,
     SEMANTIC,
     KEYWORD,
     HYBRID
@@ -88,14 +88,12 @@ data class Assistant(
     val spontaneousPrompt: String = "",
     val enabledLorebookIds: Set<Uuid> = emptySet(),
 
-    // Spontaneous Messaging
     val notificationStartHour: Int = 7,
     val notificationEndHour: Int = 22,
     val notificationFrequencyHours: Int = 4,
     val lastNotificationTime: Long = 0L,
     val lastNotificationContent: String = "",
 
-    // Context Management
     val maxHistoryMessages: Int? = null,
     val enableHistorySummarization: Boolean = false,
     val maxSearchResultsRetained: Int? = null,
@@ -108,35 +106,27 @@ data class Assistant(
 
     val uiSettings: AssistantUISettings = AssistantUISettings(),
 
-    // Memory Consolidation
     val consolidationDelayMinutes: Int = 30,
     val lastConsolidationTime: Long = 0L,
     val lastConsolidationResult: String = "",
 
-    // Master Memory (Memory Archive)
     val enableMasterMemory: Boolean = true,
     val masterMemoryPrompt: String = "",
     val masterMemoryContent: String = "",
     val lastMasterMemoryUpdate: Long = 0L,
 
-    // Diary Settings
     val enableAutoDiary: Boolean = false,
     val autoDiaryTime: String = "06:00",
     val lastAutoDiaryDate: String = "",
 
-    // Master Assistant Flag
     val isMain: Boolean = false,
-
-    // Virtual World Mode
     val isVirtualWorldMode: Boolean = false,
 
     @ColumnInfo(name = "last_conversation_id")
     val lastConversationId: String? = null,
 
-    // Detail Memory (L1 Trigger Control)
     val enableDetailMemory: Boolean = true,
     val detailMemoryThreshold: Int = 20,
-
 )
 
 @Serializable
@@ -154,7 +144,8 @@ data class AssistantMemory(
     val hasEmbedding: Boolean = false,
     val embeddingModelId: String? = null,
     val timestamp: Long = 0L,
-    val significance: Int? = null
+    val significance: Int? = null,
+    val score: Float? = null // 新增分数记录
 )
 
 @Serializable

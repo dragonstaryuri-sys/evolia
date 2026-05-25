@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.core.data.repository
 
+import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
@@ -25,8 +26,10 @@ class MemoryRepository(
     private val chatSegmentDAO: ChatSegmentDAO,
     private val embeddingService: EmbeddingService,
     private val embeddingCacheDAO: EmbeddingCacheDAO,
-    private val conversationRepository: ConversationRepository // 注入以获取原文
+    private val conversationRepository: ConversationRepository
 ) {
+    private val TAG = "MemoryRepository"
+
     // --- L1 Segment Support ---
 
     suspend fun saveSegment(segment: ChatSegmentEntity) {
@@ -40,10 +43,6 @@ class MemoryRepository(
         return chatSegmentDAO.getSegmentsByConversation(conversationId)
     }
 
-    /**
-     * 针对 L1 Segment 的混合检索
-     * 优化：返回的 content 是 摘要背景 + 原文拼接
-     */
     suspend fun retrieveRelevantSegments(
         assistantId: String,
         conversationId: String,
@@ -59,7 +58,6 @@ class MemoryRepository(
             try { embeddingService.embed(query, assistantId) } catch (e: Exception) { null }
         } else null
 
-        // 预加载当前会话的所有消息以便拼接
         val conversation = conversationRepository.getConversationById(Uuid.parse(conversationId))
         val messages = conversation?.currentMessages ?: emptyList()
 
@@ -72,7 +70,6 @@ class MemoryRepository(
                 val segmentEmbedding = segment.embedding?.let {
                     runCatching { JsonInstant.decodeFromString<List<Float>>(it) }.getOrNull()
                 } ?: run {
-                    // 如果没有向量，则重新计算。此处必须按照“背景+原文”逻辑计算
                     val originalText = if (messages.isNotEmpty()) {
                         messages.subList(
                             segment.startMessageIndex.coerceIn(messages.indices),
@@ -106,7 +103,6 @@ class MemoryRepository(
         return scoredSegments.sortedByDescending { it.second }
             .take(limit)
             .map { (segment, _) ->
-                // 【核心优化点】：返回时动态拼接原文
                 val originalText = if (messages.isNotEmpty()) {
                     val start = segment.startMessageIndex.coerceIn(messages.indices)
                     val end = (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
@@ -122,7 +118,7 @@ class MemoryRepository(
     }
 
     // --- Core Memory Methods ---
-    // (其余代码保持不变，仅展示变更部分...)
+
     fun getMemoriesOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         memoryDAO.getMemoriesOfAssistantFlow(assistantId)
             .map { entities ->
@@ -182,13 +178,11 @@ class MemoryRepository(
     }
 
     suspend fun getFullMemoryContent(id: Int, type: Int): String? {
-        return if (type == 0) { // CORE
-            val memory = memoryDAO.getMemoryById(id)
-            memory?.content
-        } else { // EPISODIC (L2)
-            val absoluteId = kotlin.math.abs(id)
-            val episode = chatEpisodeDAO.getEpisodeById(absoluteId)
-            episode?.content
+        return when (type) {
+            MemoryType.CORE -> memoryDAO.getMemoryById(id)?.content
+            MemoryType.EPISODIC -> chatEpisodeDAO.getEpisodeById(kotlin.math.abs(id))?.content
+            MemoryType.SEGMENT -> chatSegmentDAO.getSegmentById(id)?.content
+            else -> null
         }
     }
 
@@ -205,7 +199,7 @@ class MemoryRepository(
             return null
         }
         val modelId = embeddingService.getEmbeddingModelId(assistantId)
-        val effectiveContent = if (!keywords.isNullOrBlank() && memoryType == MemoryType.EPISODIC) {
+        val effectiveContent = if (!keywords.isNullOrBlank() && (memoryType == MemoryType.EPISODIC || memoryType == MemoryType.SEGMENT)) {
             "Keywords: $keywords\nContent: $content"
         } else {
             content
@@ -332,12 +326,19 @@ class MemoryRepository(
         mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID
     ): List<Pair<AssistantMemory, Float>> {
         if (mode == MemoryRetrievalMode.OFF || query.trim().isBlank()) return emptyList()
+        Log.d(TAG, "RAG Retrieval started: query='$query', threshold=$similarityThreshold, includeEpisodes=$includeEpisodes")
+
         val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
-            try { embeddingService.embed(query, assistantId) } catch (e: Exception) { null }
+            try { embeddingService.embed(query, assistantId) } catch (e: Exception) {
+                Log.e(TAG, "Embedding failed: ${e.message}")
+                null
+            }
         } else null
 
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
-        val episodes = if (includeEpisodes) chatEpisodeDAO.getEpisodesOfAssistant(assistantId) else emptyList()
+        val segments = if (includeEpisodes) chatSegmentDAO.getSegmentsByAssistant(assistantId) else emptyList()
+
+        Log.d(TAG, "DB Candidates: CORE=${memories.size}, SEGMENTS=${segments.size}")
 
         val memoryScores = memories.mapNotNull { memory ->
             val effectiveKeywords = if (memory.keywords.isNullOrBlank()) {
@@ -367,22 +368,17 @@ class MemoryRepository(
             if (score >= similarityThreshold) Triple(memory, score, true) else null
         }
 
-        val episodeScores = episodes.mapNotNull { episode ->
-            val effectiveKeywords = if (episode.keywords.isNullOrBlank()) {
-                val local = KeywordExtractor.extract(episode.content)
-                chatEpisodeDAO.insertEpisode(episode.copy(keywords = local))
-                local
-            } else episode.keywords
+        val segmentScores = segments.mapNotNull { segment ->
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
-                calculateKeywordScore(query, effectiveKeywords)
+                calculateKeywordScore(query, segment.keywords)
             } else 0f
 
             val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
-                val embedding = getOrCreateEmbedding(episode.id, MemoryType.EPISODIC, episode.content, episode.keywords, assistantId, episode.embedding, episode.embeddingModelId)
+                val embedding = getOrCreateEmbedding(segment.id, MemoryType.SEGMENT, segment.content, segment.keywords, assistantId, segment.embedding, null)
                 embedding?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
             } else 0f
 
-            val ageInMillis = System.currentTimeMillis() - episode.startTime
+            val ageInMillis = System.currentTimeMillis() - segment.timestamp
             val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
             val recency = (1.0 / (1.0 + (ageInDays / 7.0))).toFloat()
 
@@ -396,24 +392,23 @@ class MemoryRepository(
                 MemoryRetrievalMode.OFF -> 0f
             }
 
-            if (score >= similarityThreshold) Triple(episode, score, false) else null
+            Log.v(TAG, "Segment ID=${segment.id} Score=$score (Similarity=$similarity, Recency=$recency)")
+
+            if (score >= similarityThreshold) Triple(segment, score, false) else null
         }
 
-        val allScored = (memoryScores + episodeScores).sortedByDescending { it.second }
-        allScored.take(limit).forEach { (item, _, isMemory) ->
-            if (isMemory) memoryDAO.updateMemory((item as MemoryEntity).copy(lastAccessedAt = System.currentTimeMillis()))
-            else chatEpisodeDAO.insertEpisode((item as ChatEpisodeEntity).copy(lastAccessedAt = System.currentTimeMillis()))
-        }
+        val allScored = (memoryScores + segmentScores).sortedByDescending { it.second }
+        Log.d(TAG, "Total matches after threshold: ${allScored.size}")
 
         return allScored.take(limit).mapNotNull { triple ->
             val item = triple.first
             val score = triple.second
             if (triple.third) {
                 val m = item as MemoryEntity
-                AssistantMemory(m.id, m.content, m.keywords, m.type, true, m.embeddingModelId, m.createdAt) to score
+                AssistantMemory(m.id, m.content, m.keywords, m.type, true, m.embeddingModelId, m.createdAt, null, score) to score
             } else {
-                val e = item as ChatEpisodeEntity
-                AssistantMemory(-e.id, e.content, e.keywords, MemoryType.EPISODIC, true, e.embeddingModelId, e.startTime, e.significance) to score
+                val s = item as ChatSegmentEntity
+                AssistantMemory(s.id, s.content, s.keywords, MemoryType.SEGMENT, true, null, s.timestamp, null, score) to score
             }
         }
     }

@@ -13,13 +13,13 @@ data class MemoryEntity(
     @ColumnInfo("content")
     val content: String = "",
     @ColumnInfo("keywords")
-    val keywords: String? = null, // 新增：支持核心记忆关键词检索
+    val keywords: String? = null,
     @ColumnInfo("embedding")
-    val embedding: String? = null, // JSON string of float array
+    val embedding: String? = null,
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")
-    val embeddingModelId: String? = null, // UUID of the embedding model used
+    val embeddingModelId: String? = null,
     @ColumnInfo(name = "type", defaultValue = "0")
-    val type: Int = 0, // 0: CORE, 1: EPISODIC
+    val type: Int = 0,
     @ColumnInfo(name = "last_accessed_at", defaultValue = "0")
     val lastAccessedAt: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "created_at", defaultValue = "0")
@@ -28,5 +28,6 @@ data class MemoryEntity(
 
 object MemoryType {
     const val CORE = 0
-    const val EPISODIC = 1
+    const val EPISODIC = 1 // L2: Episode
+    const val SEGMENT = 3  // L1: Segment
 }

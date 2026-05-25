@@ -65,6 +65,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
+import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
 import java.util.Locale
 import kotlin.uuid.Uuid
@@ -173,48 +174,35 @@ class GenerationHandler(
                     add(
                         Tool(
                             name = "retrieve_memory_details",
-                            description = "Retrieve high-resolution tactical details or specific segments for a given episodic memory ID using semantic search. Use this when the summary is too vague.",
+                            description = "Retrieve exact message history or surrounding context for a specific segment ID to get better resolution on an event.",
                             parameters = {
                                 InputSchema.Obj(
                                     properties = buildJsonObject {
-                                        put("episode_id", buildJsonObject {
+                                        put("segment_id", buildJsonObject {
                                             put("type", "integer")
-                                            put("description", "The ID of the episodic memory.")
-                                        })
-                                        put("query", buildJsonObject {
-                                            put("type", "string")
-                                            put("description", "The specific topic or question to search for within this memory's details.")
+                                            put("description", "The ID of the segment.")
                                         })
                                     },
-                                    required = listOf("episode_id", "query")
+                                    required = listOf("segment_id")
                                 )
                             },
                             execute = { params ->
-                                val id = kotlin.math.abs(params.jsonObject["episode_id"]?.jsonPrimitive?.intOrNull ?: 0)
-                                val query = params.jsonObject["query"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val id = params.jsonObject["segment_id"]?.jsonPrimitive?.intOrNull ?: 0
+                                val segment = chatSegmentDAO.getSegmentById(id) ?: return@Tool buildJsonObject { put("error", JsonPrimitive("Segment not found.")) }
 
-                                val episode = memoryRepo.getEpisodeEntitiesOfAssistant(assistant.id.toString()).find { it.id == id }
-                                val convId = episode?.conversationId ?: return@Tool buildJsonObject { put("error", JsonPrimitive("No detailed segments found.")) }
+                                val conversation = conversationRepo.getConversationById(Uuid.parse(segment.conversationId))
+                                val messages = conversation?.currentMessages ?: emptyList()
 
-                                val resultSegments = memoryRepo.retrieveRelevantSegments(
-                                    assistantId = assistant.id.toString(),
-                                    conversationId = convId,
-                                    query = query,
-                                    limit = 2,
-                                    mode = assistant.memoryRetrievalMode
-                                )
+                                val start = segment.startMessageIndex.coerceIn(messages.indices)
+                                val end = (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
 
-                                if (resultSegments.isEmpty()) {
-                                    return@Tool buildJsonObject { put("error", JsonPrimitive("No detailed segments found.")) }
-                                }
+                                val details = if (start < end) {
+                                    messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                                } else "No details found."
 
                                 buildJsonObject {
-                                    put("episode_id", JsonPrimitive(id))
-                                    put("query_used", JsonPrimitive(query))
-                                    put("segments_found", JsonPrimitive(resultSegments.size))
-                                    put("details", JsonPrimitive(resultSegments.joinToString("\n---\n") {
-                                        "Segment ID [${it.id}]: ${it.content}"
-                                    }))
+                                    put("segment_id", JsonPrimitive(id))
+                                    put("details", JsonPrimitive(details))
                                 }
                             }
                         )
@@ -546,12 +534,12 @@ class GenerationHandler(
         }
 
         if (assistant.learningMode) {
+            val promptTemplate = settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT }
             staticSystemPromptBuilder.append(
-                settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT }
-                    .applyPlaceholders(
-                        "char" to assistant.name,
-                        "locale" to Locale.getDefault().displayName
-                    )
+                promptTemplate.applyPlaceholders(
+                    "char" to assistant.name,
+                    "locale" to Locale.getDefault().displayName
+                )
             )
         }
 
@@ -587,8 +575,8 @@ class GenerationHandler(
                         - If there is no relevant information in memory, call `create_memory` to create a new record.
                         - If a relevant record already exists, call `edit_memory` to update it.
                         - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
-                        - `retrieve_memory_details` for Episodic Memories: Call this when a summary is insufficient and you need to \"deep dive\" into that specific conversation's segments."
-                        **Note:** You can only edit or delete **Core Memories** (which have an ID). Episodic Memories are read-only context.
+                        - `retrieve_memory_details`: Call this when a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID."
+                        **Note:** You can only edit or delete **Core Memories** (which have an ID). Historical segments (L1) are read-only.
 
                         **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
                         During chats, act like a personal secretary and **proactively** record user-related information, including but not limited to:
@@ -1044,6 +1032,10 @@ class GenerationHandler(
             }
             val reason = when {
                 isBoost -> context.getString(R.string.context_source_recent_episode_boost)
+                memory.type == MemoryType.SEGMENT -> {
+                    val scoreStr = String.format(Locale.ENGLISH, "%.2f", memory.score ?: 0f)
+                    context.getString(R.string.context_source_segment_match, scoreStr)
+                }
                 assistant.useRagMemoryRetrieval -> context.getString(R.string.context_source_contextually_relevant)
                 else -> context.getString(R.string.context_source_always_included)
             }
@@ -1176,8 +1168,9 @@ class GenerationHandler(
             return ""
         }
 
-        val coreMemories = memories.filter { it.type == 0 }
-        val episodicMemories = memories.filter { it.type == 1 }
+        val coreMemories = memories.filter { it.type == MemoryType.CORE }
+        val episodicMemories = memories.filter { it.type == MemoryType.EPISODIC }
+        val segmentMemories = memories.filter { it.type == MemoryType.SEGMENT }
         val boostedMemories = memories.filter { it.type == 2 }
 
         fun formatMemoryDate(timestamp: Long): String {
@@ -1189,7 +1182,7 @@ class GenerationHandler(
         }
 
         return buildString {
-            append("## Memories\n").append("These are memories that you can reference. If a memory summary is too brief and you need specific tactical details (like code blocks, exact quotes, or step-by-step logic), please call `retrieve_memory_details(episode_id, query)`.\n")
+            append("## Memories\n").append("These are memories that you can reference. If a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID, please call `retrieve_memory_details(segment_id)`.\n")
 
             if (boostedMemories.isNotEmpty()) {
                 append("### Recent Interaction Reference\n")
@@ -1206,8 +1199,16 @@ class GenerationHandler(
                 }
             }
 
+            if (segmentMemories.isNotEmpty()) {
+                append("### Historical Message Segments\n")
+                segmentMemories.forEach { memory ->
+                    val dateStr = formatMemoryDate(memory.timestamp)
+                    append("- [Segment ID: ${memory.id}, Date: $dateStr] ${memory.content}\n")
+                }
+            }
+
             if (episodicMemories.isNotEmpty()) {
-                append("### Episodic Memories\n")
+                append("### Episodic Summaries\n")
 
                 val now = java.time.LocalDate.now()
                 val yesterday = now.minusDays(1)

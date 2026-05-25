@@ -179,11 +179,6 @@ Example1: If merging IDs 1, 2, and 3:
   {"op": "update", "id": 1, "content": "Merged text..."},
   {"op": "delete", "id": 2}
 ]
-Example2: If merging IDs -1 and -2:
-[
-  {"op": "update", "id": -1, "content": "Merged text..."},
-  {"op": "delete", "id": -2}
-]
 """
 
 const val DEFAULT_KEYWORD_EXTRACTION_PROMPT = """

@@ -1576,5 +1576,6 @@
   <string name="assistant_import_page_importing">Importing...</string>
   <string name="assistant_import_page_history_group_title">Conversation history import</string>
   <string name="assistant_import_page_history_hint">Please use the template to fill in the conversation history, with a maximum support of 30 rounds of conversation.</string>
-
+  <string name="context_source_historical_segment">Historical Segment</string>
+  <string name="context_source_segment_match">Matched historical segment (Score: %s)</string>
 </resources>

@@ -1539,6 +1539,6 @@
   <string name="assistant_import_page_importing">正在导入...</string>
   <string name="assistant_import_page_history_group_title">会话历史导入</string>
   <string name="assistant_import_page_history_hint">请使用模板填写对话历史，最多支持 30 轮对话。</string>
-
-
+  <string name="context_source_segment_match">匹配历史片段 (相关度: %s)</string>
+  <string name="context_source_historical_segment">历史对话片段</string>
 </resources>

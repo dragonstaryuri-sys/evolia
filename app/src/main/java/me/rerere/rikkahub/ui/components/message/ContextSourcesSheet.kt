@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Segment
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Memory
@@ -51,19 +52,15 @@ import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.ai.ui.UsedMemory
 import me.rerere.ai.ui.UsedMode
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 private val json = Json { ignoreUnknownKeys = true }
 
-// Corner radius values matching PhysicsSwipeToDelete
 private val groupCornerRadius = 24.dp
 private val itemCornerRadius = 10.dp
 
-/**
- * Bottom sheet displaying all context sources used in a message:
- * modes, memories, and lorebook entries.
- */
 @Composable
 fun ContextSourcesSheet(
     modes: List<UsedMode> = emptyList(),
@@ -105,7 +102,6 @@ fun ContextSourcesSheet(
                 .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header - centered
             Text(
                 text = stringResource(R.string.context_sources_title),
                 style = MaterialTheme.typography.titleLarge,
@@ -116,7 +112,6 @@ fun ContextSourcesSheet(
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Modes Section
                 if (sortedModes.isNotEmpty()) {
                     item { SectionHeader(stringResource(R.string.context_sources_modes)) }
                     itemsIndexed(sortedModes) { index, mode ->
@@ -132,7 +127,6 @@ fun ContextSourcesSheet(
                     item { Spacer(Modifier.height(12.dp)) }
                 }
 
-                // Memories Section
                 if (sortedMemories.isNotEmpty()) {
                     item { SectionHeader(stringResource(R.string.context_sources_memories)) }
                     itemsIndexed(sortedMemories) { index, memory ->
@@ -148,7 +142,6 @@ fun ContextSourcesSheet(
                     item { Spacer(Modifier.height(12.dp)) }
                 }
 
-                // Lorebook Entries Section
                 if (sortedEntries.isNotEmpty()) {
                     item { SectionHeader(stringResource(R.string.context_sources_lorebook_entries)) }
                     itemsIndexed(sortedEntries) { index, entry ->
@@ -167,9 +160,6 @@ fun ContextSourcesSheet(
     }
 }
 
-/**
- * Calculates the corner shape for a grouped item based on position
- */
 private fun getGroupedShape(index: Int, total: Int): RoundedCornerShape {
     return when {
         total == 1 -> RoundedCornerShape(groupCornerRadius)
@@ -204,8 +194,6 @@ private fun ModeItem(
     onClick: () -> Unit
 ) {
     val isDarkMode = LocalDarkMode.current
-
-    // Optical roundness for the cover
     val opticalRadius = 12.dp
     val defaultRadius = 6.dp
     val coverShape = RoundedCornerShape(
@@ -227,7 +215,6 @@ private fun ModeItem(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Mode icon cover
             Box(
                 modifier = Modifier
                     .width(45.dp)
@@ -248,7 +235,6 @@ private fun ModeItem(
                 )
             }
 
-            // Mode info
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -286,20 +272,20 @@ private fun MemoryItem(
     onClick: () -> Unit
 ) {
     val isDarkMode = LocalDarkMode.current
-    val isCore = memory.memoryType == 0
+    val isCore = memory.memoryType == MemoryType.CORE
+    val isSegment = memory.memoryType == MemoryType.SEGMENT
 
-    val backgroundColor = if (isCore) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer
+    val backgroundColor = when {
+        isCore -> MaterialTheme.colorScheme.primaryContainer
+        isSegment -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.secondaryContainer
     }
-    val contentColor = if (isCore) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
+    val contentColor = when {
+        isCore -> MaterialTheme.colorScheme.onPrimaryContainer
+        isSegment -> MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.onSecondaryContainer
     }
 
-    // Optical roundness for the cover
     val opticalRadius = 12.dp
     val defaultRadius = 6.dp
     val coverShape = RoundedCornerShape(
@@ -321,7 +307,6 @@ private fun MemoryItem(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Memory type icon
             Box(
                 modifier = Modifier
                     .width(45.dp)
@@ -344,8 +329,15 @@ private fun MemoryItem(
                             tint = contentColor
                         )
                     }
+                    isSegment -> {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.Segment,
+                            contentDescription = stringResource(R.string.context_source_historical_segment),
+                            modifier = Modifier.size(24.dp),
+                            tint = contentColor
+                        )
+                    }
                     memory.memoryId < 0 -> {
-                        // Recent chat reference (non-RAG mode)
                         Icon(
                             imageVector = Icons.Rounded.History,
                             contentDescription = stringResource(R.string.context_sources_recent_chat),
@@ -354,7 +346,6 @@ private fun MemoryItem(
                         )
                     }
                     else -> {
-                        // True episodic memory (RAG mode)
                         Image(
                             painter = painterResource(R.drawable.search_activity_24),
                             contentDescription = stringResource(R.string.context_sources_episodic_memory),
@@ -365,7 +356,6 @@ private fun MemoryItem(
                 }
             }
 
-            // Memory info
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -373,6 +363,7 @@ private fun MemoryItem(
                 Text(
                     text = when {
                         isCore -> stringResource(R.string.context_sources_core_memory)
+                        isSegment -> stringResource(R.string.context_source_historical_segment)
                         memory.memoryId < 0 -> stringResource(R.string.context_sources_recent_chat)
                         else -> stringResource(R.string.context_sources_episodic_memory)
                     },
@@ -418,7 +409,6 @@ private fun LorebookEntryItem(
         }
     }
 
-    // Optical roundness for the cover
     val opticalRadius = 12.dp
     val defaultRadius = 6.dp
     val coverShape = RoundedCornerShape(
@@ -440,7 +430,6 @@ private fun LorebookEntryItem(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Book cover
             Box(
                 modifier = Modifier
                     .width(45.dp)
@@ -483,7 +472,6 @@ private fun LorebookEntryItem(
                     }
                 }
 
-                // Entry number
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -508,7 +496,6 @@ private fun LorebookEntryItem(
                 }
             }
 
-            // Entry info
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
