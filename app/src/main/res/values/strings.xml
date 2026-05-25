@@ -1471,7 +1471,7 @@
   <!-- Context Source Activation Reasons -->
   <string name="context_source_activated_by_user">Activated by user</string>
   <string name="context_source_default_enabled">Default enabled</string>
-  <string name="context_source_recent_episode_boost">Recent episode boost</string>
+  <string name="context_source_recent_episode_boost">Cross-window session memories</string>
   <string name="context_source_contextually_relevant">Contextually relevant</string>
   <string name="context_source_always_included">Always included</string>
   <string name="context_source_rag_match">RAG Match (%s)</string>

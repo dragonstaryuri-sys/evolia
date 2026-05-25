@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.animation.core.copy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -680,85 +681,53 @@ class GenerationHandler(
             val recentChatMemories = if (assistant.enableRecentChatsReference) {
                 val today = java.time.LocalDate.now()
                 val zoneId = ZoneId.systemDefault()
+                val startOfDay = today.atStartOfDay(zoneId).toInstant().toEpochMilli()
 
-                val lastConv = assistant.lastConversationId?.let { lastId ->
-                    if (lastId != conversationId?.toString()) {
-                        conversationRepo.getConversationById(lastId)
-                    } else null
+                val currentConvIdStr = conversationId?.toString()
+                val memoriesToInject = mutableListOf<AssistantMemory>()
+
+                // 核心修改：带入当天来自其他窗口的所有 L2 (Episodic) 片段
+                val todayL2Memories = memoryRepo.getEpisodesAfter(
+                    assistantId = assistant.id.toString(),
+                    startTime = startOfDay,
+                    excludeConversationId = currentConvIdStr
+                ).map { it.copy(type = 2) }
+
+                if (todayL2Memories.isNotEmpty()) {
+                    Log.i(TAG, "Injecting ${todayL2Memories.size} cross-session memories from today.")
+                    memoriesToInject.addAll(todayL2Memories)
                 }
 
-                val isFromToday = lastConv?.let {
-                    it.updateAt.atZone(zoneId).toLocalDate() == today
-                } ?: false
-
-                if (isFromToday && lastConv != null) {
-                    val currentIsVirtual = assistant.isVirtualWorldMode
-                    val memoriesToInject = mutableListOf<AssistantMemory>()
-
-                    // 1. Episode Summary: 开启新话题时，带入本模式下的今天最后一个会话的总结
-                    if (messages.size <= 4) {
-                        val lastConvOfSameMode = if (lastConv.isVirtual == currentIsVirtual) {
-                            lastConv
-                        } else {
-                            // 如果上个会话不是当前模式（刚切换模式），则查询当前模式下的最后一个会话
-                            conversationRepo.getLatestConversations(
-                                assistantId = assistant.id,
-                                limit = 1,
-                                isVirtual = currentIsVirtual
-                            ).firstOrNull()?.takeIf { it.id.toString() != conversationId?.toString() }
-                        }
-
-                        if (lastConvOfSameMode != null) {
-                            val isSameModeFromToday = lastConvOfSameMode.updateAt.atZone(zoneId).toLocalDate() == today
-                            if (isSameModeFromToday) {
-                                val episode = memoryRepo.getEpisodeByConversationId(lastConvOfSameMode.id.toString())
-                                if (episode != null) {
-                                    Log.i(TAG, "Injecting context summary for new conversation (Mode Match).")
-                                    memoriesToInject.add(
-                                        AssistantMemory(
-                                            id = 0,
-                                            content = "今天的最近一次对话内容梗概: ${episode.content}",
-                                            type = 2,
-                                            timestamp = episode.endTime
-                                        )
-                                    )
-                                }
-                            }
-                        }
+                // 2. Mode Transition: 带入另一模式的聊天记录用于衔接
+                val lastConv = assistant.lastConversationId?.let { conversationRepo.getConversationById(it) }
+                val isLastFromToday = lastConv?.updateAt?.atZone(zoneId)?.toLocalDate() == today
+                if (isLastFromToday && lastConv != null && assistant.isVirtualWorldMode != lastConv.isVirtual) {
+                    val transitionPrompt = if (assistant.isVirtualWorldMode) {
+                        VIRTUAL_TRANSITION_TO_VIRTUAL
+                    } else {
+                        VIRTUAL_TRANSITION_TO_NORMAL
                     }
 
-                    // 2. Mode Transition: 带入另一模式的聊天记录用于衔接
-                    val isLastFromToday = lastConv.updateAt.atZone(zoneId).toLocalDate() == today
-                    if (isLastFromToday && currentIsVirtual != lastConv.isVirtual) {
-                        val transitionPrompt = if (currentIsVirtual) {
-                            VIRTUAL_TRANSITION_TO_VIRTUAL
-                        } else {
-                            VIRTUAL_TRANSITION_TO_NORMAL
+                    val lastRawHistory = lastConv.currentMessages
+                        .filter { !it.skipContext }
+                        .takeLast(6)
+                        .joinToString("\n") { msg ->
+                            "${msg.role.name}: ${msg.toContentText()}"
                         }
 
-                        val lastRawHistory = lastConv.currentMessages
-                            .filter { !it.skipContext }
-                            .takeLast(6)
-                            .joinToString("\n") { msg ->
-                                "${msg.role.name}: ${msg.toContentText()}"
-                            }
-
-                        if (lastRawHistory.isNotBlank()) {
-                            Log.i(TAG, "Injecting mode transition raw messages.")
-                            memoriesToInject.add(
-                                AssistantMemory(
-                                    id = 0,
-                                    content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
-                                    type = 2,
-                                    timestamp = lastConv.updateAt.toEpochMilli()
-                                )
+                    if (lastRawHistory.isNotBlank()) {
+                        Log.i(TAG, "Injecting mode transition raw messages.")
+                        memoriesToInject.add(
+                            AssistantMemory(
+                                id = 0,
+                                content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
+                                type = 2,
+                                timestamp = lastConv.updateAt.toEpochMilli()
                             )
-                        }
+                        )
                     }
-                    memoriesToInject
-                } else {
-                    emptyList()
                 }
+                memoriesToInject
             } else {
                 emptyList()
             }

@@ -12,6 +12,9 @@ interface ChatEpisodeDAO {
     @Query("SELECT * FROM ChatEpisodeEntity WHERE assistant_id = :assistantId ORDER BY end_time DESC")
     suspend fun getEpisodesOfAssistant(assistantId: String): List<ChatEpisodeEntity>
 
+    @Query("SELECT * FROM ChatEpisodeEntity WHERE assistant_id = :assistantId AND end_time >= :startTime ORDER BY end_time DESC")
+    suspend fun getEpisodesAfter(assistantId: String, startTime: Long): List<ChatEpisodeEntity>
+
     @Query("SELECT * FROM ChatEpisodeEntity WHERE assistant_id = :assistantId ORDER BY end_time DESC")
     fun getEpisodesOfAssistantFlow(assistantId: String): Flow<List<ChatEpisodeEntity>>
 

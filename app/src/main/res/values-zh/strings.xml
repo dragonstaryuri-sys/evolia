@@ -1426,7 +1426,7 @@
   <!-- 上下文来源激活原因 -->
   <string name="context_source_activated_by_user">手动激活</string>
   <string name="context_source_default_enabled">默认启用</string>
-  <string name="context_source_recent_episode_boost">上个会话</string>
+  <string name="context_source_recent_episode_boost">跨窗口对话记忆带入</string>
   <string name="context_source_contextually_relevant">本次对话相关</string>
   <string name="context_source_always_included">始终包含</string>
   <string name="context_source_rag_match">RAG 匹配 (%s)</string>

@@ -120,7 +120,7 @@ You {{char}}. Now you need to update your previous conversation memory based on 
 2. **Information Preservation**: Absolutely DO NOT discard specific facts, key milestones, or emotional shifts recorded in the existing memory. The goal is to APPEND and REFINE, not to prune.
 3. **Narrative Continuity**: Maintain the narrative arc. If a topic from the previous memory has progressed in the new messages, update the status of that topic while keeping its history.
 4. **Detail Focus**: Focus on specific details: key events,emotion, behaviour.
-5. **Dynamic Length**: Let the length grow naturally to accommodate important information (Max 400 words), but keep it concise by removing repetitive filler and meaningless words ,don't miss out on keywords..
+5. **Dynamic Length**: Let the length grow naturally to accommodate important information (Max 300 words), but keep it concise by removing repetitive filler and meaningless words ,don't miss out on keywords..
 6. **Perspective**: Write from the perspective of {{char}} as a personal/professional journal.
 7. **Output Language**: {{locale}}
 
@@ -128,7 +128,7 @@ You {{char}}. Now you need to update your previous conversation memory based on 
 - Provide ONLY the consolidated memory text.
 - NO preamble, NO meta-talk (e.g., "Based on the messages..."), NO conversational filler.
 - START DIRECTLY with the memory text.
-- Total length MUST NOT exceed 400 words.
+- Total length MUST NOT exceed 300 words.
 - Prohibited to fabricate things that have not happened.
 
 Consolidated Memory:

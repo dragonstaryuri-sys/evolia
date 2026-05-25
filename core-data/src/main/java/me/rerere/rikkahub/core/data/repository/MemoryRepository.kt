@@ -173,8 +173,33 @@ class MemoryRepository(
         return chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
     }
 
+    suspend fun getEpisodesAfter(assistantId: String, startTime: Long, excludeConversationId: String? = null): List<AssistantMemory> {
+        return chatEpisodeDAO.getEpisodesAfter(assistantId, startTime)
+            .filter { it.conversationId != excludeConversationId }
+            .map {
+                 AssistantMemory(-it.id, it.content, it.keywords, MemoryType.EPISODIC, it.embedding != null, it.embeddingModelId, it.startTime, it.significance)
+            }
+    }
+
     suspend fun getEpisodeByConversationId(conversationId: String): ChatEpisodeEntity? {
         return chatEpisodeDAO.getEpisodeByConversationId(conversationId)
+    }
+
+    suspend fun getMemoriesByTypeAndTime(assistantId: String, type: Int, startTime: Long): List<AssistantMemory> {
+        return when (type) {
+            MemoryType.EPISODIC -> getEpisodesAfter(assistantId, startTime)
+            MemoryType.CORE -> {
+                memoryDAO.getMemoriesOfAssistant(assistantId)
+                    .filter { it.type == MemoryType.CORE && it.createdAt >= startTime }
+                    .map { AssistantMemory(it.id, it.content, it.keywords, it.type, it.embedding != null, it.embeddingModelId, it.createdAt) }
+            }
+            MemoryType.SEGMENT -> {
+                chatSegmentDAO.getSegmentsByAssistant(assistantId)
+                    .filter { it.timestamp >= startTime }
+                    .map { AssistantMemory(it.id, it.content, it.keywords, MemoryType.SEGMENT, it.embedding != null, null, it.timestamp) }
+            }
+            else -> emptyList()
+        }
     }
 
     suspend fun getFullMemoryContent(id: Int, type: Int): String? {
