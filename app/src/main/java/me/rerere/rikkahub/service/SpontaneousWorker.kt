@@ -232,11 +232,14 @@ class SpontaneousWorker(
     private fun sendNotification(title: String, content: String, conversationId: kotlin.uuid.Uuid) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         val channelId = "assistant_spontaneous"
+        val channelName = applicationContext.getString(R.string.notification_channel_assistant_updates)
         val channel = android.app.NotificationChannel(
             channelId,
-            "Assistant Updates",
-            android.app.NotificationManager.IMPORTANCE_DEFAULT
-        )
+            channelName,
+            android.app.NotificationManager.IMPORTANCE_HIGH // 开启悬浮通知
+        ).apply {
+            enableVibration(true) // 开启震动
+        }
         notificationManager.createNotificationChannel(channel)
 
         val intent = android.content.Intent(applicationContext, me.rerere.rikkahub.RouteActivity::class.java).apply {
@@ -255,9 +258,10 @@ class SpontaneousWorker(
             .setContentTitle(title)
             .setContentText(content)
             .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(content))
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH) // 对应悬浮通知
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
             .build()
 
         if (androidx.core.app.ActivityCompat.checkSelfPermission(

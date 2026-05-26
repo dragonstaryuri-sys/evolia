@@ -237,9 +237,10 @@ class EvoliaApp : Application() {
         val backupChannel = NotificationChannelCompat
             .Builder(
                 BACKUP_NOTIFICATION_CHANNEL_ID,
-                NotificationManagerCompat.IMPORTANCE_LOW
+                NotificationManagerCompat.IMPORTANCE_HIGH // 提升为高优先级以支持悬浮通知
             )
             .setName(getString(R.string.notification_channel_backup))
+            .setVibrationEnabled(true) // 开启震动
             .build()
         notificationManager.createNotificationChannel(backupChannel)
     }

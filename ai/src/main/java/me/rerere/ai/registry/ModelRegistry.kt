@@ -32,7 +32,8 @@ object ModelRegistry {
     val GEMINI_LATEST = GEMINI_FLASH_LATEST + GEMINI_PRO_LATEST
     val GEMINI_3_SERIES = GEMINI_3_PRO + GEMINI_3_FLASH
     val GEMINI_SERIES = GEMINI_20_FLASH + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST
-
+    private val OMNI_SUFFIX = ModelMatcher.containsRegex("omni")
+    private val THINKING_SUFFIX = ModelMatcher.containsRegex("thinking")
     private val CLAUDE_SONNET_3_5 = ModelMatcher.containsRegex("claude-3.5-sonnet")
     private val CLAUDE_SONNET_3_7 = ModelMatcher.containsRegex("claude-3.7-sonnet")
     private val CLAUDE_4 = ModelMatcher.containsRegex("claude.*-4")
@@ -65,7 +66,7 @@ object ModelRegistry {
 
     val VISION_MODELS =
         GPT4O + GPT_4_1 + GPT_5 + GPT_5_MULTI + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 +
-            GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + DOUBAO_SEED + VISION_SUFFIX
+            GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + DOUBAO_SEED + VISION_SUFFIX + OMNI_SUFFIX
     val TOOL_MODELS =
         GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + GPT_5_MULTI + OPENAI_O_MODELS + O3_MINI + GEMINI_SERIES +
             CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 +
@@ -75,7 +76,8 @@ object ModelRegistry {
         GPT_OSS + GPT_5 + GPT_5_MULTI + OPENAI_O_MODELS + O3_MINI + GEMINI_2_5_FLASH + GEMINI_2_5_PRO +
             GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 +
             GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 +
-            DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED
+            DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED +
+            THINKING_SUFFIX
     val CHAT_IMAGE_GEN_MODELS = GEMINI_2_5_IMAGE
 
     val MODEL_INPUT_MODALITIES = ModelData { modelId ->

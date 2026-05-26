@@ -134,7 +134,12 @@ class AgentTaskWorker(
     private fun sendNotification(title: String, content: String) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "agent_task_notification"
-        val channel = NotificationChannel(channelId, "Agent Tasks", NotificationManager.IMPORTANCE_DEFAULT)
+        // 使用 strings.xml 中的资源名
+        val channel = NotificationChannel(
+            channelId,
+            applicationContext.getString(R.string.notification_channel_agent_task),
+            NotificationManager.IMPORTANCE_DEFAULT
+        )
         notificationManager.createNotificationChannel(channel)
 
         val intent = Intent(applicationContext, RouteActivity::class.java).apply {
