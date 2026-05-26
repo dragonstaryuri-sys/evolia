@@ -30,8 +30,11 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.uuid.Uuid
 import android.Manifest
+import android.app.PendingIntent
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
+import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
@@ -163,7 +166,7 @@ class DiaryWorker(
                     createdAt = System.currentTimeMillis()
                 )
                 diaryRepo.insertDiary(diary)
-                showSuccessNotification(assistant.name)
+                showSuccessNotification(assistant.name, assistant.id.toString())
             }
             Result.success()
         } catch (e: Exception) {
@@ -175,22 +178,41 @@ class DiaryWorker(
     private fun formatTimestamp(ts: Long): String =
         LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()).format(timeFormatter)
 
-    private fun showSimpleNotification(text: String) {
+    private fun showSimpleNotification(text: String, assistantId: String? = null) {
         val notificationManager = NotificationManagerCompat.from(applicationContext)
         if (ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+
+        val intent = Intent(applicationContext, RouteActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (assistantId != null) {
+                putExtra("target_screen", "diary")
+                putExtra("assistantId", assistantId)
+            }
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            System.currentTimeMillis().toInt(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val notification = NotificationCompat.Builder(applicationContext, BACKUP_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(applicationContext.getString(R.string.discover_page_diary_title))
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
             .build()
         try {
             notificationManager.notify(System.currentTimeMillis().toInt(), notification)
         } catch (e: Exception) {}
     }
 
-    private fun showSuccessNotification(name: String) {
-        showSimpleNotification(applicationContext.getString(R.string.diary_assistant_title_format, name) + ": " + applicationContext.getString(R.string.discover_page_diary_generate_success))
+    private fun showSuccessNotification(name: String, assistantId: String) {
+        showSimpleNotification(
+            applicationContext.getString(R.string.diary_assistant_title_format, name) + ": " + applicationContext.getString(R.string.discover_page_diary_generate_success),
+            assistantId
+        )
     }
 }

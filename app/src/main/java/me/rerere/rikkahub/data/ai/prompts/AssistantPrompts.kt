@@ -135,14 +135,14 @@ Consolidated Memory:
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
-You are {{char}}.Please record a memory for yourself based on your conversation with the user for future RAG retrieval.
+You are {{char}}.Please record a memory for yourself(record in the first person) based on your conversation with the user for future RAG retrieval.
 
 **Output Format**:
-[Background]: {A single sentence capturing the core theme, entities, and user intent}
+[Background]: {Focus on specific details: key events,emotion, behaviour.(Max 100 words)}
 [Keywords]: {3-5 specific keywords separated by commas}
 
 **Example**:
-[Background]: User is discussing their cat Luna's preference for blue canned food and asking me for feeding advice.
+[Background]: {users' name/nickname} is discussing their cat Luna's preference for blue canned food and asking me for feeding advice.
 [Keywords]: Luna, cat, dietary habits, blue canned food
 
 **Mandatory Requirements**:

@@ -422,7 +422,7 @@ class MemoryRepository(
         includeCore: Boolean = true,
         includeEpisodes: Boolean = true,
         mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID,
-        excludeConversationId: kotlin . text . String? = null
+        excludeConversationId: String? = null
     ): List<Pair<AssistantMemory, Float>> {
         if (mode == MemoryRetrievalMode.OFF || query.trim().isBlank()) return emptyList()
         Log.d(TAG, "RAG Retrieval started: query='$query', threshold=$similarityThreshold, includeEpisodes=$includeEpisodes")

@@ -136,19 +136,7 @@ class RouteActivity : AppCompatActivity() {
         agentTaskScheduler.setupHeartbeatAlarm()
         agentTaskScheduler.checkAndRescheduleOverdueTasks()
 
-        val intentAssistantId = intent?.getStringExtra("assistantId")
-        val intentConversationId = intent?.getStringExtra("conversationId")
-
-        val continueConversation = intent?.getBooleanExtra("continue_conversation", false) ?: false
-        if (continueConversation) {
-            pendingTextSelection = TextSelectionData(
-                navigateTo = intent?.getStringExtra("navigate_to"),
-                selectedText = intent?.getStringExtra("selected_text"),
-                aiResponse = intent?.getStringExtra("ai_response"),
-                userPrompt = intent?.getStringExtra("user_prompt"),
-                selectionAssistantId = intent?.getStringExtra("selection_assistant_id")
-            )
-        }
+        handleIntent(intent)
 
         setContent {
             val navStack = rememberNavController()
@@ -180,6 +168,27 @@ class RouteActivity : AppCompatActivity() {
                 AppRoutes(navStack)
             }
         }
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val targetScreen = intent?.getStringExtra("target_screen")
+        val intentAssistantId = intent?.getStringExtra("assistantId")
+        val intentConversationId = intent?.getStringExtra("conversationId")
+
+        val continueConversation = intent?.getBooleanExtra("continue_conversation", false) ?: false
+        if (continueConversation) {
+            pendingTextSelection = TextSelectionData(
+                navigateTo = intent?.getStringExtra("navigate_to"),
+                selectedText = intent?.getStringExtra("selected_text"),
+                aiResponse = intent?.getStringExtra("ai_response"),
+                userPrompt = intent?.getStringExtra("user_prompt"),
+                selectionAssistantId = intent?.getStringExtra("selection_assistant_id")
+            )
+        }
+
+        if (intentConversationId != null) {
+            pendingConversationId = intentConversationId
+        }
 
         if (intentAssistantId != null) {
             lifecycleScope.launch {
@@ -190,18 +199,20 @@ class RouteActivity : AppCompatActivity() {
                     val assistantId = Uuid.parse(intentAssistantId)
                     settingsStore.updateAssistant(assistantId)
                     settingsStore.markAssistantUsed(assistantId)
-                    // 修改点：先重置到首页，确保返回时回到列表
-                    navStack?.navigate(Screen.Home) {
-                        popUpTo(0) { inclusive = true }
+
+                    if (targetScreen == "diary") {
+                        navStack?.navigate(Screen.DiaryList(assistantId.toString()))
+                    } else {
+                        // 默认逻辑：先重置到首页，确保返回时回到列表
+                        navStack?.navigate(Screen.Home) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                        navStack?.navigate(Screen.Chat(Uuid.random().toString()))
                     }
-                    navStack?.navigate(Screen.Chat(Uuid.random().toString()))
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
-        }
-        if (intentConversationId != null) {
-            pendingConversationId = intentConversationId
         }
     }
 
@@ -215,26 +226,7 @@ class RouteActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         // 处理 singleTop 模式下的新意图进入，优先清理通知
         cancelAllNotifications()
-
-        intent.getStringExtra("conversationId")?.let { text ->
-            navStack?.navigate(Screen.Chat(text))
-        }
-        intent.getStringExtra("assistantId")?.let { assistantIdStr ->
-            lifecycleScope.launch {
-                try {
-                    val assistantId = Uuid.parse(assistantIdStr)
-                    settingsStore.updateAssistant(assistantId)
-                    settingsStore.markAssistantUsed(assistantId)
-                    // 修改点：先重置到首页，确保返回时回到列表
-                    navStack?.navigate(Screen.Home) {
-                        popUpTo(0) { inclusive = true }
-                    }
-                    navStack?.navigate(Screen.Chat(Uuid.random().toString()))
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
+        handleIntent(intent)
     }
 
     private fun cancelAllNotifications() {
