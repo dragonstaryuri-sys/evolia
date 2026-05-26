@@ -492,7 +492,10 @@ class ChatService(
                 }
                 val locale = Locale.getDefault().displayName
 
-                val prompt = DEFAULT_FULL_SUMMARY_PROMPT.replace("{{previous_summary}}", baseSummary?.removePrefix("虚拟世界：") ?: "None")
+                val prompt = DEFAULT_FULL_SUMMARY_PROMPT.replace(
+                    "{{previous_summary}}",
+                    baseSummary?.removePrefix("虚拟世界：") ?: "None"
+                )
                     .replace("{{new_messages}}", messagesText).replace("{{locale}}", locale)
                     .replace("{{char}}", assistant.name)
 
@@ -792,12 +795,13 @@ class ChatService(
 
                             add(
                                 Tool(
-                                name = sanitizedName,
-                                description = mcpTool.description ?: "",
-                                parameters = { mcpTool.inputSchema },
-                                execute = {
-                                    mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
-                                }))
+                                    name = sanitizedName,
+                                    description = mcpTool.description ?: "",
+                                    parameters = { mcpTool.inputSchema },
+                                    execute = {
+                                        mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
+                                    })
+                            )
                         }
                     }
                 },
@@ -848,37 +852,37 @@ class ChatService(
                 Logging.log(TAG, "handleMessageComplete: $friendlyError")
             }
         }.onSuccess {
-                val finalConv = getConversationFlow(conversationId).value
-                saveConversation(conversationId, finalConv)
+            val finalConv = getConversationFlow(conversationId).value
+            saveConversation(conversationId, finalConv)
 
-                val lastAssistantMsg = finalConv.currentMessages.lastOrNull() ?: return@onSuccess
-                lastAssistantMsg.usage?.let { usage ->
-                    appScope.launch {
-                        conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage)
-                    }
-                }
-
+            val lastAssistantMsg = finalConv.currentMessages.lastOrNull() ?: return@onSuccess
+            lastAssistantMsg.usage?.let { usage ->
                 appScope.launch {
-                    val currentSettings = settingsStore.settingsFlow.value
-                    val updatedAssistants = currentSettings.assistants.map {
-                        if (it.id == finalConv.assistantId) {
-                            it.copy(lastConversationId = conversationId.toString())
-                        } else it
-                    }
-                    settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+                    conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage)
                 }
-                addConversationReference(conversationId)
-                appScope.launch {
-                    coroutineScope {
-                        launch {
-                            conversationRepo.getConversationById(conversationId)
-                                ?.let { generateTitle(conversationId, it) }
-                        }
-                        launch { generateSuggestion(conversationId, finalConv) }
-                        launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
-                    }
-                }.invokeOnCompletion { removeConversationReference(conversationId) }
             }
+
+            appScope.launch {
+                val currentSettings = settingsStore.settingsFlow.value
+                val updatedAssistants = currentSettings.assistants.map {
+                    if (it.id == finalConv.assistantId) {
+                        it.copy(lastConversationId = conversationId.toString())
+                    } else it
+                }
+                settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+            }
+            addConversationReference(conversationId)
+            appScope.launch {
+                coroutineScope {
+                    launch {
+                        conversationRepo.getConversationById(conversationId)
+                            ?.let { generateTitle(conversationId, it) }
+                    }
+                    launch { generateSuggestion(conversationId, finalConv) }
+                    launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
+                }
+            }.invokeOnCompletion { removeConversationReference(conversationId) }
+        }
     }
 
     private fun translateError(e: Throwable): Throwable {
@@ -886,17 +890,24 @@ class ChatService(
         return when {
             // 匹配 JSON 解析 HTML 的特征 (Unexpected JSON token at offset ... had < instead)
             message.contains("Unexpected JSON token") && message.contains("< instead") -> {
-                IllegalStateException("请求地址有误或 API 服务异常（收到了 HTML 错误页），请检查提供商设置页面的 API 配置是否正确。", e)
+                IllegalStateException(
+                    "请求地址有误或 API 服务异常（收到了 HTML 错误页），请检查提供商设置页面的 API 配置是否正确。",
+                    e
+                )
             }
+
             message.contains("400 Bad Request", ignoreCase = true) -> {
                 IllegalStateException("请求参数错误 (400)，请确认 API Key 是否有效或模型名称是否正确。", e)
             }
+
             message.contains("401 Unauthorized", ignoreCase = true) -> {
                 IllegalStateException("认证失败 (401)，请在提供商设置页面检查 API Key。", e)
             }
+
             message.contains("404 Not Found", ignoreCase = true) -> {
                 IllegalStateException("服务地址未找到 (404)，请检查 API 基础地址是否正确。", e)
             }
+
             else -> e
         }
     }
@@ -1045,8 +1056,8 @@ class ChatService(
                 val localKeywords = KeywordExtractor.extract(finalBackground)
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
 
-                val embedding = try {
-                    embeddingService.embed(fullContextualContent, assistant.id.toString())
+                val embeddingResult = try {
+                    embeddingService.embedWithModelId(fullContextualContent, assistant.id.toString())
                 } catch (e: Exception) {
                     null
                 }
@@ -1058,7 +1069,9 @@ class ChatService(
                     keywords = keywords,
                     startMessageIndex = startIdx,
                     endMessageIndex = lastIdx,
-                    embedding = embedding?.let { JsonInstant.encodeToString(it) })
+                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                    embeddingModelId = embeddingResult?.modelId
+                )
                 memoryRepository.saveSegment(segment)
             }
 
