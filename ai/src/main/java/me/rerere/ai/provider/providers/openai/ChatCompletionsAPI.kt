@@ -211,6 +211,9 @@ class ChatCompletionsAPI(
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
+                if (t is java.io.IOException && t.message == "canceled") {
+                    return
+                }
                 var exception = t
 
                 t?.printStackTrace()
@@ -395,9 +398,63 @@ class ChatCompletionsAPI(
     }
 
     private fun buildMessages(messages: List<UIMessage>, host: String) = buildJsonArray {
-        messages
-            .filter { it.isValidToUpload() }
-            .forEach { message ->
+        val rawMessages = messages.filter { it.isValidToUpload() }
+        val filteredMessages = mutableListOf<UIMessage>()
+        var i = 0
+        while (i < rawMessages.size) {
+            val message = rawMessages[i]
+
+            when (message.role) {
+                MessageRole.TOOL -> {
+                    // 1. 拦截掉没有合法前置 assistant 的孤立 Tool 消息
+                    Log.w(TAG, "拦截到孤立的 TOOL 消息 (Index: $i)，已丢弃")
+                    i++
+                }
+                MessageRole.ASSISTANT -> {
+                    val toolCalls = message.getToolCalls()
+                    if (toolCalls.isNotEmpty()) {
+                        // 2. 这是一个带工具调用的助手消息，我们需要看后面有没有配套的 Tool 结果
+                        val toolResults = mutableListOf<UIMessage>()
+                        var j = i + 1
+                        while (j < rawMessages.size && rawMessages[j].role == MessageRole.TOOL) {
+                            toolResults.add(rawMessages[j])
+                            j++
+                        }
+
+                        // 检查是否所有的 tool_call_id 都有对应结果
+                        val calledIds = toolCalls.map { it.toolCallId }.toSet()
+                        val resultIds = toolResults.flatMap { m -> m.getToolResults().map { it.toolCallId } }.toSet()
+
+                        if (calledIds.isNotEmpty() && calledIds.all { resultIds.contains(it) }) {
+                            // 完整匹配：全部添加
+                            filteredMessages.add(message)
+                            filteredMessages.addAll(toolResults)
+                            i = j // 跳过已处理的 tool 消息
+                        } else {
+                            // 不匹配（可能被截断了）：
+                            // 为了防止 DeepSeek 报错，我们必须移除这个 assistant 消息中的工具调用属性
+                            Log.w(TAG, "检测到工具调用序列不完整 (可能被截断)，正在清洗 Assistant 消息以防止报错")
+                            val cleanedParts = message.parts.filter { it !is UIMessagePart.ToolCall }
+                            // 如果移除工具调用后还有文本内容，则保留这条消息，否则丢弃
+                            if (cleanedParts.any { it is UIMessagePart.Text && it.text.isNotBlank() }) {
+                                filteredMessages.add(message.copy(parts = cleanedParts))
+                            }
+                            i = j // 跳过那些无意义的 tool 消息
+                        }
+                    } else {
+                        // 普通助手消息
+                        filteredMessages.add(message)
+                        i++
+                    }
+                }
+                else -> {
+                    // User, System 等消息直接添加
+                    filteredMessages.add(message)
+                    i++
+                }
+            }
+        }
+        filteredMessages.forEach { message ->
                 if (message.role == MessageRole.TOOL) {
                     message.getToolResults().forEach { result ->
                         add(buildJsonObject {
