@@ -421,7 +421,8 @@ class MemoryRepository(
         similarityThreshold: Float = 0.5f,
         includeCore: Boolean = true,
         includeEpisodes: Boolean = true,
-        mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID
+        mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID,
+        excludeConversationId: kotlin . text . String? = null
     ): List<Pair<AssistantMemory, Float>> {
         if (mode == MemoryRetrievalMode.OFF || query.trim().isBlank()) return emptyList()
         Log.d(TAG, "RAG Retrieval started: query='$query', threshold=$similarityThreshold, includeEpisodes=$includeEpisodes")
@@ -434,7 +435,10 @@ class MemoryRepository(
         } else null
 
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
-        val segments = if (includeEpisodes) chatSegmentDAO.getSegmentsByAssistant(assistantId) else emptyList()
+        val segments = if (includeEpisodes) {
+            chatSegmentDAO.getSegmentsByAssistant(assistantId)
+                .filter { it.conversationId != excludeConversationId }
+        } else emptyList()
 
         Log.d(TAG, "DB Candidates: CORE=${memories.size}, SEGMENTS=${segments.size}")
 

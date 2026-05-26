@@ -716,7 +716,8 @@ class ChatService(
                                     similarityThreshold = assistant.ragSimilarityThreshold,
                                     includeCore = assistant.ragIncludeCore,
                                     includeEpisodes = assistant.ragIncludeEpisodes,
-                                    mode = assistant.memoryRetrievalMode
+                                    mode = assistant.memoryRetrievalMode,
+                                    excludeConversationId = conversationId.toString()
                                 )
                                 val memories = results.map { it.first }
                                 if (settings.enableRagLogging) {

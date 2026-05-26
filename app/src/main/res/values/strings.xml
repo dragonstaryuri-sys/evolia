@@ -1051,7 +1051,7 @@
 
   <!-- Assistant Context Management Page -->
   <string name="assistant_context_refresh_title">Context Refresh / Summarization</string>
-  <string name="assistant_context_refresh_desc">Bring in the existing summary during the conversation to enhance the coherence of the conversation</string>
+  <string name="assistant_context_refresh_desc">Incorporate existing summaries into conversations to enhance coherence; if there is no limit on the number of session history entries to include, this function does not need to be enabled.</string>
   <string name="assistant_context_auto_summarize_desc">Automatically summarize when history limit is reached</string>
   <string name="assistant_context_history_limit_title">History limit</string>
   <string name="assistant_context_history_limit_value">%d messages</string>
