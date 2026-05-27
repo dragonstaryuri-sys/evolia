@@ -165,7 +165,7 @@ class MemoryRepository(
                 AssistantMemory(
                     -it.id, it.content, it.keywords, MemoryType.EPISODIC,
                     !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
-                    it.embeddingModelId, it.startTime, it.significance
+                    it.embeddingModelId, it.endTime, it.significance
                 )
             }
             coreMemories + episodicMemories
@@ -215,11 +215,11 @@ class MemoryRepository(
         return chatEpisodeDAO.getEpisodesAfter(assistantId, startTime)
             .filter { it.conversationId != excludeConversationId }
             .map {
-                 AssistantMemory(
-                     -it.id, it.content, it.keywords, MemoryType.EPISODIC,
-                     !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
-                     it.embeddingModelId, it.startTime, it.significance
-                 )
+                AssistantMemory(
+                    -it.id, it.content, it.keywords, MemoryType.EPISODIC,
+                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embeddingModelId, it.endTime, it.significance
+                )
             }
     }
 
@@ -346,7 +346,7 @@ class MemoryRepository(
         val newEpisode = episode.copy(content = content, keywords = keywords, embedding = null)
         saveEpisode(newEpisode)
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.EPISODIC)
-        return AssistantMemory(-newEpisode.id, newEpisode.content, newEpisode.keywords, MemoryType.EPISODIC, false, null, newEpisode.startTime, newEpisode.significance)
+        return AssistantMemory(-newEpisode.id, newEpisode.content, newEpisode.keywords, MemoryType.EPISODIC, false, null, newEpisode.endTime, newEpisode.significance)
     }
 
     suspend fun updateSegmentContent(id: Int, content: String): AssistantMemory {
@@ -362,7 +362,7 @@ class MemoryRepository(
         val finalKeywords = keywords ?: KeywordExtractor.extract(content)
 
         val embeddingResult = if (type == MemoryType.CORE) {
-             try {
+            try {
                 embeddingService.embedWithModelId(content, assistantId)
             } catch (e: Exception) {
                 e.printStackTrace()

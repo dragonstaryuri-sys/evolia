@@ -5,20 +5,9 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
 # Uncomment this to preserve the line number information for
 # debugging stack traces.
--keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+-keepattributes SourceFile,LineNumberTable,Signature,InnerClasses,EnclosingMethod,Annotation
 
 # keep kotlinx serializable classes
 -keep @kotlinx.serialization.Serializable class * {*;}
@@ -26,8 +15,7 @@
 # keep jlatexmath
 -keep class org.scilab.forge.jlatexmath.** {*;}
 
-# JavaMail / Jakarta Mail rules to prevent connection failures in Release builds
-# These ensure that protocol providers (like imaps) can be loaded via reflection
+# JavaMail / Jakarta Mail rules
 -keep class javax.mail.** {*;}
 -keep class com.sun.mail.** {*;}
 -keep class jakarta.mail.** {*;}
@@ -35,20 +23,57 @@
 -dontwarn com.sun.mail.**
 -dontwarn jakarta.mail.**
 
-# Keep generic signatures for reflection (often needed by mail libraries)
--keepattributes Signature,InnerClasses,EnclosingMethod
-
 -dontobfuscate
 
-# Fix R8 missing classes for Apache POI and other libraries
--dontwarn java.awt.**
+# Apache POI 5.2.5 and its dependencies
+-keep class org.apache.poi.** { *; }
+-keep class org.apache.xmlbeans.** { *; }
+-keep class org.openxmlformats.schemas.** { *; }
+-keep class com.microsoft.schemas.** { *; }
+-keep class org.apache.commons.collections4.properties.SortedProperties { *; }
+
+-dontwarn org.apache.poi.**
+-dontwarn org.apache.xmlbeans.**
 -dontwarn javax.xml.stream.**
+-dontwarn com.microsoft.schemas.**
+-dontwarn org.openxmlformats.schemas.**
+-dontwarn java.awt.**
 -dontwarn net.sf.saxon.**
 -dontwarn org.apache.batik.**
 -dontwarn org.osgi.framework.**
 -dontwarn aQute.bnd.annotation.**
+
+# Apache Commons Compress (Used by POI for ZIP/OOXML)
+# Fixes NoSuchMethodException for ZipExtraField implementations
+-keep class org.apache.commons.compress.archivers.zip.** { *; }
+-keepclassmembers class * implements org.apache.commons.compress.archivers.zip.ZipExtraField {
+    public <init>();
+}
+-dontwarn org.apache.commons.compress.**
+
+# Log4j 2 (Crucial for POI 5.x)
+# The InstantiationException on DefaultFlowMessageFactory is a known issue with R8
+-keep class org.apache.logging.log4j.** { *; }
+-keep interface org.apache.logging.log4j.** { *; }
+-keepclassmembers class org.apache.logging.log4j.** { *; }
 -dontwarn org.apache.logging.log4j.**
--dontwarn com.microsoft.schemas.office.drawing.x2008.diagram.**
+
+# Explicitly keep constructors for Log4j factories loaded via reflection
+-keepclassmembers class * implements org.apache.logging.log4j.message.MessageFactory {
+    public <init>();
+}
+-keepclassmembers class * implements org.apache.logging.log4j.message.FlowMessageFactory {
+    public <init>();
+}
+-keepclassmembers class org.apache.logging.log4j.message.DefaultFlowMessageFactory {
+    public <init>();
+}
+-keepclassmembers class org.apache.logging.log4j.message.ParameterizedMessageFactory {
+    public <init>();
+}
+-keepclassmembers class org.apache.logging.log4j.message.ReusableMessageFactory {
+    public <init>();
+}
 
 # Bugly 混淆规则
 -keep class com.tencent.bugly.** { *; }

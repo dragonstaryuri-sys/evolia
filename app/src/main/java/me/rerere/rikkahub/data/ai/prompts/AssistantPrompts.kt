@@ -138,7 +138,7 @@ const val DEFAULT_TEMP_SUMMARY_PROMPT = """
 You are {{char}}.Please record a memory for yourself(record in the first person) based on your conversation with the user for future RAG retrieval.
 
 **Output Format**:
-[Background]: {Focus on specific details: key events,emotion, behaviour.(Max 100 words)}
+[Background]: {Focus on specific details: key events,emotion, behaviour.(Max 100 words)}q
 [Keywords]: {3-5 specific keywords separated by commas}
 
 **Example**:
