@@ -2,6 +2,7 @@ package me.rerere.rikkahub.di
 
 import me.rerere.rikkahub.ui.activity.TextSelectionVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
+import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
@@ -9,6 +10,7 @@ import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.developer.DeveloperVM
 import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
+import me.rerere.rikkahub.ui.pages.setting.PermissionVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
 import me.rerere.rikkahub.ui.pages.discover.DiaryVM
@@ -78,6 +80,7 @@ val viewModelModule = module {
     viewModelOf(::DiaryVM)
     viewModelOf(::ScheduleViewModel)
     viewModelOf(::TokenReportVM)
+    viewModelOf(::PermissionVM)
     viewModel {
         BookViewModel(
             bookRepository = get(),

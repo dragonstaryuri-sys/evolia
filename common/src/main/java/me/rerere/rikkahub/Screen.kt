@@ -69,6 +69,9 @@ sealed interface Screen {
     data object SettingMcp : Screen
 
     @Serializable
+    data object SettingPermissionCheck : Screen
+
+    @Serializable
     data object SettingRpOptimizations : Screen
 
     @Serializable

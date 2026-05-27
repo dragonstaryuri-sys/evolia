@@ -1580,4 +1580,22 @@
   <string name="context_source_segment_match">Matched historical segment (Score: %s)</string>
   <string name="notification_channel_agent_task">Agent Task</string>
   <string name="notification_channel_assistant_updates">New message notification</string>
+  <string name="setting_page_permission_check">Permission Check</string>
+  <string name="setting_page_permission_check_desc">View and manage the permission status of the application</string>
+  <string name="permission_check_title">Permission Check</string>
+  <string name="permission_check_battery_optimization">Battery Optimization Exemption</string>
+  <string name="permission_check_battery_optimization_desc">Allow the app to run in the background and prevent it from being terminated by the system unexpectedly</string>
+  <string name="permission_check_location">Location Permission</string>
+  <string name="permission_check_location_desc">Used to obtain geographic location information (e.g. {{location}} variable)</string>
+  <string name="permission_check_camera">Camera Permission</string>
+  <string name="permission_check_camera_desc">Used for photo recognition and QR code scanning</string>
+  <string name="permission_check_floating_window">Floating Window Permission</string>
+  <string name="permission_check_floating_window_desc">Used to enable global floating window tools (e.g. shortcut ball)</string>
+  <string name="permission_check_notification">Notification Permission</string>
+  <string name="permission_check_notification_desc">Used to display background running status and message alerts</string>
+  <string name="permission_check_btn_check">Check Permission Status</string>
+  <string name="permission_check_auto_start">Auto-start</string>
+  <string name="permission_check_auto_start_desc">Allow apps to launch automatically to ensure reliable operation of background tasks. Note: The system cannot automatically detect the status of this switch due to restrictions. Please tap to go to Settings and confirm it is enabled.</string>
+
+
 </resources>

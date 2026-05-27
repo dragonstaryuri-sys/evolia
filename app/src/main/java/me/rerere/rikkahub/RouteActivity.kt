@@ -87,6 +87,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingEmailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUserProfilePage
+import me.rerere.rikkahub.ui.pages.setting.SettingPermissionCheckPage
 import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
@@ -428,6 +429,7 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingSearch> { SettingSearchPage() }
                     composable<Screen.SettingTTS> { SettingTTSPage() }
                     composable<Screen.SettingMcp> { SettingMcpPage() }
+                    composable<Screen.SettingPermissionCheck> { SettingPermissionCheckPage() }
                     composable<Screen.SettingRpOptimizations> { SettingRpOptimizationsPage() }
                     composable<Screen.SettingPromptInjections> { SettingPromptInjectionsPage() }
                     composable<Screen.SettingModes> { backStackEntry ->

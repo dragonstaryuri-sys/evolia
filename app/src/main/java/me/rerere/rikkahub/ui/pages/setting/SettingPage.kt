@@ -289,6 +289,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         onClick = { navController.navigate(Screen.SettingMcp) }
                     )
 
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_permission_check),
+                        subtitle = stringResource(R.string.setting_page_permission_check_desc),
+                        icon = { Icon(Icons.Rounded.VerifiedUser, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingPermissionCheck) }
+                    )
+
                     if (BuildConfig.DEBUG) {
                         SettingGroupItem(
                             title = stringResource(R.string.setting_android_integration),

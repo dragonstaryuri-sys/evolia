@@ -1543,4 +1543,20 @@
   <string name="context_source_historical_segment">历史对话片段</string>
   <string name="notification_channel_agent_task">AI 任务</string>
   <string name="notification_channel_assistant_updates">新消息提醒</string>
+  <string name="setting_page_permission_check">权限检测</string>
+  <string name="setting_page_permission_check_desc">查看并管理应用涉及的权限状态</string>
+  <string name="permission_check_title">权限检测</string>
+  <string name="permission_check_battery_optimization">电池优化豁免</string>
+  <string name="permission_check_battery_optimization_desc">允许应用在后台运行，避免被系统误杀</string>
+  <string name="permission_check_location">位置权限</string>
+  <string name="permission_check_location_desc">用于获取地理位置信息（如 {{location}} 变量）</string>
+  <string name="permission_check_camera">相机权限</string>
+  <string name="permission_check_camera_desc">用于拍照识别和扫码</string>
+  <string name="permission_check_floating_window">悬浮窗权限</string>
+  <string name="permission_check_floating_window_desc">用于开启全局浮窗工具（如快捷球）</string>
+  <string name="permission_check_notification">通知权限</string>
+  <string name="permission_check_notification_desc">用于显示后台运行状态和消息提醒</string>
+  <string name="permission_check_btn_check">检查权限状态</string>
+  <string name="permission_check_auto_start">自启动权限</string>
+  <string name="permission_check_auto_start_desc">允许应用自启动以确保后台任务可靠运行。注意：系统限制无法自动检测此开关状态，请点击前往设置确认已开启。</string>
 </resources>
