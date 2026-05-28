@@ -9,6 +9,7 @@ import me.rerere.highlight.Highlighter
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.data.ai.AILoggingManager
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
@@ -45,7 +46,8 @@ val appModule = module {
             settingsStore = get(),
             secretKeyManager = get(),
             agentTaskRepository = get(),
-            agentTaskScheduler = get()
+            agentTaskScheduler = get(),
+            extendedStateRepo = get()
         )
     }
 

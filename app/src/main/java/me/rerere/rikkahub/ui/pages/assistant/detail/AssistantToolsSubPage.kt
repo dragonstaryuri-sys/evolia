@@ -265,6 +265,26 @@ fun AssistantToolsSubPage(
                 }
             )
 
+            // Update Profile (Available for all assistants)
+            val updateProfileEnabled = assistant.localTools.contains(LocalToolOption.UpdateProfile)
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_page_local_tools_update_profile_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_update_profile_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = updateProfileEnabled,
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.UpdateProfile
+                            } else {
+                                assistant.localTools - LocalToolOption.UpdateProfile
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
+
             // 警告提示：如果开启了邮件工具但没配置全局账号/授权码
             val isEmailConfigured =
                 settings.emailConfig.account.isNotBlank() && secretKeyManager.getEmailPassword("").isNotBlank()

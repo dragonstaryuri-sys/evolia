@@ -32,4 +32,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("time_sense")
     data object TimeSense : LocalToolOption()
+
+    @Serializable
+    @SerialName("update_profile")
+    data object UpdateProfile : LocalToolOption()
 }

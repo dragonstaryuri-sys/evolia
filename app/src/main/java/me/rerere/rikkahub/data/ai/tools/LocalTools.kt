@@ -27,6 +27,7 @@ import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
+import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.service.AgentTaskScheduler
@@ -37,6 +38,7 @@ import javax.mail.internet.InternetAddress
 import javax.mail.internet.MimeMessage
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -49,6 +51,7 @@ fun rememberLocalTools(): LocalTools {
     val agentTaskRepository = koinInject<AgentTaskRepository>()
     val agentTaskScheduler = koinInject<AgentTaskScheduler>()
     val secretKeyManager = koinInject<SecretKeyManager>()
+    val extendedStateRepo = koinInject<AssistantExtendedStateRepository>()
 
     return remember {
         LocalTools(
@@ -57,7 +60,8 @@ fun rememberLocalTools(): LocalTools {
             settingsStore,
             secretKeyManager,
             agentTaskRepository,
-            agentTaskScheduler
+            agentTaskScheduler,
+            extendedStateRepo
         )
     }
 }
@@ -68,7 +72,8 @@ class LocalTools(
     private val settingsStore: SettingsStore,
     private val secretKeyManager: SecretKeyManager,
     private val agentTaskRepository: AgentTaskRepository,
-    private val agentTaskScheduler: AgentTaskScheduler
+    private val agentTaskScheduler: AgentTaskScheduler,
+    private val extendedStateRepo: AssistantExtendedStateRepository
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -176,7 +181,10 @@ class LocalTools(
                         if (output.length > 2000) {
                             buildJsonObject {
                                 put("output", output.take(2000) + "... (truncated)")
-                                put("note", "Output truncated to save context window. Use print() sparingly or save to file, and use list_sandbox_files to inspect files.")
+                                put(
+                                    "note",
+                                    "Output truncated to save context window. Use print() sparingly or save to file, and use list_sandbox_files to inspect files."
+                                )
                             }
                         } else {
                             finalResultObj
@@ -199,7 +207,8 @@ class LocalTools(
                     try {
                         val files = pythonSandbox.listFiles(conversationId)
                         buildJsonObject {
-                            put("files", kotlinx.serialization.json.JsonArray(
+                            put(
+                                "files", kotlinx.serialization.json.JsonArray(
                                 files.map { file ->
                                     buildJsonObject {
                                         val uri = pythonSandbox.getFileUri(conversationId, file.name)
@@ -208,7 +217,10 @@ class LocalTools(
                                         put("is_image", file.isImage)
                                         put("mime", file.mimeType)
                                         put("uri", uri.toString())
-                                        put("markdown_link", if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)")
+                                        put(
+                                            "markdown_link",
+                                            if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)"
+                                        )
                                     }
                                 }
                             ))
@@ -408,6 +420,7 @@ class LocalTools(
                                 context.startActivity(intent)
                                 buildJsonObject { put("success", true); put("message", "Alarm set for $hour:$minutes") }
                             }
+
                             "set_timer" -> {
                                 val seconds = json["seconds"]?.jsonPrimitive?.intOrNull ?: 0
                                 val label = json["label"]?.jsonPrimitive?.contentOrNull ?: "Assistant Timer"
@@ -418,8 +431,14 @@ class LocalTools(
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
                                 context.startActivity(intent)
-                                buildJsonObject { put("success", true); put("message", "Timer set for $seconds seconds") }
+                                buildJsonObject {
+                                    put("success", true); put(
+                                    "message",
+                                    "Timer set for $seconds seconds"
+                                )
+                                }
                             }
+
                             else -> buildJsonObject { put("error", "Unknown action") }
                         }
                     } catch (e: Exception) {
@@ -440,14 +459,21 @@ class LocalTools(
                         properties = buildJsonObject {
                             put("action", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Action to perform: add (new task), list (get all), edit (modify existing), toggle (complete status), delete (remove)")
-                                put("enum", JsonArray(listOf(
-                                    JsonPrimitive("add"),
-                                    JsonPrimitive("list"),
-                                    JsonPrimitive("edit"),
-                                    JsonPrimitive("toggle"),
-                                    JsonPrimitive("delete")
-                                )))
+                                put(
+                                    "description",
+                                    "Action to perform: add (new task), list (get all), edit (modify existing), toggle (complete status), delete (remove)"
+                                )
+                                put(
+                                    "enum", JsonArray(
+                                        listOf(
+                                            JsonPrimitive("add"),
+                                            JsonPrimitive("list"),
+                                            JsonPrimitive("edit"),
+                                            JsonPrimitive("toggle"),
+                                            JsonPrimitive("delete")
+                                        )
+                                    )
+                                )
                             })
                             put("id", buildJsonObject {
                                 put("type", "integer")
@@ -471,11 +497,17 @@ class LocalTools(
                             })
                             put("end_time", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Deadline/End time, please use ISO 8601 format (e.g., 2023-10-27T10:00:00).")
+                                put(
+                                    "description",
+                                    "Deadline/End time, please use ISO 8601 format (e.g., 2023-10-27T10:00:00)."
+                                )
                             })
                             put("reminder_time", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Specific reminder time, please use ISO 8601 format (e.g., 2023-10-27T09:30:00).")
+                                put(
+                                    "description",
+                                    "Specific reminder time, please use ISO 8601 format (e.g., 2023-10-27T09:30:00)."
+                                )
                             })
                         },
                         required = listOf("action")
@@ -496,18 +528,20 @@ class LocalTools(
 
                                 val endTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
                                 val endTime = if (endTimeStr != null) {
-                                    runCatching { df.parse(endTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
-                                        put("success", false)
-                                        put("error", "Invalid end_time format.")
-                                    }
+                                    runCatching { df.parse(endTimeStr)?.time }.getOrNull()
+                                        ?: return@Tool buildJsonObject {
+                                            put("success", false)
+                                            put("error", "Invalid end_time format.")
+                                        }
                                 } else null
 
                                 val reminderTimeStr = json["reminder_time"]?.jsonPrimitive?.contentOrNull
                                 val reminderTime = if (reminderTimeStr != null) {
-                                    runCatching { df.parse(reminderTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
-                                        put("success", false)
-                                        put("error", "Invalid reminder_time format.")
-                                    }
+                                    runCatching { df.parse(reminderTimeStr)?.time }.getOrNull()
+                                        ?: return@Tool buildJsonObject {
+                                            put("success", false)
+                                            put("error", "Invalid reminder_time format.")
+                                        }
                                 } else null
 
                                 scheduleRepository.addSchedule(
@@ -535,6 +569,7 @@ class LocalTools(
 
                                 buildJsonObject { put("success", true) }
                             }
+
                             "list" -> {
                                 val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
                                 val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
@@ -554,6 +589,7 @@ class LocalTools(
                                     }))
                                 }
                             }
+
                             "edit" -> {
                                 val id = json["id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 val schedule = scheduleRepository.getScheduleById(id)
@@ -561,35 +597,40 @@ class LocalTools(
                                     val newTitle = json["title"]?.jsonPrimitive?.contentOrNull ?: schedule.title
                                     val newPriority = json["priority"]?.jsonPrimitive?.intOrNull ?: schedule.priority
                                     val newUrgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
-                                    val newDifficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
+                                    val newDifficulty =
+                                        json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
 
                                     val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
 
                                     val newEndTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
                                     val newEndTime = if (newEndTimeStr != null) {
-                                        runCatching { df.parse(newEndTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
-                                            put("success", false)
-                                            put("error", "Invalid end_time format.")
-                                        }
+                                        runCatching { df.parse(newEndTimeStr)?.time }.getOrNull()
+                                            ?: return@Tool buildJsonObject {
+                                                put("success", false)
+                                                put("error", "Invalid end_time format.")
+                                            }
                                     } else schedule.endTime
 
                                     val newReminderTimeStr = json["reminder_time"]?.jsonPrimitive?.contentOrNull
                                     val newReminderTime = if (newReminderTimeStr != null) {
-                                        runCatching { df.parse(newReminderTimeStr)?.time }.getOrNull() ?: return@Tool buildJsonObject {
-                                            put("success", false)
-                                            put("error", "Invalid reminder_time format.")
-                                        }
+                                        runCatching { df.parse(newReminderTimeStr)?.time }.getOrNull()
+                                            ?: return@Tool buildJsonObject {
+                                                put("success", false)
+                                                put("error", "Invalid reminder_time format.")
+                                            }
                                     } else schedule.reminderTime
 
-                                    scheduleRepository.updateSchedule(schedule.copy(
-                                        title = newTitle,
-                                        priority = newPriority,
-                                        urgency = newUrgency,
-                                        difficulty = newDifficulty,
-                                        endTime = newEndTime,
-                                        reminderTime = newReminderTime,
-                                        updatedAt = System.currentTimeMillis()
-                                    ))
+                                    scheduleRepository.updateSchedule(
+                                        schedule.copy(
+                                            title = newTitle,
+                                            priority = newPriority,
+                                            urgency = newUrgency,
+                                            difficulty = newDifficulty,
+                                            endTime = newEndTime,
+                                            reminderTime = newReminderTime,
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                    )
 
                                     // 自动同步到系统日历
                                     if (newEndTime != null || newReminderTime != null) {
@@ -606,6 +647,7 @@ class LocalTools(
                                     buildJsonObject { put("error", "Schedule not found") }
                                 }
                             }
+
                             "toggle" -> {
                                 val id = json["id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 val schedules = scheduleRepository.getAllSchedules().first()
@@ -617,11 +659,13 @@ class LocalTools(
                                     buildJsonObject { put("error", "Schedule not found") }
                                 }
                             }
+
                             "delete" -> {
                                 val id = json["id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 scheduleRepository.deleteSchedule(id)
                                 buildJsonObject { put("success", true) }
                             }
+
                             else -> buildJsonObject { put("error", "Unknown action: $action") }
                         }
                     } catch (e: Exception) {
@@ -667,7 +711,10 @@ class LocalTools(
                             })
                             put("to", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Recipient email address. OPTIONAL: If not provided, the email is sent to the user's saved default email.")
+                                put(
+                                    "description",
+                                    "Recipient email address. OPTIONAL: If not provided, the email is sent to the user's saved default email."
+                                )
                             })
                             put("subject", buildJsonObject {
                                 put("type", "string")
@@ -679,7 +726,10 @@ class LocalTools(
                             })
                             put("limit", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Number of emails to fetch, min 1, max 3, default 1, used when action=fetch")
+                                put(
+                                    "description",
+                                    "Number of emails to fetch, min 1, max 3, default 1, used when action=fetch"
+                                )
                             })
                         },
                         required = listOf("action")
@@ -709,7 +759,12 @@ class LocalTools(
                                     }
 
                                     if (to.isBlank()) {
-                                        return@withContext buildJsonObject { put("error", "Recipient email is required. Please ask the user if you don't know,or ask she/he to set it in their profile settings.") }
+                                        return@withContext buildJsonObject {
+                                            put(
+                                                "error",
+                                                "Recipient email is required. Please ask the user if you don't know,or ask she/he to set it in their profile settings."
+                                            )
+                                        }
                                     }
 
                                     val subject = json["subject"]?.jsonPrimitive?.contentOrNull ?: ""
@@ -719,6 +774,7 @@ class LocalTools(
 
                                     buildJsonObject { put("success", true); put("message", "Email sent to $to") }
                                 }
+
                                 "fetch" -> {
                                     val limit = (json["limit"]?.jsonPrimitive?.intOrNull ?: 1).coerceIn(1, 3)
                                     val emails = fetchQQEmails(emailAccount, authCode, limit)
@@ -735,6 +791,7 @@ class LocalTools(
                                         }))
                                     }
                                 }
+
                                 else -> buildJsonObject { put("error", "Unknown action") }
                             }
                         } catch (e: Exception) {
@@ -818,6 +875,7 @@ class LocalTools(
                 }
                 result
             }
+
             else -> message.content.toString()
         }
     }
@@ -835,7 +893,17 @@ class LocalTools(
                             put("action", buildJsonObject {
                                 put("type", "string")
                                 put("description", "Action to perform: add, list, delete, edit")
-                                put("enum", JsonArray(listOf(JsonPrimitive("add"), JsonPrimitive("list"), JsonPrimitive("delete"), JsonPrimitive("edit"))))
+                                put(
+                                    "enum",
+                                    JsonArray(
+                                        listOf(
+                                            JsonPrimitive("add"),
+                                            JsonPrimitive("list"),
+                                            JsonPrimitive("delete"),
+                                            JsonPrimitive("edit")
+                                        )
+                                    )
+                                )
                             })
                             put("task_id", buildJsonObject {
                                 put("type", "integer")
@@ -843,7 +911,10 @@ class LocalTools(
                             })
                             put("task_name", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Custom name for this task to help the user identify it in the task manager.")
+                                put(
+                                    "description",
+                                    "Custom name for this task to help the user identify it in the task manager."
+                                )
                             })
                             put("task_type", buildJsonObject {
                                 put("type", "string")
@@ -851,19 +922,31 @@ class LocalTools(
                             })
                             put("scheduled_time", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Scheduled time in ISO 8601 format (e.g., 2023-10-27T10:00:00). Required for 'add'.")
+                                put(
+                                    "description",
+                                    "Scheduled time in ISO 8601 format (e.g., 2023-10-27T10:00:00). Required for 'add'."
+                                )
                             })
                             put("repeat_interval", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Optional repeat interval in milliseconds (e.g., 86400000 for daily, 604800000 for a week)")
+                                put(
+                                    "description",
+                                    "Optional repeat interval in milliseconds (e.g., 86400000 for daily, 604800000 for a week)"
+                                )
                             })
                             put("instruction", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Instruction for your future self. e.g., 'Check if it will rain tomorrow in Tokyo, and if so, send an email to boss@example.com'.")
+                                put(
+                                    "description",
+                                    "Instruction for your future self. e.g., 'Check if it will rain tomorrow in Tokyo, and if so, send an email to boss@example.com'."
+                                )
                             })
                             put("target", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Recipient email address (REQUIRED for EMAIL) or notification title (for NOTIFICATION).")
+                                put(
+                                    "description",
+                                    "Recipient email address (REQUIRED for EMAIL) or notification title (for NOTIFICATION)."
+                                )
                             })
                             put("subject", buildJsonObject {
                                 put("type", "string")
@@ -880,15 +963,20 @@ class LocalTools(
                         when (action) {
                             "add" -> {
                                 val typeFromAi = json["task_type"]?.jsonPrimitive?.contentOrNull ?: ""
-                                val finalType = if (typeFromAi == "OTHERS" || typeFromAi.isBlank()) "AGENT_TASK" else typeFromAi
+                                val finalType =
+                                    if (typeFromAi == "OTHERS" || typeFromAi.isBlank()) "AGENT_TASK" else typeFromAi
 
                                 val timeStr = json["scheduled_time"]?.jsonPrimitive?.contentOrNull
                                 val time = if (timeStr != null) {
                                     runCatching {
-                                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(timeStr)?.time
+                                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                            .parse(timeStr)?.time
                                     }.getOrNull() ?: return@Tool buildJsonObject {
                                         put("success", false)
-                                        put("error", "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                        put(
+                                            "error",
+                                            "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)"
+                                        )
                                     }
                                 } else return@Tool buildJsonObject {
                                     put("success", false)
@@ -911,7 +999,10 @@ class LocalTools(
                                     if (missing.isNotEmpty()) {
                                         return@Tool buildJsonObject {
                                             put("success", false)
-                                            put("error", "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}.")
+                                            put(
+                                                "error",
+                                                "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}."
+                                            )
                                         }
                                     }
                                 }
@@ -938,6 +1029,7 @@ class LocalTools(
 
                                 buildJsonObject { put("success", true); put("task_id", newId) }
                             }
+
                             "list" -> {
                                 val tasks = agentTaskRepository.getTasksByAssistant(assistantId.toString()).first()
                                 val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
@@ -959,25 +1051,32 @@ class LocalTools(
                                     }))
                                 }
                             }
+
                             "edit" -> {
                                 val id = json["task_id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 val task = agentTaskRepository.getTaskById(id)
                                 if (task != null) {
                                     val typeFromAi = json["task_type"]?.jsonPrimitive?.contentOrNull ?: task.taskType
-                                    val finalType = if (typeFromAi == "OTHERS" || typeFromAi.isBlank()) "AGENT_TASK" else typeFromAi
+                                    val finalType =
+                                        if (typeFromAi == "OTHERS" || typeFromAi.isBlank()) "AGENT_TASK" else typeFromAi
 
                                     val timeStr = json["scheduled_time"]?.jsonPrimitive?.contentOrNull
                                     val time = if (timeStr != null) {
                                         runCatching {
-                                            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(timeStr)?.time
+                                            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                                .parse(timeStr)?.time
                                         }.getOrNull() ?: return@Tool buildJsonObject {
                                             put("success", false)
-                                            put("error", "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)")
+                                            put(
+                                                "error",
+                                                "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)"
+                                            )
                                         }
                                     } else {
                                         task.scheduledTime
                                     }
-                                    val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: task.repeatInterval
+                                    val repeat =
+                                        json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: task.repeatInterval
 
                                     val oldData = try {
                                         kotlinx.serialization.json.Json.parseToJsonElement(task.taskData).jsonObject
@@ -985,9 +1084,12 @@ class LocalTools(
                                         buildJsonObject { }
                                     }
 
-                                    val instruction = json["instruction"]?.jsonPrimitive?.contentOrNull ?: oldData["instruction"]?.jsonPrimitive?.contentOrNull
-                                    val target = json["target"]?.jsonPrimitive?.contentOrNull ?: oldData["to"]?.jsonPrimitive?.contentOrNull
-                                    val subject = json["subject"]?.jsonPrimitive?.contentOrNull ?: oldData["subject"]?.jsonPrimitive?.contentOrNull
+                                    val instruction = json["instruction"]?.jsonPrimitive?.contentOrNull
+                                        ?: oldData["instruction"]?.jsonPrimitive?.contentOrNull
+                                    val target = json["target"]?.jsonPrimitive?.contentOrNull
+                                        ?: oldData["to"]?.jsonPrimitive?.contentOrNull
+                                    val subject = json["subject"]?.jsonPrimitive?.contentOrNull
+                                        ?: oldData["subject"]?.jsonPrimitive?.contentOrNull
 
                                     if (finalType == "EMAIL") {
                                         val missing = mutableListOf<String>()
@@ -998,7 +1100,10 @@ class LocalTools(
                                         if (missing.isNotEmpty()) {
                                             return@Tool buildJsonObject {
                                                 put("success", false)
-                                                put("error", "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}.")
+                                                put(
+                                                    "error",
+                                                    "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}."
+                                                )
                                             }
                                         }
                                     }
@@ -1015,7 +1120,13 @@ class LocalTools(
                                         put("subject", JsonPrimitive(subject ?: ""))
                                     }.toString()
 
-                                    val updatedTask = task.copy(taskType = finalType, taskData = taskData, scheduledTime = time, repeatInterval = repeat, isExecuted = false)
+                                    val updatedTask = task.copy(
+                                        taskType = finalType,
+                                        taskData = taskData,
+                                        scheduledTime = time,
+                                        repeatInterval = repeat,
+                                        isExecuted = false
+                                    )
                                     agentTaskRepository.updateTask(updatedTask)
                                     agentTaskScheduler.scheduleTask(updatedTask)
                                     buildJsonObject { put("success", true) }
@@ -1023,6 +1134,7 @@ class LocalTools(
                                     buildJsonObject { put("error", "Task not found") }
                                 }
                             }
+
                             "delete" -> {
                                 val id = json["task_id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 val task = agentTaskRepository.getTaskById(id)
@@ -1032,22 +1144,150 @@ class LocalTools(
                                     buildJsonObject { put("success", true) }
                                 } else buildJsonObject { put("error", "Task not found") }
                             }
+
                             else -> buildJsonObject { put("error", "Unsupported action") }
                         }
-                    } catch (e: Exception) { buildJsonObject { put("error", e.message ?: "Failed") } }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed") }
+                    }
                 }
             )
         )
     }
 
-    fun getTools(options: List<LocalToolOption>, assistantId: Uuid, conversationId: Uuid, userImageUrls: List<String> = emptyList()): List<Tool> {
+    fun getUpdateProfileTools(assistantId: Uuid): List<Tool> {
+        return listOf(
+            Tool(
+                name = "update_profile",
+                description = "Update user or assistant profiles when new information is learned. " +
+                    "MUST provide 'target' ('user' or 'assistant') and an 'updates' object. " +
+                    "Example: {\"target\": \"user\", \"updates\": {\"diet\": \"no spicy food\"}}.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("target", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The target profile to update: 'user' or 'assistant'")
+                                put("enum", JsonArray(listOf(JsonPrimitive("user"), JsonPrimitive("assistant"))))
+                            })
+                            put("updates", buildJsonObject {
+                                put("type", "object")
+                                put("description", "A map of fields to update. " +
+                                    "Allowed fields for 'user': appearance, occupation, preferences, diet, health, taboos, interaction_preferences, important_relationships. " +
+                                    "Allowed fields for 'assistant': personality, preferences, diet, taboos, interaction_habits, relationships.")
+                                // 3. 即使解析是动态的，定义一些属性占位符能引导 AI 理解这是一个键值对对象
+                                put("additionalProperties", buildJsonObject {
+                                    put("type", "string")
+                                })
+                            })
+                        },
+                        required = listOf("target", "updates")
+                    )
+                },
+                execute = { argumentsElement ->
+                    // 添加日志，查看原始参数
+                    android.util.Log.d("LocalTools", "update_profile: raw arguments = $argumentsElement")
+
+                    val argsObj = argumentsElement.jsonObject
+                    if (argsObj.isEmpty()) {
+                        return@Tool buildJsonObject {
+                            put("error", "Missing required parameters: 'target' and 'updates'. " +
+                                "Please call again with the correct JSON structure.")
+                        }
+                    }
+                    val target = argsObj["target"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val updates = argsObj["updates"]?.jsonObject ?: buildJsonObject {}
+
+                    // 记录解析出的关键字段
+                    android.util.Log.d("LocalTools", "update_profile: parsed target = '$target', updates_keys = ${updates.keys}")
+
+                    try {
+                        when (target) {
+                            "user" -> {
+                                val currentSettings = settingsStore.settingsFlow.value
+                                val profile = currentSettings.userProfile
+                                var updatedProfile = profile
+
+                                updates.forEach { (field, value) ->
+                                    val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
+                                    android.util.Log.d("LocalTools", "update_profile: [user] updating '$field' to '$newValue'")
+                                    updatedProfile = when (field) {
+                                        "appearance" -> updatedProfile.copy(appearance = newValue)
+                                        "occupation" -> updatedProfile.copy(occupation = newValue)
+                                        "preferences" -> updatedProfile.copy(preferences = newValue)
+                                        "diet" -> updatedProfile.copy(diet = newValue)
+                                        "health" -> updatedProfile.copy(health = newValue)
+                                        "taboos" -> updatedProfile.copy(taboos = newValue)
+                                        "interaction_preferences" -> updatedProfile.copy(interactionPreferences = newValue)
+                                        "important_relationships" -> updatedProfile.copy(importantRelationships = newValue)
+                                        else -> updatedProfile
+                                    }
+                                }
+                                settingsStore.update(currentSettings.copy(userProfile = updatedProfile))
+                                buildJsonObject { put("success", true); put("message", "User profile updated.") }
+                            }
+
+                            "assistant" -> {
+                                val state = extendedStateRepo.getStateById(assistantId.toString())
+                                    ?: AssistantExtendedStateEntity(assistantId = assistantId.toString())
+                                var updatedState = state
+
+                                updates.forEach { (field, value) ->
+                                    val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
+                                    android.util.Log.d("LocalTools", "update_profile: [assistant] updating '$field' to '$newValue'")
+                                    updatedState = when (field) {
+                                        "personality" -> updatedState.copy(personality = newValue)
+                                        "preferences" -> updatedState.copy(preferences = newValue)
+                                        "diet" -> updatedState.copy(diet = newValue)
+                                        "taboos" -> updatedState.copy(taboos = newValue)
+                                        "interaction_habits" -> updatedState.copy(interactionHabits = newValue)
+                                        "relationships" -> updatedState.copy(relationships = newValue)
+                                        else -> updatedState
+                                    }
+                                }
+                                extendedStateRepo.updateState(updatedState)
+                                buildJsonObject { put("success", true); put("message", "Assistant profile updated.") }
+                            }
+
+                            else -> {
+                                // 发生错误时，记录更详细的信息
+                                android.util.Log.w("LocalTools", "update_profile failed: Unknown target profile '$target'. Received keys: ${argsObj.keys.joinToString()}")
+                                buildJsonObject {
+                                    put(
+                                        "error",
+                                        "Unknown target profile: '$target'. Received keys: ${argsObj.keys.joinToString()}"
+                                    )
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("LocalTools", "update_profile: Exception during update", e)
+                        buildJsonObject { put("error", e.message ?: "Update failed.") }
+                    }
+                }
+            )
+        )
+    }
+
+    fun getTools(
+        options: List<LocalToolOption>,
+        assistantId: Uuid,
+        conversationId: Uuid,
+        userImageUrls: List<String> = emptyList()
+    ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
-        if (options.contains(LocalToolOption.DeviceControl)) tools.addAll(getDeviceControlTools(assistantId, conversationId))
+        if (options.contains(LocalToolOption.DeviceControl)) tools.addAll(
+            getDeviceControlTools(
+                assistantId,
+                conversationId
+            )
+        )
         if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
         if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools())
         if (options.contains(LocalToolOption.AgentAutomation)) tools.addAll(getAgentTaskTools(assistantId))
         if (options.contains(LocalToolOption.EmailService)) tools.addAll(getEmailTools())
+        if (options.contains(LocalToolOption.UpdateProfile)) tools.addAll(getUpdateProfileTools(assistantId))
         return tools
     }
 }

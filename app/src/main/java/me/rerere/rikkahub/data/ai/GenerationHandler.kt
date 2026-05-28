@@ -339,13 +339,32 @@ class GenerationHandler(
                     val tool = toolsInternal.find { tool -> tool.name == toolCall.toolName }
                         ?: error("Tool ${toolCall.toolName} not found")
 
-                    val args = runCatching {
+                    Log.d(TAG, "DEBUG: Tool Name = ${toolCall.toolName}")
+                    Log.d(TAG, "DEBUG: Raw Arguments String = '${toolCall.arguments}'")
+                    val sanitizedArgs = runCatching {
                         json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
+                        toolCall.arguments // 如果解析成功，直接使用原字符串
                     }.getOrElse {
                         Log.w(TAG, "Failed to parse tool arguments, attempting sanitization: ${it.message}")
-                        val sanitized = sanitizeToolCallArguments(toolCall.arguments)
-                        json.parseToJsonElement(sanitized)
+                        sanitizeToolCallArguments(toolCall.arguments) // 修复 JSON
                     }
+
+                    val args = json.parseToJsonElement(sanitizedArgs)
+
+                    // 2. 【关键修正】将修复后的完整 JSON 同步回消息历史中
+                    // 这样下一轮对话时，AI 看到的将是格式正确的 ToolCall，它就不会再怀疑自己没传参数了
+                    if (sanitizedArgs != toolCall.arguments) {
+                        currentMessages = currentMessages.map { msg ->
+                            if (msg.parts.any { it === toolCall }) {
+                                msg.copy(parts = msg.parts.map { part ->
+                                    if (part === toolCall) {
+                                        (part as UIMessagePart.ToolCall).copy(arguments = sanitizedArgs)
+                                    } else part
+                                })
+                            } else msg
+                        }
+                    }
+
                     Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")
                     val result = tool.execute(args)
                     results += UIMessagePart.ToolResult(
@@ -376,7 +395,9 @@ class GenerationHandler(
                     )
                 }
             }
-
+            results.forEach {
+                Log.d(TAG, "DEBUG: Adding Tool Result: id=${it.toolCallId}, name=${it.toolName}, content=${it.content}")
+            }
             currentMessages = currentMessages + UIMessage(
                 role = CoreMessageRole.TOOL,
                 parts = results,
@@ -655,7 +676,7 @@ class GenerationHandler(
 
                         ### Person Specification (IMPORTANT)
                         To ensure clarity and avoid identity confusion when retrieving memories in the future, please strictly adhere to the following specifications:
-                        1. **"User"**: Refers to the person you are chatting with. Always use "User" to refer to them in all records.
+                        1. **"User/User's name"**: Refers to the person you are chatting with.
                         2. **"I"**: Refers to yourself (the AI Assistant).
 
                         **Record Format Guidelines:**
@@ -689,8 +710,6 @@ class GenerationHandler(
             staticSystemPromptBuilder.appendLine()
             staticSystemPromptBuilder.append(mode.prompt)
         }
-
-
 
         val summaryPromptBuilder = StringBuilder()
 
@@ -1539,6 +1558,7 @@ class GenerationHandler(
         if (arguments.isBlank()) return "{}"
         val trimmed = arguments.trim()
         var braceCount = 0; var inString = false; var escape = false
+        var startIndex = -1
         for ((index, char) in trimmed.withIndex()) {
             if (escape) {
                 escape = false
@@ -1547,13 +1567,25 @@ class GenerationHandler(
             when (char) {
                 '\\' -> if (inString) escape = true
                 '"' -> inString = !inString
-                '{' -> if (!inString) braceCount++
-                '}' -> if (!inString) {
+                '{' -> if (!inString) {
+                    if (startIndex == -1) startIndex = index
+                    braceCount++
+                }
+                '}' -> if (!inString && startIndex != -1) {
                     braceCount--
                     if (braceCount == 0) {
-                        return trimmed.substring(0, index + 1)
+                        return trimmed.substring(startIndex, index + 1)
                     }
                 }
+            }
+        }
+        if (startIndex != -1 && braceCount > 0) {
+            val partial = trimmed.substring(startIndex)
+            // 尝试补齐缺失的引号（如果在字符串内）和括号
+            return buildString {
+                append(partial)
+                if (inString) append("\"") // 补引号
+                repeat(braceCount) { append("}") } // 补括号
             }
         }
         Log.w(TAG, "Could not extract valid JSON object from: $trimmed")
