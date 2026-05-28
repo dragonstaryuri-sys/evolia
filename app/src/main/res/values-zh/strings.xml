@@ -1586,4 +1586,19 @@
   <string name="assistant_advanced_extended_edit_entry_desc">设置性格、细节外貌、喜好习惯等信息</string>
   <string name="assistant_extended_core_personality">核心人格</string>
   <string name="assistant_extended_life_habits">生活习性</string>
+  <!-- 用户资料相关 -->
+  <string name="setting_user_profile">用户档案</string>
+  <string name="user_profile_desc">完善您的个人资料，开启开关后，智能体在对话时将更了解您。</string>
+  <string name="user_profile_appearance">外貌</string>
+  <string name="user_profile_occupation">职业</string>
+  <string name="user_profile_preferences">喜好</string>
+  <string name="user_profile_diet">饮食</string>
+  <string name="user_profile_health">健康</string>
+  <string name="user_profile_taboos">禁忌</string>
+  <string name="user_profile_interaction_preferences">互动喜好</string>
+  <string name="user_profile_important_relationships">重要人际关系</string>
+
+  <!-- 智能体记忆设置相关 -->
+  <string name="assistant_memory_include_user_profile">带入用户档案</string>
+  <string name="assistant_memory_include_user_profile_desc">在对话中让智能体知晓您的外貌、职业、禁忌等个人档案信息</string>
 </resources>

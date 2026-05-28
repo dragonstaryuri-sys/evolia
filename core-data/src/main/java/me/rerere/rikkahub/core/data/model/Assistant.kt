@@ -115,6 +115,8 @@ data class Assistant(
     val masterMemoryContent: String = "",
     val lastMasterMemoryUpdate: Long = 0L,
 
+    val includeUserProfile: Boolean = true,
+
     val enableAutoDiary: Boolean = false,
     val autoDiaryTime: String = "06:00",
     val lastAutoDiaryDate: String = "",

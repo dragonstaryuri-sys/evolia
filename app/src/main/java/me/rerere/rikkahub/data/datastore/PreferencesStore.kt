@@ -101,6 +101,7 @@ class SettingsStore(
         val MCP_SERVERS = stringPreferencesKey("mcp_servers")
         val WEBDAV_CONFIG = stringPreferencesKey("webdav_config")
         val EMAIL_CONFIG = stringPreferencesKey("email_config")
+        val USER_PROFILE = stringPreferencesKey("user_profile")
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
         val AUTO_PLAY_TTS = booleanPreferencesKey("auto_play_tts")
@@ -185,6 +186,9 @@ class SettingsStore(
                 emailConfig = preferences[EMAIL_CONFIG]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: EmailConfig(),
+                userProfile = preferences[USER_PROFILE]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: UserProfile(),
                 ttsProviders = preferences[TTS_PROVIDERS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
@@ -355,6 +359,7 @@ class SettingsStore(
             preferences[MCP_SERVERS] = JsonInstant.encodeToString(settingsToSave.mcpServers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(migratedSettings.webDavConfig)
             preferences[EMAIL_CONFIG] = JsonInstant.encodeToString(migratedSettings.emailConfig)
+            preferences[USER_PROFILE] = JsonInstant.encodeToString(settingsToSave.userProfile)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.ttsProviders)
             settingsToSave.selectedTTSProviderId.let { preferences[SELECTED_TTS_PROVIDER] = it.toString() }
             preferences[AUTO_PLAY_TTS] = settingsToSave.autoPlayTts
@@ -390,6 +395,18 @@ class SettingsStore(
         }
     }
 }
+
+@Serializable
+data class UserProfile(
+    val appearance: String = "",
+    val occupation: String = "",
+    val preferences: String = "",
+    val diet: String = "",
+    val health: String = "",
+    val taboos: String = "",
+    val interactionPreferences: String = "",
+    val importantRelationships: String = ""
+)
 
 @Serializable
 data class Settings(
@@ -430,6 +447,7 @@ data class Settings(
     val mcpServers: List<McpServerConfig> = emptyList(),
     val webDavConfig: WebDavConfig = WebDavConfig(),
     val emailConfig: EmailConfig = EmailConfig(),
+    val userProfile: UserProfile = UserProfile(),
     val ttsProviders: List<TTSProviderSetting> = emptyList(),
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val autoPlayTts: Boolean = false,

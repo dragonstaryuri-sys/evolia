@@ -578,6 +578,25 @@ class GenerationHandler(
             )
         }
 
+        if (assistant.includeUserProfile) {
+            val profile = settings.userProfile
+            val profileLines = buildList {
+                if (profile.appearance.isNotBlank()) add("外貌: ${profile.appearance}")
+                if (profile.occupation.isNotBlank()) add("职业: ${profile.occupation}")
+                if (profile.preferences.isNotBlank()) add("喜好: ${profile.preferences}")
+                if (profile.diet.isNotBlank()) add("饮食: ${profile.diet}")
+                if (profile.health.isNotBlank()) add("健康: ${profile.health}")
+                if (profile.taboos.isNotBlank()) add("禁忌: ${profile.taboos}")
+                if (profile.interactionPreferences.isNotBlank()) add("互动喜好: ${profile.interactionPreferences}")
+                if (profile.importantRelationships.isNotBlank()) add("重要人际关系: ${profile.importantRelationships}")
+            }
+            if (profileLines.isNotEmpty()) {
+                staticSystemPromptBuilder.append("## 用户信息\n")
+                profileLines.forEach { staticSystemPromptBuilder.append("- $it\n") }
+                staticSystemPromptBuilder.append("\n")
+            }
+        }
+
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
             staticSystemPromptBuilder.append("## 记忆档案\n")
             staticSystemPromptBuilder.append(assistant.masterMemoryContent)

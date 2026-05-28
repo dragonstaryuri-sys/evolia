@@ -1622,4 +1622,19 @@
   <string name="assistant_advanced_extended_edit_entry_desc">Set personality, detailed appearance, habits, etc.</string>
   <string name="assistant_extended_core_personality">Core Personality</string>
   <string name="assistant_extended_life_habits">Life Habits</string>
+  <!-- User Profile Related -->
+  <string name="setting_user_profile">User Profile</string>
+  <string name="user_profile_desc">Complete your personal profile. Once enabled, the agent will know you better during conversations.</string>
+  <string name="user_profile_appearance">Appearance</string>
+  <string name="user_profile_occupation">Occupation</string>
+  <string name="user_profile_preferences">Preferences</string>
+  <string name="user_profile_diet">Diet</string>
+  <string name="user_profile_health">Health</string>
+  <string name="user_profile_taboos">Taboos</string>
+  <string name="user_profile_interaction_preferences">Interaction Preferences</string>
+  <string name="user_profile_important_relationships">Important Relationships</string>
+
+  <!-- Agent Memory Settings Related -->
+  <string name="assistant_memory_include_user_profile">Include User Profile</string>
+  <string name="assistant_memory_include_user_profile_desc">Allow the agent to access your personal profile information including appearance, occupation and taboos during conversations</string>
 </resources>

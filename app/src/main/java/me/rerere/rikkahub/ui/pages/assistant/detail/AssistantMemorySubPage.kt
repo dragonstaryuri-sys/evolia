@@ -46,7 +46,7 @@ import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.HistoryEdu
 import androidx.compose.material.icons.rounded.CleanHands
-import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -986,42 +986,60 @@ private fun MasterMemoryCard(
             else
                 RoundedCornerShape(24.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.assistant_memory_enable_master_title),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.assistant_memory_enable_master_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // 对所有模式下的用户展示最近更新时间
-                    if (assistant.enableMasterMemory && assistant.lastMasterMemoryUpdate > 0) {
-                        val time = java.time.Instant.ofEpochMilli(assistant.lastMasterMemoryUpdate)
-                            .atZone(java.time.ZoneId.systemDefault())
-                            .toLocalDateTime()
-                            .toLocalString()
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(Icons.Rounded.AutoStories, null, tint = MaterialTheme.colorScheme.primary)
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.assistant_memory_master_last_update, time),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 4.dp)
+                            text = stringResource(R.string.assistant_memory_enable_master_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.assistant_memory_enable_master_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        // 对所有模式下的用户展示最近更新时间
+                        if (assistant.enableMasterMemory && assistant.lastMasterMemoryUpdate > 0) {
+                            val time = java.time.Instant.ofEpochMilli(assistant.lastMasterMemoryUpdate)
+                                .atZone(java.time.ZoneId.systemDefault())
+                                .toLocalDateTime()
+                                .toLocalString()
+                            Text(
+                                text = stringResource(R.string.assistant_memory_master_last_update, time),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                    HapticSwitch(
+                        checked = assistant.enableMasterMemory,
+                        onCheckedChange = { onUpdateAssistant(assistant.copy(enableMasterMemory = it)) }
+                    )
+                }
+
+                FormItem(
+                    leading = {
+                        Icon(
+                            Icons.Rounded.AccountCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    label = { Text(stringResource(R.string.assistant_memory_include_user_profile)) },
+                    description = { Text(stringResource(R.string.assistant_memory_include_user_profile_desc)) },
+                    tail = {
+                        HapticSwitch(
+                            checked = assistant.includeUserProfile,
+                            onCheckedChange = { onUpdateAssistant(assistant.copy(includeUserProfile = it)) }
                         )
                     }
-                }
-                HapticSwitch(
-                    checked = assistant.enableMasterMemory,
-                    onCheckedChange = { onUpdateAssistant(assistant.copy(enableMasterMemory = it)) }
                 )
             }
         }
@@ -1803,6 +1821,7 @@ private fun MemoryDebugger(
 
 @Composable
 private fun FormItem(
+    leading: (@Composable () -> Unit)? = null,
     label: @Composable () -> Unit,
     description: (@Composable () -> Unit)? = null,
     tail: @Composable (() -> Unit)? = null,
@@ -1814,6 +1833,9 @@ private fun FormItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (leading != null) { // 渲染前置图标
+            leading()
+        }
         Column(modifier = Modifier.weight(1f)) {
             Box {
                 val style = MaterialTheme.typography.titleMedium
