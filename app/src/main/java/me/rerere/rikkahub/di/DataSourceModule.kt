@@ -144,6 +144,7 @@ val dataSourceModule = module {
             json = get(),
             memoryRepo = get(),
             conversationRepo = get(),
+            extendedStateRepo = get(),
             aiLoggingManager = get(),
             embeddingService = get(),
             chatSegmentDAO = get(),

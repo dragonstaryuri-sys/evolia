@@ -65,6 +65,7 @@ import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
@@ -104,6 +105,7 @@ class GenerationHandler(
     private val json: Json,
     private val memoryRepo: MemoryRepository,
     private val conversationRepo: ConversationRepository,
+    private val extendedStateRepo: AssistantExtendedStateRepository,
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: EmbeddingService,
     private val chatSegmentDAO: ChatSegmentDAO,
@@ -576,6 +578,43 @@ class GenerationHandler(
                     "locale" to Locale.getDefault().displayName
                 )
             )
+        }
+
+        if (assistant.hasExtendedState) {
+            val extendedState = extendedStateRepo.getStateById(assistant.id.toString())
+            if (extendedState != null) {
+                val agentExtendedLines = buildList {
+                    if (extendedState.personality.isNotBlank()) add("性格: ${extendedState.personality}")
+
+                    val appearance = extendedState.appearance
+                    val appearanceDetails = buildList {
+                        if (appearance.hairColor.isNotBlank()) add("发色: ${appearance.hairColor}")
+                        if (appearance.hairCurliness.isNotBlank()) add("头发卷度: ${appearance.hairCurliness}")
+                        if (appearance.hairLength.isNotBlank()) add("头发长度: ${appearance.hairLength}")
+                        if (appearance.eyeColor.isNotBlank()) add("瞳色: ${appearance.eyeColor}")
+                        if (appearance.eyelidType.isNotBlank()) add("眼皮: ${appearance.eyelidType}")
+                        if (appearance.eyelashLength.isNotBlank()) add("睫毛长度: ${appearance.eyelashLength}")
+                        if (appearance.skinTone.isNotBlank()) add("肤色: ${appearance.skinTone}")
+                        if (appearance.height > 0) add("身高: ${appearance.height}cm")
+                        if (appearance.muscle > 0) add("肌肉量: ${appearance.muscle}%")
+                        if (appearance.bodyFat > 0) add("体脂率: ${appearance.bodyFat}%")
+                    }
+                    if (appearanceDetails.isNotEmpty()) {
+                        add("外貌细节: ${appearanceDetails.joinToString(", ")}")
+                    }
+
+                    if (extendedState.preferences.isNotBlank()) add("喜好: ${extendedState.preferences}")
+                    if (extendedState.diet.isNotBlank()) add("饮食: ${extendedState.diet}")
+                    if (extendedState.taboos.isNotBlank()) add("禁忌: ${extendedState.taboos}")
+                    if (extendedState.interactionHabits.isNotBlank()) add("互动习惯: ${extendedState.interactionHabits}")
+                    if (extendedState.relationships.isNotBlank()) add("重要人际关系: ${extendedState.relationships}")
+                }
+                if (agentExtendedLines.isNotEmpty()) {
+                    staticSystemPromptBuilder.append("## 小机的档案\n")
+                    agentExtendedLines.forEach { staticSystemPromptBuilder.append("- $it\n") }
+                    staticSystemPromptBuilder.append("\n")
+                }
+            }
         }
 
         if (assistant.includeUserProfile) {
