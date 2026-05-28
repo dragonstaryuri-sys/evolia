@@ -127,6 +127,8 @@ data class Assistant(
 
     val enableDetailMemory: Boolean = true,
     val detailMemoryThreshold: Int = 20,
+
+    val hasExtendedState: Boolean = isMain,
 )
 
 @Serializable

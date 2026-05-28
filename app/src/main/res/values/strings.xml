@@ -1596,6 +1596,30 @@
   <string name="permission_check_btn_check">Check Permission Status</string>
   <string name="permission_check_auto_start">Auto-start</string>
   <string name="permission_check_auto_start_desc">Allow apps to launch automatically to ensure reliable operation of background tasks. Note: The system cannot automatically detect the status of this switch due to restrictions. Please tap to go to Settings and confirm it is enabled.</string>
+  <string name="assistant_advanced_extended_state_title">Extended Status and Personality Attributes</string>
+  <string name="assistant_advanced_extended_state_desc">Once enabled, the agent will possess in-depth personality traits including temperament, appearance, preferences and interaction habits. This function is turned on by default for the main agent.</string>
+  <string name="assistant_extended_personality">Personality</string>
+  <string name="assistant_extended_appearance">Appearance</string>
+  <string name="assistant_extended_preferences">Preferences</string>
+  <string name="assistant_extended_diet">Diet</string>
+  <string name="assistant_extended_taboos">Taboos</string>
+  <string name="assistant_extended_interaction_habits">Interaction Habits</string>
+  <string name="assistant_extended_relationships">Important Relationships</string>
 
+  <string name="assistant_extended_hair_color">Hair Color</string>
+  <string name="assistant_extended_hair_curliness">Hair Curliness</string>
+  <string name="assistant_extended_hair_length">Hair Length</string>
+  <string name="assistant_extended_eye_color">Eye Color</string>
+  <string name="assistant_extended_eyelid_type">Eyelid Type</string>
+  <string name="assistant_extended_eyelash_length">Eyelash Length</string>
+  <string name="assistant_extended_skin_tone">Skin Tone</string>
+  <string name="assistant_extended_muscle">Muscle</string>
+  <string name="assistant_extended_height">Height (cm)</string>
+  <string name="assistant_extended_body_fat">Body Fat</string>
 
+  <string name="assistant_extended_edit_title">Personality Details</string>
+  <string name="assistant_advanced_extended_edit_entry_title">Edit Personality &amp; Appearance</string>
+  <string name="assistant_advanced_extended_edit_entry_desc">Set personality, detailed appearance, habits, etc.</string>
+  <string name="assistant_extended_core_personality">Core Personality</string>
+  <string name="assistant_extended_life_habits">Life Habits</string>
 </resources>

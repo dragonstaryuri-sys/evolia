@@ -27,12 +27,13 @@ import kotlinx.serialization.decodeFromString
         ChatSegmentEntity::class,
         TokenUsageEntity::class,
         BookEntity::class,
-        BookProgressEntity::class
+        BookProgressEntity::class,
+        AssistantExtendedStateEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
-@TypeConverters(TokenUsageConverter::class)
+@TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDAO
 
@@ -58,6 +59,8 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun bookDao(): BookDAO
 
+    abstract fun assistantExtendedStateDao(): AssistantExtendedStateDAO
+
     companion object {
         const val TAG = "AppDatabase"
 
@@ -65,6 +68,24 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 为 chat_segments 表增加 embedding_model_id 字段
                 db.execSQL("ALTER TABLE chat_segments ADD COLUMN embedding_model_id TEXT DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `assistant_extended_state` (
+                        `assistantId` TEXT NOT NULL,
+                        `personality` TEXT NOT NULL,
+                        `appearance` TEXT NOT NULL,
+                        `preferences` TEXT NOT NULL,
+                        `diet` TEXT NOT NULL,
+                        `taboos` TEXT NOT NULL,
+                        `interactionHabits` TEXT NOT NULL,
+                        `relationships` TEXT NOT NULL,
+                        PRIMARY KEY(`assistantId`)
+                    )
+                """.trimIndent())
             }
         }
     }
@@ -79,5 +100,17 @@ object TokenUsageConverter {
     @TypeConverter
     fun toTokenUsage(usage: String): TokenUsage? {
         return JsonInstant.decodeFromString(usage)
+    }
+}
+
+object AssistantExtendedStateConverter {
+    @TypeConverter
+    fun fromAppearance(appearance: AssistantAppearance): String {
+        return JsonInstant.encodeToString(appearance)
+    }
+
+    @TypeConverter
+    fun toAppearance(json: String): AssistantAppearance {
+        return JsonInstant.decodeFromString(json)
     }
 }

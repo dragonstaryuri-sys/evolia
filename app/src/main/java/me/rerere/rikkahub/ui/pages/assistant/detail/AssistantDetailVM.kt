@@ -33,7 +33,9 @@ import me.rerere.rikkahub.core.data.model.Tag
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
+import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
+import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
@@ -67,7 +69,8 @@ class AssistantDetailVM(
     private val context: Application,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val providerManager: ProviderManager,
-    private val agentTaskRepository: AgentTaskRepository
+    private val agentTaskRepository: AgentTaskRepository,
+    private val extendedStateRepository: AssistantExtendedStateRepository
 ) : ViewModel() {
     private val assistantId = try {
         Uuid.parse(id)
@@ -85,6 +88,17 @@ class AssistantDetailVM(
         }.stateIn(
             scope = viewModelScope, started = SharingStarted.Lazily, initialValue = Assistant()
         )
+
+    val extendedState: StateFlow<AssistantExtendedStateEntity> = extendedStateRepository
+        .getStateByIdFlow(assistantId.toString())
+        .map { it ?: AssistantExtendedStateEntity(assistantId.toString()) }
+        .stateIn(viewModelScope, SharingStarted.Lazily, AssistantExtendedStateEntity(assistantId.toString()))
+
+    fun updateExtendedState(state: AssistantExtendedStateEntity) {
+        viewModelScope.launch {
+            extendedStateRepository.updateState(state)
+        }
+    }
 
     val tokenUsageHistory: StateFlow<List<TokenUsageEntity>> = conversationRepository
         .getRecentTokenUsageFlow(assistantId.toString(), days = 7)

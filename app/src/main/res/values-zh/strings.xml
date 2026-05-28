@@ -1559,4 +1559,31 @@
   <string name="permission_check_btn_check">检查权限状态</string>
   <string name="permission_check_auto_start">自启动权限</string>
   <string name="permission_check_auto_start_desc">允许应用自启动以确保后台任务可靠运行。注意：系统限制无法自动检测此开关状态，请点击前往设置确认已开启。</string>
+  <!-- 扩展状态设置 -->
+  <string name="assistant_advanced_extended_state_title">扩展状态与人格属性</string>
+  <string name="assistant_advanced_extended_state_desc">启用后，智能体将拥有性格、外貌、偏好、互动习惯等更深层的人格属性。</string>
+
+  <string name="assistant_extended_personality">性格</string>
+  <string name="assistant_extended_appearance">外貌</string>
+  <string name="assistant_extended_preferences">喜好</string>
+  <string name="assistant_extended_diet">饮食</string>
+  <string name="assistant_extended_taboos">禁忌</string>
+  <string name="assistant_extended_interaction_habits">互动习惯</string>
+  <string name="assistant_extended_relationships">重要人际关系</string>
+
+  <string name="assistant_extended_hair_color">发色</string>
+  <string name="assistant_extended_hair_curliness">头发卷曲度</string>
+  <string name="assistant_extended_hair_length">头发长度</string>
+  <string name="assistant_extended_eye_color">瞳色</string>
+  <string name="assistant_extended_eyelid_type">眼型</string>
+  <string name="assistant_extended_eyelash_length">睫毛长度</string>
+  <string name="assistant_extended_skin_tone">肤色</string>
+  <string name="assistant_extended_muscle">肌肉状态</string>
+  <string name="assistant_extended_height">身高（厘米）</string>
+  <string name="assistant_extended_body_fat">体脂</string>
+  <string name="assistant_extended_edit_title">人格详情</string>
+  <string name="assistant_advanced_extended_edit_entry_title">编辑人格与外貌详情</string>
+  <string name="assistant_advanced_extended_edit_entry_desc">设置性格、细节外貌、喜好习惯等信息</string>
+  <string name="assistant_extended_core_personality">核心人格</string>
+  <string name="assistant_extended_life_habits">生活习性</string>
 </resources>

@@ -1,5 +1,10 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
@@ -18,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Avatar
@@ -30,14 +39,14 @@ import me.rerere.rikkahub.core.data.model.Tag as DataTag
 
 /**
  * Profile tab - Assistant identity and appearance settings.
- * Designed with cohesive SettingsGroup pattern.
  */
 @Composable
 fun AssistantProfileSubPage(
     assistant: Assistant,
     tags: List<DataTag>,
     onUpdate: (Assistant) -> Unit,
-    vm: AssistantDetailVM
+    vm: AssistantDetailVM,
+    onNavigateToExtendedEdit: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -47,7 +56,7 @@ fun AssistantProfileSubPage(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         // ═══════════════════════════════════════════════════════════════════
-        // AVATAR SECTION (prominent, centered)
+        // AVATAR SECTION
         // ═══════════════════════════════════════════════════════════════════
         Column(
             modifier = Modifier
@@ -66,7 +75,7 @@ fun AssistantProfileSubPage(
             )
 
             Text(
-                text = "Tap to change avatar",
+                text = "点击更换头像",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -75,11 +84,10 @@ fun AssistantProfileSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // IDENTITY GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Identity") {
-            // Name
+        SettingsGroup(title = "身份标识") {
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_name),
-                subtitle = "Display name for this character",
+                subtitle = "智能体的显示名称",
                 trailing = {
                     DebouncedTextField(
                         value = assistant.name,
@@ -91,7 +99,6 @@ fun AssistantProfileSubPage(
                 }
             )
 
-            // Tags - vertical layout to prevent height growth
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
@@ -109,11 +116,6 @@ fun AssistantProfileSubPage(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Text(
-                        text = "Organize with custom tags",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     TagsInput(
                         value = assistant.tags,
                         tags = tags,
@@ -128,7 +130,7 @@ fun AssistantProfileSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // APPEARANCE GROUP
         // ═══════════════════════════════════════════════════════════════════
-        SettingsGroup(title = "Appearance") {
+        SettingsGroup(title = "外观与展示") {
             val hasImageSource = assistant.background != null ||
                 assistant.avatar is Avatar.Image ||
                 assistant.avatar is Avatar.Resource
@@ -159,6 +161,43 @@ fun AssistantProfileSubPage(
                     onUpdate(assistant.copy(backgroundDim = dim))
                 }
             )
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // EXTENDED PERSONALITY GROUP
+        // ═══════════════════════════════════════════════════════════════════
+        // 逻辑：主智能体始终显示，其他智能体仅在 DEBUG 环境下显示
+        if (assistant.isMain || BuildConfig.DEBUG) {
+            SettingsGroup(title = stringResource(R.string.assistant_advanced_extended_state_title)) {
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_advanced_extended_state_title),
+                    subtitle = stringResource(R.string.assistant_advanced_extended_state_desc),
+                    icon = {
+                        Icon(Icons.Rounded.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.hasExtendedState,
+                            enabled = true, // 允许手动开启或关闭
+                            onCheckedChange = {
+                                onUpdate(assistant.copy(hasExtendedState = it))
+                            }
+                        )
+                    }
+                )
+
+                AnimatedVisibility(
+                    visible = assistant.hasExtendedState,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    SettingGroupItem(
+                        title = stringResource(R.string.assistant_advanced_extended_edit_entry_title),
+                        subtitle = stringResource(R.string.assistant_advanced_extended_edit_entry_desc),
+                        onClick = onNavigateToExtendedEdit
+                    )
+                }
+            }
         }
     }
 }

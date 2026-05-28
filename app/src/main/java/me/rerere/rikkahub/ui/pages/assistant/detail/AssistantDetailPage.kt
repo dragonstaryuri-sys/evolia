@@ -89,6 +89,7 @@ private object AssistantDetailRoutes {
     const val MEMORY = "memory"
     const val UI = "ui"
     const val ADVANCED = "advanced"
+    const val EXTENDED_EDIT = "extended_edit"
     const val IMPORT = "import"
 }
 
@@ -204,12 +205,13 @@ fun AssistantDetailPage(
                         exit = fadeOut(animationSpec = tween(0)) // Instant exit to avoid fade artifact
                     ) {
                         Text(
-                            text = if (currentRoute == AssistantDetailRoutes.IMPORT)
-                                stringResource(R.string.assistant_import_page_title)
-                            else
-                                assistant.name.ifBlank {
+                            text = when (currentRoute) {
+                                AssistantDetailRoutes.IMPORT -> stringResource(R.string.assistant_import_page_title)
+                                AssistantDetailRoutes.EXTENDED_EDIT -> stringResource(R.string.assistant_extended_edit_title)
+                                else -> assistant.name.ifBlank {
                                     stringResource(R.string.assistant_page_default_assistant)
-                                },
+                                }
+                            },
                             maxLines = 1,
                         )
                     }
@@ -369,7 +371,8 @@ fun AssistantDetailPage(
                     assistant = assistant,
                     tags = tags,
                     onUpdate = ::onUpdate,
-                    vm = vm
+                    vm = vm,
+                    onNavigateToExtendedEdit = { navController.navigate(AssistantDetailRoutes.EXTENDED_EDIT) }
                 )
             }
 
@@ -463,6 +466,12 @@ fun AssistantDetailPage(
                     onNavigateToAgentTasks = { navController.navigate("agent_tasks") }
                 )
             }
+
+            // Extended Edit
+            composable(AssistantDetailRoutes.EXTENDED_EDIT) {
+                AssistantExtendedEditPage(vm = vm)
+            }
+
             // Agent Task
             composable("agent_tasks") {
                 AssistantAgentTaskPage(assistantId = id)

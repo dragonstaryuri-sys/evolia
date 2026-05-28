@@ -7,6 +7,7 @@ import me.rerere.rikkahub.core.data.db.repository.GenMediaRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
+import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.discover.repo.BookRepository
 import org.koin.dsl.module
@@ -46,5 +47,9 @@ val repositoryModule = module {
 
     single {
         BookRepository(bookDAO = get())
+    }
+
+    single {
+        AssistantExtendedStateRepository(assistantExtendedStateDAO = get())
     }
 }

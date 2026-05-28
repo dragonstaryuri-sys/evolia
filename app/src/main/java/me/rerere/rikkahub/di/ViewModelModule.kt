@@ -2,7 +2,6 @@ package me.rerere.rikkahub.di
 
 import me.rerere.rikkahub.ui.activity.TextSelectionVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
-import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
@@ -24,6 +23,7 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
+import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
@@ -57,7 +57,8 @@ val viewModelModule = module {
             context = get(),
             chatEpisodeDAO = get<ChatEpisodeDAO>(),
             providerManager = get(),
-            agentTaskRepository = get<AgentTaskRepository>()
+            agentTaskRepository = get<AgentTaskRepository>(),
+            extendedStateRepository = get<AssistantExtendedStateRepository>()
         )
     }
     viewModel<ShareHandlerVM> {
