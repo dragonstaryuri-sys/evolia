@@ -98,7 +98,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
     - **Selective Storage**: `ChatSegmentEntity` only persists the AI-generated **background summary** (梗概) in its `content` field to keep the database footprint lean.
     - **Positional Mapping**: It records `startMessageIndex` and `endMessageIndex` to map the summary back to the specific original messages.
     - **High-Fidelity Embedding**: For vector search, the system concatenates `[Background Summary] + [Original Text]` to capture both distilled intent and raw nuances.
-    - **Dynamic Reconstruction**: Tools like `retrieve_memory_details` fetch original messages using indices to return a combined payload: `[Background Summary] + [Original Text]`.
+    - **Dynamic Reconstruction**: Tools like `retrieve_memory` fetch original messages using indices to return a combined payload: `[Background Summary] + [Original Text]`.
 - **Temporal Grouping**: In the prompt, L1 segments are grouped by "Today", "Yesterday", "This Week", and "Older" to provide clear chronological context.
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
@@ -107,7 +107,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
     - **Dynamic Tail Injection**: If `enableRecentChatsReference` is on, the system automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
     - **Non-RAG Resource**: This injection does not consume the RAG retrieval limit, ensuring consistent awareness of all daily interactions across different windows.
     - **High-Precision Time**: Injected L2 items are prefixed with "Today:" and include `HH:mm` timestamps to help AI sequence daily events.
-- **Tactical Retrieval**: AI can call `retrieve_memory_details(segment_id)` for a "deep dive" into L1 Segments for better resolution on specific historical moments.
+- **Tactical Retrieval**: AI can call `retrieve_memory(segmentsid = id)` or `retrieve_memory(key_words = "...")` for a "deep dive" into L1 Segments for better resolution on specific historical moments.
 
 ### 6.3 Master Memory (L3 - Personal Archive)
 - **Mechanism**: An evolving "User Profile" that transcends individual conversations.

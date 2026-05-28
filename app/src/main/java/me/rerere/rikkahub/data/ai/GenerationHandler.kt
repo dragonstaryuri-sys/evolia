@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -174,36 +175,69 @@ class GenerationHandler(
 
                     add(
                         Tool(
-                            name = "retrieve_memory_details",
-                            description = "Retrieve exact message history or surrounding context for a specific segment ID to get better resolution on an event.",
+                            name = "retrieve_memory",
+                            description = "Search historical memory segments by keywords or retrieve exact message history for a specific segment ID.",
                             parameters = {
                                 InputSchema.Obj(
                                     properties = buildJsonObject {
                                         put("segment_id", buildJsonObject {
                                             put("type", "integer")
-                                            put("description", "The ID of the segment.")
+                                            put("description", "The ID of the segment to retrieve detailed history for.")
                                         })
-                                    },
-                                    required = listOf("segment_id")
+                                        put("key_words", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "Keywords to search for in historical segments database (RAG).")
+                                        })
+                                    }
                                 )
                             },
                             execute = { params ->
-                                val id = params.jsonObject["segment_id"]?.jsonPrimitive?.intOrNull ?: 0
-                                val segment = chatSegmentDAO.getSegmentById(id) ?: return@Tool buildJsonObject { put("error", JsonPrimitive("Segment not found.")) }
+                                val json = params.jsonObject
+                                val segmentId = json["segment_id"]?.jsonPrimitive?.intOrNull
+                                val keyWords = json["key_words"]?.jsonPrimitive?.contentOrNull
 
-                                val conversation = conversationRepo.getConversationById(Uuid.parse(segment.conversationId))
-                                val messages = conversation?.currentMessages ?: emptyList()
+                                when {
+                                    keyWords != null -> {
+                                        val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
+                                            assistantId = assistant.id.toString(),
+                                            query = keyWords,
+                                            limit = assistant.ragLimit,
+                                            similarityThreshold = assistant.ragSimilarityThreshold,
+                                            includeCore = false,
+                                            includeEpisodes = true,
+                                            mode = assistant.memoryRetrievalMode
+                                        )
+                                        buildJsonObject {
+                                            put("results", JsonArray(relevant.map { (mem, _) ->
+                                                buildJsonObject {
+                                                    put("segment_id", JsonPrimitive(mem.id))
+                                                    put("time", JsonPrimitive(mem.timestamp))
+                                                    put("content", JsonPrimitive(mem.content))
+                                                }
+                                            }))
+                                        }
+                                    }
+                                    segmentId != null -> {
+                                        val chatSegment = chatSegmentDAO.getSegmentById(segmentId) ?: return@Tool buildJsonObject { put("error", JsonPrimitive("Segment not found.")) }
 
-                                val start = segment.startMessageIndex.coerceIn(messages.indices)
-                                val end = (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
+                                        val conversation = conversationRepo.getConversationById(Uuid.parse(chatSegment.conversationId))
+                                        val messages = conversation?.currentMessages ?: emptyList()
 
-                                val details = if (start < end) {
-                                    messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
-                                } else "No details found."
+                                        val start = chatSegment.startMessageIndex.coerceIn(messages.indices)
+                                        val end = (chatSegment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
 
-                                buildJsonObject {
-                                    put("segment_id", JsonPrimitive(id))
-                                    put("details", JsonPrimitive(details))
+                                        val details = if (start < end) {
+                                            messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                                        } else "No details found."
+
+                                        buildJsonObject {
+                                            put("segment_id", JsonPrimitive(segmentId))
+                                            put("details", JsonPrimitive(details))
+                                        }
+                                    }
+                                    else -> buildJsonObject {
+                                        put("error", JsonPrimitive("Either `segment_id` or `key_words` must be provided."))
+                                    }
                                 }
                             }
                         )
@@ -572,11 +606,11 @@ class GenerationHandler(
                         - **INCORRECT EXAMPLE**: "You completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
 
                         ### Tool Usage
-                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory_details` tools to create, update, delete or \"deep dive\" into that specific conversation's  memories.
+                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory` tools to create, update, delete or \"deep dive\" into that specific conversation's  memories.
                         - If there is no relevant information in memory, call `create_memory` to create a new record.
                         - If a relevant record already exists, call `edit_memory` to update it.
                         - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
-                        - `retrieve_memory_details`: Call this when a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID."
+                        - `retrieve_memory`: Use this to search historical segments by `key_words` or call this with `segment_id` when a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID."
                         **Note:** You can only edit or delete **Core Memories** (which have an ID). Historical segments (L1) are read-only.
 
                         **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
@@ -1149,7 +1183,7 @@ class GenerationHandler(
         }
 
         return buildString {
-            append("## Memories\n").append("These are memories that you can reference. If a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID, please call `retrieve_memory_details(segment_id)`.\n")
+            append("## Memories\n").append("These are memories that you can reference. If a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID, please call `retrieve_memory(segment_id = id)`.\n")
 
             if (boostedMemories.isNotEmpty()) {
                 append("### 今日会话梗概\n")
