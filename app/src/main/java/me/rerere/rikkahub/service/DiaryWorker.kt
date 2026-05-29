@@ -38,6 +38,7 @@ import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
+import me.rerere.ai.core.MessageRole
 
 
 private const val TAG = "DiaryWorker"
@@ -152,7 +153,10 @@ class DiaryWorker(
                 )
             ).collect { chunk ->
                 if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
-                    generatedContent = chunk.messages.lastOrNull()?.toText() ?: ""
+                    val lastMessage = chunk.messages.lastOrNull()
+                    if (lastMessage?.role == MessageRole.ASSISTANT) {
+                        generatedContent = lastMessage.toText()
+                    }
                 }
             }
 
@@ -171,6 +175,12 @@ class DiaryWorker(
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Diary generation failed", e)
+            // 核心修复：如果是手动触发且抛出异常，通知用户具体的错误信息
+            if (isManual) {
+                val errorInfo = e.localizedMessage ?: e.toString()
+                val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
+                showSimpleNotification(errorMsg, assistantIdStr)
+            }
             Result.retry()
         }
     }
