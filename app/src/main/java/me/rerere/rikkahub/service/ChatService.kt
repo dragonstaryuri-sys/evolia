@@ -273,12 +273,19 @@ class ChatService(
         // 构建指令
         val monitorMsg = buildString {
             append("【系统自动化指令 - 任务触发】\n")
-            if (task.taskType == "EMAIL") {
-                val to = data["to"]?.jsonPrimitive?.contentOrNull
-                val subject = data["subject"]?.jsonPrimitive?.contentOrNull
-                append("类型: 邮件自动化\n")
-                if (!to.isNullOrBlank()) append("目标收件人: $to\n")
-                if (!subject.isNullOrBlank()) append("预设主题: $subject\n")
+            when (task.taskType) {
+                "EMAIL" -> {
+                    val to = data["to"]?.jsonPrimitive?.contentOrNull
+                    val subject = data["subject"]?.jsonPrimitive?.contentOrNull
+                    append("类型: 邮件自动化\n")
+                    if (!to.isNullOrBlank()) append("目标收件人: $to\n")
+                    if (!subject.isNullOrBlank()) append("预设主题: $subject\n")
+                }
+                "NOTIFICATION" -> {
+                    val title = data["title"]?.jsonPrimitive?.contentOrNull
+                    append("类型: 定时提醒\n")
+                    if (!title.isNullOrBlank()) append("提醒主题: $title\n")
+                }
             }
             append("\n指令内容：$instruction\n\n注意：这是一条系统触发的消息，请根据上述要求直接调用相关工具或执行逻辑，无需向用户确认。")
         }
@@ -770,7 +777,15 @@ class ChatService(
                     val targetOptions = if (isVirtual) {
                         assistant.localTools.filter { it is LocalToolOption.TimeSense }
                     } else if (isMain) {
-                        assistant.localTools
+                        if (assistant.enableMemory) {
+                            assistant.localTools.toMutableList().apply {
+                                if (!any { it is LocalToolOption.MilestoneManagement }) {
+                                    add(LocalToolOption.MilestoneManagement)
+                                }
+                            }
+                        } else {
+                            assistant.localTools.filter { it !is LocalToolOption.MilestoneManagement }
+                        }
                     } else {
                         // 修复：允许其他智能体使用时间观念和邮件服务
                         assistant.localTools.filter {

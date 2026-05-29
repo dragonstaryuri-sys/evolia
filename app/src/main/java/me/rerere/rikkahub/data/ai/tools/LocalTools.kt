@@ -28,6 +28,8 @@ import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
+import me.rerere.rikkahub.core.data.repository.MilestoneRepository
+import me.rerere.rikkahub.core.data.db.entity.MilestoneEntity
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.service.AgentTaskScheduler
@@ -52,6 +54,7 @@ fun rememberLocalTools(): LocalTools {
     val agentTaskScheduler = koinInject<AgentTaskScheduler>()
     val secretKeyManager = koinInject<SecretKeyManager>()
     val extendedStateRepo = koinInject<AssistantExtendedStateRepository>()
+    val milestoneRepo = koinInject<MilestoneRepository>()
 
     return remember {
         LocalTools(
@@ -61,7 +64,8 @@ fun rememberLocalTools(): LocalTools {
             secretKeyManager,
             agentTaskRepository,
             agentTaskScheduler,
-            extendedStateRepo
+            extendedStateRepo,
+            milestoneRepo
         )
     }
 }
@@ -73,7 +77,8 @@ class LocalTools(
     private val secretKeyManager: SecretKeyManager,
     private val agentTaskRepository: AgentTaskRepository,
     private val agentTaskScheduler: AgentTaskScheduler,
-    private val extendedStateRepo: AssistantExtendedStateRepository
+    private val extendedStateRepo: AssistantExtendedStateRepository,
+    private val milestoneRepo: MilestoneRepository
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -918,7 +923,7 @@ class LocalTools(
                             })
                             put("task_type", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Type of task: EMAIL, NOTIFICATION, OTHERS(required for 'add')")
+                                put("description", "Type of task: EMAIL, NOTIFICATION (Timed AI Reminder), OTHERS(required for 'add')")
                             })
                             put("scheduled_time", buildJsonObject {
                                 put("type", "string")
@@ -945,7 +950,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Recipient email address (REQUIRED for EMAIL) or notification title (for NOTIFICATION)."
+                                    "Recipient email address (REQUIRED for EMAIL) or reminder topic (for NOTIFICATION)."
                                 )
                             })
                             put("subject", buildJsonObject {
@@ -1269,6 +1274,107 @@ class LocalTools(
         )
     }
 
+    fun getMilestoneTools(assistantId: Uuid): List<Tool> {
+        return listOf(
+            Tool(
+                name = "milestone_manager",
+                description = "Core milestone events for relationship management. A milestone refers to an event that reshapes the definition or trajectory of \"us\", satisfying one of the following dimensions: Relationship (changes in address, positioning or boundaries), Perception (renewed understanding of each other), Commitment (formation of new long-term promises), Emotion (shifts in the pattern of emotional expression), Identity (changes to self-identities voluntarily disclosed by users).",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("action", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Action to perform: add, list, delete, update")
+                                put("enum", JsonArray(listOf(JsonPrimitive("add"), JsonPrimitive("list"), JsonPrimitive("delete"), JsonPrimitive("update"))))
+                            })
+                            put("id", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Milestone ID, required for update and delete")
+                            })
+                            put("time", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Event time (YYYY-MM-DD), required for 'add' and 'update'")
+                            })
+                            put("label", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Short category label (e.g., 初识, 相爱, 吵架, 升温), required for 'add'")
+                            })
+                            put("description", buildJsonObject {
+                                put("type", "string")
+                                put("description", "A concise description of what happened, required for 'add'")
+                            })
+                        },
+                        required = listOf("action")
+                    )
+                },
+                execute = {
+                    val json = it.jsonObject
+                    val action = json["action"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        when (action) {
+                            "add" -> {
+                                val time = json["time"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val label = json["label"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val description = json["description"]?.jsonPrimitive?.contentOrNull ?: ""
+                                if (time.isBlank() || label.isBlank() || description.isBlank()) {
+                                    return@Tool buildJsonObject { put("error", "Missing required fields for 'add'") }
+                                }
+                                val milestone = MilestoneEntity(
+                                    assistantId = assistantId.toString(),
+                                    time = time,
+                                    label = label,
+                                    description = description
+                                )
+                                milestoneRepo.addMilestone(milestone)
+                                buildJsonObject { put("success", true); put("id", milestone.id) }
+                            }
+                            "list" -> {
+                                val milestones = milestoneRepo.getMilestones(assistantId.toString())
+                                buildJsonObject {
+                                    put("milestones", JsonArray(milestones.map { m ->
+                                        buildJsonObject {
+                                            put("id", m.id)
+                                            put("time", m.time)
+                                            put("label", m.label)
+                                            put("description", m.description)
+                                        }
+                                    }))
+                                }
+                            }
+                            "update" -> {
+                                val id = json["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                                val time = json["time"]?.jsonPrimitive?.contentOrNull
+                                val label = json["label"]?.jsonPrimitive?.contentOrNull
+                                val description = json["description"]?.jsonPrimitive?.contentOrNull
+                                val list = milestoneRepo.getMilestones(assistantId.toString())
+                                val existing = list.find { it.id == id }
+                                if (existing != null) {
+                                    val updated = existing.copy(
+                                        time = time ?: existing.time,
+                                        label = label ?: existing.label,
+                                        description = description ?: existing.description
+                                    )
+                                    milestoneRepo.updateMilestone(updated)
+                                    buildJsonObject { put("success", true) }
+                                } else {
+                                    buildJsonObject { put("error", "Milestone not found") }
+                                }
+                            }
+                            "delete" -> {
+                                val id = json["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                                milestoneRepo.deleteMilestone(id)
+                                buildJsonObject { put("success", true) }
+                            }
+                            else -> buildJsonObject { put("error", "Unknown action") }
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed") }
+                    }
+                }
+            )
+        )
+    }
+
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
@@ -1288,6 +1394,7 @@ class LocalTools(
         if (options.contains(LocalToolOption.AgentAutomation)) tools.addAll(getAgentTaskTools(assistantId))
         if (options.contains(LocalToolOption.EmailService)) tools.addAll(getEmailTools())
         if (options.contains(LocalToolOption.UpdateProfile)) tools.addAll(getUpdateProfileTools(assistantId))
+        if (options.contains(LocalToolOption.MilestoneManagement)) tools.addAll(getMilestoneTools(assistantId))
         return tools
     }
 }

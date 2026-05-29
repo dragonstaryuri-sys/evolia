@@ -26,6 +26,7 @@ import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
+import me.rerere.rikkahub.core.data.repository.MilestoneRepository
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -65,7 +66,7 @@ val dataSourceModule = module {
 
     single {
         Room.databaseBuilder(get(), AppDatabase::class.java, "rikka_hub")
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .build()
     }
 
@@ -135,6 +136,12 @@ val dataSourceModule = module {
         get<AppDatabase>().assistantExtendedStateDao()
     }
 
+    single {
+        get<AppDatabase>().milestoneDao()
+    }
+
+    single { MilestoneRepository(milestoneDAO = get()) }
+
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single {
@@ -145,6 +152,7 @@ val dataSourceModule = module {
             memoryRepo = get(),
             conversationRepo = get(),
             extendedStateRepo = get(),
+            milestoneRepo = get(),
             aiLoggingManager = get(),
             embeddingService = get(),
             chatSegmentDAO = get(),

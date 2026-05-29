@@ -36,4 +36,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("update_profile")
     data object UpdateProfile : LocalToolOption()
+
+    @Serializable
+    @SerialName("milestone_management")
+    data object MilestoneManagement : LocalToolOption()
 }

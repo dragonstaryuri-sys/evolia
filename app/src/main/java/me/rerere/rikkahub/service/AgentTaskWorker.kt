@@ -70,16 +70,9 @@ class AgentTaskWorker(
             }
 
             val success = when (task.taskType) {
-                "AGENT_TASK", "EMAIL" -> {
+                "AGENT_TASK", "EMAIL", "NOTIFICATION" -> {
                     Log.d(TAG, "Running ${task.taskType} via ChatService (Instruction Triggered)")
                     chatService.executeAgentTask(task)
-                    true
-                }
-                "NOTIFICATION" -> {
-                    val title = data["title"]?.jsonPrimitive?.contentOrNull ?: "Notification"
-                    val content = data["content"]?.jsonPrimitive?.contentOrNull ?: ""
-                    Log.d(TAG, "Sending notification: $title")
-                    sendNotification(title, content)
                     true
                 }
                 "DIARY" -> {

@@ -28,9 +28,10 @@ import kotlinx.serialization.decodeFromString
         TokenUsageEntity::class,
         BookEntity::class,
         BookProgressEntity::class,
-        AssistantExtendedStateEntity::class
+        AssistantExtendedStateEntity::class,
+        MilestoneEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -61,6 +62,8 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun assistantExtendedStateDao(): AssistantExtendedStateDAO
 
+    abstract fun milestoneDao(): MilestoneDAO
+
     companion object {
         const val TAG = "AppDatabase"
 
@@ -84,6 +87,22 @@ abstract class AppDatabase : RoomDatabase() {
                         `interactionHabits` TEXT NOT NULL,
                         `relationships` TEXT NOT NULL,
                         PRIMARY KEY(`assistantId`)
+                    )
+                """.trimIndent())
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `MilestoneEntity` (
+                        `id` TEXT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `time` TEXT NOT NULL,
+                        `label` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
                     )
                 """.trimIndent())
             }

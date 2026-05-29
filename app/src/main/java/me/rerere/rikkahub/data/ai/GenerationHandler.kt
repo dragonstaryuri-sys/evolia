@@ -66,6 +66,7 @@ import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
+import me.rerere.rikkahub.core.data.repository.MilestoneRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
@@ -106,6 +107,7 @@ class GenerationHandler(
     private val memoryRepo: MemoryRepository,
     private val conversationRepo: ConversationRepository,
     private val extendedStateRepo: AssistantExtendedStateRepository,
+    private val milestoneRepo: MilestoneRepository,
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: EmbeddingService,
     private val chatSegmentDAO: ChatSegmentDAO,
@@ -358,7 +360,7 @@ class GenerationHandler(
                             if (msg.parts.any { it === toolCall }) {
                                 msg.copy(parts = msg.parts.map { part ->
                                     if (part === toolCall) {
-                                        (part as UIMessagePart.ToolCall).copy(arguments = sanitizedArgs)
+                                        (part).copy(arguments = sanitizedArgs)
                                     } else part
                                 })
                             } else msg
@@ -653,6 +655,17 @@ class GenerationHandler(
             if (profileLines.isNotEmpty()) {
                 staticSystemPromptBuilder.append("## 用户信息\n")
                 profileLines.forEach { staticSystemPromptBuilder.append("- $it\n") }
+                staticSystemPromptBuilder.append("\n")
+            }
+        }
+
+        if (assistant.isMain && assistant.enableMemory) {
+            val milestones = milestoneRepo.getMilestones(assistant.id.toString())
+            if (milestones.isNotEmpty()) {
+                staticSystemPromptBuilder.append("## 关系核心里程碑\n")
+                milestones.forEach { m ->
+                    staticSystemPromptBuilder.append("- 【${m.label}: ${m.time}】 ${m.description}\n")
+                }
                 staticSystemPromptBuilder.append("\n")
             }
         }
@@ -1419,7 +1432,22 @@ class GenerationHandler(
             providerImpl.streamText(
                 providerSetting = provider,
                 messages = internalMessages,
-                params = params
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = assistant.temperature,
+                    topP = assistant.topP,
+                    maxTokens = assistant.maxTokens,
+                    tools = tools,
+                    thinkingBudget = assistant.thinkingBudget,
+                    customHeaders = buildList {
+                        addAll(assistant.customHeaders)
+                        addAll(model.customHeaders)
+                    },
+                    customBody = buildList {
+                        addAll(assistant.customBodies)
+                        addAll(model.customBodies)
+                    }
+                )
             ).collect {
                 currentMessages = currentMessages.handleMessageChunk(chunk = it, model = model)
                 it.usage?.let { usage ->

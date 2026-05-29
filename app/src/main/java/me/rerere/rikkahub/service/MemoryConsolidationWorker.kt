@@ -422,7 +422,7 @@ class MemoryConsolidationWorker(
                         thinkingBudget = 2048
                     )
 
-                    if (updatedMasterContent.length > 2500) {
+                    if (updatedMasterContent.length > 1500) {
                         updatedMasterContent = compressMasterMemory(
                             handler = memory.handler,
                             providerSetting = memory.provider,
@@ -614,9 +614,9 @@ class MemoryConsolidationWorker(
         val finalSystemPrompt = systemPrompt.applyPlaceholders("char" to assistantName, "locale" to locale)
         val inputPrompt = """
             Current Date: ${LocalDate.now()}
-            # Existing Memory Archive:
+            # 当前记忆档案:
             ${existingArchive.ifBlank { "(Empty)" }}
-            # New Conversation Context:
+            # 新的对话内容:
             $newContext
             Please provide the fully updated Memory Archive incorporating all relevant new information.
         """.trimIndent()
