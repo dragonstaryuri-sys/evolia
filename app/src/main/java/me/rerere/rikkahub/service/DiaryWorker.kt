@@ -155,7 +155,7 @@ class DiaryWorker(
                 if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
                     val lastMessage = chunk.messages.lastOrNull()
                     if (lastMessage?.role == MessageRole.ASSISTANT) {
-                        generatedContent = lastMessage.toText()
+                        generatedContent = lastMessage.toContentText()
                     }
                 }
             }
