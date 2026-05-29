@@ -1178,7 +1178,7 @@ class LocalTools(
                             put("updates", buildJsonObject {
                                 put("type", "object")
                                 put("description", "A map of fields to update. " +
-                                    "Allowed fields for 'user': appearance, occupation, preferences, diet, health, taboos, interaction_preferences, important_relationships. " +
+                                    "Allowed fields for 'user': appearance, occupation, preferences, diet, health, taboos, interaction_preferences, important_relationships, birthday. " +
                                     "Allowed fields for 'assistant': personality, preferences, diet, taboos, interaction_habits, relationships.")
                                 // 3. 即使解析是动态的，定义一些属性占位符能引导 AI 理解这是一个键值对对象
                                 put("additionalProperties", buildJsonObject {
@@ -1225,6 +1225,7 @@ class LocalTools(
                                         "taboos" -> updatedProfile.copy(taboos = newValue)
                                         "interaction_preferences" -> updatedProfile.copy(interactionPreferences = newValue)
                                         "important_relationships" -> updatedProfile.copy(importantRelationships = newValue)
+                                        "birthday" -> updatedProfile.copy(birthday = newValue)
                                         else -> updatedProfile
                                     }
                                 }

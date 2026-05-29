@@ -398,6 +398,7 @@ class SettingsStore(
 
 @Serializable
 data class UserProfile(
+    val birthday: String = "",
     val appearance: String = "",
     val occupation: String = "",
     val preferences: String = "",

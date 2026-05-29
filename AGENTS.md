@@ -89,58 +89,35 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 - **L0: Raw Messages**: Immediate short-term context (Sliding Window). AI always sees the last N original messages.
 - **L1: Context Refresh (Segments)**: Fine-grained L1 summaries of historical message blocks, providing recent context highlights.
 - **L2: Episodic Memory**: Long-term conversation archive. Each Conversation maps to exactly one Episode.
-- **L3: Master Memory**: The ultimate "Master Archive" of user identity and preferences (User Profile).
+- **L3: Master Memory (终极档案)**: The ultimate "Master Archive" of relationship dynamics and long-term commitments.
 
 ### 6.1 Context Refresh (L1 - Auto-Summarization)
 - **Mechanism**: Compresses older L0 messages within the active session into segments.
 - **L0 Sliding Window**: Even if a message is summarized into L1, it remains visible as "Raw Message" in L0 if it falls within the `maxHistoryMessages` limit.
 - **Segment Strategy (Split Storage & Hybrid Retrieval)**:
-    - **Selective Storage**: `ChatSegmentEntity` only persists the AI-generated **background summary** (梗概) in its `content` field to keep the database footprint lean.
+    - **Selective Storage**: `ChatSegmentEntity` only persists the AI-generated **background summary** (梗梗) in its `content` field to keep the database footprint lean.
     - **Positional Mapping**: It records `startMessageIndex` and `endMessageIndex` to map the summary back to the specific original messages.
     - **High-Fidelity Embedding**: For vector search, the system concatenates `[Background Summary] + [Original Text]` to capture both distilled intent and raw nuances.
-    - **Dynamic Reconstruction**: Tools like `retrieve_memory` fetch original messages using indices to return a combined payload: `[Background Summary] + [Original Text]`.
 - **Temporal Grouping**: In the prompt, L1 segments are grouped by "Today", "Yesterday", "This Week", and "Older" to provide clear chronological context.
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
 - **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation.
 - **Cross-Window Continuity (All-Day L2 Injection)**: 
-    - **Dynamic Tail Injection**: If `enableRecentChatsReference` is on, the system automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
+    - **Dynamic Tail Injection**: System automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
     - **Non-RAG Resource**: This injection does not consume the RAG retrieval limit, ensuring consistent awareness of all daily interactions across different windows.
     - **High-Precision Time**: Injected L2 items are prefixed with "Today:" and include `HH:mm` timestamps to help AI sequence daily events.
-- **Tactical Retrieval**: AI can call `retrieve_memory(segmentsid = id)` or `retrieve_memory(key_words = "...")` for a "deep dive" into L1 Segments for better resolution on specific historical moments.
 
-### 6.3 Master Memory (L3 - Personal Archive)
-- **Mechanism**: An evolving "User Profile" that transcends individual conversations.
-- **Generation Logic**: Aggregates L2 summaries into a persistent archive injected into the Stable System Prompt.
-
-### 6.4 Token Allocation & Context Priority
-- **Hierarchy of Injection**: See 6.5 for detailed order.
-- **Allocation Strategy**: Controlled by `assistant.contextPriority` (CHAT_HISTORY, MEMORIES, or BALANCED).
-- **Recent Episode Boost**: Integrated into the All-Day L2 Injection mechanism, providing seamless transitions and memory of recent actions.
-
-### 6.5 Final Prompt Structure (Prefix Caching Optimized Order)
-To maximize Prefix Caching efficiency, the payload adopts a **"Stable-Front, Dynamic-Tail"** structure. Highly dynamic information is injected into the **last User message** in the sequence, ensuring that the cache for all preceding messages (System + Attachments + History) remains valid across multiple turns.
-
-1. **System Message: Stable Preset** (Highest Cache-Hit Region)
-    - **Core Personality**: Rules, Identity, and Instructions.
-    - **Master Memory (L3)**: Persistent User Archive.
-    - **Tool Specifications**: System instructions for activated tools and Memory Recording protocols.
-    - **Static Injections**: `BEFORE_SYSTEM` and `AFTER_SYSTEM` prompts from Modes/Lorebooks.
-
-2. **User Message: Context Attachments**
-    - Media attachments (images, documents, etc.) provided by active Modes or Lorebooks.
-
-3. **Multi-Role: Chat History (L0)**
-    - Stable sliding window of recent original messages. This prefix is preserved across turns.
-
-4. **User Message: Augmented Tail** (The Last Message)
-    - The final User message is intercepted and injected with a `dynamicContext` header containing:
-        - **L1: Context Highlights**: Recent history Segments (Summaries), grouped chronologically.
-        - **L2: Memories (RAG)**: Contextually retrieved facts and **Today's Cross-Window L2 Summaries** (full-day awareness).
-        - **Lorebook Entries**: `AFTER_SYSTEM` lorebook entries activated by the current context.
-        - **Reference Variables**: Global variables applied with placeholders.
-        - **Instant Dynamic Facts**: Current timestamp (HH:mm precision), holidays, and the interval since the last assistant reply.
-        - **The Original User Question**: Appended after the injected context header.
+### 6.3 Master Memory (L3 - Master Archive)
+- **Mechanism**: A structured relationship record that transcends individual conversations, injected into the Stable System Prompt.
+- **Sync Logic**: 
+    - **Scheduled Daily Sync**: Executed at **3:00 AM** daily via `master_memory_daily_sync`.
+    - **Incremental Update**: Only processes L2 episodes generated since the last sync.
+- **Core Content Modules**:
+    - **1. Agreement & TODOs (约定与待办)**: Pending promises, plans, and unresolved commitments.
+    - **2. Emotional Status (情感现状)**: Relationship positioning (e.g., friends, lovers) and current interaction temperature.
+- **Maintenance Protocols**:
+    - **Stability Rule**: If new dialogue doesn't involve core state changes, the AI must output the existing archive **verbatim** to prevent hallucinations or loss of detail.
+    - **Auto-Compression**: Triggers a "Lossless Compression" protocol when the archive content becomes too large, pruning completed items and refining descriptions into precise snapshots.
 
 ## 7. Agent Automation (Task Manager)
 
@@ -154,12 +131,21 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 7.3 Execution Modes & Visibility
 - **Type: EMAIL / AGENT_TASK**: 
     - **Trigger**: System sends a "Virtual Instruction" message to the AI.
-    - **Visibility**: The trigger instruction uses `skipContext = true` and is invisible to the user in the chat UI to maintain cleanliness.
-    - **Feedback**: The AI's response to the instruction is visible, providing a natural confirmation that the task was executed.
+    - **Visibility**: The trigger instruction uses `skipContext = true` and is invisible to the user in the chat UI.
 - **Type: NOTIFICATION**: Directly pushes a system notification using the specified title and content data.
 - **Type: DIARY**: Automatically records an entry into the Agent's internal diary database.
 
-### 7.4 Reliability & Lifecycle
-- **Background Wake-up**: If the app is closed, the system wakes it up to execute the worker.
-- **Persistence**: AI reasoning during background tasks is protected by `ChatForegroundService` (Status bar notification) to ensure completion even if the app is not in focus.
-- **Notification Feedback**: If executed while the app is in the background, a system notification is sent upon AI response completion to alert the user.
+## 8. Tool System & Local Capabilities
+
+### 8.1 Local Execution Engines
+- **Python Engine (`eval_python`)**: Powered by Chaquopy (Python 3.11). Includes `numpy`, `pandas`, `matplotlib`, and `Pillow`. Supports image/chart generation and file sandbox. AI can use Markdown syntax to render generated files directly in chat.
+- **JavaScript Engine (`eval_javascript`)**: QuickJS-based lightweight execution for math and logic.
+
+### 8.2 Productivity & Device Control
+- **Schedule Manager (`schedule_manager`)**: Manages internal tasks with priority/urgency. Automatically syncs with the **Android System Calendar** for persistent reminders.
+- **Device Control**: Direct management of Alarms and Timers via system Intents.
+- **Email Service**: Full SMTP/IMAP support via `qq_email_service` for autonomous email handling.
+
+### 8.3 Relationship & Dynamic Profile
+- **Profile Updater (`update_profile`)**: Allows AI to dynamically update User/Assistant Profile fields (diet, appearance, occupation, preferences, health, taboos, etc.) in real-time.
+- **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Perception, Commitment, Emotion, Identity) to shape the long-term bond and personality evolution.
