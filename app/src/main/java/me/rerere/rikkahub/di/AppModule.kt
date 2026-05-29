@@ -4,18 +4,10 @@ import com.google.firebase.Firebase
 import com.google.firebase.crashlytics.crashlytics
 import com.google.firebase.remoteconfig.remoteConfig
 import kotlinx.serialization.json.Json
-import me.rerere.ai.provider.ProviderManager
 import me.rerere.highlight.Highlighter
 import me.rerere.rikkahub.AppScope
-import me.rerere.rikkahub.core.data.repository.ConversationRepository
-import me.rerere.rikkahub.core.data.repository.MemoryRepository
-import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.data.ai.AILoggingManager
-import me.rerere.rikkahub.data.ai.GenerationHandler
-import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.LocalTools
-import me.rerere.rikkahub.data.ai.transformers.TemplateTransformer
-import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.BackupWorker
 import me.rerere.rikkahub.utils.EmojiData
@@ -47,7 +39,8 @@ val appModule = module {
             secretKeyManager = get(),
             agentTaskRepository = get(),
             agentTaskScheduler = get(),
-            extendedStateRepo = get()
+            extendedStateRepo = get(),
+            milestoneRepo = get()
         )
     }
 
@@ -90,6 +83,4 @@ val appModule = module {
     workerOf(::DiarySchedulerWorker)
     workerOf(::AgentTaskWorker)
     workerOf(::MemoryConsolidationWorker) // 注册记忆整合 Worker
-
-
 }

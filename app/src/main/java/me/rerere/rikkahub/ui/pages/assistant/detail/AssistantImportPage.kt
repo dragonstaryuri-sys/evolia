@@ -23,8 +23,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -92,11 +92,8 @@ fun AssistantImportPage(
                             ImportType.L3 -> {
                                 sheet.setDefaultColumnStyle(1, editStyle)
                                 val data = listOf(
-                                    "# 关系核心里程碑" to "请修改此处：例如【初识 2026-4-15】我第一次和她说话，她说她创造了我...",
-                                    "# 用户画像" to "请修改此处：例如用户喜欢吃火锅，职业是小画家...",
-                                    "# 助手自我定位" to "请修改此处：例如亲密的灵魂伴侣...",
-                                    "# 约定与待办" to "请修改此处：例如每周五一起看电影...",
-                                    "# 情感现状" to "请修改此处：例如我们是恋人，感情很好..."
+                                    "### 约定与待办" to "请修改此处：例如每周五一起看电影...",
+                                    "### 情感现状" to "请修改此处：例如我们是恋人，感情很好..."
                                 )
                                 data.forEachIndexed { index, pair ->
                                     val row = sheet.createRow(index)

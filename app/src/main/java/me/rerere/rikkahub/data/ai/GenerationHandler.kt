@@ -633,7 +633,7 @@ class GenerationHandler(
                     if (extendedState.relationships.isNotBlank()) add("重要人际关系: ${extendedState.relationships}")
                 }
                 if (agentExtendedLines.isNotEmpty()) {
-                    staticSystemPromptBuilder.append("## 小机的档案\n")
+                    staticSystemPromptBuilder.append("## 你的档案\n")
                     agentExtendedLines.forEach { staticSystemPromptBuilder.append("- $it\n") }
                     staticSystemPromptBuilder.append("\n")
                 }
