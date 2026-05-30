@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -265,25 +266,29 @@ fun AssistantToolsSubPage(
                 }
             )
 
-            // Update Profile (Available for all assistants)
-            val updateProfileEnabled = assistant.localTools.contains(LocalToolOption.UpdateProfile)
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_page_local_tools_update_profile_title),
-                subtitle = stringResource(R.string.assistant_page_local_tools_update_profile_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = updateProfileEnabled,
-                        onCheckedChange = { enabled ->
-                            val newLocalTools = if (enabled) {
-                                assistant.localTools + LocalToolOption.UpdateProfile
-                            } else {
-                                assistant.localTools - LocalToolOption.UpdateProfile
+            // Update Profile (资料维护)
+            // 改造：只有主智能体显示，且默认开启（业务上主智能体通常自带此工具）。
+            // 其他智能体仅在 Debug 模式下显示，Release 版不显示。
+            if (assistant.isMain || BuildConfig.DEBUG) {
+                val updateProfileEnabled = assistant.localTools.contains(LocalToolOption.UpdateProfile)
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_update_profile_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_update_profile_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = updateProfileEnabled,
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.UpdateProfile
+                                } else {
+                                    assistant.localTools - LocalToolOption.UpdateProfile
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
                             }
-                            onUpdate(assistant.copy(localTools = newLocalTools))
-                        }
-                    )
-                }
-            )
+                        )
+                    }
+                )
+            }
 
             // 警告提示：如果开启了邮件工具但没配置全局账号/授权码
             val isEmailConfigured =

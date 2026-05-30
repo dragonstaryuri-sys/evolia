@@ -1639,4 +1639,9 @@
   <string name="assistant_memory_include_user_profile_desc">Allow the agent to access your personal profile information including appearance, occupation and taboos during conversations</string>
   <string name="assistant_page_local_tools_update_profile_title">Profile Maintenance</string>
   <string name="assistant_page_local_tools_update_profile_desc">Allow the agent to actively update user or its own profile information (such as personality, appearance, occupation, etc.) based on conversation content</string>
+  <string name="user_profile_nickname">Nickname</string>
+  <string name="user_profile_birthday">Birthday</string>
+  <string name="user_profile_email">Email</string>
+  <string name="user_profile_email_hint">If no recipient is specified when the device sends emails, this email address will be used as the default recipient for the email feature.</string>
+  <string name="user_profile_birthday_placeholder">Select Date</string>
 </resources>

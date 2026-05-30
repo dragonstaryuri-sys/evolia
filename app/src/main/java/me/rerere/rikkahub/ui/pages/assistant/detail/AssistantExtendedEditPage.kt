@@ -3,11 +3,6 @@ package me.rerere.rikkahub.ui.pages.assistant.detail
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccessibilityNew
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.Psychology
-import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -16,37 +11,31 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
-import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
 @Composable
 fun AssistantExtendedEditPage(
     vm: AssistantDetailVM
 ) {
     val extendedState by vm.extendedState.collectAsStateWithLifecycle()
-    val haptics = rememberPremiumHaptics()
 
-    // 我们使用本地状态暂存修改，点击保存后再同步到 VM
+    // 使用本地状态暂存修改
     var localState by remember(extendedState) { mutableStateOf(extendedState) }
     val scrollState = rememberScrollState()
 
-    Scaffold(
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    haptics.perform(HapticPattern.Success)
-                    vm.updateExtendedState(localState)
-                },
-                icon = { Icon(Icons.Rounded.Save, null) },
-                text = { Text(stringResource(R.string.save)) }
-            )
+    // 关键逻辑：退出页面（Composable 被销毁）时自动保存
+    val currentState by rememberUpdatedState(localState)
+    DisposableEffect(vm) {
+        onDispose {
+            vm.updateExtendedState(currentState)
         }
-    ) { padding ->
+    }
+
+    Scaffold { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .imePadding() // <--- 关键：增加 IME Padding 确保键盘弹出时不遮挡
+                .imePadding()
                 .verticalScroll(scrollState)
         ) {
             // ═══════════════════════════════════════════════════════════════════
@@ -143,7 +132,6 @@ fun AssistantExtendedEditPage(
                     )
                 }
 
-                // 数值滑块
                 SliderField(
                     label = stringResource(R.string.assistant_extended_muscle),
                     value = app.muscle,
@@ -180,7 +168,7 @@ fun AssistantExtendedEditPage(
                 )
             }
 
-            Spacer(Modifier.height(100.dp))
+            Spacer(Modifier.height(32.dp))
         }
     }
 }

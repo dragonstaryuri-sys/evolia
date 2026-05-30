@@ -1603,4 +1603,9 @@
   <string name="assistant_memory_include_user_profile_desc">在对话中让智能体知晓您的外貌、职业、禁忌等个人档案信息</string>
   <string name="assistant_page_local_tools_update_profile_title">资料维护</string>
   <string name="assistant_page_local_tools_update_profile_desc">允许智能体根据对话内容主动更新用户或自身的资料信息（如性格、外貌、职业等）</string>
+  <string name="user_profile_nickname">昵称</string>
+  <string name="user_profile_birthday">生日</string>
+  <string name="user_profile_email">邮箱</string>
+  <string name="user_profile_email_hint">如果让小机发邮件时没有指定收件人，则此邮箱会作为邮件功能的默认收件人。</string>
+  <string name="user_profile_birthday_placeholder">选择日期</string>
 </resources>
