@@ -1608,4 +1608,9 @@
   <string name="user_profile_email">邮箱</string>
   <string name="user_profile_email_hint">如果让小机发邮件时没有指定收件人，则此邮箱会作为邮件功能的默认收件人。</string>
   <string name="user_profile_birthday_placeholder">选择日期</string>
+
+  <string name="permission_check_usage_stats">使用情况统计</string>
+  <string name="permission_check_usage_stats_desc">允许应用查看其他应用的使用频率和时长，用于更好的情境分析</string>
+  <string name="permission_check_accessibility">无障碍服务</string>
+  <string name="permission_check_accessibility_desc">允许应用通过无障碍服务进行自动化操作或辅助交互</string>
 </resources>

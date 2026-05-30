@@ -57,8 +57,8 @@ class PermissionVM(private val context: Context) : ViewModel() {
             PermissionType.NOTIFICATION -> {
                 NotificationManagerCompat.from(context).areNotificationsEnabled()
             }
-            PermissionType.AUTO_START -> {
-                // 自启动状态无法通过标准API查询，在UI层特殊处理
+            PermissionType.AUTO_START, PermissionType.USAGE_STATS, PermissionType.ACCESSIBILITY -> {
+                // 这些权限状态较难统一检测或需要引导用户手动确认，采用“跳转模式”
                 false
             }
         }
@@ -98,6 +98,18 @@ class PermissionVM(private val context: Context) : ViewModel() {
             }
             PermissionType.AUTO_START -> {
                 openAutoStartSettings()
+            }
+            PermissionType.USAGE_STATS -> {
+                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            }
+            PermissionType.ACCESSIBILITY -> {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
             }
             else -> {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -166,5 +178,7 @@ enum class PermissionType {
     LOCATION,
     CAMERA,
     NOTIFICATION,
-    AUTO_START
+    AUTO_START,
+    USAGE_STATS,
+    ACCESSIBILITY
 }

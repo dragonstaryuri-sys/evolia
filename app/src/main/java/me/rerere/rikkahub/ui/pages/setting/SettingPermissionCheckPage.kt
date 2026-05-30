@@ -83,8 +83,11 @@ fun SettingPermissionCheckPage(vm: PermissionVM = koinViewModel()) {
                     type = type,
                     isGranted = isGranted,
                     onClick = {
-                        // 自启动权限总是允许点击跳转，因为无法检测状态
-                        if (!isGranted || type == PermissionType.AUTO_START) {
+                        // 自启动、使用情况统计、无障碍总是允许点击跳转，因为状态无法或无需在此页精确同步
+                        val alwaysClickable = type == PermissionType.AUTO_START ||
+                                            type == PermissionType.USAGE_STATS ||
+                                            type == PermissionType.ACCESSIBILITY
+                        if (!isGranted || alwaysClickable) {
                             vm.requestPermission(type)
                         }
                     }
@@ -117,6 +120,8 @@ private fun PermissionItem(
                 PermissionType.CAMERA -> Icons.Rounded.CameraAlt
                 PermissionType.NOTIFICATION -> Icons.Rounded.Notifications
                 PermissionType.AUTO_START -> Icons.Rounded.RocketLaunch
+                PermissionType.USAGE_STATS -> Icons.Rounded.Analytics
+                PermissionType.ACCESSIBILITY -> Icons.Rounded.AccessibilityNew
             }
 
             val title = when (type) {
@@ -125,6 +130,8 @@ private fun PermissionItem(
                 PermissionType.CAMERA -> stringResource(R.string.permission_check_camera)
                 PermissionType.NOTIFICATION -> stringResource(R.string.permission_check_notification)
                 PermissionType.AUTO_START -> stringResource(R.string.permission_check_auto_start)
+                PermissionType.USAGE_STATS -> stringResource(R.string.permission_check_usage_stats)
+                PermissionType.ACCESSIBILITY -> stringResource(R.string.permission_check_accessibility)
             }
 
             val desc = when (type) {
@@ -133,6 +140,8 @@ private fun PermissionItem(
                 PermissionType.CAMERA -> stringResource(R.string.permission_check_camera_desc)
                 PermissionType.NOTIFICATION -> stringResource(R.string.permission_check_notification_desc)
                 PermissionType.AUTO_START -> stringResource(R.string.permission_check_auto_start_desc)
+                PermissionType.USAGE_STATS -> stringResource(R.string.permission_check_usage_stats_desc)
+                PermissionType.ACCESSIBILITY -> stringResource(R.string.permission_check_accessibility_desc)
             }
 
             Icon(
@@ -158,9 +167,13 @@ private fun PermissionItem(
             }
 
             // 状态图标处理
+            val isJumpOnly = type == PermissionType.AUTO_START ||
+                           type == PermissionType.USAGE_STATS ||
+                           type == PermissionType.ACCESSIBILITY
+
             when {
-                type == PermissionType.AUTO_START -> {
-                    // 自启动权限显示跳转箭头，不显示红叉/绿勾，避免误导
+                isJumpOnly -> {
+                    // 这些权限显示跳转箭头，不显示红叉/绿勾，避免误导
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                         contentDescription = stringResource(R.string.permission_go_to_settings),
