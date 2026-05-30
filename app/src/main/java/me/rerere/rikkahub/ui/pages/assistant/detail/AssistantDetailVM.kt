@@ -599,10 +599,10 @@ class AssistantDetailVM(
                             memoryRepository.updateContent(id, contentString ?: "")
                         } else {
                             // Map negative ID back to positive for Segment or Episode
-                             val positiveId = kotlin.math.abs(id)
-                             // How to know if it was a segment or episode from the AI?
-                             // In this VM, we only display Segments as negative IDs now.
-                             memoryRepository.updateSegmentContent(positiveId, contentString ?: "")
+                            val positiveId = kotlin.math.abs(id)
+                            // How to know if it was a segment or episode from the AI?
+                            // In this VM, we only display Segments as negative IDs now.
+                            memoryRepository.updateSegmentContent(positiveId, contentString ?: "")
                         }
                         updated++
                     }
@@ -682,8 +682,8 @@ class AssistantDetailVM(
             if (memory.type == MemoryType.SEGMENT) {
                 memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
             } else if (memory.id < 0) {
-                 // Fallback for negative IDs if type is not set correctly
-                 memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
+                // Fallback for negative IDs if type is not set correctly
+                memoryRepository.updateSegmentContent(kotlin.math.abs(memory.id), memory.content)
             } else {
                 memoryRepository.updateContent(memory.id, memory.content)
             }

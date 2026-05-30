@@ -1023,24 +1023,6 @@ private fun MasterMemoryCard(
                         onCheckedChange = { onUpdateAssistant(assistant.copy(enableMasterMemory = it)) }
                     )
                 }
-
-                FormItem(
-                    leading = {
-                        Icon(
-                            Icons.Rounded.AccountCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
-                    label = { Text(stringResource(R.string.assistant_memory_include_user_profile)) },
-                    description = { Text(stringResource(R.string.assistant_memory_include_user_profile_desc)) },
-                    tail = {
-                        HapticSwitch(
-                            checked = assistant.includeUserProfile,
-                            onCheckedChange = { onUpdateAssistant(assistant.copy(includeUserProfile = it)) }
-                        )
-                    }
-                )
             }
         }
 

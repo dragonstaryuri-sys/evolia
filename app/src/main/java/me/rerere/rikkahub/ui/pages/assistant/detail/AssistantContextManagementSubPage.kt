@@ -39,6 +39,34 @@ fun AssistantContextManagementSubPage(
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
         // ═══════════════════════════════════════════════════════════════════
+        // USER PROFILE
+        // ═══════════════════════════════════════════════════════════════════
+        SettingsGroup(title = stringResource(R.string.setting_user_profile)) {
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_memory_include_user_profile),
+                subtitle = stringResource(R.string.assistant_memory_include_user_profile_desc),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.AccountCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.includeUserProfile,
+                        onCheckedChange = { enabled ->
+                            onUpdate(assistant.copy(includeUserProfile = enabled))
+                        }
+                    )
+                },
+                onClick = {
+                    onUpdate(assistant.copy(includeUserProfile = !assistant.includeUserProfile))
+                }
+            )
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
         // LOREBOOKS
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_lorebooks_title)) {
@@ -96,7 +124,7 @@ fun AssistantContextManagementSubPage(
                 SummarizerWarningBanner(onClick = onNavigateToModels)
             }
 
-            // 🌟 重新加回：上下文刷新开关 (控制片段注入)
+            // 🌟 上下文刷新开关 (控制片段注入)
             SettingGroupItem(
                 title = stringResource(R.string.assistant_context_refresh_title),
                 subtitle = stringResource(R.string.assistant_context_refresh_desc),
@@ -113,7 +141,7 @@ fun AssistantContextManagementSubPage(
                 }
             )
 
-            // 🌟 重新加回：片段数量滑块
+            // 🌟 片段数量滑块
             AnimatedVisibility(
                 visible = assistant.enableContextRefresh,
                 enter = fadeIn() + expandVertically(),

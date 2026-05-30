@@ -115,8 +115,6 @@ data class Assistant(
     val masterMemoryContent: String = "",
     val lastMasterMemoryUpdate: Long = 0L,
 
-    val includeUserProfile: Boolean = true,
-
     val enableAutoDiary: Boolean = false,
     val autoDiaryTime: String = "06:00",
     val lastAutoDiaryDate: String = "",
@@ -131,6 +129,8 @@ data class Assistant(
     val detailMemoryThreshold: Int = 20,
 
     val hasExtendedState: Boolean = isMain,
+    // 简化逻辑：主智能体默认开启，普通智能体默认关闭。用户修改后通过 copy 覆盖此默认值。
+    val includeUserProfile: Boolean = isMain,
 )
 
 @Serializable

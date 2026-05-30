@@ -52,6 +52,15 @@ class AssistantVM(
                 diaryModelId = assistantWithUniqueId.diaryModelId ?: settings.diaryModelId
             )
 
+            // 逻辑优化：如果是第一个智能体，默认设为主智能体并开启用户档案带入
+            if (settings.assistants.isEmpty()) {
+                newAssistant = newAssistant.copy(
+                    isMain = true,
+                    includeUserProfile = true,
+                    hasExtendedState = true
+                )
+            }
+
             if (newAssistant.name.isBlank()) {
                 newAssistant = newAssistant.copy(
                     name = "Evolia",
@@ -125,7 +134,9 @@ class AssistantVM(
                 masterMemoryContent = "",
                 lastMasterMemoryUpdate = 0L,
                 lastConsolidationTime = 0L,
-                lastConsolidationResult = ""
+                lastConsolidationResult = "",
+                isMain = false, // 复制品默认不是主智能体
+                includeUserProfile = false // 复制品默认关闭档案带入
             )
             settingsStore.update(
                 settings.copy(
