@@ -45,6 +45,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import me.rerere.rikkahub.core.data.model.LocalToolOption
 
 private const val TAG = "PreferencesStore"
 
@@ -248,6 +249,15 @@ class SettingsStore(
                     assistants[0] = assistants[0].copy(isMain = true)
                 }
             }
+
+            // 改造：确保主智能体默认包含并开启“资料维护”工具
+            assistants = assistants.map { a ->
+                if (a.isMain && !a.localTools.contains(LocalToolOption.UpdateProfile)) {
+                    a.copy(localTools = a.localTools + LocalToolOption.UpdateProfile)
+                } else {
+                    a
+                }
+            }.toMutableList()
 
             val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
             DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
@@ -645,7 +655,8 @@ internal val DEFAULT_ASSISTANTS = listOf(
         avatar = Avatar.Resource(me.rerere.rikkahub.R.drawable.default_generical_pfp),
         temperature = 0.6f,
         systemPrompt = "你是用户创造的ai",
-        isMain = true
+        isMain = true,
+        localTools = listOf(LocalToolOption.UpdateProfile)
     )
 )
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")

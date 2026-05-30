@@ -1052,8 +1052,8 @@ class ChatService(
             val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
             if (aiResponse.isNotBlank()) {
-                val backgroundRegex = Regex("""\[Background\]:\s*(.*)""", RegexOption.IGNORE_CASE)
-                val keywordsRegex = Regex("""\[Keywords\]:\s*(.*)""", RegexOption.IGNORE_CASE)
+                val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
 
                 val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
                 val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()

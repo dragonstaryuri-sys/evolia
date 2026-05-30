@@ -48,12 +48,18 @@ fun SettingUserProfilePage() {
                 title = { Text(stringResource(R.string.setting_user_profile)) },
                 navigationIcon = { BackButton() }
             )
-        }
+        },
+        // 关键点 1：禁用默认 Insets 处理，避免冲突
+        contentWindowInsets = WindowInsets(0)
     ) { padding ->
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                // 关键点 2：imePadding 应用于滚动容器外层，确保键盘弹出时高度正确缩减
+                // 同时加上 navigationBarsPadding 确保底部不被导航栏遮挡
+                .imePadding()
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -215,7 +221,7 @@ private fun BirthdayItem(
                     Icon(Icons.Rounded.CalendarToday, contentDescription = null)
                 }
             )
-            // 覆盖一层透明层捕获点击，因为 readOnly 的 TextField 内部处理点击可能不理想
+            // 覆盖一层透明层捕获点击
             Box(
                 modifier = Modifier
                     .matchParentSize()
