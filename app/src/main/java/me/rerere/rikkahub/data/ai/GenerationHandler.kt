@@ -1092,12 +1092,10 @@ class GenerationHandler(
                         }
 
                     }
+                    val originalText = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
+                    val otherParts = msg.parts.filter { it !is UIMessagePart.Text }
 
                     if (dynamicContext.isNotBlank()) {
-                        // 拼接最后一条 User 消息
-                        val originalText = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
-                        val otherParts = msg.parts.filter { it !is UIMessagePart.Text }
-
                         val newTextPart = UIMessagePart.Text(
                             text = buildString {
                                 append(dynamicContext)
@@ -1105,10 +1103,10 @@ class GenerationHandler(
                                 append(originalText)
                             }
                         )
-
                         add(msg.copy(parts = listOf(newTextPart) + otherParts))
                     } else {
-                        add(msg)
+                        val newTextPart = UIMessagePart.Text(text = originalText)
+                        add(msg.copy(parts = listOf(newTextPart) + otherParts))
                     }
                 } else {
                     add(msg)
