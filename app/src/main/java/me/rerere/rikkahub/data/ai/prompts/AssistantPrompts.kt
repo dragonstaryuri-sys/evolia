@@ -187,8 +187,7 @@ const val DIARY_NO_INTERACTION_PROMPT = """
 
 const val DIARY_TIME_REFERENCE_PROMPT = """
 [Time Reference]
-Message start time: {{start_time}}
-Message end time: {{end_time}}
+Today's Date: {{today_date}}
 Diary generation triggered at: {{trigger_time}}
 """
 

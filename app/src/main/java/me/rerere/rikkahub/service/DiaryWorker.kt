@@ -117,11 +117,15 @@ class DiaryWorker(
                     "locale" to locale
                 )
             } else {
-                val chatContent = newMessages.joinToString("\n") { "${it.role}: ${it.toText()}" }
+                val chatContent = newMessages.joinToString("\n") { message ->
+                    val time = formatTimestamp(message.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
+                    "[$time] ${message.role}: ${message.toText()}"
+                }
                 val firstMsgTime = formatTimestamp(newMessages.first().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
                 val lastMsgTime = formatTimestamp(newMessages.last().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
 
                 val timeRef = "\n\n" + DIARY_TIME_REFERENCE_PROMPT.applyPlaceholders(
+                    "today_date" to LocalDate.now().toString() + " (" + LocalDate.now().dayOfWeek.name + ")",
                     "start_time" to firstMsgTime,
                     "end_time" to lastMsgTime,
                     "trigger_time" to triggerTime
