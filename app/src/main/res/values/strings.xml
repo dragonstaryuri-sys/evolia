@@ -1646,7 +1646,10 @@
   <string name="user_profile_birthday_placeholder">Select Date</string>
 
   <string name="permission_check_usage_stats">Usage Statistics</string>
-  <string name="permission_check_usage_stats_desc">Allows the app to view the usage frequency and duration of other apps for better contextual analysis</string>
   <string name="permission_check_accessibility">Accessibility Service</string>
-  <string name="permission_check_accessibility_desc">Allows the app to perform automated operations or assisted interactions via the accessibility service</string>
+  <string name="permission_check_accessibility_desc">Allow the app to perform automated operations or assisted interactions via the Accessibility Service</string>
+  <string name="permission_check_usage_stats_desc">Allows the app to view the usage frequency and duration of other apps for better contextual analysis</string>
+  <string name="perm_accessibility_desc">Evolia requires Accessibility services to detect phone status (such as foreground applications and screen on/off status) to enable features including sleep monitoring, app usage time limits and automated reminders. We will not collect your private input data.</string>
+  <string name="tool_peek_user_desc">Set up a monitor to track the user\'s phone usage status (such as the current app and screen-on state), and trigger reminders or lock the screen when specified conditions are met.</string>
+  <string name="assistant_page_local_tools_peek_user_title">Phone Status Monitoring</string>
 </resources>

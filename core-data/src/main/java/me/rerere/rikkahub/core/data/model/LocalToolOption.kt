@@ -40,4 +40,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("milestone_management")
     data object MilestoneManagement : LocalToolOption()
+
+    @Serializable
+    @SerialName("peek_user")
+    data object PeekUser : LocalToolOption()
 }

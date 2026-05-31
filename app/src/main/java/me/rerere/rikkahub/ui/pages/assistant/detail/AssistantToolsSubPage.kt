@@ -244,6 +244,25 @@ fun AssistantToolsSubPage(
                         )
                     }
                 )
+
+                // Peek User (手机状态监控)
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_peek_user_title),
+                    subtitle = stringResource(R.string.tool_peek_user_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.PeekUser),
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.PeekUser
+                                } else {
+                                    assistant.localTools - LocalToolOption.PeekUser
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    }
+                )
             }
 
             // Email Service (Available for all assistants)

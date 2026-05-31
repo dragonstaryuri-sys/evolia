@@ -152,6 +152,14 @@ data class UIMessage(
                 parts = newParts,
                 annotations = newAnnotations,
             )
+        } ?: choice?.message?.let { msg ->
+            // Handle non-streaming response (full message)
+            copy(
+                parts = msg.parts,
+                annotations = msg.annotations,
+                usage = chunk.usage ?: msg.usage ?: usage,
+                modelId = msg.modelId ?: modelId
+            )
         } ?: this
     }
 
@@ -264,7 +272,7 @@ data class UsedMode(
 )
 
 /**
- * Represents a memory that was used when generating a message.
+ * Represents a mode that was used when generating a message.
  */
 @Serializable
 data class UsedMemory(

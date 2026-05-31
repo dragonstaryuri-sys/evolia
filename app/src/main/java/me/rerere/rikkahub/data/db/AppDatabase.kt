@@ -29,9 +29,11 @@ import kotlinx.serialization.decodeFromString
         BookEntity::class,
         BookProgressEntity::class,
         AssistantExtendedStateEntity::class,
-        MilestoneEntity::class
+        MilestoneEntity::class,
+        UserDeviceStateEntity::class,
+        AgentMonitorTaskEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -64,12 +66,15 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun milestoneDao(): MilestoneDAO
 
+    abstract fun userDeviceStateDao(): UserDeviceStateDAO
+
+    abstract fun agentMonitorTaskDao(): AgentMonitorTaskDAO
+
     companion object {
         const val TAG = "AppDatabase"
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // 为 chat_segments 表增加 embedding_model_id 字段
                 db.execSQL("ALTER TABLE chat_segments ADD COLUMN embedding_model_id TEXT DEFAULT ''")
             }
         }
@@ -105,6 +110,41 @@ abstract class AppDatabase : RoomDatabase() {
                         PRIMARY KEY(`id`)
                     )
                 """.trimIndent())
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `user_device_state` (
+                        `id` INTEGER NOT NULL,
+                        `foreground_app` TEXT NOT NULL,
+                        `foreground_app_name` TEXT NOT NULL,
+                        `is_screen_on` INTEGER NOT NULL,
+                        `last_updated` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `agent_monitor_tasks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `monitor_name` TEXT NOT NULL,
+                        `data_requirements` TEXT NOT NULL,
+                        `conditions` TEXT NOT NULL,
+                        `actions` TEXT NOT NULL,
+                        `is_enabled` INTEGER NOT NULL DEFAULT 1,
+                        `created_at` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 为 user_device_state 表增加今日累计时长和最近动作字段
+                db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `today_duration_ms` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `recent_actions` TEXT NOT NULL DEFAULT ''")
             }
         }
     }

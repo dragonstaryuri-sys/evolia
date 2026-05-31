@@ -40,7 +40,9 @@ val appModule = module {
             agentTaskRepository = get(),
             agentTaskScheduler = get(),
             extendedStateRepo = get(),
-            milestoneRepo = get()
+            milestoneRepo = get(),
+            monitorTaskRepo = get(),
+            userDeviceStateRepo = get()
         )
     }
 
@@ -82,5 +84,5 @@ val appModule = module {
     workerOf(::DiaryWorker)
     workerOf(::DiarySchedulerWorker)
     workerOf(::AgentTaskWorker)
-    workerOf(::MemoryConsolidationWorker) // 注册记忆整合 Worker
+    workerOf(::MemoryConsolidationWorker)
 }

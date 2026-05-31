@@ -1613,4 +1613,7 @@
   <string name="permission_check_usage_stats_desc">允许应用查看其他应用的使用频率和时长，用于更好的情境分析</string>
   <string name="permission_check_accessibility">无障碍服务</string>
   <string name="permission_check_accessibility_desc">允许应用通过无障碍服务进行自动化操作或辅助交互</string>
+  <string name="perm_accessibility_desc">Evolia 需要无障碍服务来感知手机状态（如前台应用、屏幕开关），以实现睡眠监督、应用限时和自动化提醒等功能。我们不会收集你的私密输入数据。</string>
+  <string name="tool_peek_user_desc">设置一个监控器来观察用户的手机使用状态（如当前 App、亮屏状态），并在满足条件时触发提醒或锁定屏幕。</string>
+  <string name="assistant_page_local_tools_peek_user_title">手机状态监控</string>
 </resources>

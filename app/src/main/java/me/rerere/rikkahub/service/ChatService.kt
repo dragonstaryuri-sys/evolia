@@ -286,8 +286,13 @@ class ChatService(
                     append("类型: 定时提醒\n")
                     if (!title.isNullOrBlank()) append("提醒主题: $title\n")
                 }
+                "MONITOR_TRIGGER" -> {
+                    val monitorName = data["monitor_name"]?.jsonPrimitive?.contentOrNull
+                    append("类型: 实时监控触发\n")
+                    if (!monitorName.isNullOrBlank()) append("监控器名称: $monitorName\n")
+                }
             }
-            append("\n指令内容：$instruction\n\n注意：这是一条系统触发的消息，请根据上述要求直接调用相关工具或执行逻辑，无需向用户确认。")
+            append("\n指令内容：$instruction\n\n注意：这是一条由自动化引擎触发的【隐形指令】，用户不会在消息列表中看到它。请根据上述指令要求直接采取行动或给出回应。")
         }
 
         // 启动后台生成逻辑
@@ -329,7 +334,8 @@ class ChatService(
                         handleMessageComplete(
                             conversationId = conversationId,
                             assistantOverride = originalAssistant,
-                            skipContextForResponse = false // 辅助参数：不要隐藏 AI 的回复，以便后续参考
+                            skipContextForResponse = false, // 辅助参数：不要隐藏 AI 的回复，以便后续参考
+                            includeSkipContextMessages = true // 关键：包含刚才添加的隐形指令
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "自动化任务生成失败", e)
@@ -687,7 +693,8 @@ class ChatService(
         conversationId: Uuid,
         messageRange: ClosedRange<Int>? = null,
         assistantOverride: Assistant? = null,
-        skipContextForResponse: Boolean = false
+        skipContextForResponse: Boolean = false,
+        includeSkipContextMessages: Boolean = false
     ) {
         val settings = settingsStore.settingsFlow.first()
         runCatching {
@@ -826,6 +833,7 @@ class ChatService(
                 contextSummary = currentEpisode?.content?.removePrefix("虚拟世界："),
                 temporarySummaries = emptyList(),
                 skipContextForResponse = skipContextForResponse,
+                includeSkipContextMessages = includeSkipContextMessages,
                 conversationId = conversationId
             ).onCompletion {
                 val duration = firstTokenTime?.let { System.currentTimeMillis() - it }

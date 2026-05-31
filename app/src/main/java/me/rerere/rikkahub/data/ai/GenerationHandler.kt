@@ -128,6 +128,7 @@ class GenerationHandler(
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList(),
         skipContextForResponse: Boolean = false,
+        includeSkipContextMessages: Boolean = false,
         conversationId: Uuid? = null
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -293,7 +294,7 @@ class GenerationHandler(
                 enabledModeIds = enabledModeIds,
                 contextSummary = contextSummary,
                 temporarySummaries = temporarySummaries,
-                includeSkipContextMessages = skipContextForResponse,
+                includeSkipContextMessages = includeSkipContextMessages,
                 conversationId = conversationId
             )
 

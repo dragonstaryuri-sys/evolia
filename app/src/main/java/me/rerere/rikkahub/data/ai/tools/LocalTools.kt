@@ -9,16 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import com.whl.quickjs.wrapper.QuickJSContext
 import com.whl.quickjs.wrapper.QuickJSObject
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import kotlin.uuid.Uuid
@@ -44,6 +35,15 @@ import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import java.text.SimpleDateFormat
 import java.util.Locale
+import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
+import me.rerere.rikkahub.core.data.repository.UserDeviceStateRepository
+import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
+import kotlinx.coroutines.flow.MutableSharedFlow
+
+// 用于在 Tool 和 AccessibilityService 之间传递即时控制指令
+object DeviceCommandHub {
+    val commands = MutableSharedFlow<String>(extraBufferCapacity = 10)
+}
 
 @Composable
 fun rememberLocalTools(): LocalTools {
@@ -55,6 +55,8 @@ fun rememberLocalTools(): LocalTools {
     val secretKeyManager = koinInject<SecretKeyManager>()
     val extendedStateRepo = koinInject<AssistantExtendedStateRepository>()
     val milestoneRepo = koinInject<MilestoneRepository>()
+    val monitorTaskRepo = koinInject<AgentMonitorTaskRepository>()
+    val userDeviceStateRepo = koinInject<UserDeviceStateRepository>()
 
     return remember {
         LocalTools(
@@ -65,7 +67,9 @@ fun rememberLocalTools(): LocalTools {
             agentTaskRepository,
             agentTaskScheduler,
             extendedStateRepo,
-            milestoneRepo
+            milestoneRepo,
+            monitorTaskRepo,
+            userDeviceStateRepo
         )
     }
 }
@@ -78,7 +82,9 @@ class LocalTools(
     private val agentTaskRepository: AgentTaskRepository,
     private val agentTaskScheduler: AgentTaskScheduler,
     private val extendedStateRepo: AssistantExtendedStateRepository,
-    private val milestoneRepo: MilestoneRepository
+    private val milestoneRepo: MilestoneRepository,
+    private val monitorTaskRepo: AgentMonitorTaskRepository,
+    private val userDeviceStateRepo: UserDeviceStateRepository
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -448,6 +454,41 @@ class LocalTools(
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "Operation failed") }
+                    }
+                }
+            ),
+            Tool(
+                name = "device_control",
+                description = "Perform system-level global actions on the user's phone. Use this when you need to actively intervene (e.g., locking screen for sleep management, returning home to stop usage). Requires Accessibility Service to be enabled. Supported commands: LOCK_SCREEN, GO_HOME, BACK, SHOW_RECENTS, SHOW_NOTIFICATIONS.",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("command", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The system command to execute")
+                                put("enum", JsonArray(listOf(
+                                    JsonPrimitive("LOCK_SCREEN"),
+                                    JsonPrimitive("GO_HOME"),
+                                    JsonPrimitive("BACK"),
+                                    JsonPrimitive("SHOW_RECENTS"),
+                                    JsonPrimitive("SHOW_NOTIFICATIONS")
+                                )))
+                            })
+                        },
+                        required = listOf("command")
+                    )
+                },
+                execute = {
+                    val command = it.jsonObject["command"]?.jsonPrimitive?.contentOrNull ?: ""
+                    // 尝试发送命令，如果没有任何订阅者（说明服务未开启），则返回错误
+                    if (DeviceCommandHub.commands.subscriptionCount.value == 0) {
+                        return@Tool buildJsonObject { put("error", "Accessibility Service is not active. Please ask user to enable it in settings.") }
+                    }
+                    val success = DeviceCommandHub.commands.tryEmit(command)
+                    buildJsonObject {
+                        put("success", success)
+                        if (success) put("message", "Command $command executed.")
+                        else put("error", "Accessibility Service is not active. Please ask user to enable it.")
                     }
                 }
             )
@@ -1376,6 +1417,109 @@ class LocalTools(
         )
     }
 
+    fun getPeekUserTools(assistantId: Uuid): List<Tool> {
+        return listOf(
+            Tool(
+                name = "peek_user",
+                description = "Set up a high-precision monitor to observe the user's phone status. When conditions are met, the system will send a HIDDEN virtual message to you (the Assistant) containing real-time data. You can then decide how to reply to the user or whether to call `device_control` to take actions. ",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("action", buildJsonObject {
+                                put("type", "string")
+                                put(
+                                    "description",
+                                    "Action to perform: add (create monitor), list (view all), delete (remove by ID)"
+                                )
+                                put(
+                                    "enum",
+                                    JsonArray(
+                                        listOf(
+                                            JsonPrimitive("add"),
+                                            JsonPrimitive("list"),
+                                            JsonPrimitive("delete")
+                                        )
+                                    )
+                                )
+                            })
+                            put("monitor_id", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "Required for 'delete'")
+                            })
+                            put("monitor_name", buildJsonObject {
+                                put("type", "string")
+                                put("description", "Descriptive name (e.g., 'Late Night Watcher')")
+                            })
+                            put("data_requirements", buildJsonObject {
+                                put("type", "array")
+                                put("items", buildJsonObject { put("type", "string") })
+                                put("description", "Fields to monitor: foreground_app, screen_status, current_time, today_usage_duration, recent_actions")
+                            })
+                            put("conditions", buildJsonObject {
+                                put("type", "object")
+                                put("description", "Trigger logic. Supported keys: 'time_range' (start/end HH:mm), 'screen_status' (ON/OFF), 'foreground_app' (appName), 'usage_duration_minutes' (Integer: trigger if daily duration exceeds this), 'cooldown_minutes' (Integer: silence after trigger, default 5).")
+                            })
+                            put("trigger_message", buildJsonObject {
+                                put("type", "string")
+                                put("description", "The message template that will be sent to you when triggered. Use {app_name}, {duration}, {recent_actions}, {current_time} as placeholders. Example: 'User promised to sleep, but is now using {app_name} for {duration}. Recent actions: {recent_actions}. Please intervene.'")
+                            })
+                        },
+                        required = listOf("action")
+                    )
+                },
+                execute = {
+                    val json = it.jsonObject
+                    val action = json["action"]?.jsonPrimitive?.contentOrNull ?: ""
+                    try {
+                        when (action) {
+                            "add" -> {
+                                val monitorName = json["monitor_name"]?.jsonPrimitive?.contentOrNull ?: "Unnamed Monitor"
+                                val dataReq = json["data_requirements"]?.toString() ?: "[]"
+                                val conditions = json["conditions"]?.toString() ?: "{}"
+                                val triggerMsg = json["trigger_message"]?.jsonPrimitive?.contentOrNull ?: "Monitor triggered"
+
+                                val task = AgentMonitorTaskEntity(
+                                    assistantId = assistantId.toString(),
+                                    monitorName = monitorName,
+                                    dataRequirements = dataReq,
+                                    conditions = conditions,
+                                    actions = buildJsonArray {
+                                        add(buildJsonObject {
+                                            put("type", "SEND_HIDDEN_MESSAGE")
+                                            put("content", triggerMsg)
+                                        })
+                                    }.toString()
+                                )
+                                val id = monitorTaskRepo.addTask(task)
+                                buildJsonObject { put("success", true); put("monitor_id", id) }
+                            }
+                            "list" -> {
+                                val tasks = monitorTaskRepo.getTasksByAssistant(assistantId.toString()).first()
+                                buildJsonObject {
+                                    put("monitors", JsonArray(tasks.map { t ->
+                                        buildJsonObject {
+                                            put("id", t.id)
+                                            put("name", t.monitorName)
+                                            put("is_enabled", t.isEnabled)
+                                        }
+                                    }))
+                                }
+                            }
+                            "delete" -> {
+                                val id = json["monitor_id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                monitorTaskRepo.deleteTaskById(id)
+                                buildJsonObject { put("success", true) }
+                            }
+                            else -> buildJsonObject { put("error", "Unknown action") }
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "Failed") }
+                    }
+                }
+            )
+        )
+    }
+
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
@@ -1384,18 +1528,16 @@ class LocalTools(
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
-        if (options.contains(LocalToolOption.DeviceControl)) tools.addAll(
-            getDeviceControlTools(
-                assistantId,
-                conversationId
-            )
-        )
+        if (options.contains(LocalToolOption.DeviceControl)) {
+             tools.addAll(getDeviceControlTools(assistantId, conversationId))
+        }
         if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
         if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools())
         if (options.contains(LocalToolOption.AgentAutomation)) tools.addAll(getAgentTaskTools(assistantId))
         if (options.contains(LocalToolOption.EmailService)) tools.addAll(getEmailTools())
         if (options.contains(LocalToolOption.UpdateProfile)) tools.addAll(getUpdateProfileTools(assistantId))
         if (options.contains(LocalToolOption.MilestoneManagement)) tools.addAll(getMilestoneTools(assistantId))
+        if (options.contains(LocalToolOption.PeekUser)) tools.addAll(getPeekUserTools(assistantId))
         return tools
     }
 }

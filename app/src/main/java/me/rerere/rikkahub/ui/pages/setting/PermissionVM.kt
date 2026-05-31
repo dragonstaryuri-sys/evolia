@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -9,7 +10,9 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.os.Process
 import android.provider.Settings
+import android.text.TextUtils
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -18,6 +21,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.service.EvoliaMonitorService
 
 class PermissionVM(private val context: Context) : ViewModel() {
     private val _permissionStates = MutableStateFlow<Map<PermissionType, Boolean>>(emptyMap())
@@ -57,11 +61,34 @@ class PermissionVM(private val context: Context) : ViewModel() {
             PermissionType.NOTIFICATION -> {
                 NotificationManagerCompat.from(context).areNotificationsEnabled()
             }
-            PermissionType.AUTO_START, PermissionType.USAGE_STATS, PermissionType.ACCESSIBILITY -> {
-                // 这些权限状态较难统一检测或需要引导用户手动确认，采用“跳转模式”
-                false
+            PermissionType.USAGE_STATS -> {
+                val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+                } else {
+                    appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+                }
+                mode == AppOpsManager.MODE_ALLOWED
             }
+            PermissionType.ACCESSIBILITY -> {
+                isAccessibilityServiceEnabled(context, EvoliaMonitorService::class.java)
+            }
+            PermissionType.AUTO_START -> false // 无法自动检测，通常显示为“去设置”
         }
+    }
+
+    private fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean {
+        val expectedComponentName = ComponentName(context, service)
+        val enabledServices = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+        if (enabledServices == null) return false
+        val colonSplitter = TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServices)
+        while (colonSplitter.hasNext()) {
+            val componentNameString = colonSplitter.next()
+            val enabledService = ComponentName.unflattenFromString(componentNameString)
+            if (enabledService != null && enabledService == expectedComponentName) return true
+        }
+        return false
     }
 
     @SuppressLint("BatteryLife")
@@ -96,9 +123,7 @@ class PermissionVM(private val context: Context) : ViewModel() {
                 }
                 context.startActivity(intent)
             }
-            PermissionType.AUTO_START -> {
-                openAutoStartSettings()
-            }
+            PermissionType.AUTO_START -> openAutoStartSettings()
             PermissionType.USAGE_STATS -> {
                 val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -127,34 +152,19 @@ class PermissionVM(private val context: Context) : ViewModel() {
         try {
             when {
                 manufacturer.contains("xiaomi") -> {
-                    intent.component = ComponentName(
-                        "com.miui.securitycenter",
-                        "com.miui.permcenter.autostart.AutoStartManagementActivity"
-                    )
+                    intent.component = ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity")
                 }
                 manufacturer.contains("huawei") || manufacturer.contains("honor") -> {
-                    intent.component = ComponentName(
-                        "com.huawei.systemmanager",
-                        "com.huawei.systemmanager.optimize.process.ProtectActivity"
-                    )
+                    intent.component = ComponentName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity")
                 }
                 manufacturer.contains("oppo") -> {
-                    intent.component = ComponentName(
-                        "com.coloros.safecenter",
-                        "com.coloros.safecenter.permission.startup.StartupAppListActivity"
-                    )
+                    intent.component = ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity")
                 }
                 manufacturer.contains("vivo") -> {
-                    intent.component = ComponentName(
-                        "com.vivo.permissionmanager",
-                        "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
-                    )
+                    intent.component = ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")
                 }
                 manufacturer.contains("meizu") -> {
-                    intent.component = ComponentName(
-                        "com.meizu.safe",
-                        "com.meizu.safe.permission.SmartBGActivity"
-                    )
+                    intent.component = ComponentName("com.meizu.safe", "com.meizu.safe.permission.SmartBGActivity")
                 }
                 else -> {
                     intent.action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS

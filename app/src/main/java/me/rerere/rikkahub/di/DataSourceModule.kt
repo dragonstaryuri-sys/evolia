@@ -66,7 +66,13 @@ val dataSourceModule = module {
 
     single {
         Room.databaseBuilder(get(), AppDatabase::class.java, "rikka_hub")
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+            .addMigrations(
+                AppDatabase.MIGRATION_1_2,
+                AppDatabase.MIGRATION_2_3,
+                AppDatabase.MIGRATION_3_4,
+                AppDatabase.MIGRATION_4_5,
+                AppDatabase.MIGRATION_5_6
+            )
             .build()
     }
 
@@ -138,6 +144,14 @@ val dataSourceModule = module {
 
     single {
         get<AppDatabase>().milestoneDao()
+    }
+
+    single {
+        get<AppDatabase>().userDeviceStateDao()
+    }
+
+    single {
+        get<AppDatabase>().agentMonitorTaskDao()
     }
 
     single { MilestoneRepository(milestoneDAO = get()) }
