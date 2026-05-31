@@ -33,7 +33,7 @@ import kotlinx.serialization.decodeFromString
         UserDeviceStateEntity::class,
         AgentMonitorTaskEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -145,6 +145,13 @@ abstract class AppDatabase : RoomDatabase() {
                 // 为 user_device_state 表增加今日累计时长和最近动作字段
                 db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `today_duration_ms` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `recent_actions` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 为 chat_segments 表增加召回次数统计字段
+                db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `recall_count` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

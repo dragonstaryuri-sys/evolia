@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 6,
-    "identityHash": "b76df787a84ed31ec7317c3be136f4a1",
+    "identityHash": "03b6e7125f07232baf8458b5a92cf1e5",
     "entities": [
       {
         "tableName": "ConversationEntity",
@@ -653,7 +653,7 @@
       },
       {
         "tableName": "chat_segments",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assistant_id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, `content` TEXT NOT NULL, `keywords` TEXT, `start_index` INTEGER NOT NULL, `end_index` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, `embedding` TEXT, `embedding_model_id` TEXT DEFAULT '')",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assistant_id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, `content` TEXT NOT NULL, `keywords` TEXT, `start_index` INTEGER NOT NULL, `end_index` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, `embedding` TEXT, `embedding_model_id` TEXT DEFAULT '', `recall_count` INTEGER NOT NULL DEFAULT 0)",
         "fields": [
           {
             "fieldPath": "id",
@@ -712,6 +712,13 @@
             "columnName": "embedding_model_id",
             "affinity": "TEXT",
             "defaultValue": "''"
+          },
+          {
+            "fieldPath": "recallCount",
+            "columnName": "recall_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -1125,7 +1132,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b76df787a84ed31ec7317c3be136f4a1')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '03b6e7125f07232baf8458b5a92cf1e5')"
     ]
   }
 }
