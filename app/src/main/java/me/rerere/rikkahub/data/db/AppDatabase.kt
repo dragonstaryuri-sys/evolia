@@ -33,7 +33,7 @@ import kotlinx.serialization.decodeFromString
         UserDeviceStateEntity::class,
         AgentMonitorTaskEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -152,6 +152,13 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 为 chat_segments 表增加召回次数统计字段
                 db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `recall_count` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 为 user_device_state 表增加屏幕上下文文字字段
+                db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `screen_context` TEXT NOT NULL DEFAULT ''")
             }
         }
     }

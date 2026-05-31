@@ -31,7 +31,7 @@ class EvoliaMonitorService : AccessibilityService() {
     private val chatService by inject<ChatService>()
     private val json = Json { ignoreUnknownKeys = true }
 
-    // 电商 App 包名列表 (可根据需要扩展)
+    // 电商/目标 App 包名列表
     private val shoppingApps = listOf(
         "com.taobao.taobao",
         "com.jingdong.app.mall",
@@ -44,12 +44,10 @@ class EvoliaMonitorService : AccessibilityService() {
         "ailand.lastchat.rikkafork.cocolal"
     )
 
-    // 缓存各任务的最后触发时间，实现冷却逻辑
     private val lastTriggerTimeMap = mutableMapOf<Long, Long>()
 
     override fun onServiceConnected() {
         Log.d(tag, "Evolia Accessibility Service connected")
-        // 监听来自 LocalTool 的即时控制指令 (LOCK_SCREEN, GO_HOME 等)
         scope.launch {
             DeviceCommandHub.commands.collectLatest { command ->
                 handleDeviceCommand(command)
@@ -65,7 +63,6 @@ class EvoliaMonitorService : AccessibilityService() {
             }
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val source = event.source
-                // 同时检查 text 和 contentDescription，解决 recent_actions 为空的问题
                 val text = source?.text?.toString() ?: source?.contentDescription?.toString() ?: ""
                 if (text.isNotBlank()) recordAction("点击了: $text")
             }
@@ -76,7 +73,6 @@ class EvoliaMonitorService : AccessibilityService() {
     override fun onInterrupt() {}
 
     private fun handleDeviceCommand(command: String) {
-        Log.d(tag, "Executing command: $command")
         when (command) {
             "LOCK_SCREEN" -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
             "GO_HOME" -> performGlobalAction(GLOBAL_ACTION_HOME)
@@ -99,7 +95,6 @@ class EvoliaMonitorService : AccessibilityService() {
             val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
             val durationMs = stats?.find { it.packageName == packageName }?.totalTimeInForeground ?: 0L
 
-            // 如果是电商 App，则抓取屏幕上下文
             val contextText = if (shoppingApps.contains(packageName)) {
                 scanScreenContext()
             } else ""
@@ -110,7 +105,7 @@ class EvoliaMonitorService : AccessibilityService() {
                 foregroundAppName = appName,
                 isScreenOn = powerManager.isInteractive,
                 todayDurationMs = durationMs,
-                screenContext = contextText, // 保存屏幕内容
+                screenContext = contextText,
                 lastUpdated = System.currentTimeMillis()
             )
             userDeviceStateRepo.updateDeviceState(currentState)
@@ -122,7 +117,6 @@ class EvoliaMonitorService : AccessibilityService() {
         scope.launch {
             val current = userDeviceStateRepo.getUserDeviceState().run { firstOrNull() } ?: UserDeviceStateEntity()
             val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-            // 只保留最近 5 条操作描述
             val existingActions = current.recentActions.lines().filter { it.isNotBlank() }.take(4)
             val newActions = ("[$time] $action" + "\n" + existingActions.joinToString("\n")).trim()
             userDeviceStateRepo.updateDeviceState(current.copy(recentActions = newActions))
@@ -131,7 +125,6 @@ class EvoliaMonitorService : AccessibilityService() {
 
     private suspend fun checkAllMonitors(state: UserDeviceStateEntity) {
         val tasks = monitorTaskRepo.getAllEnabledTasks().run { firstOrNull() } ?: return
-
         tasks.forEach { task ->
             try {
                 val conditions = json.parseToJsonElement(task.conditions).jsonObject
@@ -145,8 +138,8 @@ class EvoliaMonitorService : AccessibilityService() {
     }
 
     private fun evaluateConditions(conditions: JsonObject, state: UserDeviceStateEntity, taskId: Long): Boolean {
-        // 1. 冷却时间判断
-        val cooldownMin = conditions["cooldown_minutes"]?.jsonPrimitive?.longOrNull ?: 5L
+        // 1. 冷却
+        val cooldownMin = (conditions["cooldown_minutes"]?.jsonPrimitive?.longOrNull ?: 5L).coerceAtLeast(2L)
         val lastTrigger = lastTriggerTimeMap[taskId] ?: 0L
         if (System.currentTimeMillis() - lastTrigger < cooldownMin * 60 * 1000) return false
 
@@ -170,13 +163,15 @@ class EvoliaMonitorService : AccessibilityService() {
         val targetApp = conditions["foreground_app"]?.jsonPrimitive?.content
         if (targetApp != null && !state.foregroundAppName.contains(targetApp, ignoreCase = true)) return false
 
+        // 6. 核心功能：关键词内容过滤
+        val contentContains = conditions["content_contains"]?.jsonPrimitive?.content
+        if (contentContains != null && !state.screenContext.contains(contentContains, ignoreCase = true)) return false
+
         return true
     }
 
     private suspend fun triggerMonitor(task: AgentMonitorTaskEntity, state: UserDeviceStateEntity) {
         lastTriggerTimeMap[task.id] = System.currentTimeMillis()
-
-        // 解析模板
         val actions = json.parseToJsonElement(task.actions).jsonArray
         val triggerAction = actions.find { it.jsonObject["type"]?.jsonPrimitive?.content == "SEND_HIDDEN_MESSAGE" } ?: return
 
@@ -188,7 +183,7 @@ class EvoliaMonitorService : AccessibilityService() {
             .replace("{app_name}", state.foregroundAppName)
             .replace("{duration}", "$durationMin 分钟")
             .replace("{recent_actions}", state.recentActions.ifBlank { "无近期点击" })
-            .replace("{screen_context}", state.screenContext.ifBlank { "未抓取到有用文字" }) // 新增占位符支持
+            .replace("{screen_context}", state.screenContext.ifBlank { "无上下文" })
             .replace("{current_time}", currentTime)
 
         chatService.executeAgentTask(
@@ -217,30 +212,17 @@ class EvoliaMonitorService : AccessibilityService() {
         return if (s <= e) current in s..e else current >= s || current <= e
     }
 
-    /**
-     * 遍历当前窗口的所有节点，抓取可见文本
-     */
     private fun scanScreenContext(): String {
         val rootNode = rootInActiveWindow ?: return ""
         val texts = mutableListOf<String>()
-
         fun traverse(node: AccessibilityNodeInfo?) {
             if (node == null) return
-            if (!node.isVisibleToUser) return // 只抓取用户可见的
-
+            if (!node.isVisibleToUser) return
             val text = node.text?.toString() ?: node.contentDescription?.toString()
-            if (!text.isNullOrBlank() && text.length > 1) {
-                // 简单过滤掉太短的（如“OK”, “>”）或纯数字
-                texts.add(text.trim())
-            }
-
-            for (i in 0 until node.childCount) {
-                traverse(node.getChild(i))
-            }
+            if (!text.isNullOrBlank() && text.length > 1) texts.add(text.trim())
+            for (i in 0 until node.childCount) traverse(node.getChild(i))
         }
-
         traverse(rootNode)
-        // 使用去重和限制长度，防止文本爆炸
         return texts.distinct().take(30).joinToString(" | ")
     }
 }

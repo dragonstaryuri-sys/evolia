@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 7,
-    "identityHash": "03b6e7125f07232baf8458b5a92cf1e5",
+    "identityHash": "a2aa49130a9165e318833434bb10ce88",
     "entities": [
       {
         "tableName": "ConversationEntity",
@@ -1016,7 +1016,7 @@
       },
       {
         "tableName": "user_device_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `foreground_app` TEXT NOT NULL, `foreground_app_name` TEXT NOT NULL, `is_screen_on` INTEGER NOT NULL, `today_duration_ms` INTEGER NOT NULL, `recent_actions` TEXT NOT NULL, `last_updated` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `foreground_app` TEXT NOT NULL, `foreground_app_name` TEXT NOT NULL, `is_screen_on` INTEGER NOT NULL, `today_duration_ms` INTEGER NOT NULL, `recent_actions` TEXT NOT NULL, `screen_context` TEXT NOT NULL, `last_updated` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -1051,6 +1051,12 @@
           {
             "fieldPath": "recentActions",
             "columnName": "recent_actions",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenContext",
+            "columnName": "screen_context",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -1132,7 +1138,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '03b6e7125f07232baf8458b5a92cf1e5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a2aa49130a9165e318833434bb10ce88')"
     ]
   }
 }

@@ -1453,15 +1453,15 @@ class LocalTools(
                             put("data_requirements", buildJsonObject {
                                 put("type", "array")
                                 put("items", buildJsonObject { put("type", "string") })
-                                put("description", "Fields to monitor: foreground_app, screen_status, current_time, today_usage_duration, recent_actions")
+                                put("description", "Fields to monitor: foreground_app, screen_status, current_time, today_usage_duration, recent_actions, screen_context")
                             })
                             put("conditions", buildJsonObject {
                                 put("type", "object")
-                                put("description", "Trigger logic. Supported keys: 'time_range' (start/end HH:mm), 'screen_status' (ON/OFF), 'foreground_app' (appName), 'usage_duration_minutes' (Integer: trigger if daily duration exceeds this), 'cooldown_minutes' (Integer: silence after trigger, default 5).")
+                                put("description", "Trigger logic. Supported keys: 'time_range' (start/end HH:mm), 'screen_status' (ON/OFF), 'foreground_app' (appName), 'usage_duration_minutes' (Integer: trigger if daily duration exceeds this), 'content_contains' (String: trigger if screen text contains this), 'cooldown_minutes' (Integer: silence after trigger, default 5).")
                             })
                             put("trigger_message", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The message template that will be sent to you when triggered. Use {app_name}, {duration}, {recent_actions}, {current_time} as placeholders. Example: 'User promised to sleep, but is now using {app_name} for {duration}. Recent actions: {recent_actions}. Please intervene.'")
+                                put("description", "The message template that will be sent to you when triggered. Use {app_name}, {duration}, {recent_actions}, {screen_context}, {current_time} as placeholders. Example: 'User is looking at {app_name} and it contains {screen_context}. Please intervene.'")
                             })
                         },
                         required = listOf("action")
