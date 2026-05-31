@@ -149,7 +149,8 @@ data class AssistantMemory(
     val embeddingModelId: String? = null,
     val timestamp: Long = 0L,
     val significance: Int? = null,
-    val score: Float? = null // 新增分数记录
+    val score: Float? = null, // 新增分数记录
+    val recallCount: Int = 0 // 新增召回次数记录
 )
 
 @Serializable

@@ -36,5 +36,7 @@ data class ChatSegmentEntity(
     @ColumnInfo("embedding")
     val embedding: String? = null, // 修改为 String? 类型，存储 JSON 化的向量
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")
-    val embeddingModelId: String? = null
+    val embeddingModelId: String? = null,
+    @ColumnInfo(name = "recall_count", defaultValue = "0")
+    val recallCount: Int = 0 // 被召回的次数
 )

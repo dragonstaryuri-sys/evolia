@@ -55,7 +55,8 @@ class MemoryRepository(
                         // 必须同时拥有 embedding 和 modelId 才认为已嵌入
                         hasEmbedding = !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
                         embeddingModelId = it.embeddingModelId,
-                        timestamp = it.timestamp
+                        timestamp = it.timestamp,
+                        recallCount = it.recallCount
                     )
                 }
             }
@@ -105,12 +106,14 @@ class MemoryRepository(
                 segmentEmbedding?.let { VectorEngine.cosineSimilarity(it, queryEmbedding) } ?: 0f
             } else 0f
 
+            val recallScore = calculateRecallScore(segment.recallCount)
+
             val score = when(mode) {
-                MemoryRetrievalMode.SEMANTIC -> similarity
-                MemoryRetrievalMode.KEYWORD -> keywordScore
+                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.9f) + (recallScore * 0.1f)
+                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.9f) + (recallScore * 0.1f)
                 MemoryRetrievalMode.HYBRID -> {
-                    if (queryEmbedding == null) keywordScore
-                    else (keywordScore * 0.5f) + (similarity * 0.5f)
+                    if (queryEmbedding == null) (keywordScore * 0.9f) + (recallScore * 0.1f)
+                    else (keywordScore * 0.45f) + (similarity * 0.45f) + (recallScore * 0.1f)
                 }
                 else -> 0f
             }
@@ -118,21 +121,26 @@ class MemoryRepository(
             segment to score
         }
 
-        return scoredSegments.sortedByDescending { it.second }
-            .take(limit)
-            .map { (segment, _) ->
-                val originalText = if (messages.isNotEmpty()) {
-                    val start = segment.startMessageIndex.coerceIn(messages.indices)
-                    val end = (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
-                    if (start < end) {
-                        messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
-                    } else ""
-                } else ""
+        val topSegments = scoredSegments.sortedByDescending { it.second }.take(limit)
 
-                segment.copy(
-                    content = "[Background]: ${segment.content}\n[Original Text]:\n$originalText"
-                )
-            }
+        // 增加召回计数
+        topSegments.forEach { (segment, _) ->
+            chatSegmentDAO.incrementRecallCount(segment.id)
+        }
+
+        return topSegments.map { (segment, _) ->
+            val originalText = if (messages.isNotEmpty()) {
+                val start = segment.startMessageIndex.coerceIn(messages.indices)
+                val end = (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
+                if (start < end) {
+                    messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                } else ""
+            } else ""
+
+            segment.copy(
+                content = "[Background]: ${segment.content}\n[Original Text]:\n$originalText"
+            )
+        }
     }
 
     // --- Core Memory Methods ---
@@ -248,7 +256,8 @@ class MemoryRepository(
                         AssistantMemory(
                             it.id, it.content, it.keywords, MemoryType.SEGMENT,
                             !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
-                            it.embeddingModelId, it.timestamp
+                            it.embeddingModelId, it.timestamp,
+                            recallCount = it.recallCount
                         )
                     }
             }
@@ -355,7 +364,7 @@ class MemoryRepository(
         val newSegment = segment.copy(content = content, keywords = keywords, embedding = null, embeddingModelId = null)
         chatSegmentDAO.insertSegment(newSegment)
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.SEGMENT)
-        return AssistantMemory(newSegment.id, newSegment.content, newSegment.keywords, MemoryType.SEGMENT, false, null, newSegment.timestamp)
+        return AssistantMemory(newSegment.id, newSegment.content, newSegment.keywords, MemoryType.SEGMENT, false, null, newSegment.timestamp, recallCount = newSegment.recallCount)
     }
 
     suspend fun addMemory(assistantId: String, content: String, type: Int = MemoryType.CORE, keywords: String? = null): AssistantMemory {
@@ -412,6 +421,15 @@ class MemoryRepository(
         val baseScore = 0.2f
         val bonusScore = (matchCount.toFloat() / keywordsList.size) * 0.8f
         return (baseScore + bonusScore).coerceAtMost(1.0f)
+    }
+
+    // 新增：召回得分计算
+    private fun calculateRecallScore(count: Int): Float {
+        // 使用饱和函数：1 - 1/(1 + 0.2*x)
+        // 0次 -> 0
+        // 5次 -> 0.5
+        // 20次 -> 0.8
+        return (1.0f - 1.0f / (1.0f + count.toFloat() * 0.2f))
     }
 
     suspend fun retrieveRelevantMemoriesWithScores(
@@ -484,17 +502,21 @@ class MemoryRepository(
             val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
             val recency = (1.0 / (1.0 + (ageInDays / 7.0))).toFloat()
 
+            // 召回率得分
+            val recallScore = calculateRecallScore(segment.recallCount)
+
             val score = when(mode) {
-                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.8f) + (recency * 0.2f)
-                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.8f) + (recency * 0.2f)
+                // 相似度/关键词 70%, 新鲜度 20%, 召回率 10%
+                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.7f) + (recency * 0.2f) + (recallScore * 0.1f)
+                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.7f) + (recency * 0.2f) + (recallScore * 0.1f)
                 MemoryRetrievalMode.HYBRID -> {
-                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
-                    else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.2f)
+                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.1f) + (recallScore * 0.1f)
+                    else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.1f) + (recallScore * 0.1f)
                 }
                 MemoryRetrievalMode.OFF -> 0f
             }
 
-            Log.v(TAG, "Segment ID=${segment.id} Score=$score (Similarity=$similarity, Recency=$recency)")
+            Log.v(TAG, "Segment ID=${segment.id} Score=$score (Sim=$similarity, Rec=$recency, Recall=$recallScore)")
 
             if (score >= similarityThreshold) Triple(segment, score, false) else null
         }
@@ -502,7 +524,7 @@ class MemoryRepository(
         val allScored = (memoryScores + segmentScores).sortedByDescending { it.second }
         Log.d(TAG, "Total matches after threshold: ${allScored.size}")
 
-        return allScored.take(limit).mapNotNull { triple ->
+        val finalResults = allScored.take(limit).mapNotNull { triple ->
             val item = triple.first
             val score = triple.second
             if (triple.third) {
@@ -510,9 +532,18 @@ class MemoryRepository(
                 AssistantMemory(m.id, m.content, m.keywords, m.type, true, m.embeddingModelId, m.createdAt, null, score) to score
             } else {
                 val s = item as ChatSegmentEntity
-                AssistantMemory(s.id, s.content, s.keywords, MemoryType.SEGMENT, true, s.embeddingModelId, s.timestamp, null, score) to score
+                AssistantMemory(s.id, s.content, s.keywords, MemoryType.SEGMENT, true, s.embeddingModelId, s.timestamp, null, score, s.recallCount) to score
             }
         }
+
+        // 异步更新被召回片段的计数
+        finalResults.forEach { (memory, _) ->
+            if (memory.type == MemoryType.SEGMENT) {
+                chatSegmentDAO.incrementRecallCount(memory.id)
+            }
+        }
+
+        return finalResults
     }
 
     suspend fun regenerateEmbeddings(assistantId: String, onProgress: (Int, Int) -> Unit): Pair<Int, Int> {

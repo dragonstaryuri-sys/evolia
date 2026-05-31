@@ -35,4 +35,7 @@ interface ChatSegmentDAO {
 
     @Query("DELETE FROM chat_segments WHERE id = :id")
     suspend fun deleteSegmentById(id: Int)
+
+    @Query("UPDATE chat_segments SET recall_count = recall_count + 1 WHERE id = :id")
+    suspend fun incrementRecallCount(id: Int)
 }
