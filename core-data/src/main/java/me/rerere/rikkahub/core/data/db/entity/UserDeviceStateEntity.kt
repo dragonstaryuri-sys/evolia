@@ -22,6 +22,10 @@ data class UserDeviceStateEntity(
     val recentActions: String = "", // 最近的操作记录描述
     @ColumnInfo(name = "screen_context")
     val screenContext: String = "", // 屏幕上下文内容（如商品信息）
+    @ColumnInfo(name = "app_session_start_ms")
+    val appSessionStartMs: Long = System.currentTimeMillis(), // 当前应用开始使用的时间
+    @ColumnInfo(name = "continuous_session_start_ms")
+    val continuousSessionStartMs: Long = System.currentTimeMillis(), // 手机持续使用（屏幕亮起）开始时间
     @ColumnInfo(name = "last_updated")
     val lastUpdated: Long = System.currentTimeMillis()
 )

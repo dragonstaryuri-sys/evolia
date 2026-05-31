@@ -71,7 +71,12 @@ object DatabaseSanitizer {
                 "agent_tasks",
                 "token_usage",
                 "books",
-                "book_progress"
+                "book_progress",
+                // 补全漏掉的表
+                "MilestoneEntity",
+                "user_device_state",
+                "agent_monitor_tasks",
+                "assistant_extended_state"
             )
 
             // 3. 交叉比对迁移

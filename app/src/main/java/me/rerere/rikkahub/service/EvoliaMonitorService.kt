@@ -86,6 +86,7 @@ class EvoliaMonitorService : AccessibilityService() {
         scope.launch {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val oldState = userDeviceStateRepo.getUserDeviceState().firstOrNull()
 
             val endTime = System.currentTimeMillis()
             val startTime = Calendar.getInstance().apply {
@@ -99,14 +100,28 @@ class EvoliaMonitorService : AccessibilityService() {
                 scanScreenContext()
             } else ""
 
+            val isScreenOn = powerManager.isInteractive
+
+            // 计算 App 持续时长和手机持续时长
+            val appSessionStart = if (oldState?.foregroundApp != packageName) endTime else oldState.appSessionStartMs
+            val continuousSessionStart = if (oldState?.isScreenOn == false && isScreenOn) {
+                endTime
+            } else if (oldState == null) {
+                endTime
+            } else {
+                oldState.continuousSessionStartMs
+            }
+
             val currentState = UserDeviceStateEntity(
                 id = 0,
                 foregroundApp = packageName,
                 foregroundAppName = appName,
-                isScreenOn = powerManager.isInteractive,
+                isScreenOn = isScreenOn,
                 todayDurationMs = durationMs,
                 screenContext = contextText,
-                lastUpdated = System.currentTimeMillis()
+                appSessionStartMs = appSessionStart,
+                continuousSessionStartMs = continuousSessionStart,
+                lastUpdated = endTime
             )
             userDeviceStateRepo.updateDeviceState(currentState)
             checkAllMonitors(currentState)
@@ -155,9 +170,23 @@ class EvoliaMonitorService : AccessibilityService() {
         val screenStatus = conditions["screen_status"]?.jsonPrimitive?.content
         if (screenStatus != null && state.isScreenOn != (screenStatus == "ON")) return false
 
-        // 4. 时长阈值
+        // 4. 每日累计时长阈值
         val durationThreshold = conditions["usage_duration_minutes"]?.jsonPrimitive?.intOrNull
         if (durationThreshold != null && (state.todayDurationMs / 60000) < durationThreshold) return false
+
+        // 4.1 单次持续使用时长阈值 (Continuous app usage)
+        val appContinuousThreshold = conditions["continuous_usage_minutes"]?.jsonPrimitive?.intOrNull
+        if (appContinuousThreshold != null) {
+            val continuousMs = System.currentTimeMillis() - state.appSessionStartMs
+            if (continuousMs / 60000 < appContinuousThreshold) return false
+        }
+
+        // 4.2 手机持续使用时长阈值 (Continuous screen on)
+        val totalContinuousThreshold = conditions["total_continuous_minutes"]?.jsonPrimitive?.intOrNull
+        if (totalContinuousThreshold != null) {
+            val continuousMs = System.currentTimeMillis() - state.continuousSessionStartMs
+            if (continuousMs / 60000 < totalContinuousThreshold) return false
+        }
 
         // 5. 特定应用过滤
         val targetApp = conditions["foreground_app"]?.jsonPrimitive?.content
@@ -177,11 +206,15 @@ class EvoliaMonitorService : AccessibilityService() {
 
         val template = triggerAction.jsonObject["content"]?.jsonPrimitive?.content ?: ""
         val durationMin = state.todayDurationMs / 60000
+        val appContinuousMin = (System.currentTimeMillis() - state.appSessionStartMs) / 60000
+        val totalContinuousMin = (System.currentTimeMillis() - state.continuousSessionStartMs) / 60000
         val currentTime = SimpleDateFormat("HH:mm", Locale.US).format(Date())
 
         val finalMsg = template
             .replace("{app_name}", state.foregroundAppName)
             .replace("{duration}", "$durationMin 分钟")
+            .replace("{continuous_duration}", "$appContinuousMin 分钟")
+            .replace("{total_continuous_duration}", "$totalContinuousMin 分钟")
             .replace("{recent_actions}", state.recentActions.ifBlank { "无近期点击" })
             .replace("{screen_context}", state.screenContext.ifBlank { "无上下文" })
             .replace("{current_time}", currentTime)

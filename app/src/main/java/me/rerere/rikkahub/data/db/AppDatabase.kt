@@ -33,7 +33,7 @@ import kotlinx.serialization.decodeFromString
         UserDeviceStateEntity::class,
         AgentMonitorTaskEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -159,6 +159,14 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 为 user_device_state 表增加屏幕上下文文字字段
                 db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `screen_context` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 为 user_device_state 表增加单次 App 使用开始时间和手机持续亮屏开始时间
+                db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `app_session_start_ms` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `continuous_session_start_ms` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }
