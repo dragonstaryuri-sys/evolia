@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.data.datastore
 
 import android.content.Context
-import android.util.Log
 import androidx.datastore.core.IOException
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
@@ -32,6 +31,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
+import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.utils.toMutableStateFlow
@@ -53,7 +53,8 @@ private val Context.settingsStore by preferencesDataStore(
     name = "settings",
     produceMigrations = { _ ->
         listOf(
-            PreferenceStoreV1Migration()
+            PreferenceStoreV1Migration(),
+            PreferenceStoreV2Migration()
         )
     }
 )
@@ -250,14 +251,8 @@ class SettingsStore(
                 }
             }
 
-            // 改造：确保主智能体默认包含并开启“资料维护”工具
-            assistants = assistants.map { a ->
-                if (a.isMain && !a.localTools.contains(LocalToolOption.UpdateProfile)) {
-                    a.copy(localTools = a.localTools + LocalToolOption.UpdateProfile)
-                } else {
-                    a
-                }
-            }.toMutableList()
+            // ⚠️ 注意：原本写在此处的强制补全逻辑已移除，改由 PreferenceStoreV2Migration 进行单次迁移。
+            // 这样用户在 UI 关掉工具后，重启 App 不会再被强制开启。
 
             val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
             DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
@@ -525,8 +520,8 @@ data class FontConfig(
     val features: List<FontFeature> = emptyList()
 ) {
     companion object {
-        val DEFAULT_EXPRESSIVE = FontConfig(fontSource = FontSource.System, roundness = 100f);
-        val DEFAULT_NORMAL = FontConfig(fontSource = FontSource.System, roundness = 0f);
+        val DEFAULT_EXPRESSIVE = FontConfig(fontSource = FontSource.System, roundness = 100f)
+        val DEFAULT_NORMAL = FontConfig(fontSource = FontSource.System, roundness = 0f)
         val DEFAULT_CODE = FontConfig(fontSource = FontSource.SystemCode, roundness = 0f, weight = 400f)
     }
 }
@@ -656,7 +651,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         temperature = 0.6f,
         systemPrompt = "你是用户创造的ai",
         isMain = true,
-        localTools = listOf(LocalToolOption.UpdateProfile)
+        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser)
     )
 )
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")

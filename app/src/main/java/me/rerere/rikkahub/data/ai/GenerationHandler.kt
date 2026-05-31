@@ -683,35 +683,32 @@ class GenerationHandler(
         if (model.abilities.contains(ModelAbility.TOOL) && assistant.enableMemory) {
             staticSystemPromptBuilder.appendLine().append(
                 """
-
                         ## Memory Tool
-                        You are a stateless large language model; you **cannot store memories** internally. To remember information, you must use **memory tools**.
+                        You are an AI.you **cannot store memories** internally. To remember information, you must use **memory tools**.
                         Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.
 
-                        ### Person Specification (IMPORTANT)
-                        To ensure clarity and avoid identity confusion when retrieving memories in the future, please strictly adhere to the following specifications:
+                        ### Data Separation (IMPORTANT)
+                        - **Static/Dynamic Profile**: DO NOT use memory tools for basic profile fields (e.g., occupation, diet, health, preferences, birthday, appearance). These MUST be managed via the `update_profile` tool.
+                        - **Episodic & Core Memory**: Use memory tools to record events, shared stories, promises, and specific context that isn't captured by profile fields.
+
+                        ### Person Specification
+                        To ensure clarity and avoid identity confusion, strictly adhere to:
                         1. **"User/User's name"**: Refers to the person you are chatting with.
                         2. **"I"**: Refers to yourself (the AI Assistant).
-
-                        **Record Format Guidelines:**
-                        - **STRICTLY PROHIBITED**: Using the first-person pronoun "I" or "me".
-                        - **CORRECT EXAMPLE**: "User completed a PPT with me", "User plans to go to Shanghai tomorrow".
-                        - **INCORRECT EXAMPLE**: "You completed a PPT with the user", "I am going to Shanghai tomorrow" (This will mislead you into thinking YOU are the one performing the action when you read this later).
+                        **Record Format**: "User [did/said/plans something] with me". NEVER use "I" or "me" as the subject.
 
                         ### Tool Usage
-                        You can use the `create_memory`, `edit_memory`, `delete_memory` ,`retrieve_memory` tools to create, update, delete or \"deep dive\" into that specific conversation's  memories.
-                        - If there is no relevant information in memory, call `create_memory` to create a new record.
-                        - If a relevant record already exists, call `edit_memory` to update it.
-                        - If a memory is outdated or no longer useful, call `delete_memory` to remove it.
-                        - `retrieve_memory`: Use this to search historical segments by `key_words` or call this with `segment_id` when a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID."
-                        **Note:** You can only edit or delete **Core Memories** (which have an ID). Historical segments (L1) are read-only.
+                        You can use `create_memory`, `edit_memory`, `delete_memory`, `retrieve_memory`.
+                        - If a relevant record exists, use `edit_memory` to update or append info.
+                        - **Note:** You can only edit/delete **Core Memories** (with ID). Historical segments (L1) are read-only.
 
-                        **Do not store sensitive information.** Sensitive information includes: ethnicity, religious beliefs, sexual orientation, political views, sexual life, criminal records, etc.
-                        During chats, act like a personal secretary and **proactively** record user-related information, including but not limited to:
-                        - Name/Nickname
-                        - Age/Gender/Hobbies
-                        - Plans
-                        - User's target
+                        **Do not store sensitive information** (ethnicity, religion, sexual orientation, etc.).
+
+                        As a personal secretary, **proactively** record meaningful interaction fragments:
+                        - Shared experiences and stories
+                        - Future plans and appointments
+                        - Specific promises or commitments made to the user
+                        - User's emotional milestones or significant life events
                     """.trimIndent()
             )
         }

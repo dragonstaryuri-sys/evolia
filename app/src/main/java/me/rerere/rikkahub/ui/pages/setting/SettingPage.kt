@@ -30,9 +30,11 @@ import org.koin.androidx.compose.koinViewModel
 import me.rerere.rikkahub.utils.openUrl
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.utils.UiState
+import me.rerere.rikkahub.utils.UpdateInfo
 import org.koin.compose.koinInject
 import okhttp3.OkHttpClient
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.UpdateDialog
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
@@ -400,6 +402,7 @@ private data class LanguageOption(val name: String, val tag: String)
 
 @Composable
 fun ProviderConfigWarningCard(navController: androidx.navigation.NavController) {
+    // ... (保持原样)
     Surface(
         modifier = Modifier
             .padding(16.dp)
@@ -446,6 +449,22 @@ private fun UpdateAvailableBanner(
     val updateFlow = remember(updateChecker) { updateChecker.checkUpdate() }
     val updateState by updateFlow.collectAsStateWithLifecycle(initialValue = UiState.Loading)
 
+    // 控制弹窗的状态
+    var showDialog by remember { mutableStateOf<UpdateInfo?>(null) }
+
+    if (showDialog != null) {
+        UpdateDialog(
+            updateInfo = showDialog!!,
+            onDismissRequest = { showDialog = null },
+            onConfirm = {
+                showDialog?.downloads?.firstOrNull()?.let {
+                    context.openUrl(it.url)
+                }
+                showDialog = null
+            }
+        )
+    }
+
     if (updateState is UiState.Success) {
         val updateInfo = (updateState as UiState.Success).data
         if (me.rerere.rikkahub.utils.Version(updateInfo.version) > me.rerere.rikkahub.utils.Version(BuildConfig.VERSION_NAME)){
@@ -456,9 +475,8 @@ private fun UpdateAvailableBanner(
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 shape = MaterialTheme.shapes.medium,
                 onClick = {
-                    updateInfo.downloads.firstOrNull()?.let {
-                        context.openUrl(it.url)
-                    }
+                    // 点击后不再直接跳转，而是弹出详情弹窗
+                    showDialog = updateInfo
                 }
             ) {
                 Row(

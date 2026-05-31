@@ -143,9 +143,17 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 8.2 Productivity & Device Control
 - **Schedule Manager (`schedule_manager`)**: Manages internal tasks with priority/urgency. Automatically syncs with the **Android System Calendar** for persistent reminders.
-- **Device Control**: Direct management of Alarms and Timers via system Intents.
+- **Device Control (`device_control`)**: 
+    - **System Commands**: Perform global actions (LOCK_SCREEN, GO_HOME, BACK, SHOW_RECENTS, SHOW_NOTIFICATIONS) to actively guide user behavior.
+    - **Alarm & Timer**: Manage system alarms and countdown timers via Intents.
 - **Email Service**: Full SMTP/IMAP support via `qq_email_service` for autonomous email handling.
 
 ### 8.3 Relationship & Dynamic Profile
 - **Profile Updater (`update_profile`)**: Allows AI to dynamically update User/Assistant Profile fields (diet, appearance, occupation, preferences, health, taboos, etc.) in real-time.
 - **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Perception, Commitment, Emotion, Identity) to shape the long-term bond and personality evolution.
+
+### 8.4 User Observation & Monitoring
+- **User Observer (`peek_user`)**: Sets up persistent high-precision monitors for phone status.
+    - **Data Dimensions**: Foreground App, Today Usage, Session Duration (App/Device), Screen Context (OCR), and Recent Actions.
+    - **Continuous Duration**: Supports triggering based on continuous usage of a specific app (`continuous_usage_minutes`) or continuous screen-on time (`total_continuous_minutes`).
+    - **Implementation**: Powered by `EvoliaMonitorService` (Accessibility Service) with 60s active polling and BroadcastReceiver-based screen state tracking.

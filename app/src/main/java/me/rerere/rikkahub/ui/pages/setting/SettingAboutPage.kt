@@ -40,10 +40,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,21 +62,40 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.UpdateDialog
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
+import me.rerere.rikkahub.utils.UpdateInfo
 import me.rerere.rikkahub.utils.Version
 import me.rerere.rikkahub.utils.openUrl
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingAboutPage() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val okHttpClient = koinInject<OkHttpClient>()
     val updateChecker = remember { UpdateChecker(okHttpClient) }
+
+    // 用于控制更新弹窗显示的状态
+    var updateInfoToShow by remember { mutableStateOf<UpdateInfo?>(null) }
+
+    if (updateInfoToShow != null) {
+        UpdateDialog(
+            updateInfo = updateInfoToShow!!,
+            onDismissRequest = { updateInfoToShow = null },
+            onConfirm = {
+                updateInfoToShow?.downloads?.firstOrNull()?.let {
+                    context.openUrl(it.url)
+                }
+                updateInfoToShow = null
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -93,7 +115,7 @@ fun SettingAboutPage() {
         ) {
             Spacer(modifier = Modifier.height(32.dp))
 
-            // App Icon - Large, Centered Vector
+            // App Icon
             Image(
                 painter = painterResource(R.drawable.ic_launcher_evolia_foreground),
                 contentDescription = null,
@@ -110,7 +132,7 @@ fun SettingAboutPage() {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Version Badge - Pill shaped with tertiaryContainer
+            // Version Badge
             Surface(
                 color = MaterialTheme.colorScheme.tertiaryContainer,
                 shape = CircleShape,
@@ -212,17 +234,15 @@ fun SettingAboutPage() {
                             updateChecker.checkUpdate().collect { state ->
                                 when (state) {
                                     is UiState.Loading -> {
-                                        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, context.getString(R.string.update_checking), Toast.LENGTH_SHORT).show()
                                     }
                                     is UiState.Success -> {
                                         val updateInfo = state.data
                                         if (Version(updateInfo.version) > Version(BuildConfig.VERSION_NAME)) {
-                                            Toast.makeText(context, "发现新版本: ${updateInfo.version}", Toast.LENGTH_LONG).show()
-                                            updateInfo.downloads.firstOrNull()?.let {
-                                                context.openUrl(it.url)
-                                            }
+                                            // 发现新版本，弹出详细说明框
+                                            updateInfoToShow = updateInfo
                                         } else {
-                                            Toast.makeText(context, "当前已是最新版本", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.update_is_latest), Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                     is UiState.Error -> {
