@@ -109,8 +109,10 @@ class AssistantDetailVM(
         history.find { it.date == today }
     }.stateIn(viewModelScope, SharingStarted.Lazily, null)
 
+    // 过滤掉已执行的任务，只显示未执行的
     val agentTasks: StateFlow<List<AgentTaskEntity>> = agentTaskRepository
         .getTasksByAssistant(assistantId.toString())
+        .map { tasks -> tasks.filter { !it.isExecuted } }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun deleteAgentTask(task: AgentTaskEntity) {

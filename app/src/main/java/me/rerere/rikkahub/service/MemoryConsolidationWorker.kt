@@ -17,6 +17,7 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
@@ -34,8 +35,9 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
-import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.common.android.appTempFolder
 import kotlinx.serialization.encodeToString
+import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -54,6 +56,7 @@ class MemoryConsolidationWorker(
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
     private val chatSegmentDAO: ChatSegmentDAO by inject()
     private val memoryRepository: MemoryRepository by inject()
+    private val agentTaskRepository: AgentTaskRepository by inject()
     private val embeddingService: EmbeddingService by inject()
 
     private class ResolvedModel(
@@ -85,6 +88,14 @@ class MemoryConsolidationWorker(
         )
 
         try {
+            // 自动清理已执行的任务数据
+            try {
+                agentTaskRepository.deleteExecutedTasks()
+                Log.i(TAG, "Garbage collection: Executed agent tasks cleared.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to clear executed tasks", e)
+            }
+
             if (forceConversationId != null) {
                 if (!tryLock(forceConversationId)) {
                     Log.i(TAG, "Conversation $forceConversationId is already being processed, skipping.")

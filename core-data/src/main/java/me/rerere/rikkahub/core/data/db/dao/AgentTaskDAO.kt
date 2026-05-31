@@ -15,6 +15,9 @@ interface AgentTaskDAO {
     @Delete
     suspend fun deleteTask(task: AgentTaskEntity)
 
+    @Query("DELETE FROM agent_tasks WHERE is_executed = 1")
+    suspend fun deleteExecutedTasks()
+
     @Query("SELECT * FROM agent_tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): AgentTaskEntity?
 

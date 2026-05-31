@@ -21,5 +21,7 @@ class AgentTaskRepository(
 
     suspend fun deleteTask(task: AgentTaskEntity) = agentTaskDAO.deleteTask(task)
 
+    suspend fun deleteExecutedTasks() = agentTaskDAO.deleteExecutedTasks()
+
     suspend fun getTaskById(id: Long): AgentTaskEntity? = agentTaskDAO.getTaskById(id)
 }
