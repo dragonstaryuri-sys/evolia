@@ -1616,4 +1616,10 @@
   <string name="perm_accessibility_desc">Evolia 需要无障碍服务来感知手机状态（如前台应用、屏幕开关），以实现睡眠监督、应用限时和自动化提醒等功能。我们不会收集你的私密输入数据。</string>
   <string name="tool_peek_user_desc">设置一个监控器来观察用户的手机使用状态（如当前 App、亮屏状态），并在满足条件时触发提醒或锁定屏幕。</string>
   <string name="assistant_page_local_tools_peek_user_title">手机状态监控</string>
+  <string name="agent_monitor_manager">监视器管理</string>
+  <string name="agent_monitor_manager_desc">查看并管理机已创建的状态监视器</string>
+  <string name="agent_monitor_empty">暂无监视器</string>
+  <string name="agent_monitor_delete_confirm">确定要删除这个监视器吗？删除后将不再监控相关状态。</string>
+  <string name="agent_monitor_created_at">创建于: %s</string>
+
 </resources>

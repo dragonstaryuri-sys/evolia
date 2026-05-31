@@ -20,6 +20,8 @@ data class UserDeviceStateEntity(
     val todayDurationMs: Long = 0,
     @ColumnInfo(name = "recent_actions")
     val recentActions: String = "", // 最近的操作记录描述
+    @ColumnInfo(name = "screen_context")
+    val screenContext: String = "", // 屏幕上下文内容（如商品信息）
     @ColumnInfo(name = "last_updated")
     val lastUpdated: Long = System.currentTimeMillis()
 )

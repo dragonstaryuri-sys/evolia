@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.PowerManager
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +31,19 @@ class EvoliaMonitorService : AccessibilityService() {
     private val chatService by inject<ChatService>()
     private val json = Json { ignoreUnknownKeys = true }
 
+    // 电商 App 包名列表 (可根据需要扩展)
+    private val shoppingApps = listOf(
+        "com.taobao.taobao",
+        "com.jingdong.app.mall",
+        "com.xunmeng.pinduoduo",
+        "com.tmall.android",
+        "com.xingin.xhs",
+        "com.sankuai.meituan",
+        "com.tmall.wireless",
+        "com.dianping.v1",
+        "ailand.lastchat.rikkafork.cocolal"
+    )
+
     // 缓存各任务的最后触发时间，实现冷却逻辑
     private val lastTriggerTimeMap = mutableMapOf<Long, Long>()
 
@@ -50,7 +64,9 @@ class EvoliaMonitorService : AccessibilityService() {
                 updateForegroundApp(packageName, getAppName(packageName))
             }
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                val text = event.text.firstOrNull()?.toString() ?: ""
+                val source = event.source
+                // 同时检查 text 和 contentDescription，解决 recent_actions 为空的问题
+                val text = source?.text?.toString() ?: source?.contentDescription?.toString() ?: ""
                 if (text.isNotBlank()) recordAction("点击了: $text")
             }
             else -> {}
@@ -83,12 +99,18 @@ class EvoliaMonitorService : AccessibilityService() {
             val stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
             val durationMs = stats?.find { it.packageName == packageName }?.totalTimeInForeground ?: 0L
 
+            // 如果是电商 App，则抓取屏幕上下文
+            val contextText = if (shoppingApps.contains(packageName)) {
+                scanScreenContext()
+            } else ""
+
             val currentState = UserDeviceStateEntity(
                 id = 0,
                 foregroundApp = packageName,
                 foregroundAppName = appName,
                 isScreenOn = powerManager.isInteractive,
                 todayDurationMs = durationMs,
+                screenContext = contextText, // 保存屏幕内容
                 lastUpdated = System.currentTimeMillis()
             )
             userDeviceStateRepo.updateDeviceState(currentState)
@@ -100,7 +122,7 @@ class EvoliaMonitorService : AccessibilityService() {
         scope.launch {
             val current = userDeviceStateRepo.getUserDeviceState().run { firstOrNull() } ?: UserDeviceStateEntity()
             val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-            // 只保留最近 5 条操作描述，防止文本过长
+            // 只保留最近 5 条操作描述
             val existingActions = current.recentActions.lines().filter { it.isNotBlank() }.take(4)
             val newActions = ("[$time] $action" + "\n" + existingActions.joinToString("\n")).trim()
             userDeviceStateRepo.updateDeviceState(current.copy(recentActions = newActions))
@@ -123,7 +145,7 @@ class EvoliaMonitorService : AccessibilityService() {
     }
 
     private fun evaluateConditions(conditions: JsonObject, state: UserDeviceStateEntity, taskId: Long): Boolean {
-        // 1. 冷却时间判断 (由 Agent 设置, 默认为 5 分钟)
+        // 1. 冷却时间判断
         val cooldownMin = conditions["cooldown_minutes"]?.jsonPrimitive?.longOrNull ?: 5L
         val lastTrigger = lastTriggerTimeMap[taskId] ?: 0L
         if (System.currentTimeMillis() - lastTrigger < cooldownMin * 60 * 1000) return false
@@ -140,7 +162,7 @@ class EvoliaMonitorService : AccessibilityService() {
         val screenStatus = conditions["screen_status"]?.jsonPrimitive?.content
         if (screenStatus != null && state.isScreenOn != (screenStatus == "ON")) return false
 
-        // 4. 时长阈值 (累计时长达到多少分钟)
+        // 4. 时长阈值
         val durationThreshold = conditions["usage_duration_minutes"]?.jsonPrimitive?.intOrNull
         if (durationThreshold != null && (state.todayDurationMs / 60000) < durationThreshold) return false
 
@@ -154,7 +176,7 @@ class EvoliaMonitorService : AccessibilityService() {
     private suspend fun triggerMonitor(task: AgentMonitorTaskEntity, state: UserDeviceStateEntity) {
         lastTriggerTimeMap[task.id] = System.currentTimeMillis()
 
-        // 解析告密模板
+        // 解析模板
         val actions = json.parseToJsonElement(task.actions).jsonArray
         val triggerAction = actions.find { it.jsonObject["type"]?.jsonPrimitive?.content == "SEND_HIDDEN_MESSAGE" } ?: return
 
@@ -166,6 +188,7 @@ class EvoliaMonitorService : AccessibilityService() {
             .replace("{app_name}", state.foregroundAppName)
             .replace("{duration}", "$durationMin 分钟")
             .replace("{recent_actions}", state.recentActions.ifBlank { "无近期点击" })
+            .replace("{screen_context}", state.screenContext.ifBlank { "未抓取到有用文字" }) // 新增占位符支持
             .replace("{current_time}", currentTime)
 
         chatService.executeAgentTask(
@@ -192,5 +215,32 @@ class EvoliaMonitorService : AccessibilityService() {
         fun parse(s: String) = s.split(":").let { it[0].toInt() * 60 + it[1].toInt() }
         val s = parse(start); val e = parse(end)
         return if (s <= e) current in s..e else current >= s || current <= e
+    }
+
+    /**
+     * 遍历当前窗口的所有节点，抓取可见文本
+     */
+    private fun scanScreenContext(): String {
+        val rootNode = rootInActiveWindow ?: return ""
+        val texts = mutableListOf<String>()
+
+        fun traverse(node: AccessibilityNodeInfo?) {
+            if (node == null) return
+            if (!node.isVisibleToUser) return // 只抓取用户可见的
+
+            val text = node.text?.toString() ?: node.contentDescription?.toString()
+            if (!text.isNullOrBlank() && text.length > 1) {
+                // 简单过滤掉太短的（如“OK”, “>”）或纯数字
+                texts.add(text.trim())
+            }
+
+            for (i in 0 until node.childCount) {
+                traverse(node.getChild(i))
+            }
+        }
+
+        traverse(rootNode)
+        // 使用去重和限制长度，防止文本爆炸
+        return texts.distinct().take(30).joinToString(" | ")
     }
 }

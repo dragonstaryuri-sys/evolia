@@ -46,7 +46,8 @@ import me.rerere.rikkahub.core.data.model.ContextPriority
 fun AssistantAdvancedSubPage(
     assistant: Assistant,
     onUpdate: (Assistant) -> Unit,
-    onNavigateToAgentTasks: () -> Unit
+    onNavigateToAgentTasks: () -> Unit,
+    onNavigateToAgentMonitors: () -> Unit
 ) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -72,6 +73,14 @@ fun AssistantAdvancedSubPage(
                     subtitle = stringResource(R.string.agent_task_manager_desc),
                     onClick = {
                         onNavigateToAgentTasks()
+                    }
+                )
+
+                SettingGroupItem(
+                    title = stringResource(R.string.agent_monitor_manager),
+                    subtitle = stringResource(R.string.agent_monitor_manager_desc),
+                    onClick = {
+                        onNavigateToAgentMonitors()
                     }
                 )
             }

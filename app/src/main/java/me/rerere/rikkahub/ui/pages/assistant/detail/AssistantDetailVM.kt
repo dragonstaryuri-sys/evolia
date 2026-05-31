@@ -34,7 +34,9 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
+import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
+import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
 import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -70,7 +72,8 @@ class AssistantDetailVM(
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val providerManager: ProviderManager,
     private val agentTaskRepository: AgentTaskRepository,
-    private val extendedStateRepository: AssistantExtendedStateRepository
+    private val extendedStateRepository: AssistantExtendedStateRepository,
+    private val agentMonitorTaskRepository: AgentMonitorTaskRepository
 ) : ViewModel() {
     private val assistantId = try {
         Uuid.parse(id)
@@ -118,6 +121,17 @@ class AssistantDetailVM(
     fun deleteAgentTask(task: AgentTaskEntity) {
         viewModelScope.launch {
             agentTaskRepository.deleteTask(task)
+        }
+    }
+
+    // 获取监视器任务
+    val monitorTasks: StateFlow<List<AgentMonitorTaskEntity>> = agentMonitorTaskRepository
+        .getTasksByAssistant(assistantId.toString())
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    fun deleteMonitorTask(task: AgentMonitorTaskEntity) {
+        viewModelScope.launch {
+            agentMonitorTaskRepository.deleteTask(task)
         }
     }
 

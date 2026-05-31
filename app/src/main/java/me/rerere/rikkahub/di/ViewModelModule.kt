@@ -24,6 +24,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
+import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
@@ -58,7 +59,8 @@ val viewModelModule = module {
             chatEpisodeDAO = get<ChatEpisodeDAO>(),
             providerManager = get(),
             agentTaskRepository = get<AgentTaskRepository>(),
-            extendedStateRepository = get<AssistantExtendedStateRepository>()
+            extendedStateRepository = get<AssistantExtendedStateRepository>(),
+            agentMonitorTaskRepository = get<AgentMonitorTaskRepository>()
         )
     }
     viewModel<ShareHandlerVM> {

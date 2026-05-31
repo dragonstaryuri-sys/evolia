@@ -208,6 +208,8 @@ fun AssistantDetailPage(
                             text = when (currentRoute) {
                                 AssistantDetailRoutes.IMPORT -> stringResource(R.string.assistant_import_page_title)
                                 AssistantDetailRoutes.EXTENDED_EDIT -> stringResource(R.string.assistant_extended_edit_title)
+                                "agent_tasks" -> stringResource(R.string.agent_task_manager)
+                                "agent_monitors" -> stringResource(R.string.agent_monitor_manager)
                                 else -> assistant.name.ifBlank {
                                     stringResource(R.string.assistant_page_default_assistant)
                                 }
@@ -463,7 +465,8 @@ fun AssistantDetailPage(
                 AssistantAdvancedSubPage(
                     assistant = assistant,
                     onUpdate = { onUpdate(it) },
-                    onNavigateToAgentTasks = { navController.navigate("agent_tasks") }
+                    onNavigateToAgentTasks = { navController.navigate("agent_tasks") },
+                    onNavigateToAgentMonitors = { navController.navigate("agent_monitors") }
                 )
             }
 
@@ -475,6 +478,11 @@ fun AssistantDetailPage(
             // Agent Task
             composable("agent_tasks") {
                 AssistantAgentTaskPage(assistantId = id)
+            }
+
+            // Agent Monitor
+            composable("agent_monitors") {
+                AssistantAgentMonitorPage(assistantId = id)
             }
 
             // 搬家页面入口
