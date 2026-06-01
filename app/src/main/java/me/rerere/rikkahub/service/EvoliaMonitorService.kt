@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.firstOrNull
@@ -49,7 +50,7 @@ class EvoliaMonitorService : AccessibilityService() {
     private val lastTriggerTimeMap = mutableMapOf<Long, Long>()
     private var pollingJob: Job? = null
 
-    // 屏幕状态监听：AccessibilityService 无法直接感知熄屏，需靠广播
+    // 屏幕状态监听
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -134,7 +135,6 @@ class EvoliaMonitorService : AccessibilityService() {
             val isScreenOn = screenOn ?: powerManager.isInteractive
             val packageName = (if (isScreenOn) newPackage ?: oldState.foregroundApp else "").ifBlank { "" }
 
-            // 1. 处理起始时间点 (Session Start)
             var appSessionStart = oldState.appSessionStartMs
             var continuousStart = oldState.continuousSessionStartMs
 
@@ -142,17 +142,14 @@ class EvoliaMonitorService : AccessibilityService() {
                 appSessionStart = 0L
                 continuousStart = 0L
             } else {
-                // 屏幕刚刚亮起或初次运行
                 if (continuousStart <= 0L || (screenTransition && screenOn == true)) {
                     continuousStart = now
                 }
-                // App 切换或初次运行
                 if (packageName.isNotBlank() && (packageName != oldState.foregroundApp || appSessionStart <= 0L)) {
                     appSessionStart = now
                 }
             }
 
-            // 2. 统计今日累计时长 (Duration Compensation)
             val startTime = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
             }.timeInMillis
@@ -162,20 +159,16 @@ class EvoliaMonitorService : AccessibilityService() {
                 stats?.find { it.packageName == packageName }?.totalTimeInForeground ?: 0L
             } else 0L
 
-            // 抖音等 App 补偿算法：UsageStatsManager 数据延迟严重
-            // 如果处于活跃状态且 App 没变，我们将“系统记录”与“本地计时器”取大值
             var realTodayDurationMs = systemTotal
             if (isScreenOn && packageName.isNotBlank() && packageName == oldState.foregroundApp && appSessionStart > 0) {
                 val sessionElapsed = now - appSessionStart
-                // 补偿逻辑：系统记录可能还没刷新，我们用本地估算的累加值
                 realTodayDurationMs = maxOf(systemTotal, oldState.todayDurationMs, sessionElapsed)
             }
 
             val contextText = if (isScreenOn && shoppingApps.contains(packageName)) scanScreenContext() else ""
 
-            // 获取位置信息 (增加安全权限检查)
             val (lat, lon, locName) = if (
-                androidx.core.content.ContextCompat.checkSelfPermission(
+                ContextCompat.checkSelfPermission(
                     this@EvoliaMonitorService,
                     android.Manifest.permission.ACCESS_COARSE_LOCATION
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -185,12 +178,9 @@ class EvoliaMonitorService : AccessibilityService() {
                     val loc = try {
                         lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
                             ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                    } catch (e: SecurityException) {
-                        null
-                    }
+                    } catch (e: SecurityException) { null }
 
                     if (loc != null) {
-                        // 使用 Dispatchers.IO 处理耗时的逆地理编码
                         val name = withContext(Dispatchers.IO) {
                             try {
                                 val geocoder = Geocoder(this@EvoliaMonitorService, Locale.getDefault())
@@ -199,21 +189,14 @@ class EvoliaMonitorService : AccessibilityService() {
                                 addresses?.firstOrNull()?.let {
                                     it.getAddressLine(0) ?: it.featureName ?: it.locality ?: ""
                                 } ?: ""
-                            } catch (e: Exception) {
-                                ""
-                            }
+                            } catch (e: Exception) { "" }
                         }
                         Triple(loc.latitude, loc.longitude, name)
-                    } else {
-                        Triple(oldState.latitude, oldState.longitude, oldState.locationName)
-                    }
+                    } else Triple(oldState.latitude, oldState.longitude, oldState.locationName)
                 } catch (e: Exception) {
                     Triple(oldState.latitude, oldState.longitude, oldState.locationName)
                 }
-            } else {
-                // 无权限时保持旧状态
-                Triple(oldState.latitude, oldState.longitude, oldState.locationName)
-            }
+            } else Triple(oldState.latitude, oldState.longitude, oldState.locationName)
 
             val currentState = oldState.copy(
                 foregroundApp = packageName,
@@ -230,8 +213,9 @@ class EvoliaMonitorService : AccessibilityService() {
             )
 
             userDeviceStateRepo.updateDeviceState(currentState)
+            // 只有当屏幕开启，或者位置发生变化时，才检查监控
             if (isScreenOn || currentState.locationName != oldState.locationName) {
-                checkAllMonitors(currentState)
+                checkAllMonitors(currentState, oldState)
             }
         }
     }
@@ -243,17 +227,16 @@ class EvoliaMonitorService : AccessibilityService() {
             val existingActions = current.recentActions.lines().filter { it.isNotBlank() }.take(4)
             val newActions = ("[$time] $action" + "\n" + existingActions.joinToString("\n")).trim()
             userDeviceStateRepo.updateDeviceState(current.copy(recentActions = newActions))
-            // 动作后顺便同步一下状态和检查监控
             syncDeviceState()
         }
     }
 
-    private suspend fun checkAllMonitors(state: UserDeviceStateEntity) {
+    private suspend fun checkAllMonitors(state: UserDeviceStateEntity, oldState: UserDeviceStateEntity) {
         val tasks = monitorTaskRepo.getAllEnabledTasks().run { firstOrNull() } ?: return
         tasks.forEach { task ->
             try {
                 val conditions = json.parseToJsonElement(task.conditions).jsonObject
-                if (evaluateConditions(conditions, state, task.id)) {
+                if (evaluateConditions(conditions, state, oldState, task.id)) {
                     triggerMonitor(task, state)
                 }
             } catch (e: Exception) {
@@ -262,11 +245,25 @@ class EvoliaMonitorService : AccessibilityService() {
         }
     }
 
-    private fun evaluateConditions(conditions: JsonObject, state: UserDeviceStateEntity, taskId: Long): Boolean {
+    private fun evaluateConditions(
+        conditions: JsonObject,
+        state: UserDeviceStateEntity,
+        oldState: UserDeviceStateEntity,
+        taskId: Long
+    ): Boolean {
         val now = System.currentTimeMillis()
         val cooldownMin = (conditions["cooldown_minutes"]?.jsonPrimitive?.longOrNull ?: 5L).coerceAtLeast(2L)
         val lastTrigger = lastTriggerTimeMap[taskId] ?: 0L
         if (now - lastTrigger < cooldownMin * 60 * 1000) return false
+
+        // 1. 地点触发（核心逻辑改进：仅当“进入”该地点时触发一次）
+        val locationNameCondition = conditions["location_name"]?.jsonPrimitive?.content
+        if (locationNameCondition != null) {
+            val isNowMatch = state.locationName.contains(locationNameCondition, ignoreCase = true)
+            val wasMatch = oldState.locationName.contains(locationNameCondition, ignoreCase = true)
+            // 只有当前匹配且之前不匹配（刚进入），或者位置发生了本质变化才触发
+            if (!isNowMatch || wasMatch) return false
+        }
 
         val timeRange = conditions["time_range"]?.jsonObject
         if (timeRange != null) {
@@ -278,18 +275,15 @@ class EvoliaMonitorService : AccessibilityService() {
         val screenStatus = conditions["screen_status"]?.jsonPrimitive?.content
         if (screenStatus != null && state.isScreenOn != (screenStatus == "ON")) return false
 
-        // 4. 每日累计时长阈值
         val durationThreshold = conditions["usage_duration_minutes"]?.jsonPrimitive?.intOrNull
         if (durationThreshold != null && (state.todayDurationMs / 60000) < durationThreshold) return false
 
-        // 4.1 单次持续使用时长阈值 (Continuous app usage)
         val appContinuousThreshold = conditions["continuous_usage_minutes"]?.jsonPrimitive?.intOrNull
         if (appContinuousThreshold != null && state.appSessionStartMs > 0) {
             val continuousMs = now - state.appSessionStartMs
             if (continuousMs / 60000 < appContinuousThreshold) return false
         }
 
-        // 4.2 手机持续使用时长阈值 (Continuous screen on)
         val totalContinuousThreshold = conditions["total_continuous_minutes"]?.jsonPrimitive?.intOrNull
         if (totalContinuousThreshold != null && state.continuousSessionStartMs > 0) {
             val continuousMs = now - state.continuousSessionStartMs
@@ -301,10 +295,6 @@ class EvoliaMonitorService : AccessibilityService() {
 
         val contentContains = conditions["content_contains"]?.jsonPrimitive?.content
         if (contentContains != null && !state.screenContext.contains(contentContains, ignoreCase = true)) return false
-
-        // 地点触发
-        val locationNameCondition = conditions["location_name"]?.jsonPrimitive?.content
-        if (locationNameCondition != null && !state.locationName.contains(locationNameCondition, ignoreCase = true)) return false
 
         return true
     }
