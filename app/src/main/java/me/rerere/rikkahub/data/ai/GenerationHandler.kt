@@ -561,7 +561,7 @@ class GenerationHandler(
             "用户和你现在在你的电子（虚拟）世界。\n"
         }
         else {
-            "你是一个ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。\n"
+            "你是一个ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。你通过evolia这个app和用户对话互动。\n"
         }
         if (assistant.isMain){
             staticSystemPromptBuilder.append(modeDescription)

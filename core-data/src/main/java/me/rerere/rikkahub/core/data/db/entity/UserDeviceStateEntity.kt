@@ -26,6 +26,12 @@ data class UserDeviceStateEntity(
     val appSessionStartMs: Long = System.currentTimeMillis(), // 当前应用开始使用的时间
     @ColumnInfo(name = "continuous_session_start_ms")
     val continuousSessionStartMs: Long = System.currentTimeMillis(), // 手机持续使用（屏幕亮起）开始时间
+    @ColumnInfo(name = "latitude")
+    val latitude: Double = 0.0,
+    @ColumnInfo(name = "longitude")
+    val longitude: Double = 0.0,
+    @ColumnInfo(name = "location_name")
+    val locationName: String = "",
     @ColumnInfo(name = "last_updated")
     val lastUpdated: Long = System.currentTimeMillis()
 )

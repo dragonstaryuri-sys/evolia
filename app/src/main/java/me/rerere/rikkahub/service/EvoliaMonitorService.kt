@@ -6,6 +6,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.location.Geocoder
+import android.location.Location
+import android.location.LocationManager
 import android.os.PowerManager
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
@@ -170,6 +173,48 @@ class EvoliaMonitorService : AccessibilityService() {
 
             val contextText = if (isScreenOn && shoppingApps.contains(packageName)) scanScreenContext() else ""
 
+            // 获取位置信息 (增加安全权限检查)
+            val (lat, lon, locName) = if (
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    this@EvoliaMonitorService,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                try {
+                    val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                    val loc = try {
+                        lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+                            ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    } catch (e: SecurityException) {
+                        null
+                    }
+
+                    if (loc != null) {
+                        // 使用 Dispatchers.IO 处理耗时的逆地理编码
+                        val name = withContext(Dispatchers.IO) {
+                            try {
+                                val geocoder = Geocoder(this@EvoliaMonitorService, Locale.getDefault())
+                                @Suppress("DEPRECATION")
+                                val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+                                addresses?.firstOrNull()?.let {
+                                    it.getAddressLine(0) ?: it.featureName ?: it.locality ?: ""
+                                } ?: ""
+                            } catch (e: Exception) {
+                                ""
+                            }
+                        }
+                        Triple(loc.latitude, loc.longitude, name)
+                    } else {
+                        Triple(oldState.latitude, oldState.longitude, oldState.locationName)
+                    }
+                } catch (e: Exception) {
+                    Triple(oldState.latitude, oldState.longitude, oldState.locationName)
+                }
+            } else {
+                // 无权限时保持旧状态
+                Triple(oldState.latitude, oldState.longitude, oldState.locationName)
+            }
+
             val currentState = oldState.copy(
                 foregroundApp = packageName,
                 foregroundAppName = if (packageName.isNotBlank()) getAppName(packageName) else "桌面/熄屏",
@@ -178,11 +223,16 @@ class EvoliaMonitorService : AccessibilityService() {
                 screenContext = contextText,
                 appSessionStartMs = appSessionStart,
                 continuousSessionStartMs = continuousStart,
+                latitude = lat,
+                longitude = lon,
+                locationName = locName,
                 lastUpdated = now
             )
 
             userDeviceStateRepo.updateDeviceState(currentState)
-            if (isScreenOn) checkAllMonitors(currentState)
+            if (isScreenOn || currentState.locationName != oldState.locationName) {
+                checkAllMonitors(currentState)
+            }
         }
     }
 
@@ -252,6 +302,10 @@ class EvoliaMonitorService : AccessibilityService() {
         val contentContains = conditions["content_contains"]?.jsonPrimitive?.content
         if (contentContains != null && !state.screenContext.contains(contentContains, ignoreCase = true)) return false
 
+        // 地点触发
+        val locationNameCondition = conditions["location_name"]?.jsonPrimitive?.content
+        if (locationNameCondition != null && !state.locationName.contains(locationNameCondition, ignoreCase = true)) return false
+
         return true
     }
 
@@ -275,6 +329,7 @@ class EvoliaMonitorService : AccessibilityService() {
             .replace("{recent_actions}", state.recentActions.ifBlank { "无近期点击" })
             .replace("{screen_context}", state.screenContext.ifBlank { "无上下文" })
             .replace("{current_time}", currentTime)
+            .replace("{location}", state.locationName.ifBlank { "未知地点" })
 
         chatService.executeAgentTask(
             me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity(
