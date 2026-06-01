@@ -173,7 +173,10 @@ class LocalTools(
                                     put("is_image", file.isImage)
                                     put("mime", file.mimeType)
                                     put("uri", uri.toString())
-                                    put("markdown_link", if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)")
+                                    put(
+                                        "markdown_link",
+                                        if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)"
+                                    )
                                 }
                             }
 
@@ -184,7 +187,10 @@ class LocalTools(
                             }
                             if (generatedFiles.isNotEmpty()) {
                                 put("generated_files", JsonArray(generatedFiles))
-                                put("note", "Use generated_files[].markdown_link in your reply so users can open/download outputs directly in chat.")
+                                put(
+                                    "note",
+                                    "Use generated_files[].markdown_link in your reply so users can open/download outputs directly in chat."
+                                )
                             }
                         }
 
@@ -220,21 +226,21 @@ class LocalTools(
                         buildJsonObject {
                             put(
                                 "files", kotlinx.serialization.json.JsonArray(
-                                files.map { file ->
-                                    buildJsonObject {
-                                        val uri = pythonSandbox.getFileUri(conversationId, file.name)
-                                        put("name", file.name)
-                                        put("size", file.size)
-                                        put("is_image", file.isImage)
-                                        put("mime", file.mimeType)
-                                        put("uri", uri.toString())
-                                        put(
-                                            "markdown_link",
-                                            if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)"
-                                        )
+                                    files.map { file ->
+                                        buildJsonObject {
+                                            val uri = pythonSandbox.getFileUri(conversationId, file.name)
+                                            put("name", file.name)
+                                            put("size", file.size)
+                                            put("is_image", file.isImage)
+                                            put("mime", file.mimeType)
+                                            put("uri", uri.toString())
+                                            put(
+                                                "markdown_link",
+                                                if (file.isImage) "![${file.name}]($uri)" else "[${file.name}]($uri)"
+                                            )
+                                        }
                                     }
-                                }
-                            ))
+                                ))
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "Failed to list files") }
@@ -466,13 +472,17 @@ class LocalTools(
                             put("command", buildJsonObject {
                                 put("type", "string")
                                 put("description", "The system command to execute")
-                                put("enum", JsonArray(listOf(
-                                    JsonPrimitive("LOCK_SCREEN"),
-                                    JsonPrimitive("GO_HOME"),
-                                    JsonPrimitive("BACK"),
-                                    JsonPrimitive("SHOW_RECENTS"),
-                                    JsonPrimitive("SHOW_NOTIFICATIONS")
-                                )))
+                                put(
+                                    "enum", JsonArray(
+                                        listOf(
+                                            JsonPrimitive("LOCK_SCREEN"),
+                                            JsonPrimitive("GO_HOME"),
+                                            JsonPrimitive("BACK"),
+                                            JsonPrimitive("SHOW_RECENTS"),
+                                            JsonPrimitive("SHOW_NOTIFICATIONS")
+                                        )
+                                    )
+                                )
                             })
                         },
                         required = listOf("command")
@@ -482,7 +492,12 @@ class LocalTools(
                     val command = it.jsonObject["command"]?.jsonPrimitive?.contentOrNull ?: ""
                     // 尝试发送命令，如果没有任何订阅者（说明服务未开启），则返回错误
                     if (DeviceCommandHub.commands.subscriptionCount.value == 0) {
-                        return@Tool buildJsonObject { put("error", "Accessibility Service is not active. Please ask user to enable it in settings.") }
+                        return@Tool buildJsonObject {
+                            put(
+                                "error",
+                                "Accessibility Service is not active. Please ask user to enable it in settings."
+                            )
+                        }
                     }
                     val success = DeviceCommandHub.commands.tryEmit(command)
                     buildJsonObject {
@@ -964,7 +979,10 @@ class LocalTools(
                             })
                             put("task_type", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Type of task: EMAIL, NOTIFICATION (Timed AI Reminder), OTHERS(required for 'add')")
+                                put(
+                                    "description",
+                                    "Type of task: EMAIL, NOTIFICATION (Timed AI Reminder), OTHERS(required for 'add')"
+                                )
                             })
                             put("scheduled_time", buildJsonObject {
                                 put("type", "string")
@@ -1218,9 +1236,11 @@ class LocalTools(
                             })
                             put("updates", buildJsonObject {
                                 put("type", "object")
-                                put("description", "A map of fields to update. " +
-                                    "Allowed fields for 'user': appearance, occupation, preferences, diet, health, taboos, interaction_preferences, important_relationships, birthday. " +
-                                    "Allowed fields for 'assistant': personality, preferences, diet, taboos, interaction_habits, relationships.")
+                                put(
+                                    "description", "A map of fields to update. " +
+                                        "Allowed fields for 'user': appearance, occupation, preferences, diet, health, taboos, interaction_preferences, important_relationships, birthday. " +
+                                        "Allowed fields for 'assistant': personality, preferences, diet, taboos, interaction_habits, relationships."
+                                )
                                 // 3. 即使解析是动态的，定义一些属性占位符能引导 AI 理解这是一个键值对对象
                                 put("additionalProperties", buildJsonObject {
                                     put("type", "string")
@@ -1237,15 +1257,20 @@ class LocalTools(
                     val argsObj = argumentsElement.jsonObject
                     if (argsObj.isEmpty()) {
                         return@Tool buildJsonObject {
-                            put("error", "Missing required parameters: 'target' and 'updates'. " +
-                                "Please call again with the correct JSON structure.")
+                            put(
+                                "error", "Missing required parameters: 'target' and 'updates'. " +
+                                    "Please call again with the correct JSON structure."
+                            )
                         }
                     }
                     val target = argsObj["target"]?.jsonPrimitive?.contentOrNull ?: ""
                     val updates = argsObj["updates"]?.jsonObject ?: buildJsonObject {}
 
                     // 记录解析出的关键字段
-                    android.util.Log.d("LocalTools", "update_profile: parsed target = '$target', updates_keys = ${updates.keys}")
+                    android.util.Log.d(
+                        "LocalTools",
+                        "update_profile: parsed target = '$target', updates_keys = ${updates.keys}"
+                    )
 
                     try {
                         when (target) {
@@ -1256,7 +1281,10 @@ class LocalTools(
 
                                 updates.forEach { (field, value) ->
                                     val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
-                                    android.util.Log.d("LocalTools", "update_profile: [user] updating '$field' to '$newValue'")
+                                    android.util.Log.d(
+                                        "LocalTools",
+                                        "update_profile: [user] updating '$field' to '$newValue'"
+                                    )
                                     updatedProfile = when (field) {
                                         "appearance" -> updatedProfile.copy(appearance = newValue)
                                         "occupation" -> updatedProfile.copy(occupation = newValue)
@@ -1281,7 +1309,10 @@ class LocalTools(
 
                                 updates.forEach { (field, value) ->
                                     val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
-                                    android.util.Log.d("LocalTools", "update_profile: [assistant] updating '$field' to '$newValue'")
+                                    android.util.Log.d(
+                                        "LocalTools",
+                                        "update_profile: [assistant] updating '$field' to '$newValue'"
+                                    )
                                     updatedState = when (field) {
                                         "personality" -> updatedState.copy(personality = newValue)
                                         "preferences" -> updatedState.copy(preferences = newValue)
@@ -1298,7 +1329,10 @@ class LocalTools(
 
                             else -> {
                                 // 发生错误时，记录更详细的信息
-                                android.util.Log.w("LocalTools", "update_profile failed: Unknown target profile '$target'. Received keys: ${argsObj.keys.joinToString()}")
+                                android.util.Log.w(
+                                    "LocalTools",
+                                    "update_profile failed: Unknown target profile '$target'. Received keys: ${argsObj.keys.joinToString()}"
+                                )
                                 buildJsonObject {
                                     put(
                                         "error",
@@ -1327,7 +1361,17 @@ class LocalTools(
                             put("action", buildJsonObject {
                                 put("type", "string")
                                 put("description", "Action to perform: add, list, delete, update")
-                                put("enum", JsonArray(listOf(JsonPrimitive("add"), JsonPrimitive("list"), JsonPrimitive("delete"), JsonPrimitive("update"))))
+                                put(
+                                    "enum",
+                                    JsonArray(
+                                        listOf(
+                                            JsonPrimitive("add"),
+                                            JsonPrimitive("list"),
+                                            JsonPrimitive("delete"),
+                                            JsonPrimitive("update")
+                                        )
+                                    )
+                                )
                             })
                             put("id", buildJsonObject {
                                 put("type", "string")
@@ -1339,7 +1383,10 @@ class LocalTools(
                             })
                             put("label", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Short category label (e.g., 初识, 相爱, 吵架, 升温), required for 'add'")
+                                put(
+                                    "description",
+                                    "Short category label (e.g., 初识, 相爱, 吵架, 升温), required for 'add'"
+                                )
                             })
                             put("description", buildJsonObject {
                                 put("type", "string")
@@ -1370,6 +1417,7 @@ class LocalTools(
                                 milestoneRepo.addMilestone(milestone)
                                 buildJsonObject { put("success", true); put("id", milestone.id) }
                             }
+
                             "list" -> {
                                 val milestones = milestoneRepo.getMilestones(assistantId.toString())
                                 buildJsonObject {
@@ -1383,6 +1431,7 @@ class LocalTools(
                                     }))
                                 }
                             }
+
                             "update" -> {
                                 val id = json["id"]?.jsonPrimitive?.contentOrNull ?: ""
                                 val time = json["time"]?.jsonPrimitive?.contentOrNull
@@ -1402,11 +1451,13 @@ class LocalTools(
                                     buildJsonObject { put("error", "Milestone not found") }
                                 }
                             }
+
                             "delete" -> {
                                 val id = json["id"]?.jsonPrimitive?.contentOrNull ?: ""
                                 milestoneRepo.deleteMilestone(id)
                                 buildJsonObject { put("success", true) }
                             }
+
                             else -> buildJsonObject { put("error", "Unknown action") }
                         }
                     } catch (e: Exception) {
@@ -1421,7 +1472,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "peek_user",
-                description = "Set up a high-precision monitor to observe the user's phone status. When conditions are met, the system will send a HIDDEN virtual message to you (the Assistant) containing real-time data. You can then decide how to reply to the user or whether to call `device_control` to take actions. ",
+                description = "Observe the user's phone status. Use 'add' to set up a monitor(When conditions are met, the system will send a HIDDEN virtual message to you (the Assistant) containing real-time data. You can then decide how to reply to the user or whether to call `device_control` to take actions.), or 'get' to view a monitor's details.",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -1429,7 +1480,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Action to perform: add (create monitor), list (view all), delete (remove by ID)"
+                                    "Action to perform: add (create monitor), list (view all), delete (remove by ID), get (view monitor details by ID)"
                                 )
                                 put(
                                     "enum",
@@ -1437,14 +1488,15 @@ class LocalTools(
                                         listOf(
                                             JsonPrimitive("add"),
                                             JsonPrimitive("list"),
-                                            JsonPrimitive("delete")
+                                            JsonPrimitive("delete"),
+                                            JsonPrimitive("get")
                                         )
                                     )
                                 )
                             })
                             put("monitor_id", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Required for 'delete'")
+                                put("description", "Required for 'delete' and 'get'")
                             })
                             put("monitor_name", buildJsonObject {
                                 put("type", "string")
@@ -1453,15 +1505,24 @@ class LocalTools(
                             put("data_requirements", buildJsonObject {
                                 put("type", "array")
                                 put("items", buildJsonObject { put("type", "string") })
-                                put("description", "Fields to monitor: foreground_app, screen_status, current_time, today_usage_duration, app_session_duration, total_continuous_duration, recent_actions, screen_context")
+                                put(
+                                    "description",
+                                    "Fields to monitor: foreground_app, screen_status, current_time, today_usage_duration, app_session_duration, total_continuous_duration, recent_actions, screen_context"
+                                )
                             })
                             put("conditions", buildJsonObject {
                                 put("type", "object")
-                                put("description", "Trigger logic. Supported keys: 'time_range' (start/end HH:mm), 'screen_status' (ON/OFF), 'foreground_app' (appName), 'usage_duration_minutes' (Integer: trigger if daily duration exceeds this), 'continuous_usage_minutes' (Integer: trigger if current app usage duration exceeds this), 'total_continuous_minutes' (Integer: trigger if continuous screen on duration exceeds this), 'content_contains' (String: trigger if screen text contains this), 'cooldown_minutes' (Integer: silence after trigger, default 5).")
+                                put(
+                                    "description",
+                                    "Trigger logic. Supported keys: 'time_range' (start/end HH:mm), 'screen_status' (ON/OFF), 'foreground_app' (appName), 'usage_duration_minutes' (Integer: trigger if daily duration exceeds this), 'continuous_usage_minutes' (Integer: trigger if current app usage duration exceeds this), 'total_continuous_minutes' (Integer: trigger if continuous screen on duration exceeds this), 'content_contains' (String: trigger if screen text contains this), 'cooldown_minutes' (Integer: silence after trigger, default 5)."
+                                )
                             })
                             put("trigger_message", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The message template that will be sent to you when triggered. Use {app_name}, {duration}, {continuous_duration}, {total_continuous_duration}, {recent_actions}, {screen_context}, {current_time} as placeholders. Example: 'User has been using {app_name} for {continuous_duration}. Please intervene.'")
+                                put(
+                                    "description",
+                                    "The message template that will be sent to you when triggered. Use {app_name}, {duration}, {continuous_duration}, {total_continuous_duration}, {recent_actions}, {screen_context}, {current_time} as placeholders. Example: 'User has been using {app_name} for {continuous_duration}. Please intervene.'"
+                                )
                             })
                         },
                         required = listOf("action")
@@ -1473,10 +1534,12 @@ class LocalTools(
                     try {
                         when (action) {
                             "add" -> {
-                                val monitorName = json["monitor_name"]?.jsonPrimitive?.contentOrNull ?: "Unnamed Monitor"
+                                val monitorName =
+                                    json["monitor_name"]?.jsonPrimitive?.contentOrNull ?: "Unnamed Monitor"
                                 val dataReq = json["data_requirements"]?.toString() ?: "[]"
                                 val conditions = json["conditions"]?.toString() ?: "{}"
-                                val triggerMsg = json["trigger_message"]?.jsonPrimitive?.contentOrNull ?: "Monitor triggered"
+                                val triggerMsg =
+                                    json["trigger_message"]?.jsonPrimitive?.contentOrNull ?: "Monitor triggered"
 
                                 val task = AgentMonitorTaskEntity(
                                     assistantId = assistantId.toString(),
@@ -1493,6 +1556,7 @@ class LocalTools(
                                 val id = monitorTaskRepo.addTask(task)
                                 buildJsonObject { put("success", true); put("monitor_id", id) }
                             }
+
                             "list" -> {
                                 val tasks = monitorTaskRepo.getTasksByAssistant(assistantId.toString()).first()
                                 buildJsonObject {
@@ -1505,11 +1569,32 @@ class LocalTools(
                                     }))
                                 }
                             }
+
                             "delete" -> {
                                 val id = json["monitor_id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 monitorTaskRepo.deleteTaskById(id)
                                 buildJsonObject { put("success", true) }
                             }
+                            "get" -> {
+                                val id = json["monitor_id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                val task = monitorTaskRepo.getTaskById(id)
+                                if (task != null) {
+                                    buildJsonObject {
+                                        put("success", true)
+                                        put("id", task.id)
+                                        put("name", task.monitorName)
+                                        // 尝试将存储的 String JSON 解析回结构化对象，以便 AI 更好地处理
+                                        put("data_requirements", try { Json.parseToJsonElement(task.dataRequirements) } catch (e: Exception) { JsonPrimitive(task.dataRequirements) })
+                                        put("conditions", try { Json.parseToJsonElement(task.conditions) } catch (e: Exception) { JsonPrimitive(task.conditions) })
+                                        put("actions", try { Json.parseToJsonElement(task.actions) } catch (e: Exception) { JsonPrimitive(task.actions) })
+                                        put("is_enabled", task.isEnabled)
+                                        put("created_at", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(java.util.Date(task.createdAt)))
+                                    }
+                                } else {
+                                    buildJsonObject { put("error", "Monitor not found") }
+                                }
+                            }
+
                             else -> buildJsonObject { put("error", "Unknown action") }
                         }
                     } catch (e: Exception) {
@@ -1529,7 +1614,7 @@ class LocalTools(
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
         if (options.contains(LocalToolOption.DeviceControl)) {
-             tools.addAll(getDeviceControlTools(assistantId, conversationId))
+            tools.addAll(getDeviceControlTools(assistantId, conversationId))
         }
         if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
         if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools())
