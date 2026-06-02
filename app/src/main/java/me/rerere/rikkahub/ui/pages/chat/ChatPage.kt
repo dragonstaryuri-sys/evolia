@@ -35,7 +35,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.ui.graphics.toArgb
 import com.airbnb.lottie.LottieProperty
-import androidx.compose.ui.graphics.toArgb
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -270,7 +269,9 @@ private fun ChatPageContent(
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
 
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingRegenerateMessage by rememberSaveable { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
+    // 核心修复：pendingRegenerateMessage 存储的是整条消息，可能导致 TransactionTooLargeException。
+    // 将其从 rememberSaveable 降级为普通的 remember。
+    var pendingRegenerateMessage by remember { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
 
@@ -400,7 +401,6 @@ private fun ChatPageContent(
                         initialSearchQuery = initialSearchQuery,
                         onJumpToMessage = { targetNode ->
                             previewMode = false
-                            // 跳转逻辑已交由 ChatList 内部统一处理，避免手动计算索引带来的偏差
                         },
                         onRegenerate = { message ->
                             if (vm.canPreserveVersionHistory(message)) {
@@ -414,10 +414,10 @@ private fun ChatPageContent(
                             inputState.editingMessage = it.id
                             inputState.setContents(it.parts)
                         },
-                        onDelete = {
+                        onDelete = { message ->
                             val backup = conversation
                             val deletedNodeIds = conversation.messageNodes.map { it.id }.toSet()
-                            vm.deleteMessage(it)
+                            vm.deleteMessage(message)
                             val newNodeIds = vm.conversation.value.messageNodes.map { it.id }.toSet()
                             val removedIds = deletedNodeIds - newNodeIds
                             toaster.show(

@@ -147,8 +147,18 @@ object ChatInputStateSaver : Saver<ChatInputState, String> {
     }
 
     override fun SaverScope.save(value: ChatInputState): String? {
+        val text = value.textContent.text.toString()
+        // 核心修复：限制保存的文本长度。
+        // Binder 事务限制约为 1MB。如果用户输入或粘贴了极长的文本，
+        // 在此处进行截断以防止 TransactionTooLargeException 导致整个应用崩溃。
+        val safeText = if (text.length > 50_000) {
+            text.take(50_000) + "...(truncated due to size)"
+        } else {
+            text
+        }
+
         return JsonInstant.encodeToString(buildJsonObject {
-            put("textContent", value.textContent.text.toString())
+            put("textContent", safeText)
             put("messageContent", JsonInstant.encodeToJsonElement(value.messageContent))
             put("editingMessage", JsonInstant.encodeToJsonElement(value.editingMessage))
         })
