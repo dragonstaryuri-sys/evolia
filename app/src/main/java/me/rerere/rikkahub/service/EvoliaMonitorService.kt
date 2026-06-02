@@ -49,7 +49,7 @@ class EvoliaMonitorService : AccessibilityService() {
 
     private val lastTriggerTimeMap = mutableMapOf<Long, Long>()
     private var pollingJob: Job? = null
-
+    private var lastLocationCheckTime = 0L
     // 屏幕状态监听
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -167,6 +167,7 @@ class EvoliaMonitorService : AccessibilityService() {
 
             val contextText = if (isScreenOn && shoppingApps.contains(packageName)) scanScreenContext() else ""
 
+            val shouldCheckLocation = now - lastLocationCheckTime >= 5 * 60 * 1000
             val (lat, lon, locName) = if (
                 ContextCompat.checkSelfPermission(
                     this@EvoliaMonitorService,
@@ -186,17 +187,25 @@ class EvoliaMonitorService : AccessibilityService() {
                                 val geocoder = Geocoder(this@EvoliaMonitorService, Locale.getDefault())
                                 @Suppress("DEPRECATION")
                                 val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
-                                addresses?.firstOrNull()?.let {
+                                // 1. 尝试获取最新的位置名称
+                                val fetched = addresses?.firstOrNull()?.let {
                                     it.getAddressLine(0) ?: it.featureName ?: it.locality ?: ""
                                 } ?: ""
-                            } catch (e: Exception) { "" }
+                                // 2. 兜底保护：如果获取到的是空名字，则沿用上一次的有效位置名称，避免状态丢失
+                                if (fetched.isNotBlank()) fetched else oldState.locationName
+                            } catch (e: Exception) {
+                                // 3. 发生异常时，也采用上一次的位置名称进行兜底
+                                oldState.locationName
+                            }
                         }
                         Triple(loc.latitude, loc.longitude, name)
                     } else Triple(oldState.latitude, oldState.longitude, oldState.locationName)
                 } catch (e: Exception) {
                     Triple(oldState.latitude, oldState.longitude, oldState.locationName)
                 }
-            } else Triple(oldState.latitude, oldState.longitude, oldState.locationName)
+            } else {
+                Triple(oldState.latitude, oldState.longitude, oldState.locationName)
+            }
 
             val currentState = oldState.copy(
                 foregroundApp = packageName,
