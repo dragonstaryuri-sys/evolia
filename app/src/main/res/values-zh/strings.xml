@@ -1023,7 +1023,7 @@
   <string name="assistant_context_auto_summarize_desc">达到历史消息上限时自动生成摘要</string>
   <string name="assistant_context_history_limit_title">历史消息上限</string>
   <string name="assistant_context_history_limit_value">%d 条消息</string>
-  <string name="assistant_context_history_limit_desc">传给大模型的会话历史条数</string>
+  <string name="assistant_context_history_limit_desc">对话时带入的会话历史条数，两条就是1轮</string>
   <string name="assistant_context_episodic_limit_title">包含的片段摘要数量</string>
   <string name="assistant_context_episodic_limit_value">%d 个摘要</string>
   <string name="assistant_context_episodic_limit_desc">作为历史背景带入的近期片段摘要数量</string>

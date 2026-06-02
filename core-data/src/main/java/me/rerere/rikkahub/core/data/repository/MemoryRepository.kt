@@ -109,11 +109,11 @@ class MemoryRepository(
             val recallScore = calculateRecallScore(segment.recallCount)
 
             val score = when(mode) {
-                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.9f) + (recallScore * 0.1f)
-                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.9f) + (recallScore * 0.1f)
+                MemoryRetrievalMode.SEMANTIC -> similarity
+                MemoryRetrievalMode.KEYWORD -> keywordScore
                 MemoryRetrievalMode.HYBRID -> {
-                    if (queryEmbedding == null) (keywordScore * 0.9f) + (recallScore * 0.1f)
-                    else (keywordScore * 0.45f) + (similarity * 0.45f) + (recallScore * 0.1f)
+                    if (queryEmbedding == null) keywordScore
+                    else (keywordScore * 0.5f) + (similarity * 0.5f)
                 }
                 else -> 0f
             }
@@ -507,11 +507,11 @@ class MemoryRepository(
 
             val score = when(mode) {
                 // 相似度/关键词 70%, 新鲜度 20%, 召回率 10%
-                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.7f) + (recency * 0.2f) + (recallScore * 0.1f)
-                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.7f) + (recency * 0.2f) + (recallScore * 0.1f)
+                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.8f) + (recency * 0.2f)
+                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.8f) + (recency * 0.2f)
                 MemoryRetrievalMode.HYBRID -> {
-                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.1f) + (recallScore * 0.1f)
-                    else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.1f) + (recallScore * 0.1f)
+                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
+                    else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.2f)
                 }
                 MemoryRetrievalMode.OFF -> 0f
             }
