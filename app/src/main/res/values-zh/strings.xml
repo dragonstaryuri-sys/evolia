@@ -1343,7 +1343,7 @@
   <string name="assistant_context_priority_balanced">平衡分配 (推荐)</string>
   <!-- Tips -->
   <string name="notification_chat_generating">正在生成回复...</string>
-  <string name="notification_channel_chat_generation">保证对话不被杀死的通知</string>
+  <string name="notification_channel_chat_generation">后台生成保活 (防止系统强制挂起对话)</string>
   <string name="setting_provider_page_balance_authorize_key">余额查询授权码 (Authorize Key)</string>
   <string name="setting_provider_page_balance_user_id">用户 ID (User ID)</string>
 
