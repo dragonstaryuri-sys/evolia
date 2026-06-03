@@ -7,6 +7,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import androidx.work.WorkInfo
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -16,6 +17,7 @@ import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.AppToasterState
+import java.util.UUID
 
 class DiaryVM(
     private val app: Application,
@@ -33,10 +35,49 @@ class DiaryVM(
         diaryRepo.getDiariesByAssistant(assistantId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 由于生成逻辑移到了 WorkManager，UI 上的加载状态可以根据 WorkInfo 来观察（可选）
-    // 这里暂时保持精简，直接通过通知告知结果
-    private val _isGenerating = MutableStateFlow(false)
-    val isGenerating = _isGenerating.asStateFlow()
+    // 观察 WorkManager 状态，包括手动和自动
+    val isGenerating = WorkManager.getInstance(app)
+        .getWorkInfosByTagFlow("diary_gen")
+        .combine(WorkManager.getInstance(app).getWorkInfosByTagFlow("auto_diary")) { manual, auto ->
+            (manual + auto).any { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private val processedTaskIds = mutableSetOf<UUID>()
+    private var isObserving = false
+
+    /**
+     * 监听任务结果并弹出提示
+     */
+    fun observeTaskResults(toaster: AppToasterState) {
+        if (isObserving) return
+        isObserving = true
+        viewModelScope.launch {
+            var isFirstEmission = true
+            WorkManager.getInstance(app)
+                .getWorkInfosByTagFlow("diary_gen")
+                .combine(WorkManager.getInstance(app).getWorkInfosByTagFlow("auto_diary")) { manual, auto ->
+                    manual + auto
+                }
+                .collect { infos ->
+                    if (isFirstEmission) {
+                        // 首次加载时，记录所有已结束的任务，防止进入页面时弹出旧提示
+                        infos.forEach { if (it.state.isFinished) processedTaskIds.add(it.id) }
+                        isFirstEmission = false
+                    } else {
+                        infos.forEach { info ->
+                            // 如果是新完成的任务且成功，弹出 Toast
+                            if (info.state == WorkInfo.State.SUCCEEDED && !processedTaskIds.contains(info.id)) {
+                                processedTaskIds.add(info.id)
+                                toaster.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
+                            } else if (info.state.isFinished) {
+                                processedTaskIds.add(info.id)
+                            }
+                        }
+                    }
+                }
+        }
+    }
 
     fun generateTodayDiary(assistantId: String?, toaster: AppToasterState? = null) {
         val currentSettings = settings.value
@@ -46,7 +87,6 @@ class DiaryVM(
             currentSettings.getCurrentAssistant()
         } ?: return
 
-        // 提交后台任务，带上 isManual=true
         val workRequest = OneTimeWorkRequestBuilder<DiaryWorker>()
             .setInputData(workDataOf(
                 "assistantId" to assistant.id.toString(),
@@ -57,7 +97,7 @@ class DiaryVM(
 
         WorkManager.getInstance(app).enqueueUniqueWork(
             "diary_gen_${assistant.id}",
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.REPLACE,
             workRequest
         )
 

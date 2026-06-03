@@ -53,6 +53,11 @@ fun DiaryListPage(
     var showSettings by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
+    // 启动任务结果监听
+    LaunchedEffect(vm, toaster) {
+        vm.observeTaskResults(toaster)
+    }
+
     val diaries by remember(assistantId) { vm.getDiaries(assistantId) }.collectAsStateWithLifecycle(emptyList())
     val currentAssistant = remember(assistantId, assistants) {
         assistants.find { it.id.toString() == assistantId }
