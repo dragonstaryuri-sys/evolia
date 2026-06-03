@@ -224,10 +224,13 @@ object PlaceholderTransformer : InputMessageTransformer, KoinComponent {
             assistant = ctx.assistant
         )
         defaultProvider.placeholders.forEach { (key, placeholderInfo) ->
-            val value = placeholderInfo.resolver(placeholderCtx)
-            result = result
-                .replace(oldValue = "{{$key}}", newValue = value, ignoreCase = true)
-                .replace(oldValue = "{$key}", newValue = value, ignoreCase = true)
+            // 只有当消息内容中确实包含该占位符时，才调用解析器获取值
+            if (result.contains("{{$key}}", ignoreCase = true) || result.contains("{$key}", ignoreCase = true)) {
+                val value = placeholderInfo.resolver(placeholderCtx)
+                result = result
+                    .replace(oldValue = "{{$key}}", newValue = value, ignoreCase = true)
+                    .replace(oldValue = "{$key}", newValue = value, ignoreCase = true)
+            }
         }
 
         return result
