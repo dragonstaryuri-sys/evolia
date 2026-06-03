@@ -876,10 +876,6 @@
   <string name="new_chat_template_learn_prompt">解释</string>
   <string name="use_global">使用全局配置</string>
   <string name="context_refresh_no_summarizer">先在设置里配置一个摘要模型</string>
-  <string name="context_refresh_confirm_title">是否总结消息？</string>
-  <string name="context_refresh_never">永不总结</string>
-  <string name="context_refresh_title">消息总结</string>
-  <string name="context_refresh_button">总结消息</string>
   <string name="chat_message_tool_python_code">代码</string>
   <string name="context_max_messages">最大上下文条数</string>
   <string name="context_max_messages_unlimited">无限制</string>

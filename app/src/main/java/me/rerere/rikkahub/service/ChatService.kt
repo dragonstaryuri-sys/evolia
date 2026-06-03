@@ -1010,14 +1010,14 @@ class ChatService(
         id: Uuid, onlySegments: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
         if (summarizingConversations.contains(id)) {
-            return@withContext ContextRefreshResult(false, errorMessage = "Already summarizing")
+            return@withContext ContextRefreshResult(false, errorMessage = "正在总结中...请勿重复操作")
         }
         summarizingConversations.add(id)
 
         try {
             val settings = settingsStore.settingsFlow.first()
             val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(
-                false, errorMessage = "Not found"
+                false, errorMessage = "会话不存在"
             )
 
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
@@ -1036,7 +1036,7 @@ class ChatService(
             val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
 
             if (startIdx >= lastIdx || lastIdx - startIdx < 2) {
-                return@withContext ContextRefreshResult(false)
+                return@withContext ContextRefreshResult(false, errorMessage = "当前没有足够的新消息需要压缩（至少需要 2 条新消息）")
             }
 
             val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()

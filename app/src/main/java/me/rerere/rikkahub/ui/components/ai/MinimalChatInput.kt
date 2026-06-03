@@ -849,24 +849,6 @@ private fun MinimalPickerContent(
             }
         )
 
-        // Summarize button - only show when context refresh is enabled and more than 2 messages
-        if (assistant.enableContextRefresh && conversation.currentMessages.size > 2) {
-            MinimalPickerItem(
-                icon = {
-                    Icon(
-                        imageVector = Icons.Rounded.Summarize,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                },
-                title = stringResource(R.string.minimal_input_summarize),
-                subtitle = stringResource(R.string.minimal_input_summarize_desc),
-                onClick = {
-                    showContextRefreshDialog = true
-                }
-            )
-        }
     }
 
     // Reasoning picker sheet
