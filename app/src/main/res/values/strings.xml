@@ -1662,7 +1662,12 @@
   <string name="update_action_know">Got it</string>
   <string name="update_checking">Checking for updates...</string>
   <string name="update_is_latest">You are already on the latest version</string>
-
+  <string name="manual_archive_l1">Manual Archive</string>
+  <string name="manual_archive_l1_loading">Archiving in progress, please wait patiently</string>
+  <string name="manual_archive_l1_no_messages">There are no new messages in the current conversation to be archived</string>
+  <string name="manual_archive_l1_no_model">No summary model configured, please go to Model Settings first</string>
+  <string name="manual_archive_l1_timeout">Summary model response timed out, please try again later</string>
+  <string name="manual_archive_l1_success">Successfully archived %d segments</string>
 
 
 </resources>

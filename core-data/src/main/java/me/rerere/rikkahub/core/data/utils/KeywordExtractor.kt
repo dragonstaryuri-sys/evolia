@@ -11,7 +11,7 @@ object KeywordExtractor {
         "了一", "了","recent","context","the","in","user","this","that","at","where","what","with","为了","它的","她的","他的",
         "by","why","how","yes","总结","exchange","follows","本次","对话",
         "那么","当时","只","转而","最终","导致","提到","几个","虽然","今晚","目前","以为","有点","非常","除了","是否","导致","无法",
-        "一天","提出",
+        "一天","提出","只要","我想","一切都",
         // 代词
         "你", "我", "他", "她", "它", "你们", "我们", "他们", "她们", "它们",
         "自己", "咱们", "本人", "人家", "某个", "某些",
@@ -27,7 +27,7 @@ object KeywordExtractor {
      * 基于本地算法提取关键词 (无需大模型)
      * 策略：使用 BreakIterator 进行词法分析，保留长度 >= 2 的词，过滤停用词，并限制数量
      */
-    fun extract(text: String, maxKeywords: Int = 30): String {
+    fun extract(text: String, maxKeywords: Int = 20): String {
         if (text.isBlank()) return ""
 
         val boundary = BreakIterator.getWordInstance(Locale.CHINA)

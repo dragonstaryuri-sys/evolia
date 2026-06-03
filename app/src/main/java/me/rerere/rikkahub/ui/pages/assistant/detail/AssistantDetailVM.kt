@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
@@ -39,11 +42,16 @@ import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
 import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
+import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
+import me.rerere.rikkahub.core.data.utils.KeywordExtractor
+import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.util.Locale
@@ -73,7 +81,8 @@ class AssistantDetailVM(
     private val providerManager: ProviderManager,
     private val agentTaskRepository: AgentTaskRepository,
     private val extendedStateRepository: AssistantExtendedStateRepository,
-    private val agentMonitorTaskRepository: AgentMonitorTaskRepository
+    private val agentMonitorTaskRepository: AgentMonitorTaskRepository,
+    private val embeddingService: EmbeddingService
 ) : ViewModel() {
     private val assistantId = try {
         Uuid.parse(id)
@@ -210,6 +219,9 @@ class AssistantDetailVM(
 
     private val _isConsolidating = MutableStateFlow(false)
     val isConsolidating = _isConsolidating.asStateFlow()
+
+    private val _isArchivingL1 = MutableStateFlow(false)
+    val isArchivingL1 = _isArchivingL1.asStateFlow()
 
     private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
     val embeddingProgress = _embeddingProgress.asStateFlow()
@@ -380,6 +392,135 @@ class AssistantDetailVM(
 
     fun cancelConsolidation() {
         consolidationJob?.cancel()
+    }
+
+    fun performManualL1Archive() {
+        if (_isArchivingL1.value) return
+        viewModelScope.launch {
+            _isArchivingL1.value = true
+            try {
+                val currentAssistant = assistant.value
+                val currentSettings = settings.value
+                val lastConvId = currentAssistant.lastConversationId
+                if (lastConvId.isNullOrBlank()) {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_messages))
+                    return@launch
+                }
+
+                val conversation = conversationRepository.getConversationById(Uuid.parse(lastConvId))
+                if (conversation == null) {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_messages))
+                    return@launch
+                }
+
+                val messages = conversation.currentMessages
+                val startIdx = if (conversation.contextSummaryUpToIndex >= 0) (conversation.contextSummaryUpToIndex + 1) else 0
+                val totalNewMessages = messages.size - startIdx
+
+                if (totalNewMessages < 2) {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_messages))
+                    return@launch
+                }
+
+                val modelId = currentAssistant.summarizerModelId ?: currentSettings.summarizerModelId
+                val model = currentSettings.findModelById(modelId)
+                if (model == null) {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
+                    return@launch
+                }
+                val provider = model.findProvider(currentSettings.providers) ?: run {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
+                    return@launch
+                }
+                val handler = providerManager.getProviderByType(provider) as? me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting> ?: run {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
+                    return@launch
+                }
+
+                val threshold = currentAssistant.detailMemoryThreshold.coerceAtLeast(2)
+                var archiveCount = 0
+                var currentStart = startIdx
+
+                while (currentStart < messages.size - 1) {
+                    val currentEnd = (currentStart + threshold - 1).coerceAtMost(messages.size - 1)
+                    if (currentEnd - currentStart < 1) break // Need at least 2 messages
+
+                    val toSummarize = messages.subList(currentStart, currentEnd + 1)
+                    val text = toSummarize.joinToString("\n") {
+                        "${it.role}: ${it.toContentText().take(500)}"
+                    }
+
+                    val locale = Locale.getDefault().displayName
+                    val prompt = DEFAULT_TEMP_SUMMARY_PROMPT
+                        .replace("{{new_messages}}", text)
+                        .replace("{{locale}}", locale)
+                        .replace("{{char}}", currentAssistant.name)
+
+                    val aiResponse = withTimeoutOrNull(15000) {
+                        try {
+                            handler.generateText(
+                                provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 1.0f)
+                            ).choices.firstOrNull()?.message?.toContentText()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "L1 Summarization error", e)
+                            null
+                        }
+                    }
+
+                    if (aiResponse == null) {
+                        setSnackbarMessage(context.getString(R.string.manual_archive_l1_timeout))
+                        break
+                    }
+
+                    if (aiResponse.isNotBlank()) {
+                        val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                        val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+
+                        val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                        val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+
+                        val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
+                        val aiKeywords = keywordsMatch ?: ""
+                        val localKeywords = KeywordExtractor.extract(finalBackground)
+                        val mergedKeywords = (aiKeywords.split(Regex("[,，、；;]")) + localKeywords.split(",")).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct().joinToString(",")
+
+                        val fullContextualContent = "[Background]: $finalBackground\n[Original Text]:\n$text"
+                        val embeddingResult = try {
+                            embeddingService.embedWithModelId(fullContextualContent, currentAssistant.id.toString())
+                        } catch (e: Exception) { null }
+
+                        val segment = ChatSegmentEntity(
+                            assistantId = currentAssistant.id.toString(),
+                            conversationId = lastConvId,
+                            content = finalBackground,
+                            keywords = mergedKeywords,
+                            startMessageIndex = currentStart,
+                            endMessageIndex = currentEnd,
+                            embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                            embeddingModelId = embeddingResult?.modelId
+                        )
+                        memoryRepository.saveSegment(segment)
+                        archiveCount++
+                        currentStart = currentEnd + 1
+
+                        // Update conversation state in DB
+                        val updatedConv = conversation.copy(contextSummaryUpToIndex = currentEnd, lastRefreshTime = System.currentTimeMillis())
+                        conversationRepository.updateConversation(updatedConv)
+                    } else {
+                        break
+                    }
+                }
+
+                if (archiveCount > 0) {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_success, archiveCount))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Manual L1 archive failed", e)
+                setSnackbarMessage("Error: ${e.message}")
+            } finally {
+                _isArchivingL1.value = false
+            }
+        }
     }
 
     fun optimizeMemories() {

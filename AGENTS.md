@@ -87,25 +87,25 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 
 ### 6.0 Memory Tier Overview
 - **L0: Raw Messages**: Immediate short-term context (Sliding Window). AI always sees the last N original messages.
-- **L1: Context Refresh (Segments)**: Fine-grained L1 summaries of historical message blocks, providing recent context highlights.
-- **L2: Episodic Memory**: Long-term conversation archive. Each Conversation maps to exactly one Episode.
+- **L1: Context Refresh (Segments)**: Fine-grained L1 summaries of historical message blocks. **This is the primary source for Episodic RAG retrieval.**
+- **L2: Episodic Memory**: Long-term conversation archive. Each Conversation maps to exactly one Episode. **Exclusively for all-day continuity and L3 updates, NOT included in RAG.**
 - **L3: Master Memory (终极档案)**: The ultimate "Master Archive" of relationship dynamics and long-term commitments.
 
 ### 6.1 Context Refresh (L1 - Auto-Summarization)
 - **Mechanism**: Compresses older L0 messages within the active session into segments.
 - **L0 Sliding Window**: Even if a message is summarized into L1, it remains visible as "Raw Message" in L0 if it falls within the `maxHistoryMessages` limit.
 - **Segment Strategy (Split Storage & Hybrid Retrieval)**:
-    - **Selective Storage**: `ChatSegmentEntity` only persists the AI-generated **background summary** (梗梗) in its `content` field to keep the database footprint lean.
-    - **Positional Mapping**: It records `startMessageIndex` and `endMessageIndex` to map the summary back to the specific original messages.
-    - **High-Fidelity Embedding**: For vector search, the system concatenates `[Background Summary] + [Original Text]` to capture both distilled intent and raw nuances.
-- **Temporal Grouping**: In the prompt, L1 segments are grouped by "Today", "Yesterday", "This Week", and "Older" to provide clear chronological context.
+    - **Selective Storage**: `ChatSegmentEntity` only persists the AI-generated **background summary** in its `content` field.
+    - **RAG searchable**: L1 segments are embedded and searchable via vector/keyword hybrid retrieval.
+    - **High-Fidelity Embedding**: System concatenates `[Background Summary] + [Original Text]` for vector search.
+- **Temporal Grouping**: In the prompt, L1 segments are grouped by "Today", "Yesterday", "This Week", and "Older".
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
 - **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation.
 - **Cross-Window Continuity (All-Day L2 Injection)**: 
     - **Dynamic Tail Injection**: System automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
-    - **Non-RAG Resource**: This injection does not consume the RAG retrieval limit, ensuring consistent awareness of all daily interactions across different windows.
-    - **High-Precision Time**: Injected L2 items are prefixed with "Today:" and include `HH:mm` timestamps to help AI sequence daily events.
+    - **NON-RAG RESOURCE**: L2 is **NOT** part of the vector memory library. It is never "searched"; it is either "injected" (if from today) or "archived" into L3.
+    - **High-Precision Time**: Injected L2 items include `HH:mm` timestamps to help AI sequence daily events.
 
 ### 6.3 Master Memory (L3 - Master Archive)
 - **Mechanism**: A structured relationship record that transcends individual conversations, injected into the Stable System Prompt.
@@ -116,8 +116,8 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
     - **1. Agreement & TODOs (约定与待办)**: Pending promises, plans, and unresolved commitments.
     - **2. Emotional Status (情感现状)**: Relationship positioning (e.g., friends, lovers) and current interaction temperature.
 - **Maintenance Protocols**:
-    - **Stability Rule**: If new dialogue doesn't involve core state changes, the AI must output the existing archive **verbatim** to prevent hallucinations or loss of detail.
-    - **Auto-Compression**: Triggers a "Lossless Compression" protocol when the archive content becomes too large, pruning completed items and refining descriptions into precise snapshots.
+    - **Stability Rule**: AI must output the existing archive **verbatim** if no core state changes occur.
+    - **Auto-Compression**: Triggers a "Lossless Compression" protocol when the archive content becomes too large.
 
 ## 7. Agent Automation (Task Manager)
 
@@ -126,34 +126,33 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 7.2 Core Logic
 - **Scheduling**: Reliable execution via `WorkManager`. Tasks are persisted in `AgentTaskEntity` (Room).
-- **Smart Session Routing**: Automatic detection of the most relevant conversation for execution, prioritizing active or recently updated sessions.
+- **Smart Session Routing**: Automatic detection of the most relevant conversation for execution.
 
 ### 7.3 Execution Modes & Visibility
 - **Type: EMAIL / AGENT_TASK**: 
     - **Trigger**: System sends a "Virtual Instruction" message to the AI.
-    - **Visibility**: The trigger instruction uses `skipContext = true` and is invisible to the user in the chat UI.
-- **Type: NOTIFICATION**: Directly pushes a system notification using the specified title and content data.
+    - **Visibility**: The trigger instruction uses `skipContext = true` and is invisible to the user.
+- **Type: NOTIFICATION**: Directly pushes a system notification.
 - **Type: DIARY**: Automatically records an entry into the Agent's internal diary database.
 
 ## 8. Tool System & Local Capabilities
 
 ### 8.1 Local Execution Engines
-- **Python Engine (`eval_python`)**: Powered by Chaquopy (Python 3.11). Includes `numpy`, `pandas`, `matplotlib`, and `Pillow`. Supports image/chart generation and file sandbox. AI can use Markdown syntax to render generated files directly in chat.
-- **JavaScript Engine (`eval_javascript`)**: QuickJS-based lightweight execution for math and logic.
+- **Python Engine (`eval_python`)**: Powered by Chaquopy (Python 3.11).
+- **JavaScript Engine (`eval_javascript`)**: QuickJS-based lightweight execution.
 
 ### 8.2 Productivity & Device Control
-- **Schedule Manager (`schedule_manager`)**: Manages internal tasks with priority/urgency. Automatically syncs with the **Android System Calendar** for persistent reminders.
+- **Schedule Manager (`schedule_manager`)**: Manages internal tasks with priority/urgency.
 - **Device Control (`device_control`)**: 
-    - **System Commands**: Perform global actions (LOCK_SCREEN, GO_HOME, BACK, SHOW_RECENTS, SHOW_NOTIFICATIONS) to actively guide user behavior.
+    - **System Commands**: Perform global actions (LOCK_SCREEN, GO_HOME, etc.).
     - **Alarm & Timer**: Manage system alarms and countdown timers via Intents.
-- **Email Service**: Full SMTP/IMAP support via `qq_email_service` for autonomous email handling.
+- **Email Service**: Full SMTP/IMAP support via `qq_email_service`.
 
 ### 8.3 Relationship & Dynamic Profile
-- **Profile Updater (`update_profile`)**: Allows AI to dynamically update User/Assistant Profile fields (diet, appearance, occupation, preferences, health, taboos, etc.) in real-time.
-- **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Perception, Commitment, Emotion, Identity) to shape the long-term bond and personality evolution.
+- **Profile Updater (`update_profile`)**: Allows AI to dynamically update User/Assistant Profile fields.
+- **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Perception, Commitment, Emotion, Identity).
 
 ### 8.4 User Observation & Monitoring
 - **User Observer (`peek_user`)**: Sets up persistent high-precision monitors for phone status.
-    - **Data Dimensions**: Foreground App, Today Usage, Session Duration (App/Device), Screen Context (OCR), and Recent Actions.
-    - **Continuous Duration**: Supports triggering based on continuous usage of a specific app (`continuous_usage_minutes`) or continuous screen-on time (`total_continuous_minutes`).
-    - **Implementation**: Powered by `EvoliaMonitorService` (Accessibility Service) with 60s active polling and BroadcastReceiver-based screen state tracking.
+    - **Data Dimensions**: Foreground App, Today Usage, Session Duration, Screen Context (OCR), and Recent Actions.
+    - **Implementation**: Powered by `EvoliaMonitorService` (Accessibility Service).

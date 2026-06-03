@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.HistoryEdu
 import androidx.compose.material.icons.rounded.CleanHands
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -173,6 +174,7 @@ fun AssistantMemorySettings(
 
     val isOptimizing by assistantDetailVM.isOptimizing.collectAsStateWithLifecycle()
     val isConsolidating by assistantDetailVM.isConsolidating.collectAsStateWithLifecycle()
+    val isArchivingL1 by assistantDetailVM.isArchivingL1.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics()
 
     // Detail Memory Local State
@@ -511,6 +513,30 @@ fun AssistantMemorySettings(
                                                     },
                                                     valueRange = 10f..50f, steps = 3
                                                 )
+
+                                                Spacer(Modifier.height(8.dp))
+
+                                                if (isArchivingL1) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.Center,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Text(stringResource(R.string.manual_archive_l1_loading), style = MaterialTheme.typography.bodySmall)
+                                                    }
+                                                } else {
+                                                    Button(
+                                                        onClick = { assistantDetailVM.performManualL1Archive() },
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        shape = MaterialTheme.shapes.medium
+                                                    ) {
+                                                        Icon(Icons.Rounded.Inventory, null, modifier = Modifier.size(18.dp))
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Text(stringResource(R.string.manual_archive_l1))
+                                                    }
+                                                }
                                             }
                                         }
                                     }
