@@ -10,6 +10,7 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.os.PowerManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -50,6 +51,8 @@ class EvoliaMonitorService : AccessibilityService() {
     private val lastTriggerTimeMap = mutableMapOf<Long, Long>()
     private var pollingJob: Job? = null
     private var lastLocationCheckTime = 0L
+    private var lastCellId: String? = null
+
     // 屏幕状态监听
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -167,19 +170,31 @@ class EvoliaMonitorService : AccessibilityService() {
 
             val contextText = if (isScreenOn && shoppingApps.contains(packageName)) scanScreenContext() else ""
 
-            val shouldCheckLocation = now - lastLocationCheckTime >= 5 * 60 * 1000
+            // 检查基站变化 (低功耗移动感知)
+            val currentCell = getCurrentCellId()
+            val cellChanged = currentCell != null && currentCell != lastCellId
+            if (cellChanged) lastCellId = currentCell
+
+            // 逻辑：基站切换触发刷新，或者到达5分钟间隔刷新
+            val shouldCheckLocation = cellChanged || (now - lastLocationCheckTime >= 5 * 60 * 1000)
+
             val (lat, lon, locName) = if (
-                ContextCompat.checkSelfPermission(
+                shouldCheckLocation && ContextCompat.checkSelfPermission(
                     this@EvoliaMonitorService,
                     android.Manifest.permission.ACCESS_COARSE_LOCATION
                 ) == android.content.pm.PackageManager.PERMISSION_GRANTED
             ) {
+                lastLocationCheckTime = now
                 try {
                     val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                    val loc = try {
-                        lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+                    // 如果基站变了，尝试获取更精确的缓存，否则只拿低功耗的网络定位缓存
+                    val loc = if (cellChanged && ContextCompat.checkSelfPermission(this@EvoliaMonitorService, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                         lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                             ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-                    } catch (e: SecurityException) { null }
+                    } else {
+                         lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                            ?: lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+                    }
 
                     if (loc != null) {
                         val name = withContext(Dispatchers.IO) {
@@ -187,14 +202,11 @@ class EvoliaMonitorService : AccessibilityService() {
                                 val geocoder = Geocoder(this@EvoliaMonitorService, Locale.getDefault())
                                 @Suppress("DEPRECATION")
                                 val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
-                                // 1. 尝试获取最新的位置名称
                                 val fetched = addresses?.firstOrNull()?.let {
                                     it.getAddressLine(0) ?: it.featureName ?: it.locality ?: ""
                                 } ?: ""
-                                // 2. 兜底保护：如果获取到的是空名字，则沿用上一次的有效位置名称，避免状态丢失
                                 if (fetched.isNotBlank()) fetched else oldState.locationName
                             } catch (e: Exception) {
-                                // 3. 发生异常时，也采用上一次的位置名称进行兜底
                                 oldState.locationName
                             }
                         }
@@ -227,6 +239,17 @@ class EvoliaMonitorService : AccessibilityService() {
                 checkAllMonitors(currentState, oldState)
             }
         }
+    }
+
+    private fun getCurrentCellId(): String? {
+        val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return null
+        return try {
+            // 获取注册的基站信息。在Android 10+上通常需要 ACCESS_FINE_LOCATION 权限
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                tm.allCellInfo?.firstOrNull { it.isRegistered }?.toString()
+            } else null
+        } catch (e: Exception) { null }
     }
 
     private fun recordAction(action: String) {
@@ -265,12 +288,11 @@ class EvoliaMonitorService : AccessibilityService() {
         val lastTrigger = lastTriggerTimeMap[taskId] ?: 0L
         if (now - lastTrigger < cooldownMin * 60 * 1000) return false
 
-        // 1. 地点触发（核心逻辑改进：仅当“进入”该地点时触发一次）
+        // 1. 地点触发
         val locationNameCondition = conditions["location_name"]?.jsonPrimitive?.content
         if (locationNameCondition != null) {
             val isNowMatch = state.locationName.contains(locationNameCondition, ignoreCase = true)
             val wasMatch = oldState.locationName.contains(locationNameCondition, ignoreCase = true)
-            // 只有当前匹配且之前不匹配（刚进入），或者位置发生了本质变化才触发
             if (!isNowMatch || wasMatch) return false
         }
 
