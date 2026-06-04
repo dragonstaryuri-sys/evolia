@@ -645,6 +645,7 @@ class GenerationHandler(
             val profile = settings.userProfile
             val profileLines = buildList {
                 if (profile.appearance.isNotBlank()) add("外貌: ${profile.appearance}")
+                if (profile.birthday.isNotBlank()) add("生日: ${profile.occupation}")
                 if (profile.occupation.isNotBlank()) add("职业: ${profile.occupation}")
                 if (profile.preferences.isNotBlank()) add("喜好: ${profile.preferences}")
                 if (profile.diet.isNotBlank()) add("饮食: ${profile.diet}")
