@@ -43,6 +43,10 @@ class MemoryRepository(
         return chatSegmentDAO.getSegmentsByConversation(conversationId)
     }
 
+    suspend fun getSegmentById(id: Int): ChatSegmentEntity? {
+        return chatSegmentDAO.getSegmentById(id)
+    }
+
     fun getSegmentsOfAssistantFlow(assistantId: String): Flow<List<AssistantMemory>> =
         chatSegmentDAO.getSegmentsByAssistantFlow(assistantId)
             .map { entities ->

@@ -802,8 +802,30 @@ class AssistantDetailVM(
         if (id > 0) {
             memoryRepository.deleteMemory(id)
         } else {
-            // Negative IDs in UI represent Segments (L1) now
-            memoryRepository.deleteSegment(kotlin.math.abs(id))
+            val segmentId = kotlin.math.abs(id)
+            val segment = memoryRepository.getSegmentById(segmentId)
+            if (segment != null) {
+                val convId = segment.conversationId
+                val startIndex = segment.startMessageIndex
+
+                // 2. 执行物理删除
+                memoryRepository.deleteSegment(segmentId)
+
+                // 3. 更新会话的水位线，回退到该片段开始之前
+                if (!convId.isNullOrBlank()) {
+                    val conversation = conversationRepository.getConversationById(kotlin.uuid.Uuid.parse(convId))
+                    if (conversation != null) {
+                        // 只有当删除的片段在当前水位线之内时，才需要回退
+                        // 这里为了简单，直接取 最小值，确保该片段对应的消息可以被重新扫描
+                        val newIndex = (startIndex - 1).coerceAtMost(conversation.contextSummaryUpToIndex)
+                        val updatedConv = conversation.copy(contextSummaryUpToIndex = newIndex)
+                        conversationRepository.updateConversation(updatedConv)
+                        Log.i(TAG, "L1 片段已删除，会话 $convId 进度回退至: $newIndex")
+                    }
+                }
+            } else {
+                memoryRepository.deleteSegment(segmentId)
+            }
         }
     }
 
