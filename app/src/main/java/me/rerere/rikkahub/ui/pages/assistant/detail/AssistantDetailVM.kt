@@ -20,6 +20,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.Provider
+import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -428,11 +431,11 @@ class AssistantDetailVM(
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
                     return@launch
                 }
-                val provider = model.findProvider(currentSettings.providers) ?: run {
+                val providerSetting = model.findProvider(currentSettings.providers) ?: run {
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
                     return@launch
                 }
-                val handler = providerManager.getProviderByType(provider) as? me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting> ?: run {
+                val handler = providerManager.getProviderByType(providerSetting) as? Provider<ProviderSetting> ?: run {
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
                     return@launch
                 }
@@ -443,7 +446,7 @@ class AssistantDetailVM(
 
                 while (currentStart < messages.size - 1) {
                     val currentEnd = (currentStart + threshold - 1).coerceAtMost(messages.size - 1)
-                    if (currentEnd - currentStart < 1) break // Need at least 2 messages
+                    if (currentEnd - currentStart < 1) break
 
                     val toSummarize = messages.subList(currentStart, currentEnd + 1)
                     val text = toSummarize.joinToString("\n") {
@@ -456,59 +459,64 @@ class AssistantDetailVM(
                         .replace("{{locale}}", locale)
                         .replace("{{char}}", currentAssistant.name)
 
-                    val aiResponse = withTimeoutOrNull(15000) {
-                        try {
+                    // Correctly handle timeout vs exception to avoid misleading "timeout" message
+                    val aiResponse = try {
+                        val response = withTimeoutOrNull(15000) {
                             handler.generateText(
-                                provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 1.0f)
+                                providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 1.0f)
                             ).choices.firstOrNull()?.message?.toContentText()
-                        } catch (e: Exception) {
-                            Log.e(TAG, "L1 Summarization error", e)
-                            null
                         }
+                        if (response == null) {
+                            setSnackbarMessage(context.getString(R.string.manual_archive_l1_timeout))
+                            null
+                        } else if (response.isBlank()) {
+                            Log.w(TAG, "AI returned blank response for L1 archive")
+                            null
+                        } else {
+                            response
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "L1 Summarization error", e)
+                        setSnackbarMessage("Error: ${e.localizedMessage ?: e.message ?: "Unknown error"}")
+                        null
                     }
 
                     if (aiResponse == null) {
-                        setSnackbarMessage(context.getString(R.string.manual_archive_l1_timeout))
                         break
                     }
 
-                    if (aiResponse.isNotBlank()) {
-                        val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-                        val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                    val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                    val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
 
-                        val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-                        val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                    val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                    val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
 
-                        val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
-                        val aiKeywords = keywordsMatch ?: ""
-                        val localKeywords = KeywordExtractor.extract(finalBackground)
-                        val mergedKeywords = (aiKeywords.split(Regex("[,，、；;]")) + localKeywords.split(",")).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct().joinToString(",")
+                    val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
+                    val aiKeywords = keywordsMatch ?: ""
+                    val localKeywords = KeywordExtractor.extract(finalBackground)
+                    val mergedKeywords = (aiKeywords.split(Regex("[,，、；;]")) + localKeywords.split(",")).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct().joinToString(",")
 
-                        val fullContextualContent = "[Background]: $finalBackground\n[Original Text]:\n$text"
-                        val embeddingResult = try {
-                            embeddingService.embedWithModelId(fullContextualContent, currentAssistant.id.toString())
-                        } catch (e: Exception) { null }
+                    val fullContextualContent = "[Background]: $finalBackground\n[Original Text]:\n$text"
+                    val embeddingResult = try {
+                        embeddingService.embedWithModelId(fullContextualContent, currentAssistant.id.toString())
+                    } catch (e: Exception) { null }
 
-                        val segment = ChatSegmentEntity(
-                            assistantId = currentAssistant.id.toString(),
-                            conversationId = lastConvId,
-                            content = finalBackground,
-                            keywords = mergedKeywords,
-                            startMessageIndex = currentStart,
-                            endMessageIndex = currentEnd,
-                            embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
-                            embeddingModelId = embeddingResult?.modelId
-                        )
-                        memoryRepository.saveSegment(segment)
-                        archiveCount++
-                        currentStart = currentEnd + 1
+                    val segment = ChatSegmentEntity(
+                        assistantId = currentAssistant.id.toString(),
+                        conversationId = lastConvId,
+                        content = finalBackground,
+                        keywords = mergedKeywords,
+                        startMessageIndex = currentStart,
+                        endMessageIndex = currentEnd,
+                        embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                        embeddingModelId = embeddingResult?.modelId
+                    )
+                    memoryRepository.saveSegment(segment)
+                    archiveCount++
+                    currentStart = currentEnd + 1
 
-                        // Update conversation state in DB
-                        val updatedConv = conversation.copy(contextSummaryUpToIndex = currentEnd, lastRefreshTime = System.currentTimeMillis())
-                        conversationRepository.updateConversation(updatedConv)
-                    } else {
-                        break
-                    }
+                    val updatedConv = conversation.copy(contextSummaryUpToIndex = currentEnd, lastRefreshTime = System.currentTimeMillis())
+                    conversationRepository.updateConversation(updatedConv)
                 }
 
                 if (archiveCount > 0) {
@@ -516,7 +524,7 @@ class AssistantDetailVM(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Manual L1 archive failed", e)
-                setSnackbarMessage("Error: ${e.message}")
+                setSnackbarMessage("Error: ${e.localizedMessage ?: e.message ?: "Unknown error"}")
             } finally {
                 _isArchivingL1.value = false
             }
