@@ -38,4 +38,6 @@ interface ChatSegmentDAO {
 
     @Query("UPDATE chat_segments SET recall_count = recall_count + 1 WHERE id = :id")
     suspend fun incrementRecallCount(id: Int)
+
+
 }
