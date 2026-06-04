@@ -55,6 +55,7 @@ private const val TAG = "EvoliaApp"
 
 const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
 const val BACKUP_NOTIFICATION_CHANNEL_ID = "backup_status"
+const val AGENT_TASK_NOTIFICATION_CHANNEL_ID = "agent_task_notification"
 
 class EvoliaApp : Application() {
     override fun onCreate() {
@@ -243,6 +244,16 @@ class EvoliaApp : Application() {
             .setVibrationEnabled(true) // 开启震动
             .build()
         notificationManager.createNotificationChannel(backupChannel)
+
+        val agentTaskChannel = NotificationChannelCompat
+            .Builder(
+                AGENT_TASK_NOTIFICATION_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_DEFAULT
+            )
+            .setName(getString(R.string.notification_channel_agent_task))
+            .setVibrationEnabled(true)
+            .build()
+        notificationManager.createNotificationChannel(agentTaskChannel)
     }
 
     override fun onTerminate() {

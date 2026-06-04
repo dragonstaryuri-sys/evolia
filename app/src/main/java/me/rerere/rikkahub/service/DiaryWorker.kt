@@ -9,7 +9,7 @@ import androidx.work.WorkerParameters
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.toInstant
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.BACKUP_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.AGENT_TASK_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
@@ -210,7 +210,7 @@ class DiaryWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val notification = NotificationCompat.Builder(applicationContext, BACKUP_NOTIFICATION_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(applicationContext, AGENT_TASK_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(applicationContext.getString(R.string.discover_page_diary_title))
             .setContentText(text)
