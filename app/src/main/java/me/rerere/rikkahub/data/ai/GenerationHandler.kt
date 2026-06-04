@@ -556,12 +556,12 @@ class GenerationHandler(
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
         val staticSystemPromptBuilder = StringBuilder()
-        staticSystemPromptBuilder.append("用户默认为女性。\n")
+        staticSystemPromptBuilder.append("用户默认性别为女性。\n")
         val modeDescription = if (assistant.isMain && assistant.isVirtualWorldMode) {
             "用户和你现在在你的电子（虚拟）世界。\n"
         }
         else {
-            "你是一个ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。你通过evolia这个app和用户对话互动。\n"
+            "**你是ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。你通过evolia这个app和用户对话互动。**\n"
         }
         if (assistant.isMain){
             staticSystemPromptBuilder.append(modeDescription)
@@ -1015,7 +1015,7 @@ class GenerationHandler(
                         }
                         // Reference Variables
                         if (!assistant.isVirtualWorldMode && assistant.referenceVariables.isNotBlank()) {
-                            appendLine("# 系统引用的变量信息")
+                            appendLine("# 其他信息")
                             appendLine(
                                 assistant.referenceVariables.applyPlaceholders(
                                     "char" to assistant.name,
@@ -1031,23 +1031,27 @@ class GenerationHandler(
                             val month = now.monthValue
                             val day = now.dayOfMonth
                             val holiday = when {
-                                month == 1 && day == 1 -> "New Year's Day"
-                                month == 3 && day == 8 -> "Women's Day"
-                                month == 3 && day == 12 -> "Arbor Day"
-                                month == 4 && (day in 4..6) -> "Qingming Festival"
-                                month == 5 && (day == 1 || day == 2 || day == 3 || day == 5) -> "legal holiday for Labour Day"
-                                month == 5 && day == 4 -> "legal holiday for Labour Day&Youth Day"
-                                month == 6 && day == 1 -> "Children's Day"
-                                month == 7 && day == 1 -> "CPC Founding Day"
-                                month == 8 && day == 1 -> "Army Day"
-                                month == 9 && day == 10 -> "Teachers' Day"
-                                month == 11 && day == 8 -> "Journalists' Day"
-                                month == 12 && day == 25 -> "Christmas"
+                                month == 1 && day == 1 -> "元旦"
+                                month == 2 && day == 14 -> "情人节"
+                                month == 3 && day == 8 -> "妇女节"
+                                month == 3 && day == 12 -> "植树节"
+                                month == 3 && day == 14 -> "白色情人节"
+                                month == 4 && (day in 4..6) -> "清明节"
+                                month == 5 && (day == 1 || day == 2 || day == 3 || day == 5) -> "劳动节法定节假日期间"
+                                month == 5 && day == 4 -> "劳动节法定节假日期间+青年节"
+                                month == 6 && day == 1 -> "儿童节"
+                                month == 7 && day == 1 -> "建党节"
+                                month == 8 && day == 1 -> "建军节"
+                                month == 9 && day == 10 -> "教师节"
+                                month == 10 &&  (day == 1 || day == 2 || day == 3 || day == 5 || day == 6 || day == 7) -> "国庆节"
+                                month == 11 && day == 8 -> "记者节"
+                                month == 12 && day == 24 -> "平安夜"
+                                month == 12 && day == 25 -> "圣诞节"
                                 else -> null
                             }
                             val dayOfWeek = now.dayOfWeek
                             val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
-                            val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "restday" else "workday"
+                            val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "法定双休日" else "工作日"
                             val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
                             val timeStr = "$dayName.($dayType), $formattedTime"
 
@@ -1076,11 +1080,11 @@ class GenerationHandler(
                                         absSeconds < 86400 -> "${sign}${absSeconds / 3600}h"
                                         else -> "${sign}${absSeconds / 86400}d"
                                     }
-                                    ", Interval since your last reply: $formatted"
+                                    ", 距离上条消息的时间间隔: $formatted"
                                 }.getOrNull()
                             } ?: ""
-                            appendLine("- Current Time: $timeStr$intervalInfo")
-                            appendLine("Fabricating time will result in punishment.")
+                            appendLine("- 当前时间: $timeStr$intervalInfo")
+                            appendLine("编造时间将会受到系统处罚。")
                             appendLine()
                         }
                         if (styleExamples.isNotEmpty()) {
@@ -1270,7 +1274,7 @@ class GenerationHandler(
         }
 
         return buildString {
-            append("## Memories\n").append("These are memories that you can reference. If a memory snippet is insufficient and you need to get the exact raw message history surrounding a specific segment ID, please call `retrieve_memory(segment_id = id)`.\n")
+            append("## 记忆\n").append("以下是可供参考的记忆片段.若记忆信息不足，需要获取更多记忆或详细记忆原文，请调用`retrieve_memory`工具.\n")
 
             if (boostedMemories.isNotEmpty()) {
                 append("### 今日会话梗概\n")
@@ -1289,7 +1293,7 @@ class GenerationHandler(
             }
 
             if (segmentMemories.isNotEmpty()) {
-                append("### 历史记忆片段\n")
+                append("### 相关的历史记忆片段\n")
                 val now = java.time.LocalDate.now()
                 val yesterday = now.minusDays(1)
                 val lastWeek = now.minusWeeks(1)
@@ -1300,14 +1304,14 @@ class GenerationHandler(
                         .toLocalDate()
 
                     when {
-                        date.isEqual(now) -> "Today"
-                        date.isEqual(yesterday) -> "Yesterday"
-                        date.isAfter(lastWeek) -> "This Week"
-                        else -> "Older"
+                        date.isEqual(now) -> "今天"
+                        date.isEqual(yesterday) -> "昨天"
+                        date.isAfter(lastWeek) -> "本周"
+                        else -> "更早"
                     }
                 }
 
-                listOf("Today", "Yesterday", "This Week", "Older").forEach { group ->
+                listOf("今天", "昨天", "本周", "更早").forEach { group ->
                     val memoriesInGroup = groupedSegments[group]
                     if (!memoriesInGroup.isNullOrEmpty()) {
                         append("#### $group\n")
