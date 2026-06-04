@@ -463,7 +463,9 @@ class AssistantDetailVM(
                     val aiResponse = try {
                         val response = withTimeoutOrNull(15000) {
                             handler.generateText(
-                                providerSetting, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 1.0f)
+                                providerSetting,
+                                listOf(UIMessage.user(prompt)),
+                                TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f, thinkingBudget = 0)
                             ).choices.firstOrNull()?.message?.toContentText()
                         }
                         if (response == null) {
@@ -619,11 +621,11 @@ class AssistantDetailVM(
                     "char" to assistantName
                 )
 
-        val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
+        val h = handler as Provider<ProviderSetting>
         val resp = h.generateText(
             providerSetting,
             listOf(UIMessage.user(prompt)),
-            TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f)
+            TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f, thinkingBudget = 0)
         )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
