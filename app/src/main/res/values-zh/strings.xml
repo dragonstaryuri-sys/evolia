@@ -1629,4 +1629,6 @@
   <string name="manual_archive_l1_no_model">未配置摘要模型，请先前往模型设置</string>
   <string name="manual_archive_l1_timeout">摘要模型响应超时，请稍后重试</string>
   <string name="manual_archive_l1_success">成功归档 %d 个片段</string>
+  <string name="operation_manual">操作手册</string>
+  <string name="operation_description">查看详细的功能使用说明</string>
 </resources>

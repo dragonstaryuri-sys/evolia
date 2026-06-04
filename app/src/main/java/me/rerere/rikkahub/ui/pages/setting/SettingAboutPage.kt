@@ -186,6 +186,15 @@ fun SettingAboutPage() {
                         context.startActivity(intent)
                     }
                 )
+                AboutItem(
+                    icon = Icons.Rounded.Description,
+                    title = stringResource(R.string.operation_manual),
+                    subtitle = stringResource(R.string.operation_description),
+                    trailing = Icons.AutoMirrored.Rounded.OpenInNew,
+                    onClick = {
+                        context.openUrl("https://my.feishu.cn/wiki/MozEwVogTicUMQkbFtPcQK69nSh?from=from_copylink")
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(24.dp))
