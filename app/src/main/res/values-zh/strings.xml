@@ -993,7 +993,7 @@
   <string name="stat_episodic">片段</string>
   <string name="stat_total">总计</string>
   <string name="stat_embedded">已嵌入</string>
-  <string name="estimated_capacity">预估容量：约 %1$d 条记忆</string>
+  <string name="estimated_capacity">单次最多可返回：约 %1$d 条记忆</string>
   <string name="search_memories">搜索记忆...</string>
   <string name="no_memories_yet">暂无记忆</string>
   <string name="no_matching_memories">无匹配记忆</string>
