@@ -921,9 +921,14 @@
   <string name="discover_page_forum">论坛</string>
   <string name="discover_page_forum_desc">社区与扩展 (开发中)</string>
   <string name="discover_page_diary">日记</string>
-  <string name="discover_page_diary_desc">管理 Agent 的日记</string>
+  <string name="assistant_context_include_diary_title">带入日记到上下文</string>
+  <string name="assistant_context_include_diary_desc">启用后，智能体在对话时将参考最近生成的日记内容</string>
+  <string name="assistant_context_diaries_limit_title">带入日记篇数</string>
+  <string name="assistant_context_diaries_limit_value">%d 篇日记</string>
+  <string name="assistant_context_diaries_limit_desc">设置带入对话背景的最近日记条数</string>
+  <string name="discover_page_diary_desc">管理智能体的日记</string>
   <string name="discover_page_developing">该功能正在开发中</string>
-  <string name="discover_page_diary_title">Agent 日记</string>
+  <string name="discover_page_diary_title">智能体日记</string>
   <string name="discover_page_diary_generate">生成今日日记</string>
   <string name="discover_page_diary_empty">暂无日记。开始聊天并生成一篇吧！</string>
   <string name="discover_page_diary_delete_confirm">确定要删除这篇日记吗？</string>

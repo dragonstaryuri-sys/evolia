@@ -13,6 +13,7 @@ import me.rerere.common.http.AcceptLanguageBuilder
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
 import me.rerere.rikkahub.data.ai.GenerationHandler
@@ -160,6 +161,8 @@ val dataSourceModule = module {
 
     single { MilestoneRepository(milestoneDAO = get()) }
 
+    single { DiaryRepository(agentDiaryDao = get()) }
+
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single {
@@ -174,6 +177,7 @@ val dataSourceModule = module {
             aiLoggingManager = get(),
             embeddingService = get(),
             chatSegmentDAO = get(),
+            diaryRepo = get(),
             appScope = get()
         )
     }

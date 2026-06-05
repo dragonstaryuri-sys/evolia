@@ -118,6 +118,8 @@ data class Assistant(
     val enableAutoDiary: Boolean = false,
     val autoDiaryTime: String = "06:00",
     val lastAutoDiaryDate: String = "",
+    val includeDiariesInContext: Boolean = false,
+    val maxDiariesToInclude: Int = 5,
 
     val isMain: Boolean = false,
     val isVirtualWorldMode: Boolean = false,

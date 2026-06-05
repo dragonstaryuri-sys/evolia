@@ -167,6 +167,59 @@ fun AssistantContextManagementSubPage(
         }
 
         // ═══════════════════════════════════════════════════════════════════
+        // DIARY (NEW SECTION)
+        // ═══════════════════════════════════════════════════════════════════
+        SettingsGroup(title = stringResource(R.string.discover_page_diary)) {
+            // 开关：是否带入日记
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_context_include_diary_title),
+                subtitle = stringResource(R.string.assistant_context_include_diary_desc),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.EditNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.includeDiariesInContext,
+                        onCheckedChange = { enabled ->
+                            onUpdate(assistant.copy(includeDiariesInContext = enabled))
+                        }
+                    )
+                },
+                onClick = {
+                    onUpdate(assistant.copy(includeDiariesInContext = !assistant.includeDiariesInContext))
+                }
+            )
+
+            // 🌟 日记篇数滑块
+            AnimatedVisibility(
+                visible = assistant.includeDiariesInContext,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                val diaryLimit = assistant.maxDiariesToInclude
+                var diarySliderValue by remember(diaryLimit) { mutableFloatStateOf(diaryLimit.toFloat()) }
+
+                SliderSettingCard(
+                    title = stringResource(R.string.assistant_context_diaries_limit_title),
+                    value = diarySliderValue,
+                    valueText = stringResource(R.string.assistant_context_diaries_limit_value, diarySliderValue.roundToInt()),
+                    description = stringResource(R.string.assistant_context_diaries_limit_desc),
+                    onValueChange = { diarySliderValue = it },
+                    onValueChangeFinished = {
+                        val newValue = diarySliderValue.roundToInt()
+                        onUpdate(assistant.copy(maxDiariesToInclude = newValue))
+                    },
+                    valueRange = 1f..10f,
+                    steps = 9
+                )
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
         // SEARCH RESULTS
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.context_search_results_title)) {

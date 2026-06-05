@@ -80,7 +80,11 @@ import java.time.Duration
 import java.time.Instant
 import java.time.DayOfWeek
 import java.time.format.TextStyle
-
+import kotlin.text.appendLine
+import kotlin.text.forEach
+import kotlin.text.isNotEmpty
+import me.rerere.rikkahub.core.data.repository.DiaryRepository
+import kotlinx.coroutines.flow.first
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -111,6 +115,7 @@ class GenerationHandler(
     private val aiLoggingManager: AILoggingManager,
     private val embeddingService: EmbeddingService,
     private val chatSegmentDAO: ChatSegmentDAO,
+    private val diaryRepo: DiaryRepository,
     private val appScope: AppScope,
 ) {
     fun generateText(
@@ -676,6 +681,24 @@ class GenerationHandler(
             staticSystemPromptBuilder.append("## 记忆档案\n")
             staticSystemPromptBuilder.append(assistant.masterMemoryContent)
             staticSystemPromptBuilder.append("\n\n")
+        }
+        if (assistant.includeDiariesInContext) {
+            try {
+                // 获取最新的 N 篇日记
+                val diaries = diaryRepo.getDiariesByAssistant(assistant.id.toString())
+                    .first()
+                    .take(assistant.maxDiariesToInclude)
+
+                if (diaries.isNotEmpty()) {
+                    staticSystemPromptBuilder.append("## 你的日记（近1天或近几天的日记）\n")
+                    diaries.forEach { diary -> // 按时间顺序排列（旧到新）
+                        staticSystemPromptBuilder.append("- 【${diary.date}】: ${diary.content}\n")
+                    }
+                    staticSystemPromptBuilder.append("\n")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to include diaries in context", e)
+            }
         }
 
 
