@@ -67,17 +67,14 @@ class ChatVM(
     }
     private val anchorConversationId: Uuid = Uuid.parse(id)
 
-    // 追踪当前活跃的会话 ID。在虚拟模式下，它会随着“新话题”或“发送消息到最新话题”而改变
+    // 内存中的“当前活跃 ID”，它是发送消息的唯一目标
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
 
-    // 追踪所有在该 VM 生命周期内活跃的会话 ID（用于保活）
     private val activeConversationIds = ConcurrentHashMap.newKeySet<Uuid>()
 
-    // Track if conversation data has been loaded from the service
     private val _isConversationLoaded = MutableStateFlow(false)
     val isConversationLoaded: StateFlow<Boolean> = _isConversationLoaded
 
-    // 上下文同步状态：只有当前会话在同步名单里时才显示动画
     val isSyncingContext: StateFlow<Boolean> = combine(
         _currentActiveId,
         chatService.syncingConversationIds
@@ -86,7 +83,6 @@ class ChatVM(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
 
-    // 核心会话 Flow：现在它会跟随 _currentActiveId 的变化而切换观察目标
     val conversation: StateFlow<Conversation> = _currentActiveId
         .flatMapLatest { chatService.getConversationFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
@@ -96,46 +92,36 @@ class ChatVM(
         data class Separator(val text: String) : ChatUIItem()
     }
 
-    // 虚拟模式下的数据库会话流
-    private val virtualConvsFlow = conversation
-        .map { it.assistantId to it.isVirtual }
+    private val assistantConvsFlow = conversation
+        .map { it.assistantId }
         .distinctUntilChanged()
-        .flatMapLatest { (assistantId, isVirtual) ->
-            if (isVirtual) conversationRepo.getVirtualConversationsOfAssistant(assistantId)
-            else flowOf(emptyList())
+        .flatMapLatest { assistantId ->
+            conversationRepo.getConversationsOfAssistantAnyMode(assistantId)
         }
 
-    // 最终 UI 消息流：合并数据库历史与内存实时流
     val uiMessages: StateFlow<List<ChatUIItem>> = combine(
         conversation,
-        virtualConvsFlow
+        assistantConvsFlow
     ) { activeConv, dbConvs ->
-        if (activeConv.isVirtual) {
-            // 核心逻辑：用内存中正在流式输出的活跃会话对象，替换掉数据库中尚未更新的陈旧对象
-            val merged = dbConvs.map { if (it.id == activeConv.id) activeConv else it }
-            val finalConvs = if (merged.none { it.id == activeConv.id }) {
-                (merged + activeConv).sortedBy { it.createAt }
-            } else {
-                merged.sortedBy { it.createAt }
-            }
-
-            val items = mutableListOf<ChatUIItem>()
-            finalConvs.forEachIndexed { index, c ->
-                if (index > 0 && c.messageNodes.isNotEmpty()) {
-                    items.add(ChatUIItem.Separator("——— 已开启新话题 ———"))
-                }
-                items.addAll(c.messageNodes.map { ChatUIItem.Message(it) })
-            }
-            items
+        val merged = dbConvs.map { if (it.id == activeConv.id) activeConv else it }
+        val finalConvs = if (merged.none { it.id == activeConv.id }) {
+            (merged + activeConv).sortedBy { it.createAt }
         } else {
-            // 普通模式：直接展示当前会话
-            activeConv.messageNodes.map { ChatUIItem.Message(it) }
+            merged.sortedBy { it.createAt }
         }
+
+        val items = mutableListOf<ChatUIItem>()
+        finalConvs.forEachIndexed { index, c ->
+            if (index > 0 && c.messageNodes.isNotEmpty()) {
+                items.add(ChatUIItem.Separator("——— 已开启新话题 ———"))
+            }
+            items.addAll(c.messageNodes.map { ChatUIItem.Message(it) })
+        }
+        items
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     var chatListInitialized by mutableStateOf(false)
 
-    // 生成状态 Job 现在也会跟随活跃 ID 切换
     val conversationJob: StateFlow<Job?> = _currentActiveId
         .flatMapLatest { chatService.getGenerationJobStateFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
@@ -164,13 +150,24 @@ class ChatVM(
     }
 
     init {
-        trackConversation(anchorConversationId)
         viewModelScope.launch {
-            chatService.initializeConversation(anchorConversationId)
+            // 核心修复逻辑：在聚合模式下，如果进入的是一个从未见过的 ID（通常是导航自动生成的），
+            // 我们默认接续该助手名下的最后一个会话，以保持对话连贯。
+            val settings = settingsStore.settingsFlowRaw.first()
+            val currentAssistantId = settings.assistantId
+            val latestInDb = conversationRepo.getLatestConversation(currentAssistantId)
+
+            val targetId = if (conversationRepo.getConversationById(anchorConversationId) == null && latestInDb != null) {
+                latestInDb.id
+            } else {
+                anchorConversationId
+            }
+
+            _currentActiveId.value = targetId
+            trackConversation(targetId)
+            chatService.initializeConversation(targetId)
             _isConversationLoaded.value = true
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            context.writeStringPreference("lastConversationId", anchorConversationId.toString())
+            context.writeStringPreference("lastConversationId", targetId.toString())
         }
     }
 
@@ -264,7 +261,6 @@ class ChatVM(
         assistant?.searchMode ?: me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off
     }.stateIn(viewModelScope, SharingStarted.Lazily, me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
 
-    // Check if the user has ever sent a message in virtual mode for the current assistant
     val isFirstVirtualChat: StateFlow<Boolean> = conversation
         .map { it.assistantId }
         .distinctUntilChanged()
@@ -291,7 +287,6 @@ class ChatVM(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
 
-    // Use distinctUntilChanged to prevent frequent flatMapLatest during message streaming
     private val currentAssistantIdFlow = conversation.map { it.assistantId }.distinctUntilChanged()
 
     val conversations: Flow<PagingData<ConversationListItem>> =
@@ -396,16 +391,11 @@ class ChatVM(
             val assistantId = settings.value.assistantId
             val assistant = settings.value.assistants.find { it.id == assistantId }
 
-            // 核心修改：虚拟模式下，寻找该助手名下最新的虚拟会话 ID
-            val targetId = if (conversation.value.isVirtual) {
-                conversationRepo.getLatestConversations(assistantId, limit = 1, isVirtual = true)
-                    .firstOrNull()?.id ?: anchorConversationId
-            } else {
-                anchorConversationId
-            }
+            // 核心修改：直接使用内存中当前活跃的 targetId。
+            // 当用户点击“开启新话题”时，_currentActiveId 已经更新，此处必须遵循它，
+            // 否则会因为数据库查询到旧会话而导致消息错位。
+            val targetId = _currentActiveId.value
 
-            // 切换活跃 ID 并保活，确保 UI 能观察到 targetId 的流式输出
-            _currentActiveId.value = targetId
             trackConversation(targetId)
 
             val processedContent = if (assistant != null) {
@@ -430,18 +420,12 @@ class ChatVM(
         } else parts
 
         viewModelScope.launch {
-            // 在聚合模式下，我们需要找到该消息所属的原始会话
-            val allConvs = if (conversation.value.isVirtual) {
-                conversationRepo.getVirtualConversationsOfAssistant(conversation.value.assistantId).first()
-            } else {
-                listOf(conversation.value)
-            }
+            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
 
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { node -> node.messages.any { it.id == messageId } }
             } ?: conversation.value
 
-            // 切换活跃 ID 以便观察可能的重新生成
             _currentActiveId.value = targetConv.id
             trackConversation(targetConv.id)
 
@@ -457,34 +441,26 @@ class ChatVM(
     }
 
     fun startNewTopic() {
-        if (isSyncingContext.value) return // 正在同步时禁止开启新话题
+        if (isSyncingContext.value) return
 
         viewModelScope.launch {
             val currentConv = conversation.value
             val assistantId = currentConv.assistantId
-
-            // 2. 生成新 ID
             val newId = Uuid.random()
-            val isVirtual = currentConv.isVirtual
 
-            // 3. 保存新会话
             val newConv = Conversation.ofId(
                 id = newId,
                 assistantId = assistantId,
-                isVirtual = isVirtual
+                isVirtual = currentConv.isVirtual
             )
+            // 保存新会话到数据库，此时由于 ChatService 已允许保存空会话，此操作会立即成功。
             chatService.saveConversation(newId, newConv)
 
-            // 4. 处理模式差异
-            if (isVirtual) {
-                // 虚拟模式：切换活跃 ID 并保活，此时 UIMessages 会通过 combine 逻辑感知到新会话
-                trackConversation(newId)
-                chatService.initializeConversation(newId)
-                _currentActiveId.value = newId
-                _toastFlow.emit("已开启新话题")
-            } else {
-                _toastFlow.emit("NAVIGATE_NEW_CHAT:$newId")
-            }
+            // 更新内存状态：让发送逻辑立刻知道我们要去新 ID。
+            trackConversation(newId)
+            chatService.initializeConversation(newId)
+            _currentActiveId.value = newId
+            _toastFlow.emit("已开启新话题")
         }
     }
 
@@ -517,11 +493,7 @@ class ChatVM(
     }
 
     private suspend fun deleteMessageInternal(message: UIMessage) {
-        val allConvs = if (conversation.value.isVirtual) {
-            conversationRepo.getVirtualConversationsOfAssistant(conversation.value.assistantId).first()
-        } else {
-            listOf(conversation.value)
-        }
+        val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
 
         val targetConv = allConvs.find { conv ->
             conv.messageNodes.any { node -> node.messages.any { it.id == message.id } }
@@ -571,11 +543,7 @@ class ChatVM(
     fun regenerateAtMessage(message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false) {
 
         viewModelScope.launch {
-            val allConvs = if (conversation.value.isVirtual) {
-                conversationRepo.getVirtualConversationsOfAssistant(conversation.value.assistantId).first()
-            } else {
-                listOf(conversation.value)
-            }
+            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { node -> node.messages.any { it.id == message.id } }
             } ?: conversation.value
@@ -597,7 +565,8 @@ class ChatVM(
     fun undoDeleteConversation(conversationId: Uuid) { chatService.undoDeleteConversation(conversationId) }
     fun updatePinnedStatus(conversation: Conversation) { viewModelScope.launch { conversationRepo.togglePinStatus(conversation.id) } }
     fun updateConversationTitle(conversation: Conversation, title: String) { viewModelScope.launch { conversationRepo.updateConversation(conversation.copy(title = title)) } }
-    fun generateTitle(conversation: Conversation, force: Boolean = false) { viewModelScope.launch { val full = conversationRepo.getConversationById(conversation.id) ?: return@launch; chatService.generateTitle(conversation.id, full, force) } }
+    fun generateTitle(conversation: Conversation, force: Boolean = false) {
+    }
 
     fun consolidateConversation(conversation: Conversation) {
         viewModelScope.launch {
@@ -617,7 +586,6 @@ class ChatVM(
                 if (workInfo != null) {
                     when (workInfo.state) {
                         androidx.work.WorkInfo.State.SUCCEEDED -> {
-                            // 重新从最新的 settings 中获取结果
                             val updatedSettings = settingsStore.settingsFlow.first()
                             val result = updatedSettings.assistants
                                 .find { it.id == conversation.assistantId }
@@ -640,17 +608,10 @@ class ChatVM(
 
     fun updateConversation(newConversation: Conversation) { viewModelScope.launch { chatService.saveConversation(newConversation.id, newConversation) } }
 
-    /**
-     * 在虚拟/聚合模式下，根据 Node ID 寻找所属会话并更新
-     */
     fun updateMessageNodeInAnyConversation(newNode: MessageNode) {
         viewModelScope.launch {
             val assistantId = conversation.value.assistantId
-            val allConvs = if (conversation.value.isVirtual) {
-                conversationRepo.getVirtualConversationsOfAssistant(assistantId).first()
-            } else {
-                listOf(conversation.value)
-            }
+            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(assistantId).first()
 
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { it.id == newNode.id }

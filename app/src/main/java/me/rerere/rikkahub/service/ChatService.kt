@@ -185,7 +185,6 @@ class ChatService(
         appScope.launch {
             generationJobs.collect { jobs ->
                 if (jobs.isNotEmpty()) {
-                    // 核心修复：只有在应用处于前台时才尝试开启前台服务，避免 Android 12+ 后台启动限制
                     if (_isForeground.value) {
                         ChatForegroundService.start(context)
                     } else {
@@ -211,7 +210,6 @@ class ChatService(
             try {
                 return block()
             } catch (e: Exception) {
-                // 识别 IO 异常、超时或被取消的情况
                 val isNetworkError = e is java.io.IOException || e.message?.contains(
                     "timeout",
                     ignoreCase = true
@@ -219,13 +217,13 @@ class ChatService(
                 if (isNetworkError) {
                     Log.w(TAG, "网络异常，正在重试 (第 ${it + 1} 次): ${e.message}")
                     delay(currentDelay)
-                    currentDelay *= 2 // 指数退避
+                    currentDelay *= 2
                 } else {
                     throw e
                 }
             }
         }
-        return block() // 最后一次尝试
+        return block()
     }
 
     fun addConversationReference(conversationId: Uuid) {
@@ -251,8 +249,6 @@ class ChatService(
         val originalAssistantId = Uuid.parse(task.assistantId)
         val originalAssistant = settings.getAssistantById(originalAssistantId) ?: return
 
-        // 1. 寻找目标会话
-        // 核心优化：优先匹配当前用户正在“观看”的会话（存在引用计数的）
         val activeConvId = conversationReferences.keys.find { id ->
             conversations[id]?.value?.assistantId == originalAssistantId
         }
@@ -261,7 +257,6 @@ class ChatService(
             Log.d(TAG, "Task Trigger: Found active session $activeConvId for assistant")
             activeConvId
         } else {
-            // 如果没在看，找数据库最近更新的
             val lastDbId =
                 conversationRepo.getAllConversations().first().filter { it.assistantId == originalAssistantId }
                     .maxByOrNull { it.updateAt }?.id
@@ -270,7 +265,6 @@ class ChatService(
             lastDbId ?: Uuid.random()
         }
 
-        // 构建指令
         val monitorMsg = buildString {
             append("【系统自动化指令 - 任务触发】\n")
             when (task.taskType) {
@@ -295,24 +289,20 @@ class ChatService(
             append("\n指令内容：$instruction\n\n注意：这是一条由自动化引擎触发的【隐形指令】，用户不会在消息列表中看到它。请根据上述指令要求直接采取行动或给出回应。")
         }
 
-        // 启动后台生成逻辑
         appScope.launch {
             try {
-                // 避让机制
                 var retry = 0
                 while (generationJobs.value[conversationId] != null && retry < 30) {
                     delay(100)
                     retry++
                 }
 
-                // 防止冲突：强行接管
                 if (generationJobs.value[conversationId] != null) {
                     Log.w(TAG, "会话 $conversationId 忙碌，强行接管执行自动化任务。")
                     generationJobs.value[conversationId]?.cancel()
                     delay(200)
                 }
 
-                // 初始化并强制更新 Flow 状态
                 initializeConversation(conversationId)
                 val currentConv = getConversationFlow(conversationId).value
 
@@ -324,18 +314,16 @@ class ChatService(
                     messageNodes = currentConv.messageNodes + newNode, updateAt = Instant.now()
                 )
 
-                // 确保 Flow 和 数据库同步更新
                 updateConversation(conversationId, updatedConv)
                 saveConversation(conversationId, updatedConv)
 
-                // 执行生成逻辑
                 val job = launch {
                     try {
                         handleMessageComplete(
                             conversationId = conversationId,
                             assistantOverride = originalAssistant,
-                            skipContextForResponse = false, // 辅助参数：不要隐藏 AI 的回复，以便后续参考
-                            includeSkipContextMessages = true // 关键：包含刚才添加的隐形指令
+                            skipContextForResponse = false,
+                            includeSkipContextMessages = true
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "自动化任务生成失败", e)
@@ -395,13 +383,11 @@ class ChatService(
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
         val currentConv = conversations[conversationId]?.value ?: currentConvInDb
 
-        // 2. 识别助理 ID（如果是新建会话查不到 DB，则从上一个会话推断）
         val currentAssistantId = currentConv?.assistantId
             ?: lastConversationId?.let { oldId ->
                 conversations[oldId]?.value?.assistantId ?: conversationRepo.getConversationById(oldId)?.assistantId
             }
             ?: settingsStore.settingsFlowRaw.first().getCurrentAssistant().id
-        // 当切换会话时，尝试对上一个会话进行记忆归档
         lastConversationId?.let { oldId ->
             if (oldId != conversationId) {
                 val oldConv = conversationRepo.getConversationById(oldId)
@@ -414,14 +400,11 @@ class ChatService(
                             _syncingConversationIds.update { it + conversationId }
 
                             try {
-                                // 1. L2 情节记忆归档 (耗时 LLM)
                                 archiveConversation(oldId, force = true)
                             } finally {
-                                // 归档完即视为同步完成，关闭动画
                                 _syncingConversationIds.update { it - conversationId }
                             }
 
-                            // 2. L1 细节记忆：清算剩余消息 (耗时较长，改为后台静默完成)
                             if (assistant.enableDetailMemory) {
                                 summarizeAndRefresh(oldId, onlySegments = true)
                             }
@@ -447,9 +430,6 @@ class ChatService(
         }
     }
 
-    /**
-     * 将会话存档为唯一的情节记忆 (1:1 映射)
-     */
     @Suppress("UNCHECKED_CAST")
     suspend fun archiveConversation(
         conversationId: Uuid, force: Boolean = false, skipEmbedding: Boolean = false
@@ -794,7 +774,6 @@ class ChatService(
                             assistant.localTools.filter { it !is LocalToolOption.MilestoneManagement }
                         }
                     } else {
-                        // 修复：允许其他智能体使用时间观念和邮件服务
                         assistant.localTools.filter {
                             it is LocalToolOption.TimeSense || it is LocalToolOption.EmailService
                         }
@@ -898,10 +877,8 @@ class ChatService(
             addConversationReference(conversationId)
             appScope.launch {
                 coroutineScope {
-                    launch {
-                        conversationRepo.getConversationById(conversationId)
-                            ?.let { generateTitle(conversationId, it) }
-                    }
+                    // 弃用：不再自动生成标题
+                    // launch { conversationRepo.getConversationById(conversationId)?.let { generateTitle(conversationId, it) } }
                     launch { generateSuggestion(conversationId, finalConv) }
                     launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
                 }
@@ -912,7 +889,6 @@ class ChatService(
     private fun translateError(e: Throwable): Throwable {
         val message = e.message ?: ""
         return when {
-            // 匹配 JSON 解析 HTML 的特征 (Unexpected JSON token at offset ... had < instead)
             message.contains("Unexpected JSON token") && message.contains("< instead") -> {
                 IllegalStateException(
                     "请求地址有误或 API 服务异常（收到了 HTML 错误页），请检查提供商设置页面的 API 配置是否正确。",
@@ -938,14 +914,13 @@ class ChatService(
 
     private fun createSearchTool(settings: Settings, assistant: Assistant, providerIndex: Int? = null): Set<Tool> {
         val idx = providerIndex ?: settings.searchServiceSelected
-        var callCount = 0 // 闭包内的计数器
+        var callCount = 0
         return buildSet {
             add(Tool(name = "search_web", description = "search web", parameters = {
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 SearchService.getService(opt).parameters
             }, execute = {
                 if (callCount >= 1) {
-                    // 如果 AI 尝试第二次调用，直接拦截并返回提示
                     return@Tool buildJsonObject {
                         put(
                             "error",
@@ -960,19 +935,16 @@ class ChatService(
 
                 val searchResult = SearchService.getService(opt).search(it.jsonObject, commonOptions, opt).getOrThrow()
 
-                // 打印原始搜索日志
                 Log.d(TAG, "Web Search Raw Results (Fixed Request: $resultSize, Got: ${searchResult.items.size})")
                 searchResult.items.forEachIndexed { i, item ->
                     Log.v(TAG, "Raw Item [$i]: ${item.title} (${item.url})")
                 }
 
-                // 清洗 HTML 标签
                 val htmlRegex = Regex("<[^>]*>")
                 val cleanedItems = searchResult.items.take(resultSize).map { item ->
                     item.copy(text = item.text.replace(htmlRegex, "").trim())
                 }
 
-                // 直接返回清洗后的搜索结果，不经过任何摘要模型
                 Log.i(TAG, "Return raw search results directly (no summary model)")
                 buildJsonObject {
                     put("items", JsonArray(cleanedItems.mapIndexed { i, item ->
@@ -1099,8 +1071,7 @@ class ChatService(
                 memoryRepository.saveSegment(segment)
             }
 
-            val currentConv = conversationRepo.getConversationById(id) ?: conv
-            val updated = currentConv.copy(
+            val updated = conv.copy(
                 contextSummaryUpToIndex = lastIdx, lastRefreshTime = System.currentTimeMillis()
             )
             conversationRepo.updateConversation(updated)
@@ -1156,7 +1127,8 @@ class ChatService(
         }
         updateConversation(id, conversation)
 
-        if (conversation.title.isBlank() && conversation.messageNodes.isEmpty() && !conversation.isVirtual) return
+        // 核心修改：移除空会话保存限制。在聚合显示模式下，即使是空话题也是合法的起始锚点。
+        // if (conversation.title.isBlank() && conversation.messageNodes.isEmpty() && !conversation.isVirtual) return
 
         if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(
             conversation
@@ -1220,29 +1192,8 @@ class ChatService(
     }
 
     suspend fun generateTitle(conversationId: Uuid, conversation: Conversation, force: Boolean = false) {
-        if (conversation.isVirtual) return
-        if (!force && conversation.title.isNotBlank()) return
-        runCatching {
-            val settings = settingsStore.settingsFlow.first()
-            val model = settings.findModelById(settings.titleModelId) ?: settings.getCurrentChatModel() ?: return
-            val provider = model.findProvider(settings.providers) ?: return
-            val content = conversation.currentMessages.truncate(conversation.truncateIndex)
-                .joinToString("\n\n") { it.summaryAsText() }
-            if (content.isBlank()) return
-            val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(
-                provider, listOf(
-                    UIMessage.user(
-                        settings.titlePrompt.applyPlaceholders(
-                            "locale" to Locale.getDefault().displayName, "content" to content
-                        )
-                    )
-                ), TextGenerationParams(model, 0.3f, 1.0f)
-            )
-            result.usage?.let { conversationRepo.recordTokenUsage(conversation.assistantId.toString(), it) }
-            saveConversation(
-                conversationId, conversation.copy(title = result.choices[0].message?.toContentText()?.trim() ?: "")
-            )
-        }
+        // 弃用：不再生成标题逻辑
+        return
     }
 
     suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {

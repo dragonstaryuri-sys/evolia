@@ -1026,19 +1026,19 @@ class GenerationHandler(
                     // 构造动态系统信息 (L2 记忆, 变量, 时间)
                     val dynamicContext = buildString {
                         if (summarySystemPrompt.isNotBlank()) {
-                            appendLine("# 对话梗概和动态信息")
+                            appendLine("## 对话梗概和动态信息")
                             appendLine(summarySystemPrompt)
                             appendLine()
                         }
                         // Memories (RAG retrieved facts)
                         if (selectedMemories.isNotEmpty()) {
-                            appendLine("# 相关记忆片段")
+                            appendLine("## 相关记忆片段")
                             appendLine(buildMemoryPrompt(selectedMemories))
                             appendLine()
                         }
                         // Reference Variables
                         if (!assistant.isVirtualWorldMode && assistant.referenceVariables.isNotBlank()) {
-                            appendLine("# 其他信息")
+                            appendLine("## 其他信息")
                             appendLine(
                                 assistant.referenceVariables.applyPlaceholders(
                                     "char" to assistant.name,
@@ -1111,7 +1111,7 @@ class GenerationHandler(
                             appendLine()
                         }
                         if (styleExamples.isNotEmpty()) {
-                            appendLine("# 语言风格示例")
+                            appendLine("## 语言风格示例")
                             styleExamples.forEach { example ->
                                 append("- ").appendLine(example)
                             }
@@ -1124,6 +1124,7 @@ class GenerationHandler(
                     if (dynamicContext.isNotBlank()) {
                         val newTextPart = UIMessagePart.Text(
                             text = buildString {
+                                appendLine("# 系统消息")
                                 append(dynamicContext)
                                 appendLine("# 用户问题")
                                 append(originalText)
@@ -1297,7 +1298,7 @@ class GenerationHandler(
         }
 
         return buildString {
-            append("## 记忆\n").append("以下是可供参考的记忆片段.若记忆信息不足，需要获取更多记忆或详细记忆原文，请调用`retrieve_memory`工具.\n")
+            append("以下是可供参考的记忆片段.若记忆信息不足，需要获取更多记忆或详细记忆原文，请调用`retrieve_memory`工具.\n")
 
             if (boostedMemories.isNotEmpty()) {
                 append("### 今日会话梗概\n")

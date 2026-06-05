@@ -132,8 +132,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val currentSearchMode by vm.currentSearchMode.collectAsStateWithLifecycle()
     val newChatStats by vm.newChatStats.collectAsStateWithLifecycle()
 
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-
     val windowAdaptiveInfo = currentWindowDpSize()
     val isBigScreen =
         windowAdaptiveInfo.width > windowAdaptiveInfo.height && windowAdaptiveInfo.width >= 1100.dp
@@ -180,68 +178,23 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
         }
     }
 
-    if (isBigScreen) {
-        PermanentNavigationDrawer(
-            drawerContent = {
-                ChatDrawerContent(
-                    navController = navController,
-                    vm = vm,
-                    settings = setting,
-                    conversationId = conversation.id,
-                    drawerState = drawerState
-                )
-            }
-        ) {
-            ChatPageContent(
-                inputState = inputState,
-                loadingJob = loadingJob,
-                setting = setting,
-                conversation = conversation,
-                isConversationLoaded = isConversationLoaded,
-                drawerState = drawerState,
-                navController = navController,
-                vm = vm,
-                chatListState = chatListState,
-                enableWebSearch = enableWebSearch,
-                currentSearchMode = currentSearchMode,
-                currentChatModel = currentChatModel,
-                bigScreen = true,
-                initialSearchQuery = searchQuery,
-                newChatStats = newChatStats
-            )
-        }
-    } else {
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContent = {
-                ChatDrawerContent(
-                    navController = navController,
-                    vm = vm,
-                    settings = setting,
-                    conversationId = conversation.id,
-                    drawerState = drawerState
-                )
-            }
-        ) {
-            ChatPageContent(
-                inputState = inputState,
-                loadingJob = loadingJob,
-                setting = setting,
-                conversation = conversation,
-                isConversationLoaded = isConversationLoaded,
-                drawerState = drawerState,
-                navController = navController,
-                vm = vm,
-                chatListState = chatListState,
-                enableWebSearch = enableWebSearch,
-                currentSearchMode = currentSearchMode,
-                currentChatModel = currentChatModel,
-                bigScreen = false,
-                initialSearchQuery = searchQuery,
-                newChatStats = newChatStats
-            )
-        }
-    }
+    // 根据需求，取消抽屉图标和抽屉功能，直接渲染 ChatPageContent
+    ChatPageContent(
+        inputState = inputState,
+        loadingJob = loadingJob,
+        setting = setting,
+        conversation = conversation,
+        isConversationLoaded = isConversationLoaded,
+        navController = navController,
+        vm = vm,
+        chatListState = chatListState,
+        enableWebSearch = enableWebSearch,
+        currentSearchMode = currentSearchMode,
+        currentChatModel = currentChatModel,
+        bigScreen = isBigScreen,
+        initialSearchQuery = searchQuery,
+        newChatStats = newChatStats
+    )
 }
 
 @Composable
@@ -252,7 +205,6 @@ private fun ChatPageContent(
     bigScreen: Boolean,
     conversation: Conversation,
     isConversationLoaded: Boolean,
-    drawerState: DrawerState,
     navController: NavHostController,
     vm: ChatVM,
     chatListState: LazyListState,
@@ -269,8 +221,6 @@ private fun ChatPageContent(
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
 
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    // 核心修复：pendingRegenerateMessage 存储的是整条消息，可能导致 TransactionTooLargeException。
-    // 将其从 rememberSaveable 降级为普通的 remember。
     var pendingRegenerateMessage by remember { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
@@ -278,7 +228,6 @@ private fun ChatPageContent(
     val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
     val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
 
-    // --- 核心优化：流式自动朗读逻辑 ---
     val tts = LocalTTSState.current
     var lastProcessedMessageId by remember { mutableStateOf<Uuid?>(null) }
     var lastProcessedIndex by remember { mutableStateOf(0) }
@@ -366,7 +315,6 @@ private fun ChatPageContent(
                             conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
                         },
                         bigScreen = bigScreen,
-                        drawerState = drawerState,
                         previewMode = previewMode,
                         isTemporaryChat = isTemporaryChat,
                         onNewChat = {
@@ -482,7 +430,6 @@ private fun ChatPageContent(
                 val hasTextInput = inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
                 val isFirstVirtualChat by vm.isFirstVirtualChat.collectAsStateWithLifecycle()
 
-                // 仅在首次进入虚拟模式时显示 NewChatContent (因为目前 NewChatContent 内部已处理 VirtualWorldWelcome)
                 val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen && currentAssistant.isVirtualWorldMode && isFirstVirtualChat
                 val errorSelectModelText = stringResource(R.string.error_select_model_first)
                 AnimatedVisibility(
@@ -694,9 +641,7 @@ private fun ChatPageContent(
 
 @Composable
 private fun RunningPersonAnimation(modifier: Modifier = Modifier) {
-    // 加载 JSON 动画资源
     val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.run))
-    // 设置循环播放
     val progress by animateLottieCompositionAsState(
         composition = composition,
         iterations = LottieConstants.IterateForever
@@ -710,7 +655,7 @@ private fun RunningPersonAnimation(modifier: Modifier = Modifier) {
         rememberLottieDynamicProperty(
             property = LottieProperty.COLOR,
             value = MaterialTheme.colorScheme.primary.toArgb(),
-            keyPath = arrayOf("**") // 匹配所有路径
+            keyPath = arrayOf("**")
         )
         )
     )
@@ -729,7 +674,6 @@ private fun TopBar(
     settings: Settings,
     conversationId: kotlin.uuid.Uuid,
     hasUserMessages: Boolean,
-    drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
     isTemporaryChat: Boolean,
@@ -767,6 +711,7 @@ private fun TopBar(
             modifier = Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 返回按钮
             Surface(
                 onClick = { navController.navigateUp() },
                 shape = buttonShape,
@@ -780,14 +725,18 @@ private fun TopBar(
 
             Spacer(Modifier.width(8.dp))
 
+            // 喇叭图标移动到返回按钮右侧
             Surface(
-                onClick = { scope.launch { drawerState.open() } },
+                onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) },
                 shape = buttonShape,
                 color = topContainerColor,
                 border = topContainerBorder
             ) {
                 Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Menu, "History")
+                    Icon(
+                        if (settings.autoPlayTts) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
+                        "Auto Play TTS"
+                    )
                 }
             }
 
@@ -844,18 +793,12 @@ private fun TopBar(
                     when {
                         isEmptyState && !isTempChat && hideTopRightAvatar -> {
                             Row(modifier = Modifier.height(topPillSize), verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) }, modifier = Modifier.size(topPillSize)) {
-                                    Icon(if (settings.autoPlayTts) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff, "Auto Play TTS")
-                                }
                                 IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {
                                     Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                 }
                             }
                         }
                         else -> Row(modifier = Modifier.height(topPillSize), verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) }, modifier = Modifier.size(topPillSize)) {
-                                Icon(if (settings.autoPlayTts) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff, "Auto Play TTS")
-                            }
                             when {
                                 isEmptyState && !isTempChat -> {
                                     IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {

@@ -27,7 +27,6 @@ val PROVIDER_PRESETS = listOf(
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://open.bigmodel.cn/api/paas/v4"
     ),
-    // Domestic providers (Priority)
     ProviderPreset(
         name = "DeepSeek",
         description = "DeepSeek - 国内高性价比大模型",
@@ -63,6 +62,17 @@ val PROVIDER_PRESETS = listOf(
         baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     ),
     ProviderPreset(
+        name = "StepFun",
+        description = "阶跃星辰 - 阶跃系列模型",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://api.stepfun.com/v1",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/balance",
+            resultPath = "balance"
+        )
+    ),
+    ProviderPreset(
         name = "4sapi",
         description = "4sapi - 高品质聚合 AI 服务商",
         type = ProviderSetting.OpenAI::class,
@@ -87,6 +97,13 @@ val PROVIDER_PRESETS = listOf(
         description = "Multimodal AI with text, image, audio, and video",
         type = ProviderSetting.Google::class,
         baseUrl = "https://generativelanguage.googleapis.com/v1beta"
+    ),
+    ProviderPreset(
+        name = "Mistral (GCS)",
+        description = "Mistral models hosted on Google Cloud (Vertex AI)",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://{region}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{region}/publishers/mistralai/models",
+        chatCompletionsPath = "/{model_id}:rawPredict"
     ),
     ProviderPreset(
         name = "Anthropic Claude",
