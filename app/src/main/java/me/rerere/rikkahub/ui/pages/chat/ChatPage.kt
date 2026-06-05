@@ -34,7 +34,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.ui.graphics.toArgb
-import com.airbnb.lottie.LottieProperty
+import androidx.compose.ui.graphics.StrokeCap
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -69,7 +69,6 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
-import com.airbnb.lottie.compose.*
 
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
@@ -624,7 +623,7 @@ private fun ChatPageContent(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            RunningPersonAnimation(modifier = Modifier.padding(bottom = 24.dp))
+                            DocumentLoadingAnimation(modifier = Modifier.padding(bottom = 24.dp))
                             Text(
                                 text = stringResource(R.string.syncing_context_animation_hint),
                                 style = MaterialTheme.typography.bodyLarge,
@@ -640,25 +639,22 @@ private fun ChatPageContent(
 }
 
 @Composable
-private fun RunningPersonAnimation(modifier: Modifier = Modifier) {
-    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.run))
-    val progress by animateLottieCompositionAsState(
-        composition = composition,
-        iterations = LottieConstants.IterateForever
-    )
-
-    LottieAnimation(
-        composition = composition,
-        progress = { progress },
-        modifier = modifier.size(120.dp),
-        dynamicProperties = rememberLottieDynamicProperties(
-        rememberLottieDynamicProperty(
-            property = LottieProperty.COLOR,
-            value = MaterialTheme.colorScheme.primary.toArgb(),
-            keyPath = arrayOf("**")
+private fun DocumentLoadingAnimation(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.size(120.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 3.dp,
+            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+            strokeCap = StrokeCap.Round
         )
+        Icon(
+            imageVector = Icons.Rounded.Description,
+            contentDescription = null,
+            modifier = Modifier.size(54.dp),
+            tint = MaterialTheme.colorScheme.primary
         )
-    )
+    }
 }
 
 private data class TopBarActionState(
