@@ -257,6 +257,16 @@ private fun ColumnScope.ProviderConfigureOpenAI(
     val latestProvider by rememberUpdatedState(provider)
     val toaster = LocalToaster.current
 
+    // Auto-correction logic for built-in providers
+    LaunchedEffect(provider.id) {
+        if (provider.builtIn) {
+            val preset = PROVIDER_PRESETS.find { it.name == provider.name && it.type == ProviderSetting.OpenAI::class }
+            if (preset != null && (provider.baseUrl != preset.baseUrl || provider.chatCompletionsPath != preset.chatCompletionsPath)) {
+                onEdit(provider.copy(baseUrl = preset.baseUrl, chatCompletionsPath = preset.chatCompletionsPath))
+            }
+        }
+    }
+
     provider.description()
 
     var apiKeyVisible by remember { mutableStateOf(false) }
@@ -319,7 +329,8 @@ private fun ColumnScope.ProviderConfigureOpenAI(
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !provider.builtIn
     )
 
     if (!provider.useResponseApi) {
@@ -377,6 +388,17 @@ private fun ColumnScope.ProviderConfigureClaude(
     onEdit: (provider: ProviderSetting.Claude) -> Unit
 ) {
     val latestProvider by rememberUpdatedState(provider)
+
+    // Auto-correction logic for built-in providers
+    LaunchedEffect(provider.id) {
+        if (provider.builtIn) {
+            val preset = PROVIDER_PRESETS.find { it.name == provider.name && it.type == ProviderSetting.Claude::class }
+            if (preset != null && provider.baseUrl != preset.baseUrl) {
+                onEdit(provider.copy(baseUrl = preset.baseUrl))
+            }
+        }
+    }
+
     provider.description()
 
     var apiKeyVisible by remember { mutableStateOf(false) }
@@ -437,7 +459,8 @@ private fun ColumnScope.ProviderConfigureClaude(
         label = {
             Text(stringResource(id = R.string.setting_provider_page_api_base_url))
         },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !provider.builtIn
     )
 }
 
@@ -447,6 +470,17 @@ private fun ColumnScope.ProviderConfigureGoogle(
     onEdit: (provider: ProviderSetting.Google) -> Unit
 ) {
     val latestProvider by rememberUpdatedState(provider)
+
+    // Auto-correction logic for built-in providers
+    LaunchedEffect(provider.id) {
+        if (provider.builtIn && !provider.vertexAI) {
+            val preset = PROVIDER_PRESETS.find { it.name == provider.name && it.type == ProviderSetting.Google::class }
+            if (preset != null && provider.baseUrl != preset.baseUrl) {
+                onEdit(provider.copy(baseUrl = preset.baseUrl))
+            }
+        }
+    }
+
     provider.description()
 
     Row(
@@ -521,6 +555,7 @@ private fun ColumnScope.ProviderConfigureGoogle(
                 Text(stringResource(id = R.string.setting_provider_page_api_base_url))
             },
             modifier = Modifier.fillMaxWidth(),
+            enabled = !provider.builtIn,
             isError = !localBaseUrl.endsWith("/v1beta"),
             supportingText = if (!localBaseUrl.endsWith("/v1beta")) {
                 {

@@ -21,13 +21,66 @@ data class ProviderPreset(
  * List of provider presets ordered by popularity
  */
 val PROVIDER_PRESETS = listOf(
-    // Tier 1: Major providers
+    ProviderPreset(
+        name = "Zhipu AI",
+        description = "智谱 AI - GLM 系列模型，支持视觉与工具",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://open.bigmodel.cn/api/paas/v4"
+    ),
+    // Domestic providers (Priority)
+    ProviderPreset(
+        name = "DeepSeek",
+        description = "DeepSeek - 国内高性价比大模型",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://api.deepseek.com",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/balance",
+            resultPath = "balance_infos[0].total_balance"
+        )
+    ),
+    ProviderPreset(
+        name = "SiliconFlow",
+        description = "硅基流动 - 聚合各大国内主流模型接口",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://api.siliconflow.cn/v1",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "/user/info",
+            resultPath = "data.balance"
+        )
+    ),
+    ProviderPreset(
+        name = "VolcEngine",
+        description = "火山引擎 - 字节跳动 AI 平台，豆包系列模型",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://ark.cn-beijing.volces.com/api/v3"
+    ),
+    ProviderPreset(
+        name = "Alibaba Qwen",
+        description = "通义千问 - 阿里大模型，支持 OpenAI 兼容格式",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    ),
+    ProviderPreset(
+        name = "4sapi",
+        description = "4sapi - 高品质聚合 AI 服务商",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://4sapi.com/v1",
+        balanceOption = BalanceOption(
+            enabled = true,
+            apiPath = "https://4sapi.com/api/user/self",
+            resultPath = "data.quota"
+        )
+    ),
+
+    // Tier 1: Major Global providers
     ProviderPreset(
         name = "OpenAI",
         description = "Creator of GPT models, industry-leading AI",
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://api.openai.com/v1",
-        useResponseApi = false // Response API available but default off for compatibility
+        useResponseApi = false
     ),
     ProviderPreset(
         name = "Google Gemini",
@@ -53,62 +106,11 @@ val PROVIDER_PRESETS = listOf(
         )
     ),
     ProviderPreset(
-        name = "DeepSeek",
-        description = "DeepSeek",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://api.deepseek.com",
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "/user/balance",
-            resultPath = "balance_infos[0].total_balance"
-        )
-    ),
-    ProviderPreset(
-        name = "SiliconFlow",
-        description = "硅基流动，提供各大国内模型接口",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://api.siliconflow.cn/v1",
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "/user/info",
-            resultPath = "data.balance"
-        )
-    ),
-    ProviderPreset(
-        name = "VolcEngine",
-        description = "火山引擎，字节跳动 AI 平台，豆包系列模型",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://ark.cn-beijing.volces.com/api/v3"
-    ),
-    ProviderPreset(
-        name = "4sapi",
-        description = "高品质聚合 AI 服务商",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://4sapi.com/v1",
-        balanceOption = BalanceOption(
-            enabled = true,
-            apiPath = "https://4sapi.com/api/user/self",
-            resultPath = "data.quota"
-        )
-    ),
-    ProviderPreset(
-        name = "Ollama",
-        description = "Cloud LLMs hosted by Ollama",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://ollama.com/v1"
-    ),
-    ProviderPreset(
-        name = "Vercel",
-        description = "Unified API for 100+ models with auto-fallbacks",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://ai-gateway.vercel.sh/v1"
-    ),
-    ProviderPreset(
         name = "Groq",
         description = "Ultra-fast inference for open models",
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://api.groq.com/openai/v1",
-        useResponseApi = true // Groq supports OpenAI Responses API
+        useResponseApi = true
     ),
     ProviderPreset(
         name = "Together AI",
@@ -127,6 +129,26 @@ val PROVIDER_PRESETS = listOf(
         description = "AI with real-time web search",
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://api.perplexity.ai"
+    ),
+    ProviderPreset(
+        name = "01.AI Yi",
+        description = "零一万物 - Yi 系列开源模型",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://api.01.ai/v1"
+    ),
+
+    // Others
+    ProviderPreset(
+        name = "Ollama",
+        description = "Cloud LLMs hosted by Ollama",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://ollama.com/v1"
+    ),
+    ProviderPreset(
+        name = "Vercel",
+        description = "Unified API for 100+ models with auto-fallbacks",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://ai-gateway.vercel.sh/v1"
     ),
     ProviderPreset(
         name = "Fireworks AI",
@@ -235,12 +257,6 @@ val PROVIDER_PRESETS = listOf(
         baseUrl = "https://aihubmix.com/v1"
     ),
     ProviderPreset(
-        name = "Alibaba Qwen",
-        description = "Qwen models from Alibaba Cloud",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    ),
-    ProviderPreset(
         name = "GLhf",
         description = "Free open-source LLMs",
         type = ProviderSetting.OpenAI::class,
@@ -306,19 +322,6 @@ val PROVIDER_PRESETS = listOf(
         type = ProviderSetting.OpenAI::class,
         baseUrl = "https://api.baseten.co/v1"
     ),
-
-    ProviderPreset(
-        name = "01.AI Yi",
-        description = "Yi open models",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://api.01.ai/v1"
-    ),
-    ProviderPreset(
-        name = "Zhipu AI",
-        description = "GLM models with vision, tools, and reasoning",
-        type = ProviderSetting.OpenAI::class,
-        baseUrl = "https://open.bigmodel.cn/api/paas/v4"
-    ),
 )
 
 /**
@@ -331,22 +334,26 @@ fun ProviderPreset.toProviderSetting(): ProviderSetting {
             baseUrl = baseUrl,
             balanceOption = balanceOption,
             useResponseApi = useResponseApi,
-            chatCompletionsPath = chatCompletionsPath
+            chatCompletionsPath = chatCompletionsPath,
+            builtIn = true // 标记为内置
         )
         ProviderSetting.Google::class -> ProviderSetting.Google(
             name = name,
             baseUrl = baseUrl,
-            balanceOption = balanceOption
+            balanceOption = balanceOption,
+            builtIn = true // 标记为内置
         )
         ProviderSetting.Claude::class -> ProviderSetting.Claude(
             name = name,
             baseUrl = baseUrl,
-            balanceOption = balanceOption
+            balanceOption = balanceOption,
+            builtIn = true // 标记为内置
         )
         else -> ProviderSetting.OpenAI(
             name = name,
             baseUrl = baseUrl,
-            balanceOption = balanceOption
+            balanceOption = balanceOption,
+            builtIn = true // 标记为内置
         )
     }
 }

@@ -349,10 +349,26 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = stringResource(R.string.setting_tts_page_edit_provider),
-                        style = MaterialTheme.typography.headlineSmall
-                    )
+                    val providerTypeName = when (currentProvider) {
+                        is TTSProviderSetting.OpenAI -> "OpenAI"
+                        is TTSProviderSetting.Gemini -> "Google"
+                        is TTSProviderSetting.MiniMax -> "MiniMax"
+                        is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
+                        is TTSProviderSetting.Azure -> "Azure"
+                        else -> "System"
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = stringResource(R.string.setting_tts_page_edit_provider),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        if (currentProvider.builtIn) {
+                            Spacer(Modifier.size(8.dp))
+                            Tag(type = TagType.INFO) {
+                                Text("Built-in")
+                            }
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         listOf("zh" to "中", "en" to "EN", "ko" to "KR").forEach { (code, label) ->
                             androidx.compose.material3.InputChip(
@@ -910,13 +926,13 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
                                 val newProvider = when (preset.type) {
-                                    TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS()
-                                    TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI()
-                                    TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini()
-                                    TTSProviderSetting.Azure::class -> TTSProviderSetting.Azure()
-                                    TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs()
-                                    TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax()
-                                    else -> TTSProviderSetting.SystemTTS()
+                                    TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS(builtIn = true)
+                                    TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI(builtIn = true)
+                                    TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini(builtIn = true)
+                                    TTSProviderSetting.Azure::class -> TTSProviderSetting.Azure(builtIn = true)
+                                    TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs(builtIn = true)
+                                    TTSProviderSetting.MiniMax::class -> TTSProviderSetting.MiniMax(builtIn = true)
+                                    else -> TTSProviderSetting.SystemTTS(builtIn = true)
                                 }
                                 onAdd(newProvider)
                                 showBottomSheet = false

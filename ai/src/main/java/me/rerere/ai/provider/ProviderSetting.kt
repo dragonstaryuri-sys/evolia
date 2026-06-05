@@ -75,7 +75,7 @@ sealed class ProviderSetting {
         override val balanceOption: BalanceOption = BalanceOption(),
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
-        @Transient override val builtIn: Boolean = false,
+        override val builtIn: Boolean = false, // 移除 @Transient，允许序列化
         @Transient override val description: @Composable (() -> Unit) = {},
         @Transient override val shortDescription: @Composable (() -> Unit) = {},
         var apiKey: String = "",
@@ -145,7 +145,7 @@ sealed class ProviderSetting {
         override val balanceOption: BalanceOption = BalanceOption(),
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
-        @Transient override val builtIn: Boolean = false,
+        override val builtIn: Boolean = false, // 移除 @Transient
         @Transient override val description: @Composable() () -> Unit = {},
         @Transient override val shortDescription: @Composable() () -> Unit = {},
         var apiKey: String = "",
@@ -218,7 +218,7 @@ sealed class ProviderSetting {
         override val balanceOption: BalanceOption = BalanceOption(),
         override var tags: List<Uuid> = emptyList(),
         override val customIconUri: String? = null,
-        @Transient override val builtIn: Boolean = false,
+        override val builtIn: Boolean = false, // 移除 @Transient
         @Transient override val description: @Composable (() -> Unit) = {},
         @Transient override val shortDescription: @Composable (() -> Unit) = {},
         var apiKey: String = "",

@@ -311,6 +311,13 @@ private fun MiniMaxTTSConfiguration(
     var voices by remember { mutableStateOf<List<TTSVoice>>(emptyList()) }
     var isLoadingVoices by remember { mutableStateOf(false) }
 
+    // Auto-correction logic for built-in provider
+    LaunchedEffect(setting.id) {
+        if (setting.builtIn && setting.baseUrl != "https://api.minimaxi.com/v1") {
+            onValueChange(setting.copy(baseUrl = "https://api.minimaxi.com/v1"))
+        }
+    }
+
     var localApiKey by remember(setting.apiKey) { mutableStateOf(setting.apiKey) }
     var localBaseUrl by remember(setting.baseUrl) { mutableStateOf(setting.baseUrl) }
     var localModel by remember(setting.model) { mutableStateOf(setting.model) }
@@ -369,7 +376,12 @@ private fun MiniMaxTTSConfiguration(
     }
 
     FormItem(label = { Text(stringResource(R.string.setting_tts_page_base_url)) }) {
-        OutlinedTextField(value = localBaseUrl, onValueChange = { localBaseUrl = it }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            value = localBaseUrl,
+            onValueChange = { localBaseUrl = it },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !setting.builtIn
+        )
     }
 
     FormItem(label = { Text(stringResource(R.string.setting_tts_page_model)) }) {
@@ -865,6 +877,13 @@ private fun OpenAITTSConfiguration(
     setting: TTSProviderSetting.OpenAI,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
+    // Auto-correction logic for built-in provider
+    LaunchedEffect(setting.id) {
+        if (setting.builtIn && setting.baseUrl != "https://api.openai.com/v1") {
+            onValueChange(setting.copy(baseUrl = "https://api.openai.com/v1"))
+        }
+    }
+
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -901,7 +920,8 @@ private fun OpenAITTSConfiguration(
                 onValueChange(setting.copy(baseUrl = newBaseUrl))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) },
+            enabled = !setting.builtIn
         )
     }
 
@@ -965,6 +985,13 @@ private fun GeminiTTSConfiguration(
     setting: TTSProviderSetting.Gemini,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
+    // Auto-correction logic for built-in provider
+    LaunchedEffect(setting.id) {
+        if (setting.builtIn && setting.baseUrl != "https://generativelanguage.googleapis.com/v1beta") {
+            onValueChange(setting.copy(baseUrl = "https://generativelanguage.googleapis.com/v1beta"))
+        }
+    }
+
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -1001,7 +1028,8 @@ private fun GeminiTTSConfiguration(
                 onValueChange(setting.copy(baseUrl = newBaseUrl))
             },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
+            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) },
+            enabled = !setting.builtIn
         )
     }
 

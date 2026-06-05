@@ -306,7 +306,7 @@
   <string name="permission_desc_require_permission">为了提供更好的用户体验，应用需要以下权限：</string>
   <string name="permission_diaog_title">权限请求</string>
   <string name="permission_go_to_settings">前往设置</string>
-  <string name="permission_notification">通知</string>
+  <string name="permission_notification">通知、定时任务、监视器管理</string>
   <string name="permission_notification_desc">发送通知</string>
   <string name="permission_permanently_denied">已永久拒绝</string>
   <string name="permission_required">必需</string>
@@ -426,7 +426,7 @@
   <string name="setting_model_page_translate_model_desc">用于翻译功能的模型</string>
   <string name="setting_model_page_translate_prompt_vars">变量: 原始文本: {source_text}, 目标语言: {target_lang}</string>
   <string name="setting_page_about">关于</string>
-  <string name="setting_page_about_desc">关于本APP</string>
+  <string name="setting_page_about_desc">关于本APP（含操作手册）</string>
   <string name="setting_page_assistant">助手</string>
   <string name="setting_page_assistant_desc">设置个性化助手 (智能体)</string>
   <string name="setting_page_basic_settings">基本设置</string>
@@ -831,7 +831,7 @@
   <string name="minimal_input_camera">相机</string>
   <string name="assistant_lorebooks_enabled">"启用 %d "</string>
   <string name="context_management_title">\t上下文管理</string>
-  <string name="context_management_desc">世界书,聊天记录,搜索结果</string>
+  <string name="context_management_desc">世界书,会话历史,搜索结果,日记带入</string>
   <string name="context_lorebooks_title">世界书</string>
   <string name="context_lorebooks_desc">选择要与该助手一起使用的世界书（Lorebook）</string>
   <string name="context_message_history_title">消息历史</string>
@@ -948,7 +948,7 @@
   <string name="assistant_detail_group_capabilities">能力</string>
   <string name="assistant_detail_group_other">其他</string>
   <string name="assistant_detail_profile_title">个人资料</string>
-  <string name="assistant_detail_prompts_desc">名称、头像、标签、外观</string>
+  <string name="assistant_detail_prompts_desc">设定、语言风格等</string>
   <string name="assistant_detail_models_title">模型</string>
   <string name="assistant_detail_ui_customization_desc">单角色显示设置</string>
   <string name="assistant_detail_advanced_title">高级设置</string>
