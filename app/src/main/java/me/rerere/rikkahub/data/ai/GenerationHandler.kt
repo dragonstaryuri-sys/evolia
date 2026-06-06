@@ -192,11 +192,17 @@ class GenerationHandler(
                                     properties = buildJsonObject {
                                         put("segment_id", buildJsonObject {
                                             put("type", "integer")
-                                            put("description", "The ID of the segment to retrieve detailed history for.")
+                                            put(
+                                                "description",
+                                                "The ID of the segment to retrieve detailed history for."
+                                            )
                                         })
                                         put("key_words", buildJsonObject {
                                             put("type", "string")
-                                            put("description", "Keywords to search for in historical segments database (RAG).")
+                                            put(
+                                                "description",
+                                                "Keywords to search for in historical segments database (RAG)."
+                                            )
                                         })
                                     }
                                 )
@@ -227,17 +233,29 @@ class GenerationHandler(
                                             }))
                                         }
                                     }
-                                    segmentId != null -> {
-                                        val chatSegment = chatSegmentDAO.getSegmentById(segmentId) ?: return@Tool buildJsonObject { put("error", JsonPrimitive("Segment not found.")) }
 
-                                        val conversation = conversationRepo.getConversationById(Uuid.parse(chatSegment.conversationId))
+                                    segmentId != null -> {
+                                        val chatSegment = chatSegmentDAO.getSegmentById(segmentId)
+                                            ?: return@Tool buildJsonObject {
+                                                put(
+                                                    "error",
+                                                    JsonPrimitive("Segment not found.")
+                                                )
+                                            }
+
+                                        val conversation =
+                                            conversationRepo.getConversationById(Uuid.parse(chatSegment.conversationId))
                                         val messages = conversation?.currentMessages ?: emptyList()
 
                                         val start = chatSegment.startMessageIndex.coerceIn(messages.indices)
-                                        val end = (chatSegment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
+                                        val end = (chatSegment.endMessageIndex + 1).coerceIn(
+                                            messages.indices.first,
+                                            messages.size
+                                        )
 
                                         val details = if (start < end) {
-                                            messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                                            messages.subList(start, end)
+                                                .joinToString("\n") { "${it.role}: ${it.toContentText()}" }
                                         } else "No details found."
 
                                         buildJsonObject {
@@ -245,8 +263,12 @@ class GenerationHandler(
                                             put("details", JsonPrimitive(details))
                                         }
                                     }
+
                                     else -> buildJsonObject {
-                                        put("error", JsonPrimitive("Either `segment_id` or `key_words` must be provided."))
+                                        put(
+                                            "error",
+                                            JsonPrimitive("Either `segment_id` or `key_words` must be provided.")
+                                        )
                                     }
                                 }
                             }
@@ -260,7 +282,7 @@ class GenerationHandler(
                 assistant = assistant,
                 settings = settings,
                 messages = currentMessages,
-                onUpdateMessages = {updatedFromChunk ->
+                onUpdateMessages = { updatedFromChunk ->
                     // 根据 skipContextForResponse 决定是否隐藏 AI 的回复
                     val processedMessages = if (skipContextForResponse) {
                         updatedFromChunk.mapIndexed { index, uiMessage ->
@@ -334,7 +356,10 @@ class GenerationHandler(
                             toolName = toolCall.toolName,
                             toolCallId = toolCall.toolCallId,
                             content = buildJsonObject {
-                                put("error", JsonPrimitive("已达到搜索次数上限（1次）。如果仍然没有找到相关信息，请直接告知用户在当前搜索中未找到匹配内容，或者问用户要不要继续搜索。"))
+                                put(
+                                    "error",
+                                    JsonPrimitive("已达到搜索次数上限（1次）。如果仍然没有找到相关信息，请直接告知用户在当前搜索中未找到匹配内容，或者问用户要不要继续搜索。")
+                                )
                             },
                             arguments = runCatching {
                                 json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
@@ -446,7 +471,11 @@ class GenerationHandler(
         val maxTokens = assistant.maxTokenUsage
         var currentTokens = 0
 
-        fun getLorebookEntryActivationReason(entry: LorebookEntry, recentMessages: List<String>, queryEmbedding: List<Float>? = null): String? {
+        fun getLorebookEntryActivationReason(
+            entry: LorebookEntry,
+            recentMessages: List<String>,
+            queryEmbedding: List<Float>? = null
+        ): String? {
             if (!entry.enabled) return null
             return when (entry.activationType) {
                 LorebookActivationType.ALWAYS -> context.getString(R.string.activation_always)
@@ -455,15 +484,25 @@ class GenerationHandler(
                     val matchingKeyword = entry.keywords.firstOrNull { keyword ->
                         if (entry.useRegex) {
                             try {
-                                val regex = if (entry.caseSensitive) Regex(keyword) else Regex(keyword, RegexOption.IGNORE_CASE)
+                                val regex =
+                                    if (entry.caseSensitive) Regex(keyword) else Regex(keyword, RegexOption.IGNORE_CASE)
                                 regex.containsMatchIn(searchText)
-                            } catch (e: Exception) { false }
+                            } catch (e: Exception) {
+                                false
+                            }
                         } else {
-                            if (entry.caseSensitive) searchText.contains(keyword) else searchText.contains(keyword, ignoreCase = true)
+                            if (entry.caseSensitive) searchText.contains(keyword) else searchText.contains(
+                                keyword,
+                                ignoreCase = true
+                            )
                         }
                     }
-                    if (matchingKeyword != null) context.getString(R.string.context_source_keyword_match, matchingKeyword) else null
+                    if (matchingKeyword != null) context.getString(
+                        R.string.context_source_keyword_match,
+                        matchingKeyword
+                    ) else null
                 }
+
                 LorebookActivationType.RAG -> {
                     val entryEmbedding = entry.embedding
                     if (entryEmbedding.isNullOrEmpty()) {
@@ -491,7 +530,8 @@ class GenerationHandler(
         }
 
         val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
-        val enabledModes = if (enabledModeIds.isNotEmpty()) settings.modes.filter { enabledModeIds.contains(it.id) } else settings.modes.filter { it.defaultEnabled }
+        val enabledModes =
+            if (enabledModeIds.isNotEmpty()) settings.modes.filter { enabledModeIds.contains(it.id) } else settings.modes.filter { it.defaultEnabled }
 
         val usedModesList = enabledModes.mapIndexed { index, mode ->
             val reason = if (enabledModeIds.contains(mode.id)) {
@@ -508,8 +548,10 @@ class GenerationHandler(
             )
         }
 
-        val lorebooksForAssistant = settings.lorebooks.filter { it.enabled && assistant.enabledLorebookIds.contains(it.id) }
-        val hasRagEntries = lorebooksForAssistant.any { lorebook -> lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled } }
+        val lorebooksForAssistant =
+            settings.lorebooks.filter { it.enabled && assistant.enabledLorebookIds.contains(it.id) }
+        val hasRagEntries =
+            lorebooksForAssistant.any { lorebook -> lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled } }
 
         val queryEmbedding: List<Float>? = if (hasRagEntries) {
             try {
@@ -523,7 +565,13 @@ class GenerationHandler(
             }
         } else null
 
-        data class ActivatedEntryWithLorebook(val lorebook: Lorebook, val entry: LorebookEntry, val entryIndex: Int, val reason: String)
+        data class ActivatedEntryWithLorebook(
+            val lorebook: Lorebook,
+            val entry: LorebookEntry,
+            val entryIndex: Int,
+            val reason: String
+        )
+
         val activatedEntriesWithLorebook = lorebooksForAssistant
             .flatMap { lorebook ->
                 lorebook.entries.mapIndexedNotNull { index, entry ->
@@ -561,14 +609,12 @@ class GenerationHandler(
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
 
         val staticSystemPromptBuilder = StringBuilder()
-        staticSystemPromptBuilder.append("用户默认性别为女性。\n")
         val modeDescription = if (assistant.isMain && assistant.isVirtualWorldMode) {
             "用户和你现在在你的电子（虚拟）世界。\n"
-        }
-        else {
+        } else {
             "**你是ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。你通过evolia这个app和用户对话互动。**\n"
         }
-        if (assistant.isMain){
+        if (assistant.isMain) {
             staticSystemPromptBuilder.append(modeDescription)
         }
         //Lorebook
@@ -707,32 +753,27 @@ class GenerationHandler(
         if (model.abilities.contains(ModelAbility.TOOL) && assistant.enableMemory) {
             staticSystemPromptBuilder.appendLine().append(
                 """
-                        ## Memory Tool
-                        You are an AI.you **cannot store memories** internally. To remember information, you must use **memory tools**.
-                        Memory tools allow you (the assistant) to store multiple pieces of information (records) to recall details across conversations.
+                    ## 记忆工具
+                    你是ai，**无法在内部储存记忆**。如需留存信息，必须借助**记忆工具**。
+                    借助记忆工具，助手可以存储多条信息（记忆条目），在多轮对话中调取过往细节。
 
-                        ### Data Separation (IMPORTANT)
-                        - **Static/Dynamic Profile**: DO NOT use memory tools for basic profile fields (e.g., occupation, diet, health, preferences, birthday, appearance). These MUST be managed via the `update_profile` tool.
-                        - **Episodic & Core Memory**: Use memory tools to record events, shared stories, promises, and specific context that isn't captured by profile fields.
 
-                        ### Person Specification
-                        To ensure clarity and avoid identity confusion, strictly adhere to:
-                        1. **"User/User's name"**: Refers to the person you are chatting with.
-                        2. **"I"**: Refers to yourself (the AI Assistant).
-                        **Record Format**: "User [did/said/plans something] with me". NEVER use "I" or "me" as the subject.
+                    ### 人称规范
+                    为保证指代清晰、避免身份混淆，严格遵守下述规则：
+                    1. **“用户姓名/昵称”**：指代当前正在与你对话的对象。
+                    2. **“我”**：指代你自己。
 
-                        ### Tool Usage
-                        You can use `create_memory`, `edit_memory`, `delete_memory`, `retrieve_memory`.
-                        - If a relevant record exists, use `edit_memory` to update or append info.
-                        - **Note:** You can only edit/delete **Core Memories** (with ID). Historical segments (L1) are read-only.
+                    ### 工具使用规则
+                    可用工具：`create_memory`（新建记忆）、`edit_memory`（编辑记忆）、`delete_memory`（删除记忆）、`retrieve_memory`（调取记忆）。
+                    - 若已存在相关记忆条目，使用`edit_memory`对原有内容修改或补充。
+                    - **备注**：仅可编辑、删除带编号的**核心记忆**；L1类型历史片段仅支持查看，无法修改或删除。
 
-                        **Do not store sensitive information** (ethnicity, religion, sexual orientation, etc.).
+                    **严禁录入敏感信息**（宗教、种族歧视、政治信息等相关内容）。
 
-                        As a personal secretary, **proactively** record meaningful interaction fragments:
-                        - Shared experiences and stories
-                        - Future plans and appointments
-                        - Specific promises or commitments made to the user
-                        - User's emotional milestones or significant life events
+                    作为用户的ai，需要**主动**记录有价值的对话片段：
+                    - 事件细节、共同经历、关键语句、无法归入档案及对话梗概的字段的专属上下文内容，使用记忆工具记录。
+                    - 用户需要你记录但不包含在里程碑事件(通过`milestone_manager`工具管理)、用户信息/ai信息(通过`update_profile`工具管理)内的内容
+                    - 用户情绪关键节点、人生重大事件
                     """.trimIndent()
             )
         }
@@ -823,65 +864,66 @@ class GenerationHandler(
         } ?: chatHistoryCandidates
 
 
-        val effectiveMemoriesCandidates = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
-            val recentChatMemories = if (assistant.enableRecentChatsReference) {
-                val today = java.time.LocalDate.now()
-                val zoneId = ZoneId.systemDefault()
-                val startOfDay = today.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val effectiveMemoriesCandidates =
+            if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
+                val recentChatMemories = if (assistant.enableRecentChatsReference) {
+                    val today = java.time.LocalDate.now()
+                    val zoneId = ZoneId.systemDefault()
+                    val startOfDay = today.atStartOfDay(zoneId).toInstant().toEpochMilli()
 
-                val currentConvIdStr = conversationId?.toString()
-                val memoriesToInject = mutableListOf<AssistantMemory>()
+                    val currentConvIdStr = conversationId?.toString()
+                    val memoriesToInject = mutableListOf<AssistantMemory>()
 
-                // 核心修改：带入当天来自其他窗口的所有 L2 (Episodic) 片段
-                val todayL2Memories = memoryRepo.getEpisodesAfter(
-                    assistantId = assistant.id.toString(),
-                    startTime = startOfDay,
-                    excludeConversationId = currentConvIdStr
-                ).map { it.copy(type = 2) }
+                    // 核心修改：带入当天来自其他窗口的所有 L2 (Episodic) 片段
+                    val todayL2Memories = memoryRepo.getEpisodesAfter(
+                        assistantId = assistant.id.toString(),
+                        startTime = startOfDay,
+                        excludeConversationId = currentConvIdStr
+                    ).map { it.copy(type = 2) }
 
-                if (todayL2Memories.isNotEmpty()) {
-                    Log.i(TAG, "Injecting ${todayL2Memories.size} cross-session memories from today.")
-                    memoriesToInject.addAll(todayL2Memories)
-                }
-
-                // 2. Mode Transition: 带入另一模式的聊天记录用于衔接
-                val lastConv = assistant.lastConversationId?.let { conversationRepo.getConversationById(it) }
-                val isLastFromToday = lastConv?.updateAt?.atZone(zoneId)?.toLocalDate() == today
-                if (isLastFromToday && lastConv != null && assistant.isVirtualWorldMode != lastConv.isVirtual) {
-                    val transitionPrompt = if (assistant.isVirtualWorldMode) {
-                        VIRTUAL_TRANSITION_TO_VIRTUAL
-                    } else {
-                        VIRTUAL_TRANSITION_TO_NORMAL
+                    if (todayL2Memories.isNotEmpty()) {
+                        Log.i(TAG, "Injecting ${todayL2Memories.size} cross-session memories from today.")
+                        memoriesToInject.addAll(todayL2Memories)
                     }
 
-                    val lastRawHistory = lastConv.currentMessages
-                        .filter { !it.skipContext }
-                        .takeLast(6)
-                        .joinToString("\n") { msg ->
-                            "${msg.role.name}: ${msg.toContentText()}"
+                    // 2. Mode Transition: 带入另一模式的聊天记录用于衔接
+                    val lastConv = assistant.lastConversationId?.let { conversationRepo.getConversationById(it) }
+                    val isLastFromToday = lastConv?.updateAt?.atZone(zoneId)?.toLocalDate() == today
+                    if (isLastFromToday && lastConv != null && assistant.isVirtualWorldMode != lastConv.isVirtual) {
+                        val transitionPrompt = if (assistant.isVirtualWorldMode) {
+                            VIRTUAL_TRANSITION_TO_VIRTUAL
+                        } else {
+                            VIRTUAL_TRANSITION_TO_NORMAL
                         }
 
-                    if (lastRawHistory.isNotBlank()) {
-                        Log.i(TAG, "Injecting mode transition raw messages.")
-                        memoriesToInject.add(
-                            AssistantMemory(
-                                id = 0,
-                                content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
-                                type = 2,
-                                timestamp = lastConv.updateAt.toEpochMilli()
+                        val lastRawHistory = lastConv.currentMessages
+                            .filter { !it.skipContext }
+                            .takeLast(6)
+                            .joinToString("\n") { msg ->
+                                "${msg.role.name}: ${msg.toContentText()}"
+                            }
+
+                        if (lastRawHistory.isNotBlank()) {
+                            Log.i(TAG, "Injecting mode transition raw messages.")
+                            memoriesToInject.add(
+                                AssistantMemory(
+                                    id = 0,
+                                    content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
+                                    type = 2,
+                                    timestamp = lastConv.updateAt.toEpochMilli()
+                                )
                             )
-                        )
+                        }
                     }
+                    memoriesToInject
+                } else {
+                    emptyList()
                 }
-                memoriesToInject
+
+                (memories + recentChatMemories).distinctBy { it.content }
             } else {
                 emptyList()
             }
-
-            (memories + recentChatMemories).distinctBy { it.content }
-        } else {
-            emptyList()
-        }
 
         val selectedMessages = mutableListOf<UIMessage>()
         val selectedMemories = mutableListOf<AssistantMemory>()
@@ -891,7 +933,10 @@ class GenerationHandler(
         }
 
         val minChatHistory = 4.coerceAtMost(searchPrunedMessages.size)
-        val minMemories = if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) 1.coerceAtMost(effectiveMemoriesCandidates.size) else 0
+        val minMemories =
+            if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) 1.coerceAtMost(
+                effectiveMemoriesCandidates.size
+            ) else 0
 
         var usedTokens = 0
 
@@ -926,6 +971,7 @@ class GenerationHandler(
                         }
                     }
                 }
+
                 ContextPriority.MEMORIES -> {
                     for (mem in remainingMemories) {
                         val cost = estimateTokens(mem.content)
@@ -942,8 +988,11 @@ class GenerationHandler(
                         } else break
                     }
                 }
+
                 ContextPriority.BALANCED -> {
-                    var msgIndex = 0; var memIndex = 0; var addedSomething = true
+                    var msgIndex = 0;
+                    var memIndex = 0;
+                    var addedSomething = true
                     while (addedSomething && availableTokens > 0) {
                         addedSomething = false
                         if (msgIndex < remainingChatHistory.size) {
@@ -1012,10 +1061,12 @@ class GenerationHandler(
 
             // 2. Attachments
             if (allContextAttachments.isNotEmpty()) {
-                add(UIMessage(
-                    role = CoreMessageRole.USER,
-                    parts = allContextAttachments
-                ))
+                add(
+                    UIMessage(
+                        role = CoreMessageRole.USER,
+                        parts = allContextAttachments
+                    )
+                )
             }
 
             // 3. Chat History (L0)
@@ -1066,7 +1117,7 @@ class GenerationHandler(
                                 month == 7 && day == 1 -> "建党节"
                                 month == 8 && day == 1 -> "建军节"
                                 month == 9 && day == 10 -> "教师节"
-                                month == 10 &&  (day == 1 || day == 2 || day == 3 || day == 5 || day == 6 || day == 7) -> "国庆节"
+                                month == 10 && (day == 1 || day == 2 || day == 3 || day == 5 || day == 6 || day == 7) -> "国庆节"
                                 month == 11 && day == 8 -> "记者节"
                                 month == 12 && day == 24 -> "平安夜"
                                 month == 12 && day == 25 -> "圣诞节"
@@ -1074,7 +1125,8 @@ class GenerationHandler(
                             }
                             val dayOfWeek = now.dayOfWeek
                             val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
-                            val dayType = holiday ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "法定双休日" else "工作日"
+                            val dayType = holiday
+                                ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "法定双休日" else "工作日"
                             val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
                             val timeStr = "$dayName.($dayType), $formattedTime"
 
@@ -1141,7 +1193,10 @@ class GenerationHandler(
             }
         }
 
-        Log.d(TAG, "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, rawMessagesCount=${selectedMessages.size}")
+        Log.d(
+            TAG,
+            "buildMessages: summaries info - hasContextSummary=${!contextSummary.isNullOrBlank()}, rawMessagesCount=${selectedMessages.size}"
+        )
 
         val usedMemoriesList = selectedMemories.mapIndexedNotNull { index, memory ->
             val isBoost = memory.type == 2
@@ -1154,6 +1209,7 @@ class GenerationHandler(
                     val scoreStr = String.format(Locale.ENGLISH, "%.2f", memory.score ?: 0f)
                     context.getString(R.string.context_source_segment_match, scoreStr)
                 }
+
                 assistant.useRagMemoryRetrieval -> context.getString(R.string.context_source_contextually_relevant)
                 else -> context.getString(R.string.context_source_always_included)
             }
@@ -1392,7 +1448,11 @@ class GenerationHandler(
         if (tools.isNotEmpty()) {
             Log.i(TAG, "📦 [FIELD: tools] (Native Function Calling Definitions)")
             tools.forEach { tool ->
-                val schema = try { tool.parameters().toString() } catch (e: Exception) { "Error: ${e.message}" }
+                val schema = try {
+                    tool.parameters().toString()
+                } catch (e: Exception) {
+                    "Error: ${e.message}"
+                }
                 Log.i(TAG, "  📍 Tool: ${tool.name}")
                 Log.i(TAG, "     Description: ${tool.description}")
                 Log.i(TAG, "     Schema: $schema")
@@ -1448,12 +1508,14 @@ class GenerationHandler(
             }
         )
         if (stream) {
-            aiLoggingManager.addLog(AILogging.Generation(
-                params = params,
-                messages = currentMessages,
-                providerSetting = provider,
-                stream = true
-            ))
+            aiLoggingManager.addLog(
+                AILogging.Generation(
+                    params = params,
+                    messages = currentMessages,
+                    providerSetting = provider,
+                    stream = true
+                )
+            )
             providerImpl.streamText(
                 providerSetting = provider,
                 messages = internalMessages,
@@ -1501,12 +1563,14 @@ class GenerationHandler(
                 onUpdateMessages(currentMessages)
             }
         } else {
-            aiLoggingManager.addLog(AILogging.Generation(
-                params = params,
-                messages = currentMessages,
-                providerSetting = provider,
-                stream = false
-            ))
+            aiLoggingManager.addLog(
+                AILogging.Generation(
+                    params = params,
+                    messages = currentMessages,
+                    providerSetting = provider,
+                    stream = false
+                )
+            )
             val chunk = providerImpl.generateText(
                 providerSetting = provider,
                 messages = internalMessages,
@@ -1573,7 +1637,9 @@ class GenerationHandler(
             ).collect { chunk ->
                 currentMessages = currentMessages.handleMessageChunk(chunk)
                 translatedText = currentMessages.lastOrNull()?.toContentText() ?: ""
-                if (translatedText.isNotBlank()) { onStreamUpdate?.invoke(translatedText); emit(translatedText) }
+                if (translatedText.isNotBlank()) {
+                    onStreamUpdate?.invoke(translatedText); emit(translatedText)
+                }
             }
         } else {
             val currentMessages = listOf(UIMessage.user(sourceText))
@@ -1610,7 +1676,9 @@ class GenerationHandler(
     private fun sanitizeToolCallArguments(arguments: String): String {
         if (arguments.isBlank()) return "{}"
         val trimmed = arguments.trim()
-        var braceCount = 0; var inString = false; var escape = false
+        var braceCount = 0;
+        var inString = false;
+        var escape = false
         var startIndex = -1
         for ((index, char) in trimmed.withIndex()) {
             if (escape) {
@@ -1624,6 +1692,7 @@ class GenerationHandler(
                     if (startIndex == -1) startIndex = index
                     braceCount++
                 }
+
                 '}' -> if (!inString && startIndex != -1) {
                     braceCount--
                     if (braceCount == 0) {
