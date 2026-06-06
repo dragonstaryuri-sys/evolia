@@ -37,6 +37,8 @@ android {
         versionCode = 9
         versionName = "3.1.1"
 
+        buildConfigField("String", "GITHUB_REPO", "\"dragonstaryuri-sys/evolia\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {

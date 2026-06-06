@@ -2,7 +2,6 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
-import androidx.compose.animation.core.copy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -81,8 +80,6 @@ import java.time.Instant
 import java.time.DayOfWeek
 import java.time.format.TextStyle
 import kotlin.text.appendLine
-import kotlin.text.forEach
-import kotlin.text.isNotEmpty
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import kotlinx.coroutines.flow.first
 

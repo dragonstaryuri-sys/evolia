@@ -457,8 +457,9 @@ private fun UpdateAvailableBanner(
             updateInfo = showDialog!!,
             onDismissRequest = { showDialog = null },
             onConfirm = {
-                showDialog?.downloads?.firstOrNull()?.let {
-                    context.openUrl(it.url)
+                showDialog?.downloads?.firstOrNull()?.let { download ->
+                    // 修复：这里改为调用封装好的下载方法，它会自动处理镜像地址
+                    updateChecker.downloadUpdate(context, download)
                 }
                 showDialog = null
             }
@@ -475,7 +476,7 @@ private fun UpdateAvailableBanner(
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 shape = MaterialTheme.shapes.medium,
                 onClick = {
-                    // 点击后不再直接跳转，而是弹出详情弹窗
+                    // 点击后弹出详情弹窗
                     showDialog = updateInfo
                 }
             ) {

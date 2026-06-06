@@ -89,8 +89,9 @@ fun SettingAboutPage() {
             updateInfo = updateInfoToShow!!,
             onDismissRequest = { updateInfoToShow = null },
             onConfirm = {
-                updateInfoToShow?.downloads?.firstOrNull()?.let {
-                    context.openUrl(it.url)
+                updateInfoToShow?.downloads?.firstOrNull()?.let { download ->
+                    // 修复点：调用封装好的下载方法（会自动处理镜像和通知栏显示）
+                    updateChecker.downloadUpdate(context, download)
                 }
                 updateInfoToShow = null
             }

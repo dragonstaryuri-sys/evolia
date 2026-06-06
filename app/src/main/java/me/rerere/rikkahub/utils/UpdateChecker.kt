@@ -7,15 +7,11 @@ import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import androidx.core.net.toUri
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -23,11 +19,12 @@ import me.rerere.common.http.await
 import me.rerere.rikkahub.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
-// GitHub API 地址
-private const val GITHUB_API_URL = "https://api.github.com/repos/dragonstaryuri-sys/evolia/releases/latest"
+private const val TAG = "UpdateChecker"
+private val GITHUB_API_URL = "https://api.github.com/repos/${BuildConfig.GITHUB_REPO}/releases/latest"
 
-// GitHub 镜像站列表
+// 镜像站列表
 private val GITHUB_MIRRORS = listOf(
     "https://ghfile.geekertao.top/",
     "https://ghproxy.com/",
@@ -37,56 +34,45 @@ private val GITHUB_MIRRORS = listOf(
     "https://ghproxy.imciel.com/",
     "https://gh.jasonzeng.dev/",
     "https://gh.monlor.com/",
-    "https://proxy.gitwarp.com/"
+    "https://proxy.gitwarp.com/",
+    "https://gh.dpik.top/"
 )
-
-private const val TAG = "UpdateChecker"
 
 class UpdateChecker(private val client: OkHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
+    // 使用 IO 作用域处理耗时测速逻辑
+    private val checkerScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
+    /**
+     * 检查更新：仅负责拉取 Release 列表
+     */
     fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
         emit(UiState.Loading)
+
+        Log.d(TAG, "Fetching update info...")
         val response = client.newCall(
             Request.Builder()
                 .url(GITHUB_API_URL)
                 .get()
                 .addHeader("Accept", "application/vnd.github+json")
-                .addHeader(
-                    "User-Agent",
-                    "Evolia ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
-                )
+                .addHeader("User-Agent", "Evolia/${BuildConfig.VERSION_NAME}")
                 .build()
         ).await()
 
         if (response.isSuccessful) {
             val release = json.decodeFromString<GitHubRelease>(response.body.string())
-
-            // 获取架构信息
             val arch = getDeviceArchitecture()
-
-            // 挑选最快的镜像
-            val fastestMirror = withTimeoutOrNull(2000) {
-                findFastestMirror()
-            }
-            Log.d(TAG, "Fastest mirror: $fastestMirror")
 
             val downloads = release.assets
                 .filter { it.name.endsWith(".apk") }
                 .map { asset ->
-                    val originalUrl = asset.browserDownloadUrl
-                    val mirrorUrl = fastestMirror?.let { mirror ->
-                        if (mirror.endsWith("/")) "$mirror$originalUrl" else "$mirror/$originalUrl"
-                    }
                     UpdateDownload(
                         name = asset.name,
-                        url = originalUrl,
-                        mirrorUrl = mirrorUrl,
+                        url = asset.browserDownloadUrl,
                         size = formatFileSize(asset.size)
                     )
                 }
 
-            // 排序：优先匹配当前架构
             val sortedDownloads = downloads.sortedByDescending { download ->
                 when {
                     download.name.contains(arch, ignoreCase = true) -> 2
@@ -106,38 +92,94 @@ class UpdateChecker(private val client: OkHttpClient) {
                 )
             )
         } else {
-            throw Exception("Failed to fetch update info: ${response.code}")
+            throw Exception("GitHub API Failed: ${response.code}")
         }
-    }.catch {
-        it.printStackTrace()
-        emit(UiState.Error(it))
+    }.catch { e ->
+        Log.e(TAG, "Update check failed", e)
+        emit(UiState.Error(e))
     }.flowOn(Dispatchers.IO)
 
     /**
-     * 测试并寻找最快的镜像站
+     * 执行更新下载：
+     * 这里是核心，点击“确定”后先进行 3-5 秒的快速测速，然后再发起下载。
      */
+    fun downloadUpdate(context: Context, download: UpdateDownload) {
+        checkerScope.launch {
+            // 1. 弹出状态提示
+            Toast.makeText(context, "🚀 正在为您匹配最快下载通道...", Toast.LENGTH_SHORT).show()
+
+            // 2. 实时测速（设置 5 秒总超时，并行探测）
+            val fastestMirror = withTimeoutOrNull(5000) {
+                Log.i(TAG, "Starting real-time mirror speed test...")
+                findFastestMirror()
+            }
+
+            // 3. 决定下载地址
+            val finalUrl = fastestMirror?.let { mirror ->
+                val prefix = if (mirror.endsWith("/")) mirror else "$mirror/"
+                "$prefix${download.url}"
+            } ?: download.url
+
+            Log.i(TAG, "Speed test result -> Mirror: ${fastestMirror ?: "NONE"}, Final URL: $finalUrl")
+
+            // 4. 给用户反馈
+            if (fastestMirror != null) {
+                Toast.makeText(context, "✨ 已连接加速节点，正在起飞！", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "⚠️ 镜像连接超时，正在直连 GitHub...", Toast.LENGTH_SHORT).show()
+            }
+
+            // 5. 提交系统下载任务
+            try {
+                val request = DownloadManager.Request(finalUrl.toUri()).apply {
+                    setTitle("Evolia 更新下载")
+                    setDescription("文件名: ${download.name}")
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, download.name)
+                    setMimeType("application/vnd.android.package-archive")
+                }
+                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                dm.enqueue(request)
+            } catch (e: Exception) {
+                Log.e(TAG, "DownloadManager Error", e)
+                context.openUrl(finalUrl)
+            }
+        }
+    }
+
     private suspend fun findFastestMirror(): String? = withContext(Dispatchers.IO) {
-        GITHUB_MIRRORS.map { mirror ->
+        val testClient = client.newBuilder()
+            .connectTimeout(2500, TimeUnit.MILLISECONDS)
+            .readTimeout(2500, TimeUnit.MILLISECONDS)
+            .build()
+
+        val tasks = GITHUB_MIRRORS.map { mirror ->
             async {
                 val start = System.currentTimeMillis()
                 try {
-                    // 使用 HEAD 请求测试延迟
                     val request = Request.Builder()
                         .url(mirror)
-                        .head()
+                        .get()
+                        .addHeader("User-Agent", "Mozilla/5.0")
                         .build()
-                    client.newCall(request).await().use { resp ->
-                        if (resp.isSuccessful) {
-                            mirror to (System.currentTimeMillis() - start)
-                        } else {
-                            null
-                        }
+
+                    testClient.newCall(request).await().use { resp ->
+                        val delay = System.currentTimeMillis() - start
+                        // 镜像站根目录能响应（HTTP < 500）即为可用
+                        if (resp.code < 500) {
+                            Log.d(TAG, "Mirror available: $mirror ($delay ms)")
+                            mirror to delay
+                        } else null
                     }
                 } catch (e: Exception) {
                     null
                 }
             }
-        }.awaitAll().filterNotNull().minByOrNull { it.second }?.first
+        }
+
+        // 等待所有结果，并挑选最快的
+        tasks.awaitAll().filterNotNull().minByOrNull { it.second }?.first
     }
 
     private fun getDeviceArchitecture(): String {
@@ -156,28 +198,6 @@ class UpdateChecker(private val client: OkHttpClient) {
             bytes >= 1_048_576 -> String.format("%.1f MB", bytes / 1_048_576.0)
             bytes >= 1_024 -> String.format("%.1f KB", bytes / 1_024.0)
             else -> "$bytes B"
-        }
-    }
-
-    fun downloadUpdate(context: Context, download: UpdateDownload) {
-        runCatching {
-            // 优先使用镜像地址，如果没有则使用原始地址
-            val downloadUrl = download.mirrorUrl ?: download.url
-            Log.d(TAG, "Downloading update from: $downloadUrl")
-
-            val request = DownloadManager.Request(downloadUrl.toUri()).apply {
-                setTitle("Evolia Update")
-                setDescription("Downloading ${download.name}...")
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, download.name)
-                setMimeType("application/vnd.android.package-archive")
-            }
-            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            dm.enqueue(request)
-        }.onFailure {
-            Toast.makeText(context, "Failed to download update", Toast.LENGTH_SHORT).show()
-            context.openUrl(download.url)
         }
     }
 }
@@ -202,7 +222,6 @@ data class GitHubAsset(
 data class UpdateDownload(
     val name: String,
     val url: String,
-    val mirrorUrl: String? = null,
     val size: String
 )
 
@@ -214,9 +233,6 @@ data class UpdateInfo(
     val downloads: List<UpdateDownload>
 )
 
-/**
- * 版本号值类
- */
 @JvmInline
 value class Version(val value: String) : Comparable<Version> {
     private fun parseVersion(): List<Int> = value.split(".").map { it.toIntOrNull() ?: 0 }
