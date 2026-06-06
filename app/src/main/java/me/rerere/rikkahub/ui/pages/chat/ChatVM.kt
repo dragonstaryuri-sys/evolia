@@ -117,6 +117,7 @@ class ChatVM(
             }
             items.addAll(c.messageNodes.map { ChatUIItem.Message(it) })
         }
+        // 核心修复：提供正序列表（最早在前），由 UI 层 ChatList 负责反转适配 reverseLayout
         items
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 

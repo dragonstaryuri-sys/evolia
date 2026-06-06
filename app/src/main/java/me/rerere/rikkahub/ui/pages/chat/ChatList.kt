@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -108,7 +107,6 @@ import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.utils.plus
 import kotlin.uuid.Uuid
-import androidx.compose.ui.platform.LocalContext
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
@@ -117,7 +115,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.utils.openUrl
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Memory
 import kotlin.time.Duration.Companion.minutes
@@ -154,16 +151,14 @@ fun ChatList(
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
 
-    // 处理来自外部（如全局搜索）的初始跳转请求
     LaunchedEffect(initialSearchQuery, uiItems) {
         if (!initialSearchQuery.isNullOrBlank()) {
-            // 在 uiItems 中搜索匹配的消息节点，支持聚合/虚拟模式
             val node = uiItems.filterIsInstance<ChatVM.ChatUIItem.Message>()
                 .map { it.node }
-                .find { it.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true) }
+                // uiItems 现在是正序，使用 findLast 获取最近的匹配项
+                .findLast { it.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true) }
 
             if (node != null) {
-                // 增加小延迟确保列表已完成布局和测量
                 delay(150)
                 scrollToNodeId = node.id
             }
@@ -239,7 +234,6 @@ private fun SharedTransitionScope.ChatListNormal(
     val loadingState by rememberUpdatedState(loading)
     var isRecentScroll by remember { mutableStateOf(false) }
     var userScrolledUp by remember { mutableStateOf(false) }
-    val context = LocalContext.current
     val navController = LocalNavController.current
 
     val currentConversationState = rememberUpdatedState(conversation)
@@ -268,28 +262,20 @@ private fun SharedTransitionScope.ChatListNormal(
     var isMemoryLoading by remember { mutableStateOf(false) }
 
     fun List<LazyListItemInfo>.isAtBottom(): Boolean {
-        val lastItem = lastOrNull() ?: return false
-        if (lastItem.key == LoadingIndicatorKey || lastItem.key == ScrollBottomKey) {
-            return true
-        }
-        val hasScrollBottom = any { it.key == ScrollBottomKey }
-        if (hasScrollBottom) return true
-        return !state.canScrollForward || (lastItem.offset + lastItem.size <= state.layoutInfo.viewportEndOffset + lastItem.size * 0.15 + 32)
+        // 在 reverseLayout 中，列表底部的 index 是 0
+        return state.firstVisibleItemIndex == 0
     }
 
-    // 聊天选择
     val selectedItems = remember { mutableStateListOf<Uuid>() }
     var selecting by remember { mutableStateOf(false) }
     var showExportSheet by remember { mutableStateOf(false) }
 
-    // 自动跟随键盘滚动
     ImeLazyListAutoScroller(lazyListState = state)
 
     Box(
-        modifier = Modifier
-            .fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
     ) {
-        // Detect user scrolling up to suppress auto-scroll
+        // 自动跟随滚动逻辑
         LaunchedEffect(state) {
             var previousFirstIndex = state.firstVisibleItemIndex
             var previousFirstOffset = state.firstVisibleItemScrollOffset
@@ -297,8 +283,9 @@ private fun SharedTransitionScope.ChatListNormal(
                 Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
             }.collect { (isScrolling, firstIndex, firstOffset) ->
                 if (isScrolling && loadingState) {
-                    val scrolledUp = firstIndex < previousFirstIndex ||
-                        (firstIndex == previousFirstIndex && firstOffset < previousFirstOffset)
+                    // 在 reverseLayout 中，向上滚动是 index 变大
+                    val scrolledUp = firstIndex > previousFirstIndex ||
+                        (firstIndex == previousFirstIndex && firstOffset > previousFirstOffset)
                     if (scrolledUp && !userScrolledUp) {
                         userScrolledUp = true
                     }
@@ -312,12 +299,9 @@ private fun SharedTransitionScope.ChatListNormal(
         }
 
         LaunchedEffect(loading) {
-            if (!loading) {
-                userScrolledUp = false
-            }
+            if (!loading) userScrolledUp = false
         }
 
-        // 监听滚动状态来显示/隐藏消息导航按钮
         LaunchedEffect(state) {
             snapshotFlow {
                 state.isScrollInProgress || !state.layoutInfo.visibleItemsInfo.isAtBottom()
@@ -354,14 +338,9 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-
             uiItems.forEach { item ->
                 when (item) {
-                    is ChatVM.ChatUIItem.Message -> {
-                        if (!item.node.currentMessage.skipContext) {
-                            currentNodes.add(item.node)
-                        }
-                    }
+                    is ChatVM.ChatUIItem.Message -> if (!item.node.currentMessage.skipContext) currentNodes.add(item.node)
                     is ChatVM.ChatUIItem.Separator -> {
                         flush()
                         result.add(ChatListDisplayItem.Separator(item.text))
@@ -369,24 +348,18 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            if (needsPhantomLoadingTurn) {
-                currentNodes.add(MessageNode.of(UIMessage.assistant("")))
-            }
-
+            if (needsPhantomLoadingTurn) currentNodes.add(MessageNode.of(UIMessage.assistant("")))
             flush()
-            result
+            // 关键：反转显示列表，使最新消息处于 index 0，配合 reverseLayout 渲染在最底部
+            result.asReversed()
         }
 
-        // 核心跳转逻辑：在包含时间标签、分隔线的真实 UI 列表中查找索引
         LaunchedEffect(displayItems, scrollToNodeId) {
             val targetId = scrollToNodeId ?: return@LaunchedEffect
-
             val realIndex = displayItems.indexOfFirst { item ->
                 item is ChatListDisplayItem.TurnGroup && item.group.nodes.any { it.id == targetId }
             }
-
             if (realIndex >= 0) {
-                // 给 UI 转场留出一点稳定时间，防止长列表首尾跳转导致的抖动
                 delay(200)
                 state.animateScrollToItem(realIndex)
                 onScrolledToNode()
@@ -395,7 +368,11 @@ private fun SharedTransitionScope.ChatListNormal(
 
         LazyColumn(
             state = state,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) + PaddingValues(bottom = 32.dp) + innerPadding + androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
+            reverseLayout = true,
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 16.dp) +
+                PaddingValues(top = 32.dp) +
+                innerPadding +
+                androidx.compose.foundation.layout.WindowInsets.ime.asPaddingValues(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier
@@ -405,15 +382,20 @@ private fun SharedTransitionScope.ChatListNormal(
                 )
                 .fillMaxSize(),
         ) {
+            // 在倒序布局中，ScrollBottomKey（列表视觉终点，逻辑起点）放在 DSL 最前
+            item(ScrollBottomKey) {
+                Spacer(Modifier.fillMaxWidth().height(5.dp))
+            }
+
             itemsIndexed(
                 items = displayItems,
                 key = { index, item ->
                     when (item) {
                         is ChatListDisplayItem.TurnGroup -> {
-                            if (needsPhantomLoadingTurn && index == displayItems.lastIndex) "pending_assistant"
+                            if (needsPhantomLoadingTurn && index == 0) "pending_assistant"
                             else item.group.firstNode.id
                         }
-                        is ChatListDisplayItem.Separator -> "sep_${item.text.hashCode()}_${item.text.take(5)}"
+                        is ChatListDisplayItem.Separator -> "sep_${item.text.hashCode()}"
                         is ChatListDisplayItem.Time -> "time_${item.timeText.hashCode()}"
                     }
                 },
@@ -428,15 +410,13 @@ private fun SharedTransitionScope.ChatListNormal(
                             ListSelectableItem(
                                 isSelected = isSelected,
                                 onSelectChange = { checked ->
-                                    if (checked) {
-                                        group.nodes.forEach { selectedItems.add(it.id) }
-                                    } else {
-                                        group.nodes.forEach { selectedItems.remove(it.id) }
-                                    }
+                                    if (checked) group.nodes.forEach { selectedItems.add(it.id) }
+                                    else group.nodes.forEach { selectedItems.remove(it.id) }
                                 },
                                 enabled = selecting,
                             ) {
-                                val isLastTurn = index == displayItems.lastIndex
+                                // 倒序中，最新的 Turn 在 index 0 (或 index 1 如果 index 0 是 phantom)
+                                val isLastTurn = index == 0 || (needsPhantomLoadingTurn && index == 1)
                                 val showRegenerate by remember(group.role, isLastTurn) {
                                     derivedStateOf {
                                         when (group.role) {
@@ -452,18 +432,10 @@ private fun SharedTransitionScope.ChatListNormal(
                                     model = group.lastNode.currentMessage.modelId?.let { settings.findModelById(it) },
                                     assistant = settings.getAssistantById(conversation.assistantId),
                                     loading = loading && isLastTurn,
-                                    onRegenerate = { node ->
-                                        onRegenerate(node.currentMessage)
-                                    },
-                                    onEdit = { node ->
-                                        onEdit(node.currentMessage)
-                                    },
-                                    onFork = { node ->
-                                        onForkMessage(node.currentMessage)
-                                    },
-                                    onDelete = { node ->
-                                        onDelete(node.currentMessage)
-                                    },
+                                    onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                                    onEdit = { node -> onEdit(node.currentMessage) },
+                                    onFork = { node -> onForkMessage(node.currentMessage) },
+                                    onDelete = { node -> onDelete(node.currentMessage) },
                                     onShare = { node ->
                                         selecting = true
                                         selectedItems.clear()
@@ -474,9 +446,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                                 .map { it.id })
                                         }
                                     },
-                                    onUpdate = {
-                                        onUpdateMessage(it)
-                                    },
+                                    onUpdate = { onUpdateMessage(it) },
                                     onEditLorebookEntry = { entry ->
                                         navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
                                     },
@@ -492,18 +462,15 @@ private fun SharedTransitionScope.ChatListNormal(
                                                 return@launch
                                             }
                                             val fullContent = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
-                                            if (fullContent != null) {
-                                                previewingMemory = memory.copy(memoryContent = fullContent)
-                                            }
-                                            else {
-                                                previewingMemory = memory.copy(memoryContent = "未找到完整内容")
-                                            }
+                                            previewingMemory = memory.copy(memoryContent = fullContent ?: "未找到完整内容")
                                             isMemoryLoading = false
                                         }
                                     },
                                     showRegenerate = showRegenerate,
                                 )
                             }
+
+                            // 找回 truncateNode 逻辑：上下文截断线
                             val truncateNode = group.nodes.find { node ->
                                 conversation.messageNodes.indexOf(node) == conversation.truncateIndex - 1
                             }
@@ -511,9 +478,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier
-                                        .padding(vertical = 8.dp)
-                                        .fillMaxWidth()
+                                    modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()
                                 ) {
                                     HorizontalDivider(modifier = Modifier.weight(1f))
                                     Text(
@@ -526,144 +491,59 @@ private fun SharedTransitionScope.ChatListNormal(
                         }
                     }
                     is ChatListDisplayItem.Separator -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = item.text,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                            Text(text = item.text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
                         }
                     }
                     is ChatListDisplayItem.Time -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = item.timeText,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                            Text(text = item.timeText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outlineVariant)
                         }
                     }
                 }
             }
-
-            item(ScrollBottomKey) {
-                Spacer(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                )
-            }
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             AnimatedVisibility(
                 visible = selecting,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = -(48).dp),
-                enter = slideInVertically(
-                    initialOffsetY = { it * 2 },
-                ),
-                exit = slideOutVertically(
-                    targetOffsetY = { it * 2 },
-                ),
+                modifier = Modifier.align(Alignment.BottomCenter).offset(y = -(48).dp),
+                enter = slideInVertically(initialOffsetY = { it * 2 }),
+                exit = slideOutVertically(targetOffsetY = { it * 2 }),
             ) {
-                HorizontalFloatingToolbar(
-                    expanded = true,
-                ) {
-                    Tooltip(
-                        tooltip = {
-                            Text("Clear selection")
-                        }
-                    ) {
-                        IconButton(
-                            onClick = {
-                                selecting = false
-                                selectedItems.clear()
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Close, null)
-                        }
+                HorizontalFloatingToolbar(expanded = true) {
+                    Tooltip(tooltip = { Text("Clear selection") }) {
+                        IconButton(onClick = { selecting = false; selectedItems.clear() }) { Icon(Icons.Rounded.Close, null) }
                     }
-                    Tooltip(
-                        tooltip = {
-                            Text("Select all")
-                        }
-                    ) {
-                        IconButton(
-                            onClick = {
-                                if (selectedItems.isNotEmpty()) {
-                                    selectedItems.clear()
-                                } else {
-                                    selectedItems.addAll(conversation.messageNodes.map { it.id })
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Rounded.TouchApp, null)
-                        }
+                    Tooltip(tooltip = { Text("Select all") }) {
+                        IconButton(onClick = {
+                            if (selectedItems.isNotEmpty()) selectedItems.clear()
+                            else selectedItems.addAll(conversation.messageNodes.map { it.id })
+                        }) { Icon(Icons.Rounded.TouchApp, null) }
                     }
-                    Tooltip(
-                        tooltip = {
-                            Text("Confirm")
-                        }
-                    ) {
-                        FilledIconButton(
-                            onClick = {
-                                selecting = false
-                                val messages = conversation.messageNodes.filter { it.id in selectedItems }
-                                if (messages.isNotEmpty()) {
-                                    showExportSheet = true
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Check, null)
-                        }
+                    Tooltip(tooltip = { Text("Confirm") }) {
+                        FilledIconButton(onClick = {
+                            selecting = false
+                            if (selectedItems.isNotEmpty()) showExportSheet = true
+                        }) { Icon(Icons.Rounded.Check, null) }
                     }
                 }
             }
 
             ChatExportSheet(
                 visible = showExportSheet,
-                onDismissRequest = {
-                    showExportSheet = false
-                    selectedItems.clear()
-                },
+                onDismissRequest = { showExportSheet = false; selectedItems.clear() },
                 conversation = conversation,
-                selectedMessages = conversation.messageNodes.filter { it.id in selectedItems }
-                    .map { it.currentMessage }
+                selectedMessages = conversation.messageNodes.filter { it.id in selectedItems }.map { it.currentMessage }
             )
 
             previewingMemory?.let { memory ->
-                MemoryPreviewDialog(
-                    memory = memory,
-                    isLoading = isMemoryLoading,
-                    onDismissRequest = {
-                        previewingMemory = null
-                        isMemoryLoading = false
-                    }
-                )
+                MemoryPreviewDialog(memory = memory, isLoading = isMemoryLoading, onDismissRequest = { previewingMemory = null; isMemoryLoading = false })
             }
 
-            val captureProgress = LocalScrollCaptureInProgress.current
-            val effectiveDisplay = settings.getEffectiveDisplaySetting()
-
             MessageJumper(
-                show = isRecentScroll && !state.isScrollInProgress && effectiveDisplay.showMessageJumper && !captureProgress,
-                onLeft = effectiveDisplay.messageJumperOnLeft,
+                show = isRecentScroll && !state.isScrollInProgress && settings.getEffectiveDisplaySetting().showMessageJumper && !LocalScrollCaptureInProgress.current,
+                onLeft = settings.getEffectiveDisplaySetting().messageJumperOnLeft,
                 scope = scope,
                 state = state
             )
@@ -677,60 +557,27 @@ private fun formatTime(dateTime: LocalDateTime): String {
     return "$hour:$minute"
 }
 
-private fun extractMatchingSnippet(
-    text: String,
-    query: String
-): String {
-    if (query.isBlank()) {
-        return text
-    }
 
+private fun extractMatchingSnippet(text: String, query: String): String {
+    if (query.isBlank()) return text
     val matchIndex = text.indexOf(query, ignoreCase = true)
-    if (matchIndex == -1) {
-        return text
-    }
-
+    if (matchIndex == -1) return text
     val snippet = text.substring(matchIndex)
-
-    return if (matchIndex > 0) {
-        "...$snippet"
-    } else {
-        snippet
-    }
+    return if (matchIndex > 0) "...$snippet" else snippet
 }
 
-private fun buildHighlightedText(
-    text: String,
-    query: String,
-    highlightColor: Color
-): AnnotatedString {
-    if (query.isBlank()) {
-        return AnnotatedString(text)
-    }
-
+private fun buildHighlightedText(text: String, query: String, highlightColor: Color): AnnotatedString {
+    if (query.isBlank()) return AnnotatedString(text)
     return buildAnnotatedString {
         var startIndex = 0
         var index = text.indexOf(query, startIndex, ignoreCase = true)
-
         while (index >= 0) {
             append(text.substring(startIndex, index))
-
-            withStyle(
-                style = SpanStyle(
-                    background = highlightColor,
-                    color = Color.Black
-                )
-            ) {
-                append(text.substring(index, index + query.length))
-            }
-
+            withStyle(style = SpanStyle(background = highlightColor, color = Color.Black)) { append(text.substring(index, index + query.length)) }
             startIndex = index + query.length
             index = text.indexOf(query, startIndex, ignoreCase = true)
         }
-
-        if (startIndex < text.length) {
-            append(text.substring(startIndex))
-        }
+        if (startIndex < text.length) append(text.substring(startIndex))
     }
 }
 
@@ -747,48 +594,24 @@ private fun SharedTransitionScope.ChatListPreview(
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
     val previewTopPadding = 20.dp
+    // 修复点：在 remember 外部获取 Composable 颜色
+    val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
 
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
         val visibleNodes = conversation.messageNodes.filter { !it.currentMessage.skipContext }
-        if (searchQuery.isBlank()) {
-            conversation.messageNodes
-        } else {
-            visibleNodes.filter { node ->
-                node.currentMessage.toText().contains(searchQuery, ignoreCase = true)
-            }
-        }
+        if (searchQuery.isBlank()) conversation.messageNodes
+        else visibleNodes.filter { it.currentMessage.toText().contains(searchQuery, ignoreCase = true) }
     }
 
-    Column(
-        modifier = Modifier
-            .padding(innerPadding)
-            .padding(top = previewTopPadding)
-            .fillMaxSize(),
-    ) {
+    Column(modifier = Modifier.padding(innerPadding).padding(top = previewTopPadding).fillMaxSize()) {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             placeholder = { Text(stringResource(R.string.chat_page_search_placeholder)) },
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Rounded.Search,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-            },
+            leadingIcon = { Icon(Icons.Rounded.Search, null, modifier = Modifier.size(20.dp)) },
             trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Clear",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+                if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Rounded.Close, null, modifier = Modifier.size(20.dp)) }
             },
             singleLine = true,
             shape = CircleShape,
@@ -799,61 +622,17 @@ private fun SharedTransitionScope.ChatListPreview(
             state = state,
             contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier
-                .sharedBounds(
-                    sharedContentState = rememberSharedContentState(key = "conversation_list_preview"),
-                    animatedVisibilityScope = animatedVisibilityScope
-                )
-                .fillMaxWidth()
-                .weight(1f),
+            modifier = Modifier.sharedBounds(rememberSharedContentState(key = "conversation_list_preview"), animatedVisibilityScope).fillMaxWidth().weight(1f),
         ) {
-            itemsIndexed(
-                items = filteredMessages,
-                key = { index, item -> item.id },
-            ) { _, node ->
+            // 在预览模式下，通常使用正序。如果列表较长，可以考虑反序显示最新。
+            // 保持正序，因为它主要用于全文搜索。
+            itemsIndexed(items = filteredMessages, key = { _, item -> item.id }) { _, node ->
                 val message = node.currentMessage
                 val isUser = message.role == me.rerere.ai.core.MessageRole.USER
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (!isUser) Modifier.padding(end = 24.dp) else Modifier
-                        ),
-                    horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
-                ) {
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .clickable {
-                                    onJumpToMessage(node)
-                                }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
-                            val highlightedText = remember(searchQuery, message) {
-                                val fullText = message.toText().trim().ifBlank { "[...]" }
-                                val messageText = extractMatchingSnippet(
-                                    text = fullText,
-                                    query = searchQuery
-                                )
-                                buildHighlightedText(
-                                    text = messageText,
-                                    query = searchQuery,
-                                    highlightColor = highlightColor
-                                )
-                            }
-                            Text(
-                                text = highlightedText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
+                Column(modifier = Modifier.fillMaxWidth().then(if (!isUser) Modifier.padding(end = 24.dp) else Modifier), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer) {
+                        val highlightedText = remember(searchQuery, message, highlightColor) { buildHighlightedText(extractMatchingSnippet(message.toText().trim().ifBlank { "[...]" }, searchQuery), searchQuery, highlightColor) }
+                        Text(text = highlightedText, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { onJumpToMessage(node) }.padding(horizontal = 8.dp, vertical = 6.dp))
                     }
                 }
             }
@@ -861,178 +640,29 @@ private fun SharedTransitionScope.ChatListPreview(
     }
 }
 
-
 @Composable
-private fun BoxScope.MessageJumper(
-    show: Boolean,
-    onLeft: Boolean,
-    scope: CoroutineScope,
-    state: LazyListState
-) {
+private fun BoxScope.MessageJumper(show: Boolean, onLeft: Boolean, scope: CoroutineScope, state: LazyListState) {
     AnimatedVisibility(
         visible = show,
         modifier = Modifier.align(if (onLeft) Alignment.CenterStart else Alignment.CenterEnd),
-        enter = slideInHorizontally(
-            initialOffsetX = { if (onLeft) -it * 2 else it * 2 },
-        ),
-        exit = slideOutHorizontally(
-            targetOffsetX = { if (onLeft) -it * 2 else it * 2 },
-        )
+        enter = slideInHorizontally(initialOffsetX = { if (onLeft) -it * 2 else it * 2 }),
+        exit = slideOutHorizontally(targetOffsetX = { if (onLeft) -it * 2 else it * 2 })
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Surface(
-                onClick = {
-                    scope.launch {
-                        state.animateScrollToItem(0)
-                    }
-                },
-                shape = CircleShape,
-                tonalElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardDoubleArrowUp,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(4.dp)
-                )
-            }
-            Surface(
-                onClick = {
-                    scope.launch {
-                        state.animateScrollToItem(
-                            (state.firstVisibleItemIndex - 1).fastCoerceAtLeast(
-                                0
-                            )
-                        )
-                    }
-                },
-                shape = CircleShape,
-                tonalElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowUp,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(4.dp)
-                )
-            }
-            Surface(
-                onClick = {
-                    scope.launch {
-                        state.animateScrollToItem(state.firstVisibleItemIndex + 1)
-                    }
-                },
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(4.dp)
-                )
-            }
-            Surface(
-                onClick = {
-                    scope.launch {
-                        state.animateScrollToItem(state.layoutInfo.totalItemsCount - 1)
-                    }
-                },
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceColorAtElevation(
-                    4.dp
-                ).copy(alpha = 0.65f),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardDoubleArrowDown,
-                    contentDescription = stringResource(R.string.chat_page_scroll_to_bottom),
-                    modifier = Modifier
-                        .padding(4.dp)
-                )
-            }
+        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(onClick = { scope.launch { state.animateScrollToItem(state.layoutInfo.totalItemsCount - 1) } }, shape = CircleShape, tonalElevation = 4.dp, color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)) { Icon(Icons.Rounded.KeyboardDoubleArrowUp, null, modifier = Modifier.padding(4.dp)) }
+            Surface(onClick = { scope.launch { state.animateScrollToItem(state.firstVisibleItemIndex + 1) } }, shape = CircleShape, tonalElevation = 4.dp, color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)) { Icon(Icons.Rounded.KeyboardArrowUp, null, modifier = Modifier.padding(4.dp)) }
+            Surface(onClick = { scope.launch { state.animateScrollToItem((state.firstVisibleItemIndex - 1).fastCoerceAtLeast(0)) } }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)) { Icon(Icons.Rounded.KeyboardArrowDown, null, modifier = Modifier.padding(4.dp)) }
+            Surface(onClick = { scope.launch { state.animateScrollToItem(0) } }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp).copy(alpha = 0.65f)) { Icon(Icons.Rounded.KeyboardDoubleArrowDown, stringResource(R.string.chat_page_scroll_to_bottom), modifier = Modifier.padding(4.dp)) }
         }
     }
 }
 
-
 @Composable
-fun MemoryPreviewDialog(    memory: me.rerere.ai.ui.UsedMemory,
-                            isLoading: Boolean,
-                            onDismissRequest: () -> Unit
-) {
+fun MemoryPreviewDialog(memory: me.rerere.ai.ui.UsedMemory, isLoading: Boolean, onDismissRequest: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
-        confirmButton = {
-            TextButton(onClick = onDismissRequest) {
-                Text(stringResource(id = android.R.string.ok))
-            }
-        },
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(
-                    imageVector = when(memory.memoryType) {
-                        0 -> Icons.Rounded.Memory
-                        2 -> Icons.Rounded.Bolt
-                        else -> Icons.Rounded.History
-                    },
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = if (memory.memoryType == 0)
-                        stringResource(R.string.context_sources_core_memory)
-                    else
-                        stringResource(R.string.context_sources_episodic_memory)
-                )
-            }
-        },
-        text = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .animateContentSize(animationSpec = androidx.compose.animation.core.spring(stiffness = 300f))
-                    .heightIn(min = 120.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                } else {
-                    Column(
-                        modifier = Modifier.verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        ) {
-                            Text(
-                                text = memory.memoryContent,
-                                modifier = Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-
-                        memory.activationReason?.let { reason ->
-                            Text(
-                                text = stringResource(R.string.context_sources_activation_reason, reason),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        confirmButton = { TextButton(onClick = onDismissRequest) { Text(stringResource(id = android.R.string.ok)) } },
+        title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Icon(imageVector = when(memory.memoryType) { 0 -> Icons.Rounded.Memory; 2 -> Icons.Rounded.Bolt; else -> Icons.Rounded.History }, contentDescription = null, tint = MaterialTheme.colorScheme.primary); Text(text = if (memory.memoryType == 0) stringResource(R.string.context_sources_core_memory) else stringResource(R.string.context_sources_episodic_memory)) } },
+        text = { Box(modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = spring(stiffness = 300f)).heightIn(min = 120.dp), contentAlignment = Alignment.Center) { if (isLoading) CircularProgressIndicator(modifier = Modifier.size(36.dp)) else Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) { Text(text = memory.memoryContent, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium) } } } }
     )
 }

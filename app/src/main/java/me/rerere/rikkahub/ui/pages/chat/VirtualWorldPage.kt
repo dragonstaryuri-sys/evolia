@@ -172,11 +172,6 @@ fun VirtualWorldPage(id: Uuid) {
     val chatListState = rememberLazyListState()
     LaunchedEffect(isConversationLoaded) {
         if (isConversationLoaded && !vm.chatListInitialized) {
-            snapshotFlow { chatListState.layoutInfo.totalItemsCount }
-                .filter { it > 0 }
-                .first()
-            delay(150)
-            chatListState.scrollToItem(chatListState.layoutInfo.totalItemsCount - 1)
             vm.chatListInitialized = true
         }
     }

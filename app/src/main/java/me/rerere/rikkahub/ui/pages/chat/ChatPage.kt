@@ -166,13 +166,9 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val chatListState = rememberLazyListState()
     LaunchedEffect(isConversationLoaded) {
         if (isConversationLoaded && !vm.chatListInitialized) {
-            snapshotFlow { chatListState.layoutInfo.totalItemsCount }
-                .filter { it > 0 }
-                .first()
-
-            delay(150)
-
-            chatListState.scrollToItem(chatListState.layoutInfo.totalItemsCount - 1)
+            // 核心变动：删除了 scrollToItem 逻辑。
+            // 因为 ChatList 现在使用 reverseLayout=true 且数据已倒序，
+            // 初始渲染时 index 0 (最新消息) 就在底部，无需手动滚动。
             vm.chatListInitialized = true
         }
     }
