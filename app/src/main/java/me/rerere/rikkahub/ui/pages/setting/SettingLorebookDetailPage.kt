@@ -867,16 +867,14 @@ private fun EntryEditorSheet(
                 label = { Text(stringResource(R.string.lorebook_entry_injection_position)) }
             ) {
                 Select(
-                    options = InjectionPosition.entries,
+                    options = remember { listOf(InjectionPosition.BEFORE_SYSTEM, InjectionPosition.AFTER_SYSTEM) },
                     selectedOption = injectionPosition,
                     onOptionSelected = { injectionPosition = it },
                     optionToString = { position ->
                         when (position) {
                             InjectionPosition.BEFORE_SYSTEM -> stringResource(R.string.injection_position_before_system)
                             InjectionPosition.AFTER_SYSTEM -> stringResource(R.string.injection_position_after_system)
-                            InjectionPosition.TOP_OF_CHAT -> stringResource(R.string.injection_position_top_of_chat)
-                            InjectionPosition.BEFORE_LATEST -> stringResource(R.string.injection_position_before_latest)
-                            InjectionPosition.AT_DEPTH -> stringResource(R.string.injection_position_at_depth)
+                            else -> ""
                         }
                     },
                     modifier = Modifier.fillMaxWidth()

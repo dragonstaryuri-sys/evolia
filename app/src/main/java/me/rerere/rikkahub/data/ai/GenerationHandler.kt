@@ -603,10 +603,11 @@ class GenerationHandler(
             )
         }
 
+        // Silent compatibility: Treat all non-BEFORE_SYSTEM positions as AFTER_SYSTEM
         val beforeSystemModes = enabledModes.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
-        val afterSystemModes = enabledModes.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
+        val afterSystemModes = enabledModes.filter { it.injectionPosition != InjectionPosition.BEFORE_SYSTEM }
         val beforeSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.BEFORE_SYSTEM }
-        val afterSystemEntries = activatedEntries.filter { it.injectionPosition == InjectionPosition.AFTER_SYSTEM }
+        val afterSystemEntries = activatedEntries.filter { it.injectionPosition != InjectionPosition.BEFORE_SYSTEM }
 
         val staticSystemPromptBuilder = StringBuilder()
         val modeDescription = if (assistant.isMain && assistant.isVirtualWorldMode) {
