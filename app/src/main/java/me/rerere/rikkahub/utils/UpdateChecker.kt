@@ -4,13 +4,18 @@ import android.app.DownloadManager
 import android.content.Context
 import android.os.Build
 import android.os.Environment
+import android.util.Log
 import android.widget.Toast
 import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -22,67 +27,118 @@ import okhttp3.Request
 // GitHub API 地址
 private const val GITHUB_API_URL = "https://api.github.com/repos/dragonstaryuri-sys/evolia/releases/latest"
 
+// GitHub 镜像站列表
+private val GITHUB_MIRRORS = listOf(
+    "https://ghfile.geekertao.top/",
+    "https://ghproxy.com/",
+    "https://ghfast.top/",
+    "https://gh.ddlc.top/",
+    "https://ghproxy.cc/",
+    "https://ghproxy.imciel.com/",
+    "https://gh.jasonzeng.dev/",
+    "https://gh.monlor.com/",
+    "https://proxy.gitwarp.com/"
+)
+
+private const val TAG = "UpdateChecker"
+
 class UpdateChecker(private val client: OkHttpClient) {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun checkUpdate(): Flow<UiState<UpdateInfo>> = flow {
         emit(UiState.Loading)
-        emit(
-            UiState.Success(
-                data = try {
-                    val response = client.newCall(
-                        Request.Builder()
-                            .url(GITHUB_API_URL)
-                            .get()
-                            .addHeader("Accept", "application/vnd.github+json")
-                            .addHeader(
-                                "User-Agent",
-                                "Evolia ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
-                            )
-                            .build()
-                    ).await()
-                    if (response.isSuccessful) {
-                        val release = json.decodeFromString<GitHubRelease>(response.body.string())
+        val response = client.newCall(
+            Request.Builder()
+                .url(GITHUB_API_URL)
+                .get()
+                .addHeader("Accept", "application/vnd.github+json")
+                .addHeader(
+                    "User-Agent",
+                    "Evolia ${BuildConfig.VERSION_NAME} #${BuildConfig.VERSION_CODE}"
+                )
+                .build()
+        ).await()
 
-                        // 获取架构信息
-                        val arch = getDeviceArchitecture()
-                        val downloads = release.assets
-                            .filter { it.name.endsWith(".apk") }
-                            .map { asset ->
-                                UpdateDownload(
-                                    name = asset.name,
-                                    // 直接使用 GitHub 原始链接
-                                    url = asset.browserDownloadUrl,
-                                    size = formatFileSize(asset.size)
-                                )
-                            }
+        if (response.isSuccessful) {
+            val release = json.decodeFromString<GitHubRelease>(response.body.string())
 
-                        // 排序：优先匹配当前架构
-                        val sortedDownloads = downloads.sortedByDescending { download ->
-                            when {
-                                download.name.contains(arch, ignoreCase = true) -> 2
-                                download.name.contains("universal", ignoreCase = true) -> 1
-                                else -> 0
-                            }
-                        }
+            // 获取架构信息
+            val arch = getDeviceArchitecture()
 
-                        UpdateInfo(
-                            version = release.tagName.removePrefix("v"),
-                            publishedAt = release.publishedAt,
-                            changelog = release.body ?: "",
-                            downloads = sortedDownloads
-                        )
-                    } else {
-                        throw Exception("Failed to fetch update info: ${response.code}")
+            // 挑选最快的镜像
+            val fastestMirror = withTimeoutOrNull(2000) {
+                findFastestMirror()
+            }
+            Log.d(TAG, "Fastest mirror: $fastestMirror")
+
+            val downloads = release.assets
+                .filter { it.name.endsWith(".apk") }
+                .map { asset ->
+                    val originalUrl = asset.browserDownloadUrl
+                    val mirrorUrl = fastestMirror?.let { mirror ->
+                        if (mirror.endsWith("/")) "$mirror$originalUrl" else "$mirror/$originalUrl"
                     }
-                } catch (e: Exception) {
-                    throw Exception("Failed to fetch update info", e)
+                    UpdateDownload(
+                        name = asset.name,
+                        url = originalUrl,
+                        mirrorUrl = mirrorUrl,
+                        size = formatFileSize(asset.size)
+                    )
                 }
+
+            // 排序：优先匹配当前架构
+            val sortedDownloads = downloads.sortedByDescending { download ->
+                when {
+                    download.name.contains(arch, ignoreCase = true) -> 2
+                    download.name.contains("universal", ignoreCase = true) -> 1
+                    else -> 0
+                }
+            }
+
+            emit(
+                UiState.Success(
+                    UpdateInfo(
+                        version = release.tagName.removePrefix("v"),
+                        publishedAt = release.publishedAt,
+                        changelog = release.body ?: "",
+                        downloads = sortedDownloads
+                    )
+                )
             )
-        )
+        } else {
+            throw Exception("Failed to fetch update info: ${response.code}")
+        }
     }.catch {
+        it.printStackTrace()
         emit(UiState.Error(it))
     }.flowOn(Dispatchers.IO)
+
+    /**
+     * 测试并寻找最快的镜像站
+     */
+    private suspend fun findFastestMirror(): String? = withContext(Dispatchers.IO) {
+        GITHUB_MIRRORS.map { mirror ->
+            async {
+                val start = System.currentTimeMillis()
+                try {
+                    // 使用 HEAD 请求测试延迟
+                    val request = Request.Builder()
+                        .url(mirror)
+                        .head()
+                        .build()
+                    client.newCall(request).await().use { resp ->
+                        if (resp.isSuccessful) {
+                            mirror to (System.currentTimeMillis() - start)
+                        } else {
+                            null
+                        }
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }.awaitAll().filterNotNull().minByOrNull { it.second }?.first
+    }
 
     private fun getDeviceArchitecture(): String {
         val abis = Build.SUPPORTED_ABIS
@@ -105,7 +161,11 @@ class UpdateChecker(private val client: OkHttpClient) {
 
     fun downloadUpdate(context: Context, download: UpdateDownload) {
         runCatching {
-            val request = DownloadManager.Request(download.url.toUri()).apply {
+            // 优先使用镜像地址，如果没有则使用原始地址
+            val downloadUrl = download.mirrorUrl ?: download.url
+            Log.d(TAG, "Downloading update from: $downloadUrl")
+
+            val request = DownloadManager.Request(downloadUrl.toUri()).apply {
                 setTitle("Evolia Update")
                 setDescription("Downloading ${download.name}...")
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
@@ -142,6 +202,7 @@ data class GitHubAsset(
 data class UpdateDownload(
     val name: String,
     val url: String,
+    val mirrorUrl: String? = null,
     val size: String
 )
 
