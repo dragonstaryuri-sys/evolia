@@ -100,9 +100,10 @@ class ChatVM(
         }
 
     val uiMessages: StateFlow<List<ChatUIItem>> = combine(
+        _currentActiveId,
         conversation,
         assistantConvsFlow
-    ) { activeConv, dbConvs ->
+    ) { activeId, activeConv, dbConvs ->
         val merged = dbConvs.map { if (it.id == activeConv.id) activeConv else it }
         val finalConvs = if (merged.none { it.id == activeConv.id }) {
             (merged + activeConv).sortedBy { it.createAt }
@@ -111,13 +112,22 @@ class ChatVM(
         }
 
         val items = mutableListOf<ChatUIItem>()
+        var hasSeenContent = false
         finalConvs.forEachIndexed { index, c ->
-            if (index > 0 && c.messageNodes.isNotEmpty()) {
-                items.add(ChatUIItem.Separator("——— 已开启新话题 ———"))
+            val isCurrentActive = c.id == activeId
+            val hasContent = c.messageNodes.isNotEmpty()
+
+            if (index > 0 && (hasContent || isCurrentActive)) {
+                if (hasSeenContent) {
+                    items.add(ChatUIItem.Separator("——— 已开启新话题 ———"))
+                }
+            }
+
+            if (hasContent) {
+                hasSeenContent = true
             }
             items.addAll(c.messageNodes.map { ChatUIItem.Message(it) })
         }
-        // 核心修复：提供正序列表（最早在前），由 UI 层 ChatList 负责反转适配 reverseLayout
         items
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -152,8 +162,6 @@ class ChatVM(
 
     init {
         viewModelScope.launch {
-            // 核心修复逻辑：在聚合模式下，如果进入的是一个从未见过的 ID（通常是导航自动生成的），
-            // 我们默认接续该助手名下的最后一个会话，以保持对话连贯。
             val settings = settingsStore.settingsFlowRaw.first()
             val currentAssistantId = settings.assistantId
             val latestInDb = conversationRepo.getLatestConversation(currentAssistantId)
@@ -391,12 +399,7 @@ class ChatVM(
         viewModelScope.launch {
             val assistantId = settings.value.assistantId
             val assistant = settings.value.assistants.find { it.id == assistantId }
-
-            // 核心修改：直接使用内存中当前活跃的 targetId。
-            // 当用户点击“开启新话题”时，_currentActiveId 已经更新，此处必须遵循它，
-            // 否则会因为数据库查询到旧会话而导致消息错位。
             val targetId = _currentActiveId.value
-
             trackConversation(targetId)
 
             val processedContent = if (assistant != null) {
@@ -422,7 +425,6 @@ class ChatVM(
 
         viewModelScope.launch {
             val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
-
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { node -> node.messages.any { it.id == messageId } }
             } ?: conversation.value
@@ -443,25 +445,15 @@ class ChatVM(
 
     fun startNewTopic() {
         if (isSyncingContext.value) return
-
         viewModelScope.launch {
             val currentConv = conversation.value
             val assistantId = currentConv.assistantId
             val newId = Uuid.random()
-
-            val newConv = Conversation.ofId(
-                id = newId,
-                assistantId = assistantId,
-                isVirtual = currentConv.isVirtual
-            )
-            // 保存新会话到数据库，此时由于 ChatService 已允许保存空会话，此操作会立即成功。
+            val newConv = Conversation.ofId(id = newId, assistantId = assistantId, isVirtual = currentConv.isVirtual)
             chatService.saveConversation(newId, newConv)
-
-            // 更新内存状态：让发送逻辑立刻知道我们要去新 ID。
             trackConversation(newId)
             chatService.initializeConversation(newId)
             _currentActiveId.value = newId
-            _toastFlow.emit("已开启新话题")
         }
     }
 
@@ -495,7 +487,6 @@ class ChatVM(
 
     private suspend fun deleteMessageInternal(message: UIMessage) {
         val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
-
         val targetConv = allConvs.find { conv ->
             conv.messageNodes.any { node -> node.messages.any { it.id == message.id } }
         } ?: return
@@ -542,7 +533,6 @@ class ChatVM(
     }
 
     fun regenerateAtMessage(message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false) {
-
         viewModelScope.launch {
             val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
             val targetConv = allConvs.find { conv ->
@@ -566,8 +556,6 @@ class ChatVM(
     fun undoDeleteConversation(conversationId: Uuid) { chatService.undoDeleteConversation(conversationId) }
     fun updatePinnedStatus(conversation: Conversation) { viewModelScope.launch { conversationRepo.togglePinStatus(conversation.id) } }
     fun updateConversationTitle(conversation: Conversation, title: String) { viewModelScope.launch { conversationRepo.updateConversation(conversation.copy(title = title)) } }
-    fun generateTitle(conversation: Conversation, force: Boolean = false) {
-    }
 
     fun consolidateConversation(conversation: Conversation) {
         viewModelScope.launch {
@@ -613,7 +601,6 @@ class ChatVM(
         viewModelScope.launch {
             val assistantId = conversation.value.assistantId
             val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(assistantId).first()
-
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { it.id == newNode.id }
             } ?: return@launch

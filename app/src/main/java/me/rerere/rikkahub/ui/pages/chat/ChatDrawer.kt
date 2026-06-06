@@ -101,7 +101,6 @@ fun ChatDrawerContent(
                 onDelete = { vm.deleteConversation(it) },
                 onPin = { vm.updatePinnedStatus(it) },
                 onEditTitle = { conv, title -> vm.updateConversationTitle(conv, title) },
-                onRegenerateTitle = { vm.generateTitle(it) },
                 onConsolidate = { vm.consolidateConversation(it) },
                 showUnconsolidatedDot = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation,
                 showConsolidateOption = currentAssistant.enableMemory && currentAssistant.enableMemoryConsolidation

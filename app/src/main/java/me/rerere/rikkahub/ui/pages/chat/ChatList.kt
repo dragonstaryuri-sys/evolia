@@ -395,8 +395,8 @@ private fun SharedTransitionScope.ChatListNormal(
                             if (needsPhantomLoadingTurn && index == 0) "pending_assistant"
                             else item.group.firstNode.id
                         }
-                        is ChatListDisplayItem.Separator -> "sep_${item.text.hashCode()}"
-                        is ChatListDisplayItem.Time -> "time_${item.timeText.hashCode()}"
+                        is ChatListDisplayItem.Separator -> "sep_${index}_${item.text.hashCode()}"
+                        is ChatListDisplayItem.Time -> "time_${index}_${item.timeText.hashCode()}"
                     }
                 },
             ) { index, item ->
