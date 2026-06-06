@@ -1,7 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-
+import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,12 +25,8 @@ import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +43,6 @@ import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TipsAndUpdates
-import androidx.compose.material.icons.rounded.Title
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Memory
@@ -57,9 +52,7 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TITLE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -112,9 +105,6 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
             // --- Secondary Features Group ---
             item {
                 DefaultImageGenerationModelSetting(settings = settings, vm = vm)
-            }
-            item {
-                DefaultTitleModelSetting(settings = settings, vm = vm)
             }
             item {
                 DefaultTranslationModelSetting(settings = settings, vm = vm)
@@ -340,98 +330,6 @@ private fun DefaultImageGenerationModelSetting(
             }
         }
     )
-}
-
-@Composable
-private fun DefaultTitleModelSetting(
-    settings: Settings,
-    vm: SettingVM
-) {
-    var showModal by remember { mutableStateOf(false) }
-    ModelFeatureCard(
-        title = {
-            Text(stringResource(R.string.setting_model_page_title_model), maxLines = 1)
-        },
-        description = {
-            Text(stringResource(R.string.setting_model_page_title_model_desc))
-        },
-        icon = {
-            Icon(Icons.Rounded.Title, null)
-        },
-        actions = {
-            Box(modifier = Modifier.weight(1f)) {
-                ModelSelector(
-                    modelId = settings.titleModelId,
-                    type = ModelType.CHAT,
-                    onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
-                                titleModelId = it.id
-                            )
-                        )
-                    },
-                    providers = settings.providers,
-                    modifier = Modifier.wrapContentWidth()
-                )
-            }
-            IconButton(
-                onClick = {
-                    showModal = true
-                }
-            ) {
-                Icon(Icons.Rounded.Settings, null)
-            }
-        }
-    )
-
-    if (showModal) {
-        ModalBottomSheet(
-            onDismissRequest = {
-                showModal = false
-            },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FormItem(
-                    label = {
-                        Text(stringResource(R.string.setting_model_page_prompt))
-                    },
-                    description = {
-                        Text(stringResource(R.string.setting_model_page_suggestion_prompt_vars))
-                    }
-                ) {
-                    OutlinedTextField(
-                        value = settings.titlePrompt,
-                        onValueChange = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    titlePrompt = it
-                                )
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        maxLines = 8
-                    )
-                    TextButton(
-                        onClick = {
-                            vm.updateSettings(
-                                settings.copy(
-                                    titlePrompt = DEFAULT_TITLE_PROMPT
-                                )
-                            )
-                        }
-                    ) {
-                        Text(stringResource(R.string.setting_model_page_reset_to_default))
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable

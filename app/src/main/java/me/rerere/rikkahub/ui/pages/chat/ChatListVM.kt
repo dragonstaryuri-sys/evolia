@@ -155,22 +155,6 @@ class ChatListVM(
         }
     }
 
-    fun generateTitle(conversation: Conversation, force: Boolean = false) {
-        viewModelScope.launch {
-            val conversationFull = conversationRepo.getConversationById(conversation.id) ?: return@launch
-            chatService.generateTitle(conversation.id, conversationFull, force)
-        }
-    }
-
-    fun consolidateConversation(conversation: Conversation) {
-        viewModelScope.launch {
-            conversationRepo.markAsNotConsolidated(conversation.id)
-            val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-                .setInputData(androidx.work.workDataOf("FORCE_CONVERSATION_ID" to conversation.id.toString()))
-                .build()
-            androidx.work.WorkManager.getInstance(context).enqueue(request)
-        }
-    }
 
     /**
      * 切换虚拟 world 模式，优化逻辑：

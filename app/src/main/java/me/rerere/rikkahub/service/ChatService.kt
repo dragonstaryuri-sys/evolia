@@ -877,8 +877,6 @@ class ChatService(
             addConversationReference(conversationId)
             appScope.launch {
                 coroutineScope {
-                    // 弃用：不再自动生成标题
-                    // launch { conversationRepo.getConversationById(conversationId)?.let { generateTitle(conversationId, it) } }
                     launch { generateSuggestion(conversationId, finalConv) }
                     launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
                 }
@@ -1189,11 +1187,6 @@ class ChatService(
             else node
         }.filter { it.messages.isNotEmpty() }
         updateConversation(conversationId, conv.copy(messageNodes = nodes))
-    }
-
-    suspend fun generateTitle(conversationId: Uuid, conversation: Conversation, force: Boolean = false) {
-        // 弃用：不再生成标题逻辑
-        return
     }
 
     suspend fun generateSuggestion(conversationId: Uuid, conversation: Conversation) {
