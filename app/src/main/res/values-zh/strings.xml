@@ -1498,7 +1498,7 @@
   <string name="tts_filter_rules_filter_emojis_title">过滤表情符号</string>
   <string name="tts_filter_rules_filter_emojis_desc">开启后，TTS 将不再念出文本中的表情符号（如 🤯）</string>
 
-  <string name="syncing_context_animation_hint">TA正在努力跑到新的会话窗口~</string>
+  <string name="syncing_context_animation_hint">会话归档中~</string>
 
   <string name="backup_permission_notification">发送通知</string>
   <string name="backup_permission_location_coarse">模糊定位 (用于 {{location}} 变量)</string>
@@ -1508,7 +1508,7 @@
   <string name="backup_permission_alarm">设置闹钟与提醒</string>
   <string name="backup_permission_exact_alarm">精确闹钟权限 (用于自动任务调度)</string>
   <string name="assistant_detail_export_options">导出选项</string>
-  <string name="assistant_detail_export_bundle">Evolia捆绑包（.json）</string>
+  <string name="assistant_detail_export_bundle">Evolia角色卡（.json）</string>
   <string name="assistant_detail_export_card_v2_json">角色卡片V2（.json）</string>
   <string name="assistant_detail_export_card_v2_png">角色卡片V2（.png）</string>
   <string name="assistant_detail_export_failed">导出失败：%s</string>
