@@ -309,7 +309,9 @@ class ChatCompletionsAPI(
                     "openrouter.ai" -> {
                         // https://openrouter.ai/docs/use-cases/reasoning-tokens
                         put("reasoning", buildJsonObject {
-                            if (level != ReasoningLevel.AUTO) put("max_tokens", params.thinkingBudget ?: 0)
+                            if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                                put("max_tokens", params.thinkingBudget ?: 0)
+                            }
                             if (!level.isEnabled) {
                                 put("enabled", false)
                             }
@@ -320,7 +322,9 @@ class ChatCompletionsAPI(
                         // 阿里云百炼
                         // https://bailian.console.aliyun.com/console?tab=doc#/doc/?type=model&url=https%3A%2F%2Fhelp.aliyun.com%2Fdocument_detail%2F2870973.html&renderType=iframe
                         put("enable_thinking", level.isEnabled)
-                        if (level != ReasoningLevel.AUTO) put("thinking_budget", params.thinkingBudget ?: 0)
+                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                            put("thinking_budget", params.thinkingBudget ?: 0)
+                        }
                     }
 
                     "ark.cn-beijing.volces.com", "open.bigmodel.cn", "api.deepseek.com", "api.moonshot.cn" -> {
@@ -355,9 +359,9 @@ class ChatCompletionsAPI(
 
                     "api.siliconflow.cn" -> {
                         // https://docs.siliconflow.cn/cn/userguide/capabilities/reasoning#3-1-api-%E5%8F%82%E6%95%B0
-                        val modelId = params.model.modelId
-                        if (modelId.contains("DeepSeek-V3.1") || modelId.contains("GLM-4.5") || modelId.contains("Qwen3-8B")) {
-                            put("enable_thinking", level.isEnabled)
+                        put("enable_thinking", level.isEnabled)
+                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                            put("thinking_budget", params.thinkingBudget ?: 0)
                         }
                     }
 
