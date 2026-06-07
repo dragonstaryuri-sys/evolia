@@ -249,9 +249,11 @@ class ChatService(
         val originalAssistantId = Uuid.parse(task.assistantId)
         val originalAssistant = settings.getAssistantById(originalAssistantId) ?: return
 
-        val activeConvId = conversationReferences.keys.find { id ->
-            conversations[id]?.value?.assistantId == originalAssistantId
-        }
+        val activeConvId = conversationReferences.keys
+            .mapNotNull { id -> conversations[id]?.value }
+            .filter { it.assistantId == originalAssistantId }
+            .maxByOrNull { it.updateAt } // 找到最新更新的那一个
+            ?.id
 
         val conversationId = if (activeConvId != null) {
             Log.d(TAG, "Task Trigger: Found active session $activeConvId for assistant")
