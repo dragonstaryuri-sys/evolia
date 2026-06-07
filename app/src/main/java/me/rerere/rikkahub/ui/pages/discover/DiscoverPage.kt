@@ -122,7 +122,7 @@ fun DiscoverPage() {
                 DiscoverItem(
                     title = stringResource(R.string.menu_page_favorites),
                     description = stringResource(R.string.favorites_page_title),
-                    icon = { Icon(Icons.Rounded.Favorite, null, tint = MaterialTheme.colorScheme.error) },
+                    icon = { Icon(Icons.Rounded.Star, null, tint = MaterialTheme.colorScheme.primary) },
                     onClick = {
                         navController.navigate(Screen.Favorites)
                     }
