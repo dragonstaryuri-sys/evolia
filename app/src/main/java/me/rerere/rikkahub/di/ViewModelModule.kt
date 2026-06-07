@@ -14,6 +14,7 @@ import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
 import me.rerere.rikkahub.ui.pages.discover.DiaryVM
 import me.rerere.rikkahub.ui.pages.favorites.FavoritesVM
+import me.rerere.rikkahub.ui.pages.favorites.FavoriteDetailVM
 import me.rerere.rikkahub.discover.ui.BookViewModel
 import me.rerere.rikkahub.discover.ui.ScheduleViewModel
 import me.rerere.rikkahub.discover.ui.TokenReportVM
@@ -90,6 +91,12 @@ val viewModelModule = module {
     viewModelOf(::TokenReportVM)
     viewModelOf(::PermissionVM)
     viewModelOf(::FavoritesVM)
+    viewModel<FavoriteDetailVM> { params ->
+        FavoriteDetailVM(
+            id = params.get(),
+            favoriteRepository = get()
+        )
+    }
     viewModel {
         BookViewModel(
             bookRepository = get(),

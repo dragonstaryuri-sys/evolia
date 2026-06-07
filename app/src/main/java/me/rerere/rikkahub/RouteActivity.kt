@@ -92,6 +92,7 @@ import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoritesPage
+import me.rerere.rikkahub.ui.pages.favorites.FavoriteDetailPage
 import me.rerere.rikkahub.discover.ui.ScheduleScreen
 import me.rerere.rikkahub.discover.ui.TokenReportScreen
 import me.rerere.rikkahub.discover.ui.BookShelfScreen
@@ -455,6 +456,10 @@ class RouteActivity : AppCompatActivity() {
                     }
                     composable<Screen.Favorites> {
                         FavoritesPage()
+                    }
+                    composable<Screen.FavoriteDetail> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.FavoriteDetail>()
+                        FavoriteDetailPage(id = route.id)
                     }
                     composable<Screen.Schedule> {
                         ScheduleScreen(onBack = { navBackStack.popBackStack() })

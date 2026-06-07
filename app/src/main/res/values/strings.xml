@@ -1686,5 +1686,6 @@
   <string name="favorites_empty">No favorites yet</string>
   <string name="action_favorite">Favorite</string>
   <string name="action_share">Share</string>
+  <string name="favorites_detail_title">Details</string>
 
 </resources>

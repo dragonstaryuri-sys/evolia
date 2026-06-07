@@ -18,6 +18,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -27,6 +28,8 @@ import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.ZoneId
 import kotlinx.serialization.decodeFromString
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,7 +66,12 @@ fun FavoritesPage() {
                 ) { index ->
                     val favorite = favorites[index]
                     if (favorite != null) {
-                        FavoriteCard(favorite)
+                        FavoriteCard(
+                            favorite = favorite,
+                            onClick = {
+                                navController.navigate(Screen.FavoriteDetail(id = favorite.id))
+                            }
+                        )
                     }
                 }
             }
@@ -72,7 +80,8 @@ fun FavoritesPage() {
 }
 
 @Composable
-private fun FavoriteCard(favorite: FavoriteEntity) {
+private fun FavoriteCard(favorite: FavoriteEntity, onClick: () -> Unit) {
+    val haptics = rememberPremiumHaptics()
     val messages = remember(favorite.content) {
         try {
             JsonInstant.decodeFromString<List<UIMessage>>(favorite.content)
@@ -82,6 +91,10 @@ private fun FavoriteCard(favorite: FavoriteEntity) {
     }
 
     Surface(
+        onClick = {
+            haptics.perform(HapticPattern.Pop)
+            onClick()
+        },
         shape = AppShapes.CardLarge,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth()
@@ -89,10 +102,15 @@ private fun FavoriteCard(favorite: FavoriteEntity) {
         Column(modifier = Modifier.padding(16.dp)) {
             if (favorite.type == 0) {
                 // 单条消息
-                val firstMsg = messages.firstOrNull()
-                val text = firstMsg?.toText() ?: ""
+                val rawText = messages.firstOrNull()?.toText() ?: ""
+                val displayText = if (rawText.length > 50) {
+                    rawText.take(50) + "..."
+                } else {
+                    rawText
+                }
+
                 Text(
-                    text = text,
+                    text = displayText,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis

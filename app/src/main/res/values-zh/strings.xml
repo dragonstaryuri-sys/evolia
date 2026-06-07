@@ -1646,4 +1646,6 @@
   <string name="favorites_empty">暂无收藏内容</string>
   <string name="action_favorite">收藏</string>
   <string name="action_share">分享</string>
+  <string name="favorites_detail_title">详情</string>
+
 </resources>
