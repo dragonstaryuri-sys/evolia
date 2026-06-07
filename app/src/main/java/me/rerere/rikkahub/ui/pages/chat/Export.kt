@@ -4,11 +4,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,9 +43,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -95,6 +95,8 @@ import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.getActivity
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.toLocalString
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.core.data.model.Avatar
 import org.koin.compose.koinInject
 import java.io.FileOutputStream
 import java.time.LocalDateTime
@@ -242,7 +244,7 @@ private fun exportToMarkdown(
         append("# ${conversation.title}\n\n")
         append("*Exported on ${LocalDateTime.now().toLocalString()}*\n\n")
 
-        messages.forEach { message ->
+        messages.filter { !it.skipContext }.forEach { message ->
             val role = if (message.role == MessageRole.USER) "**User**" else "**Assistant**"
             append("$role:\n\n")
             message.parts.toSortedMessageParts().forEach { part ->
@@ -387,7 +389,7 @@ private fun ExportedChatImage(
             LocalHighlighter provides highlighter
         ) {
             Surface(
-                modifier = Modifier.width(540.dp) // like 1080p but with density independence
+                modifier = Modifier.width(540.dp)
             ) {
                 Column(
                     modifier = Modifier
@@ -396,47 +398,23 @@ private fun ExportedChatImage(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f, fill = false)) {
-                            Text(
-                                text = conversation.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                            )
-                            Text(
-                                text = "${LocalDateTime.now().toLocalString()}  rikka-ai.com",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        // Use painterResource for the logo
-                        val painter = painterResource(id = R.drawable.ic_launcher_evolia_foreground)
-                        Image(
-                            painter = painter,
-                            contentDescription = "Logo",
-                            modifier = Modifier.size(60.dp)
-                        )
-                    }
+                    // Header removed for chat-list style
 
-                    // Messages
-                    messages.forEach { message ->
+                    // Messages (Filter skipContext)
+                    messages.filter { !it.skipContext }.forEach { message ->
                         ExportedChatMessage(
                             message = message,
                             options = options,
-                            prevMessage = messages.getOrNull(messages.indexOf(message) - 1)
+                            conversation = conversation
                         )
                     }
 
-                    // Watermark
-                    Column {
+                    // Watermark (Keep small)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = stringResource(R.string.export_image_warning),
+                            text = "来自EVOLIA",
                             fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         )
                     }
                 }
@@ -448,106 +426,127 @@ private fun ExportedChatImage(
 @Composable
 private fun ExportedChatMessage(
     message: UIMessage,
-    prevMessage: UIMessage? = null,
+    conversation: Conversation,
     options: ImageExportOptions = ImageExportOptions()
 ) {
     if (message.parts.isEmptyUIMessage()) return
     val context = LocalContext.current
     val settings = LocalSettings.current
-    val model = message.modelId?.let { settings.findModelById(it) }
-    // Always show model icon for assistant messages in exported images
-    val showModelIcon = message.role == MessageRole.ASSISTANT && prevMessage?.role == MessageRole.USER
-    val iconLabel = when {
-        model?.modelId?.isNotBlank() == true -> model.modelId
-        model?.displayName?.isNotBlank() == true -> model.displayName
-        else -> "AI"
+
+    val isUser = message.role == MessageRole.USER
+    val assistant = settings.assistants.find { it.id == conversation.assistantId }
+
+    val senderName = if (isUser) {
+        settings.displaySetting.userNickname.ifBlank { stringResource(R.string.user_default_name) }
+    } else {
+        assistant?.name ?: "AI"
     }
-    val messageContent: @Composable () -> Unit = {
+
+    val avatarContent: @Composable () -> Unit = {
+        UIAvatar(
+            name = senderName,
+            modifier = Modifier.size(40.dp),
+            value = if (isUser) settings.displaySetting.userAvatar else (assistant?.avatar ?: Avatar.Dummy),
+            loading = false
+        )
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Top
+    ) {
+        // Assistant Avatar on the Left
+        if (!isUser) {
+            avatarContent()
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
         Column(
-            modifier = Modifier
-                .widthIn(max = (540 * 0.9).dp)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = if (message.role == MessageRole.USER) Alignment.End else Alignment.Start
+            modifier = Modifier.weight(1f, fill = false),
+            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-            message.parts.toSortedMessageParts().forEach { part ->
-                when (part) {
-                    is UIMessagePart.Text -> {
-                        if (part.text.isNotBlank()) {
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = when (message.role) {
-                                        MessageRole.USER -> MaterialTheme.colorScheme.primaryContainer
-                                        else -> Color.Transparent
+            // Sender Name
+            Text(
+                text = senderName,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp, start = if(!isUser) 4.dp else 0.dp, end = if(isUser) 4.dp else 0.dp)
+            )
+
+            // Message Parts (Bubbles)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+            ) {
+                message.parts.toSortedMessageParts().forEach { part ->
+                    when (part) {
+                        is UIMessagePart.Text -> {
+                            if (part.text.isNotBlank()) {
+                                Card(
+                                    shape = RoundedCornerShape(
+                                        topStart = if (isUser) 16.dp else 4.dp,
+                                        topEnd = if (isUser) 4.dp else 16.dp,
+                                        bottomStart = 16.dp,
+                                        bottomEnd = 16.dp
+                                    ),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isUser)
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        else
+                                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                                    ),
+                                    modifier = Modifier.widthIn(max = (540 * 0.75).dp)
+                                ) {
+                                    ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
+                                        MarkdownBlock(
+                                            content = part.text,
+                                            modifier = Modifier.padding(12.dp)
+                                        )
                                     }
-                                )
-                            ) {
-                                ProvideTextStyle(MaterialTheme.typography.bodyMedium) {
-                                    MarkdownBlock(
-                                        content = part.text,
-                                        modifier = Modifier.padding(12.dp)
-                                    )
                                 }
                             }
                         }
-                    }
 
-                    is UIMessagePart.Image -> {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(part.url)
-                                .allowHardware(false)
-                                .crossfade(false)
-                                .build(),
-                            contentDescription = "Image",
-                            modifier = Modifier
-                                .sizeIn(maxHeight = 300.dp)
-                                .clip(RoundedCornerShape(12.dp)),
-                        )
-                    }
+                        is UIMessagePart.Image -> {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(part.url)
+                                    .allowHardware(false)
+                                    .crossfade(false)
+                                    .build(),
+                                contentDescription = "Image",
+                                modifier = Modifier
+                                    .sizeIn(maxWidth = (540 * 0.7).dp, maxHeight = 400.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                            )
+                        }
 
-                    is UIMessagePart.Reasoning -> {
-                        ExportedReasoningCard(reasoning = part, expanded = options.expandReasoning)
-                    }
+                        is UIMessagePart.Reasoning -> {
+                            ExportedReasoningCard(reasoning = part, expanded = options.expandReasoning)
+                        }
 
-                    is UIMessagePart.ToolCall -> {
-                        ExportedToolCall(toolCall = part)
-                    }
+                        is UIMessagePart.ToolCall -> {
+                            ExportedToolCall(toolCall = part)
+                        }
 
-                    is UIMessagePart.ToolResult -> {
-                        ExportedToolResult(toolResult = part)
-                    }
+                        is UIMessagePart.ToolResult -> {
+                            ExportedToolResult(toolResult = part)
+                        }
 
-                    else -> {
-                        // Other parts are not rendered in image export for now
+                        else -> {}
                     }
                 }
             }
         }
-    }
 
-    if (showModelIcon) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 8.dp)
-        ) {
-            AutoAIIcon(
-                name = iconLabel,
-                modifier = Modifier
-                    .padding(top = 8.dp)
-                    .size(36.dp)
-            )
-
-            Text(
-                text = iconLabel,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+        // User Avatar on the Right
+        if (isUser) {
+            Spacer(modifier = Modifier.width(8.dp))
+            avatarContent()
         }
     }
-    messageContent()
 }
 
 @Composable
@@ -558,36 +557,34 @@ private fun ExportedReasoningCard(reasoning: UIMessagePart.Reasoning, expanded: 
 
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.widthIn(max = (540 * 0.7).dp)
     ) {
         Column(
-            modifier = Modifier
-                .padding(8.dp),
+            modifier = Modifier.padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp),
+                modifier = Modifier.padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     imageVector = Icons.Rounded.Lightbulb,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.secondary
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary
                 )
                 Text(
                     text = stringResource(R.string.deep_thinking),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.secondary
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
                 if (duration > 0.seconds) {
                     Text(
                         text = "(${duration.toString(DurationUnit.SECONDS, 1)})",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.secondary
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
@@ -595,9 +592,7 @@ private fun ExportedReasoningCard(reasoning: UIMessagePart.Reasoning, expanded: 
                 MarkdownBlock(
                     content = reasoning.reasoning,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 )
             }
         }
@@ -610,13 +605,13 @@ private fun ExportedToolCall(
 ) {
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.widthIn(max = (540 * 0.7).dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 12.dp)
         ) {
             Icon(
                 imageVector = when (toolCall.toolName) {
@@ -627,29 +622,12 @@ private fun ExportedToolCall(
                     else -> Icons.Rounded.Build
                 },
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                modifier = Modifier.size(16.dp)
             )
-            Column {
-                Text(
-                    text = when (toolCall.toolName) {
-                        "create_memory" -> stringResource(R.string.chat_message_tool_create_memory)
-                        "edit_memory" -> stringResource(R.string.chat_message_tool_edit_memory)
-                        "delete_memory" -> stringResource(R.string.chat_message_tool_delete_memory)
-                        "search_web" -> {
-                            val query = runCatching {
-                                JsonInstant.parseToJsonElement(toolCall.arguments).jsonObject["query"]?.jsonPrimitiveOrNull?.contentOrNull
-                                    ?: ""
-                            }.getOrDefault("")
-                            stringResource(R.string.chat_message_tool_search_web, query)
-                        }
-                        "scrape_web" -> stringResource(R.string.chat_message_tool_scrape_web)
-                        else -> stringResource(R.string.chat_message_tool_call_generic, toolCall.toolName)
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
+            Text(
+                text = toolCall.toolName,
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
     }
 }
@@ -658,45 +636,23 @@ private fun ExportedToolCall(
 private fun ExportedToolResult(toolResult: UIMessagePart.ToolResult) {
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.widthIn(max = (540 * 0.7).dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp)
+            modifier = Modifier.padding(vertical = 4.dp, horizontal = 12.dp)
         ) {
             Icon(
-                imageVector = when (toolResult.toolName) {
-                    "create_memory", "edit_memory" -> Icons.Rounded.Favorite
-                    "delete_memory" -> Icons.Rounded.Delete
-                    "search_web" -> Icons.Rounded.Public
-                    "scrape_web" -> Icons.Rounded.Public
-                    else -> Icons.Rounded.Build
-                },
+                imageVector = Icons.Rounded.Description,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                modifier = Modifier.size(14.dp)
             )
-            Column {
-                Text(
-                    text = when (toolResult.toolName) {
-                        "create_memory" -> stringResource(R.string.chat_message_tool_create_memory)
-                        "edit_memory" -> stringResource(R.string.chat_message_tool_edit_memory)
-                        "delete_memory" -> stringResource(R.string.chat_message_tool_delete_memory)
-                        "search_web" -> {
-                            val query =
-                                toolResult.arguments.jsonObject["query"]?.jsonPrimitiveOrNull?.contentOrNull
-                                    ?: ""
-                            stringResource(R.string.chat_message_tool_search_web, query)
-                        }
-                        "scrape_web" -> stringResource(R.string.chat_message_tool_scrape_web)
-                        else -> stringResource(R.string.chat_message_tool_call_generic, toolResult.toolName)
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
+            Text(
+                text = "Result: ${toolResult.toolName}",
+                style = MaterialTheme.typography.labelSmall,
+            )
         }
     }
 }
