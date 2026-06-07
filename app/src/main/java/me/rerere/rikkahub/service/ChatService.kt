@@ -396,18 +396,30 @@ class ChatService(
                 if (oldConv != null && oldConv.assistantId == currentAssistantId) {
                     val settings = settingsStore.settingsFlow.first()
                     val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
-                    if (assistant.enableRecentChatsReference) {
+
+                    if (assistant.enableMemory) {
                         appScope.launch {
-                            _syncingConversationIds.update { it + conversationId }
-
-                            try {
-                                archiveConversation(oldId, force = true)
-                            } finally {
-                                _syncingConversationIds.update { it - conversationId }
-                            }
-
-                            if (assistant.enableDetailMemory) {
-                                summarizeAndRefresh(oldId, onlySegments = true)
+                            if (assistant.enableRecentChatsReference) {
+                                // 开启了连贯模式：显示动画，UI 动画在 L2 (主路径) 完成后结束
+                                _syncingConversationIds.update { it + conversationId }
+                                try {
+                                    // L1 并行在后台运行，不阻塞 L2 和 UI 动画的关闭
+                                    if (assistant.enableDetailMemory) {
+                                        launch { summarizeAndRefresh(oldId, onlySegments = true, skipArchive = true) }
+                                    }
+                                    // L2 在当前路径挂起运行
+                                    archiveConversation(oldId, force = true)
+                                } finally {
+                                    // 只要 L2 全量归档完成，不论后台 L1 进度，立即结束动画
+                                    _syncingConversationIds.update { it - conversationId }
+                                }
+                            } else {
+                                // 未开启连贯模式：静默后台执行
+                                if (assistant.enableDetailMemory) {
+                                    summarizeAndRefresh(oldId, onlySegments = true)
+                                } else if (assistant.enableMemoryConsolidation) {
+                                    archiveConversation(oldId, force = true)
+                                }
                             }
                         }
                     }
@@ -420,7 +432,6 @@ class ChatService(
         val conversation = currentConv
         if (currentConvInDb != null) {
             updateConversation(conversationId, currentConvInDb)
-            // 如果不是由后台任务显式指定的初始化，则同步更新全局助手设定
             if (targetAssistantId == null) {
                 settingsStore.updateAssistant(currentConvInDb.assistantId)
             }
@@ -444,7 +455,6 @@ class ChatService(
             val conv = conversationRepo.getConversationById(conversationId) ?: return
             val messages = conv.currentMessages
             val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
-
             val episodeSignificance = existingEpisode?.significance ?: 0
 
             if (!force) {
@@ -506,7 +516,7 @@ class ChatService(
                 resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
             }
 
-            if (summary.isNotBlank() && !newMessages.isEmpty()) {
+            if (summary.isNotBlank() && (!newMessages.isEmpty() || force)) {
                 val aiKeywords = extractKeywords(
                     handler = backgroundHandler,
                     providerSetting = backgroundProvider,
@@ -525,7 +535,7 @@ class ChatService(
                     try {
                         embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
                     } catch (e: Exception) {
-                        Log.e(TAG, "Failed to generate embedding for archived episode", e)
+                        Log.e(TAG, "Failed to generate embedding", e)
                         null
                     }
                 }
@@ -548,10 +558,7 @@ class ChatService(
                     lastAccessedAt = System.currentTimeMillis()
                 )
                 memoryRepository.saveEpisode(episode)
-                Log.i(
-                    TAG,
-                    "Archived episodic memory (L2) for $conversationId. skipEmbedding=$skipEmbedding, messages=${messages.size}"
-                )
+                Log.i(TAG, "Archived L2 memory for $conversationId. force=$force, skipEmbedding=$skipEmbedding")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to archive conversation $conversationId", e)
@@ -981,7 +988,7 @@ class ChatService(
     }
 
     suspend fun summarizeAndRefresh(
-        id: Uuid, onlySegments: Boolean = false
+        id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
         if (summarizingConversations.contains(id)) {
             return@withContext ContextRefreshResult(false, errorMessage = "正在总结中...请勿重复操作")
@@ -1079,9 +1086,11 @@ class ChatService(
             conversationRepo.updateConversation(updated)
             updateConversation(id, updated)
 
-            archiveConversation(id, force = true, skipEmbedding = true)
+            if (!skipArchive) {
+                archiveConversation(id, force = true, skipEmbedding = true)
+            }
 
-            ContextRefreshResult(true, "Segments & Episode Summary updated", toSummarize.size)
+            ContextRefreshResult(true, "Segments updated", toSummarize.size)
         } catch (e: Exception) {
             ContextRefreshResult(false, errorMessage = e.message)
         } finally {
@@ -1128,9 +1137,6 @@ class ChatService(
             updateConversation(id, conversation); return
         }
         updateConversation(id, conversation)
-
-        // 核心修改：移除空会话保存限制。在聚合显示模式下，即使是空话题也是合法的起始锚点。
-        // if (conversation.title.isBlank() && conversation.messageNodes.isEmpty() && !conversation.isVirtual) return
 
         if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(
             conversation
