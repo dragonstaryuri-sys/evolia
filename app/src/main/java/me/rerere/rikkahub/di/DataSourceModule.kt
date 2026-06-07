@@ -192,8 +192,9 @@ val dataSourceModule = module {
             .build()
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.MINUTES)
+            .readTimeout(60, TimeUnit.SECONDS) // 修改：从10分钟减为60秒，防止死等
             .writeTimeout(120, TimeUnit.SECONDS)
+            .pingInterval(30, TimeUnit.SECONDS) // 新增：每30秒发心跳包，检测TCP连接是否存活
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)

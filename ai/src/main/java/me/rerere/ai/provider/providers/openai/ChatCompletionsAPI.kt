@@ -56,6 +56,7 @@ import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
+import java.io.IOException
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
@@ -129,6 +130,9 @@ class ChatCompletionsAPI(
         messages: List<UIMessage>,
         params: TextGenerationParams,
     ): Flow<MessageChunk> = callbackFlow {
+        val startTime = System.currentTimeMillis()
+        var firstTokenReceived = false
+
         val requestBody = buildChatCompletionRequest(
             messages = messages,
             params = params,
@@ -147,96 +151,107 @@ class ChatCompletionsAPI(
             .configureReferHeaders(providerSetting.baseUrl)
             .build()
 
-        Log.i(TAG, "streamText: ${json.encodeToString(requestBody)}")
-
-        // just for debugging response body
-        // println(client.newCall(request).await().body?.string())
+        Log.i(TAG, "streamText: start request, body size: ${json.encodeToString(requestBody).length}")
 
         val listener = object : EventSourceListener() {
+            override fun onOpen(eventSource: EventSource, response: Response) {
+                Log.d(TAG, "onOpen: Connection established in ${System.currentTimeMillis() - startTime}ms")
+            }
+
             override fun onEvent(
                 eventSource: EventSource,
                 id: String?,
                 type: String?,
                 data: String
             ) {
+                if (!firstTokenReceived) {
+                    firstTokenReceived = true
+                    Log.d(TAG, "onEvent: First chunk received in ${System.currentTimeMillis() - startTime}ms")
+                }
+
                 if (data == "[DONE]") {
-                    println("[onEvent] (done) 结束流: $data")
                     close()
                     return
                 }
-                Log.d(TAG, "onEvent: $data")
-                data
-                    .trim()
-                    .split("\n")
-                    .filter { it.isNotBlank() }
-                    .map { json.parseToJsonElement(it).jsonObject }
-                    .forEach {
-                        if (it["error"] != null) {
-                            val error = it["error"]!!.parseErrorDetail()
-                            throw error
-                        }
-                        val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                        val choices = it["choices"]?.jsonArrayOrNull ?: JsonArray(emptyList())
-                        val choiceList = buildList {
-                            if (choices.isNotEmpty()) {
-                                val choice = choices[0].jsonObject
-                                val message =
-                                    choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
-                                    ?: throw Exception("delta/message is null")
-                                val finishReason =
-                                    choice["finish_reason"]?.jsonPrimitive?.contentOrNull
-                                        ?: "unknown"
-                                add(
-                                    UIMessageChoice(
-                                        index = 0,
-                                        delta = parseMessage(message),
-                                        message = null,
-                                        finishReason = finishReason,
-                                    )
-                                )
+                try {
+                    data
+                        .trim()
+                        .split("\n")
+                        .filter { it.isNotBlank() }
+                        .map { json.parseToJsonElement(it).jsonObject }
+                        .forEach {
+                            if (it["error"] != null) {
+                                val error = it["error"]!!.parseErrorDetail()
+                                throw error
                             }
-                        }
-                        val usage = parseTokenUsage(it["usage"] as? JsonObject)
+                            val id = it["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val model = it["model"]?.jsonPrimitive?.contentOrNull ?: ""
 
-                        val messageChunk = MessageChunk(
-                            id = id,
-                            model = model,
-                            choices = choiceList,
-                            usage = usage
-                        )
-                        trySend(messageChunk)
-                    }
+                            val choices = it["choices"]?.jsonArrayOrNull ?: JsonArray(emptyList())
+                            val choiceList = buildList {
+                                if (choices.isNotEmpty()) {
+                                    val choice = choices[0].jsonObject
+                                    val message =
+                                        choice["delta"]?.jsonObject ?: choice["message"]?.jsonObject
+                                        ?: throw Exception("delta/message is null")
+                                    val finishReason =
+                                        choice["finish_reason"]?.jsonPrimitive?.contentOrNull
+                                            ?: "unknown"
+                                    add(
+                                        UIMessageChoice(
+                                            index = 0,
+                                            delta = parseMessage(message),
+                                            message = null,
+                                            finishReason = finishReason,
+                                        )
+                                    )
+                                }
+                            }
+                            val usage = parseTokenUsage(it["usage"] as? JsonObject)
+
+                            val messageChunk = MessageChunk(
+                                id = id,
+                                model = model,
+                                choices = choiceList,
+                                usage = usage
+                            )
+                            trySend(messageChunk)
+                        }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing SSE event: ${e.message}")
+                    close(e)
+                }
             }
 
             override fun onFailure(eventSource: EventSource, t: Throwable?, response: Response?) {
-                if (t is java.io.IOException && t.message == "canceled") {
+                if (t is IOException && t.message == "canceled") {
                     return
                 }
-                var exception = t
 
-                t?.printStackTrace()
-                println("[onFailure] 发生错误: ${t?.javaClass?.name} ${t?.message} / $response")
+                Log.e(TAG, "streamText onFailure: t=${t?.message}, code=${response?.code}")
 
+                var exception: Throwable? = t
                 val bodyRaw = response?.body?.stringSafe()
+
                 try {
                     if (!bodyRaw.isNullOrBlank()) {
                         val bodyElement = Json.parseToJsonElement(bodyRaw)
-                        println(bodyElement)
                         exception = bodyElement.parseErrorDetail()
-                        Log.i(TAG, "onFailure: $exception")
+                    } else if (response != null && !response.isSuccessful) {
+                        exception = IOException("HTTP ${response.code}: ${response.message}")
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "onFailure: failed to parse from $bodyRaw")
-                    e.printStackTrace()
-                    exception = e
-                } finally {
-                    close(exception)
+                    Log.w(TAG, "onFailure: failed to parse error body")
+                    if (exception == null) exception = e
                 }
+
+                // 确保即使所有解析都失败，也要抛出一个异常防止 Flow 挂死
+                close(exception ?: IOException("Unknown stream error"))
             }
 
             override fun onClosed(eventSource: EventSource) {
+                Log.d(TAG, "onClosed: SSE connection closed")
                 close()
             }
         }
@@ -244,7 +259,7 @@ class ChatCompletionsAPI(
         val eventSource = EventSources.createFactory(proxyClient).newEventSource(request, listener)
 
         awaitClose {
-            println("[awaitClose] 关闭eventSource ")
+            Log.d(TAG, "awaitClose: cancelling eventSource")
             eventSource.cancel()
         }
     }
