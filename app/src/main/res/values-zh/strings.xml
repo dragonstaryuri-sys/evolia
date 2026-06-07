@@ -1636,4 +1636,14 @@
   <string name="manual_archive_l1_success">成功归档 %d 个片段</string>
   <string name="operation_manual">操作手册</string>
   <string name="operation_description">查看详细的功能使用说明</string>
+  <!-- 收藏功能相关 -->
+  <string name="menu_page_favorites">收藏</string>
+  <string name="chat_page_multi_select">多选</string>
+  <string name="favorites_page_title">我的收藏</string>
+  <string name="favorites_chat_history_title">%1$s和%2$s的聊天记录</string>
+  <string name="favorites_add_success">已收藏</string>
+  <string name="favorites_add_failed">收藏失败，请稍后重试</string>
+  <string name="favorites_empty">暂无收藏内容</string>
+  <string name="action_favorite">收藏</string>
+  <string name="action_share">分享</string>
 </resources>

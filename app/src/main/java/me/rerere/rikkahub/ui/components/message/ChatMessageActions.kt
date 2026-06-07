@@ -45,7 +45,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SelectAll
-import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import kotlinx.coroutines.delay
@@ -320,7 +320,7 @@ fun ChatMessageActionsSheet(
                 }
             }
 
-            // Share
+            // Multi-select (Share replaced by Multi-select)
             Card(
                 onClick = {
                     onDismissRequest()
@@ -339,12 +339,12 @@ fun ChatMessageActionsSheet(
                         .fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Share,
+                        imageVector = Icons.Rounded.Checklist,
                         contentDescription = null,
                         modifier = Modifier.padding(4.dp)
                     )
                     Text(
-                        text = stringResource(R.string.share),
+                        text = stringResource(R.string.chat_page_multi_select),
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }

@@ -13,6 +13,7 @@ import me.rerere.rikkahub.ui.pages.setting.PermissionVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.menu.MenuVM
 import me.rerere.rikkahub.ui.pages.discover.DiaryVM
+import me.rerere.rikkahub.ui.pages.favorites.FavoritesVM
 import me.rerere.rikkahub.discover.ui.BookViewModel
 import me.rerere.rikkahub.discover.ui.ScheduleViewModel
 import me.rerere.rikkahub.discover.ui.TokenReportVM
@@ -26,6 +27,7 @@ import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
+import me.rerere.rikkahub.core.data.repository.FavoriteRepository
 
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
@@ -37,7 +39,8 @@ val viewModelModule = module {
             chatService = get(),
             updateChecker = get(),
             appScope = get(),
-            memoryRepo = get()
+            memoryRepo = get(),
+            favoriteRepo = get()
         )
     }
     viewModel<SettingVM> {
@@ -86,6 +89,7 @@ val viewModelModule = module {
     viewModelOf(::ScheduleViewModel)
     viewModelOf(::TokenReportVM)
     viewModelOf(::PermissionVM)
+    viewModelOf(::FavoritesVM)
     viewModel {
         BookViewModel(
             bookRepository = get(),

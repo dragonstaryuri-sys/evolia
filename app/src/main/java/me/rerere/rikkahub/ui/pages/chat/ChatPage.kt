@@ -170,7 +170,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
         }
     }
 
-    // 根据需求，取消抽屉图标和抽屉功能，直接渲染 ChatPageContent
     ChatPageContent(
         inputState = inputState,
         loadingJob = loadingJob,
@@ -377,7 +376,10 @@ private fun ChatPageContent(
                         onForkMessage = {
                             scope.launch { vm.forkMessage(it) }
                         },
-                        onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) }
+                        onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) },
+                        onAddFavorite = { messages ->
+                            vm.addFavorite(messages, currentAssistant, setting.displaySetting.userNickname)
+                        }
                     )
 
                 val hasUserSentMessages = remember(conversation.messageNodes) {

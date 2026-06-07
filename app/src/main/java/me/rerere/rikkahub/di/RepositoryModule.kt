@@ -60,4 +60,8 @@ val repositoryModule = module {
     single {
         AgentMonitorTaskRepository(agentMonitorTaskDAO = get())
     }
+
+    single {
+        FavoriteRepository(favoriteDao = get())
+    }
 }

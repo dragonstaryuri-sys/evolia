@@ -31,9 +31,10 @@ import kotlinx.serialization.decodeFromString
         AssistantExtendedStateEntity::class,
         MilestoneEntity::class,
         UserDeviceStateEntity::class,
-        AgentMonitorTaskEntity::class
+        AgentMonitorTaskEntity::class,
+        FavoriteEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -69,6 +70,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDeviceStateDao(): UserDeviceStateDAO
 
     abstract fun agentMonitorTaskDao(): AgentMonitorTaskDAO
+
+    abstract fun favoriteDao(): FavoriteDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -176,6 +179,23 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `latitude` REAL NOT NULL DEFAULT 0.0")
                 db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `longitude` REAL NOT NULL DEFAULT 0.0")
                 db.execSQL("ALTER TABLE `user_device_state` ADD COLUMN `location_name` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `favorites` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `type` INTEGER NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `sender_name` TEXT NOT NULL DEFAULT '',
+                        `agent_name` TEXT NOT NULL DEFAULT '',
+                        `user_nickname` TEXT NOT NULL DEFAULT '',
+                        `message_time` INTEGER NOT NULL,
+                        `create_at` INTEGER NOT NULL
+                    )
+                """.trimIndent())
             }
         }
     }

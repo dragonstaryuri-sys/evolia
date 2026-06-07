@@ -41,28 +41,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.HorizontalFloatingToolbar
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.surfaceColorAtElevation
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -76,17 +56,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
-import androidx.compose.material.icons.rounded.KeyboardDoubleArrowDown
-import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
-import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.TouchApp
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.rounded.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -147,6 +117,7 @@ fun ChatList(
     onUpdateMessage: (MessageNode) -> Unit = {},
     onJumpToMessage: (MessageNode) -> Unit = {},
     onGetFullMemoryContent: suspend (Int, Int) -> String? = { _, _ -> null },
+    onAddFavorite: (List<UIMessage>) -> Unit = {},
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -155,7 +126,6 @@ fun ChatList(
         if (!initialSearchQuery.isNullOrBlank()) {
             val node = uiItems.filterIsInstance<ChatVM.ChatUIItem.Message>()
                 .map { it.node }
-                // uiItems 现在是正序，使用 findLast 获取最近的匹配项
                 .findLast { it.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true) }
 
             if (node != null) {
@@ -204,6 +174,7 @@ fun ChatList(
                     onDelete = onDelete,
                     onUpdateMessage = onUpdateMessage,
                     onGetFullMemoryContent = onGetFullMemoryContent,
+                    onAddFavorite = onAddFavorite,
                     animatedVisibilityScope = this@AnimatedContent,
                 )
             }
@@ -228,6 +199,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onDelete: (UIMessage) -> Unit,
     onUpdateMessage: (MessageNode) -> Unit,
     onGetFullMemoryContent: suspend (Int, Int) -> String?,
+    onAddFavorite: (List<UIMessage>) -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val scope = rememberCoroutineScope()
@@ -262,7 +234,6 @@ private fun SharedTransitionScope.ChatListNormal(
     var isMemoryLoading by remember { mutableStateOf(false) }
 
     fun List<LazyListItemInfo>.isAtBottom(): Boolean {
-        // 在 reverseLayout 中，列表底部的 index 是 0
         return state.firstVisibleItemIndex == 0
     }
 
@@ -283,7 +254,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 Triple(state.isScrollInProgress, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
             }.collect { (isScrolling, firstIndex, firstOffset) ->
                 if (isScrolling && loadingState) {
-                    // 在 reverseLayout 中，向上滚动是 index 变大
                     val scrolledUp = firstIndex > previousFirstIndex ||
                         (firstIndex == previousFirstIndex && firstOffset > previousFirstOffset)
                     if (scrolledUp && !userScrolledUp) {
@@ -350,7 +320,6 @@ private fun SharedTransitionScope.ChatListNormal(
 
             if (needsPhantomLoadingTurn) currentNodes.add(MessageNode.of(UIMessage.assistant("")))
             flush()
-            // 关键：反转显示列表，使最新消息处于 index 0，配合 reverseLayout 渲染在最底部
             result.asReversed()
         }
 
@@ -382,7 +351,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 )
                 .fillMaxSize(),
         ) {
-            // 在倒序布局中，ScrollBottomKey（列表视觉终点，逻辑起点）放在 DSL 最前
             item(ScrollBottomKey) {
                 Spacer(Modifier.fillMaxWidth().height(5.dp))
             }
@@ -410,12 +378,11 @@ private fun SharedTransitionScope.ChatListNormal(
                             ListSelectableItem(
                                 isSelected = isSelected,
                                 onSelectChange = { checked ->
-                                    if (checked) group.nodes.forEach { selectedItems.add(it.id) }
+                                    if (checked) group.nodes.forEach { if (!selectedItems.contains(it.id)) selectedItems.add(it.id) }
                                     else group.nodes.forEach { selectedItems.remove(it.id) }
                                 },
                                 enabled = selecting,
                             ) {
-                                // 倒序中，最新的 Turn 在 index 0 (或 index 1 如果 index 0 是 phantom)
                                 val isLastTurn = index == 0 || (needsPhantomLoadingTurn && index == 1)
                                 val showRegenerate by remember(group.role, isLastTurn) {
                                     derivedStateOf {
@@ -439,19 +406,12 @@ private fun SharedTransitionScope.ChatListNormal(
                                     onShare = { node ->
                                         selecting = true
                                         selectedItems.clear()
-                                        val nodeIndex = conversation.messageNodes.indexOf(node)
-                                        if (nodeIndex >= 0) {
-                                            selectedItems.addAll(conversation.messageNodes
-                                                .subList(0, nodeIndex + 1)
-                                                .map { it.id })
-                                        }
+                                        // 仅选中长按的消息
+                                        selectedItems.add(node.id)
                                     },
                                     onUpdate = { onUpdateMessage(it) },
                                     onEditLorebookEntry = { entry ->
                                         navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId))
-                                    },
-                                    onModeClick = { mode ->
-                                        navController.navigate(Screen.SettingModes(scrollToModeId = mode.modeId))
                                     },
                                     onMemoryClick = { memory ->
                                         scope.launch {
@@ -470,7 +430,6 @@ private fun SharedTransitionScope.ChatListNormal(
                                 )
                             }
 
-                            // 找回 truncateNode 逻辑：上下文截断线
                             val truncateNode = group.nodes.find { node ->
                                 conversation.messageNodes.indexOf(node) == conversation.truncateIndex - 1
                             }
@@ -512,20 +471,32 @@ private fun SharedTransitionScope.ChatListNormal(
                 exit = slideOutVertically(targetOffsetY = { it * 2 }),
             ) {
                 HorizontalFloatingToolbar(expanded = true) {
-                    Tooltip(tooltip = { Text("Clear selection") }) {
+                    Tooltip(tooltip = { Text(stringResource(R.string.cancel)) }) {
                         IconButton(onClick = { selecting = false; selectedItems.clear() }) { Icon(Icons.Rounded.Close, null) }
                     }
-                    Tooltip(tooltip = { Text("Select all") }) {
-                        IconButton(onClick = {
-                            if (selectedItems.isNotEmpty()) selectedItems.clear()
-                            else selectedItems.addAll(conversation.messageNodes.map { it.id })
-                        }) { Icon(Icons.Rounded.TouchApp, null) }
+
+                    Tooltip(tooltip = { Text(stringResource(R.string.action_favorite)) }) {
+                        IconButton(
+                            enabled = selectedItems.isNotEmpty(),
+                            onClick = {
+                                val messages = conversation.messageNodes
+                                    .filter { it.id in selectedItems }
+                                    .map { it.currentMessage }
+                                onAddFavorite(messages)
+                                selecting = false
+                                selectedItems.clear()
+                            }
+                        ) { Icon(Icons.Rounded.Favorite, null) }
                     }
-                    Tooltip(tooltip = { Text("Confirm") }) {
-                        FilledIconButton(onClick = {
-                            selecting = false
-                            if (selectedItems.isNotEmpty()) showExportSheet = true
-                        }) { Icon(Icons.Rounded.Check, null) }
+
+                    Tooltip(tooltip = { Text(stringResource(R.string.action_share)) }) {
+                        FilledIconButton(
+                            enabled = selectedItems.isNotEmpty(),
+                            onClick = {
+                                selecting = false
+                                showExportSheet = true
+                            }
+                        ) { Icon(Icons.Rounded.Share, null) }
                     }
                 }
             }
@@ -594,7 +565,6 @@ private fun SharedTransitionScope.ChatListPreview(
 ) {
     var searchQuery by remember { mutableStateOf(initialSearchQuery ?: "") }
     val previewTopPadding = 20.dp
-    // 修复点：在 remember 外部获取 Composable 颜色
     val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
 
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
@@ -624,8 +594,6 @@ private fun SharedTransitionScope.ChatListPreview(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.sharedBounds(rememberSharedContentState(key = "conversation_list_preview"), animatedVisibilityScope).fillMaxWidth().weight(1f),
         ) {
-            // 在预览模式下，通常使用正序。如果列表较长，可以考虑反序显示最新。
-            // 保持正序，因为它主要用于全文搜索。
             itemsIndexed(items = filteredMessages, key = { _, item -> item.id }) { _, node ->
                 val message = node.currentMessage
                 val isUser = message.role == me.rerere.ai.core.MessageRole.USER

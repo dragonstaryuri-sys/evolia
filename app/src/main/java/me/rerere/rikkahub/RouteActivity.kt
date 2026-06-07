@@ -91,6 +91,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPermissionCheckPage
 import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
+import me.rerere.rikkahub.ui.pages.favorites.FavoritesPage
 import me.rerere.rikkahub.discover.ui.ScheduleScreen
 import me.rerere.rikkahub.discover.ui.TokenReportScreen
 import me.rerere.rikkahub.discover.ui.BookShelfScreen
@@ -451,6 +452,9 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.DiaryList> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.DiaryList>()
                         DiaryListPage(assistantId = route.assistantId)
+                    }
+                    composable<Screen.Favorites> {
+                        FavoritesPage()
                     }
                     composable<Screen.Schedule> {
                         ScheduleScreen(onBack = { navBackStack.popBackStack() })

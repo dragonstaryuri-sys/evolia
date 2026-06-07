@@ -1676,4 +1676,15 @@
   <string name="operation_manual">Operation Manual</string>
   <string name="operation_description">Check the detailed instructions for function usage</string>
 
+  <!-- Favorites related functions -->
+  <string name="menu_page_favorites">Favorites</string>
+  <string name="chat_page_multi_select">Multi-select</string>
+  <string name="favorites_page_title">My Favorites</string>
+  <string name="favorites_chat_history_title">Chat history between %1$s and %2$s</string>
+  <string name="favorites_add_success">Added to favorites</string>
+  <string name="favorites_add_failed">Failed to add to favorites. Please try again later.</string>
+  <string name="favorites_empty">No favorites yet</string>
+  <string name="action_favorite">Favorite</string>
+  <string name="action_share">Share</string>
+
 </resources>

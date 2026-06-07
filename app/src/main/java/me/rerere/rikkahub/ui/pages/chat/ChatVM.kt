@@ -33,6 +33,7 @@ import me.rerere.rikkahub.core.data.model.replaceRegexes
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.core.data.repository.FavoriteRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
@@ -46,6 +47,11 @@ import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 import androidx.compose.runtime.derivedStateOf
+import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
+import me.rerere.rikkahub.common.JsonInstant
+import kotlinx.serialization.encodeToString
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 
 
 private const val TAG = "ChatVM"
@@ -60,6 +66,7 @@ class ChatVM(
     val updateChecker: UpdateChecker,
     private val appScope: me.rerere.rikkahub.AppScope,
     private val memoryRepo: MemoryRepository,
+    private val favoriteRepo: FavoriteRepository,
 ) : ViewModel() {
 
     suspend fun getFullMemoryContent(memoryId: Int, memoryType: Int): String? {
@@ -614,6 +621,27 @@ class ChatVM(
 
     fun deleteFile(uri: Uri) { appScope.launch { context.deleteChatFiles(listOf(uri)) } }
     suspend fun refreshContext(): ChatService.ContextRefreshResult { return chatService.summarizeAndRefresh(_currentActiveId.value) }
+
+    fun addFavorite(messages: List<UIMessage>, assistant: Assistant, userNickname: String) {
+        viewModelScope.launch {
+            try {
+                val favorite = FavoriteEntity(
+                    type = if (messages.size > 1) 1 else 0,
+                    content = JsonInstant.encodeToString(messages),
+                    senderName = if (messages.size == 1) {
+                        if (messages.first().role == me.rerere.ai.core.MessageRole.USER) userNickname else assistant.name
+                    } else "",
+                    agentName = assistant.name,
+                    userNickname = userNickname,
+                    messageTime = messages.first().createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                )
+                favoriteRepo.addFavorite(favorite)
+                _toastFlow.emit(context.getString(R.string.favorites_add_success))
+            } catch (e: Exception) {
+                _toastFlow.emit(context.getString(R.string.favorites_add_failed))
+            }
+        }
+    }
 
     private fun getDateLabel(date: LocalDate): String {
         val today = LocalDate.now()

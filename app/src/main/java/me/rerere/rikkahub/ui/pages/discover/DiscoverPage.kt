@@ -3,10 +3,7 @@ package me.rerere.rikkahub.ui.pages.discover
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoStories
-import androidx.compose.material.icons.rounded.Book
-import androidx.compose.material.icons.rounded.Forum
-import androidx.compose.material.icons.rounded.Token
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -120,7 +117,19 @@ fun DiscoverPage() {
                 )
             }
 
-            // 4. 现有功能：日记
+            // 4. 收藏
+            item {
+                DiscoverItem(
+                    title = stringResource(R.string.menu_page_favorites),
+                    description = stringResource(R.string.favorites_page_title),
+                    icon = { Icon(Icons.Rounded.Favorite, null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        navController.navigate(Screen.Favorites)
+                    }
+                )
+            }
+
+            // 5. 现有功能：日记
             item {
                 DiscoverItem(
                     title = stringResource(R.string.discover_page_diary),
@@ -132,7 +141,7 @@ fun DiscoverPage() {
                 )
             }
 
-            // 5. 现有功能：社区（开发中）
+            // 6. 现有功能：社区（开发中）
             item {
                 val developingText = stringResource(R.string.discover_page_developing)
                 DiscoverItem(
