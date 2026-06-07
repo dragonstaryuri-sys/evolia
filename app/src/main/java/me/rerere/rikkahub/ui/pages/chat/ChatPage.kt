@@ -69,6 +69,8 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
+import me.rerere.rikkahub.ui.components.chat.CallScreen
+import me.rerere.rikkahub.ui.components.chat.CallStatus
 
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
@@ -210,6 +212,12 @@ private fun ChatPageContent(
     val context = LocalContext.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
+
+    // Voice Call States
+    var isCallActive by rememberSaveable { mutableStateOf(false) }
+    var isMuted by remember { mutableStateOf(false) }
+    var isSpeakerOn by remember { mutableStateOf(true) }
+    var callStatus by remember { mutableStateOf(CallStatus.CONNECTING) }
 
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by remember { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
@@ -539,6 +547,7 @@ private fun ChatPageContent(
                             onClearContext = { vm.startNewTopic() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                             onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
+                            onStartCall = { isCallActive = true },
                             onRefreshContext = { vm.refreshContext() },
                             onDeleteFile = { vm.deleteFile(it) },
                         )
@@ -589,6 +598,7 @@ private fun ChatPageContent(
                             onClearContext = { vm.startNewTopic() },
                             onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
                             onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
+                            onStartCall = { isCallActive = true },
                             onRefreshContext = { vm.refreshContext() },
                             onDeleteFile = { vm.deleteFile(it) },
                         )
@@ -625,6 +635,27 @@ private fun ChatPageContent(
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                         }
+                    }
+                }
+
+                // Voice Call Overlay
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isCallActive,
+                    enter = fadeIn() + expandIn(expandFrom = Alignment.BottomCenter),
+                    exit = fadeOut() + shrinkOut(shrinkTowards = Alignment.BottomCenter)
+                ) {
+                    CallScreen(
+                        assistant = currentAssistant,
+                        status = callStatus,
+                        isMuted = isMuted,
+                        isSpeakerOn = isSpeakerOn,
+                        onMuteToggle = { isMuted = !isMuted },
+                        onSpeakerToggle = { isSpeakerOn = !isSpeakerOn },
+                        onHangup = { isCallActive = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    BackHandler {
+                        isCallActive = false
                     }
                 }
                 }

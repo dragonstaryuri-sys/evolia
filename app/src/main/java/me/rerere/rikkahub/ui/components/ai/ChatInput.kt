@@ -121,6 +121,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.ui.draw.rotate
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
@@ -184,6 +185,7 @@ fun ChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
+    onStartCall: () -> Unit = {},
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = {
         ChatService.ContextRefreshResult(
             false,
@@ -618,6 +620,7 @@ fun ChatInput(
                             onUpdateAssistant = onUpdateAssistant,
                             onUpdateConversation = onUpdateConversation,
                             onNavigateToLorebook = onNavigateToLorebook,
+                            onStartCall = onStartCall,
                             onRefreshContext = onRefreshContext,
                             onDismiss = { dismissExpand() }
                         )
@@ -1156,6 +1159,7 @@ internal fun FilesPicker(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
+    onStartCall: () -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
     onDismiss: () -> Unit
 ) {
@@ -1168,7 +1172,7 @@ internal fun FilesPicker(
     val showContextRefresh =
         assistant.enableContextRefresh && !isKeyboardVisible && conversation.currentMessages.size > 2
 
-    // Shapes for 3-button row - different based on keyboard visibility
+    // Shapes for 4-button row
     val topLeftShape = if (isKeyboardVisible) {
         RoundedCornerShape(topStart = 24.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 10.dp)
     } else {
@@ -1207,7 +1211,7 @@ internal fun FilesPicker(
             .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // File upload buttons row: Capture, Photo Library, Files
+        // File upload buttons row: Capture, Photo Library, Files, Call
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1236,10 +1240,22 @@ internal fun FilesPicker(
                 // Check if Python is enabled for this assistant
                 val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
                 FilePickButton(
-                    shape = topRightShape,
+                    shape = topMiddleShape,
                     allowAllTypes = isPythonEnabled
                 ) {
                     state.addFiles(it)
+                    onDismiss()
+                }
+            }
+            Box(modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()) {
+                VoiceCallButton(
+                    assistant = assistant,
+                    onUpdateAssistant = onUpdateAssistant,
+                    shape = topRightShape,
+                    onStartCall = onStartCall
+                ) {
                     onDismiss()
                 }
             }
@@ -1755,6 +1771,34 @@ fun FilePickButton(
         }
     ) {
         pickMedia.launch(arrayOf("*/*"))
+    }
+}
+
+@Composable
+fun VoiceCallButton(
+    assistant: Assistant,
+    onUpdateAssistant: (Assistant) -> Unit,
+    shape: Shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+    onStartCall: () -> Unit = {},
+    onDismiss: () -> Unit
+) {
+    val haptics = rememberPremiumHaptics()
+
+    BigIconTextButton(
+        shape = shape,
+        icon = {
+            Icon(Icons.Rounded.Call, null)
+        }
+    ) {
+        haptics.perform(HapticPattern.Pop)
+        // 1. 关闭深度思考 (Reasoning)
+        if ((assistant.thinkingBudget ?: 0) > 0) {
+            onUpdateAssistant(assistant.copy(thinkingBudget = 0))
+        }
+
+        // 2. 唤起通话逻辑
+        onStartCall()
+        onDismiss()
     }
 }
 

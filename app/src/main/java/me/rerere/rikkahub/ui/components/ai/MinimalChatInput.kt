@@ -60,6 +60,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CameraAlt
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlashOn
@@ -79,11 +80,11 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -159,6 +160,7 @@ fun MinimalChatInput(
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
     onNavigateToLorebook: (String) -> Unit = {},
+    onStartCall: () -> Unit = {},
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
     onDeleteFile: (Uri) -> Unit = {},
 ) {
@@ -458,6 +460,7 @@ fun MinimalChatInput(
                 onUpdateAssistant = onUpdateAssistant,
                 onUpdateSearchService = onUpdateSearchService,
                 onNavigateToLorebook = onNavigateToLorebook,
+                onStartCall = onStartCall,
                 onRefreshContext = onRefreshContext,
                 onDeleteFile = onDeleteFile,
                 onDismiss = { showPicker = false }
@@ -480,6 +483,7 @@ private fun MinimalPickerContent(
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateSearchService: (Int) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
+    onStartCall: () -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
     onDeleteFile: (Uri) -> Unit,
     onDismiss: () -> Unit
@@ -488,6 +492,7 @@ private fun MinimalPickerContent(
     val localSettings = LocalSettings.current
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics()
 
     // OLED dark mode detection for buttons (not sheet backgrounds)
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
@@ -707,10 +712,25 @@ private fun MinimalPickerContent(
             // Files button - icon only, no label
             MinimalFileButtonGroupedIconOnly(
                 icon = Icons.Rounded.FolderOpen,
-                shape = rightButtonShape,
+                shape = middleButtonShape,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     filePickerLauncher.launch("*/*")
+                }
+            )
+
+            // Voice Call button
+            MinimalFileButtonGroupedIconOnly(
+                icon = Icons.Rounded.Call,
+                shape = rightButtonShape,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    if ((assistant.thinkingBudget ?: 0) > 0) {
+                        onUpdateAssistant(assistant.copy(thinkingBudget = 0))
+                    }
+                    onStartCall()
+                    onDismiss()
                 }
             )
         }
