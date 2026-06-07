@@ -240,7 +240,7 @@
   <string name="chat_page_consolidate">Consolidate</string>
   <string name="chat_page_save">Save</string>
   <string name="chat_page_scroll_to_bottom">Scroll to Bottom</string>
-  <string name="chat_page_search_placeholder">Search chats</string>
+  <string name="chat_page_search_placeholder">Only the chat history of the latest session is supported for search.</string>
   <string name="chat_page_today">Today</string>
   <string name="chat_page_yesterday">Yesterday</string>
   <string name="citations_count">%1$d citations</string>
