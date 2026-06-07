@@ -252,7 +252,7 @@ class ChatService(
         val activeConvId = conversationReferences.keys
             .mapNotNull { id -> conversations[id]?.value }
             .filter { it.assistantId == originalAssistantId }
-            .maxByOrNull { it.updateAt } // 找到最新更新的那一个
+            .maxByOrNull { it.updateAt }
             ?.id
 
         val conversationId = if (activeConvId != null) {
@@ -305,7 +305,7 @@ class ChatService(
                     delay(200)
                 }
 
-                initializeConversation(conversationId)
+                initializeConversation(conversationId, targetAssistantId = originalAssistantId)
                 val currentConv = getConversationFlow(conversationId).value
 
                 val newNode = UIMessage(
@@ -381,15 +381,14 @@ class ChatService(
         _generationJobs.value = _generationJobs.value.toMutableMap().apply { remove(conversationId) }
     }
 
-    suspend fun initializeConversation(conversationId: Uuid) {
+    suspend fun initializeConversation(conversationId: Uuid, targetAssistantId: Uuid? = null) {
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
         val currentConv = conversations[conversationId]?.value ?: currentConvInDb
 
-        val currentAssistantId = currentConv?.assistantId
-            ?: lastConversationId?.let { oldId ->
-                conversations[oldId]?.value?.assistantId ?: conversationRepo.getConversationById(oldId)?.assistantId
-            }
+        val currentAssistantId = targetAssistantId
+            ?: currentConv?.assistantId
             ?: settingsStore.settingsFlowRaw.first().getCurrentAssistant().id
+
         lastConversationId?.let { oldId ->
             if (oldId != conversationId) {
                 val oldConv = conversationRepo.getConversationById(oldId)
@@ -421,7 +420,10 @@ class ChatService(
         val conversation = currentConv
         if (currentConvInDb != null) {
             updateConversation(conversationId, currentConvInDb)
-            settingsStore.updateAssistant(currentConvInDb.assistantId)
+            // 如果不是由后台任务显式指定的初始化，则同步更新全局助手设定
+            if (targetAssistantId == null) {
+                settingsStore.updateAssistant(currentConvInDb.assistantId)
+            }
         } else {
             val settings = settingsStore.settingsFlowRaw.first()
             val assistant = settings.getAssistantById(currentAssistantId) ?: settings.getCurrentAssistant()
