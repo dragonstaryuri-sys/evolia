@@ -61,7 +61,6 @@ class UpdateChecker(private val client: OkHttpClient) {
 
         if (response.isSuccessful) {
             val release = json.decodeFromString<GitHubRelease>(response.body.string())
-            val arch = getDeviceArchitecture()
 
             val downloads = release.assets
                 .filter { it.name.endsWith(".apk") }
@@ -73,12 +72,9 @@ class UpdateChecker(private val client: OkHttpClient) {
                     )
                 }
 
+            // 根据设备架构自动排序，首位即为最匹配的版本
             val sortedDownloads = downloads.sortedByDescending { download ->
-                when {
-                    download.name.contains(arch, ignoreCase = true) -> 2
-                    download.name.contains("universal", ignoreCase = true) -> 1
-                    else -> 0
-                }
+                calculateMatchScore(download.name)
             }
 
             emit(
@@ -182,15 +178,36 @@ class UpdateChecker(private val client: OkHttpClient) {
         tasks.awaitAll().filterNotNull().minByOrNull { it.second }?.first
     }
 
-    private fun getDeviceArchitecture(): String {
-        val abis = Build.SUPPORTED_ABIS
-        return when {
-            abis.any { it.contains("arm64") } -> "arm64-v8a"
-            abis.any { it.contains("armeabi") } -> "armeabi-v7a"
-            abis.any { it.contains("x86_64") } -> "x86_64"
-            abis.any { it.contains("x86") } -> "x86"
-            else -> "universal"
+    /**
+     * 根据文件名和设备支持的 ABI 计算匹配分数
+     * 分数越高表示越适配当前设备
+     */
+    private fun calculateMatchScore(fileName: String): Int {
+        val name = fileName.lowercase()
+        val supportedAbis = Build.SUPPORTED_ABIS
+
+        // 查找第一个匹配的 ABI
+        for ((index, abi) in supportedAbis.withIndex()) {
+            val isMatch = when (abi.lowercase()) {
+                "arm64-v8a" -> name.contains("arm64") || name.contains("v8a") || name.contains("arm64-v8a")
+                "armeabi-v7a" -> name.contains("armeabi-v7a") || name.contains("v7a") || name.contains("armv7")
+                "x86_64" -> name.contains("x86_64") || name.contains("x64")
+                "x86" -> name.contains("x86") && !name.contains("x86_64")
+                else -> name.contains(abi.lowercase())
+            }
+
+            if (isMatch) {
+                // 基础分 100，根据在 SUPPORTED_ABIS 中的位置扣分（越靠前越好）
+                return 100 - index
+            }
         }
+
+        // 如果包含 universal，给一个固定中等分数
+        if (name.contains("universal")) {
+            return 50
+        }
+
+        return 0
     }
 
     private fun formatFileSize(bytes: Long): String {
