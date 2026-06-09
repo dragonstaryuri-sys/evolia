@@ -69,7 +69,16 @@ class DiaryVM(
                             // 如果是新完成的任务且成功，弹出 Toast
                             if (info.state == WorkInfo.State.SUCCEEDED && !processedTaskIds.contains(info.id)) {
                                 processedTaskIds.add(info.id)
-                                toaster.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
+
+                                // 检查是否是跳过的任务
+                                val isSkipped = info.outputData.getBoolean("skipped", false)
+                                val reason = info.outputData.getString("reason")
+
+                                if (isSkipped && reason == "already_exists") {
+                                    toaster.show(app.getString(R.string.diary_already_generated), type = ToastType.Info)
+                                } else if (!isSkipped) {
+                                    toaster.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
+                                }
                             } else if (info.state.isFinished) {
                                 processedTaskIds.add(info.id)
                             }

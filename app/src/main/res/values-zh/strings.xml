@@ -1274,7 +1274,7 @@
   <string name="assistant_memory_rag_limit_value">%d 条记忆</string>
 
   <!-- 日记相关 -->
-  <string name="diary_already_generated">今天的日记已经生成过了</string>
+  <string name="diary_already_generated">今天已经写过日记了！</string>
   <string name="diary_generate_failed">生成日记失败: %s</string>
   <string name="diary_select_time">选择时间</string>
   <string name="diary_auto_generate_time">自动生成时间</string>

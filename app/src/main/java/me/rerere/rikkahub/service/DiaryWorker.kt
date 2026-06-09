@@ -34,6 +34,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
+import androidx.work.workDataOf
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
@@ -77,20 +78,24 @@ class DiaryWorker(
             // 检查今天是否已有日记
             val todayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
             if (todayDiary != null) {
-                if (isManual) showSimpleNotification(applicationContext.getString(R.string.diary_no_new_messages))
-                return Result.success()
+                // 如果是手动触发且日记已存在，标记为 skipped，由 UI 层显示更精确的提示
+                return if (isManual) {
+                    Result.success(workDataOf("skipped" to true, "reason" to "already_exists"))
+                } else {
+                    Result.success()
+                }
             }
 
             // 获取最后一次日记
             val lastDiary = diaryRepo.getLastDiaryOfAssistant(assistant.id.toString())
 
-            // 确定时间起点：从上篇日记开始，如果没有日记则从今天凌晨开始
+            // 确定时间起点
             val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-            // 1. 获取自上次日记以来的所有新消息 (不区分虚拟/普通模式)
+            // 1. 获取新消息
             val conversations = conversationRepo.getConversationsOfAssistantAnyMode(assistant.id).first()
-            val newMessages = conversations.flatMap { conv ->
+            val allMessages = conversations.flatMap { conv ->
                 conv.messageNodes.flatMap { node ->
                     node.messages.filter {
                         it.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds() > startTimeThreshold
@@ -98,12 +103,16 @@ class DiaryWorker(
                 }
             }.sortedBy { it.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds() }
 
+            // 核心修改：日记生成只拼接消息文本内容，不拼接思考链和工具调用的信息
+            val newMessages = allMessages.filter {
+                it.role != MessageRole.TOOL && it.toContentText().isNotBlank()
+            }
+
             val triggerTime = LocalDateTime.now().format(timeFormatter)
             val locale = Locale.getDefault().toLanguageTag()
 
             // 2. 构造 Prompt
             val finalPrompt: String = if (newMessages.isEmpty()) {
-                // 即使没说话也生成
                 val memories = memoryRepo.getCombinedMemoriesFlow(assistant.id.toString()).first()
                 val selectedMemories = if (memories.isNotEmpty()) {
                     memories.shuffled().take(3).joinToString("\n") { "- ${it.content}" }
@@ -119,7 +128,8 @@ class DiaryWorker(
             } else {
                 val chatContent = newMessages.joinToString("\n") { message ->
                     val time = formatTimestamp(message.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
-                    "[$time] ${message.role}: ${message.toText()}"
+                    // 仅使用文本正文，过滤推理过程
+                    "[$time] ${message.role}: ${message.toContentText()}"
                 }
                 val firstMsgTime = formatTimestamp(newMessages.first().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
                 val lastMsgTime = formatTimestamp(newMessages.last().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
@@ -152,8 +162,8 @@ class DiaryWorker(
                 model = model,
                 messages = listOf(UIMessage.user(finalPrompt)),
                 assistant = assistant.copy(
-                    temperature = 0.6f, // 降低随机性，让日记更稳定
-                    topP = 0.8f,
+                    temperature = 0.9f,
+                    topP = 0.6f,
                 )
             ).collect { chunk ->
                 if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
@@ -174,12 +184,15 @@ class DiaryWorker(
                     createdAt = System.currentTimeMillis()
                 )
                 diaryRepo.insertDiary(diary)
-                showSuccessNotification(assistant.name, assistant.id.toString())
+
+                // 只有自动生成时才发送系统通知。如果是手动生成，UI 层已经有对应的 Toast 提示了。
+                if (!isManual) {
+                    showSuccessNotification(assistant.name, assistant.id.toString())
+                }
             }
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Diary generation failed", e)
-            // 核心修复：如果是手动触发且抛出异常，通知用户具体的错误信息
             if (isManual) {
                 val errorInfo = e.localizedMessage ?: e.toString()
                 val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
