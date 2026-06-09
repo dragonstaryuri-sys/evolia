@@ -1696,5 +1696,11 @@
   <string name="call_action_end">Hang Up</string>
   <string name="call_action_mute">Mute</string>
   <string name="call_action_speaker">Speaker</string>
+  <!-- MiniMax Realtime Settings -->
+  <string name="setting_provider_minimax_realtime_title">Real-time Voice Settings</string>
+  <string name="setting_provider_minimax_group_id">Group ID</string>
+  <string name="setting_provider_minimax_realtime_hint">To use the real-time call feature of this model, please fill in the information below. The Group ID can be obtained from the MiniMax Console.</string>
+  <string name="setting_provider_minimax_realtime_voice">Real-time Voice Timbre</string>
+  <string name="setting_provider_minimax_realtime_voice_hint">Example: ash, dedicated timbre for real-time interface</string>
 
 </resources>

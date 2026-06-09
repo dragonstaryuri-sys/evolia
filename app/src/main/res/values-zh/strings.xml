@@ -1656,4 +1656,10 @@
   <string name="call_action_end">挂断</string>
   <string name="call_action_mute">静音</string>
   <string name="call_action_speaker">扬声器</string>
+  <string name="setting_provider_minimax_realtime_title">实时语音设置</string>
+  <string name="setting_provider_minimax_group_id">Group ID</string>
+  <string name="setting_provider_minimax_realtime_hint">如果需要使用该模型的实时通话功能，请填写以下信息。Group ID 可在 MiniMax 控制台获取。</string>
+  <string name="setting_provider_minimax_realtime_voice">实时语音音色</string>
+  <string name="setting_provider_minimax_realtime_voice_hint">例如: ash, 实时接口专用音色</string>
+
 </resources>
