@@ -224,7 +224,7 @@ class GenerationHandler(
                                             put("results", JsonArray(relevant.map { (mem, _) ->
                                                 buildJsonObject {
                                                     put("segment_id", JsonPrimitive(mem.id))
-                                                    put("time", JsonPrimitive(mem.timestamp))
+                                                    put("time", JsonPrimitive(formatMemoryDate(mem.timestamp)))
                                                     put("content", JsonPrimitive(mem.content))
                                                 }
                                             }))
@@ -257,6 +257,7 @@ class GenerationHandler(
 
                                         buildJsonObject {
                                             put("segment_id", JsonPrimitive(segmentId))
+                                            put("time", JsonPrimitive(formatMemoryDate(chatSegment.timestamp)))
                                             put("details", JsonPrimitive(details))
                                         }
                                     }
@@ -1327,12 +1328,19 @@ class GenerationHandler(
                         put("hasEmbedding", JsonPrimitive(memory.hasEmbedding))
                         memory.embeddingModelId?.let { put("embeddingModelId", JsonPrimitive(it)) }
                         put("timestamp", JsonPrimitive(memory.timestamp))
-                        memory.significance?.let { put("significance", JsonPrimitive(it)) }
+                        memory.significance?.let { put("significance", JsonPrimitive(memory.significance ?: 0)) }
                     }
                 }
             }
         )
     )
+
+    private fun formatMemoryDate(timestamp: Long): String {
+        if (timestamp <= 0) return "Unknown Date"
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+            .withZone(ZoneId.systemDefault())
+        return formatter.format(Instant.ofEpochMilli(timestamp))
+    }
 
     private fun buildMemoryPrompt(memories: List<AssistantMemory>): String {
         Log.d(TAG, "buildMemoryPrompt: Injecting ${memories.size} memories into prompt")
@@ -1343,13 +1351,6 @@ class GenerationHandler(
         val coreMemories = memories.filter { it.type == MemoryType.CORE }
         val segmentMemories = memories.filter { it.type == MemoryType.SEGMENT }
         val boostedMemories = memories.filter { it.type == 2 }
-
-        fun formatMemoryDate(timestamp: Long): String {
-            if (timestamp <= 0) return "Unknown Date"
-            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                .withZone(ZoneId.systemDefault())
-            return formatter.format(Instant.ofEpochMilli(timestamp))
-        }
 
         return buildString {
             append("以下是可供参考的记忆片段.若记忆信息不足，需要获取更多记忆或详细记忆原文，请调用`retrieve_memory`工具.\n")
