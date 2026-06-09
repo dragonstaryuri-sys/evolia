@@ -391,38 +391,45 @@ class ChatService(
 
         lastConversationId?.let { oldId ->
             if (oldId != conversationId) {
-                val oldConv = conversationRepo.getConversationById(oldId)
+                // 【关键点】：去数据库查一下，看看当前进入的这个 ID 是不是一个从未见过的新会话
+                val isNewConversation = currentConvInDb == null ||
+                    currentConvInDb.currentMessages.none { it.role == MessageRole.USER }
 
-                if (oldConv != null && oldConv.assistantId == currentAssistantId) {
-                    val settings = settingsStore.settingsFlow.first()
-                    val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
+                // 只有进入“全新会话”时，才触发对上一个会话 (oldId) 的归档和同步动画
+                if (isNewConversation) {
+                    val oldConv = conversationRepo.getConversationById(oldId)
 
-                    if (assistant.enableMemory) {
-                        appScope.launch {
-                            if (assistant.enableRecentChatsReference) {
-                                // 开启了连贯模式：显示动画，UI 动画在 L2 (主路径) 完成后结束
-                                _syncingConversationIds.update { it + conversationId }
-                                try {
-                                    // L1 并行在后台运行，不阻塞 L2 和 UI 动画的关闭
-                                    if (assistant.enableDetailMemory) {
-                                        launch { summarizeAndRefresh(oldId, onlySegments = true, skipArchive = true) }
+                    if (oldConv != null && oldConv.assistantId == currentAssistantId) {
+                        val settings = settingsStore.settingsFlow.first()
+                        val assistant = settings.getAssistantById(oldConv.assistantId) ?: settings.getCurrentAssistant()
+
+                        if (assistant.enableMemory) {
+                            appScope.launch {
+                                if (assistant.enableRecentChatsReference) {
+                                    // 只有新建会话且开启了连贯模式，才显示动画
+                                    _syncingConversationIds.update { it + conversationId }
+                                    try {
+                                        if (assistant.enableDetailMemory) {
+                                            launch { summarizeAndRefresh(oldId, onlySegments = true, skipArchive = true) }
+                                        }
+                                        archiveConversation(oldId, force = true)
+                                    } finally {
+                                        _syncingConversationIds.update { it - conversationId }
                                     }
-                                    // L2 在当前路径挂起运行
-                                    archiveConversation(oldId, force = true)
-                                } finally {
-                                    // 只要 L2 全量归档完成，不论后台 L1 进度，立即结束动画
-                                    _syncingConversationIds.update { it - conversationId }
-                                }
-                            } else {
-                                // 未开启连贯模式：静默后台执行
-                                if (assistant.enableDetailMemory) {
-                                    summarizeAndRefresh(oldId, onlySegments = true)
-                                } else if (assistant.enableMemoryConsolidation) {
-                                    archiveConversation(oldId, force = true)
+                                } else {
+                                    // 未开启连贯模式：静默后台执行
+                                    if (assistant.enableDetailMemory) {
+                                        summarizeAndRefresh(oldId, onlySegments = true)
+                                    } else if (assistant.enableMemoryConsolidation) {
+                                        archiveConversation(oldId, force = true)
+                                    }
                                 }
                             }
                         }
                     }
+                } else {
+                    // 如果是切换到已有的旧会话，或者返回主页，这里什么都不做，直接跳过归档
+                    Log.d(TAG, "切换到已有会话或返回主页，跳过自动归档逻辑。")
                 }
             }
         }
@@ -509,7 +516,7 @@ class ChatService(
                 val providerHandler = handler as Provider<ProviderSetting>
                 val resp = retryIO(times = 2) {
                     providerHandler.generateText(
-                        provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 0.5f)
+                        provider, listOf(UIMessage.user(prompt)), TextGenerationParams(model, 0.3f, 1.0f, thinkingBudget = 0)
                     )
                 }
                 resp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
@@ -1039,7 +1046,7 @@ class ChatService(
 
             val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(
-                provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f)
+                provider, listOf(UIMessage.user(tempPrompt)), TextGenerationParams(model, 0.3f, 1.0f, thinkingBudget = 0)
             )
             tempResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
             val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
@@ -1219,7 +1226,7 @@ class ChatService(
                             "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8)
                                 .joinToString("\n") { it.summaryAsText() })
                     )
-                ), TextGenerationParams(model, 1.0f, 1.0f)
+                ), TextGenerationParams(model, 1.0f, 1.0f, thinkingBudget = 0)
             )
             result.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
             val suggestions =
