@@ -1350,6 +1350,12 @@ class GenerationHandler(
 
         val coreMemories = memories.filter { it.type == MemoryType.CORE }
         val segmentMemories = memories.filter { it.type == MemoryType.SEGMENT }
+            .sortedByDescending { it.content.length } // 优先保留信息量大的（比如 0-32 优于 0-29）
+            .distinctBy {
+                // 简单的防重：如果两段内容的前 30 个字符几乎一样，通常是重叠生成的，只取一段
+                it.content.take(30).trim()
+            }
+            .sortedByDescending { it.timestamp }
         val boostedMemories = memories.filter { it.type == 2 }
 
         return buildString {

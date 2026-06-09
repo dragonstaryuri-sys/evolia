@@ -990,10 +990,11 @@ class ChatService(
     suspend fun summarizeAndRefresh(
         id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
-        if (summarizingConversations.contains(id)) {
+        // 方案 1: 原子锁拦截 (修复之前非原子判断的问题)
+        if (!summarizingConversations.add(id)) {
+            Log.d(TAG, "summarizeAndRefresh: Archiving for $id already in progress, skipping.")
             return@withContext ContextRefreshResult(false, errorMessage = "正在总结中...请勿重复操作")
         }
-        summarizingConversations.add(id)
 
         try {
             val settings = settingsStore.settingsFlow.first()
@@ -1005,6 +1006,19 @@ class ChatService(
             val messages = conv.currentMessages
 
             if (messages.isEmpty()) return@withContext ContextRefreshResult(false)
+
+            // 方案 2: 获取数据库中确切的最新索引，确保不产生重叠
+            val latestSegmentEndIndex = memoryRepository.getLatestSegmentEndIndex(id.toString()) ?: -1
+            val actualStartIdx = if (latestSegmentEndIndex >= 0) latestSegmentEndIndex + 1 else 0
+
+            val lastIdx = (messages.size - 1).coerceAtLeast(0)
+
+            // 只有当待归档消息确实存在，且符合步长要求时才处理
+            if (actualStartIdx >= lastIdx || lastIdx - actualStartIdx < 2) {
+                Log.d(TAG, "summarizeAndRefresh: Range [$actualStartIdx, $lastIdx] is covered or too small, skipping.")
+                return@withContext ContextRefreshResult(false, errorMessage = "当前没有足够的新消息需要压缩")
+            }
+
             val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId)
                 ?: assistant.chatModelId?.let { settings.findModelById(it) }
@@ -1013,18 +1027,8 @@ class ChatService(
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)
 
-            val lastIdx = (messages.size - 1).coerceAtLeast(0)
-            val startIdx = if (conv.contextSummaryUpToIndex >= 0) (conv.contextSummaryUpToIndex + 1) else 0
-
-            if (startIdx >= lastIdx || lastIdx - startIdx < 2) {
-                return@withContext ContextRefreshResult(false, errorMessage = "当前没有足够的新消息需要压缩（至少需要 2 条新消息）")
-            }
-
-            val toSummarize = if (startIdx <= lastIdx) messages.subList(startIdx, lastIdx + 1) else emptyList()
-
-            if (toSummarize.isEmpty()) {
-                return@withContext ContextRefreshResult(false)
-            }
+            // 使用重新计算的 actualStartIdx 截取消息
+            val toSummarize = messages.subList(actualStartIdx, lastIdx + 1)
 
             val text = toSummarize.joinToString("\n") {
                 "${it.role}: ${it.toContentText().take(500)}"
@@ -1072,7 +1076,7 @@ class ChatService(
                     conversationId = id.toString(),
                     content = finalBackground,
                     keywords = keywords,
-                    startMessageIndex = startIdx,
+                    startMessageIndex = actualStartIdx,
                     endMessageIndex = lastIdx,
                     embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
                     embeddingModelId = embeddingResult?.modelId
@@ -1092,6 +1096,7 @@ class ChatService(
 
             ContextRefreshResult(true, "Segments updated", toSummarize.size)
         } catch (e: Exception) {
+            Log.e(TAG, "summarizeAndRefresh failed for $id", e)
             ContextRefreshResult(false, errorMessage = e.message)
         } finally {
             summarizingConversations.remove(id)

@@ -12,6 +12,7 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "chat_segments",
     indices = [
+        Index(value = ["conversation_id", "start_index"], unique = true), // 强制唯一索引，防止重叠
         Index(value = ["conversation_id"]),
         Index(value = ["assistant_id"])
     ]
@@ -34,7 +35,7 @@ data class ChatSegmentEntity(
     @ColumnInfo("timestamp")
     val timestamp: Long = System.currentTimeMillis(),
     @ColumnInfo("embedding")
-    val embedding: String? = null, // 修改为 String? 类型，存储 JSON 化的向量
+    val embedding: String? = null, // 存储 JSON 化的向量
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")
     val embeddingModelId: String? = null,
     @ColumnInfo(name = "recall_count", defaultValue = "0")

@@ -65,6 +65,10 @@ class MemoryRepository(
                 }
             }
 
+    suspend fun getLatestSegmentEndIndex(conversationId: String): Int? {
+        return chatSegmentDAO.getLatestSegmentEndIndex(conversationId)
+    }
+
     suspend fun retrieveRelevantSegments(
         assistantId: String,
         conversationId: String,

@@ -34,7 +34,7 @@ import kotlinx.serialization.decodeFromString
         AgentMonitorTaskEntity::class,
         FavoriteEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -84,7 +84,8 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `assistant_extended_state` (
                         `assistantId` TEXT NOT NULL,
                         `personality` TEXT NOT NULL,
@@ -96,13 +97,15 @@ abstract class AppDatabase : RoomDatabase() {
                         `relationships` TEXT NOT NULL,
                         PRIMARY KEY(`assistantId`)
                     )
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
         }
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `MilestoneEntity` (
                         `id` TEXT NOT NULL,
                         `assistant_id` TEXT NOT NULL,
@@ -112,13 +115,15 @@ abstract class AppDatabase : RoomDatabase() {
                         `created_at` INTEGER NOT NULL,
                         PRIMARY KEY(`id`)
                     )
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
         }
 
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `user_device_state` (
                         `id` INTEGER NOT NULL,
                         `foreground_app` TEXT NOT NULL,
@@ -127,8 +132,10 @@ abstract class AppDatabase : RoomDatabase() {
                         `last_updated` INTEGER NOT NULL,
                         PRIMARY KEY(`id`)
                     )
-                """.trimIndent())
-                db.execSQL("""
+                """.trimIndent()
+                )
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `agent_monitor_tasks` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         `assistant_id` TEXT NOT NULL,
@@ -139,7 +146,8 @@ abstract class AppDatabase : RoomDatabase() {
                         `is_enabled` INTEGER NOT NULL DEFAULT 1,
                         `created_at` INTEGER NOT NULL
                     )
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
         }
 
@@ -184,7 +192,8 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("""
+                db.execSQL(
+                    """
                     CREATE TABLE IF NOT EXISTS `favorites` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                         `type` INTEGER NOT NULL,
@@ -195,8 +204,26 @@ abstract class AppDatabase : RoomDatabase() {
                         `message_time` INTEGER NOT NULL,
                         `create_at` INTEGER NOT NULL
                     )
-                """.trimIndent())
+                """.trimIndent()
+                )
             }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+            DELETE FROM chat_segments
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM chat_segments
+                GROUP BY conversation_id, start_index
+            )
+        """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_segments_conversation_id_start_index` ON `chat_segments` (`conversation_id`, `start_index`)")
+            }
+
         }
     }
 }

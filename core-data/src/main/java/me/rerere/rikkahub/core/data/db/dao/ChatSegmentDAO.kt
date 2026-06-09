@@ -39,5 +39,6 @@ interface ChatSegmentDAO {
     @Query("UPDATE chat_segments SET recall_count = recall_count + 1 WHERE id = :id")
     suspend fun incrementRecallCount(id: Int)
 
-
+    @Query("SELECT MAX(end_index) FROM chat_segments WHERE conversation_id = :conversationId")
+    suspend fun getLatestSegmentEndIndex(conversationId: String): Int?
 }
