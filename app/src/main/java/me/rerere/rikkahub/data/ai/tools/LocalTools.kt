@@ -1537,7 +1537,25 @@ class LocalTools(
                                 val monitorName =
                                     json["monitor_name"]?.jsonPrimitive?.contentOrNull ?: "Unnamed Monitor"
                                 val dataReq = json["data_requirements"]?.toString() ?: "[]"
-                                val conditions = json["conditions"]?.toString() ?: "{}"
+
+                                // Auto-fix: if foreground_app is not provided but continuous_usage_minutes is,
+                                // rename it to total_continuous_minutes.
+                                val conditionsObj = json["conditions"]?.jsonObject ?: buildJsonObject {}
+                                val processedConditions = if (conditionsObj.containsKey("continuous_usage_minutes") && !conditionsObj.containsKey("foreground_app")) {
+                                    buildJsonObject {
+                                        conditionsObj.forEach { (k, v) ->
+                                            if (k == "continuous_usage_minutes") {
+                                                put("total_continuous_minutes", v)
+                                            } else {
+                                                put(k, v)
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    conditionsObj
+                                }
+                                val conditions = processedConditions.toString()
+
                                 val triggerMsg =
                                     json["trigger_message"]?.jsonPrimitive?.contentOrNull ?: "Monitor triggered"
 
