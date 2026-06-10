@@ -41,7 +41,8 @@
     android:supportsRtl="true"
     android:theme="@style/Theme.Rikkahub"
         android:usesCleartextTraffic="true"
-    tools:targetApi="33">
+    tools:targetApi="33"
+    android:largeHeap="true">
 
     <!-- 显式禁用 Firebase Analytics 采集，防止应用尝试连接 firebaselogging 服务器 -->
     <meta-data

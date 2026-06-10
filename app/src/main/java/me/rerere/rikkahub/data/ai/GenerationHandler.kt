@@ -1446,48 +1446,30 @@ class GenerationHandler(
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
 
         // ==================== 核心 Payload 日志开始 ====================
-        Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        Log.i(TAG, "🚀 [FINAL LLM REQUEST STRUCTURE]")
+        if (me.rerere.rikkahub.BuildConfig.DEBUG) {
+            Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            Log.i(TAG, "🚀 [FINAL LLM REQUEST STRUCTURE]")
 
-        // 1. 打印 Native Tools (这是独立于 Messages 的字段)
-        if (tools.isNotEmpty()) {
-            Log.i(TAG, "📦 [FIELD: tools] (Native Function Calling Definitions)")
-            tools.forEach { tool ->
-                val schema = try {
-                    tool.parameters().toString()
-                } catch (e: Exception) {
-                    "Error: ${e.message}"
+            if (tools.isNotEmpty()) {
+                Log.i(TAG, "📦 [FIELD: tools] (Count: ${tools.size})")
+            }
+
+            Log.i(TAG, "💬 [FIELD: messages] (Sequence for Context Caching)")
+            internalMessages.forEachIndexed { index, msg ->
+                val layerTag = when {
+                    msg.role == CoreMessageRole.SYSTEM && index == 0 -> "LAYER 0: STATIC PRESET"
+                    msg.role == CoreMessageRole.SYSTEM && index == 1 && internalMessages.size > 2 -> "LAYER 1: SEMI-STATIC"
+                    msg.role == CoreMessageRole.SYSTEM && index == internalMessages.lastIndex -> "LAYER 2: DYNAMIC"
+                    else -> "${msg.role.name}:"
                 }
-                Log.i(TAG, "  📍 Tool: ${tool.name}")
-                Log.i(TAG, "     Description: ${tool.description}")
-                Log.i(TAG, "     Schema: $schema")
+
+                // 防御性日志记录：截断过长内容以防止 Logcat 导致内存分配失败
+                val text = msg.toText()
+                val preview = if (text.length > 500) text.take(500) + "... (truncated for logs)" else text
+                Log.i(TAG, "  [$index] $layerTag $preview")
             }
-        } else {
-            Log.i(TAG, "📦 [FIELD: tools] -> EMPTY (Model will not use function calling)")
+            Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         }
-
-        // 2. 打印 Messages 数组 (这是最关键的缓存匹配序列)
-        Log.i(TAG, "💬 [FIELD: messages] (Sequence for Context Caching)")
-        internalMessages.forEachIndexed { index, msg ->
-            val layerTag = when {
-                msg.role == CoreMessageRole.SYSTEM && index == 0 -> "LAYER 0: STATIC PRESET"
-                msg.role == CoreMessageRole.SYSTEM && index == 1 && internalMessages.size > 2 -> "LAYER 1: SEMI-STATIC (Summary/Lorebook)"
-                msg.role == CoreMessageRole.SYSTEM && index == internalMessages.lastIndex -> "LAYER 2: DYNAMIC (Time/RAG/Tools)"
-                msg.role == CoreMessageRole.USER -> "USER:"
-                msg.role == CoreMessageRole.ASSISTANT -> "ASSISTANT:"
-                else -> "MSG #${index} (${msg.role.name})"
-            }
-
-            Log.i(TAG, "  序号: $index | 角色: ${msg.role} | 类型: $layerTag")
-            Log.i(TAG, "  内容预览: >>>")
-            // 这里的 msg.toText() 就是 AI 真正收到的原始字符串内容
-            msg.toText().chunked(100).forEach { Log.i(TAG, "    $it") }
-            Log.i(TAG, "  <<< [内容结束]")
-        }
-
-        // 3. 打印其他关键参数
-        Log.i(TAG, "⚙️ [FIELD: params] -> Temp: ${assistant.temperature}, TopP: ${assistant.topP}, Stream: $stream")
-        Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         // ==================== 核心 Payload 日志结束 ====================
 
         val usedLorebookEntries = buildResult.activatedLorebookEntries
