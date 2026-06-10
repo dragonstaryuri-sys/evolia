@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
@@ -183,14 +184,18 @@ class ChatService(
 
         // 自动管理前台服务状态
         appScope.launch {
-            generationJobs.collect { jobs ->
-                if (jobs.isNotEmpty()) {
-                    if (_isForeground.value) {
+            // 联合监听任务列表和前台状态，确保状态同步
+            combine(generationJobs, _isForeground) { jobs, isForeground ->
+                jobs.isNotEmpty() to isForeground
+            }.collect { (hasJobs, isForeground) ->
+                if (hasJobs) {
+                    if (isForeground) {
                         ChatForegroundService.start(context)
                     } else {
-                        Log.d(TAG, "App is in background, skipping ForegroundService start to avoid crash")
+                        Log.d(TAG, "Jobs running in background, service will continue if already started.")
                     }
                 } else {
+                    // 只要任务清空，必须停止服务
                     ChatForegroundService.stop(context)
                 }
             }
@@ -374,11 +379,13 @@ class ChatService(
             removeGenerationJob(conversationId)
             return
         }
-        _generationJobs.value = _generationJobs.value.toMutableMap().apply { this[conversationId] = job }
+        // 使用原子更新防止任务泄漏
+        _generationJobs.update { it + (conversationId to job) }
     }
 
     private fun removeGenerationJob(conversationId: Uuid) {
-        _generationJobs.value = _generationJobs.value.toMutableMap().apply { remove(conversationId) }
+        // 使用原子更新
+        _generationJobs.update { it - conversationId }
     }
 
     suspend fun initializeConversation(conversationId: Uuid, targetAssistantId: Uuid? = null) {
@@ -501,7 +508,8 @@ class ChatService(
                 baseSummary
             } else {
                 val messagesText = newMessages.joinToString("\n") {
-                    val content = it.toContentText()
+                    // 防御性处理：限制归档时的单条消息长度，防止 Prompt 爆炸及 OOM
+                    val content = it.toContentText().take(2000)
                     "${it.role}: $content"
                 }
                 val locale = Locale.getDefault().displayName
@@ -754,105 +762,108 @@ class ChatService(
 
             val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
-            generationHandler.generateText(
-                settings = settings,
-                model = model,
-                messages = conversation.currentMessages.let {
-                    if (messageRange != null) it.subList(
-                        messageRange.start, messageRange.endInclusive + 1
-                    ) else it
-                },
-                assistant = assistant,
-                memories = retrievedMemories,
-                inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
-                outputTransformers = outputTransformers,
-                tools = buildList {
-                    val isMain = assistant.isMain
-                    val isVirtual = conversation.isVirtual
+            // 硬超时保护：20 分钟
+            kotlinx.coroutines.withTimeout(20 * 60 * 1000L) {
+                generationHandler.generateText(
+                    settings = settings,
+                    model = model,
+                    messages = conversation.currentMessages.let {
+                        if (messageRange != null) it.subList(
+                            messageRange.start, messageRange.endInclusive + 1
+                        ) else it
+                    },
+                    assistant = assistant,
+                    memories = retrievedMemories,
+                    inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
+                    outputTransformers = outputTransformers,
+                    tools = buildList {
+                        val isMain = assistant.isMain
+                        val isVirtual = conversation.isVirtual
 
-                    val supportsBuiltIn =
-                        model.tools.isNotEmpty() || ModelRegistry.GEMINI_SERIES.match(model.modelId)
-                    val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
-                    val searchMode = assistant.searchMode
+                        val supportsBuiltIn =
+                            model.tools.isNotEmpty() || ModelRegistry.GEMINI_SERIES.match(model.modelId)
+                        val useBuiltIn = assistant.preferBuiltInSearch && supportsBuiltIn
+                        val searchMode = assistant.searchMode
 
-                    if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) {
-                        addAll(createSearchTool(settings, assistant, searchMode.index))
-                    }
+                        if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) {
+                            addAll(createSearchTool(settings, assistant, searchMode.index))
+                        }
 
-                    val targetOptions = if (isVirtual) {
-                        assistant.localTools.filter { it is LocalToolOption.TimeSense }
-                    } else if (isMain) {
-                        if (assistant.enableMemory) {
-                            assistant.localTools.toMutableList().apply {
-                                if (!any { it is LocalToolOption.MilestoneManagement }) {
-                                    add(LocalToolOption.MilestoneManagement)
+                        val targetOptions = if (isVirtual) {
+                            assistant.localTools.filter { it is LocalToolOption.TimeSense }
+                        } else if (isMain) {
+                            if (assistant.enableMemory) {
+                                assistant.localTools.toMutableList().apply {
+                                    if (!any { it is LocalToolOption.MilestoneManagement }) {
+                                        add(LocalToolOption.MilestoneManagement)
+                                    }
                                 }
+                            } else {
+                                assistant.localTools.filter { it !is LocalToolOption.MilestoneManagement }
                             }
                         } else {
-                            assistant.localTools.filter { it !is LocalToolOption.MilestoneManagement }
-                        }
-                    } else {
-                        assistant.localTools.filter {
-                            it is LocalToolOption.TimeSense || it is LocalToolOption.EmailService
-                        }
-                    }
-
-                    addAll(
-                        localTools.getTools(
-                            options = targetOptions,
-                            assistantId = assistant.id,
-                            conversationId = conversation.id,
-                            userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()
-                                ?.map { it.url } ?: emptyList()))
-
-                    if (isMain && !isVirtual) {
-                        val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
-                        mcpManager.getAllAvailableTools().forEach { mcpTool ->
-                            val originalName = mcpTool.name
-                            val sanitizedName = originalName.replace(nameRegex, "_").let {
-                                if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
+                            assistant.localTools.filter {
+                                it is LocalToolOption.TimeSense || it is LocalToolOption.EmailService
                             }
-
-                            add(
-                                Tool(
-                                    name = sanitizedName,
-                                    description = mcpTool.description ?: "",
-                                    parameters = { mcpTool.inputSchema },
-                                    execute = {
-                                        mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
-                                    })
-                            )
                         }
-                    }
-                },
-                truncateIndex = conversation.truncateIndex,
-                enabledModeIds = conversation.enabledModeIds,
-                contextSummary = currentEpisode?.content?.removePrefix("虚拟世界："),
-                temporarySummaries = emptyList(),
-                skipContextForResponse = skipContextForResponse,
-                includeSkipContextMessages = includeSkipContextMessages,
-                conversationId = conversationId
-            ).onCompletion {
-                val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
-                val current = getConversationFlow(conversationId).value
-                val updated = current.copy(messageNodes = current.messageNodes.mapIndexed { idx, node ->
-                    val isLast = idx == current.messageNodes.lastIndex
-                    node.copy(messages = node.messages.map { msg ->
-                        val finished = msg.finishReasoning()
-                        if (isLast && finished.role == MessageRole.ASSISTANT && finished.generationDurationMs == null) finished.copy(
-                            generationDurationMs = duration
-                        ) else finished
-                    })
-                }, updateAt = Instant.now())
-                updateConversation(conversationId, updated)
-                if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) sendGenerationDoneNotification(
-                    conversationId
-                )
-            }.collect { chunk ->
-                if (firstTokenTime == null) firstTokenTime = System.currentTimeMillis()
-                if (chunk is GenerationChunk.Messages) updateConversation(
-                    conversationId, getConversationFlow(conversationId).value.updateCurrentMessages(chunk.messages)
-                )
+
+                        addAll(
+                            localTools.getTools(
+                                options = targetOptions,
+                                assistantId = assistant.id,
+                                conversationId = conversation.id,
+                                userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()
+                                    ?.map { it.url } ?: emptyList()))
+
+                        if (isMain && !isVirtual) {
+                            val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
+                            mcpManager.getAllAvailableTools().forEach { mcpTool ->
+                                val originalName = mcpTool.name
+                                val sanitizedName = originalName.replace(nameRegex, "_").let {
+                                    if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
+                                }
+
+                                add(
+                                    Tool(
+                                        name = sanitizedName,
+                                        description = mcpTool.description ?: "",
+                                        parameters = { mcpTool.inputSchema },
+                                        execute = {
+                                            mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
+                                        })
+                                )
+                            }
+                        }
+                    },
+                    truncateIndex = conversation.truncateIndex,
+                    enabledModeIds = conversation.enabledModeIds,
+                    contextSummary = currentEpisode?.content?.removePrefix("虚拟世界："),
+                    temporarySummaries = emptyList(),
+                    skipContextForResponse = skipContextForResponse,
+                    includeSkipContextMessages = includeSkipContextMessages,
+                    conversationId = conversationId
+                ).onCompletion {
+                    val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
+                    val current = getConversationFlow(conversationId).value
+                    val updated = current.copy(messageNodes = current.messageNodes.mapIndexed { idx, node ->
+                        val isLast = idx == current.messageNodes.lastIndex
+                        node.copy(messages = node.messages.map { msg ->
+                            val finished = msg.finishReasoning()
+                            if (isLast && finished.role == MessageRole.ASSISTANT && finished.generationDurationMs == null) finished.copy(
+                                generationDurationMs = duration
+                            ) else finished
+                        })
+                    }, updateAt = Instant.now())
+                    updateConversation(conversationId, updated)
+                    if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) sendGenerationDoneNotification(
+                        conversationId
+                    )
+                }.collect { chunk ->
+                    if (firstTokenTime == null) firstTokenTime = System.currentTimeMillis()
+                    if (chunk is GenerationChunk.Messages) updateConversation(
+                        conversationId, getConversationFlow(conversationId).value.updateCurrentMessages(chunk.messages)
+                    )
+                }
             }
         }.onFailure { e ->
             Log.d(TAG, "Generation failed/cancelled for $conversationId, saving current state. Error: ${e.message}")
@@ -958,7 +969,8 @@ class ChatService(
 
                 val htmlRegex = Regex("<[^>]*>")
                 val cleanedItems = searchResult.items.take(resultSize).map { item ->
-                    item.copy(text = item.text.replace(htmlRegex, "").trim())
+                    // 防御性处理：截断网页正文，防止 OOM
+                    item.copy(text = item.text.replace(htmlRegex, "").trim().take(4000))
                 }
 
                 Log.i(TAG, "Return raw search results directly (no summary model)")

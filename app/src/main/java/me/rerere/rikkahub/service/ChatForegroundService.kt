@@ -63,6 +63,19 @@ class ChatForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * Android 14 (API 34) 引入的回调。
+     * 当 dataSync 类型的前台服务超过系统规定的运行时间上限（通常为 6 小时）时被调用。
+     * 必须在此处调用 stopSelf()，否则系统将抛出 ForegroundServiceDidNotStopInTimeException。
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            super.onTimeout(startId, fgsType)
+        }
+        Log.w("ChatForegroundService", "Foreground service timed out for type $fgsType, stopping self.")
+        stopSelf()
+    }
+
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
