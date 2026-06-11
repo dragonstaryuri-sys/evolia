@@ -89,13 +89,13 @@ class LocalTools(
     val javascriptTool by lazy {
         Tool(
             name = "eval_javascript",
-            description = "Execute JavaScript code with QuickJS. If use this tool to calculate math, better to add `toFixed` to the code.",
+            description = "使用 QuickJS 执行 JavaScript 代码。如果使用此工具进行数学计算，建议在代码中添加 `toFixed` 以确保精度。",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("code", buildJsonObject {
                             put("type", "string")
-                            put("description", "The JavaScript code to execute")
+                            put("description", "要执行的 JavaScript 代码")
                         })
                     },
                 )
@@ -133,19 +133,19 @@ class LocalTools(
         }
 
         val preloadedInfo = if (preloadedFiles.isNotEmpty()) {
-            " User attachments are pre-loaded in sandbox as: ${preloadedFiles.joinToString { it }}. Access them with Image.open(\"${"$"}{filename}\")."
+            " 用户附件已预加载到沙盒中：${preloadedFiles.joinToString { it }}。可通过 Image.open(\"${"$"}{filename}\") 访问。"
         } else ""
 
         return listOf(
             Tool(
                 name = "eval_python",
-                description = "Execute Python code. Has access to numpy, pandas, matplotlib and Pillow. Use for calculations, data processing and chart/image generation.$preloadedInfo After execution, check `generated_files` and include any `markdown_link` in your reply (for images prefer Markdown image syntax like `![chart](content://...)`).",
+                description = "执行 Python 代码。支持数据分析 (numpy, pandas)、图表生成 (matplotlib)、图像处理 (Pillow)、网络请求 (requests) 以及多种文档处理 (Word, Excel, PPT, PDF)。环境已内置多款中文字体，绘图时可直接显示中文。$preloadedInfo 执行后，请检查 `generated_files` 并在回复中包含任何 `markdown_link` (对于图像，优先使用 Markdown 图像语法如 `![chart](...)`)。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("code", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The Python code to execute")
+                                put("description", "要执行的 Python 代码")
                             })
                         },
                         required = listOf("code")
@@ -189,7 +189,7 @@ class LocalTools(
                                 put("generated_files", JsonArray(generatedFiles))
                                 put(
                                     "note",
-                                    "Use generated_files[].markdown_link in your reply so users can open/download outputs directly in chat."
+                                    "在你的回复中使用 generated_files[].markdown_link，以便用户直接在聊天中查看或下载输出。"
                                 )
                             }
                         }
@@ -197,23 +197,23 @@ class LocalTools(
                         val output = finalResultObj.toString()
                         if (output.length > 2000) {
                             buildJsonObject {
-                                put("output", output.take(2000) + "... (truncated)")
+                                put("output", output.take(2000) + "... (内容过长，已截断)")
                                 put(
                                     "note",
-                                    "Output truncated to save context window. Use print() sparingly or save to file, and use list_sandbox_files to inspect files."
+                                    "输出内容已被截断以节省上下文窗口。请尽量少用 print() 或保存到文件，并使用 list_sandbox_files 查看文件。"
                                 )
                             }
                         } else {
                             finalResultObj
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Unknown error") }
+                        buildJsonObject { put("error", e.message ?: "未知错误") }
                     }
                 }
             ),
             Tool(
                 name = "list_sandbox_files",
-                description = "List all files in the Python sandbox for this conversation. Returns file names, sizes, whether they are images, and direct markdown links you can include in your response.",
+                description = "列出此对话的 Python 沙盒中的所有文件。返回文件名、大小、是否为图像以及可以直接包含在回复中的 markdown 链接。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject { },
@@ -243,19 +243,19 @@ class LocalTools(
                                 ))
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to list files") }
+                        buildJsonObject { put("error", e.message ?: "列出文件失败") }
                     }
                 }
             ),
             Tool(
                 name = "read_sandbox_file",
-                description = "Read a text file from the Python sandbox.",
+                description = "从 Python 沙盒中读取文本文件的具体内容。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("path", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Relative path to the file in the sandbox")
+                                put("description", "沙盒中文件的相对路径")
                             })
                         },
                         required = listOf("path")
@@ -269,23 +269,23 @@ class LocalTools(
                         val resultJson = executor.callAttr("read_file", path, workingDir).toString()
                         kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to read file") }
+                        buildJsonObject { put("error", e.message ?: "读取文件失败") }
                     }
                 }
             ),
             Tool(
                 name = "write_sandbox_file",
-                description = "Write content to a file in the Python sandbox. Returns `markdown_link` which you MUST include in your response to let the user download the file.",
+                description = "向 Python 沙盒中的文件写入内容。返回 `markdown_link`，你必须将其包含在回复中，以便用户下载该文件。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("path", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Relative path for the file")
+                                put("description", "文件的相对路径")
                             })
                             put("content", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Content to write to the file")
+                                put("description", "要写入文件的内容")
                             })
                         },
                         required = listOf("path", "content")
@@ -311,19 +311,19 @@ class LocalTools(
                             resultObj
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to write file") }
+                        buildJsonObject { put("error", e.message ?: "写入文件失败") }
                     }
                 }
             ),
             Tool(
                 name = "delete_sandbox_file",
-                description = "Delete a file from the Python sandbox.",
+                description = "从 Python 沙盒中物理删除指定文件。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("path", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Relative path to the file to delete")
+                                put("description", "要删除的文件的相对路径")
                             })
                         },
                         required = listOf("path")
@@ -338,23 +338,23 @@ class LocalTools(
                             put("path", path)
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed to delete file") }
+                        buildJsonObject { put("error", e.message ?: "删除文件失败") }
                     }
                 }
             ),
             Tool(
                 name = "import_attachment",
-                description = "Import an attached file from the user's message into the Python sandbox.",
+                description = "将用户在消息中上传的附件文件导入到 Python 沙盒中以便后续处理。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("url", buildJsonObject {
                                 put("type", "string")
-                                put("description", "File URL")
+                                put("description", "附件文件的 URL")
                             })
                             put("filename", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Filename to save as in the sandbox")
+                                put("description", "在沙盒中保存的文件名，需要带上格式后缀，如:.md")
                             })
                         },
                         required = listOf("url", "filename")
@@ -377,7 +377,7 @@ class LocalTools(
                     } catch (e: Exception) {
                         buildJsonObject {
                             put("success", false)
-                            put("error", e.message ?: "Failed to import file")
+                            put("error", e.message ?: "导入文件失败")
                         }
                     }
                 }
@@ -389,30 +389,30 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "device_alarm_timer_manager",
-                description = "Manage alarms and timers on the device. Action 'set_alarm' requires 'hour' and 'minutes'. Action 'set_timer' requires 'seconds'.",
+                description = "管理设备上的闹钟和定时器。操作 'set_alarm' 需要 'hour' 和 'minutes'。操作 'set_timer' 需要 'seconds'。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("action", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Action to perform: set_alarm or set_timer")
+                                put("description", "要执行的操作：set_alarm（设置闹钟）或 set_timer（设置定时器）")
                                 put("enum", JsonArray(listOf(JsonPrimitive("set_alarm"), JsonPrimitive("set_timer"))))
                             })
                             put("hour", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Alarm hour (0-23)")
+                                put("description", "闹钟小时 (0-23)")
                             })
                             put("minutes", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Alarm minutes (0-59)")
+                                put("description", "闹钟分钟 (0-59)")
                             })
                             put("seconds", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Timer duration in seconds")
+                                put("description", "定时器时长（秒）")
                             })
                             put("label", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Label for the alarm or timer")
+                                put("description", "闹钟或定时器的描述标签")
                             })
                         },
                         required = listOf("action")
@@ -426,7 +426,7 @@ class LocalTools(
                             "set_alarm" -> {
                                 val hour = json["hour"]?.jsonPrimitive?.intOrNull ?: 0
                                 val minutes = json["minutes"]?.jsonPrimitive?.intOrNull ?: 0
-                                val label = json["label"]?.jsonPrimitive?.contentOrNull ?: "Assistant Alarm"
+                                val label = json["label"]?.jsonPrimitive?.contentOrNull ?: "小机闹钟"
                                 val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
                                     putExtra(AlarmClock.EXTRA_HOUR, hour)
                                     putExtra(AlarmClock.EXTRA_MINUTES, minutes)
@@ -435,12 +435,12 @@ class LocalTools(
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
                                 context.startActivity(intent)
-                                buildJsonObject { put("success", true); put("message", "Alarm set for $hour:$minutes") }
+                                buildJsonObject { put("success", true); put("message", "闹钟已设置为 $hour:$minutes") }
                             }
 
                             "set_timer" -> {
                                 val seconds = json["seconds"]?.jsonPrimitive?.intOrNull ?: 0
-                                val label = json["label"]?.jsonPrimitive?.contentOrNull ?: "Assistant Timer"
+                                val label = json["label"]?.jsonPrimitive?.contentOrNull ?: "小机定时器"
                                 val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
                                     putExtra(AlarmClock.EXTRA_LENGTH, seconds)
                                     putExtra(AlarmClock.EXTRA_MESSAGE, label)
@@ -451,27 +451,27 @@ class LocalTools(
                                 buildJsonObject {
                                     put("success", true); put(
                                     "message",
-                                    "Timer set for $seconds seconds"
+                                    "定时器已设置为 $seconds 秒"
                                 )
                                 }
                             }
 
-                            else -> buildJsonObject { put("error", "Unknown action") }
+                            else -> buildJsonObject { put("error", "未知操作") }
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Operation failed") }
+                        buildJsonObject { put("error", e.message ?: "操作失败") }
                     }
                 }
             ),
             Tool(
                 name = "device_control",
-                description = "Perform system-level global actions on the user's phone. Use this when you need to actively intervene (e.g., locking screen for sleep management, returning home to stop usage). Requires Accessibility Service to be enabled. Supported commands: LOCK_SCREEN, GO_HOME, BACK, SHOW_RECENTS, SHOW_NOTIFICATIONS.",
+                description = "在用户的手机上执行系统级全局操作。当需要主动干预时（例如：为睡眠管理锁定屏幕、返回主屏幕以停止使用）使用。需要开启无障碍服务。支持的命令：LOCK_SCREEN（锁屏）, GO_HOME（回主页）, BACK（返回）, SHOW_RECENTS（显示最近任务）, SHOW_NOTIFICATIONS（显示通知）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("command", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The system command to execute")
+                                put("description", "要执行的系统命令")
                                 put(
                                     "enum", JsonArray(
                                         listOf(
@@ -495,15 +495,15 @@ class LocalTools(
                         return@Tool buildJsonObject {
                             put(
                                 "error",
-                                "Accessibility Service is not active. Please ask user to enable it in settings."
+                                "无障碍服务未开启。请请示用户在设置中开启。"
                             )
                         }
                     }
                     val success = DeviceCommandHub.commands.tryEmit(command)
                     buildJsonObject {
                         put("success", success)
-                        if (success) put("message", "Command $command executed.")
-                        else put("error", "Accessibility Service is not active. Please ask user to enable it.")
+                        if (success) put("message", "命令 $command 已执行。")
+                        else put("error", "无障碍服务未激活。请请示用户开启。")
                     }
                 }
             )
@@ -514,7 +514,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "schedule_manager",
-                description = "Manage user's schedules/tasks. Supported actions: add, list, edit, toggle, delete.",
+                description = "管理用户的日程和任务。支持的操作：add（添加）, list（列表获取）, edit（编辑修改）, toggle（切换完成/未完成状态）, delete（物理移除）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -522,7 +522,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Action to perform: add (new task), list (get all), edit (modify existing), toggle (complete status), delete (remove)"
+                                    "要执行的操作：add（新任务）, list（获取所有）, edit（修改现有）, toggle（切换完成状态）, delete（移除）"
                                 )
                                 put(
                                     "enum", JsonArray(
@@ -538,36 +538,36 @@ class LocalTools(
                             })
                             put("id", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Schedule ID, required for edit, toggle, and delete")
+                                put("description", "日程 ID，编辑、切换状态和删除时必填")
                             })
                             put("title", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The title of the schedule, required for 'add'")
+                                put("description", "日程标题，添加时必填")
                             })
                             put("priority", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Priority (0: Not Important, 1: Normal, 2: Important)")
+                                put("description", "优先级 (0: 不重要, 1: 普通, 2: 重要)")
                             })
                             put("urgency", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Urgency (0: Not Urgent, 1: Normal, 2: Very Urgent)")
+                                put("description", "紧急程度 (0: 不紧急, 1: 普通, 2: 非常紧急)")
                             })
                             put("difficulty", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Difficulty (0: Simple, 1: Normal, 2: Not Simple)")
+                                put("description", "难度 (0: 简单, 1: 普通, 2: 困难)")
                             })
                             put("end_time", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Deadline/End time, please use ISO 8601 format (e.g., 2023-10-27T10:00:00)."
+                                    "截止日期/结束时间，请使用 ISO 8601 格式（例如：2023-10-27T10:00:00）。"
                                 )
                             })
                             put("reminder_time", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Specific reminder time, please use ISO 8601 format (e.g., 2023-10-27T09:30:00)."
+                                    "具体提醒时间，请使用 ISO 8601 格式（例如：2023-10-27T09:30:00）。"
                                 )
                             })
                         },
@@ -592,7 +592,7 @@ class LocalTools(
                                     runCatching { df.parse(endTimeStr)?.time }.getOrNull()
                                         ?: return@Tool buildJsonObject {
                                             put("success", false)
-                                            put("error", "Invalid end_time format.")
+                                            put("error", "end_time 格式无效。")
                                         }
                                 } else null
 
@@ -601,7 +601,7 @@ class LocalTools(
                                     runCatching { df.parse(reminderTimeStr)?.time }.getOrNull()
                                         ?: return@Tool buildJsonObject {
                                             put("success", false)
-                                            put("error", "Invalid reminder_time format.")
+                                            put("error", "reminder_time 格式无效。")
                                         }
                                 } else null
 
@@ -624,7 +624,7 @@ class LocalTools(
                                         title = title,
                                         startTime = reminderTime ?: System.currentTimeMillis(),
                                         endTime = endTime,
-                                        description = "Created by Evolia Assistant"
+                                        description = "由你的机创建"
                                     )
                                 }
 
@@ -668,7 +668,7 @@ class LocalTools(
                                         runCatching { df.parse(newEndTimeStr)?.time }.getOrNull()
                                             ?: return@Tool buildJsonObject {
                                                 put("success", false)
-                                                put("error", "Invalid end_time format.")
+                                                put("error", "end_time 格式无效。")
                                             }
                                     } else schedule.endTime
 
@@ -677,7 +677,7 @@ class LocalTools(
                                         runCatching { df.parse(newReminderTimeStr)?.time }.getOrNull()
                                             ?: return@Tool buildJsonObject {
                                                 put("success", false)
-                                                put("error", "Invalid reminder_time format.")
+                                                put("error", "reminder_time 格式无效。")
                                             }
                                     } else schedule.reminderTime
 
@@ -699,13 +699,13 @@ class LocalTools(
                                             title = newTitle,
                                             startTime = newReminderTime ?: System.currentTimeMillis(),
                                             endTime = newEndTime,
-                                            description = "Updated by Evolia Assistant"
+                                            description = "由小机更新"
                                         )
                                     }
 
                                     buildJsonObject { put("success", true) }
                                 } else {
-                                    buildJsonObject { put("error", "Schedule not found") }
+                                    buildJsonObject { put("error", "未找到日程") }
                                 }
                             }
 
@@ -717,7 +717,7 @@ class LocalTools(
                                     scheduleRepository.toggleComplete(schedule)
                                     buildJsonObject { put("success", true) }
                                 } else {
-                                    buildJsonObject { put("error", "Schedule not found") }
+                                    buildJsonObject { put("error", "未找到日程") }
                                 }
                             }
 
@@ -727,10 +727,10 @@ class LocalTools(
                                 buildJsonObject { put("success", true) }
                             }
 
-                            else -> buildJsonObject { put("error", "Unknown action: $action") }
+                            else -> buildJsonObject { put("error", "未知操作：$action") }
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Schedule operation failed") }
+                        buildJsonObject { put("error", e.message ?: "日程操作失败") }
                     }
                 }
             )
@@ -753,7 +753,7 @@ class LocalTools(
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            android.util.Log.e("LocalTools", "Failed to open system calendar", e)
+            android.util.Log.e("LocalTools", "无法打开系统日历", e)
         }
     }
 
@@ -761,35 +761,35 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "qq_email_service",
-                description = "Send or fetch emails using QQ mailbox. For sending emails, the recipient 'to' parameter is optional; if omitted, the email is sent to the user's default email address set in their profile settings.",
+                description = "使用 QQ 邮箱发送或获取邮件。发送邮件时，收件人 'to' 参数是可选的；如果省略，邮件将自动发送到用户在个人设置中定义的默认邮箱。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("action", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Operation type: send to send email, fetch to receive emails")
+                                put("description", "操作类型：send 表示发送邮件，fetch 表示获取邮件列表")
                                 put("enum", JsonArray(listOf(JsonPrimitive("send"), JsonPrimitive("fetch"))))
                             })
                             put("to", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Recipient email address. OPTIONAL: If not provided, the email is sent to the user's saved default email."
+                                    "收件人邮箱地址。可选：如果不提供，邮件将发送到用户保存的默认邮箱。"
                                 )
                             })
                             put("subject", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Email title, required when action=send")
+                                put("description", "邮件主题，action=send 时必填")
                             })
                             put("content", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Email body content, required when action=send")
+                                put("description", "邮件正文内容，action=send 时必填")
                             })
                             put("limit", buildJsonObject {
                                 put("type", "integer")
                                 put(
                                     "description",
-                                    "Number of emails to fetch, min 1, max 3, default 1, used when action=fetch"
+                                    "获取邮件的数量，最小 1，最大 3，默认为 1，仅在 action=fetch 时有效"
                                 )
                             })
                         },
@@ -802,7 +802,7 @@ class LocalTools(
                     val authCode = secretKeyManager.getEmailPassword("")
 
                     if (emailAccount.isBlank() || authCode.isBlank()) {
-                        return@Tool buildJsonObject { put("error", "Email service not configured.") }
+                        return@Tool buildJsonObject { put("error", "邮件服务未配置（缺少账号或授权码）。") }
                     }
 
                     val json = it.jsonObject
@@ -823,7 +823,7 @@ class LocalTools(
                                         return@withContext buildJsonObject {
                                             put(
                                                 "error",
-                                                "Recipient email is required. Please ask the user if you don't know,or ask she/he to set it in their profile settings."
+                                                "收件人邮箱不能为空。请询问用户，或建议其在档案设置中设置。"
                                             )
                                         }
                                     }
@@ -833,7 +833,7 @@ class LocalTools(
 
                                     sendQQEmail(emailAccount, authCode, to, subject, content)
 
-                                    buildJsonObject { put("success", true); put("message", "Email sent to $to") }
+                                    buildJsonObject { put("success", true); put("message", "邮件已成功发送至 $to") }
                                 }
 
                                 "fetch" -> {
@@ -853,10 +853,10 @@ class LocalTools(
                                     }
                                 }
 
-                                else -> buildJsonObject { put("error", "Unknown action") }
+                                else -> buildJsonObject { put("error", "未知操作") }
                             }
                         } catch (e: Exception) {
-                            buildJsonObject { put("error", e.message ?: "Email operation failed") }
+                            buildJsonObject { put("error", e.message ?: "邮件操作过程出错") }
                         }
                     }
                 }
@@ -906,9 +906,9 @@ class LocalTools(
             val msg = messages[i]
             result.add(
                 MailData(
-                    subject = msg.subject ?: "(No Subject)",
-                    from = msg.from?.joinToString { it.toString() } ?: "Unknown",
-                    date = msg.sentDate?.toString() ?: "Unknown",
+                    subject = msg.subject ?: "(无主题)",
+                    from = msg.from?.joinToString { it.toString() } ?: "未知发件人",
+                    date = msg.sentDate?.toString() ?: "未知日期",
                     content = getTextFromMessage(msg)
                 )
             )
@@ -947,13 +947,13 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "agent_task_manager",
-                description = "Manage automation tasks. Write an 'instruction' for your future self. At the scheduled time, you will receive this instruction as a virtual message and you can then use ANY available tool to fulfill it. This is far more flexible than static tasks.",
+                description = "管理自动化异步任务。给“未来的自己”设定一条指令（instruction）。在预定时间，你将收到这条指令作为虚拟消息，并可调用任何工具来执行它。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("action", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Action to perform: add, list, delete, edit")
+                                put("description", "要执行的操作：add（新增任务）, list（查询列表）, delete（删除任务）, edit（修改任务）")
                                 put(
                                     "enum",
                                     JsonArray(
@@ -968,53 +968,53 @@ class LocalTools(
                             })
                             put("task_id", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Required for 'delete' and 'edit'")
+                                put("description", "任务 ID，仅在 'delete' 和 'edit' 时必填")
                             })
                             put("task_name", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Custom name for this task to help the user identify it in the task manager."
+                                    "此任务的自定义名称，方便用户识别。"
                                 )
                             })
                             put("task_type", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Type of task: EMAIL, NOTIFICATION (Timed AI Reminder), OTHERS(required for 'add')"
+                                    "任务类别：EMAIL（邮件定时发）, NOTIFICATION（定时消息提醒）, OTHERS（通用异步任务，添加时必填）"
                                 )
                             })
                             put("scheduled_time", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Scheduled time in ISO 8601 format (e.g., 2023-10-27T10:00:00). Required for 'add'."
+                                    "执行时间，使用 ISO 8601 格式（如：2023-10-27T10:00:00）。新增时必填。"
                                 )
                             })
                             put("repeat_interval", buildJsonObject {
                                 put("type", "integer")
                                 put(
                                     "description",
-                                    "Optional repeat interval in milliseconds (e.g., 86400000 for daily, 604800000 for a week)"
+                                    "重复周期（毫秒），可选。例如：86400000 代表每天执行一次"
                                 )
                             })
                             put("instruction", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Instruction for your future self. e.g., 'Check if it will rain tomorrow in Tokyo, and if so, send an email to boss@example.com'."
+                                    "具体指令内容。例如：'查询东京明天的天气，如降雨则向 boss@example.com 发送提醒邮件'。"
                                 )
                             })
                             put("target", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Recipient email address (REQUIRED for EMAIL) or reminder topic (for NOTIFICATION)."
+                                    "目标对象。EMAIL 任务为收件人邮箱；NOTIFICATION 任务为提醒的主题名称。"
                                 )
                             })
                             put("subject", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Email subject (REQUIRED for EMAIL).")
+                                put("description", "任务相关的标题/主题（EMAIL 任务必填）。")
                             })
                         },
                         required = listOf("action", "task_type")
@@ -1039,12 +1039,12 @@ class LocalTools(
                                         put("success", false)
                                         put(
                                             "error",
-                                            "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)"
+                                            "scheduled_time 格式不正确。请使用 ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)"
                                         )
                                     }
                                 } else return@Tool buildJsonObject {
                                     put("success", false)
-                                    put("error", "scheduled_time is required for 'add'")
+                                    put("error", "新增任务必须提供 scheduled_time")
                                 }
 
                                 val repeat = json["repeat_interval"]?.jsonPrimitive?.longOrNull ?: 0L
@@ -1056,16 +1056,16 @@ class LocalTools(
                                 // 强制校验 EMAIL 任务的必填项
                                 if (finalType == "EMAIL") {
                                     val missing = mutableListOf<String>()
-                                    if (target.isNullOrBlank()) missing.add("target (recipient email)")
+                                    if (target.isNullOrBlank()) missing.add("target (收件人)")
                                     if (subject.isNullOrBlank()) missing.add("subject")
-                                    if (instruction.isNullOrBlank()) missing.add("instruction (email body/command)")
+                                    if (instruction.isNullOrBlank()) missing.add("instruction (正文内容)")
 
                                     if (missing.isNotEmpty()) {
                                         return@Tool buildJsonObject {
                                             put("success", false)
                                             put(
                                                 "error",
-                                                "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}."
+                                                "EMAIL 任务必须提供：${missing.joinToString(", ")}。"
                                             )
                                         }
                                     }
@@ -1133,7 +1133,7 @@ class LocalTools(
                                             put("success", false)
                                             put(
                                                 "error",
-                                                "Invalid scheduled_time format. Use ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)"
+                                                "scheduled_time 格式无效。请使用 ISO 8601 (yyyy-MM-dd'T'HH:mm:ss)"
                                             )
                                         }
                                     } else {
@@ -1157,7 +1157,7 @@ class LocalTools(
 
                                     if (finalType == "EMAIL") {
                                         val missing = mutableListOf<String>()
-                                        if (target.isNullOrBlank()) missing.add("target (recipient email)")
+                                        if (target.isNullOrBlank()) missing.add("target (收件邮箱)")
                                         if (subject.isNullOrBlank()) missing.add("subject")
                                         if (instruction.isNullOrBlank()) missing.add("instruction")
 
@@ -1166,7 +1166,7 @@ class LocalTools(
                                                 put("success", false)
                                                 put(
                                                     "error",
-                                                    "For EMAIL task, you MUST provide: ${missing.joinToString(", ")}."
+                                                    "EMAIL 任务修改时必须包含：${missing.joinToString(", ")}。"
                                                 )
                                             }
                                         }
@@ -1195,7 +1195,7 @@ class LocalTools(
                                     agentTaskScheduler.scheduleTask(updatedTask)
                                     buildJsonObject { put("success", true) }
                                 } else {
-                                    buildJsonObject { put("error", "Task not found") }
+                                    buildJsonObject { put("error", "未找到该任务") }
                                 }
                             }
 
@@ -1206,13 +1206,13 @@ class LocalTools(
                                     agentTaskRepository.deleteTask(task)
                                     agentTaskScheduler.cancelTask(id)
                                     buildJsonObject { put("success", true) }
-                                } else buildJsonObject { put("error", "Task not found") }
+                                } else buildJsonObject { put("error", "任务不存在") }
                             }
 
-                            else -> buildJsonObject { put("error", "Unsupported action") }
+                            else -> buildJsonObject { put("error", "不支持的任务操作") }
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed") }
+                        buildJsonObject { put("error", e.message ?: "操作异常") }
                     }
                 }
             )
@@ -1223,23 +1223,23 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "update_profile",
-                description = "Update user or assistant profiles when new information is learned. " +
-                    "MUST provide 'target' ('user' or 'assistant') and an 'updates' object. " +
-                    "Example: {\"target\": \"user\", \"updates\": {\"diet\": \"no spicy food\"}}.",
+                description = "当获知新信息时，更新用户或你自己的的档案。必须提供 'target' ('user' 或 'assistant') 和 'updates' 对象。" +
+                    "重要：更新档案时，必须在现有信息的基础上进行增量更新，严禁直接覆盖导致旧信息丢失。" +
+                    "如果某个字段已有内容，请将新信息与旧信息合理整合后再提交。例如：若用户原有偏好为'喜欢苹果'，新得知其也喜欢橘子，则应更新为'喜欢苹果和橘子'。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("target", buildJsonObject {
                                 put("type", "string")
-                                put("description", "The target profile to update: 'user' or 'assistant'")
+                                put("description", "要更新的目标档案：'user'（用户）或 'assistant'（助手）")
                                 put("enum", JsonArray(listOf(JsonPrimitive("user"), JsonPrimitive("assistant"))))
                             })
                             put("updates", buildJsonObject {
                                 put("type", "object")
                                 put(
-                                    "description", "A map of fields to update. " +
-                                        "Allowed fields for 'user': appearance, occupation, preferences, diet, health, taboos, interaction_preferences, important_relationships, birthday. " +
-                                        "Allowed fields for 'assistant': personality, preferences, diet, taboos, interaction_habits, relationships."
+                                    "description", "要更新的字段映射键值对。" +
+                                        "'user' 可选字段：appearance（外貌）, occupation（职业）, preferences（偏好）, diet（饮食）, health（健康）, taboos（禁忌）, interaction_preferences（交互偏好）, important_relationships（重要人际关系）, birthday（生日）。" +
+                                        "'assistant' 可选字段：personality（性格）, preferences（偏好）, diet（饮食）, taboos（禁忌）, interaction_habits（交互习惯）, relationships（关系描述）。"
                                 )
                                 // 3. 即使解析是动态的，定义一些属性占位符能引导 AI 理解这是一个键值对对象
                                 put("additionalProperties", buildJsonObject {
@@ -1258,8 +1258,7 @@ class LocalTools(
                     if (argsObj.isEmpty()) {
                         return@Tool buildJsonObject {
                             put(
-                                "error", "Missing required parameters: 'target' and 'updates'. " +
-                                    "Please call again with the correct JSON structure."
+                                "error", "缺少参数：'target' 或 'updates'。请按照 JSON 格式规范调用。"
                             )
                         }
                     }
@@ -1299,7 +1298,7 @@ class LocalTools(
                                     }
                                 }
                                 settingsStore.update(currentSettings.copy(userProfile = updatedProfile))
-                                buildJsonObject { put("success", true); put("message", "User profile updated.") }
+                                buildJsonObject { put("success", true); put("message", "用户档案已完成增量更新。") }
                             }
 
                             "assistant" -> {
@@ -1324,26 +1323,26 @@ class LocalTools(
                                     }
                                 }
                                 extendedStateRepo.updateState(updatedState)
-                                buildJsonObject { put("success", true); put("message", "Assistant profile updated.") }
+                                buildJsonObject { put("success", true); put("message", "小机档案已完成增量更新。") }
                             }
 
                             else -> {
                                 // 发生错误时，记录更详细的信息
                                 android.util.Log.w(
                                     "LocalTools",
-                                    "update_profile failed: Unknown target profile '$target'. Received keys: ${argsObj.keys.joinToString()}"
+                                    "update_profile failed: 目标 '$target' 无效。收到的键：${argsObj.keys.joinToString()}"
                                 )
                                 buildJsonObject {
                                     put(
                                         "error",
-                                        "Unknown target profile: '$target'. Received keys: ${argsObj.keys.joinToString()}"
+                                        "无效的目标档案类型：'$target'。"
                                     )
                                 }
                             }
                         }
                     } catch (e: Exception) {
-                        android.util.Log.e("LocalTools", "update_profile: Exception during update", e)
-                        buildJsonObject { put("error", e.message ?: "Update failed.") }
+                        android.util.Log.e("LocalTools", "update_profile: 发生内部错误", e)
+                        buildJsonObject { put("error", e.message ?: "档案更新操作失败。") }
                     }
                 }
             )
@@ -1354,13 +1353,13 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "milestone_manager",
-                description = "Core milestone events for relationship management. A milestone refers to an event that reshapes the definition or trajectory of \"us\", satisfying one of the following dimensions: Relationship (changes in address, positioning or boundaries), Perception (renewed understanding of each other), Commitment (formation of new long-term promises), Emotion (shifts in the pattern of emotional expression), Identity (changes to self-identities voluntarily disclosed by users).",
+                description = "记录并管理关系发展中的重大里程碑。里程碑指重塑“我们”定义或轨迹的事件，包括：关系定位（地址或边界变化）、认知（ renewed 理解）、承诺（形成新长期约定）、情感（表达模式变化）、身份（披露自我身份相关变化）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
                             put("action", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Action to perform: add, list, delete, update")
+                                put("description", "要执行的操作：add（记录新里程碑）, list（获取所有记录）, delete（移除某项）, update（修改内容）")
                                 put(
                                     "enum",
                                     JsonArray(
@@ -1375,22 +1374,22 @@ class LocalTools(
                             })
                             put("id", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Milestone ID, required for update and delete")
+                                put("description", "里程碑记录的 ID，在 update 和 delete 时必填")
                             })
                             put("time", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Event time (YYYY-MM-DD), required for 'add' and 'update'")
+                                put("description", "事件发生的时间 (YYYY-MM-DD)，在 add 和 update 时必填")
                             })
                             put("label", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Short category label (e.g., 初识, 相爱, 吵架, 升温), required for 'add'"
+                                    "简短的分类标签（如：初见, 确立关系, 深度交心, 误会化解），新增时必填"
                                 )
                             })
                             put("description", buildJsonObject {
                                 put("type", "string")
-                                put("description", "A concise description of what happened, required for 'add'")
+                                put("description", "事件的详细背景或经过，新增时必填")
                             })
                         },
                         required = listOf("action")
@@ -1406,7 +1405,7 @@ class LocalTools(
                                 val label = json["label"]?.jsonPrimitive?.contentOrNull ?: ""
                                 val description = json["description"]?.jsonPrimitive?.contentOrNull ?: ""
                                 if (time.isBlank() || label.isBlank() || description.isBlank()) {
-                                    return@Tool buildJsonObject { put("error", "Missing required fields for 'add'") }
+                                    return@Tool buildJsonObject { put("error", "添加记录时缺少核心信息（时间、标签或描述）") }
                                 }
                                 val milestone = MilestoneEntity(
                                     assistantId = assistantId.toString(),
@@ -1448,7 +1447,7 @@ class LocalTools(
                                     milestoneRepo.updateMilestone(updated)
                                     buildJsonObject { put("success", true) }
                                 } else {
-                                    buildJsonObject { put("error", "Milestone not found") }
+                                    buildJsonObject { put("error", "未找到对应的里程碑记录") }
                                 }
                             }
 
@@ -1458,10 +1457,10 @@ class LocalTools(
                                 buildJsonObject { put("success", true) }
                             }
 
-                            else -> buildJsonObject { put("error", "Unknown action") }
+                            else -> buildJsonObject { put("error", "无效操作") }
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed") }
+                        buildJsonObject { put("error", e.message ?: "操作异常") }
                     }
                 }
             )
@@ -1472,7 +1471,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "peek_user",
-                description = "Observe the user's phone status. Use 'add' to set up a monitor(When conditions are met, the system will send a HIDDEN virtual message to you (the Assistant) containing real-time data. You can then decide how to reply to the user or whether to call `device_control` to take actions.), or 'get' to view a monitor's details.",
+                description = "观察并监控用户的手机实时状态。通过 'add' 设置触发式监控（满足条件时系统将自动发送包含实时数据的隐藏消息给你），或使用 'get' 查看具体监控配置详情。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -1480,7 +1479,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "Action to perform: add (create monitor), list (view all), delete (remove by ID), get (view monitor details by ID)"
+                                    "要执行的操作：add（创建新监控）, list（查看已有列表）, delete（按 ID 撤销监控）, get（按 ID 获取详细配置）"
                                 )
                                 put(
                                     "enum",
@@ -1496,32 +1495,32 @@ class LocalTools(
                             })
                             put("monitor_id", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "Required for 'delete' and 'get'")
+                                put("description", "监控条目的 ID，删除或查询时必填")
                             })
                             put("monitor_name", buildJsonObject {
                                 put("type", "string")
-                                put("description", "Descriptive name (e.g., 'Late Night Watcher')")
+                                put("description", "起一个描述性名称（例如：'防熬夜卫士'）")
                             })
                             put("data_requirements", buildJsonObject {
                                 put("type", "array")
                                 put("items", buildJsonObject { put("type", "string") })
                                 put(
                                     "description",
-                                    "Fields to monitor: foreground_app, screen_status, current_time, today_usage_duration, app_session_duration, total_continuous_duration, recent_actions, screen_context, location"
+                                    "需获取的数据字段：foreground_app（前台应用）, screen_status（屏幕状态）, current_time（当前时间）, today_usage_duration（今日使用总计）, app_session_duration（当前应用连续使用时长）, total_continuous_duration（手机连续使用时长）, recent_actions（近期操作记录）, screen_context（屏幕文字上下文）, location（位置信息）"
                                 )
                             })
                             put("conditions", buildJsonObject {
                                 put("type", "object")
                                 put(
                                     "description",
-                                    "Trigger logic. Supported keys: 'time_range' (start/end HH:mm), 'screen_status' (ON/OFF), 'foreground_app' (appName), 'usage_duration_minutes' (Integer), 'continuous_usage_minutes' (Integer), 'total_continuous_minutes' (Integer), 'content_contains' (String), 'location_name' (String: trigger when arriving at or staying at this named location), 'cooldown_minutes' (Integer: silence after trigger, default 5)."
+                                    "设置触发逻辑。支持：'time_range' (HH:mm 范围), 'screen_status' (ON/OFF), 'foreground_app' (特定包名), 'usage_duration_minutes' (使用时长限额), 'continuous_usage_minutes' (单次应用限额), 'total_continuous_minutes' (单次持续使用时间限额), 'content_contains' (屏幕内容包含关键词), 'location_name' (抵达/留在某地), 'cooldown_minutes' (触发后静默时长，默认 5)。"
                                 )
                             })
                             put("trigger_message", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "The message template. Placeholders: {app_name}, {duration}, {continuous_duration}, {total_continuous_duration}, {recent_actions}, {screen_context}, {current_time}, {location}. Example: 'User arrived at her home:{location}.'"
+                                    "触发时发送给你的消息模板。可用变量：{app_name}, {duration}, {continuous_duration}, {total_continuous_duration}, {recent_actions}, {screen_context}, {current_time}, {location}。"
                                 )
                             })
                         },
@@ -1535,11 +1534,11 @@ class LocalTools(
                         when (action) {
                             "add" -> {
                                 val monitorName =
-                                    json["monitor_name"]?.jsonPrimitive?.contentOrNull ?: "Unnamed Monitor"
+                                    json["monitor_name"]?.jsonPrimitive?.contentOrNull ?: "未命名监控"
                                 val dataReq = json["data_requirements"]?.toString() ?: "[]"
 
-                                // Auto-fix: if foreground_app is not provided but continuous_usage_minutes is,
-                                // rename it to total_continuous_minutes.
+                                // 自动修复：如果未提供 foreground_app 但提供了 continuous_usage_minutes，
+                                // 则将其重命名为 total_continuous_minutes。
                                 val conditionsObj = json["conditions"]?.jsonObject ?: buildJsonObject {}
                                 val processedConditions = if (conditionsObj.containsKey("continuous_usage_minutes") && !conditionsObj.containsKey("foreground_app")) {
                                     buildJsonObject {
@@ -1557,7 +1556,7 @@ class LocalTools(
                                 val conditions = processedConditions.toString()
 
                                 val triggerMsg =
-                                    json["trigger_message"]?.jsonPrimitive?.contentOrNull ?: "Monitor triggered"
+                                    json["trigger_message"]?.jsonPrimitive?.contentOrNull ?: "监控已触发"
 
                                 val task = AgentMonitorTaskEntity(
                                     assistantId = assistantId.toString(),
@@ -1609,14 +1608,14 @@ class LocalTools(
                                         put("created_at", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(java.util.Date(task.createdAt)))
                                     }
                                 } else {
-                                    buildJsonObject { put("error", "Monitor not found") }
+                                    buildJsonObject { put("error", "监控项不存在") }
                                 }
                             }
 
-                            else -> buildJsonObject { put("error", "Unknown action") }
+                            else -> buildJsonObject { put("error", "不支持的操作") }
                         }
                     } catch (e: Exception) {
-                        buildJsonObject { put("error", e.message ?: "Failed") }
+                        buildJsonObject { put("error", e.message ?: "操作异常") }
                     }
                 }
             )
