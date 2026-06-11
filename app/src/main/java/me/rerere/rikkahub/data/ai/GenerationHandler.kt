@@ -183,7 +183,7 @@ class GenerationHandler(
                     add(
                         Tool(
                             name = "retrieve_memory",
-                            description = "Search historical memory segments by keywords or retrieve exact message history for a specific segment ID.",
+                            description = "可通过关键词检索历史记忆片段，或根据指定片段编号调取完整消息历史记录。",
                             parameters = {
                                 InputSchema.Obj(
                                     properties = buildJsonObject {
@@ -191,14 +191,14 @@ class GenerationHandler(
                                             put("type", "integer")
                                             put(
                                                 "description",
-                                                "The ID of the segment to retrieve detailed history for."
+                                                "需要调取详细历史记录的片段记忆编号"
                                             )
                                         })
                                         put("key_words", buildJsonObject {
                                             put("type", "string")
                                             put(
                                                 "description",
-                                                "Keywords to search for in historical segments database (RAG)."
+                                                "需在历史记忆库（RAG检索）中检索的关键词。"
                                             )
                                         })
                                     }
@@ -265,7 +265,7 @@ class GenerationHandler(
                                     else -> buildJsonObject {
                                         put(
                                             "error",
-                                            JsonPrimitive("Either `segment_id` or `key_words` must be provided.")
+                                            JsonPrimitive("必须传入`segment_id`或`key_words`其中一个参数")
                                         )
                                     }
                                 }
@@ -1242,13 +1242,13 @@ class GenerationHandler(
     ) = listOf(
         Tool(
             name = "create_memory",
-            description = "Create a new memory record.",
+            description = "创建一条新的记忆",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("content", buildJsonObject {
                             put("type", "string")
-                            put("description", "Content of the memory.")
+                            put("description", "记忆内容")
                         })
                     },
                     required = listOf("content")
@@ -1257,23 +1257,23 @@ class GenerationHandler(
             execute = {
                 val params = it.jsonObject
                 val content =
-                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                    params["content"]?.jsonPrimitive?.contentOrNull ?: error("需要提供记忆内容")
                 json.encodeToJsonElement(AssistantMemory.serializer(), onCreation(content))
             }
         ),
         Tool(
             name = "edit_memory",
-            description = "Update an existing memory record.",
+            description = "更新已有的记忆条目",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("id", buildJsonObject {
                             put("type", "integer")
-                            put("description", "ID of the memory to update.")
+                            put("description", "要更新的记忆条目的ID")
                         })
                         put("content", buildJsonObject {
                             put("type", "string")
-                            put("description", "New content for the memory.")
+                            put("description", "更新后的记忆内容")
                         })
                     },
                     required = listOf("id", "content"),
@@ -1281,8 +1281,8 @@ class GenerationHandler(
             },
             execute = {
                 val params = it.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
-                val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("content is required")
+                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("必须提供id")
+                val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("必须提供记忆内容")
                 val before = memoryRepo.getMemoryById(id)
                 val updated = onUpdate(id, content)
                 buildJsonObject {
@@ -1302,13 +1302,13 @@ class GenerationHandler(
         ),
         Tool(
             name = "delete_memory",
-            description = "Delete a memory record.",
+            description = "删除一段已存在的记忆",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {
                         put("id", buildJsonObject {
                             put("type", "integer")
-                            put("description", "ID of the memory to delete.")
+                            put("description", "要删除的记忆的id")
                         })
                     },
                     required = listOf("id")
@@ -1316,7 +1316,7 @@ class GenerationHandler(
             },
             execute = {
                 val params = it.jsonObject
-                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("id is required")
+                val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("必须提供记忆条目的id")
                 val before = memoryRepo.getMemoryById(id)
                 onDelete(id)
                 buildJsonObject {
@@ -1336,7 +1336,7 @@ class GenerationHandler(
     )
 
     private fun formatMemoryDate(timestamp: Long): String {
-        if (timestamp <= 0) return "Unknown Date"
+        if (timestamp <= 0) return "未知时间"
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
             .withZone(ZoneId.systemDefault())
         return formatter.format(Instant.ofEpochMilli(timestamp))
