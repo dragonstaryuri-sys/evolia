@@ -15,6 +15,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,9 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -167,9 +171,14 @@ class ChatService(
 
     private var lastConversationId: Uuid? = null
 
+    private val promptPlaceholderRegex = Regex("\\{\\{(\\w+)\\}\\}")
+
     // 并发防抖锁集合
     private val archivingConversations = ConcurrentHashMap.newKeySet<Uuid>()
     private val summarizingConversations = ConcurrentHashMap.newKeySet<Uuid>()
+
+    // 会话级别的互斥锁，确保同一时间只有一个生成任务在处理网络/状态更新
+    private val conversationMutexes = ConcurrentHashMap<Uuid, Mutex>()
 
     private val lifecycleObserver = LifecycleEventObserver { _, event ->
         when (event) {
@@ -207,6 +216,12 @@ class ChatService(
         _generationJobs.value.values.forEach { it?.cancel() }
     }
 
+    private fun fillPrompt(template: String, placeholders: Map<String, String>): String {
+        return promptPlaceholderRegex.replace(template) { match ->
+            placeholders[match.groupValues[1]] ?: match.value
+        }
+    }
+
     private suspend fun <T> retryIO(
         times: Int = 2, initialDelay: Long = 2000, block: suspend () -> T
     ): T {
@@ -236,13 +251,18 @@ class ChatService(
     }
 
     fun removeConversationReference(conversationId: Uuid) {
-        conversationReferences[conversationId]?.let { count ->
-            if (count > 1) conversationReferences[conversationId] = count - 1
-            else conversationReferences.remove(conversationId)
-        }
-        appScope.launch {
-            delay(500)
-            checkAllConversationsReferences()
+        val currentCount = conversationReferences[conversationId] ?: 0
+        if (currentCount <= 1) {
+            conversationReferences.remove(conversationId)
+            // 方案 C：如果没有任何引用了，且没有生成任务在跑，立即清理内存缓存
+            appScope.launch {
+                delay(100) // 给转场留一点点余地
+                if (!hasReference(conversationId)) {
+                    cleanupConversation(conversationId)
+                }
+            }
+        } else {
+            conversationReferences[conversationId] = currentCount - 1
         }
     }
 
@@ -353,12 +373,20 @@ class ChatService(
         conversationReferences.containsKey(conversationId) || _generationJobs.value.containsKey(conversationId)
 
     fun checkAllConversationsReferences() {
+        // 方案 C：遍历当前缓存，清理掉所有没有引用且没有任务的会话
         conversations.keys.forEach { if (!hasReference(it)) cleanupConversation(it) }
     }
 
     fun getConversationFlow(conversationId: Uuid): StateFlow<Conversation> {
         val settings = settingsStore.settingsFlow.value
         val currentAssistant = settings.getCurrentAssistant()
+
+        // 方案 C：强制限制同时在内存中的 Flow 数量（LRU 简单实现）
+        if (!conversations.containsKey(conversationId) && conversations.size >= 5) {
+            val toRemove = conversations.keys.firstOrNull { !hasReference(it) }
+            toRemove?.let { cleanupConversation(it) }
+        }
+
         return conversations.getOrPut(conversationId) {
             MutableStateFlow(
                 Conversation.ofId(
@@ -507,19 +535,21 @@ class ChatService(
             val summary = if (newMessages.isEmpty() && baseSummary != null) {
                 baseSummary
             } else {
-                val messagesText = newMessages.joinToString("\n") {
-                    // 防御性处理：限制归档时的单条消息长度，防止 Prompt 爆炸及 OOM
-                    val content = it.toContentText().take(2000)
-                    "${it.role}: $content"
-                }
+                // 方案 B 优化：使用 StringBuilder 避免超长会话拼接时的 OOM
+                val messagesText = StringBuilder().apply {
+                    newMessages.forEach { msg ->
+                        append(msg.role).append(": ").append(msg.toContentText().take(2000)).append("\n")
+                    }
+                }.toString()
+
                 val locale = Locale.getDefault().displayName
 
-                val prompt = DEFAULT_FULL_SUMMARY_PROMPT.replace(
-                    "{{previous_summary}}",
-                    baseSummary?.removePrefix("虚拟世界：") ?: "None"
-                )
-                    .replace("{{new_messages}}", messagesText).replace("{{locale}}", locale)
-                    .replace("{{char}}", assistant.name)
+                val prompt = fillPrompt(DEFAULT_FULL_SUMMARY_PROMPT, mapOf(
+                    "previous_summary" to (baseSummary?.removePrefix("虚拟世界：") ?: "None"),
+                    "new_messages" to messagesText,
+                    "locale" to locale,
+                    "char" to assistant.name
+                ))
 
                 val providerHandler = handler as Provider<ProviderSetting>
                 val resp = retryIO(times = 2) {
@@ -586,25 +616,35 @@ class ChatService(
         conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false
     ) {
         if (isTemporaryChat) temporaryConversations.add(conversationId)
-        _generationJobs.value[conversationId]?.cancel()
+
+        val oldJob = _generationJobs.value[conversationId]
+        oldJob?.cancel()
 
         val job = appScope.launch {
             try {
-                initializeConversation(conversationId)
+                // 确保互斥：等旧任务彻底释放锁，或者超时 200ms 强制继续
+                val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
+                withTimeoutOrNull(200) { mutex.lock() }
 
-                val currentConversation = getConversationFlow(conversationId).value
-                val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
-                val newConversation = currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes + UIMessage(
-                        role = MessageRole.USER, parts = content
-                    ).toMessageNode()
-                )
-                saveConversation(conversationId, newConversation)
-                conversationRepo.recordDailyActivity()
-                if (answer) handleMessageComplete(conversationId)
-                _generationDoneFlow.emit(conversationId)
+                try {
+                    initializeConversation(conversationId)
+
+                    val currentConversation = getConversationFlow(conversationId).value
+                    val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
+                    val newConversation = currentConversation.copy(
+                        messageNodes = currentConversation.messageNodes + newNode
+                    )
+                    saveConversation(conversationId, newConversation)
+                    conversationRepo.recordDailyActivity()
+                    if (answer) handleMessageComplete(conversationId)
+                    _generationDoneFlow.emit(conversationId)
+                } finally {
+                    if (mutex.isLocked) mutex.unlock()
+                }
             } catch (e: Exception) {
-                _errorFlow.emit(translateError(e))
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _errorFlow.emit(translateError(e))
+                }
             }
         }
         setGenerationJob(conversationId, job)
@@ -618,57 +658,48 @@ class ChatService(
     fun regenerateAtMessage(
         conversationId: Uuid, message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false
     ) {
-        _generationJobs.value[conversationId]?.cancel()
+        val oldJob = _generationJobs.value[conversationId]
+        oldJob?.cancel()
+
         val job = appScope.launch {
             try {
-                initializeConversation(conversationId)
-                val conversation = getConversationFlow(conversationId).value
-                if (message.role == MessageRole.USER) {
-                    val node = conversation.getMessageNodeByMessage(message)
-                    val indexAt = conversation.messageNodes.indexOf(node)
-                    val newConversation =
-                        conversation.copy(messageNodes = conversation.messageNodes.subList(0, indexAt + 1))
-                    saveConversation(conversationId, newConversation)
-                    handleMessageComplete(conversationId)
-                } else if (regenerateAssistantMsg) {
-                    val clickedNode = conversation.getMessageNodeByMessage(message)
-                    val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
-                    val lastUserIndex = conversation.messageNodes.subList(0, clickedIndex + 1)
-                        .indexOfLast { it.role == MessageRole.USER }
+                // 方案 A: 优雅的互斥锁 + 呼吸期
+                // 我们不使用 while 循环死等，而是使用 Mutex 来保证网络流不会重叠。
+                val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
 
-                    if (lastUserIndex >= 0) {
-                        val firstAssistantIndex = lastUserIndex + 1
-                        val turnEndIndex =
-                            conversation.messageNodes.subList(firstAssistantIndex, conversation.messageNodes.size)
-                                .indexOfFirst { it.role == MessageRole.USER }
-                                .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
+                // 给旧任务 150ms 释放 native 资源的机会（通常断开网络连接只需要 20-50ms）
+                // 如果 150ms 还没排队排到，强行开始，防止 UI 卡顿
+                withTimeoutOrNull(150) { mutex.lock() }
 
-                        if (forceWipe) {
-                            val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-                            nodes.add(
-                                MessageNode(
-                                    id = Uuid.random(),
-                                    messages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()))
-                                )
-                            )
-                            if (turnEndIndex < conversation.messageNodes.size) nodes.addAll(
-                                conversation.messageNodes.subList(
-                                    turnEndIndex, conversation.messageNodes.size
-                                )
-                            )
-                            saveConversation(conversationId, conversation.copy(messageNodes = nodes))
-                            handleMessageComplete(conversationId)
-                        } else {
-                            val versionTag = Uuid.random().toString()
-                            val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-                            val firstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
-                            if (firstAssistant != null) {
-                                val newMessages = firstAssistant.messages + UIMessage(
-                                    role = MessageRole.ASSISTANT, parts = emptyList(), versionTag = versionTag
-                                )
+                try {
+                    initializeConversation(conversationId)
+                    val conversation = getConversationFlow(conversationId).value
+                    if (message.role == MessageRole.USER) {
+                        val node = conversation.getMessageNodeByMessage(message)
+                        val indexAt = conversation.messageNodes.indexOf(node)
+                        val newConversation =
+                            conversation.copy(messageNodes = conversation.messageNodes.subList(0, indexAt + 1))
+                        saveConversation(conversationId, newConversation)
+                        handleMessageComplete(conversationId)
+                    } else if (regenerateAssistantMsg) {
+                        val clickedNode = conversation.getMessageNodeByMessage(message)
+                        val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
+                        val lastUserIndex = conversation.messageNodes.subList(0, clickedIndex + 1)
+                            .indexOfLast { it.role == MessageRole.USER }
+
+                        if (lastUserIndex >= 0) {
+                            val firstAssistantIndex = lastUserIndex + 1
+                            val turnEndIndex =
+                                conversation.messageNodes.subList(firstAssistantIndex, conversation.messageNodes.size)
+                                    .indexOfFirst { it.role == MessageRole.USER }
+                                    .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
+
+                            if (forceWipe) {
+                                val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
                                 nodes.add(
-                                    firstAssistant.copy(
-                                        messages = newMessages, selectIndex = newMessages.lastIndex
+                                    MessageNode(
+                                        id = Uuid.random(),
+                                        messages = listOf(UIMessage(role = MessageRole.ASSISTANT, parts = emptyList()))
                                     )
                                 )
                                 if (turnEndIndex < conversation.messageNodes.size) nodes.addAll(
@@ -676,15 +707,41 @@ class ChatService(
                                         turnEndIndex, conversation.messageNodes.size
                                     )
                                 )
+                                saveConversation(conversationId, conversation.copy(messageNodes = nodes))
+                                handleMessageComplete(conversationId)
+                            } else {
+                                val versionTag = Uuid.random().toString()
+                                val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
+                                val firstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
+                                if (firstAssistant != null) {
+                                    val newMessages = firstAssistant.messages + UIMessage(
+                                        role = MessageRole.ASSISTANT, parts = emptyList(), versionTag = versionTag
+                                    )
+                                    nodes.add(
+                                        firstAssistant.copy(
+                                            messages = newMessages, selectIndex = newMessages.lastIndex
+                                        )
+                                    )
+                                    if (turnEndIndex < conversation.messageNodes.size) nodes.addAll(
+                                        conversation.messageNodes.subList(
+                                            turnEndIndex, conversation.messageNodes.size
+                                        )
+                                    )
+                                }
+                                saveConversation(conversationId, conversation.copy(messageNodes = nodes))
+                                handleMessageComplete(conversationId)
                             }
-                            saveConversation(conversationId, conversation.copy(messageNodes = nodes))
-                            handleMessageComplete(conversationId)
-                        }
-                    } else handleMessageComplete(conversationId, messageRange = 0..<clickedIndex)
+                        } else handleMessageComplete(conversationId, messageRange = 0..<clickedIndex)
+                    }
+                } finally {
+                    // 只有拿到了锁才需要释放
+                    if (mutex.isLocked) mutex.unlock()
                 }
                 _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
-                _errorFlow.emit(translateError(e))
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _errorFlow.emit(translateError(e))
+                }
             }
         }
         setGenerationJob(conversationId, job)
@@ -1049,12 +1106,19 @@ class ChatService(
             // 使用重新计算的 actualStartIdx 截取消息
             val toSummarize = messages.subList(actualStartIdx, lastIdx + 1)
 
-            val text = toSummarize.joinToString("\n") {
-                "${it.role}: ${it.toContentText().take(500)}"
-            }
+            // 方案 B 优化：使用 StringBuilder 避免压缩时的 OOM
+            val text = StringBuilder().apply {
+                toSummarize.forEach { msg ->
+                    append(msg.role).append(": ").append(msg.toContentText().take(500)).append("\n")
+                }
+            }.toString()
+
             val locale = Locale.getDefault().displayName
-            val tempPrompt = DEFAULT_TEMP_SUMMARY_PROMPT.replace("{{new_messages}}", text).replace("{{locale}}", locale)
-                .replace("{{char}}", assistant.name)
+            val tempPrompt = fillPrompt(DEFAULT_TEMP_SUMMARY_PROMPT, mapOf(
+                "new_messages" to text,
+                "locale" to locale,
+                "char" to assistant.name
+            ))
 
             val providerHandler = handler as Provider<ProviderSetting>
             val tempResp = providerHandler.generateText(
@@ -1132,8 +1196,10 @@ class ChatService(
     ): String {
         return try {
             val locale = Locale.getDefault().getDisplayName(Locale.ROOT)
-            val prompt = DEFAULT_KEYWORD_EXTRACTION_PROMPT.replace("{{summary}}", summary).replace("{{locale}}", locale)
-
+            val prompt = fillPrompt(DEFAULT_KEYWORD_EXTRACTION_PROMPT, mapOf(
+                "summary" to summary,
+                "locale" to locale
+            ))
             val h = handler as Provider<ProviderSetting>
             val resp = h.generateText(
                 providerSetting = providerSetting,
@@ -1205,7 +1271,13 @@ class ChatService(
     fun cleanupConversation(id: Uuid) {
         _generationJobs.value[id]?.cancel()
         removeGenerationJob(id)
+
+        // 核心修复：显式清空 Flow 中的引用，辅助 GC 更快地回收大型 Conversation 对象
+        conversations[id]?.value = Conversation.ofId(id, Uuid.random())
+
         conversations.remove(id)
+        conversationMutexes.remove(id)
+        Log.d(TAG, "Unloaded conversation $id from RAM cache.")
     }
 
     private suspend fun checkInvalidMessages(conversationId: Uuid) {
@@ -1325,3 +1397,4 @@ private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLeng
         is JsonArray -> JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
     }
 }
+
