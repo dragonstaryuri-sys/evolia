@@ -43,6 +43,7 @@ import me.rerere.ai.core.MessageRole
 
 
 private const val TAG = "DiaryWorker"
+private const val MAX_CHAT_CONTENT_LENGTH = 30_000 // 最大允许的聊天内容字符数
 
 class DiaryWorker(
     context: Context,
@@ -126,11 +127,21 @@ class DiaryWorker(
                     "locale" to locale
                 )
             } else {
-                val chatContent = newMessages.joinToString("\n") { message ->
+                var chatContent = newMessages.joinToString("\n") { message ->
                     val time = formatTimestamp(message.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
                     // 仅使用文本正文，过滤推理过程
                     "[$time] ${message.role}: ${message.toContentText()}"
                 }
+
+                // 处理超长文本：取头部和尾部
+                if (chatContent.length > MAX_CHAT_CONTENT_LENGTH) {
+                    val half = MAX_CHAT_CONTENT_LENGTH / 2
+                    val head = chatContent.take(half)
+                    val tail = chatContent.takeLast(half)
+                    chatContent = "$head\n\n...[Content omitted due to length]...\n\n$tail"
+                    Log.w(TAG, "Chat content for diary truncated: original length ${chatContent.length}")
+                }
+
                 val firstMsgTime = formatTimestamp(newMessages.first().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
                 val lastMsgTime = formatTimestamp(newMessages.last().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
 
