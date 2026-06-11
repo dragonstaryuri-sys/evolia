@@ -43,7 +43,7 @@ import me.rerere.ai.core.MessageRole
 
 
 private const val TAG = "DiaryWorker"
-private const val MAX_CHAT_CONTENT_LENGTH = 30_000 // 最大允许的聊天内容字符数
+private const val MAX_CHAT_CONTENT_LENGTH = 80_000 // 最大允许的聊天内容字符数
 
 class DiaryWorker(
     context: Context,
