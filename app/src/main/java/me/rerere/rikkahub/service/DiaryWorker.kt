@@ -50,13 +50,8 @@ private const val MAX_CHAT_CONTENT_LENGTH = 80_000 // 最大允许的聊天内�
 private const val DIARY_MARKDOWN_INSTRUCTION = """
 
 ---
-**Format Instruction (Markdown):**
-Please use Markdown to make the diary beautiful and readable:
-- Use `###` for section headers (e.g., Morning, Afternoon, Evening or key events).
-- Use **bold** for emphasis on important feelings or events.
-- Use bullet points `-` for lists of activities or thoughts.
-- Use `>` for self-reflections or quotes.
-- Avoid using H1 (#) or H2 (##) to keep it concise within the card.
+**日记格式(Markdown):**
+请使用markdown格式让日记看起来更有趣和漂亮~
 """
 
 class DiaryWorker(
