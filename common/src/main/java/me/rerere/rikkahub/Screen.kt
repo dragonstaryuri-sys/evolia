@@ -45,6 +45,9 @@ sealed interface Screen {
     data class WebView(val url: String = "", val content: String = "") : Screen
 
     @Serializable
+    data class MarkdownViewer(val title: String, val content: String = "", val uri: String? = null) : Screen
+
+    @Serializable
     data object SettingDisplay : Screen
 
     @Serializable

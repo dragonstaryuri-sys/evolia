@@ -47,6 +47,8 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.Description
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.launch
@@ -526,15 +528,16 @@ private fun ToolCallPreviewSheet(
                         }
                     }
 
-                    // File write tool - show file info with download button
-                    "write_sandbox_file" -> {
+                    // File tool - Support write, read and list
+                    "write_sandbox_file", "read_sandbox_file", "list_sandbox_files" -> {
                         val path = (arguments as? JsonObject)?.get("path")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
                         val contentObj = content as? JsonObject
-                        val success = contentObj?.get("success")?.jsonPrimitive?.content?.toBooleanStrictOrNull() == true
+                        val success = contentObj?.get("success")?.jsonPrimitiveOrNull?.contentOrNull == "true"
                         val uri = contentObj?.get("uri")?.jsonPrimitiveOrNull?.contentOrNull
+                        val fileContent = contentObj?.get("content")?.jsonPrimitiveOrNull?.contentOrNull
+                        val files = contentObj?.get("files")?.jsonArray
                         val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
                         val context = androidx.compose.ui.platform.LocalContext.current
-                        val scope = rememberCoroutineScope()
 
                         Column(
                             modifier = Modifier
@@ -543,73 +546,111 @@ private fun ToolCallPreviewSheet(
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = stringResource(R.string.chat_message_tool_file_created),
+                                text = when(toolName) {
+                                    "write_sandbox_file" -> stringResource(R.string.chat_message_tool_file_created)
+                                    "read_sandbox_file" -> "File Content"
+                                    "list_sandbox_files" -> "File List"
+                                    else -> ""
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
                             )
 
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (success)
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                    else MaterialTheme.colorScheme.errorContainer
-                                ),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    // File path
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = if (success) Icons.Rounded.Build
-                                                else Icons.Rounded.Delete,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(24.dp),
-                                            tint = if (success) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.error
-                                        )
-                                        Text(
-                                            text = path,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-
-                                    if (error != null) {
-                                        Text(
-                                            text = error,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-
-                                    // Download button
-                                    if (success && uri != null) {
-                                        androidx.compose.material3.FilledTonalButton(
+                            if (toolName == "list_sandbox_files" && files != null) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    files.forEach { file ->
+                                        val fObj = file as? JsonObject
+                                        val fName = fObj?.get("name")?.jsonPrimitive?.content ?: ""
+                                        val fUri = fObj?.get("uri")?.jsonPrimitive?.content
+                                        Card(
                                             onClick = {
-                                                val uriParsed = android.net.Uri.parse(uri)
-                                                scope.launch {
-                                                    context.saveToDownloads(uriParsed, path.substringAfterLast("/"))
+                                                if (fUri != null && fName.endsWith(".md", ignoreCase = true)) {
+                                                    onDismissRequest()
+                                                    navController.navigate(Screen.MarkdownViewer(title = fName, uri = fUri))
                                                 }
                                             },
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.ContentCopy,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            androidx.compose.foundation.layout.Spacer(
-                                                modifier = Modifier.size(8.dp)
-                                            )
-                                            Text(stringResource(R.string.chat_message_tool_download_file))
+                                            Row(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Icon(Icons.Rounded.Description, null, modifier = Modifier.size(18.dp))
+                                                Text(fName, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                                if (fUri != null && fName.endsWith(".md", ignoreCase = true)) {
+                                                    Icon(Icons.Rounded.Visibility, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (error == null)
+                                            MaterialTheme.colorScheme.surfaceContainerLow
+                                        else MaterialTheme.colorScheme.errorContainer
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (path.isNotEmpty()) {
+                                            Text(text = path, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)
+                                        }
+
+                                        if (error != null) {
+                                            Text(text = error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                        }
+
+                                        if (fileContent != null) {
+                                            if (path.endsWith(".md", ignoreCase = true)) {
+                                                MarkdownBlock(content = fileContent, style = MaterialTheme.typography.bodySmall)
+                                            } else {
+                                                HighlightText(code = fileContent, language = path.substringAfterLast(".", "txt"), fontSize = 11.sp)
+                                            }
+                                        }
+
+                                        // Action buttons
+                                        if (uri != null) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                if (path.endsWith(".md", ignoreCase = true)) {
+                                                    androidx.compose.material3.Button(
+                                                        onClick = {
+                                                            onDismissRequest()
+                                                            navController.navigate(Screen.MarkdownViewer(
+                                                                title = path.substringAfterLast("/"),
+                                                                uri = uri
+                                                            ))
+                                                        },
+                                                        modifier = Modifier.weight(1f)
+                                                    ) {
+                                                        Icon(Icons.Rounded.Visibility, null, modifier = Modifier.size(18.dp))
+                                                        androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                                                        Text("Preview")
+                                                    }
+                                                }
+
+                                                androidx.compose.material3.FilledTonalButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            context.saveToDownloads(android.net.Uri.parse(uri), path.substringAfterLast("/"))
+                                                        }
+                                                    },
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp))
+                                                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                                                    Text(stringResource(R.string.chat_message_tool_download_file))
+                                                }
+                                            }
                                         }
                                     }
                                 }

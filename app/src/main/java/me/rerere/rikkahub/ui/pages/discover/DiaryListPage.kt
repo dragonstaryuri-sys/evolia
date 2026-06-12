@@ -29,6 +29,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -266,13 +267,10 @@ private fun DiaryItem(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            SelectionContainer {
-                Text(
-                    text = diary.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
+            MarkdownBlock(
+                content = diary.content,
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }

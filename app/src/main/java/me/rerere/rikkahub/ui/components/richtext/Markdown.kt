@@ -66,7 +66,6 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -87,6 +86,7 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.utils.toDp
 import me.rerere.rikkahub.utils.saveToDownloads
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.unit.TextUnit
 import kotlinx.coroutines.launch
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
@@ -561,10 +561,16 @@ private fun MarkdownNode(
                 modifier = modifier.clickable {
                     Log.d("Markdown", "Link clicked: text='$linkText', dest='$linkDest'")
                     val uri = linkDest.toUri()
-                    // Handle content:// URIs as downloads
+                    // Handle content:// URIs - check if it's a Markdown file for internal preview
                     if (uri.scheme == "content") {
-                        val fileName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else uri.lastPathSegment ?: "downloaded_file"
-                        scope.launch { context.saveToDownloads(uri, fileName) }
+                        val fileName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else uri.lastPathSegment ?: "file"
+                        if (fileName.endsWith(".md", ignoreCase = true)) {
+                            // 自动保存并预览
+                            scope.launch { context.saveToDownloads(uri, fileName) }
+                            navController.navigate(Screen.MarkdownViewer(title = fileName, uri = linkDest))
+                        } else {
+                            scope.launch { context.saveToDownloads(uri, fileName) }
+                        }
                     } else if (uri.scheme in listOf("http", "https")) {
                         // 应用内 WebView 打开
                         navController.navigate(Screen.WebView(url = linkDest))
@@ -1111,26 +1117,37 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                     appendInlineContent("citation:$linkDest")
                 }
             } else if (linkDest.startsWith("content://")) {
-                // Handle content:// URIs as downloadable files - looks like regular link
+                // Handle content:// URIs - check if it's Markdown for preview, else download
                 val displayName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else linkDest.substringAfterLast("/")
-                val inlineKey = "download:$linkDest"
+                val isMarkdown = displayName.endsWith(".md", ignoreCase = true)
+                val inlineKey = "filelink:$linkDest"
+
                 inlineContents.putIfAbsent(
                     inlineKey, InlineTextContent(
                         placeholder = Placeholder(
-                            width = (displayName.length * 12 + 32).sp, // Extra width to avoid clipping long download link text
-                            height = (style.fontSize.value * 1.3f).sp, // Extra height for descenders (p, g, y)
+                            width = (displayName.length * 12 + 32).sp,
+                            height = (style.fontSize.value * 1.3f).sp,
                             placeholderVerticalAlign = PlaceholderVerticalAlign.TextBottom,
                         ), children = {
                             val context = LocalContext.current
+                            val navController = LocalNavController.current
                             val scope = rememberCoroutineScope()
                             Text(
                                 text = displayName,
                                 modifier = Modifier
                                     .clickable {
-                                        Log.d("Markdown", "Download clicked: $displayName from $linkDest")
-                                        val uri = linkDest.toUri()
-                                        scope.launch {
-                                            context.saveToDownloads(uri, displayName)
+                                        if (isMarkdown) {
+                                            // 自动保存 + 自动预览
+                                            val uri = linkDest.toUri()
+                                            scope.launch {
+                                                context.saveToDownloads(uri, displayName)
+                                            }
+                                            navController.navigate(Screen.MarkdownViewer(title = displayName, uri = linkDest))
+                                        } else {
+                                            val uri = linkDest.toUri()
+                                            scope.launch {
+                                                context.saveToDownloads(uri, displayName)
+                                            }
                                         }
                                     },
                                 style = TextStyle(

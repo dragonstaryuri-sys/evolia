@@ -41,9 +41,23 @@ import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
 import me.rerere.ai.core.MessageRole
 
-
 private const val TAG = "DiaryWorker"
 private const val MAX_CHAT_CONTENT_LENGTH = 80_000 // 最大允许的聊天内容字符数
+
+/**
+ * Markdown formatting instruction for the AI.
+ */
+private const val DIARY_MARKDOWN_INSTRUCTION = """
+
+---
+**Format Instruction (Markdown):**
+Please use Markdown to make the diary beautiful and readable:
+- Use `###` for section headers (e.g., Morning, Afternoon, Evening or key events).
+- Use **bold** for emphasis on important feelings or events.
+- Use bullet points `-` for lists of activities or thoughts.
+- Use `>` for self-reflections or quotes.
+- Avoid using H1 (#) or H2 (##) to keep it concise within the card.
+"""
 
 class DiaryWorker(
     context: Context,
@@ -125,7 +139,7 @@ class DiaryWorker(
                     "memories" to selectedMemories,
                     "system_prompt" to assistant.systemPrompt,
                     "locale" to locale
-                )
+                ) + DIARY_MARKDOWN_INSTRUCTION
             } else {
                 var chatContent = newMessages.joinToString("\n") { message ->
                     val time = formatTimestamp(message.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
@@ -158,7 +172,7 @@ class DiaryWorker(
                     "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
                     "system_prompt" to assistant.systemPrompt,
                     "locale" to locale
-                ) + timeRef
+                ) + timeRef + DIARY_MARKDOWN_INSTRUCTION
             }
 
             // 3. AI 生成

@@ -82,6 +82,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingLorebooksPage
 import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
+import me.rerere.rikkahub.ui.pages.markdown.MarkdownViewerPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
@@ -419,6 +420,10 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.WebView> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.WebView>()
                         WebViewPage(route.url, route.content)
+                    }
+                    composable<Screen.MarkdownViewer> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.MarkdownViewer>()
+                        MarkdownViewerPage(route.title, route.content, route.uri)
                     }
                     composable<Screen.SettingDisplay> { SettingDisplayPage() }
                     composable<Screen.SettingProvider> { SettingProviderPage() }
