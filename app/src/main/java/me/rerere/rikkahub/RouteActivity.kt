@@ -419,7 +419,7 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.ImageGen> { ImageGenPage() }
                     composable<Screen.WebView> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.WebView>()
-                        WebViewPage(route.url, route.content)
+                        WebViewPage(route.url, route.content, route.title)
                     }
                     composable<Screen.MarkdownViewer> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.MarkdownViewer>()

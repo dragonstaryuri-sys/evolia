@@ -23,25 +23,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.core.net.toUri
+import kotlinx.coroutines.launch
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
 import me.rerere.rikkahub.utils.base64Decode
+import me.rerere.rikkahub.utils.saveToDownloads
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebViewPage(url: String, content: String) {
+fun WebViewPage(url: String, content: String, title: String? = null) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val state = if (url.isNotEmpty()) {
         rememberWebViewState(
             url = url,
@@ -72,7 +80,7 @@ fun WebViewPage(url: String, content: String) {
             TopAppBar(
                 title = {
                     Text(
-                        text = state.pageTitle?.takeIf { it.isNotEmpty() } ?: state.currentUrl
+                        text = title ?: state.pageTitle?.takeIf { it.isNotEmpty() } ?: state.currentUrl
                         ?: "",
                         maxLines = 1,
                         style = MaterialTheme.typography.titleSmall
@@ -82,6 +90,17 @@ fun WebViewPage(url: String, content: String) {
                     BackButton()
                 },
                 actions = {
+                    if (url.startsWith("content://")) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                val fileName = title ?: url.substringAfterLast("/")
+                                context.saveToDownloads(url.toUri(), fileName)
+                            }
+                        }) {
+                            Icon(Icons.Rounded.Download, contentDescription = "Save to Downloads")
+                        }
+                    }
+
                     IconButton(onClick = { state.reload() }) {
                         Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
                     }

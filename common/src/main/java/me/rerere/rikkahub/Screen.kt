@@ -42,7 +42,7 @@ sealed interface Screen {
     data object ImageGen : Screen
 
     @Serializable
-    data class WebView(val url: String = "", val content: String = "") : Screen
+    data class WebView(val url: String = "", val content: String = "", val title: String? = null) : Screen
 
     @Serializable
     data class MarkdownViewer(val title: String, val content: String = "", val uri: String? = null) : Screen

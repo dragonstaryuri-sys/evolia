@@ -565,9 +565,11 @@ private fun MarkdownNode(
                     if (uri.scheme == "content") {
                         val fileName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else uri.lastPathSegment ?: "file"
                         if (fileName.endsWith(".md", ignoreCase = true)) {
-                            // 自动保存并预览
-                            scope.launch { context.saveToDownloads(uri, fileName) }
+                            // 自动预览
                             navController.navigate(Screen.MarkdownViewer(title = fileName, uri = linkDest))
+                        } else if (fileName.endsWith(".html", ignoreCase = true)) {
+                            // 自动预览 HTML
+                            navController.navigate(Screen.WebView(url = linkDest, title = fileName))
                         } else {
                             scope.launch { context.saveToDownloads(uri, fileName) }
                         }
@@ -1120,6 +1122,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                 // Handle content:// URIs - check if it's Markdown for preview, else download
                 val displayName = if (linkText.isNotEmpty() && !linkText.contains("/")) linkText else linkDest.substringAfterLast("/")
                 val isMarkdown = displayName.endsWith(".md", ignoreCase = true)
+                val isHtml = displayName.endsWith(".html", ignoreCase = true)
                 val inlineKey = "filelink:$linkDest"
 
                 inlineContents.putIfAbsent(
@@ -1137,12 +1140,11 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
                                 modifier = Modifier
                                     .clickable {
                                         if (isMarkdown) {
-                                            // 自动保存 + 自动预览
-                                            val uri = linkDest.toUri()
-                                            scope.launch {
-                                                context.saveToDownloads(uri, displayName)
-                                            }
+                                            // 自动预览
                                             navController.navigate(Screen.MarkdownViewer(title = displayName, uri = linkDest))
+                                        } else if (isHtml) {
+                                            // 自动预览 HTML
+                                            navController.navigate(Screen.WebView(url = linkDest, title = displayName))
                                         } else {
                                             val uri = linkDest.toUri()
                                             scope.launch {
