@@ -2,7 +2,10 @@
 package me.rerere.rikkahub.common
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.util.Log
@@ -41,6 +44,17 @@ fun Context.deleteAllChatFiles() {
 }
 
 /**
+ * Delete all generated images
+ */
+fun Context.deleteAllImageFiles() {
+    val dir = getImagesDir()
+    if (dir.exists()) {
+        dir.deleteRecursively()
+        dir.mkdirs() // Recreate empty dir
+    }
+}
+
+/**
  * Count chat files and their total size
  */
 suspend fun Context.countChatFiles(): Pair<Int, Long> = withContext(Dispatchers.IO) {
@@ -49,6 +63,20 @@ suspend fun Context.countChatFiles(): Pair<Int, Long> = withContext(Dispatchers.
         return@withContext Pair(0, 0)
     }
     val files = dir.listFiles() ?: return@withContext Pair(0, 0)
+    val count = files.size
+    val size = files.sumOf { it.length() }
+    Pair(count, size)
+}
+
+/**
+ * Count image files and their total size
+ */
+suspend fun Context.countImageFiles(): Pair<Int, Long> = withContext(Dispatchers.IO) {
+    val dir = getImagesDir()
+    if (!dir.exists()) {
+        return@withContext Pair(0, 0)
+    }
+    val files = dir.listFiles()?.filter { it.isFile } ?: return@withContext Pair(0, 0)
     val count = files.size
     val size = files.sumOf { it.length() }
     Pair(count, size)
@@ -159,7 +187,7 @@ fun Context.getImagesDir(): File {
 }
 
 /**
- * Create image file from base64 data
+ * Create image file from base64 data (Original version, raw write)
  */
 fun Context.createImageFileFromBase64(base64Data: String, filePath: String): File {
     val data = if (base64Data.startsWith("data:image")) {
@@ -172,6 +200,37 @@ fun Context.createImageFileFromBase64(base64Data: String, filePath: String): Fil
     val file = File(filePath)
     file.parentFile?.mkdirs()
     file.writeBytes(byteArray)
+    return file
+}
+
+/**
+ * Create image file from base64 data with WebP compression
+ * @param quality 0-100, default 80
+ */
+fun Context.createCompressedImageFromBase64(base64Data: String, filePath: String, quality: Int = 80): File {
+    val data = if (base64Data.startsWith("data:image")) {
+        base64Data.substringAfter("base64,")
+    } else {
+        base64Data
+    }
+
+    val byteArray = Base64.decode(data.toByteArray())
+    val bitmap = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
+        ?: return createImageFileFromBase64(base64Data, filePath) // Fallback to raw if decode fails
+
+    val file = File(filePath)
+    file.parentFile?.mkdirs()
+
+    file.outputStream().use { output ->
+        val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+            @Suppress("DEPRECATION")
+            Bitmap.CompressFormat.WEBP
+        }
+        bitmap.compress(format, quality, output)
+    }
+    bitmap.recycle()
     return file
 }
 

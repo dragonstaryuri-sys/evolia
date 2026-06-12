@@ -39,6 +39,9 @@ import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
 import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
+import me.rerere.rikkahub.common.countImageFiles
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.components.ui.ToastType
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +50,37 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val lazyListState = rememberLazyListState()
+    val toaster = LocalToaster.current
+
+    var showClearCacheDialog by remember { mutableStateOf(false) }
+
+    if (showClearCacheDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = { Text(stringResource(R.string.setting_page_clear_cache_confirm_title)) },
+            text = { Text(stringResource(R.string.setting_page_clear_cache_confirm_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearCacheDialog = false
+                        vm.clearCache {
+                            toaster.show(
+                                message = "缓存清理完成", // 这里也可以用 stringResource，但异步回调里建议直接传或用 context
+                                type = ToastType.Success
+                            )
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -321,15 +355,19 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         onClick = { navController.navigate(Screen.Backup) }
                     )
                     val context = LocalContext.current
-                    val storageState by produceState(-1 to 0L) {
+                    val chatStorageState by produceState(-1 to 0L) {
                         value = context.countChatFiles()
                     }
+                    val imageStorageState by produceState(-1 to 0L) {
+                        value = context.countImageFiles()
+                    }
+
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_chat_storage),
                         subtitle = stringResource(
                             R.string.setting_page_chat_storage_desc,
-                            storageState.first,
-                            storageState.second.toDouble() / 1024 / 1024
+                            chatStorageState.first,
+                            chatStorageState.second.toDouble() / 1024 / 1024
                         ),
                         icon = { Icon(Icons.Rounded.Storage, null, modifier = Modifier.size(20.dp)) },
                         onClick = {
@@ -340,6 +378,17 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                                     }
                             context.startActivity(intent)
                         }
+                    )
+
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_clear_cache),
+                        subtitle = if (imageStorageState.first > 0) {
+                            "${stringResource(R.string.setting_page_clear_cache_desc)} (${imageStorageState.first} 张图, %.2f MB)".format(imageStorageState.second.toDouble() / 1024 / 1024)
+                        } else {
+                            stringResource(R.string.setting_page_clear_cache_desc)
+                        },
+                        icon = { Icon(Icons.Rounded.DeleteSweep, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { showClearCacheDialog = true }
                     )
                 }
             }

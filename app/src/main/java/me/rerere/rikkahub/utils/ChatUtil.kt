@@ -244,8 +244,17 @@ suspend fun Context.convertBase64ImagePartToLocalFile(message: UIMessage): UIMes
         )
     }
 
-fun Bitmap.compress(): ByteArray = ByteArrayOutputStream().use {
-    compress(Bitmap.CompressFormat.PNG, 100, it)
+/**
+ * 压缩 Bitmap 为 ByteArray，默认使用 WebP 格式以节省空间
+ */
+fun Bitmap.compress(quality: Int = 80): ByteArray = ByteArrayOutputStream().use {
+    val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Bitmap.CompressFormat.WEBP_LOSSY
+    } else {
+        @Suppress("DEPRECATION")
+        Bitmap.CompressFormat.WEBP
+    }
+    compress(format, quality, it)
     it.toByteArray()
 }
 
@@ -295,6 +304,37 @@ fun Context.createImageFileFromBase64(base64Data: String, filePath: String): Fil
     val file = File(filePath)
     file.parentFile?.mkdirs()
     file.writeBytes(byteArray)
+    return file
+}
+
+/**
+ * 使用 WebP 压缩保存图片
+ */
+@OptIn(ExperimentalEncodingApi::class)
+fun Context.createCompressedImageFromBase64(base64Data: String, filePath: String, quality: Int = 80): File {
+    val data = if (base64Data.startsWith("data:image")) {
+        base64Data.substringAfter("base64,")
+    } else {
+        base64Data
+    }
+
+    val byteArray = Base64.decode(data.toByteArray())
+    val bitmap = BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
+        ?: return createImageFileFromBase64(base64Data, filePath) // 解码失败则回退到原始保存
+
+    val file = File(filePath)
+    file.parentFile?.mkdirs()
+
+    file.outputStream().use { output ->
+        val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+            @Suppress("DEPRECATION")
+            Bitmap.CompressFormat.WEBP
+        }
+        bitmap.compress(format, quality, output)
+    }
+    bitmap.recycle()
     return file
 }
 

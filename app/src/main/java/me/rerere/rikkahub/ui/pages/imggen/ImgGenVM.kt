@@ -26,7 +26,7 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.core.data.db.entity.GenMediaEntity
 import me.rerere.rikkahub.core.data.db.repository.GenMediaRepository
-import me.rerere.rikkahub.utils.createImageFileFromBase64
+import me.rerere.rikkahub.utils.createCompressedImageFromBase64
 import me.rerere.rikkahub.utils.getImagesDir
 import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
@@ -286,10 +286,12 @@ class ImgGenVM(
         val imagesDir = context.getImagesDir()
 
         val timestamp = System.currentTimeMillis()
-        val filename = "${timestamp}_${modelName}_$index.png"
+        // 使用 .webp 后缀，因为我们会将其压缩为 webp 格式
+        val filename = "${timestamp}_${modelName}_$index.webp"
         val imageFile = File(imagesDir, filename)
 
-        val createdFile = context.createImageFileFromBase64(item.data, imageFile.absolutePath)
+        // 使用压缩保存方法 (WebP 80质量)
+        val createdFile = context.createCompressedImageFromBase64(item.data, imageFile.absolutePath, 80)
 
         // Save to database with relative path
         val relativePath = "images/${imageFile.name}"

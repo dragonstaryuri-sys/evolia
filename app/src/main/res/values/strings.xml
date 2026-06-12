@@ -1702,5 +1702,10 @@
   <string name="setting_provider_minimax_realtime_hint">To use the real-time call feature of this model, please fill in the information below. The Group ID can be obtained from the MiniMax Console.</string>
   <string name="setting_provider_minimax_realtime_voice">Real-time Voice Timbre</string>
   <string name="setting_provider_minimax_realtime_voice_hint">Example: ash, dedicated timbre for real-time interface</string>
-
+  <!-- Clear Cache -->
+  <string name="setting_page_clear_cache">Clear Cache</string>
+  <string name="setting_page_clear_cache_desc">Delete all generated images and chat attachments to free up space</string>
+  <string name="setting_page_clear_cache_confirm_title">Confirm Clear Cache?</string>
+  <string name="setting_page_clear_cache_confirm_message">This will permanently delete all generated images (Gallery) and files uploaded in chats. These will also be removed from future backups. This action cannot be undone.</string>
+  <string name="setting_page_clear_cache_success">Cache cleared successfully</string>
 </resources>

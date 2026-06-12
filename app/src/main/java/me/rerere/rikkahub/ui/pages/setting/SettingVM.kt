@@ -12,6 +12,8 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.utils.IconStorageManager
+import me.rerere.rikkahub.common.deleteAllChatFiles
+import me.rerere.rikkahub.common.deleteAllImageFiles
 import okhttp3.OkHttpClient
 
 class SettingVM(
@@ -28,11 +30,11 @@ class SettingVM(
         viewModelScope.launch {
             val oldSettings = settings.value
             settingsStore.update(newSettings)
-            
+
             // Check if providers were removed and trigger icon cleanup
             val oldProviderIds = oldSettings.providers.map { it.id }.toSet()
             val newProviderIds = newSettings.providers.map { it.id }.toSet()
-            
+
             if (oldProviderIds != newProviderIds) {
                 // Providers changed, schedule cleanup in background
                 launch(Dispatchers.IO) {
@@ -41,28 +43,39 @@ class SettingVM(
             }
         }
     }
-    
+
+    /**
+     * 清理缓存：包括聊天上传的文件和生成的图片
+     */
+    fun clearCache(onComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            context.deleteAllChatFiles()
+            context.deleteAllImageFiles()
+            onComplete()
+        }
+    }
+
     /**
      * Clean up icons that are no longer used by any model/provider.
      */
     private fun cleanupUnusedIcons(settings: Settings) {
         val iconManager = IconStorageManager.getInstance(context, okHttpClient)
-        
+
         // Collect all icon keys that are still in use
         val usedKeys = mutableSetOf<String>()
-        
+
         for (provider in settings.providers) {
             // Add provider icon key (for both light and dark mode)
             val providerSlug = provider.name.lowercase().replace(" ", "-").replace("_", "-")
             usedKeys.add(IconStorageManager.generateIconKey(providerSlug, null, true))
             usedKeys.add(IconStorageManager.generateIconKey(providerSlug, null, false))
-            
+
             // Add model icon keys
             for (model in provider.models) {
                 val modelName = model.displayName.ifBlank { model.modelId }
                 usedKeys.add(IconStorageManager.generateIconKey(model.providerSlug, modelName, true))
                 usedKeys.add(IconStorageManager.generateIconKey(model.providerSlug, modelName, false))
-                
+
                 // Also add URL-based keys if model has iconUrl
                 if (!model.iconUrl.isNullOrBlank()) {
                     usedKeys.add("url_${model.iconUrl.hashCode()}_dark")
@@ -70,7 +83,7 @@ class SettingVM(
                 }
             }
         }
-        
+
         iconManager.cleanupUnusedIcons(usedKeys)
     }
 }
