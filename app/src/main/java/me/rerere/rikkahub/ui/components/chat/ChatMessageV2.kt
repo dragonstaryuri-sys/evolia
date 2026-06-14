@@ -107,18 +107,22 @@ data class MessageTurnGroup(
     val filteredNodes: List<MessageNode> get() {
         val tag = activeVersionTag
         return nodes.mapNotNull { node ->
-            if (tag == null) {
-                // Active version is null-tagged (old version before versioning)
-                // Find the first message with null versionTag
-                val index = node.messages.indexOfFirst { it.versionTag == null }
-                if (index != -1) {
-                    node.copy(selectIndex = index)
-                } else null
+            // 如果节点当前选中的消息已经匹配标签，则尊重现有的 selectIndex。
+            // 当多个消息共享同一个标签（例如编辑某个版本后）时，这至关重要。
+            if (node.currentMessage.versionTag == tag) {
+                return@mapNotNull node
+            }
+
+            // 寻找具有匹配标签的消息。使用 indexOfLast 以确保编辑后能显示最新的版本。
+            val index = node.messages.indexOfLast { it.versionTag == tag }
+            if (index != -1) {
+                node.copy(selectIndex = index)
             } else {
-                // Active version has a tag, find message with matching tag
-                val index = node.messages.indexOfFirst { it.versionTag == tag }
-                if (index != -1) {
-                    node.copy(selectIndex = index)
+                // 如果找不到匹配当前标签的消息（例如在查看某个分支时，该节点还没有对应的分支），
+                // 尝试找无标签的消息（通用历史）。
+                val lastUntaggedIndex = node.messages.indexOfLast { it.versionTag == null }
+                if (lastUntaggedIndex != -1) {
+                    node.copy(selectIndex = lastUntaggedIndex)
                 } else null
             }
         }
@@ -595,14 +599,14 @@ private fun UserMessageTurn(
             }
         }
 
-        // Message bubbles
-        group.nodes.forEachIndexed { nodeIndex, node ->
+        // Message bubbles - Use filteredNodes to respect versions and edits
+        group.filteredNodes.forEachIndexed { nodeIndex, node ->
             val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()
             textParts.forEachIndexed { partIndex, part ->
                 // Calculate bubble position based on overall position in group
                 val isFirst = nodeIndex == 0 && partIndex == 0
-                val isLast = nodeIndex == group.nodes.lastIndex && partIndex == textParts.lastIndex
-                val totalBubbles = group.nodes.sumOf { n ->
+                val isLast = nodeIndex == group.filteredNodes.lastIndex && partIndex == textParts.lastIndex
+                val totalBubbles = group.filteredNodes.sumOf { n ->
                     n.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().size
                 }
                 val position = when {
