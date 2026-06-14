@@ -32,6 +32,10 @@ data class UserDeviceStateEntity(
     val longitude: Double = 0.0,
     @ColumnInfo(name = "location_name")
     val locationName: String = "",
+    @ColumnInfo(name = "wifi_ssid")
+    val wifiSsid: String = "",
+    @ColumnInfo(name = "is_wifi_connected")
+    val isWifiConnected: Boolean = false,
     @ColumnInfo(name = "last_updated")
     val lastUpdated: Long = System.currentTimeMillis()
 )

@@ -1708,4 +1708,7 @@
   <string name="setting_page_clear_cache_confirm_title">Confirm Clear Cache?</string>
   <string name="setting_page_clear_cache_confirm_message">This will permanently delete all generated images (Gallery) and files uploaded in chats. These will also be removed from future backups. This action cannot be undone.</string>
   <string name="setting_page_clear_cache_success">Cache cleared successfully</string>
+    <string name="backup_permission_wifi">Modify the Wi-Fi connection status</string>
+  <string name="permission_check_wifi">Wi-Fi permission</string>
+  <string name="permission_check_wifi_desc">Allow AI to control your Wi-Fi</string>
 </resources>

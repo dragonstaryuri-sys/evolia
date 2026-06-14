@@ -1667,4 +1667,7 @@
   <string name="setting_page_clear_cache_confirm_title">确认清理缓存？</string>
   <string name="setting_page_clear_cache_confirm_message">这将永久删除所有已生成的图片和对话中上传的文件。这些内容也将从未来的备份包中移除，操作不可撤销。</string>
   <string name="setting_page_clear_cache_success">缓存清理完成</string>
+  <string name="backup_permission_wifi">修改wifi连接状态</string>
+  <string name="permission_check_wifi">wifi开关权限</string>
+  <string name="permission_check_wifi_desc">允许小机控制你的wifi</string>
 </resources>

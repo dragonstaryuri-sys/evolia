@@ -7,8 +7,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.location.Geocoder
-import android.location.Location
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.net.wifi.WifiManager
 import android.os.PowerManager
 import android.telephony.TelephonyManager
 import android.util.Log
@@ -116,12 +118,41 @@ class EvoliaMonitorService : AccessibilityService() {
     override fun onInterrupt() {}
 
     private fun handleDeviceCommand(command: String) {
-        when (command) {
-            "LOCK_SCREEN" -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
-            "GO_HOME" -> performGlobalAction(GLOBAL_ACTION_HOME)
-            "BACK" -> performGlobalAction(GLOBAL_ACTION_BACK)
-            "SHOW_RECENTS" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
-            "SHOW_NOTIFICATIONS" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+        when {
+            command == "LOCK_SCREEN" -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+            command == "GO_HOME" -> performGlobalAction(GLOBAL_ACTION_HOME)
+            command == "BACK" -> performGlobalAction(GLOBAL_ACTION_BACK)
+            command == "SHOW_RECENTS" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+            command == "SHOW_NOTIFICATIONS" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+            command == "WIFI_ON" -> setWifiEnabled(true)
+            command == "WIFI_OFF" -> setWifiEnabled(false)
+            command.startsWith("OPEN_APP:") -> {
+                val pkg = command.substringAfter("OPEN_APP:")
+                if (pkg.isNotBlank()) openApp(pkg)
+            }
+        }
+    }
+
+    private fun setWifiEnabled(enabled: Boolean) {
+        try {
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            wifiManager.isWifiEnabled = enabled
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to set wifi: $enabled", e)
+        }
+    }
+
+
+    private fun openApp(packageName: String) {
+        try {
+            val intent = packageManager.getLaunchIntentForPackage(packageName)
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to open app: $packageName", e)
         }
     }
 
@@ -133,9 +164,6 @@ class EvoliaMonitorService : AccessibilityService() {
         val now = System.currentTimeMillis()
 
         // --- 核心隐私锁：全局 5 分钟频率限制 ---
-        // 注意：获取基站 ID 和经纬度在系统中均计为“位置访问记录”。
-        // 我们将其严格锁定在 5 分钟周期内。此逻辑不论屏幕亮灭均有效，
-        // 即使在息屏状态下，后台轮询（Polling）也会在满足 5 分钟冷却后执行刷新。
         val canRefreshLocation = now - lastLocationCheckTime >= 5 * 60 * 1000
         if (canRefreshLocation) {
             lastLocationCheckTime = now
@@ -213,6 +241,9 @@ class EvoliaMonitorService : AccessibilityService() {
                 Triple(oldState.latitude, oldState.longitude, oldState.locationName)
             }
 
+            // 3. 更新 WiFi 状态
+            val wifiInfo = getWifiStatus()
+
             val currentState = oldState.copy(
                 foregroundApp = packageName,
                 foregroundAppName = if (packageName.isNotBlank()) getAppName(packageName) else "桌面/熄屏",
@@ -224,13 +255,38 @@ class EvoliaMonitorService : AccessibilityService() {
                 latitude = locationResult.first,
                 longitude = locationResult.second,
                 locationName = locationResult.third,
+                wifiSsid = wifiInfo.first,
+                isWifiConnected = wifiInfo.second,
                 lastUpdated = now
             )
 
             userDeviceStateRepo.updateDeviceState(currentState)
-            if (isScreenOn || currentState.locationName != oldState.locationName) {
+            if (isScreenOn || currentState.locationName != oldState.locationName || currentState.wifiSsid != oldState.wifiSsid) {
                 checkAllMonitors(currentState, oldState)
             }
+        }
+    }
+
+    private fun getWifiStatus(): Pair<String, Boolean> {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = cm.activeNetwork ?: return "" to false
+            val capabilities = cm.getNetworkCapabilities(network) ?: return "" to false
+
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                @Suppress("DEPRECATION")
+                val info = wm.connectionInfo
+                val ssid = if (info != null && info.networkId != -1) {
+                    info.ssid.removePrefix("\"").removeSuffix("\"")
+                } else ""
+                val isConnected = ssid.isNotBlank() && ssid != "<unknown ssid>"
+                ssid to isConnected
+            } else {
+                "" to false
+            }
+        } catch (e: Exception) {
+            "" to false
         }
     }
 
@@ -289,6 +345,16 @@ class EvoliaMonitorService : AccessibilityService() {
             if (!isNowMatch || wasMatch) return false
         }
 
+        val wifiSsidCondition = conditions["wifi_ssid"]?.jsonPrimitive?.content
+        if (wifiSsidCondition != null) {
+            val isNowMatch = state.wifiSsid.contains(wifiSsidCondition, ignoreCase = true)
+            val wasMatch = oldState.wifiSsid.contains(wifiSsidCondition, ignoreCase = true)
+            if (!isNowMatch || wasMatch) return false
+        }
+
+        val wifiConnectedCondition = conditions["is_wifi_connected"]?.jsonPrimitive?.booleanOrNull
+        if (wifiConnectedCondition != null && state.isWifiConnected != wifiConnectedCondition) return false
+
         val timeRange = conditions["time_range"]?.jsonObject
         if (timeRange != null) {
             val start = timeRange["start"]?.jsonPrimitive?.content ?: ""
@@ -346,6 +412,8 @@ class EvoliaMonitorService : AccessibilityService() {
             .replace("{screen_context}", state.screenContext.ifBlank { "无上下文" })
             .replace("{current_time}", currentTime)
             .replace("{location}", state.locationName.ifBlank { "未知地点" })
+            .replace("{wifi_ssid}", state.wifiSsid.ifBlank { "未连接" })
+            .replace("{wifi_connected}", if (state.isWifiConnected) "已连接" else "未连接")
 
         chatService.executeAgentTask(
             me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity(

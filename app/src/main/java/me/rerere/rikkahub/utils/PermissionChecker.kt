@@ -25,6 +25,7 @@ object PermissionChecker {
                     add(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 add(Manifest.permission.CAMERA)
+                add(Manifest.permission.CHANGE_WIFI_STATE)
             }
         ),
         LOCATION(
@@ -138,6 +139,7 @@ object PermissionChecker {
                 Manifest.permission.READ_CALENDAR -> context.getString(R.string.backup_permission_calendar)
                 "com.android.alarm.permission.SET_ALARM" -> context.getString(R.string.backup_permission_alarm)
                 Manifest.permission.SCHEDULE_EXACT_ALARM -> context.getString(R.string.backup_permission_exact_alarm)
+                Manifest.permission.CHANGE_WIFI_STATE -> context.getString(R.string.backup_permission_wifi)
                 else -> null
             }
         }.distinct()

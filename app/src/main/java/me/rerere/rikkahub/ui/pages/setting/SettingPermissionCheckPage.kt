@@ -122,6 +122,7 @@ private fun PermissionItem(
                 PermissionType.AUTO_START -> Icons.Rounded.RocketLaunch
                 PermissionType.USAGE_STATS -> Icons.Rounded.Analytics
                 PermissionType.ACCESSIBILITY -> Icons.Rounded.AccessibilityNew
+                PermissionType.WIFI -> Icons.Rounded.Wifi
             }
 
             val title = when (type) {
@@ -132,6 +133,7 @@ private fun PermissionItem(
                 PermissionType.AUTO_START -> stringResource(R.string.permission_check_auto_start)
                 PermissionType.USAGE_STATS -> stringResource(R.string.permission_check_usage_stats)
                 PermissionType.ACCESSIBILITY -> stringResource(R.string.permission_check_accessibility)
+                PermissionType.WIFI -> stringResource(R.string.permission_check_wifi)
             }
 
             val desc = when (type) {
@@ -142,6 +144,7 @@ private fun PermissionItem(
                 PermissionType.AUTO_START -> stringResource(R.string.permission_check_auto_start_desc)
                 PermissionType.USAGE_STATS -> stringResource(R.string.permission_check_usage_stats_desc)
                 PermissionType.ACCESSIBILITY -> stringResource(R.string.permission_check_accessibility_desc)
+                PermissionType.WIFI -> stringResource(R.string.permission_check_wifi_desc)
             }
 
             Icon(

@@ -41,7 +41,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **AI Context:** Prioritize token economy and vector memory efficiency. Use caching (Prefix Caching optimized).
 
 ### Robustness & Safety
--   **JSON Handling:**
+-    JSON Handling:
 -   **STRICTLY PROHIBITED:** Non-null assertions (`!!`) on JSON elements.
 -   **REQUIRED:** Use safe type checks (`is JsonArray`, `jsonPrimitiveOrNull`).
 -   **State Management:**
@@ -144,8 +144,10 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 8.2 Productivity & Device Control
 - **Schedule Manager (`schedule_manager`)**: Manages internal tasks with priority/urgency.
 - **Device Control (`device_control`)**: 
-    - **System Commands**: Perform global actions (LOCK_SCREEN, GO_HOME, etc.).
+    - **System Commands**: Perform global actions (LOCK_SCREEN, GO_HOME, BACK, etc.).
+    - **App & Connection**: OPEN_APP, WIFI_ON/OFF.
     - **Alarm & Timer**: Manage system alarms and countdown timers via Intents.
+- **App Explorer (`list_apps`)**: Lists installed applications and package names for automation.
 - **Email Service**: Full SMTP/IMAP support via `qq_email_service`.
 
 ### 8.3 Relationship & Dynamic Profile

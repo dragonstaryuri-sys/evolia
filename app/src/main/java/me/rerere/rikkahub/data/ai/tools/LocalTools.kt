@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.ai.tools
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.AlarmClock
 import android.provider.CalendarContract
 import androidx.compose.runtime.Composable
@@ -388,6 +389,31 @@ class LocalTools(
     fun getDeviceControlTools(assistantId: Uuid, conversationId: Uuid): List<Tool> {
         return listOf(
             Tool(
+                name = "list_apps",
+                description = "列出用户手机上安装的所有应用及其包名。当需要调用 'device_control' 中的 'OPEN_APP' 操作但不知道包名时使用。",
+                parameters = { InputSchema.Obj(properties = buildJsonObject {}) },
+                execute = {
+                    try {
+                        val pm = context.packageManager
+                        val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                        val appList = apps.mapNotNull { app ->
+                            val name = pm.getApplicationLabel(app).toString()
+                            if (pm.getLaunchIntentForPackage(app.packageName) != null) {
+                                buildJsonObject {
+                                    put("name", name)
+                                    put("package_name", app.packageName)
+                                }
+                            } else null
+                        }
+                        buildJsonObject {
+                            put("apps", JsonArray(appList))
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "获取应用列表失败") }
+                    }
+                }
+            ),
+            Tool(
                 name = "device_alarm_timer_manager",
                 description = "管理设备上的闹钟和定时器。操作 'set_alarm' 需要 'hour' 和 'minutes'。操作 'set_timer' 需要 'seconds'。",
                 parameters = {
@@ -465,7 +491,7 @@ class LocalTools(
             ),
             Tool(
                 name = "device_control",
-                description = "在用户的手机上执行系统级全局操作。当需要主动干预时（例如：为睡眠管理锁定屏幕、返回主屏幕以停止使用）使用。需要开启无障碍服务。支持的命令：LOCK_SCREEN（锁屏）, GO_HOME（回主页）, BACK（返回）, SHOW_RECENTS（显示最近任务）, SHOW_NOTIFICATIONS（显示通知）。",
+                description = "在用户的手机上执行系统级全局操作。当需要主动干预时（例如：为睡眠管理锁定屏幕、返回主屏幕以停止使用、开关 WiFi/蓝牙、打开特定 App）使用。部分操作需要开启无障碍服务。支持的命令：LOCK_SCREEN（锁屏）, GO_HOME（回主页）, BACK（返回）, SHOW_RECENTS（显示最近任务）, SHOW_NOTIFICATIONS（显示通知）, WIFI_ON/OFF（开关 WiFi）, OPEN_APP（打开 App）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -479,10 +505,17 @@ class LocalTools(
                                             JsonPrimitive("GO_HOME"),
                                             JsonPrimitive("BACK"),
                                             JsonPrimitive("SHOW_RECENTS"),
-                                            JsonPrimitive("SHOW_NOTIFICATIONS")
+                                            JsonPrimitive("SHOW_NOTIFICATIONS"),
+                                            JsonPrimitive("WIFI_ON"),
+                                            JsonPrimitive("WIFI_OFF"),
+                                            JsonPrimitive("OPEN_APP")
                                         )
                                     )
                                 )
+                            })
+                            put("package_name", buildJsonObject {
+                                put("type", "string")
+                                put("description", "仅在 command=OPEN_APP 时必填，指定要打开的应用包名（可先通过 list_apps 获取）")
                             })
                         },
                         required = listOf("command")
@@ -490,20 +523,40 @@ class LocalTools(
                 },
                 execute = {
                     val command = it.jsonObject["command"]?.jsonPrimitive?.contentOrNull ?: ""
-                    // 尝试发送命令，如果没有任何订阅者（说明服务未开启），则返回错误
+                    val packageName = it.jsonObject["package_name"]?.jsonPrimitive?.contentOrNull
+
+                    // 对于简单的打开 App，如果不在无障碍服务中也能尝试直接执行
+                    if (command == "OPEN_APP" && !packageName.isNullOrBlank()) {
+                        try {
+                            val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+                            if (launchIntent != null) {
+                                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(launchIntent)
+                                return@Tool buildJsonObject { put("success", true); put("message", "正在打开 $packageName") }
+                            } else {
+                                return@Tool buildJsonObject { put("error", "无法找到该应用的启动入口") }
+                            }
+                        } catch (e: Exception) {
+                            return@Tool buildJsonObject { put("error", "打开应用失败: ${e.message}") }
+                        }
+                    }
+
+                    // 其它命令通过 DeviceCommandHub 发送给 EvoliaMonitorService
                     if (DeviceCommandHub.commands.subscriptionCount.value == 0) {
                         return@Tool buildJsonObject {
                             put(
                                 "error",
-                                "无障碍服务未开启。请请示用户在设置中开启。"
+                                "无障碍服务未开启。涉及系统控制（如锁屏、WiFi开关、返回键等）的操作需要该服务权限。请请示用户开启。"
                             )
                         }
                     }
-                    val success = DeviceCommandHub.commands.tryEmit(command)
+
+                    val finalCommand = if (command == "OPEN_APP") "OPEN_APP:$packageName" else command
+                    val success = DeviceCommandHub.commands.tryEmit(finalCommand)
                     buildJsonObject {
                         put("success", success)
-                        if (success) put("message", "命令 $command 已执行。")
-                        else put("error", "无障碍服务未激活。请请示用户开启。")
+                        if (success) put("message", "命令 $command 已下发执行。")
+                        else put("error", "无障碍服务未响应。")
                     }
                 }
             )
@@ -1506,21 +1559,21 @@ class LocalTools(
                                 put("items", buildJsonObject { put("type", "string") })
                                 put(
                                     "description",
-                                    "需获取的数据字段：foreground_app（前台应用）, screen_status（屏幕状态）, current_time（当前时间）, today_usage_duration（今日使用总计）, app_session_duration（当前应用连续使用时长）, total_continuous_duration（手机连续使用时长）, recent_actions（近期操作记录）, screen_context（屏幕文字上下文）, location（位置信息）"
+                                    "需获取的数据字段：foreground_app（前台应用）, screen_status（屏幕状态）, current_time（当前时间）, today_usage_duration（今日使用总计）, app_session_duration（当前应用连续使用时长）, total_continuous_duration（手机连续使用时长）, recent_actions（近期操作记录）, screen_context（屏幕文字上下文）, location（位置信息）, wifi_ssid（WiFi 名称）, is_wifi_connected（WiFi 是否连接）"
                                 )
                             })
                             put("conditions", buildJsonObject {
                                 put("type", "object")
                                 put(
                                     "description",
-                                    "设置触发逻辑。支持：'time_range' (HH:mm 范围), 'screen_status' (ON/OFF), 'foreground_app' (特定包名), 'usage_duration_minutes' (使用时长限额), 'continuous_usage_minutes' (单次应用限额), 'total_continuous_minutes' (单次持续使用时间限额), 'content_contains' (屏幕内容包含关键词), 'location_name' (抵达/留在某地), 'cooldown_minutes' (触发后静默时长，默认 5)。"
+                                    "设置触发逻辑。支持：'time_range' (HH:mm 范围), 'screen_status' (ON/OFF), 'foreground_app' (特定包名), 'usage_duration_minutes' (使用时长限额), 'continuous_usage_minutes' (单次应用限额), 'total_continuous_minutes' (单次持续使用时间限额), 'content_contains' (屏幕内容包含关键词), 'location_name' (抵达/留在某地), 'wifi_ssid' (连接到特定 WiFi), 'is_wifi_connected' (WiFi 连接状态变化), 'cooldown_minutes' (触发后静默时长，默认 5)。"
                                 )
                             })
                             put("trigger_message", buildJsonObject {
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "触发时发送给你的消息模板。可用变量：{app_name}, {duration}, {continuous_duration}, {total_continuous_duration}, {recent_actions}, {screen_context}, {current_time}, {location}。"
+                                    "触发时发送给你的消息模板。可用变量：{app_name}, {duration}, {continuous_duration}, {total_continuous_duration}, {recent_actions}, {screen_context}, {current_time}, {location}, {wifi_ssid}, {wifi_connected}。"
                                 )
                             })
                         },

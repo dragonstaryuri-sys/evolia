@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 12,
-    "identityHash": "61486fdb09c53091366806666844ea7e",
+    "identityHash": "c85d4120edb6b027aeaf9143e828700d",
     "entities": [
       {
         "tableName": "ConversationEntity",
@@ -1026,7 +1026,7 @@
       },
       {
         "tableName": "user_device_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `foreground_app` TEXT NOT NULL, `foreground_app_name` TEXT NOT NULL, `is_screen_on` INTEGER NOT NULL, `today_duration_ms` INTEGER NOT NULL, `recent_actions` TEXT NOT NULL, `screen_context` TEXT NOT NULL, `app_session_start_ms` INTEGER NOT NULL, `continuous_session_start_ms` INTEGER NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `location_name` TEXT NOT NULL, `last_updated` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `foreground_app` TEXT NOT NULL, `foreground_app_name` TEXT NOT NULL, `is_screen_on` INTEGER NOT NULL, `today_duration_ms` INTEGER NOT NULL, `recent_actions` TEXT NOT NULL, `screen_context` TEXT NOT NULL, `app_session_start_ms` INTEGER NOT NULL, `continuous_session_start_ms` INTEGER NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `location_name` TEXT NOT NULL, `wifi_ssid` TEXT NOT NULL, `is_wifi_connected` INTEGER NOT NULL, `last_updated` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -1098,6 +1098,18 @@
             "fieldPath": "locationName",
             "columnName": "location_name",
             "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wifiSsid",
+            "columnName": "wifi_ssid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isWifiConnected",
+            "columnName": "is_wifi_connected",
+            "affinity": "INTEGER",
             "notNull": true
           },
           {
@@ -1238,7 +1250,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '61486fdb09c53091366806666844ea7e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c85d4120edb6b027aeaf9143e828700d')"
     ]
   }
 }

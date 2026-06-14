@@ -185,18 +185,15 @@ fun AssistantToolsSubPage(
                             checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
                             onCheckedChange = { enabled ->
                                 if (enabled) {
-                                    val permissions = mutableListOf<String>()
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+                                    val permissions = buildList {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            add(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                        add(Manifest.permission.CAMERA)
+                                        add(Manifest.permission.CHANGE_WIFI_STATE)
                                     }
-                                    permissions.add(Manifest.permission.CAMERA)
 
-                                    if (permissions.isNotEmpty()) {
-                                        deviceControlPermissionLauncher.launch(permissions.toTypedArray())
-                                    } else {
-                                        val newLocalTools = assistant.localTools + LocalToolOption.DeviceControl
-                                        onUpdate(assistant.copy(localTools = newLocalTools))
-                                    }
+                                    deviceControlPermissionLauncher.launch(permissions.toTypedArray())
                                 } else {
                                     val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
                                     onUpdate(assistant.copy(localTools = newLocalTools))
