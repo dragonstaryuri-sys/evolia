@@ -1670,4 +1670,11 @@
   <string name="backup_permission_wifi">修改wifi连接状态</string>
   <string name="permission_check_wifi">wifi开关权限</string>
   <string name="permission_check_wifi_desc">允许小机控制你的wifi</string>
+  <!-- Desktop Pet -->
+  <string name="feature_desktop_pet">桌宠</string>
+  <string name="feature_desktop_pet_desc">在屏幕上显示一个陪伴小球，随你一起探索手机世界</string>
+  <string name="permission_overlay_title">悬浮窗显示权限</string>
+  <string name="permission_overlay_desc">用于在屏幕上显示交互小球和 AI 回复气泡</string>
+  <string name="pet_trigger_manual">让我看看你在看什么...</string>
+  <string name="pet_input_hint">给机回复</string>
 </resources>

@@ -1711,4 +1711,11 @@
     <string name="backup_permission_wifi">Modify the Wi-Fi connection status</string>
   <string name="permission_check_wifi">Wi-Fi permission</string>
   <string name="permission_check_wifi_desc">Allow AI to control your Wi-Fi</string>
+
+  <string name="feature_desktop_pet">Desktop Pet</string>
+  <string name="feature_desktop_pet_desc">Display a companion orb on the screen to explore your phone alongside you</string>
+  <string name="permission_overlay_title">Display Over Other Apps Permission</string>
+  <string name="permission_overlay_desc">Used to show the interactive orb and AI reply bubbles on the screen</string>
+  <string name="pet_trigger_manual">Let me see what you're looking at...</string>
+  <string name="pet_input_hint">Send a message to the pet</string>
 </resources>
