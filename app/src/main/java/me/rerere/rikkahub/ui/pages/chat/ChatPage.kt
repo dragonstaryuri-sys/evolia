@@ -219,6 +219,29 @@ private fun ChatPageContent(
     var isSpeakerOn by remember { mutableStateOf(true) }
     var callStatus by remember { mutableStateOf(CallStatus.CONNECTING) }
 
+    // --- 统一返回出口逻辑 ---
+    val handleBack: () -> Unit = {
+        when {
+            isCallActive -> {
+                isCallActive = false
+            }
+            previewMode -> {
+                previewMode = false
+            }
+            else -> {
+                // 尝试正常回退，如果回退失败（栈中只有当前页）则导航回主页并清空栈
+                if (!navController.popBackStack()) {
+                    navController.navigate(Screen.Home) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            }
+        }
+    }
+
+    // 系统返回手势（左滑）统一拦截
+    BackHandler(enabled = true, onBack = handleBack)
+
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by remember { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     val currentAssistant = setting.getCurrentAssistant()
@@ -316,6 +339,7 @@ private fun ChatPageContent(
                         bigScreen = bigScreen,
                         previewMode = previewMode,
                         isTemporaryChat = isTemporaryChat,
+                        onBack = handleBack, // 顶部返回按钮也走 handleBack
                         onNewChat = {
                             vm.startNewTopic()
                         },
@@ -654,9 +678,7 @@ private fun ChatPageContent(
                         onHangup = { isCallActive = false },
                         modifier = Modifier.fillMaxSize()
                     )
-                    BackHandler {
-                        isCallActive = false
-                    }
+                    // 移除此处的独立 BackHandler，逻辑已整合至 handleBack
                 }
                 }
             }
@@ -699,6 +721,7 @@ private fun TopBar(
     bigScreen: Boolean,
     previewMode: Boolean,
     isTemporaryChat: Boolean,
+    onBack: () -> Unit, // 新增参数：统一的回退逻辑
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
@@ -735,7 +758,7 @@ private fun TopBar(
         ) {
             // 返回按钮
             Surface(
-                onClick = { navController.navigateUp() },
+                onClick = onBack, // 调用统一的回退逻辑
                 shape = buttonShape,
                 color = topContainerColor,
                 border = topContainerBorder
