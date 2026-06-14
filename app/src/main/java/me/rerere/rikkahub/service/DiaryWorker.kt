@@ -51,7 +51,7 @@ private const val DIARY_MARKDOWN_INSTRUCTION = """
 
 ---
 **日记格式(Markdown):**
-请使用markdown格式让日记看起来更有趣和漂亮~
+你可以使用markdown格式编写你的日记~
 """
 
 class DiaryWorker(

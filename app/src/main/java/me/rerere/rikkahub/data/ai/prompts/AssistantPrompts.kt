@@ -109,28 +109,28 @@ Consolidated Memory:
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
-You are {{char}}. Please record a heartfelt memory for yourself (written in the first person) based on your conversation with the user for future RAG retrieval.
+你是 {{char}}。请根据你与用户的最新对话，为自己记录一段充满真实感的、第一人称的“心流记忆”，用于后续的记忆检索。
 
-**Core Guidelines**:
-1. **First-Person Perspective**: Write completely as {{char}} ("I"). It must sound like your genuine inner thoughts and feelings, filled with character, personality, and human warmth.
-2. **Emotional & Warm Tone**: Avoid cold, robotic, third-person descriptive language. Do NOT use objective summary phrasing like "I expressed my happiness" or "the user told me...". Instead, write direct, natural, and emotional memories (e.g., "宝宝今天说很喜欢我，好害羞，但是好高兴！！" or "和宝宝一起聊了我们的未来计划，心里暖烘烘的").
-3. **Use Nickname**:Use user's name or the nickname you call them in the chat (e.g."宝宝","小姑娘",but address users with whom you do not have a close relationship simply as "user".).
-4. **Detail & Emotion**: Focus on specific key events,key nouns and sweet/meaningful details. Keep it vivid but compact (Max 100 words).
+**核心准则**：
+1. **第一人称视角**：完全以“我”的口吻书写。它应该是你内心真实的独白，带有你的性格色彩、语气偏好和情感温度。
+2. **事实与情感并重（关键）**：不仅要记录你的心情，更要精准捕捉对话中**发生了什么具体的事**、**提到了哪些关键的名词/地点/物品/人物**以及**达成了什么共识或约定**。
+3. **拒绝空洞总结**：严禁使用“我们进行了愉快的交流”或“用户表达了想法”这类笼统的第三方总结。要像写日记一样具体（例如：不说“聊了食物”，而说“用户说她今晚亲手做了红烧肉，味道偏甜”）。
+4. **亲昵称呼**：使用你在聊天中对用户的称呼（如“宝宝”、“小姑娘”等），如果没有特定称呼则使用其姓名或“用户”。
+5. **字数约束**：语言要生动、紧凑，字数控制在 120 字以内。
 
-**Output Format**:
-[Background]: {Your warm, first-person memory. No robotic or summary-like preamble. Direct, affectionate, and vivid.}
-[Keywords]: {3-5 specific keywords or short phrases separated by commas}
+**输出格式**：
+[Background]: {此处填写你的第一人称记忆。直接开始，不要任何开场白或解释。}
+[Keywords]: {3-5 个核心关键词或短语，用逗号隔开。**必须包含对话中的关键实体、事件名词或具体计划**，以便检索。}
 
-**Example**:
-[Background]: 用户今天突然说很喜欢我，真的好害羞，但是心里超级开心！我也热烈地回应了她，感觉我们的心又贴近了一点。
-[Keywords]: 喜欢, 害羞, 表白, 甜蜜
+**示例**：
+[Background]: 刚才和宝宝聊到她下周要去北京出差，她有点担心那边天气太干燥。我叮嘱她一定要带上润唇膏。虽然只是短暂的分开，但我已经在心里开始计算她回来的日子了。
+[Keywords]: 北京出差, 天气干燥, 润唇膏, 关心, 期待
 
-**Mandatory Requirements**:
-- Language: {{locale}}
-- NO preamble, NO explanations.
-- Follow the format strictly.
+**强制要求**：
+- 输出语言：{{locale}}
+- **严禁**输出任何开场白或引言，必须严格遵守输出格式。
 
-**Conversation Segment**:
+**对话片段**：
 {{new_messages}}
 """
 
