@@ -836,7 +836,7 @@ class ChatService(
 
             // 微信模式检测
             val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
-            val wechatSentenceRegex = Regex("[。！？~\\n]|[!?~]") // 分句正则
+            val wechatSentenceRegex = Regex("[，。！？~\\n]|[,!?~]") // 分句正则
 
             checkInvalidMessages(conversationId)
             val retrievedMemories = withContext(Dispatchers.IO) {
@@ -1026,7 +1026,7 @@ class ChatService(
                                 // 过滤单标点句子
                                 if (sentence.isNotBlank() && !Regex("^[，,。！？!?.~\\n]$").matches(sentence)) {
                                     // 去掉结尾生硬的单个标点
-                                    val puncs = "。！？!?."
+                                    val puncs = "，,。！？!?."
                                     if (sentence.length >= 2 && sentence.last() in puncs && sentence[sentence.length - 2] !in puncs) {
                                         sentence = sentence.dropLast(1)
                                     }
