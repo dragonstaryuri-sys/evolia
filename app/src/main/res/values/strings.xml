@@ -1716,6 +1716,12 @@
   <string name="feature_desktop_pet_desc">Display a companion orb on the screen to explore your phone alongside you</string>
   <string name="permission_overlay_title">Display Over Other Apps Permission</string>
   <string name="permission_overlay_desc">Used to show the interactive orb and AI reply bubbles on the screen</string>
-  <string name="pet_trigger_manual">Let me see what you're looking at...</string>
+  <string name="pet_trigger_manual">Let me see what you\'re looking at...</string>
   <string name="pet_input_hint">Send a message to the pet</string>
+
+  <string name="setting_display_wechat_mode">WeChat Mode</string>
+  <string name="setting_display_wechat_mode_desc">Once enabled, conversations will be displayed in a layout similar to WeChat: concise replies, paragraphing by sentences, avatar display and hidden thinking process.</string>
+  <string name="chat_status_typing">Typing...</string>
+  <string name="assistant_ui_wechat_mode_title">WeChat Mode</string>
+  <string name="assistant_ui_wechat_mode_desc">Make the conversation style and display layout of this agent consistent with WeChat chats</string>
 </resources>

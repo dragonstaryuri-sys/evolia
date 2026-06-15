@@ -124,6 +124,20 @@ fun SettingDisplayPage(vm: SettingVM = koinViewModel()) {
                         }
                     )
 
+                    // WECHAT mode button
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_display_wechat_mode),
+                        subtitle = stringResource(R.string.setting_display_wechat_mode_desc),
+                        trailing = {
+                            HapticSwitch(
+                                checked = displaySetting.wechatMode,
+                                onCheckedChange = {
+                                    updateDisplaySetting(displaySetting.copy(wechatMode = it))
+                                },
+                            )
+                        }
+                    )
+
                     // Theme picker buttons when dynamic color is off
                     if (!settings.dynamicColor) {
                         PresetThemeButtonGroup(

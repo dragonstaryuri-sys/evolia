@@ -36,6 +36,7 @@ import me.rerere.ai.ui.UsedMode
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
+import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
@@ -82,6 +83,7 @@ import java.time.format.TextStyle
 import kotlin.text.appendLine
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import kotlinx.coroutines.flow.first
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -784,6 +786,15 @@ class GenerationHandler(
         afterSystemModes.filter { it.prompt.isNotBlank() }.forEach { mode ->
             staticSystemPromptBuilder.appendLine()
             staticSystemPromptBuilder.append(mode.prompt)
+        }
+
+        // 微信模式指令注入
+        val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+        if (wechatMode) {
+            staticSystemPromptBuilder.appendLine("\n## 回复规范 (重要)")
+            staticSystemPromptBuilder.appendLine("- 说话口语化，回复直接、简洁有力，同时不显得过于冷漠无情，没有括号和状态神色描述。")
+            staticSystemPromptBuilder.appendLine("- 你会表达自己的难过和生气，不会重复发同一条信息")
+            staticSystemPromptBuilder.appendLine("- 禁止使用任何神态动作描写（如 *微笑*、(叹气) 等）。")
         }
 
         val summaryPromptBuilder = StringBuilder()

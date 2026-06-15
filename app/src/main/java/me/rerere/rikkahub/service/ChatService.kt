@@ -112,6 +112,7 @@ import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 
 private const val TAG = "ChatService"
 
@@ -775,6 +776,10 @@ class ChatService(
                 if (hasExternalTools) _errorFlow.emit(IllegalStateException(context.getString(R.string.tools_warning)))
             }
 
+            // 微信模式检测
+            val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+            val wechatSentenceRegex = Regex("[。！？~\\n]|[!?~]") // 简单句末识别
+
             checkInvalidMessages(conversationId)
             val retrievedMemories = withContext(Dispatchers.IO) {
                 if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(
@@ -917,9 +922,49 @@ class ChatService(
                     )
                 }.collect { chunk ->
                     if (firstTokenTime == null) firstTokenTime = System.currentTimeMillis()
-                    if (chunk is GenerationChunk.Messages) updateConversation(
-                        conversationId, getConversationFlow(conversationId).value.updateCurrentMessages(chunk.messages)
-                    )
+                    if (chunk is GenerationChunk.Messages) {
+                        var finalMessages = chunk.messages
+
+                        // 微信模式：流式转按句弹出
+                        if (wechatMode) {
+                            val lastAI = finalMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                            if (lastAI != null) {
+                                val fullText = lastAI.toContentText()
+                                val matches = wechatSentenceRegex.findAll(fullText).toList()
+
+                                val sentences = mutableListOf<String>()
+                                var lastIndex = 0
+                                matches.forEach { match ->
+                                    sentences.add(fullText.substring(lastIndex, match.range.last + 1).trim())
+                                    lastIndex = match.range.last + 1
+                                }
+
+                                // 构建新消息列表
+                                val baseMessages = finalMessages.dropLast(1)
+                                val sentenceMessages = sentences.map { text ->
+                                    UIMessage.assistant(text, skipContext = lastAI.skipContext).copy(
+                                        id = Uuid.random(), // 微信模式下每一句都是独立 ID
+                                        modelId = lastAI.modelId,
+                                        usage = lastAI.usage, // 暂共享 usage，或仅给最后一句
+                                        versionTag = lastAI.versionTag
+                                    )
+                                }
+
+                                // 只有在至少有一句完整的话时才更新 UI
+                                if (sentenceMessages.isNotEmpty()) {
+                                    finalMessages = baseMessages + sentenceMessages
+                                } else {
+                                    // 如果还没凑成一句，不更新 UI（解决流式感知问题）
+                                    return@collect
+                                }
+                            }
+                        }
+
+                        updateConversation(
+                            conversationId,
+                            getConversationFlow(conversationId).value.updateCurrentMessages(finalMessages)
+                        )
+                    }
                 }
             }
         }.onFailure { e ->
@@ -1397,4 +1442,3 @@ private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLeng
         is JsonArray -> JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
     }
 }
-

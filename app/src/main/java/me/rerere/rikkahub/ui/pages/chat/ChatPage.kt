@@ -351,7 +351,8 @@ private fun ChatPageContent(
                         },
                         onToggleTemporaryChat = {
                             isTemporaryChat = !isTemporaryChat
-                        }
+                        },
+                        isLoading = loadingJob != null
                     )
                 },
                 containerColor = Color.Transparent,
@@ -725,7 +726,8 @@ private fun TopBar(
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
-    onToggleTemporaryChat: () -> Unit
+    onToggleTemporaryChat: () -> Unit,
+    isLoading: Boolean
 ) {
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
@@ -787,8 +789,15 @@ private fun TopBar(
 
             Spacer(Modifier.weight(1f))
 
+            val wechatMode = settings.getEffectiveDisplaySetting(currentAssistant).wechatMode
+            val titleText = if (isLoading && wechatMode) {
+                stringResource(R.string.chat_status_typing)
+            } else {
+                currentAssistant.name
+            }
+
             Text(
-                text = currentAssistant.name,
+                text = titleText,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
                 modifier = Modifier
                     .align(Alignment.CenterVertically)

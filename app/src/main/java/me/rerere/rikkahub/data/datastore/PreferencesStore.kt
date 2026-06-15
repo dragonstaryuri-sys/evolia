@@ -136,7 +136,7 @@ class SettingsStore(
                     ?: GEMINI_2_5_FLASH_ID,
                 translateModeId = preferences[TRANSLATE_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
-                suggestionModelId = preferences[SUGGESTION_MODEL]?.let { Uuid.parse(it) }
+                suggestionModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) }
                     ?: GEMINI_2_5_FLASH_ID,
                 imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
                 translatePrompt = preferences[TRANSLATION_PROMPT] ?: DEFAULT_TRANSLATION_PROMPT,
@@ -553,10 +553,11 @@ data class DisplaySetting(
     val filterEmojis: Boolean = false,
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
     val showContextStacks: Boolean = true,
-    val newChatHeaderStyle: me.rerere.rikkahub.data.datastore.NewChatHeaderStyle = me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON,
-    val newChatContentStyle: me.rerere.rikkahub.data.datastore.NewChatContentStyle = me.rerere.rikkahub.data.datastore.NewChatContentStyle.ACTIONS,
+    val newChatHeaderStyle: NewChatHeaderStyle = NewChatHeaderStyle.BIG_ICON,
+    val newChatContentStyle: NewChatContentStyle = NewChatContentStyle.ACTIONS,
     val newChatShowAvatar: Boolean = true,
-    val hasShownProviderGuide: Boolean = false
+    val hasShownProviderGuide: Boolean = false,
+    val wechatMode: Boolean = false
 )
 
 @Serializable
@@ -616,6 +617,7 @@ fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySe
         newChatContentStyle = ui.newChatContentStyle?.let { runCatching { NewChatContentStyle.valueOf(it) }.getOrNull() }
             ?: displaySetting.newChatContentStyle,
         newChatShowAvatar = ui.newChatShowAvatar ?: displaySetting.newChatShowAvatar,
+        wechatMode = ui.wechatMode ?: displaySetting.wechatMode
     )
 }
 

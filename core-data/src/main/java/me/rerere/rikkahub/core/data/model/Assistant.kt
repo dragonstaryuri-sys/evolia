@@ -25,6 +25,7 @@ data class AssistantUISettings(
     val newChatHeaderStyle: String? = null,
     val newChatContentStyle: String? = null,
     val newChatShowAvatar: Boolean? = null,
+    val wechatMode: Boolean? = null,
 )
 
 @Serializable

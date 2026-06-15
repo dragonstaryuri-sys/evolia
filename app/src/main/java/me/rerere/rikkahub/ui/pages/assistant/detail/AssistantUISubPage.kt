@@ -50,6 +50,71 @@ fun AssistantUISubPage(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
+        // Chat Settings
+        SettingsGroup(title = stringResource(R.string.setting_page_chat_settings)) {
+            // WeChat Mode Card - Placed at the top as requested
+            TriStateSettingItem(
+                title = stringResource(R.string.assistant_ui_wechat_mode_title),
+                subtitle = stringResource(R.string.assistant_ui_wechat_mode_desc),
+                value = uiSettings.wechatMode,
+                globalValue = settings.displaySetting.wechatMode,
+                onValueChange = { updateUI(uiSettings.copy(wechatMode = it)) }
+            )
+
+            val inputOptions: List<me.rerere.rikkahub.data.datastore.ChatInputStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.ChatInputStyle.entries
+            SettingGroupItem(
+                title = stringResource(R.string.setting_chat_input_style),
+                subtitle = stringResource(R.string.setting_chat_input_style_desc),
+                trailing = {
+                    me.rerere.rikkahub.ui.components.ui.Select(
+                        options = inputOptions,
+                        selectedOption = inputOptions.find { it?.name == uiSettings.chatInputStyle },
+                        onOptionSelected = { updateUI(uiSettings.copy(chatInputStyle = it?.name)) },
+                        optionToString = { style ->
+                            when (style) {
+                                null -> stringResource(R.string.use_global)
+                                me.rerere.rikkahub.data.datastore.ChatInputStyle.FLOATING -> stringResource(R.string.setting_chat_input_style_floating)
+                                me.rerere.rikkahub.data.datastore.ChatInputStyle.MINIMAL -> stringResource(R.string.setting_chat_input_style_minimal)
+                            }
+                        },
+                        modifier = Modifier.width(130.dp)
+                    )
+                }
+            )
+
+            TriStateSettingItem(
+                title = stringResource(R.string.assistant_ui_show_assistant_avatar_title),
+                subtitle = stringResource(R.string.assistant_ui_show_assistant_avatar_desc),
+                value = uiSettings.showAssistantAvatar,
+                globalValue = settings.displaySetting.showModelIcon,
+                onValueChange = { updateUI(uiSettings.copy(showAssistantAvatar = it)) }
+            )
+
+            TriStateSettingItem(
+                title = stringResource(R.string.assistant_ui_show_assistant_bubbles_title),
+                subtitle = stringResource(R.string.assistant_ui_show_assistant_bubbles_desc),
+                value = uiSettings.showAssistantBubbles,
+                globalValue = settings.displaySetting.showAssistantBubbles,
+                onValueChange = { updateUI(uiSettings.copy(showAssistantBubbles = it)) }
+            )
+
+            TriStateSettingItem(
+                title = stringResource(R.string.setting_display_page_show_token_usage_title),
+                subtitle = stringResource(R.string.setting_display_page_show_token_usage_desc),
+                value = uiSettings.showTokenUsage,
+                globalValue = settings.displaySetting.showTokenUsage,
+                onValueChange = { updateUI(uiSettings.copy(showTokenUsage = it)) }
+            )
+
+            TriStateSettingItem(
+                title = stringResource(R.string.setting_display_page_auto_collapse_thinking_title),
+                subtitle = stringResource(R.string.setting_display_page_auto_collapse_thinking_desc),
+                value = uiSettings.autoCloseThinking,
+                globalValue = settings.displaySetting.autoCloseThinking,
+                onValueChange = { updateUI(uiSettings.copy(autoCloseThinking = it)) }
+            )
+        }
+
         // New Chat Settings
         SettingsGroup(title = stringResource(R.string.setting_new_chat_title)) {
             val headerOptions: List<me.rerere.rikkahub.data.datastore.NewChatHeaderStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.entries
@@ -106,62 +171,6 @@ fun AssistantUISubPage(
                         modifier = Modifier.width(130.dp)
                     )
                 }
-            )
-        }
-
-        // Chat Display Settings
-        SettingsGroup(title = stringResource(R.string.setting_page_chat_settings)) {
-            val inputOptions: List<me.rerere.rikkahub.data.datastore.ChatInputStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.ChatInputStyle.entries
-            SettingGroupItem(
-                title = stringResource(R.string.setting_chat_input_style),
-                subtitle = stringResource(R.string.setting_chat_input_style_desc),
-                trailing = {
-                    me.rerere.rikkahub.ui.components.ui.Select(
-                        options = inputOptions,
-                        selectedOption = inputOptions.find { it?.name == uiSettings.chatInputStyle },
-                        onOptionSelected = { updateUI(uiSettings.copy(chatInputStyle = it?.name)) },
-                        optionToString = { style ->
-                            when (style) {
-                                null -> stringResource(R.string.use_global)
-                                me.rerere.rikkahub.data.datastore.ChatInputStyle.FLOATING -> stringResource(R.string.setting_chat_input_style_floating)
-                                me.rerere.rikkahub.data.datastore.ChatInputStyle.MINIMAL -> stringResource(R.string.setting_chat_input_style_minimal)
-                            }
-                        },
-                        modifier = Modifier.width(130.dp)
-                    )
-                }
-            )
-
-            TriStateSettingItem(
-                title = stringResource(R.string.assistant_ui_show_assistant_avatar_title),
-                subtitle = stringResource(R.string.assistant_ui_show_assistant_avatar_desc),
-                value = uiSettings.showAssistantAvatar,
-                globalValue = settings.displaySetting.showModelIcon,
-                onValueChange = { updateUI(uiSettings.copy(showAssistantAvatar = it)) }
-            )
-
-            TriStateSettingItem(
-                title = stringResource(R.string.assistant_ui_show_assistant_bubbles_title),
-                subtitle = stringResource(R.string.assistant_ui_show_assistant_bubbles_desc),
-                value = uiSettings.showAssistantBubbles,
-                globalValue = settings.displaySetting.showAssistantBubbles,
-                onValueChange = { updateUI(uiSettings.copy(showAssistantBubbles = it)) }
-            )
-
-            TriStateSettingItem(
-                title = stringResource(R.string.setting_display_page_show_token_usage_title),
-                subtitle = stringResource(R.string.setting_display_page_show_token_usage_desc),
-                value = uiSettings.showTokenUsage,
-                globalValue = settings.displaySetting.showTokenUsage,
-                onValueChange = { updateUI(uiSettings.copy(showTokenUsage = it)) }
-            )
-
-            TriStateSettingItem(
-                title = stringResource(R.string.setting_display_page_auto_collapse_thinking_title),
-                subtitle = stringResource(R.string.setting_display_page_auto_collapse_thinking_desc),
-                value = uiSettings.autoCloseThinking,
-                globalValue = settings.displaySetting.autoCloseThinking,
-                onValueChange = { updateUI(uiSettings.copy(autoCloseThinking = it)) }
             )
         }
 
