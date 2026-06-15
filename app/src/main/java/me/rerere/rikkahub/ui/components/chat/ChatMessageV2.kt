@@ -403,8 +403,14 @@ fun ChatMessageTurn(
         lineHeight = LocalTextStyle.current.lineHeight * effectiveDisplay.fontSizeRatio
     )
     val configuration = LocalConfiguration.current
-    val maxBubbleWidth = (configuration.screenWidthDp * 0.85f).dp
     val wechatMode = effectiveDisplay.wechatMode
+
+    // WeChat mode: max width is screen width minus avatar(40) and margins
+    val maxBubbleWidth = if (wechatMode) {
+        (configuration.screenWidthDp - 88).dp
+    } else {
+        (configuration.screenWidthDp * 0.85f).dp
+    }
 
     var showActionsSheet by remember { mutableStateOf(false) }
     var showSelectCopySheet by remember { mutableStateOf(false) }
@@ -416,7 +422,10 @@ fun ChatMessageTurn(
     val activityState = deriveActivityState(group.allParts, loading && isLastTurn)
     val timelineEntries = buildTimelineEntries(group.allParts)
 
-    val actionTargetNode = remember(group) {
+    // Current focused/clicked node for actions
+    var selectedNode by remember(group) { mutableStateOf<MessageNode?>(null) }
+
+    val actionTargetNode = selectedNode ?: remember(group) {
         group.filteredNodes
             .asReversed()
             .firstOrNull { node ->
@@ -444,9 +453,26 @@ fun ChatMessageTurn(
                     assistant = assistant,
                     maxWidth = maxBubbleWidth,
                     showToolbar = showUserToolbar,
-                    onToggleToolbar = { showUserToolbar = !showUserToolbar },
-                    onCopy = { context.copyMessageToClipboard(group.lastNode.currentMessage) },
-                    onRegenerate = { onRegenerate(group.lastNode) },
+                    onToggleToolbar = {
+                        selectedNode = it
+                        showUserToolbar = !showUserToolbar
+                    },
+                    onBubbleClick = { node ->
+                        selectedNode = node
+                        if (wechatMode) {
+                            showActionsSheet = true
+                        } else {
+                            showUserToolbar = !showUserToolbar
+                        }
+                    },
+                    onCopy = {
+                        val node = selectedNode ?: group.lastNode
+                        context.copyMessageToClipboard(node.currentMessage)
+                    },
+                    onRegenerate = {
+                        val node = selectedNode ?: group.lastNode
+                        onRegenerate(node)
+                    },
                     onOpenMenu = { showActionsSheet = true },
                     showRegenerate = showRegenerate,
                     enableHaptics = effectiveDisplay.enableUIHaptics,
@@ -475,8 +501,9 @@ fun ChatMessageTurn(
                         initialTimelineExpandedType = type
                         showTimelineSheet = true
                     },
-                    onBubbleClick = {
-                        if (isLastTurn) {
+                    onBubbleClick = { node ->
+                        selectedNode = node
+                        if (wechatMode || isLastTurn) {
                             showActionsSheet = true
                         } else {
                             actionsExpanded = !actionsExpanded
@@ -541,7 +568,8 @@ private fun UserMessageTurn(
     assistant: Assistant?,
     maxWidth: androidx.compose.ui.unit.Dp,
     showToolbar: Boolean,
-    onToggleToolbar: () -> Unit,
+    onToggleToolbar: (MessageNode) -> Unit,
+    onBubbleClick: (MessageNode) -> Unit,
     onCopy: () -> Unit,
     onRegenerate: () -> Unit,
     onOpenMenu: () -> Unit,
@@ -612,7 +640,7 @@ private fun UserMessageTurn(
                             contentColor = if (wechatMode) WeChatTextBlack else null,
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                onToggleToolbar()
+                                onBubbleClick(node)
                             }
                         ) {
                             MarkdownBlock(
@@ -713,7 +741,7 @@ private fun AssistantMessageTurn(
     enableHaptics: Boolean,
     onCitationClick: (String) -> Unit,
     onActivityPillClick: (ActivityType?) -> Unit,
-    onBubbleClick: () -> Unit,
+    onBubbleClick: (MessageNode) -> Unit,
     onAvatarClick: () -> Unit,
     onRegenerate: () -> Unit,
     onUpdate: (MessageNode) -> Unit,
@@ -736,10 +764,6 @@ private fun AssistantMessageTurn(
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 350f),
         label = "assistant_name_alpha"
     )
-    val handleBubbleClick = {
-        haptics.perform(HapticPattern.Pop)
-        onBubbleClick()
-    }
 
     val avatarName = assistant?.name?.ifEmpty { null } ?: model?.displayName ?: "Assistant"
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
@@ -856,7 +880,10 @@ private fun AssistantMessageTurn(
                         modifier = Modifier.widthIn(max = maxWidth),
                         containerColor = if (wechatMode) WeChatAiWhite else null,
                         contentColor = if (wechatMode) WeChatTextBlack else null,
-                        onClick = handleBubbleClick
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            onBubbleClick(node)
+                        }
                     ) {
                         MarkdownBlock(
                             content = part.text.replaceRegexes(
@@ -912,7 +939,7 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            allTextBubbles.forEach { (_, part) ->
+            allTextBubbles.forEach { (node, part) ->
                 Row(verticalAlignment = Alignment.Top) {
                     if (wechatMode) {
                         UIAvatar(
@@ -930,7 +957,10 @@ private fun AssistantMessageTurn(
                             visual = true
                         ),
                         onClickCitation = { id -> onCitationClick(id) },
-                        modifier = Modifier.clickable { handleBubbleClick() }
+                        modifier = Modifier.clickable {
+                            haptics.perform(HapticPattern.Pop)
+                            onBubbleClick(node)
+                        }
                     )
                 }
             }

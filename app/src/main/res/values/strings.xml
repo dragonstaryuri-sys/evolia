@@ -1724,4 +1724,7 @@
   <string name="chat_status_typing">Typing...</string>
   <string name="assistant_ui_wechat_mode_title">WeChat Mode</string>
   <string name="assistant_ui_wechat_mode_desc">Make the conversation style and display layout of this agent consistent with WeChat chats</string>
+  <string name="ui_mode_picker_title">UI Mode</string>
+  <string name="ui_mode_normal">Normal Mode</string>
+  <string name="ui_mode_wechat">WeChat Mode</string>
 </resources>

@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -122,6 +123,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.ui.draw.rotate
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
@@ -157,8 +160,10 @@ import java.io.File
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.ui.graphics.graphicsLayer
 import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 
 enum class ExpandState {
     Collapsed,
@@ -201,17 +206,23 @@ fun ChatInput(
     val scope = rememberCoroutineScope()
 
     val keyboardController = LocalSoftwareKeyboardController.current
+    val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
 
     fun sendMessage() {
         keyboardController?.hide()
         haptics.perform(HapticPattern.Send)
-        if (state.loading) onCancelClick() else onSendClick()
+        if (state.loading) {
+            // 微信模式下不执行取消逻辑（按钮可能被点击但不触发取消）
+            if (!wechatMode) onCancelClick()
+        } else onSendClick()
     }
 
     fun sendMessageWithoutAnswer() {
         keyboardController?.hide()
         haptics.perform(HapticPattern.Thud)
-        if (state.loading) onCancelClick() else onLongSendClick()
+        if (state.loading) {
+            if (!wechatMode) onCancelClick()
+        } else onLongSendClick()
     }
 
     var expand by remember { mutableStateOf(ExpandState.Collapsed) }
@@ -537,21 +548,21 @@ fun ChatInput(
                                                             )
                                                             .background(
                                                                 color = when {
-                                                                    state.loading -> MaterialTheme.colorScheme.errorContainer
+                                                                    state.loading && !wechatMode -> MaterialTheme.colorScheme.errorContainer
                                                                     state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh
                                                                     else -> MaterialTheme.colorScheme.primary
                                                                 }
                                                             )
                                                     ) {
                                                         val contentColor = when {
-                                                            state.loading -> MaterialTheme.colorScheme.onErrorContainer
+                                                            state.loading && !wechatMode -> MaterialTheme.colorScheme.onErrorContainer
                                                             state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(
                                                                 alpha = 0.38f
                                                             )
 
                                                             else -> MaterialTheme.colorScheme.onPrimary
                                                         }
-                                                        if (state.loading) {
+                                                        if (state.loading && !wechatMode) {
                                                             KeepScreenOn()
                                                             Icon(
                                                                 Icons.Rounded.Stop,
@@ -616,6 +627,7 @@ fun ChatInput(
                             conversation = conversation,
                             state = state,
                             assistant = assistant,
+                            settings = settings,
                             onClearContext = onClearContext,
                             onUpdateAssistant = onUpdateAssistant,
                             onUpdateConversation = onUpdateConversation,
@@ -1155,6 +1167,7 @@ internal fun FilesPicker(
     conversation: Conversation,
     assistant: Assistant,
     state: ChatInputState,
+    settings: Settings,
     onClearContext: () -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
@@ -1163,7 +1176,6 @@ internal fun FilesPicker(
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
     onDismiss: () -> Unit
 ) {
-    val settings = LocalSettings.current
     val amoledMode by rememberAmoledDarkMode()
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
 
@@ -1182,18 +1194,18 @@ internal fun FilesPicker(
     val topRightShape = if (isKeyboardVisible) {
         RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
     } else {
-        RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
+        RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
     }
-    // Shapes for modes/lorebooks row - middle if context refresh enabled, bottom if not
+    // Shapes for middle/bottom rows
     val middleLeftShape = RoundedCornerShape(10.dp)
     val middleRightShape = RoundedCornerShape(10.dp)
-    val bottomLeftShape = if (showContextRefresh) middleLeftShape else RoundedCornerShape(
+    val bottomLeftShape = RoundedCornerShape(
         topStart = 10.dp,
         topEnd = 10.dp,
         bottomStart = 24.dp,
         bottomEnd = 10.dp
     )
-    val bottomRightShape = if (showContextRefresh) middleRightShape else RoundedCornerShape(
+    val bottomRightShape = RoundedCornerShape(
         topStart = 10.dp,
         topEnd = 10.dp,
         bottomStart = 10.dp,
@@ -1211,7 +1223,7 @@ internal fun FilesPicker(
             .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // File upload buttons row: Capture, Photo Library, Files, Call
+        // Row 1: Take Photo, Pick Image, Pick File, Start Call
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1237,7 +1249,6 @@ internal fun FilesPicker(
             Box(modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()) {
-                // Check if Python is enabled for this assistant
                 val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
                 FilePickButton(
                     shape = topMiddleShape,
@@ -1261,22 +1272,15 @@ internal fun FilesPicker(
             }
         }
 
-        // Modes and Lorebooks row - hidden when keyboard is visible
-        var showModesPicker by remember { mutableStateOf(false) }
-        var showLorebooksPicker by remember { mutableStateOf(false) }
-
+        // Row 2: Modes and Lorebooks
         if (!isKeyboardVisible) {
-            // Calculate active modes count from conversation
             val activeModeCount = settings.modes.count { mode ->
-                if (conversation.enabledModeIds.isEmpty()) {
-                    mode.defaultEnabled
-                } else {
-                    conversation.enabledModeIds.contains(mode.id)
-                }
+                if (conversation.enabledModeIds.isEmpty()) mode.defaultEnabled else conversation.enabledModeIds.contains(mode.id)
             }
-
-            // Calculate active lorebooks count from assistant
             val activeLorebookCount = assistant.enabledLorebookIds.size
+
+            var showModesPicker by remember { mutableStateOf(false) }
+            var showLorebooksPicker by remember { mutableStateOf(false) }
 
             Row(
                 modifier = Modifier
@@ -1284,12 +1288,11 @@ internal fun FilesPicker(
                     .height(80.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Modes button (left half) - matches BigIconTextButton pattern
-                val modesActive = activeModeCount > 0
+                // Modes button
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.weight(1f),
-                        shape = bottomLeftShape,
+                        shape = middleLeftShape,
                         color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
                         onClick = { showModesPicker = true }
@@ -1299,38 +1302,20 @@ internal fun FilesPicker(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.AutoFixHigh,
-                                contentDescription = null,
-                                tint = if (modesActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = stringResource(R.string.modes_picker_title),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (modesActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = if (settings.modes.isEmpty()) {
-                                        stringResource(R.string.modes_picker_none)
-                                    } else {
-                                        "$activeModeCount/${settings.modes.size}"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Icon(Icons.Rounded.AutoFixHigh, null, tint = if (activeModeCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(stringResource(R.string.modes_picker_title), style = MaterialTheme.typography.labelLarge, color = if (activeModeCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                Text("$activeModeCount/${settings.modes.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
                 }
 
-                // Lorebooks button (right half) - matches BigIconTextButton pattern
-                val lorebooksActive = activeLorebookCount > 0
+                // Lorebooks button
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
                         modifier = Modifier.weight(1f),
-                        shape = bottomRightShape,
+                        shape = middleRightShape,
                         color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
                         onClick = { showLorebooksPicker = true }
@@ -1340,24 +1325,109 @@ internal fun FilesPicker(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Icon(Icons.Rounded.Book, null, tint = if (activeLorebookCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                            Column {
+                                Text(stringResource(R.string.lorebooks_picker_title), style = MaterialTheme.typography.labelLarge, color = if (activeLorebookCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                Text("$activeLorebookCount/${settings.lorebooks.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Row 3: ReasoningTokens and UI Mode Switcher
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(80.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Reasoning picker
+                val chatModel = settings.getCurrentChatModel()
+                val reasoningTokens = assistant.thinkingBudget ?: 0
+                val reasoningLevel = ReasoningLevel.fromBudgetTokens(reasoningTokens)
+                val reasoningActive = reasoningLevel.isEnabled
+                val reasoningLevelTitle = when (reasoningLevel) {
+                    ReasoningLevel.OFF -> R.string.reasoning_off
+                    ReasoningLevel.AUTO -> R.string.reasoning_auto
+                    ReasoningLevel.LOW -> R.string.reasoning_light
+                    ReasoningLevel.MEDIUM -> R.string.reasoning_medium
+                    ReasoningLevel.HIGH -> R.string.reasoning_heavy
+                }
+
+                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                    var showReasoningPicker by remember { mutableStateOf(false) }
+                    if (showReasoningPicker) {
+                        ReasoningPicker(
+                            reasoningTokens = reasoningTokens,
+                            onUpdateReasoningTokens = { onUpdateAssistant(assistant.copy(thinkingBudget = it)) },
+                            onDismissRequest = { showReasoningPicker = false }
+                        )
+                    }
+
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = bottomLeftShape,
+                        color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
+                        onClick = { showReasoningPicker = true },
+                        enabled = chatModel?.abilities?.contains(ModelAbility.REASONING) == true
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Icon(
-                                imageVector = Icons.Rounded.Book,
-                                contentDescription = null,
-                                tint = if (lorebooksActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                Icons.Rounded.Lightbulb,
+                                null,
+                                tint = if (reasoningActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
                             )
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column {
+                                Text(stringResource(R.string.setting_provider_page_reasoning), style = MaterialTheme.typography.labelLarge, color = if (reasoningActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                 Text(
-                                    text = stringResource(R.string.lorebooks_picker_title),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (lorebooksActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    stringResource(reasoningLevelTitle),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                        }
+                    }
+                }
+
+                // UI Mode switcher
+                val effectiveDisplay = settings.getEffectiveDisplaySetting(assistant)
+                val wechatMode = effectiveDisplay.wechatMode
+                CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = bottomRightShape,
+                        color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
+                        onClick = {
+                            onUpdateAssistant(
+                                assistant.copy(
+                                    uiSettings = assistant.uiSettings.copy(wechatMode = !wechatMode)
+                                )
+                            )
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (wechatMode) Icons.Rounded.ChatBubbleOutline else Icons.Rounded.Settings,
+                                null,
+                                tint = if (wechatMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text(stringResource(R.string.ui_mode_picker_title), style = MaterialTheme.typography.labelLarge, color = if (wechatMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                                 Text(
-                                    text = if (settings.lorebooks.isEmpty()) {
-                                        stringResource(R.string.lorebooks_picker_none)
-                                    } else {
-                                        "$activeLorebookCount/${settings.lorebooks.size}"
-                                    },
+                                    if (wechatMode) stringResource(R.string.ui_mode_wechat) else stringResource(R.string.ui_mode_normal),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1367,94 +1437,40 @@ internal fun FilesPicker(
                 }
             }
 
-            // Context Refresh button row - shown when enabled
+            // Row 4: Context Refresh
             if (showContextRefresh) {
-                val totalMessages = conversation.currentMessages.size
-                val lastSummaryIndex = conversation.contextSummaryUpToIndex
-                val hasPreviousSummary = lastSummaryIndex >= 0
-                val messagesToKeep = 2 // Keep last user+assistant exchange
-                val newMessageCount = if (hasPreviousSummary && lastSummaryIndex < totalMessages) {
-                    // Messages after last summary, minus the ones we keep
-                    (totalMessages - lastSummaryIndex - 1 - messagesToKeep).coerceAtLeast(0)
-                } else {
-                    // No previous summary - all messages minus kept ones
-                    (totalMessages - messagesToKeep).coerceAtLeast(0)
-                }
-
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape = fullBottomShape,
                         color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
                         onClick = { showContextRefreshDialog = true }
                     ) {
                         Row(
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp)
-                                .fillMaxSize(),
+                            modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Refresh,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Icon(Icons.Rounded.Refresh, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(R.string.context_refresh_button),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            if (newMessageCount > 0) {
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "($newMessageCount)",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Text(stringResource(R.string.context_refresh_button), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
             }
+
+            // Sheets and Dialogs logic moved inside for state scope
+            if (showModesPicker) {
+                ModesPickerSheet(settings = settings, conversation = conversation, onUpdateConversation = onUpdateConversation, onDismiss = { showModesPicker = false })
+            }
+            if (showLorebooksPicker) {
+                LorebooksPickerSheet(settings = settings, assistant = assistant, onUpdateAssistant = onUpdateAssistant, onNavigateToLorebook = { showLorebooksPicker = false; onNavigateToLorebook(it) }, onDismiss = { showLorebooksPicker = false })
+            }
         }
 
-        // Modes picker sheet
-        if (showModesPicker) {
-            ModesPickerSheet(
-                settings = settings,
-                conversation = conversation,
-                onUpdateConversation = onUpdateConversation,
-                onDismiss = { showModesPicker = false }
-            )
-        }
-
-        // Lorebooks picker sheet
-        if (showLorebooksPicker) {
-            LorebooksPickerSheet(
-                settings = settings,
-                assistant = assistant,
-                onUpdateAssistant = onUpdateAssistant,
-                onNavigateToLorebook = { lorebookId ->
-                    showLorebooksPicker = false
-                    onNavigateToLorebook(lorebookId)
-                },
-                onDismiss = { showLorebooksPicker = false }
-            )
-        }
-
-        // Context Refresh confirmation dialog
         if (showContextRefreshDialog) {
-            ContextRefreshDialog(
-                conversation = conversation,
-                onRefresh = onRefreshContext,
-                onDismiss = { showContextRefreshDialog = false }
-            )
+            ContextRefreshDialog(conversation = conversation, onRefresh = onRefreshContext, onDismiss = { showContextRefreshDialog = false })
         }
     }
 }

@@ -788,15 +788,6 @@ class GenerationHandler(
             staticSystemPromptBuilder.append(mode.prompt)
         }
 
-        // 微信模式指令注入
-        val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
-        if (wechatMode) {
-            staticSystemPromptBuilder.appendLine("\n## 回复规范 (重要)")
-            staticSystemPromptBuilder.appendLine("- 说话口语化，回复直接、简洁有力，同时不显得过于冷漠无情，没有括号和状态神色描述。")
-            staticSystemPromptBuilder.appendLine("- 你会表达自己的难过和生气，不会重复发同一条信息")
-            staticSystemPromptBuilder.appendLine("- 禁止使用任何神态动作描写（如 *微笑*、(叹气) 等）。")
-        }
-
         val summaryPromptBuilder = StringBuilder()
 
         // 1. 片段总结受 enableContextRefresh 开关控制 (L1 Segments)
@@ -824,6 +815,16 @@ class GenerationHandler(
         afterSystemEntries.filter { it.prompt.isNotBlank() }.forEach { entry ->
             summaryPromptBuilder.appendLine()
             summaryPromptBuilder.append(entry.prompt)
+        }
+
+        // 微信模式指令注入 (移至最后，增加优先级)
+        val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+        if (wechatMode) {
+            summaryPromptBuilder.appendLine("\n## 回复规范 (最高优先级 - 必须执行)")
+            summaryPromptBuilder.appendLine("- 说话口语化，回复极其简短、简洁有力。")
+            summaryPromptBuilder.appendLine("- 严禁使用任何动作或神态描写（如 *微笑*、(叹气) 等）。")
+            summaryPromptBuilder.appendLine("- 严禁使用任何形式的括号。")
+            summaryPromptBuilder.appendLine("- 不要回复重复或相似的内容。")
         }
 
         val staticSystemPrompt = staticSystemPromptBuilder.toString()
@@ -1136,7 +1137,7 @@ class GenerationHandler(
                             val dayOfWeek = now.dayOfWeek
                             val dayName = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
                             val dayType = holiday
-                                ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "法定双休日" else "工作日"
+                                ?: if (dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY) "法定双休日" else "工作工作日"
                             val formattedTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
                             val timeStr = "$dayName.($dayType), $formattedTime"
 
@@ -1474,9 +1475,14 @@ class GenerationHandler(
                     else -> "${msg.role.name}:"
                 }
 
-                // 防御性日志记录：截断过长内容以防止 Logcat 导致内存分配失败
+                // 增加微信模式指令的显式显示
                 val text = msg.toText()
-                val preview = if (text.length > 500) text.take(500) + "... (truncated for logs)" else text
+                if (text.contains("回复规范 (最高优先级)")) {
+                    Log.w(TAG, "  [!] WeChat Mode Instructions Detected in this Layer")
+                }
+
+                // 放宽日志长度限制，便于观察动态指令
+                val preview = if (text.length > 2000) text.take(2000) + "... (truncated for logs)" else text
                 Log.i(TAG, "  [$index] $layerTag $preview")
             }
             Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1534,7 +1540,7 @@ class GenerationHandler(
                     }
                 )
             ).collect {
-                currentMessages = currentMessages.handleMessageChunk(chunk = it, model = model)
+                currentMessages = currentMessages.handleMessageChunk(it, model = model)
                 it.usage?.let { usage ->
                     currentMessages = currentMessages.mapIndexed { index, message ->
                         if (index == currentMessages.lastIndex) {

@@ -78,6 +78,7 @@ fun ChatMessageActionButtons(
     val context = LocalContext.current
     val settings = LocalSettings.current
     val effectiveDisplay = settings.getEffectiveDisplaySetting()
+    val wechatMode = effectiveDisplay.wechatMode
     var isPendingDelete by remember { mutableStateOf(false) }
     var showContextSheet by remember { mutableStateOf(false) }
 
@@ -121,7 +122,7 @@ fun ChatMessageActionButtons(
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         // Context stack indicator at the start
-        if (showContextStacks) {
+        if (showContextStacks && !wechatMode) {
             ContextStackIndicator(
                 modes = usedModes,
                 memories = usedMemories,
@@ -131,71 +132,79 @@ fun ChatMessageActionButtons(
             )
         }
 
-        Icon(
-            Icons.Rounded.ContentCopy, stringResource(R.string.copy), modifier = Modifier
-                .clip(CircleShape)
-                .clickable { context.copyMessageToClipboard(message) }
-                .padding(8.dp)
-                .size(16.dp)
-        )
-
-        if (showRegenerate) {
+        if (!wechatMode) {
             Icon(
-                Icons.Rounded.Refresh, stringResource(R.string.regenerate), modifier = Modifier
+                Icons.Rounded.ContentCopy, stringResource(R.string.copy), modifier = Modifier
                     .clip(CircleShape)
-                    .clickable { onRegenerate() }
+                    .clickable { context.copyMessageToClipboard(message) }
+                    .padding(8.dp)
+                    .size(16.dp)
+            )
+
+            if (showRegenerate) {
+                Icon(
+                    Icons.Rounded.Refresh, stringResource(R.string.regenerate), modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable { onRegenerate() }
+                        .padding(8.dp)
+                        .size(16.dp)
+                )
+            }
+
+            if (message.role == MessageRole.ASSISTANT) {
+                val tts = LocalTTSState.current
+                val isSpeaking by tts.isSpeaking.collectAsState()
+                val isAvailable by tts.isAvailable.collectAsState()
+                Icon(
+                    imageVector = if (isSpeaking) Icons.Rounded.StopCircle else Icons.AutoMirrored.Rounded.VolumeUp,
+                    contentDescription = stringResource(R.string.tts),
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(
+                            enabled = isAvailable,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = LocalIndication.current,
+                            onClick = {
+                                if (!isSpeaking) {
+                                    tts.speak(message.toContentText())
+                                } else {
+                                    tts.stop()
+                                }
+                            }
+                        )
+                        .padding(8.dp)
+                        .size(16.dp),
+                    tint = if (isAvailable) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f)
+                )
+            }
+        }
+
+        // 微信模式下也隐藏这个三点图标
+        if (!wechatMode) {
+            Icon(
+                imageVector = Icons.Rounded.MoreHoriz,
+                contentDescription = "More Options",
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = LocalIndication.current,
+                        onClick = {
+                            onOpenActionSheet()
+                        }
+                    )
                     .padding(8.dp)
                     .size(16.dp)
             )
         }
 
-        if (message.role == MessageRole.ASSISTANT) {
-            val tts = LocalTTSState.current
-            val isSpeaking by tts.isSpeaking.collectAsState()
-            val isAvailable by tts.isAvailable.collectAsState()
-            Icon(
-                imageVector = if (isSpeaking) Icons.Rounded.StopCircle else Icons.AutoMirrored.Rounded.VolumeUp,
-                contentDescription = stringResource(R.string.tts),
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(
-                        enabled = isAvailable,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = LocalIndication.current,
-                        onClick = {
-                            if (!isSpeaking) {
-                                tts.speak(message.toContentText())
-                            } else {
-                                tts.stop()
-                            }
-                        }
-                    )
-                    .padding(8.dp)
-                    .size(16.dp),
-                tint = if (isAvailable) LocalContentColor.current else LocalContentColor.current.copy(alpha = 0.38f)
+        // WeChat mode hides version selector
+        if (!wechatMode) {
+            ChatMessageBranchSelector(
+                node = node,
+                onUpdate = onUpdate,
             )
         }
-
-        Icon(
-            imageVector = Icons.Rounded.MoreHoriz,
-            contentDescription = "More Options",
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = LocalIndication.current,
-                    onClick = {
-                        onOpenActionSheet()
-                    }
-                )
-                .padding(8.dp)
-                .size(16.dp)
-        )
-
-        ChatMessageBranchSelector(
-            node = node,
-            onUpdate = onUpdate,
-        )
     }
 }
 
@@ -211,6 +220,9 @@ fun ChatMessageActionsSheet(
     onWebViewPreview: () -> Unit,
     onDismissRequest: () -> Unit
 ) {
+    val settings = LocalSettings.current
+    val wechatMode = settings.getEffectiveDisplaySetting().wechatMode
+
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -253,15 +265,48 @@ fun ChatMessageActionsSheet(
                 }
             }
 
-            // WebView Preview (only show if message has text content)
-            val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
-                .any { it.text.isNotBlank() }
+            if (!wechatMode) {
+                // WebView Preview (only show if message has text content)
+                val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
+                    .any { it.text.isNotBlank() }
 
-            if (hasTextContent) {
+                if (hasTextContent) {
+                    Card(
+                        onClick = {
+                            onDismissRequest()
+                            onWebViewPreview()
+                        },
+
+                        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                        colors = CardDefaults.cardColors(
+                            containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        )
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.OpenInBrowser,
+                                contentDescription = null,
+                                modifier = Modifier.padding(4.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.render_with_webview),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                }
+
+                // Edit
                 Card(
                     onClick = {
                         onDismissRequest()
-                        onWebViewPreview()
+                        onEdit()
                     },
 
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
@@ -277,46 +322,15 @@ fun ChatMessageActionsSheet(
                             .fillMaxWidth()
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.OpenInBrowser,
+                            imageVector = Icons.Rounded.Edit,
                             contentDescription = null,
                             modifier = Modifier.padding(4.dp)
                         )
                         Text(
-                            text = stringResource(R.string.render_with_webview),
+                            text = stringResource(R.string.edit),
                             style = MaterialTheme.typography.titleMedium,
                         )
                     }
-                }
-            }
-
-            // Edit
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onEdit()
-                },
-
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.edit),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
                 }
             }
 
@@ -350,33 +364,35 @@ fun ChatMessageActionsSheet(
                 }
             }
 
-            // Create a Fork
-            Card(
-                onClick = {
-                    onDismissRequest()
-                    onFork()
-                },
-                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier
-                        .padding(16.dp)
-                        .fillMaxWidth()
+            if (!wechatMode) {
+                // Create a Fork
+                Card(
+                    onClick = {
+                        onDismissRequest()
+                        onFork()
+                    },
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(
+                        containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
                 ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.CallSplit,
-                        contentDescription = null,
-                        modifier = Modifier.padding(4.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.create_fork),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.CallSplit,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.create_fork),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
                 }
             }
 

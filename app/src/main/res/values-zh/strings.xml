@@ -1683,4 +1683,7 @@
   <string name="chat_status_typing">正在输入中...</string>
   <string name="assistant_ui_wechat_mode_title">微信模式</string>
   <string name="assistant_ui_wechat_mode_desc">使该智能体的对话风格和展示形式接近微信聊天</string>
+  <string name="ui_mode_picker_title">UI 模式</string>
+  <string name="ui_mode_normal">普通模式</string>
+  <string name="ui_mode_wechat">微信模式</string>
 </resources>
