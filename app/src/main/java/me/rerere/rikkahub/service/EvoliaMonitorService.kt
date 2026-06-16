@@ -317,7 +317,7 @@ class EvoliaMonitorService : AccessibilityService() {
         val tasks = monitorTaskRepo.getAllEnabledTasks().run { firstOrNull() } ?: return
         tasks.forEach { task ->
             try {
-                val conditions = json.parseToJsonElement(task.conditions).jsonObject
+                val conditions = json.parseToJsonElement(task.conditions) as? JsonObject ?: return@forEach
                 if (evaluateConditions(conditions, state, oldState, task.id)) {
                     triggerMonitor(task, state)
                 }
@@ -334,56 +334,56 @@ class EvoliaMonitorService : AccessibilityService() {
         taskId: Long
     ): Boolean {
         val now = System.currentTimeMillis()
-        val cooldownMin = (conditions["cooldown_minutes"]?.jsonPrimitive?.longOrNull ?: 5L).coerceAtLeast(2L)
+        val cooldownMin = ((conditions["cooldown_minutes"] as? JsonPrimitive)?.longOrNull ?: 5L).coerceAtLeast(2L)
         val lastTrigger = lastTriggerTimeMap[taskId] ?: 0L
         if (now - lastTrigger < cooldownMin * 60 * 1000) return false
 
-        val locationNameCondition = conditions["location_name"]?.jsonPrimitive?.content
+        val locationNameCondition = (conditions["location_name"] as? JsonPrimitive)?.content
         if (locationNameCondition != null) {
             val isNowMatch = state.locationName.contains(locationNameCondition, ignoreCase = true)
             val wasMatch = oldState.locationName.contains(locationNameCondition, ignoreCase = true)
             if (!isNowMatch || wasMatch) return false
         }
 
-        val wifiSsidCondition = conditions["wifi_ssid"]?.jsonPrimitive?.content
+        val wifiSsidCondition = (conditions["wifi_ssid"] as? JsonPrimitive)?.content
         if (wifiSsidCondition != null) {
             val isNowMatch = state.wifiSsid.contains(wifiSsidCondition, ignoreCase = true)
             val wasMatch = oldState.wifiSsid.contains(wifiSsidCondition, ignoreCase = true)
             if (!isNowMatch || wasMatch) return false
         }
 
-        val wifiConnectedCondition = conditions["is_wifi_connected"]?.jsonPrimitive?.booleanOrNull
+        val wifiConnectedCondition = (conditions["is_wifi_connected"] as? JsonPrimitive)?.booleanOrNull
         if (wifiConnectedCondition != null && state.isWifiConnected != wifiConnectedCondition) return false
 
-        val timeRange = conditions["time_range"]?.jsonObject
+        val timeRange = conditions["time_range"] as? JsonObject
         if (timeRange != null) {
-            val start = timeRange["start"]?.jsonPrimitive?.content ?: ""
-            val end = timeRange["end"]?.jsonPrimitive?.content ?: ""
+            val start = (timeRange["start"] as? JsonPrimitive)?.content ?: ""
+            val end = (timeRange["end"] as? JsonPrimitive)?.content ?: ""
             if (!isCurrentTimeInRange(start, end)) return false
         }
 
-        val screenStatus = conditions["screen_status"]?.jsonPrimitive?.content
+        val screenStatus = (conditions["screen_status"] as? JsonPrimitive)?.content
         if (screenStatus != null && state.isScreenOn != (screenStatus == "ON")) return false
 
-        val durationThreshold = conditions["usage_duration_minutes"]?.jsonPrimitive?.intOrNull
+        val durationThreshold = (conditions["usage_duration_minutes"] as? JsonPrimitive)?.intOrNull
         if (durationThreshold != null && (state.todayDurationMs / 60000) < durationThreshold) return false
 
-        val appContinuousThreshold = conditions["continuous_usage_minutes"]?.jsonPrimitive?.intOrNull
+        val appContinuousThreshold = (conditions["continuous_usage_minutes"] as? JsonPrimitive)?.intOrNull
         if (appContinuousThreshold != null && state.appSessionStartMs > 0) {
             val continuousMs = now - state.appSessionStartMs
             if (continuousMs / 60000 < appContinuousThreshold) return false
         }
 
-        val totalContinuousThreshold = conditions["total_continuous_minutes"]?.jsonPrimitive?.intOrNull
+        val totalContinuousThreshold = (conditions["total_continuous_minutes"] as? JsonPrimitive)?.intOrNull
         if (totalContinuousThreshold != null && state.continuousSessionStartMs > 0) {
             val continuousMs = now - state.continuousSessionStartMs
             if (continuousMs / 60000 < totalContinuousThreshold) return false
         }
 
-        val targetApp = conditions["foreground_app"]?.jsonPrimitive?.content
+        val targetApp = (conditions["foreground_app"] as? JsonPrimitive)?.content
         if (targetApp != null && !state.foregroundAppName.contains(targetApp, ignoreCase = true)) return false
 
-        val contentContains = conditions["content_contains"]?.jsonPrimitive?.content
+        val contentContains = (conditions["content_contains"] as? JsonPrimitive)?.content
         if (contentContains != null && !state.screenContext.contains(contentContains, ignoreCase = true)) return false
 
         return true
@@ -391,11 +391,11 @@ class EvoliaMonitorService : AccessibilityService() {
 
     private suspend fun triggerMonitor(task: AgentMonitorTaskEntity, state: UserDeviceStateEntity) {
         lastTriggerTimeMap[task.id] = System.currentTimeMillis()
-        val actions = json.parseToJsonElement(task.actions).jsonArray
-        val triggerAction =
-            actions.find { it.jsonObject["type"]?.jsonPrimitive?.content == "SEND_HIDDEN_MESSAGE" } ?: return
+        val actions = json.parseToJsonElement(task.actions) as? JsonArray ?: return
+        val triggerAction = actions.filterIsInstance<JsonObject>()
+            .find { (it["type"] as? JsonPrimitive)?.content == "SEND_HIDDEN_MESSAGE" } ?: return
 
-        val template = triggerAction.jsonObject["content"]?.jsonPrimitive?.content ?: ""
+        val template = (triggerAction["content"] as? JsonPrimitive)?.content ?: ""
         val now = System.currentTimeMillis()
         val durationMin = state.todayDurationMs / 60000
         val appContinuousMin = if (state.appSessionStartMs > 0) (now - state.appSessionStartMs) / 60000 else 0

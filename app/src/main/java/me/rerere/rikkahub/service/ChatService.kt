@@ -819,11 +819,14 @@ class ChatService(
     ) {
         val settings = settingsStore.settingsFlow.first()
         val aiMessageIds = mutableMapOf<Int, Uuid>()
-        runCatching {
+        var currentConversation = conversations[conversationId]?.value
+            ?: conversationRepo.getConversationById(conversationId)
+            ?: return // 如果数据库也没，那真的没救了
 
-            val conversation = getConversationFlow(conversationId).value
-            updateConversation(conversationId, conversation.copy(chatSuggestions = emptyList()))
-            val assistant = assistantOverride ?: settings.getAssistantById(conversation.assistantId)
+        runCatching {
+            currentConversation = currentConversation.copy(chatSuggestions = emptyList())
+            updateConversation(conversationId, currentConversation)
+            val assistant = assistantOverride ?: settings.getAssistantById(currentConversation.assistantId)
             ?: settings.getCurrentAssistant()
             val modelId = assistant.chatModelId ?: settings.chatModelId
             val model = settings.findModelById(modelId) ?: settings.getCurrentChatModel() ?: return@runCatching
@@ -836,9 +839,10 @@ class ChatService(
 
             // 微信模式检测
             val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
-            val wechatSentenceRegex = Regex("[，。！？~\\n]|[,!?~]") // 分句正则
+            val wechatSentenceRegex = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]") // 分句正则
 
             checkInvalidMessages(conversationId)
+            currentConversation = getConversationFlow(conversationId).value
             val retrievedMemories = withContext(Dispatchers.IO) {
                 if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF && !temporaryConversations.contains(
                         conversationId
@@ -847,7 +851,7 @@ class ChatService(
                     kotlinx.coroutines.withTimeoutOrNull(8000) {
                         if (assistant.useRagMemoryRetrieval) {
                             val lastUserMsg =
-                                conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
+                                currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
                             if (lastUserMsg.isNotBlank()) {
                                 val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                                     assistantId = assistant.id.toString(),
@@ -883,7 +887,7 @@ class ChatService(
             val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
             // 核心修改：如果是微信模式，我们需要把本轮用户连续发送的消息拼接后发送给模型
-            val baseMessages = conversation.currentMessages.let {
+            val baseMessages = currentConversation.currentMessages.let {
                 if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
             }
 
@@ -927,7 +931,7 @@ class ChatService(
                     outputTransformers = outputTransformers,
                     tools = buildList {
                         val isMain = assistant.isMain
-                        val isVirtual = conversation.isVirtual
+                        val isVirtual = currentConversation.isVirtual
 
                         val supportsBuiltIn =
                             model.tools.isNotEmpty() || ModelRegistry.GEMINI_SERIES.match(model.modelId)
@@ -960,8 +964,8 @@ class ChatService(
                             localTools.getTools(
                                 options = targetOptions,
                                 assistantId = assistant.id,
-                                conversationId = conversation.id,
-                                userImageUrls = conversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()
+                                conversationId = currentConversation.id,
+                                userImageUrls = currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()
                                     ?.map { it.url } ?: emptyList()))
 
                         if (isMain && !isVirtual) {
@@ -984,8 +988,8 @@ class ChatService(
                             }
                         }
                     },
-                    truncateIndex = conversation.truncateIndex,
-                    enabledModeIds = conversation.enabledModeIds,
+                    truncateIndex = currentConversation.truncateIndex,
+                    enabledModeIds = currentConversation.enabledModeIds,
                     contextSummary = currentEpisode?.content?.removePrefix("虚拟世界："),
                     temporarySummaries = emptyList(),
                     skipContextForResponse = skipContextForResponse,
@@ -993,9 +997,8 @@ class ChatService(
                     conversationId = conversationId
                 ).onCompletion {
                     val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
-                    val current = getConversationFlow(conversationId).value
-                    val updated = current.copy(messageNodes = current.messageNodes.mapIndexed { idx, node ->
-                        val isLast = idx == current.messageNodes.lastIndex
+                    val updated = currentConversation.copy(messageNodes = currentConversation.messageNodes.mapIndexed { idx, node ->
+                        val isLast = idx == currentConversation.messageNodes.lastIndex
                         node.copy(messages = node.messages.map { msg ->
                             val finished = msg.finishReasoning()
                             if (isLast && finished.role == MessageRole.ASSISTANT && finished.generationDurationMs == null) finished.copy(
@@ -1003,6 +1006,7 @@ class ChatService(
                             ) else finished
                         })
                     }, updateAt = Instant.now())
+                    currentConversation = updated
                     updateConversation(conversationId, updated)
                     if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) sendGenerationDoneNotification(
                         conversationId
@@ -1066,19 +1070,15 @@ class ChatService(
 
                             // 3. 提交更新：只要有内容就更新 UI，不再使用 delay 阻塞流
                             if (wechatMessages.size > baseMessages.size) {
-                                updateConversation(
-                                    conversationId,
-                                    getConversationFlow(conversationId).value.updateCurrentMessages(wechatMessages)
-                                )
+                                currentConversation = currentConversation.updateCurrentMessages(wechatMessages)
+                                updateConversation(conversationId, currentConversation)
                                 return@collect
                             }
                             // 微信模式下，如果没拆出新气泡，也直接返回等待下一个 chunk，避免与 finalMessages 产生覆盖
                             return@collect
                         } else if (fullText.isNotBlank()) {
-                            updateConversation(
-                                conversationId,
-                                getConversationFlow(conversationId).value.updateCurrentMessages(finalMessages)
-                            )
+                            currentConversation = currentConversation.updateCurrentMessages(finalMessages)
+                            updateConversation(conversationId, currentConversation)
                             return@collect
                         }
                     }
@@ -1086,7 +1086,7 @@ class ChatService(
             }
         }.onFailure { e ->
             Log.d(TAG, "Generation failed/cancelled for $conversationId, saving current state. Error: ${e.message}")
-            val finalConv = getConversationFlow(conversationId).value
+            val finalConv = currentConversation
             appScope.launch {
                 saveConversation(conversationId, finalConv)
 
@@ -1104,7 +1104,7 @@ class ChatService(
             }
         }.onSuccess {
             // 获取当前内存中最新的对话状态（这里面已经包含了微信模式拆分好的气泡）
-            val finalConv = getConversationFlow(conversationId).value
+            val finalConv = currentConversation
 
             // 核心修复：直接保存内存里的最终版本，确保不产生重复的长句覆盖
             saveConversation(conversationId, finalConv)
@@ -1442,10 +1442,6 @@ class ChatService(
     fun cleanupConversation(id: Uuid) {
         _generationJobs.value[id]?.cancel()
         removeGenerationJob(id)
-
-        // 核心修复：显式清空 Flow 中的引用，辅助 GC 更快地回收大型 Conversation 对象
-        conversations[id]?.value = Conversation.ofId(id, Uuid.random())
-
         conversations.remove(id)
         conversationMutexes.remove(id)
         Log.d(TAG, "Unloaded conversation $id from RAM cache.")
