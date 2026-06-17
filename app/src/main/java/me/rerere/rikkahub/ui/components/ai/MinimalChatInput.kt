@@ -62,6 +62,7 @@ import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CameraAlt
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
@@ -114,6 +115,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
@@ -171,7 +173,7 @@ fun MinimalChatInput(
     val keyboardController = LocalSoftwareKeyboardController.current
     val localSettings = LocalSettings.current
     val scope = rememberCoroutineScope()
-
+    val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
     // OLED dark mode handling for picker sheet
     val amoledMode by me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode()
     val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
@@ -199,7 +201,10 @@ fun MinimalChatInput(
     }
 
     fun sendMessage() {
-        keyboardController?.hide()
+
+        if (!wechatMode) {
+            keyboardController?.hide()
+        }
         haptics.perform(HapticPattern.Send)
         if (state.loading) onCancelClick() else onSendClick()
     }
@@ -501,6 +506,9 @@ private fun MinimalPickerContent(
     // Sheet background uses surfaceContainerLow always
     val sheetContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
 
+    // WeChat Mode state
+    val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+
     // Camera state
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
@@ -796,6 +804,24 @@ private fun MinimalPickerContent(
             )
         }
 
+        // UI Mode Toggle
+        MinimalPickerItem(
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.ChatBubbleOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = if (wechatMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            title = stringResource(R.string.ui_mode_picker_title),
+            subtitle = if (wechatMode) stringResource(R.string.ui_mode_wechat) else stringResource(R.string.ui_mode_normal),
+            onClick = {
+                haptics.perform(HapticPattern.Pop)
+                onUpdateAssistant(assistant.copy(uiSettings = assistant.uiSettings.copy(wechatMode = !wechatMode)))
+            }
+        )
+
         // Search picker - show selected provider if enabled (use effectiveProviderIndex to track current selection)
         val searchService = settings.searchServices.getOrNull(effectiveProviderIndex)
         val searchProviderName = if (searchService != null) {
@@ -865,6 +891,7 @@ private fun MinimalPickerContent(
             title = stringResource(R.string.minimal_input_lorebooks),
             subtitle = if (activeLorebooksCount > 0) "$activeLorebooksCount active" else stringResource(R.string.minimal_input_lorebooks_desc),
             onClick = {
+                showLorebooksPicker = false
                 showLorebooksPicker = true
             }
         )

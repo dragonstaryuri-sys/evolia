@@ -209,7 +209,9 @@ fun ChatInput(
     val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
 
     fun sendMessage() {
-        keyboardController?.hide()
+        if (!wechatMode) {
+            keyboardController?.hide()
+        }
         haptics.perform(HapticPattern.Send)
         if (state.loading) {
             // 微信模式下不执行取消逻辑（按钮可能被点击但不触发取消）
