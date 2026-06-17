@@ -818,8 +818,10 @@ class ChatService(
         includeSkipContextMessages: Boolean = false
     ) {
         val settings = settingsStore.settingsFlow.first()
+        var firstTokenTime: Long? = null
         val processMessageIds = mutableMapOf<Int, Uuid>()
         val aiMessageIds = mutableMapOf<Int, Uuid>()
+        var lastDisplayedSentenceCount = 0
         var currentConversation = conversations[conversationId]?.value
             ?: conversationRepo.getConversationById(conversationId)
             ?: return // 如果数据库也没，那真的没救了
@@ -1043,6 +1045,16 @@ class ChatService(
                                 lastIndex = match.range.last + 1
                             }
                             val remainder = fullText.substring(lastIndex).trim()
+                            val currentSentenceCount = sentences.size
+                            if (currentSentenceCount > lastDisplayedSentenceCount) {
+                                val newlyCompletedSentences = sentences.subList(lastDisplayedSentenceCount, currentSentenceCount)
+                                val totalChars = newlyCompletedSentences.sumOf { it.length }
+                                val charSpeed = 60L
+                                val jitter = kotlin.random.Random.nextLong(-100, 100)
+                                val finalDelay = (totalChars * charSpeed + jitter).coerceIn(400L, 2500L)
+                                delay(finalDelay)
+                                lastDisplayedSentenceCount = currentSentenceCount
+                            }
                             val wechatMessages = mutableListOf<UIMessage>()
                             wechatMessages.addAll(baseMessages)
                             wechatMessages.addAll(newMessages.dropLast(1))
