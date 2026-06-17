@@ -1045,23 +1045,45 @@ class ChatService(
                                 lastIndex = match.range.last + 1
                             }
                             val remainder = fullText.substring(lastIndex).trim()
-                            val currentSentenceCount = sentences.size
-                            if (currentSentenceCount > lastDisplayedSentenceCount) {
-                                val newlyCompletedSentences = sentences.subList(lastDisplayedSentenceCount, currentSentenceCount)
-                                val totalChars = newlyCompletedSentences.sumOf { it.length }
-                                val charSpeed = 60L
-                                val jitter = kotlin.random.Random.nextLong(-100, 100)
-                                val finalDelay = (totalChars * charSpeed + jitter).coerceIn(400L, 2500L)
-                                delay(finalDelay)
-                                lastDisplayedSentenceCount = currentSentenceCount
-                            }
-                            val wechatMessages = mutableListOf<UIMessage>()
-                            wechatMessages.addAll(baseMessages)
-                            wechatMessages.addAll(newMessages.dropLast(1))
+                            // --- 核心优化逻辑：逐句弹出模拟打字 ---
+                            // 只要有新产生的完整句子，就进入循环逐一处理
+                            while (lastDisplayedSentenceCount < sentences.size) {
+                                val sentence = sentences[lastDisplayedSentenceCount]
 
+                                // 模拟打字速度：根据字数计算延迟 (设定约 60ms/字，比常人快一点但有节奏)
+                                val charSpeed = 500L
+                                val jitter = kotlin.random.Random.nextLong(-100, 100) // 加入随机微调，更真实
+                                val finalDelay = (sentence.length * charSpeed + jitter).coerceIn(400L, 20000L)
+                                Log.d("wechat", "延迟: $finalDelay ms")
+                                // 先等待（模拟打字过程）
+                                delay(finalDelay)
+
+                                // 增加已显示的句子计数
+                                lastDisplayedSentenceCount++
+
+                                // 立即更新 UI，让新句子“跳”出来
+                                val wechatMessages = mutableListOf<UIMessage>()
+                                wechatMessages.addAll(baseMessages)
+                                wechatMessages.addAll(newMessages.dropLast(1))
+
+                                for (i in 0 until lastDisplayedSentenceCount) {
+                                    wechatMessages.add(
+                                        lastAI.copy(
+                                            id = aiMessageIds.getOrPut(i) { Uuid.random() },
+                                            parts = listOf(UIMessagePart.Text(sentences[i]))
+                                        )
+                                    )
+                                }
+                                // 逐句跳出时暂不显示 remainder，让终结感更强
+                                currentConversation = currentConversation.updateCurrentMessages(wechatMessages)
+                                updateConversation(conversationId, currentConversation)
+                            }
+                            val finalWechatMessages = mutableListOf<UIMessage>()
+                            finalWechatMessages.addAll(baseMessages)
+                            finalWechatMessages.addAll(newMessages.dropLast(1))
                             // 将最后一条 AI 消息拆分为多个气泡
                             sentences.forEachIndexed { idx, text ->
-                                wechatMessages.add(
+                                finalWechatMessages.add(
                                     lastAI.copy( // 使用 copy 而不是新建，保留原有的 ID（如果有）和元数据
                                         id = aiMessageIds.getOrPut(idx) { Uuid.random() },
                                         parts = listOf(UIMessagePart.Text(text))
@@ -1070,14 +1092,14 @@ class ChatService(
                             }
 
                             if (remainder.isNotBlank()) {
-                                wechatMessages.add(
+                                finalWechatMessages.add(
                                     lastAI.copy(
                                         id = aiMessageIds.getOrPut(sentences.size) { Uuid.random() },
                                         parts = listOf(UIMessagePart.Text(remainder))
                                     )
                                 )
                             }
-                            currentConversation = currentConversation.updateCurrentMessages(wechatMessages)
+                            currentConversation = currentConversation.updateCurrentMessages(finalWechatMessages)
                             updateConversation(conversationId, currentConversation)
                         } else {
                             val toUpdate = baseMessages + newMessages
