@@ -58,11 +58,10 @@ import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.common.JsonInstant
-import me.rerere.rikkahub.common.JsonInstantPretty
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
-import me.rerere.rikkahub.core.data.db.entity.MemoryType
+import kotlinx.coroutines.job
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantSearchMode
@@ -104,13 +103,10 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.longOrNull
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
 import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import kotlin.coroutines.coroutineContext
 
 private const val TAG = "ChatService"
 
@@ -269,7 +265,7 @@ class ChatService(
     }
 
     suspend fun executeAgentTask(task: me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity) {
-        val data = me.rerere.rikkahub.common.JsonInstant.parseToJsonElement(task.taskData) as? JsonObject ?: return
+        val data = JsonInstant.parseToJsonElement(task.taskData) as? JsonObject ?: return
 
         val instruction = data["instruction"]?.jsonPrimitive?.contentOrNull ?: ""
         val settings = settingsStore.settingsFlow.first()
@@ -480,8 +476,6 @@ class ChatService(
         }
 
         lastConversationId = conversationId
-
-        val conversation = currentConv
         if (currentConvInDb != null) {
             updateConversation(conversationId, currentConvInDb)
             if (targetAssistantId == null) {
@@ -651,7 +645,6 @@ class ChatService(
 
         val job = appScope.launch {
             try {
-                val currentSettings = settingsStore.settingsFlow.first()
                 val currentConversationFlow = getConversationFlow(conversationId)
                 val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
 
@@ -795,8 +788,8 @@ class ChatService(
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = false
     ) {
+        val currentJob = coroutineContext.job
         val settings = settingsStore.settingsFlow.first()
-        var firstTokenTime: Long? = null
         val processMessageIds = mutableMapOf<Int, Uuid>()
         val aiMessageIds = mutableMapOf<Int, Uuid>()
         var lastDisplayedSentenceCount = 0
@@ -817,7 +810,6 @@ class ChatService(
                     (assistant.searchMode !is AssistantSearchMode.Off) || mcpManager.getAllAvailableTools().isNotEmpty()
                 if (hasExternalTools) _errorFlow.emit(IllegalStateException(context.getString(R.string.tools_warning)))
             }
-            val wechatMessageIds = mutableMapOf<Int, Uuid>()
             // 微信模式检测
             val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
             val wechatSentenceRegex = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]") // 分句正则
@@ -829,7 +821,7 @@ class ChatService(
                         conversationId
                     )
                 ) {
-                    kotlinx.coroutines.withTimeoutOrNull(8000) {
+                    withTimeoutOrNull(8000) {
                         if (assistant.useRagMemoryRetrieval) {
                             val lastUserMsg =
                                 currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
@@ -879,7 +871,6 @@ class ChatService(
                 if (lastUserGroupStart in messages.indices && messages.size - lastUserGroupStart > 1) {
                     // 合并本轮所有用户消息
                     val userMessages = messages.subList(lastUserGroupStart, messages.size)
-                    val combinedText = userMessages.joinToString("\n") { it.toContentText() }
                     val allParts =
                         userMessages.flatMap { it.parts }.distinctBy { (it as? UIMessagePart.Image)?.url ?: it }
 
@@ -895,10 +886,6 @@ class ChatService(
                 messages
             } else baseMessages
 
-            // 微信模式下正式启动 handleMessageComplete 时，也要标记任务位，让 UI 显示“正在输入中...”
-            if (wechatMode) {
-                setGenerationJob(conversationId, Job()) // 占位任务
-            }
 
             // 硬超时保护：20 分钟
             kotlinx.coroutines.withTimeout(20 * 60 * 1000L) {
@@ -1033,39 +1020,37 @@ class ChatService(
                                 val finalDelay = (sentence.length * charSpeed + jitter).coerceIn(400L, 20000L)
                                 // 先等待（模拟打字过程）
                                 delay(finalDelay)
-
+                                if (!currentJob.isActive) {
+                                    Log.d(TAG, "任务已被取消，停止 UI 局部更新")
+                                    return@collect
+                                }
                                 // 增加已显示的句子计数
                                 lastDisplayedSentenceCount++
 
                                 // 立即更新 UI，让新句子“跳”出来
-                                val wechatMessages = mutableListOf<UIMessage>()
-                                wechatMessages.addAll(baseMessages)
-                                wechatMessages.addAll(newMessages.dropLast(1))
-
-                                for (i in 0 until lastDisplayedSentenceCount) {
-                                    wechatMessages.add(
-                                        lastAI.copy(
-                                            id = aiMessageIds.getOrPut(i) { Uuid.random() },
-                                            parts = listOf(UIMessagePart.Text(sentences[i]))
-                                        )
-                                    )
-                                }
+                                val wechatMessages = buildWechatMessages(
+                                    baseMessages,
+                                    newMessages,
+                                    sentences,
+                                    lastDisplayedSentenceCount,
+                                    lastAI,
+                                    aiMessageIds
+                                )
                                 currentConversation = currentConversation.updateCurrentMessages(wechatMessages)
-                                updateConversation(conversationId, currentConversation)
+                                // 性能优化：每2句更新一次数据库
+                                if (lastDisplayedSentenceCount % 2 == 0 || lastDisplayedSentenceCount == sentences.size) {
+                                    updateConversation(conversationId, currentConversation)
+                                }
                             }
                             if (!coroutineContext.isActive) return@collect
-                            val finalWechatMessages = mutableListOf<UIMessage>()
-                            finalWechatMessages.addAll(baseMessages)
-                            finalWechatMessages.addAll(newMessages.dropLast(1))
-                            // 将最后一条 AI 消息拆分为多个气泡
-                            sentences.forEachIndexed { idx, text ->
-                                finalWechatMessages.add(
-                                    lastAI.copy( // 使用 copy 而不是新建，保留原有的 ID（如果有）和元数据
-                                        id = aiMessageIds.getOrPut(idx) { Uuid.random() },
-                                        parts = listOf(UIMessagePart.Text(text))
-                                    )
-                                )
-                            }
+                            val finalWechatMessages = buildWechatMessages(
+                                baseMessages,
+                                newMessages,
+                                sentences,
+                                sentences.size,
+                                lastAI,
+                                aiMessageIds
+                            ).toMutableList()
 
                             if (remainder.isNotBlank()) {
                                 finalWechatMessages.add(
@@ -1086,6 +1071,10 @@ class ChatService(
                 }
             }
         }.onFailure { e ->
+            if (e is kotlinx.coroutines.CancellationException) {
+                Log.d(TAG, "任务被用户中断，跳过最终状态保存")
+                return@onFailure
+            }
             Log.d(TAG, "Generation failed/cancelled for $conversationId, saving current state. Error: ${e.message}")
             val finalConv = currentConversation
             appScope.launch {
@@ -1104,6 +1093,7 @@ class ChatService(
                 Logging.log(TAG, "handleMessageComplete: $friendlyError")
             }
         }.onSuccess {
+            if (!currentJob.isActive) return@onSuccess
             // 获取当前内存中最新的对话状态（这里面已经包含了微信模式拆分好的气泡）
             val finalConv = currentConversation
 
@@ -1134,6 +1124,28 @@ class ChatService(
                 }
             }.invokeOnCompletion { removeConversationReference(conversationId) }
         }
+    }
+
+    private fun buildWechatMessages(
+        baseMessages: List<UIMessage>,
+        newMessages: List<UIMessage>,
+        sentences: List<String>,
+        count: Int,
+        lastAI: UIMessage,
+        aiMessageIds: MutableMap<Int, Uuid>
+    ): List<UIMessage> {
+        val list = mutableListOf<UIMessage>()
+        list.addAll(baseMessages)
+        list.addAll(newMessages.dropLast(1))
+        for (i in 0 until count) {
+            list.add(
+                lastAI.copy(
+                    id = aiMessageIds.getOrPut(i) { Uuid.random() },
+                    parts = listOf(UIMessagePart.Text(sentences[i]))
+                )
+            )
+        }
+        return list
     }
 
     private fun translateError(e: Throwable): Throwable {
@@ -1298,8 +1310,8 @@ class ChatService(
             val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
 
             if (aiResponse.isNotBlank()) {
-                val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-                val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                val backgroundRegex = Regex("""\[(?:Background|背景)][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                val keywordsRegex = Regex("""\[(?:Keywords|关键词)][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
 
                 val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
                 val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
@@ -1405,40 +1417,7 @@ class ChatService(
         )
     }
 
-    fun translateMessage(id: Uuid, message: UIMessage, target: Locale) {
-        appScope.launch(Dispatchers.IO) {
-            try {
-                val settings = settingsStore.settingsFlow.first()
-                val conv = getConversationFlow(id).value
-                val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
-                val modelId = assistant.chatModelId ?: settings.chatModelId
-                val text = message.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n\n") { it.text }.trim()
-                if (text.isNotBlank()) {
-                    updateTranslationField(id, message.id, context.getString(R.string.translating))
-                    generationHandler.translateText(settings, text, target, modelId) {
-                        updateTranslationField(
-                            id, message.id, it
-                        )
-                    }.collect {}
-                    saveConversation(id, getConversationFlow(id).value)
-                }
-            } catch (e: Exception) {
-                updateTranslationField(id, message.id, null); _errorFlow.emit(translateError(e))
-            }
-        }
-    }
 
-    private suspend fun updateTranslationField(id: Uuid, mid: Uuid, text: String?) {
-        val conv = getConversationFlow(id).value
-        val nodes = conv.messageNodes.map { node ->
-            if (node.messages.any { it.id == mid }) node.copy(messages = node.messages.map {
-                if (it.id == mid) it.copy(
-                    translation = text
-                ) else it
-            }) else node
-        }
-        updateConversation(id, conv.copy(messageNodes = nodes))
-    }
 
     fun cleanupConversation(id: Uuid) {
         _generationJobs.value[id]?.cancel()
