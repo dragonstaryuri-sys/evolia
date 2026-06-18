@@ -213,9 +213,8 @@ fun ChatInput(
             keyboardController?.hide()
         }
         haptics.perform(HapticPattern.Send)
-        if (state.loading) {
-            // 微信模式下不执行取消逻辑（按钮可能被点击但不触发取消）
-            if (!wechatMode) onCancelClick()
+        if (state.loading && !wechatMode) {
+            onCancelClick()
         } else onSendClick()
     }
 

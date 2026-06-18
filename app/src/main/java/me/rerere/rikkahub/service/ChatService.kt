@@ -15,7 +15,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -35,12 +34,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import me.rerere.ai.core.MessageRole
@@ -112,6 +109,7 @@ import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import kotlinx.coroutines.isActive
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 
 private const val TAG = "ChatService"
@@ -629,38 +627,39 @@ class ChatService(
     }
 
     fun sendMessage(
-        conversationId: Uuid, content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false
+        conversationId: Uuid,
+        content: List<UIMessagePart>,
+        answer: Boolean = true,
+        isTemporaryChat: Boolean = false
     ) {
         if (isTemporaryChat) temporaryConversations.add(conversationId)
 
-        // 核心优化 1：用户一旦发送新消息，立即强制终止该会话正在进行的 AI 回复
+        val settings = settingsStore.settingsFlow.value
+        val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
+
+        // --- 修改点：微信模式也统一执行打断逻辑 ---
         val oldJob = _generationJobs.value[conversationId]
         if (oldJob != null) {
-            Log.d(TAG, "User sent new message, cancelling previous AI response for $conversationId")
+            Log.d(TAG, "User sent new message, cancelling previous AI response (WeChat Mode: $wechatMode).")
             oldJob.cancel()
+            // 注意：cancel 是协程协作式的，如果模型生成逻辑中包含阻塞调用，
+            // 建议在 generationHandler.generateText 中确保能响应取消信号
+
             removeGenerationJob(conversationId)
         }
-
-        // 取消可能的待发送计时任务 (微信模式)
         wechatDebounceJobs[conversationId]?.cancel()
 
         val job = appScope.launch {
             try {
-                val settings = settingsStore.settingsFlow.first()
+                val currentSettings = settingsStore.settingsFlow.first()
                 val currentConversationFlow = getConversationFlow(conversationId)
-                val currentAssistant = settings.getAssistantById(currentConversationFlow.value.assistantId)
-                    ?: settings.getCurrentAssistant()
-                val wechatMode = settings.getEffectiveDisplaySetting(currentAssistant).wechatMode
-
-                // 确保互斥：等旧任务彻底释放锁，或者超时 200ms 强制继续
                 val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
-                withTimeoutOrNull(200) { mutex.lock() }
 
-                try {
+                mutex.withLock {
                     initializeConversation(conversationId)
                     val currentConversation = currentConversationFlow.value
 
-                    // 将新消息添加到本地 UI (立即渲染用户气泡)
+                    // 1. 保存用户新消息
                     val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
                     val updatedConv = currentConversation.copy(
                         messageNodes = currentConversation.messageNodes + newNode,
@@ -670,23 +669,11 @@ class ChatService(
                     conversationRepo.recordDailyActivity()
 
                     if (answer) {
-                        if (wechatMode) {
-                            // 微信模式：开启 5s 合并发送计时器
-                            val debounceJob = launch {
-                                delay(5000)
-                                handleMessageComplete(conversationId)
-                                _generationDoneFlow.emit(conversationId)
-                                wechatDebounceJobs.remove(conversationId)
-                            }
-                            wechatDebounceJobs[conversationId] = debounceJob
-                        } else {
-                            // 普通模式：立即发送
-                            handleMessageComplete(conversationId)
-                            _generationDoneFlow.emit(conversationId)
-                        }
+                        // 2. 这里的逻辑直接发送，不再进行 5s 的 debounce 排队
+                        // 因为你要求“终止旧的，处理新的”
+                        handleMessageComplete(conversationId)
+                        _generationDoneFlow.emit(conversationId)
                     }
-                } finally {
-                    if (mutex.isLocked) mutex.unlock()
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
@@ -695,17 +682,8 @@ class ChatService(
             }
         }
 
-        // 记录任务位 (用于控制前台服务和 UI 状态)
-        // 微信模式下在倒计时期间不标记状态位
-        val isWechatModeNow = settingsStore.settingsFlow.value.getEffectiveDisplaySetting(
-            settingsStore.settingsFlow.value.getAssistantById(
-                conversations[conversationId]?.value?.assistantId ?: Uuid.NIL
-            )
-        ).wechatMode
-
-        if (!isWechatModeNow) {
-            setGenerationJob(conversationId, job)
-        }
+        // 将新的生成任务存入 map
+        setGenerationJob(conversationId, job)
 
         job.invokeOnCompletion {
             setGenerationJob(conversationId, null)
@@ -1047,14 +1025,12 @@ class ChatService(
                             val remainder = fullText.substring(lastIndex).trim()
                             // --- 核心优化逻辑：逐句弹出模拟打字 ---
                             // 只要有新产生的完整句子，就进入循环逐一处理
-                            while (lastDisplayedSentenceCount < sentences.size) {
+                            while (lastDisplayedSentenceCount < sentences.size && coroutineContext.isActive) {
                                 val sentence = sentences[lastDisplayedSentenceCount]
-
-                                // 模拟打字速度：根据字数计算延迟 (设定约 60ms/字，比常人快一点但有节奏)
+                                // 模拟打字速度：根据字数计算延迟 (设定约 500ms/字)
                                 val charSpeed = 500L
                                 val jitter = kotlin.random.Random.nextLong(-100, 100) // 加入随机微调，更真实
                                 val finalDelay = (sentence.length * charSpeed + jitter).coerceIn(400L, 20000L)
-                                Log.d("wechat", "延迟: $finalDelay ms")
                                 // 先等待（模拟打字过程）
                                 delay(finalDelay)
 
@@ -1074,10 +1050,10 @@ class ChatService(
                                         )
                                     )
                                 }
-                                // 逐句跳出时暂不显示 remainder，让终结感更强
                                 currentConversation = currentConversation.updateCurrentMessages(wechatMessages)
                                 updateConversation(conversationId, currentConversation)
                             }
+                            if (!coroutineContext.isActive) return@collect
                             val finalWechatMessages = mutableListOf<UIMessage>()
                             finalWechatMessages.addAll(baseMessages)
                             finalWechatMessages.addAll(newMessages.dropLast(1))

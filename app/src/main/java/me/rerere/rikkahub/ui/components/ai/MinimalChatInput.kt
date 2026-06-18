@@ -206,7 +206,7 @@ fun MinimalChatInput(
             keyboardController?.hide()
         }
         haptics.perform(HapticPattern.Send)
-        if (state.loading) onCancelClick() else onSendClick()
+        if (state.loading && !wechatMode) onCancelClick() else onSendClick()
     }
 
     Box(
@@ -374,7 +374,7 @@ fun MinimalChatInput(
                                     .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 6.dp)
                             ) {
                                 val currentAction = when {
-                                    state.loading -> "loading"
+                                    state.loading && !wechatMode -> "loading"
                                     !state.isEmpty() -> "send"
                                     else -> "picker"
                                 }
