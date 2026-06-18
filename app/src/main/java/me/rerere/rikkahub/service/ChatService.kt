@@ -202,8 +202,10 @@ class ChatService(
                         Log.d(TAG, "Jobs running in background, service will continue if already started.")
                     }
                 } else {
-                    // 只要任务清空，必须停止服务
-                    ChatForegroundService.stop(context)
+                    delay(2000)
+                    if (_generationJobs.value.isEmpty()) {
+                        ChatForegroundService.stop(context)
+                    }
                 }
             }
         }
@@ -649,16 +651,14 @@ class ChatService(
                 val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
 
                 mutex.withLock {
-                    initializeConversation(conversationId)
                     val currentConversation = currentConversationFlow.value
-
                     // 1. 保存用户新消息
                     val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
                     val updatedConv = currentConversation.copy(
                         messageNodes = currentConversation.messageNodes + newNode,
                         updateAt = Instant.now()
                     )
-                    saveConversation(conversationId, updatedConv)
+                    updateConversation(conversationId, updatedConv)
                     conversationRepo.recordDailyActivity()
 
                     if (answer) {
@@ -1012,7 +1012,7 @@ class ChatService(
                             val remainder = fullText.substring(lastIndex).trim()
                             // --- 核心优化逻辑：逐句弹出模拟打字 ---
                             // 只要有新产生的完整句子，就进入循环逐一处理
-                            while (lastDisplayedSentenceCount < sentences.size && coroutineContext.isActive) {
+                            while (lastDisplayedSentenceCount < sentences.size && currentJob.isActive) {
                                 val sentence = sentences[lastDisplayedSentenceCount]
                                 // 模拟打字速度：根据字数计算延迟 (设定约 500ms/字)
                                 val charSpeed = 500L
@@ -1020,47 +1020,47 @@ class ChatService(
                                 val finalDelay = (sentence.length * charSpeed + jitter).coerceIn(400L, 20000L)
                                 // 先等待（模拟打字过程）
                                 delay(finalDelay)
+
+                                // 检查任务有效性
                                 if (!currentJob.isActive) {
                                     Log.d(TAG, "任务已被取消，停止 UI 局部更新")
                                     return@collect
                                 }
+
                                 // 增加已显示的句子计数
                                 lastDisplayedSentenceCount++
 
-                                // 立即更新 UI，让新句子“跳”出来
-                                val wechatMessages = buildWechatMessages(
-                                    baseMessages,
-                                    newMessages,
-                                    sentences,
-                                    lastDisplayedSentenceCount,
-                                    lastAI,
-                                    aiMessageIds
-                                )
-                                currentConversation = currentConversation.updateCurrentMessages(wechatMessages)
+                                // 局部更新逻辑：仅更新当前正在输出的 AI 消息
+                                val newParts = buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount, aiMessageIds)
+                                val updatedAiMessage = lastAI.copy(parts = newParts)
+                                val newNodes = currentConversation.messageNodes.map { node ->
+                                    if (node.messages.any { it.id == lastAI.id }) {
+                                        node.copy(messages = node.messages.map { if (it.id == lastAI.id) updatedAiMessage else it })
+                                    } else node
+                                }
+                                currentConversation = currentConversation.copy(messageNodes = newNodes)
+
                                 // 性能优化：每2句更新一次数据库
                                 if (lastDisplayedSentenceCount % 2 == 0 || lastDisplayedSentenceCount == sentences.size) {
                                     updateConversation(conversationId, currentConversation)
                                 }
                             }
-                            if (!coroutineContext.isActive) return@collect
-                            val finalWechatMessages = buildWechatMessages(
-                                baseMessages,
-                                newMessages,
-                                sentences,
-                                sentences.size,
-                                lastAI,
-                                aiMessageIds
-                            ).toMutableList()
 
+                            // 最终收尾处理
+                            if (!currentJob.isActive) return@collect
+
+                            val finalParts = buildWechatMessages(lastAI, sentences, sentences.size, aiMessageIds).toMutableList()
                             if (remainder.isNotBlank()) {
-                                finalWechatMessages.add(
-                                    lastAI.copy(
-                                        id = aiMessageIds.getOrPut(sentences.size) { Uuid.random() },
-                                        parts = listOf(UIMessagePart.Text(remainder))
-                                    )
-                                )
+                                finalParts.add(UIMessagePart.Text(remainder))
                             }
-                            currentConversation = currentConversation.updateCurrentMessages(finalWechatMessages)
+
+                            val finalUpdatedAiMessage = lastAI.copy(parts = finalParts)
+                            val finalNodes = currentConversation.messageNodes.map { node ->
+                                if (node.messages.any { it.id == lastAI.id }) {
+                                    node.copy(messages = node.messages.map { if (it.id == lastAI.id) finalUpdatedAiMessage else it })
+                                } else node
+                            }
+                            currentConversation = currentConversation.copy(messageNodes = finalNodes)
                             updateConversation(conversationId, currentConversation)
                         } else {
                             val toUpdate = baseMessages + newMessages
@@ -1127,25 +1127,16 @@ class ChatService(
     }
 
     private fun buildWechatMessages(
-        baseMessages: List<UIMessage>,
-        newMessages: List<UIMessage>,
+        lastAI: UIMessage,
         sentences: List<String>,
         count: Int,
-        lastAI: UIMessage,
         aiMessageIds: MutableMap<Int, Uuid>
-    ): List<UIMessage> {
-        val list = mutableListOf<UIMessage>()
-        list.addAll(baseMessages)
-        list.addAll(newMessages.dropLast(1))
+    ): List<UIMessagePart> {
+        val parts = mutableListOf<UIMessagePart>()
         for (i in 0 until count) {
-            list.add(
-                lastAI.copy(
-                    id = aiMessageIds.getOrPut(i) { Uuid.random() },
-                    parts = listOf(UIMessagePart.Text(sentences[i]))
-                )
-            )
+            parts.add(UIMessagePart.Text(sentences[i]))
         }
-        return list
+        return parts
     }
 
     private fun translateError(e: Throwable): Throwable {
