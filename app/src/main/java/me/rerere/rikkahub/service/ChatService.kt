@@ -630,57 +630,62 @@ class ChatService(
     ) {
         if (isTemporaryChat) temporaryConversations.add(conversationId)
 
-        val settings = settingsStore.settingsFlow.value
-        val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
-
-        // --- 修改点：微信模式也统一执行打断逻辑 ---
+        // 1. 打断逻辑：无论是不是微信模式，只要发新消息，必须终止旧的 AI 回复气泡的打字过程
         val oldJob = _generationJobs.value[conversationId]
         if (oldJob != null) {
-            Log.d(TAG, "User sent new message, cancelling previous AI response (WeChat Mode: $wechatMode).")
+            Log.d(TAG, "User sent new message, cancelling previous AI response.")
             oldJob.cancel()
-            // 注意：cancel 是协程协作式的，如果模型生成逻辑中包含阻塞调用，
-            // 建议在 generationHandler.generateText 中确保能响应取消信号
-
             removeGenerationJob(conversationId)
         }
+        // 2. 取消旧的计时任务（如果用户在 5 秒内连续发消息，则重新计时）
         wechatDebounceJobs[conversationId]?.cancel()
 
-        val job = appScope.launch {
-            try {
-                val currentConversationFlow = getConversationFlow(conversationId)
-                val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
-
-                mutex.withLock {
-                    val currentConversation = currentConversationFlow.value
-                    // 1. 保存用户新消息
-                    val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
-                    val updatedConv = currentConversation.copy(
-                        messageNodes = currentConversation.messageNodes + newNode,
-                        updateAt = Instant.now()
-                    )
-                    updateConversation(conversationId, updatedConv)
-                    conversationRepo.recordDailyActivity()
-
-                    if (answer) {
-                        // 2. 这里的逻辑直接发送，不再进行 5s 的 debounce 排队
-                        // 因为你要求“终止旧的，处理新的”
-                        handleMessageComplete(conversationId)
-                        _generationDoneFlow.emit(conversationId)
-                    }
-                }
-            } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException) {
-                    _errorFlow.emit(translateError(e))
-                }
+        // 3. 立即保存并更新 UI (在 Mutex 外层，确保响应速度)
+        appScope.launch {
+            val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
+            mutex.withLock {
+                val currentConversation = getConversationFlow(conversationId).value
+                val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
+                val updatedConv = currentConversation.copy(
+                    messageNodes = currentConversation.messageNodes + newNode,
+                    updateAt = Instant.now()
+                )
+                saveConversation(conversationId, updatedConv)
+                conversationRepo.recordDailyActivity()
             }
         }
 
-        // 将新的生成任务存入 map
-        setGenerationJob(conversationId, job)
+        // 4. 处理 AI 回复的延时触发
+        if (answer) {
+            val settings = settingsStore.settingsFlow.value
+            val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
 
-        job.invokeOnCompletion {
-            setGenerationJob(conversationId, null)
-            appScope.launch { delay(500); checkAllConversationsReferences() }
+            val debounceJob = appScope.launch {
+                // 微信模式下等待 5 秒，普通模式立即触发
+                if (wechatMode) {
+                    delay(5000)
+                }
+
+                // 执行生成任务
+                try {
+                    handleMessageComplete(conversationId)
+                    _generationDoneFlow.emit(conversationId)
+                } catch (e: Exception) {
+                    if (e !is kotlinx.coroutines.CancellationException) {
+                        _errorFlow.emit(translateError(e))
+                    }
+                }
+            }
+
+            // 将本次任务存入 map 以便下次打断
+            setGenerationJob(conversationId, debounceJob)
+            wechatDebounceJobs[conversationId] = debounceJob
+
+            debounceJob.invokeOnCompletion {
+                setGenerationJob(conversationId, null)
+                wechatDebounceJobs.remove(conversationId)
+                appScope.launch { delay(500); checkAllConversationsReferences() }
+            }
         }
     }
 
