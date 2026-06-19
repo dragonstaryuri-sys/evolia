@@ -581,6 +581,7 @@ private fun UserMessageTurn(
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)
+    val navController = LocalNavController.current
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -658,7 +659,10 @@ private fun UserMessageTurn(
                             UIAvatar(
                                 name = userNickname,
                                 value = userAvatar,
-                                modifier = Modifier.size(40.dp)
+                                modifier = Modifier.size(40.dp),
+                                onClick = {
+                                    navController.navigate(Screen.SettingUserProfile)
+                                }
                             )
                         }
                     }

@@ -8,11 +8,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
@@ -64,6 +66,28 @@ fun SettingUserProfilePage() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                UIAvatar(
+                    name = displaySetting.userNickname,
+                    value = displaySetting.userAvatar,
+                    onUpdate = { newAvatar ->
+                        localSettings = localSettings.copy(
+                            displaySetting = displaySetting.copy(userAvatar = newAvatar)
+                        )
+                    },
+                    modifier = Modifier.size(96.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.avatar_change_avatar),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             Text(
                 text = stringResource(R.string.user_profile_desc),
                 style = MaterialTheme.typography.bodyMedium,

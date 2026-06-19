@@ -1307,7 +1307,8 @@ class ChatService(
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
         if (!assistant.enableDetailMemory) return
-        val max = assistant.detailMemoryThreshold
+        val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+        val max = if (wechatMode) assistant.detailMemoryThreshold * 2 else assistant.detailMemoryThreshold
 
         val count = if (conv.contextSummaryUpToIndex >= 0) {
             conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1)
@@ -1358,7 +1359,7 @@ class ChatService(
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)
 
-            // 使用重新计算的 actualStartIdx 截取消息
+            // 使用重新计算 of actualStartIdx 截取消息
             val toSummarize = messages.subList(actualStartIdx, lastIdx + 1)
 
             // 方案 B 优化：使用 StringBuilder 避免压缩时的 OOM

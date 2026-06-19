@@ -697,7 +697,7 @@ class GenerationHandler(
             val profile = settings.userProfile
             val profileLines = buildList {
                 if (profile.appearance.isNotBlank()) add("外貌: ${profile.appearance}")
-                if (profile.birthday.isNotBlank()) add("生日: ${profile.occupation}")
+                if (profile.birthday.isNotBlank()) add("生日: ${profile.birthday}")
                 if (profile.occupation.isNotBlank()) add("职业: ${profile.occupation}")
                 if (profile.preferences.isNotBlank()) add("喜好: ${profile.preferences}")
                 if (profile.diet.isNotBlank()) add("饮食: ${profile.diet}")
@@ -769,7 +769,7 @@ class GenerationHandler(
                     - 若已存在相关记忆条目，使用`edit_memory`对原有内容修改或补充。
                     - **备注**：仅可编辑、删除带编号的**核心记忆**；L1类型历史片段仅支持查看，无法修改或删除。
 
-                    **严禁录入敏感信息**（宗教、种族歧视、政治信息等相关内容）。
+                    **严禁录入敏感信息**（宗教、种族歧题、政治信息等相关内容）。
 
                     作为用户的ai，需要**主动**记录有价值的对话片段：
                     - 事件细节、共同经历、关键语句、无法归入档案及对话梗概的字段的专属上下文内容，使用记忆工具记录。

@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.TokenUsageEntity
@@ -440,7 +441,10 @@ class AssistantDetailVM(
                     return@launch
                 }
 
-                val threshold = currentAssistant.detailMemoryThreshold.coerceAtLeast(2)
+                val wechatMode = settings.value.getEffectiveDisplaySetting(currentAssistant).wechatMode
+                val baseThreshold = currentAssistant.detailMemoryThreshold.coerceAtLeast(2)
+                val threshold = if (wechatMode) baseThreshold * 2 else baseThreshold
+
                 var archiveCount = 0
                 var currentStart = startIdx
 
