@@ -52,7 +52,8 @@ import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.encodeToString
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 
 private const val TAG = "ChatVM"
 
@@ -68,7 +69,7 @@ class ChatVM(
     private val memoryRepo: MemoryRepository,
     private val favoriteRepo: FavoriteRepository,
 ) : ViewModel() {
-
+    val isAiTyping: StateFlow<Boolean> = chatService.isAiTyping
     suspend fun getFullMemoryContent(memoryId: Int, memoryType: Int): String? {
         return memoryRepo.getFullMemoryContent(memoryId, memoryType)
     }
@@ -401,8 +402,14 @@ class ChatVM(
     }
 
     fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false) {
+        val currentSettings = settings.value
+        val currentAssistant = currentSettings.getCurrentAssistant()
+        val wechatMode = currentSettings.getEffectiveDisplaySetting(currentAssistant).wechatMode
         if (content.isEmptyInputMessage()) return
-
+        if (wechatMode && isAiTyping.value) {
+            viewModelScope.launch { _toastFlow.emit("ai在回复中，等一下...") }
+            return
+        }
         viewModelScope.launch {
             val assistantId = settings.value.assistantId
             val assistant = settings.value.assistants.find { it.id == assistantId }

@@ -60,7 +60,7 @@ fun VirtualWorldPage(id: Uuid) {
     val toaster = LocalToaster.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-
+    val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
     // 监听 Toast 信号
     LaunchedEffect(Unit) {
         vm.toastFlow.collect { message ->
@@ -267,6 +267,7 @@ fun VirtualWorldPage(id: Uuid) {
                     }
 
                     MinimalChatInput(
+                        isAiTyping = isAiTyping,
                         modifier = Modifier.align(Alignment.BottomCenter),
                         state = inputState,
                         settings = setting,

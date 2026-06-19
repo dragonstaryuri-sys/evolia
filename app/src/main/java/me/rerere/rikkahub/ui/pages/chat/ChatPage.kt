@@ -71,6 +71,7 @@ import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.CallStatus
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
@@ -207,6 +208,7 @@ private fun ChatPageContent(
     initialSearchQuery: String? = null,
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
+    val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
@@ -225,9 +227,11 @@ private fun ChatPageContent(
             isCallActive -> {
                 isCallActive = false
             }
+
             previewMode -> {
                 previewMode = false
             }
+
             else -> {
                 // 尝试正常回退，如果回退失败（栈中只有当前页）则导航回主页并清空栈
                 if (!navController.popBackStack()) {
@@ -352,17 +356,19 @@ private fun ChatPageContent(
                         onToggleTemporaryChat = {
                             isTemporaryChat = !isTemporaryChat
                         },
-                        isLoading = loadingJob != null
+                        isLoading = isAiTyping
                     )
                 },
                 containerColor = Color.Transparent,
                 contentWindowInsets = WindowInsets(0.dp)
             ) { padding ->
                 Box(
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
                 ) {
                     ChatList(
-                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 140.dp),
+                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 80.dp),
                         conversation = conversation,
                         uiItems = uiMessages,
                         state = chatListState,
@@ -415,272 +421,391 @@ private fun ChatPageContent(
                         }
                     )
 
-                val hasUserSentMessages = remember(conversation.messageNodes) {
-                    conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
-                }
-                val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
-                val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
+                    val hasUserSentMessages = remember(conversation.messageNodes) {
+                        conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                    }
+                    val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
+                    val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
 
-                AnimatedVisibility(
-                    visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages,
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut(),
-                    modifier = Modifier.align(Alignment.Center)
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.padding(32.dp)
+                    AnimatedVisibility(
+                        visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages,
+                        enter = androidx.compose.animation.fadeIn(),
+                        exit = androidx.compose.animation.fadeOut(),
+                        modifier = Modifier.align(Alignment.Center)
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
                             modifier = Modifier.padding(32.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.HistoryToggleOff,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
-                            Text(
-                                text = stringResource(R.string.temporary_chat_description),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.padding(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.HistoryToggleOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(64.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                                Text(
+                                    text = stringResource(R.string.temporary_chat_description),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
                         }
                     }
-                }
 
-                val isKeyboardOpen = WindowInsets.isImeVisible
-                val hasTextInput = inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
-                val isFirstVirtualChat by vm.isFirstVirtualChat.collectAsStateWithLifecycle()
+                    val isKeyboardOpen = WindowInsets.isImeVisible
+                    val hasTextInput =
+                        inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
+                    val isFirstVirtualChat by vm.isFirstVirtualChat.collectAsStateWithLifecycle()
 
-                val shouldShowNewChatContent = isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen && currentAssistant.isVirtualWorldMode && isFirstVirtualChat
-                val errorSelectModelText = stringResource(R.string.error_select_model_first)
-                AnimatedVisibility(
-                    visible = shouldShowNewChatContent,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.Center).offset(y = 28.dp)
-                ) {
-                    NewChatContent(
-                        assistant = currentAssistant,
-                        headerStyle = effectiveDisplaySetting.newChatHeaderStyle,
-                        contentStyle = effectiveDisplaySetting.newChatContentStyle,
-                        showAvatarInHeader = effectiveDisplaySetting.newChatShowAvatar,
-                        stats = newChatStats,
-                        hasBackgroundImage = currentAssistant.background != null,
-                        onTemplateClick = { prompt -> inputState.setMessageTextAndFocus(prompt, scope) },
-                        onNavigateToImageGen = { navController.navigate(Screen.ImageGen) },
-                        onAvatarClick = {
-                            navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                        }
-                    )
-                }
+                    val shouldShowNewChatContent =
+                        isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen && currentAssistant.isVirtualWorldMode && isFirstVirtualChat
+                    val errorSelectModelText = stringResource(R.string.error_select_model_first)
+                    AnimatedVisibility(
+                        visible = shouldShowNewChatContent,
+                        enter = fadeIn(),
+                        exit = fadeOut(),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset(y = 28.dp)
+                    ) {
+                        NewChatContent(
+                            assistant = currentAssistant,
+                            headerStyle = effectiveDisplaySetting.newChatHeaderStyle,
+                            contentStyle = effectiveDisplaySetting.newChatContentStyle,
+                            showAvatarInHeader = effectiveDisplaySetting.newChatShowAvatar,
+                            stats = newChatStats,
+                            hasBackgroundImage = currentAssistant.background != null,
+                            onTemplateClick = { prompt -> inputState.setMessageTextAndFocus(prompt, scope) },
+                            onNavigateToImageGen = { navController.navigate(Screen.ImageGen) },
+                            onAvatarClick = {
+                                navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                            }
+                        )
+                    }
 
-                if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
-                    AlertDialog(
-                        onDismissRequest = {
-                            showRegenerateConfirmDialog = false
-                            pendingRegenerateMessage = null
-                        },
-                        title = { Text(stringResource(R.string.regenerate_title))},
-                        text = {
-                            Text(stringResource(R.string.regenerate_description))
-                        },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    pendingRegenerateMessage?.let { message ->
-                                        vm.regenerateAtMessage(message, forceWipe = true)
-                                    }
-                                    showRegenerateConfirmDialog = false
-                                    pendingRegenerateMessage = null
-                                }
-                            ) { Text(stringResource(R.string.regenerate_confirm)) }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = {
+                    if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
+                        AlertDialog(
+                            onDismissRequest = {
                                 showRegenerateConfirmDialog = false
                                 pendingRegenerateMessage = null
-                            }) { Text(stringResource(R.string.cancel)) }
-                        }
-                    )
-                }
-
-                AnimatedVisibility(
-                    visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent,
-                    enter = androidx.compose.animation.fadeIn(),
-                    exit = androidx.compose.animation.fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(200.dp).background(
-                                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background.copy(alpha = 0.85f))
-                                )
-                            )
-                    )
-                }
-
-                when (effectiveDisplaySetting.chatInputStyle) {
-                    ChatInputStyle.MINIMAL -> {
-                        MinimalChatInput(
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                            state = inputState,
-                            settings = setting,
-                            conversation = conversation,
-                            mcpManager = vm.mcpManager,
-                            chatSuggestions = conversation.chatSuggestions,
-                            onClickSuggestion = { suggestion ->
-                                if (currentChatModel != null) {
-                                    vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                } else { toaster.show(errorSelectModelText, type = ToastType.Error) }
                             },
-                            onCancelClick = { loadingJob?.cancel() },
-                            enableSearch = enableWebSearch,
-                            onToggleSearch = {
-                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
-                                else if (setting.searchServices.isNotEmpty()) {
-                                    val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
-                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
-                                }
+                            title = { Text(stringResource(R.string.regenerate_title)) },
+                            text = {
+                                Text(stringResource(R.string.regenerate_description))
                             },
-                            onSendClick = {
-                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                else {
-                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@MinimalChatInput }
-                                    vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                }
-                                inputState.clearInput()
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        pendingRegenerateMessage?.let { message ->
+                                            vm.regenerateAtMessage(message, forceWipe = true)
+                                        }
+                                        showRegenerateConfirmDialog = false
+                                        pendingRegenerateMessage = null
+                                    }
+                                ) { Text(stringResource(R.string.regenerate_confirm)) }
                             },
-                            onLongSendClick = {
-                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                else {
-                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@MinimalChatInput }
-                                    vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                }
-                                inputState.clearInput()
-                            },
-                            onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
-                            onUpdateAssistant = { updatedAssistant ->
-                                vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
-                            },
-                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
-                            onClearContext = { vm.startNewTopic() },
-                            onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
-                            onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
-                            onStartCall = { isCallActive = true },
-                            onRefreshContext = { vm.refreshContext() },
-                            onDeleteFile = { vm.deleteFile(it) },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    showRegenerateConfirmDialog = false
+                                    pendingRegenerateMessage = null
+                                }) { Text(stringResource(R.string.cancel)) }
+                            }
                         )
                     }
-                    ChatInputStyle.FLOATING -> {
-                        ChatInput(
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                            state = inputState,
-                            settings = setting,
-                            conversation = conversation,
-                            mcpManager = vm.mcpManager,
-                            chatSuggestions = conversation.chatSuggestions,
-                            onClickSuggestion = { suggestion ->
-                                if (currentChatModel != null) {
-                                    vm.handleMessageSend(listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)), isTemporaryChat = isTemporaryChat)
-                                } else { toaster.show(errorSelectModelText, type = ToastType.Error) }
-                            },
-                            onCancelClick = { loadingJob?.cancel() },
-                            enableSearch = enableWebSearch,
-                            onToggleSearch = {
-                                if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
-                                else if (setting.searchServices.isNotEmpty()) {
-                                    val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
-                                    vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(validIndex))
-                                }
-                            },
-                            onSendClick = {
-                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                else {
-                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput }
-                                    vm.handleMessageSend(inputState.getContents(), isTemporaryChat = isTemporaryChat)
-                                }
-                                inputState.clearInput()
-                            },
-                            onLongSendClick = {
-                                if (inputState.isEditing()) vm.handleMessageEdit(parts = inputState.getContents(), messageId = inputState.editingMessage!!)
-                                else {
-                                    if (currentChatModel == null) { toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput }
-                                    vm.handleMessageSend(content = inputState.getContents(), answer = false, isTemporaryChat = isTemporaryChat)
-                                }
-                                inputState.clearInput()
-                            },
-                            onUpdateChatModel = { vm.setChatModel(assistant = setting.getCurrentAssistant(), model = it) },
-                            onUpdateAssistant = { updatedAssistant ->
-                                vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
-                            },
-                            onUpdateSearchService = { index -> vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(index)) },
-                            onClearContext = { vm.startNewTopic() },
-                            onUpdateConversation = { updatedConversation -> vm.updateConversation(updatedConversation); vm.saveConversationAsync() },
-                            onNavigateToLorebook = { lorebookId -> navController.navigate(Screen.SettingLorebookDetail(lorebookId)) },
-                            onStartCall = { isCallActive = true },
-                            onRefreshContext = { vm.refreshContext() },
-                            onDeleteFile = { vm.deleteFile(it) },
-                        )
-                    }
-                }
 
-                AnimatedVisibility(
-                    visible = isSyncingContext,
-                    enter = fadeIn(),
-                    exit = fadeOut()
-                ) {
-                    val infiniteTransition = rememberInfiniteTransition(label = "sync_background_breathing")
-                    val breathingAlpha by infiniteTransition.animateFloat(
-                        initialValue = 0.6f,
-                        targetValue = 0.85f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "breathing_alpha"
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background.copy(alpha = breathingAlpha))
-                            .clickable(enabled = true, onClick = {}),
-                        contentAlignment = Alignment.Center
+                    AnimatedVisibility(
+                        visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent,
+                        enter = androidx.compose.animation.fadeIn(),
+                        exit = androidx.compose.animation.fadeOut(),
+                        modifier = Modifier.align(Alignment.BottomCenter)
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            DocumentLoadingAnimation(modifier = Modifier.padding(bottom = 24.dp))
-                            Text(
-                                text = stringResource(R.string.syncing_context_animation_hint),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onBackground
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .background(
+                                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color.Transparent,
+                                            MaterialTheme.colorScheme.background.copy(alpha = 0.85f)
+                                        )
+                                    )
+                                )
+                        )
+                    }
+
+                    when (effectiveDisplaySetting.chatInputStyle) {
+                        ChatInputStyle.MINIMAL -> {
+                            MinimalChatInput(
+                                isAiTyping = isAiTyping,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                state = inputState,
+                                settings = setting,
+                                conversation = conversation,
+                                mcpManager = vm.mcpManager,
+                                chatSuggestions = conversation.chatSuggestions,
+                                onClickSuggestion = { suggestion ->
+                                    if (currentChatModel != null) {
+                                        vm.handleMessageSend(
+                                            listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)),
+                                            isTemporaryChat = isTemporaryChat
+                                        )
+                                    } else {
+                                        toaster.show(errorSelectModelText, type = ToastType.Error)
+                                    }
+                                },
+                                onCancelClick = { loadingJob?.cancel() },
+                                enableSearch = enableWebSearch,
+                                onToggleSearch = {
+                                    if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
+                                    else if (setting.searchServices.isNotEmpty()) {
+                                        val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                        vm.updateAssistantSearchMode(
+                                            me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
+                                                validIndex
+                                            )
+                                        )
+                                    }
+                                },
+                                onSendClick = {
+                                    if (isAiTyping) {
+                                        return@MinimalChatInput
+                                    }
+                                    if (inputState.isEditing()) vm.handleMessageEdit(
+                                        parts = inputState.getContents(),
+                                        messageId = inputState.editingMessage!!
+                                    )
+                                    else {
+                                        if (currentChatModel == null) {
+                                            toaster.show(
+                                                errorSelectModelText,
+                                                type = ToastType.Error
+                                            ); return@MinimalChatInput
+                                        }
+                                        vm.handleMessageSend(
+                                            inputState.getContents(),
+                                            isTemporaryChat = isTemporaryChat
+                                        )
+                                    }
+                                    inputState.clearInput()
+                                },
+                                onLongSendClick = {
+                                    if (inputState.isEditing()) vm.handleMessageEdit(
+                                        parts = inputState.getContents(),
+                                        messageId = inputState.editingMessage!!
+                                    )
+                                    else {
+                                        if (currentChatModel == null) {
+                                            toaster.show(
+                                                errorSelectModelText,
+                                                type = ToastType.Error
+                                            ); return@MinimalChatInput
+                                        }
+                                        vm.handleMessageSend(
+                                            content = inputState.getContents(),
+                                            answer = false,
+                                            isTemporaryChat = isTemporaryChat
+                                        )
+                                    }
+                                    inputState.clearInput()
+                                },
+                                onUpdateChatModel = {
+                                    vm.setChatModel(
+                                        assistant = setting.getCurrentAssistant(),
+                                        model = it
+                                    )
+                                },
+                                onUpdateAssistant = { updatedAssistant ->
+                                    vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
+                                },
+                                onUpdateSearchService = { index ->
+                                    vm.updateAssistantSearchMode(
+                                        me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
+                                            index
+                                        )
+                                    )
+                                },
+                                onClearContext = { vm.startNewTopic() },
+                                onUpdateConversation = { updatedConversation ->
+                                    vm.updateConversation(
+                                        updatedConversation
+                                    ); vm.saveConversationAsync()
+                                },
+                                onNavigateToLorebook = { lorebookId ->
+                                    navController.navigate(
+                                        Screen.SettingLorebookDetail(
+                                            lorebookId
+                                        )
+                                    )
+                                },
+                                onStartCall = { isCallActive = true },
+                                onRefreshContext = { vm.refreshContext() },
+                                onDeleteFile = { vm.deleteFile(it) },
+                            )
+                        }
+
+                        ChatInputStyle.FLOATING -> {
+                            ChatInput(
+                                isAiTyping = isAiTyping,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                state = inputState,
+                                settings = setting,
+                                conversation = conversation,
+                                mcpManager = vm.mcpManager,
+                                chatSuggestions = conversation.chatSuggestions,
+                                onClickSuggestion = { suggestion ->
+                                    if (currentChatModel != null) {
+                                        vm.handleMessageSend(
+                                            listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)),
+                                            isTemporaryChat = isTemporaryChat
+                                        )
+                                    } else {
+                                        toaster.show(errorSelectModelText, type = ToastType.Error)
+                                    }
+                                },
+                                onCancelClick = { loadingJob?.cancel() },
+                                enableSearch = enableWebSearch,
+                                onToggleSearch = {
+                                    if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
+                                    else if (setting.searchServices.isNotEmpty()) {
+                                        val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                        vm.updateAssistantSearchMode(
+                                            me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
+                                                validIndex
+                                            )
+                                        )
+                                    }
+                                },
+                                onSendClick = {
+                                    if (isAiTyping) {
+                                        return@ChatInput
+                                    }
+                                    if (inputState.isEditing()) vm.handleMessageEdit(
+                                        parts = inputState.getContents(),
+                                        messageId = inputState.editingMessage!!
+                                    )
+                                    else {
+                                        if (currentChatModel == null) {
+                                            toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
+                                        }
+                                        vm.handleMessageSend(
+                                            inputState.getContents(),
+                                            isTemporaryChat = isTemporaryChat
+                                        )
+                                    }
+                                    inputState.clearInput()
+                                },
+                                onLongSendClick = {
+                                    if (inputState.isEditing()) vm.handleMessageEdit(
+                                        parts = inputState.getContents(),
+                                        messageId = inputState.editingMessage!!
+                                    )
+                                    else {
+                                        if (currentChatModel == null) {
+                                            toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
+                                        }
+                                        vm.handleMessageSend(
+                                            content = inputState.getContents(),
+                                            answer = false,
+                                            isTemporaryChat = isTemporaryChat
+                                        )
+                                    }
+                                    inputState.clearInput()
+                                },
+                                onUpdateChatModel = {
+                                    vm.setChatModel(
+                                        assistant = setting.getCurrentAssistant(),
+                                        model = it
+                                    )
+                                },
+                                onUpdateAssistant = { updatedAssistant ->
+                                    vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
+                                },
+                                onUpdateSearchService = { index ->
+                                    vm.updateAssistantSearchMode(
+                                        me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
+                                            index
+                                        )
+                                    )
+                                },
+                                onClearContext = { vm.startNewTopic() },
+                                onUpdateConversation = { updatedConversation ->
+                                    vm.updateConversation(
+                                        updatedConversation
+                                    ); vm.saveConversationAsync()
+                                },
+                                onNavigateToLorebook = { lorebookId ->
+                                    navController.navigate(
+                                        Screen.SettingLorebookDetail(
+                                            lorebookId
+                                        )
+                                    )
+                                },
+                                onStartCall = { isCallActive = true },
+                                onRefreshContext = { vm.refreshContext() },
+                                onDeleteFile = { vm.deleteFile(it) },
                             )
                         }
                     }
-                }
 
-                // Voice Call Overlay
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = isCallActive,
-                    enter = fadeIn() + expandIn(expandFrom = Alignment.BottomCenter),
-                    exit = fadeOut() + shrinkOut(shrinkTowards = Alignment.BottomCenter)
-                ) {
-                    CallScreen(
-                        assistant = currentAssistant,
-                        status = callStatus,
-                        isMuted = isMuted,
-                        isSpeakerOn = isSpeakerOn,
-                        onMuteToggle = { isMuted = !isMuted },
-                        onSpeakerToggle = { isSpeakerOn = !isSpeakerOn },
-                        onHangup = { isCallActive = false },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    // 移除此处的独立 BackHandler，逻辑已整合至 handleBack
-                }
+                    AnimatedVisibility(
+                        visible = isSyncingContext,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        val infiniteTransition = rememberInfiniteTransition(label = "sync_background_breathing")
+                        val breathingAlpha by infiniteTransition.animateFloat(
+                            initialValue = 0.6f,
+                            targetValue = 0.85f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "breathing_alpha"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background.copy(alpha = breathingAlpha))
+                                .clickable(enabled = true, onClick = {}),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                DocumentLoadingAnimation(modifier = Modifier.padding(bottom = 24.dp))
+                                Text(
+                                    text = stringResource(R.string.syncing_context_animation_hint),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                        }
+                    }
+
+                    // Voice Call Overlay
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isCallActive,
+                        enter = fadeIn() + expandIn(expandFrom = Alignment.BottomCenter),
+                        exit = fadeOut() + shrinkOut(shrinkTowards = Alignment.BottomCenter)
+                    ) {
+                        CallScreen(
+                            assistant = currentAssistant,
+                            status = callStatus,
+                            isMuted = isMuted,
+                            isSpeakerOn = isSpeakerOn,
+                            onMuteToggle = { isMuted = !isMuted },
+                            onSpeakerToggle = { isSpeakerOn = !isSpeakerOn },
+                            onHangup = { isCallActive = false },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        // 移除此处的独立 BackHandler，逻辑已整合至 handleBack
+                    }
                 }
             }
         }
@@ -747,7 +872,12 @@ private fun TopBar(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        Box(modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().height(120.dp).background(
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(
                     brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                         colors = listOf(MaterialTheme.colorScheme.background.copy(alpha = 0.95f), Color.Transparent)
                     )
@@ -755,7 +885,10 @@ private fun TopBar(
         )
 
         Row(
-            modifier = Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            modifier = Modifier
+                .statusBarsPadding()
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // 返回按钮
@@ -808,9 +941,9 @@ private fun TopBar(
 
             Spacer(Modifier.weight(1f))
 
-            val topPillScale by androidx.compose.animation.core.animateFloatAsState(
+            val topPillScale by animateFloatAsState(
                 targetValue = if (animateTopPillIn) 1f else 0.88f,
-                animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f),
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
                 label = "top_pill_scale"
             )
 
@@ -837,7 +970,36 @@ private fun TopBar(
                         conversationId = conversationId
                     ),
                     transitionSpec = {
-                        (androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f)) + androidx.compose.animation.scaleIn(initialScale = 0.92f, animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f))) togetherWith (androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 400f)) + androidx.compose.animation.scaleOut(targetScale = 0.92f, animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 400f))) using androidx.compose.animation.SizeTransform(clip = false, sizeAnimationSpec = { _, _ -> androidx.compose.animation.core.spring(dampingRatio = 0.6f, stiffness = 300f) })
+                        (androidx.compose.animation.fadeIn(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.6f,
+                                stiffness = 300f
+                            )
+                        ) + androidx.compose.animation.scaleIn(
+                            initialScale = 0.92f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.6f,
+                                stiffness = 300f
+                            )
+                        )) togetherWith (androidx.compose.animation.fadeOut(
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 400f
+                            )
+                        ) + androidx.compose.animation.scaleOut(
+                            targetScale = 0.92f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = 0.75f,
+                                stiffness = 400f
+                            )
+                        )) using androidx.compose.animation.SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                androidx.compose.animation.core.spring(
+                                    dampingRatio = 0.6f,
+                                    stiffness = 300f
+                                )
+                            })
                     },
                     label = "topbar_actions"
                 ) { actionState ->
@@ -846,33 +1008,62 @@ private fun TopBar(
                     val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
                     when {
                         isEmptyState && !isTempChat && hideTopRightAvatar -> {
-                            Row(modifier = Modifier.height(topPillSize), verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {
+                            Row(
+                                modifier = Modifier.height(topPillSize),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = { onToggleTemporaryChat() },
+                                    modifier = Modifier.size(topPillSize)
+                                ) {
                                     Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                 }
                             }
                         }
-                        else -> Row(modifier = Modifier.height(topPillSize), verticalAlignment = Alignment.CenterVertically) {
+
+                        else -> Row(
+                            modifier = Modifier.height(topPillSize),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             when {
                                 isEmptyState && !isTempChat -> {
-                                    IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {
+                                    IconButton(
+                                        onClick = { onToggleTemporaryChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
                                         Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                     }
                                     Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(name = currentAssistant.name.ifBlank { "Character" }, value = currentAssistant.avatar, modifier = Modifier.size(30.dp), onClick = { showAssistantPicker = true })
+                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                            name = currentAssistant.name.ifBlank { "Character" },
+                                            value = currentAssistant.avatar,
+                                            modifier = Modifier.size(30.dp),
+                                            onClick = { showAssistantPicker = true })
                                     }
                                 }
+
                                 isEmptyState && isTempChat -> {
-                                    IconButton(onClick = { onToggleTemporaryChat() }, modifier = Modifier.size(topPillSize)) {
+                                    IconButton(
+                                        onClick = { onToggleTemporaryChat() },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
                                         Icon(Icons.Rounded.History, "Make Normal Chat")
                                     }
                                     Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(name = currentAssistant.name.ifBlank { "Character" }, value = currentAssistant.avatar, modifier = Modifier.size(30.dp), onClick = { showAssistantPicker = true })
+                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                            name = currentAssistant.name.ifBlank { "Character" },
+                                            value = currentAssistant.avatar,
+                                            modifier = Modifier.size(30.dp),
+                                            onClick = { showAssistantPicker = true })
                                     }
                                 }
+
                                 else -> {
                                     IconButton(onClick = { onClickMenu() }, modifier = Modifier.size(topPillSize)) {
-                                        Icon(if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search, "Chat Options")
+                                        Icon(
+                                            if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search,
+                                            "Chat Options"
+                                        )
                                     }
                                     IconButton(onClick = { onNewChat() }, modifier = Modifier.size(topPillSize)) {
                                         Icon(Icons.Rounded.Add, "New Message")

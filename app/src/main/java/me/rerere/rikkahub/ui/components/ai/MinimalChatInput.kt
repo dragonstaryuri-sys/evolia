@@ -147,6 +147,7 @@ fun MinimalChatInput(
     state: ChatInputState,
     conversation: Conversation,
     settings: Settings,
+    isAiTyping: Boolean,
     mcpManager: McpManager,
     enableSearch: Boolean,
     onToggleSearch: (Boolean) -> Unit,
@@ -390,11 +391,12 @@ fun MinimalChatInput(
 
                                 Surface(
                                     onClick = {
+                                        if (isAiTyping) return@Surface
                                         if (currentAction == "send" || currentAction == "loading") sendMessage()
                                         else showPicker = true
                                     },
                                     shape = CircleShape,
-                                    color = containerColor,
+                                    color = if (isAiTyping) MaterialTheme.colorScheme.surfaceVariant else containerColor,
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {

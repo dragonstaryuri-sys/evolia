@@ -110,6 +110,7 @@ import kotlin.coroutines.coroutineContext
 
 private const val TAG = "ChatService"
 
+
 private val inputTransformers by lazy {
     listOf(
         PlaceholderTransformer,
@@ -140,7 +141,11 @@ class ChatService(
     val mcpManager: McpManager,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val embeddingService: EmbeddingService,
-) {
+
+    ) {
+    val _isAiTyping = MutableStateFlow(false)
+    val isAiTyping: StateFlow<Boolean> = _isAiTyping.asStateFlow()
+
     data class ContextRefreshResult(
         val success: Boolean,
         val summary: String = "",
@@ -626,7 +631,8 @@ class ChatService(
         conversationId: Uuid,
         content: List<UIMessagePart>,
         answer: Boolean = true,
-        isTemporaryChat: Boolean = false
+        isTemporaryChat: Boolean = false,
+        predefinedUserNode: MessageNode? = null
     ) {
         if (isTemporaryChat) temporaryConversations.add(conversationId)
 
@@ -645,7 +651,7 @@ class ChatService(
             val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
             mutex.withLock {
                 val currentConversation = getConversationFlow(conversationId).value
-                val newNode = UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
+                val newNode = predefinedUserNode ?: UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
                 val updatedConv = currentConversation.copy(
                     messageNodes = currentConversation.messageNodes + newNode,
                     updateAt = Instant.now()
@@ -664,8 +670,15 @@ class ChatService(
                 // 微信模式下等待 5 秒，普通模式立即触发
                 if (wechatMode) {
                     delay(5000)
+                    _isAiTyping.value = true
+                } else {
+                    _isAiTyping.value = false // 普通模式明确保持关闭
                 }
 
+                val timeoutJob = launch {
+                    delay(600000)
+                    if (_isAiTyping.value) _isAiTyping.value = false
+                }
                 // 执行生成任务
                 try {
                     handleMessageComplete(conversationId)
@@ -674,6 +687,10 @@ class ChatService(
                     if (e !is kotlinx.coroutines.CancellationException) {
                         _errorFlow.emit(translateError(e))
                     }
+                } finally {
+                    // 【新增】：结束后务必关闭状态
+                    timeoutJob.cancel()
+                    _isAiTyping.value = false
                 }
             }
 
@@ -829,7 +846,8 @@ class ChatService(
                     withTimeoutOrNull(8000) {
                         if (assistant.useRagMemoryRetrieval) {
                             val lastUserMsg =
-                                currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText() ?: ""
+                                currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.toText()
+                                    ?: ""
                             if (lastUserMsg.isNotBlank()) {
                                 val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                                     assistantId = assistant.id.toString(),
@@ -970,15 +988,16 @@ class ChatService(
                     conversationId = conversationId
                 ).onCompletion {
                     val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
-                    val updated = currentConversation.copy(messageNodes = currentConversation.messageNodes.mapIndexed { idx, node ->
-                        val isLast = idx == currentConversation.messageNodes.lastIndex
-                        node.copy(messages = node.messages.map { msg ->
-                            val finished = msg.finishReasoning()
-                            if (isLast && finished.role == MessageRole.ASSISTANT && finished.generationDurationMs == null) finished.copy(
-                                generationDurationMs = duration
-                            ) else finished
-                        })
-                    }, updateAt = Instant.now())
+                    val updated =
+                        currentConversation.copy(messageNodes = currentConversation.messageNodes.mapIndexed { idx, node ->
+                            val isLast = idx == currentConversation.messageNodes.lastIndex
+                            node.copy(messages = node.messages.map { msg ->
+                                val finished = msg.finishReasoning()
+                                if (isLast && finished.role == MessageRole.ASSISTANT && finished.generationDurationMs == null) finished.copy(
+                                    generationDurationMs = duration
+                                ) else finished
+                            })
+                        }, updateAt = Instant.now())
                     currentConversation = updated
                     updateConversation(conversationId, updated)
                     if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) sendGenerationDoneNotification(
@@ -992,12 +1011,14 @@ class ChatService(
                             msg.copy(id = processMessageIds.getOrPut(index) { msg.id })
                         }
                         if (newMessages.isEmpty()) return@collect
-                        // 微信模式：流式转按句弹出 + 模拟打字延迟 + 标点优化
+                        // 微信模式检测
+                        val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+                        val wechatSentenceRegex = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]") // 分句正则
                         val lastAI = finalMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
                         val fullText = lastAI?.toContentText() ?: ""
                         val isToolCalling = lastAI?.parts?.any { it is UIMessagePart.ToolCall } == true
                         // 微信模式：流式转按句弹出 + 模拟打字延迟 + 标点优化
-                        if (wechatMode && lastAI != null && !isToolCalling && fullText.isNotBlank())  {
+                        if (wechatMode && lastAI != null && !isToolCalling && fullText.isNotBlank()) {
                             val matches = wechatSentenceRegex.findAll(fullText).toList()
                             val sentences = mutableListOf<String>()
                             var lastIndex = 0
@@ -1019,12 +1040,12 @@ class ChatService(
                             // 只要有新产生的完整句子，就进入循环逐一处理
                             while (lastDisplayedSentenceCount < sentences.size && currentJob.isActive) {
                                 val sentence = sentences[lastDisplayedSentenceCount]
-                                // 模拟打字速度：根据字数计算延迟 (设定约 500ms/字)
+                                // 模拟打字速度：根据字数计算延迟 (设定约 200ms/字)
                                 val charSpeed = 500L
-                                val jitter = kotlin.random.Random.nextLong(-100, 100) // 加入随机微调，更真实
-                                val finalDelay = (sentence.length * charSpeed + jitter).coerceIn(400L, 20000L)
-                                // 先等待（模拟打字过程）
+                                val baseTime = 300L
+                                val finalDelay = (sentence.length * charSpeed + baseTime).coerceIn(500L, 20000L)
                                 delay(finalDelay)
+                                Log.d(TAG,"测试：显示的句子：$sentence，延迟：$finalDelay ms")
 
                                 // 检查任务有效性
                                 if (!currentJob.isActive) {
@@ -1036,7 +1057,8 @@ class ChatService(
                                 lastDisplayedSentenceCount++
 
                                 // 局部更新逻辑：仅更新当前正在输出的 AI 消息
-                                val newParts = buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount, aiMessageIds)
+                                val newParts =
+                                    buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount, aiMessageIds)
                                 val updatedAiMessage = lastAI.copy(parts = newParts)
                                 val newNodes = currentConversation.messageNodes.map { node ->
                                     if (node.messages.any { it.id == lastAI.id }) {
@@ -1049,15 +1071,14 @@ class ChatService(
                                 if (lastDisplayedSentenceCount % 2 == 0 || lastDisplayedSentenceCount == sentences.size) {
                                     updateConversation(conversationId, currentConversation)
                                 }
+                                Log.d(TAG, "Sentences identified: ${sentences.size}, Remainder length: ${remainder.length}")
                             }
 
-                            // 最终收尾处理
+                            // 最终收尾处理 (只显示已经完成打字延迟的句子，剔除流式中的即时 remainder)
                             if (!currentJob.isActive) return@collect
 
-                            val finalParts = buildWechatMessages(lastAI, sentences, sentences.size, aiMessageIds).toMutableList()
-                            if (remainder.isNotBlank()) {
-                                finalParts.add(UIMessagePart.Text(remainder))
-                            }
+                            val finalParts =
+                                buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount, aiMessageIds).toMutableList()
 
                             val finalUpdatedAiMessage = lastAI.copy(parts = finalParts)
                             val finalNodes = currentConversation.messageNodes.map { node ->
@@ -1071,6 +1092,60 @@ class ChatService(
                             val toUpdate = baseMessages + newMessages
                             currentConversation = currentConversation.updateCurrentMessages(toUpdate)
                             updateConversation(conversationId, currentConversation)
+                        }
+                    }
+                }
+
+                // 最终收尾处理微信模式下未完全显示的句子及尾部剩余文本 (流式生成结束后的完整展现与延迟计算)
+                val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+                if (wechatMode) {
+                    val lastAI = currentConversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                    if (lastAI != null) {
+                        val fullText = lastAI.toContentText()
+                        val isToolCalling = lastAI.parts.any { it is UIMessagePart.ToolCall }
+                        if (!isToolCalling && fullText.isNotBlank()) {
+                            val wechatSentenceRegex = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]")
+                            val matches = wechatSentenceRegex.findAll(fullText).toList()
+                            val sentences = mutableListOf<String>()
+                            var lastIndex = 0
+                            matches.forEach { match ->
+                                var sentence = fullText.substring(lastIndex, match.range.last + 1).trim()
+                                if (sentence.isNotBlank() && !Regex("^[，,。！？!?.~\\n]$").matches(sentence)) {
+                                    val puncs = "，,。！!."
+                                    if (sentence.length >= 2 && sentence.last() in puncs && sentence[sentence.length - 2] !in puncs) {
+                                        sentence = sentence.dropLast(1)
+                                    }
+                                    sentences.add(sentence)
+                                }
+                                lastIndex = match.range.last + 1
+                            }
+                            val remainder = fullText.substring(lastIndex).trim()
+                            if (remainder.isNotBlank()) {
+                                sentences.add(remainder)
+                            }
+
+                            while (lastDisplayedSentenceCount < sentences.size && currentJob.isActive) {
+                                val sentence = sentences[lastDisplayedSentenceCount]
+                                val charSpeed = 300L
+                                val baseTime = 300L
+                                val finalDelay = (sentence.length * charSpeed + baseTime).coerceIn(500L, 20000L)
+                                delay(finalDelay)
+                                Log.d(TAG, "测试最终收尾：显示的句子：$sentence，延迟：$finalDelay ms")
+
+                                if (!currentJob.isActive) return@withTimeout
+
+                                lastDisplayedSentenceCount++
+
+                                val newParts = buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount, aiMessageIds)
+                                val updatedAiMessage = lastAI.copy(parts = newParts)
+                                val newNodes = currentConversation.messageNodes.map { node ->
+                                    if (node.messages.any { it.id == lastAI.id }) {
+                                        node.copy(messages = node.messages.map { if (it.id == lastAI.id) updatedAiMessage else it })
+                                    } else node
+                                }
+                                currentConversation = currentConversation.copy(messageNodes = newNodes)
+                                updateConversation(conversationId, currentConversation)
+                            }
                         }
                     }
                 }
@@ -1412,7 +1487,6 @@ class ChatService(
             conversation
         )
     }
-
 
 
     fun cleanupConversation(id: Uuid) {
