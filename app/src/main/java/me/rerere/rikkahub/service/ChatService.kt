@@ -647,18 +647,20 @@ class ChatService(
         wechatDebounceJobs[conversationId]?.cancel()
 
         // 3. 立即保存并更新 UI (在 Mutex 外层，确保响应速度)
+        // 3. 立即更新内存中的对话状态 (同步操作，确保 handleMessageComplete 能拿到最新消息)
+        val currentConversation = getConversationFlow(conversationId).value
+        val newNode = predefinedUserNode ?: UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
+        val updatedConv = currentConversation.copy(
+            messageNodes = currentConversation.messageNodes + newNode,
+            updateAt = Instant.now()
+        )
+        // 立即更新 Flow 缓存
+        conversations[conversationId]?.value = updatedConv
+
+        // 后台持久化到数据库
         appScope.launch {
-            val mutex = conversationMutexes.getOrPut(conversationId) { Mutex() }
-            mutex.withLock {
-                val currentConversation = getConversationFlow(conversationId).value
-                val newNode = predefinedUserNode ?: UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
-                val updatedConv = currentConversation.copy(
-                    messageNodes = currentConversation.messageNodes + newNode,
-                    updateAt = Instant.now()
-                )
-                saveConversation(conversationId, updatedConv)
-                conversationRepo.recordDailyActivity()
-            }
+            saveConversation(conversationId, updatedConv)
+            conversationRepo.recordDailyActivity()
         }
 
         // 4. 处理 AI 回复的延时触发
@@ -672,7 +674,8 @@ class ChatService(
                     delay(5000)
                     _isAiTyping.value = true
                 } else {
-                    _isAiTyping.value = false // 普通模式明确保持关闭
+                    // 普通模式不需要显示 TopBar 打字状态，但我们要重置标志位
+                    _isAiTyping.value = false
                 }
 
                 val timeoutJob = launch {
@@ -814,10 +817,13 @@ class ChatService(
         val settings = settingsStore.settingsFlow.first()
         val processMessageIds = mutableMapOf<Int, Uuid>()
         val aiMessageIds = mutableMapOf<Int, Uuid>()
-        var lastDisplayedSentenceCount = 0
+
+        // 关键：在这里强制获取 Flow 的最新值，避免拿到 sendMessage 之前的旧数据
         var currentConversation = conversations[conversationId]?.value
             ?: conversationRepo.getConversationById(conversationId)
-            ?: return // 如果数据库也没，那真的没救了
+            ?: return
+
+        var lastDisplayedSentenceCount = 0
 
         runCatching {
             currentConversation = currentConversation.copy(chatSuggestions = emptyList())
@@ -1041,7 +1047,7 @@ class ChatService(
                             while (lastDisplayedSentenceCount < sentences.size && currentJob.isActive) {
                                 val sentence = sentences[lastDisplayedSentenceCount]
                                 // 模拟打字速度：根据字数计算延迟 (设定约 200ms/字)
-                                val charSpeed = 500L
+                                val charSpeed = 200L
                                 val baseTime = 300L
                                 val finalDelay = (sentence.length * charSpeed + baseTime).coerceIn(500L, 20000L)
                                 delay(finalDelay)
