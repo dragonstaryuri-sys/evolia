@@ -928,7 +928,7 @@
   <string name="assistant_context_diaries_limit_desc">设置带入对话背景的最近日记条数</string>
   <string name="discover_page_diary_desc">管理智能体的日记</string>
   <string name="discover_page_developing">该功能正在开发中</string>
-  <string name="discover_page_diary_title">智能体日记</string>
+  <string name="discover_page_diary_title">日记本</string>
   <string name="discover_page_diary_generate">生成今日日记</string>
   <string name="discover_page_diary_empty">暂无日记。开始聊天并生成一篇吧！</string>
   <string name="discover_page_diary_delete_confirm">确定要删除这篇日记吗？</string>
