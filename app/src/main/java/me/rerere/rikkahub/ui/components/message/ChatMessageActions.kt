@@ -221,6 +221,7 @@ fun ChatMessageActionsSheet(
     onDismissRequest: () -> Unit
 ) {
     val settings = LocalSettings.current
+    val context = LocalContext.current
     val wechatMode = settings.getEffectiveDisplaySetting().wechatMode
 
     ModalBottomSheet(
@@ -234,11 +235,15 @@ fun ChatMessageActionsSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Select and Copy
+            // Select and Copy / Copy
             Card(
                 onClick = {
                     onDismissRequest()
-                    onSelectAndCopy()
+                    if (wechatMode) {
+                        context.copyMessageToClipboard(message)
+                    } else {
+                        onSelectAndCopy()
+                    }
                 },
 
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
@@ -254,12 +259,12 @@ fun ChatMessageActionsSheet(
                         .fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.SelectAll,
+                        imageVector = if (wechatMode) Icons.Rounded.ContentCopy else Icons.Rounded.SelectAll,
                         contentDescription = null,
                         modifier = Modifier.padding(4.dp)
                     )
                     Text(
-                        text = stringResource(R.string.select_and_copy),
+                        text = stringResource(if (wechatMode) R.string.copy else R.string.select_and_copy),
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
