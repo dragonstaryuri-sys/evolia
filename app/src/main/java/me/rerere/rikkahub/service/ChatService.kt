@@ -1292,8 +1292,20 @@ class ChatService(
                     item.copy(text = item.text.replace(htmlRegex, "").trim().take(4000))
                 }
 
-                Log.i(TAG, "Return simplified search results for better model compatibility")
+                Log.i(TAG, "Return search results with dual-field support for UI and model compatibility")
                 buildJsonObject {
+                    // UI 依然使用 items, url, text 字段
+                    put("items", JsonArray(cleanedItems.map { item ->
+                        buildJsonObject {
+                            put("title", item.title)
+                            put("url", item.url)
+                            put("text", item.text)
+                            // 同时保留 link 和 snippet 提高模型理解度
+                            put("link", item.url)
+                            put("snippet", item.text)
+                        }
+                    }))
+                    // 顶层也放一个 results 供某些对 JSON 结构敏感的模型直接读取
                     put("results", JsonArray(cleanedItems.map { item ->
                         buildJsonObject {
                             put("title", item.title)

@@ -708,7 +708,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
     val query = argsObj?.get("query")?.jsonPrimitiveOrNull?.contentOrNull
     val resultObj = entry.resultJson as? JsonObject
     val answer = resultObj?.get("answer")?.jsonPrimitiveOrNull?.contentOrNull
-    val items = (resultObj?.get("items") as? JsonArray) ?: JsonArray(emptyList())
+    val items = (resultObj?.get("items") ?: resultObj?.get("results")) as? JsonArray ?: JsonArray(emptyList())
 
     if (!query.isNullOrBlank()) {
         Text(
@@ -747,9 +747,9 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
             items.forEach { item ->
                 val obj = item as? JsonObject ?: return@forEach
                 val title = obj["title"]?.jsonPrimitiveOrNull?.contentOrNull
-                val url = obj["url"]?.jsonPrimitiveOrNull?.contentOrNull
-                val snippet = obj["text"]?.jsonPrimitiveOrNull?.contentOrNull
-                val host = url?.let { Uri.parse(it).host }
+                val url = (obj["url"] ?: obj["link"])?.jsonPrimitiveOrNull?.contentOrNull
+                val snippet = (obj["text"] ?: obj["snippet"] ?: obj["content"])?.jsonPrimitiveOrNull?.contentOrNull
+                val host = url?.let { runCatching { Uri.parse(it).host }.getOrNull() }
 
                 Surface(
                     shape = AppShapes.CardSmall,

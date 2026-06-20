@@ -173,7 +173,8 @@ fun ToolCallItem(
                     }
                 }
                 if (toolName == "search_web") {
-                    val answer = (content as? JsonObject)?.get("answer")?.jsonPrimitiveOrNull?.contentOrNull
+                    val contentObj = content as? JsonObject
+                    val answer = contentObj?.get("answer")?.jsonPrimitiveOrNull?.contentOrNull
                     if (answer != null) {
                         Text(
                             text = answer,
@@ -184,7 +185,9 @@ fun ToolCallItem(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    val items = (content as? JsonObject)?.get("items")?.jsonArray ?: emptyList()
+
+                    // 兼容逻辑：查找 items 或 results
+                    val items = (contentObj?.get("items") ?: contentObj?.get("results"))?.jsonArray ?: emptyList()
                     if (items.isNotEmpty()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -192,7 +195,9 @@ fun ToolCallItem(
                         ) {
                             FaviconRow(
                                 urls = items.mapNotNull {
-                                    (it as? JsonObject)?.get("url")?.jsonPrimitiveOrNull?.contentOrNull
+                                    val itemObj = it as? JsonObject
+                                    // 兼容逻辑：查找 url 或 link
+                                    (itemObj?.get("url") ?: itemObj?.get("link"))?.jsonPrimitiveOrNull?.contentOrNull
                                 },
                                 size = 18.dp,
                             )
@@ -305,7 +310,8 @@ private fun ToolCallPreviewSheet(
                             )
                         )
                         val contentObj = content as? JsonObject
-                        val items = contentObj?.get("items")?.jsonArray ?: emptyList()
+                        // 兼容逻辑：items 或 results
+                        val items = (contentObj?.get("items") ?: contentObj?.get("results"))?.jsonArray ?: emptyList()
                         val answer = contentObj?.get("answer")?.jsonPrimitive?.contentOrNull
                         if (items.isNotEmpty()) {
                             LazyColumn(
@@ -335,11 +341,14 @@ private fun ToolCallPreviewSheet(
                                 items(items.size, key = { index -> "search_item_$index" }) { index ->
                                     val it = items[index]
                                     val itemObj = it as? JsonObject ?: return@items
-                                    val url = itemObj["url"]?.jsonPrimitive?.content ?: return@items
+                                    // 兼容逻辑：url 或 link
+                                    val url = (itemObj["url"] ?: itemObj["link"])?.jsonPrimitive?.content ?: return@items
                                     val title =
                                         itemObj["title"]?.jsonPrimitive?.content
                                             ?: return@items
-                                    val text = itemObj["text"]?.jsonPrimitive?.content ?: return@items
+                                    // 兼容逻辑：text, snippet 或 content
+                                    val text = (itemObj["text"] ?: itemObj["snippet"] ?: itemObj["content"])?.jsonPrimitive?.content ?: ""
+
                                     Card(
                                         onClick = {
                                             navController.navigate(Screen.WebView(url = url))
