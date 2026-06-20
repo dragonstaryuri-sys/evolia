@@ -518,8 +518,13 @@ class ChatCompletionsAPI(
                         // 2. 无可见内容 (例如只有思维链或工具调用)
                         textParts.isEmpty() && imageParts.isEmpty() -> {
                             // 重要：DeepSeek 规范，有 tool_calls 时 content 必须为 null
+                            // 智谱 (open.bigmodel.cn) 在有 tool_calls 时，content 建议为 "" 而不是 null，否则可能导致模型忽略该 turn
                             if (toolCalls.isNotEmpty()) {
-                                put("content", JsonPrimitive(null as String?))
+                                if (host == "open.bigmodel.cn") {
+                                    put("content", "")
+                                } else {
+                                    put("content", JsonPrimitive(null as String?))
+                                }
                             } else {
                                 put("content", "")
                             }

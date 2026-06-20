@@ -84,6 +84,7 @@ import kotlin.text.appendLine
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import kotlinx.coroutines.delay
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -358,7 +359,7 @@ class GenerationHandler(
                             content = buildJsonObject {
                                 put(
                                     "error",
-                                    JsonPrimitive("已达到搜索次数上限（1次）。如果仍然没有找到相关信息，请直接告知用户在当前搜索中未找到匹配内容，或者问用户要不要继续搜索。")
+                                    JsonPrimitive("已达到搜索次数上限（1次）。获得结果后请直接总结并回复用户，不要再次搜索。")
                                 )
                             },
                             arguments = runCatching {
@@ -384,18 +385,16 @@ class GenerationHandler(
 
                     val args = json.parseToJsonElement(sanitizedArgs)
 
-                    // 2. 【关键修正】将修复后的完整 JSON 同步回消息历史中
-                    // 这样下一轮对话时，AI 看到的将是格式正确的 ToolCall，它就不会再怀疑自己没传参数了
-                    if (sanitizedArgs != toolCall.arguments) {
-                        currentMessages = currentMessages.map { msg ->
-                            if (msg.parts.any { it === toolCall }) {
-                                msg.copy(parts = msg.parts.map { part ->
-                                    if (part === toolCall) {
-                                        (part).copy(arguments = sanitizedArgs)
-                                    } else part
-                                })
-                            } else msg
-                        }
+                    // 1. 【核心修正】将修复后的完整 JSON 参数同步回消息历史中 (针对 GLM 的关键修复)
+                    // 如果不回写，GLM 在下一轮可能会认为自己发送了一个错误的请求，从而循环尝试
+                    currentMessages = currentMessages.map { msg ->
+                        if (msg.parts.any { it === toolCall }) {
+                            msg.copy(parts = msg.parts.map { part ->
+                                if (part === toolCall) {
+                                    (part as UIMessagePart.ToolCall).copy(arguments = sanitizedArgs)
+                                } else part
+                            })
+                        } else msg
                     }
 
                     Log.i(TAG, "generateText: executing tool ${tool.name} with args: $args")

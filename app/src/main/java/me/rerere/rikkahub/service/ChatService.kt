@@ -439,7 +439,7 @@ class ChatService(
                 val isNewConversation = currentConvInDb == null ||
                     currentConvInDb.currentMessages.none { it.role == MessageRole.USER }
 
-                // 只有进入“全新会话”时，才触发对上一个会话 (oldId) 的归档和同步动画
+                // 只有进入“全新会话”时，才触发对上一个会话 (oldId) 的归档 and 同步动画
                 if (isNewConversation) {
                     val oldConv = conversationRepo.getConversationById(oldId)
 
@@ -1292,20 +1292,18 @@ class ChatService(
                     item.copy(text = item.text.replace(htmlRegex, "").trim().take(4000))
                 }
 
-                Log.i(TAG, "Return raw search results directly (no summary model)")
+                Log.i(TAG, "Return simplified search results for better model compatibility")
                 buildJsonObject {
-                    put("items", JsonArray(cleanedItems.mapIndexed { i, item ->
+                    put("results", JsonArray(cleanedItems.map { item ->
                         buildJsonObject {
-                            put("id", Uuid.random().toString().take(6))
-                            put("index", i + 1)
                             put("title", item.title)
-                            put("url", item.url)
-                            put("text", item.text)
+                            put("link", item.url)
+                            put("snippet", item.text)
                         }
                     }))
                 }
             }, systemPrompt = { _, _ ->
-                "## ## tool: search_web\\n\\nNote: Only 1 search allowed per turn. If search fails, inform user."
+                "## tool: search_web\n\nNote: Use the search results to answer the user's question directly. Only 1 search allowed per turn."
             }))
         }
     }
