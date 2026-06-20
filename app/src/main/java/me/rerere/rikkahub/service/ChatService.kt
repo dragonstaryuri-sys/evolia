@@ -366,7 +366,9 @@ class ChatService(
 
                 setGenerationJob(conversationId, job)
                 job.invokeOnCompletion {
-                    setGenerationJob(conversationId, null)
+                    _generationJobs.update { current ->
+                        if (current[conversationId] == job) current - conversationId else current
+                    }
                     appScope.launch { delay(500); checkAllConversationsReferences() }
                 }
 
@@ -702,8 +704,12 @@ class ChatService(
             wechatDebounceJobs[conversationId] = debounceJob
 
             debounceJob.invokeOnCompletion {
-                setGenerationJob(conversationId, null)
-                wechatDebounceJobs.remove(conversationId)
+                _generationJobs.update { current ->
+                    if (current[conversationId] == debounceJob) current - conversationId else current
+                }
+                wechatDebounceJobs.compute(conversationId) { _, current ->
+                    if (current == debounceJob) null else current
+                }
                 appScope.launch { delay(500); checkAllConversationsReferences() }
             }
         }
@@ -800,9 +806,10 @@ class ChatService(
         }
         setGenerationJob(conversationId, job)
         job.invokeOnCompletion {
-            setGenerationJob(
-                conversationId, null
-            ); appScope.launch { delay(500); checkAllConversationsReferences() }
+            _generationJobs.update { current ->
+                if (current[conversationId] == job) current - conversationId else current
+            }
+            appScope.launch { delay(500); checkAllConversationsReferences() }
         }
     }
 
