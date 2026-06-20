@@ -671,9 +671,9 @@ class ChatService(
             val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
 
             val debounceJob = appScope.launch {
-                // 微信模式下等待 5 秒，普通模式立即触发
+                // 微信模式下等待 8 秒，普通模式立即触发
                 if (wechatMode) {
-                    delay(5000)
+                    delay(8000)
                     _isAiTyping.value = true
                 } else {
                     // 普通模式不需要显示 TopBar 打字状态，但我们要重置标志位
