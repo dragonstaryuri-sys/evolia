@@ -19,6 +19,7 @@ import me.rerere.rikkahub.data.datastore.SecureStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
+import me.rerere.rikkahub.core.data.model.Avatar
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -294,6 +295,20 @@ class WebdavSync(
             }
 
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
+                // 收集正在使用的头像文件名
+                val usedAvatarFiles = mutableSetOf<String>()
+                fun collectAvatar(avatar: Avatar) {
+                    if (avatar is Avatar.Image) {
+                        val filename = avatar.url.substringAfterLast('/')
+                        if (filename.isNotBlank()) {
+                            usedAvatarFiles.add(filename)
+                        }
+                    }
+                }
+                collectAvatar(settings.displaySetting.userAvatar)
+                settings.assistants.forEach { collectAvatar(it.avatar) }
+                LogUtil.i(TAG, "Collected ${usedAvatarFiles.size} in-use avatar files")
+
                 // 备份文件目录
                 val foldersToBackup = listOf("upload", "avatars", "lorebook_attachments")
                 foldersToBackup.forEach { folderName ->
@@ -301,9 +316,18 @@ class WebdavSync(
                     if (folder.exists() && folder.isDirectory) {
                         val files = folder.listFiles()?.filter { it.isFile }
                         LogUtil.i(TAG, "Found ${files?.size ?: 0} files in $folderName folder")
-                        files?.forEach {
-                            addFileToZip(zipOut, it, "$folderName/${it.name}")
-                            LogUtil.d(TAG, "Added file to backup: $folderName/${it.name}")
+                        files?.forEach { file ->
+                            val shouldBackup = if (folderName == "avatars") {
+                                file.name in usedAvatarFiles
+                            } else {
+                                true
+                            }
+                            if (shouldBackup) {
+                                addFileToZip(zipOut, file, "$folderName/${file.name}")
+                                LogUtil.d(TAG, "Added file to backup: $folderName/${file.name}")
+                            } else {
+                                LogUtil.d(TAG, "Skipped historical avatar: $folderName/${file.name}")
+                            }
                         }
                     }
                 }
