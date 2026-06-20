@@ -465,9 +465,6 @@ class MemoryRepository(
             chatSegmentDAO.getSegmentsByAssistant(assistantId)
                 .filter { it.conversationId != excludeConversationId }
         } else emptyList()
-
-        Log.d(TAG, "DB Candidates: CORE=${memories.size}, SEGMENTS=${segments.size}")
-
         val memoryScores = memories.mapNotNull { memory ->
             val effectiveKeywords = if (memory.keywords.isNullOrBlank()) {
                 val local = KeywordExtractor.extract(memory.content)
@@ -523,9 +520,6 @@ class MemoryRepository(
                 }
                 MemoryRetrievalMode.OFF -> 0f
             }
-
-            Log.v(TAG, "Segment ID=${segment.id} Score=$score (Sim=$similarity, Rec=$recency, Recall=$recallScore)")
-
             if (score >= similarityThreshold) Triple(segment, score, false) else null
         }
 
