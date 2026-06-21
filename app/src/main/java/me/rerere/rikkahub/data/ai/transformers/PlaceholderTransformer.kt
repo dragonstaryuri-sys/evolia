@@ -61,7 +61,9 @@ fun buildPlaceholders(block: PlaceholderBuilder.() -> Unit): Map<String, Placeho
 object DefaultPlaceholderProvider : PlaceholderProvider {
     private var lastLocationCache: android.location.Location? = null
     private var lastAddressCache: String? = null
+    private var lastUpdateTime = 0L
     private const val LOCATION_UPDATE_THRESHOLD = 50.0f
+    private const val TIME_UPDATE_THRESHOLD = 5 * 60 * 1000L // 5 分钟频率锁
 
     override val placeholders: Map<String, PlaceholderInfo> = buildPlaceholders {
         placeholder("cur_date", { Text(stringResource(R.string.placeholder_current_date)) }) {
@@ -127,11 +129,16 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
                         } else null
 
                     location?.let { loc ->
-                        // 50米距离缓存逻辑
+                        val now = System.currentTimeMillis()
                         val lastLoc = lastLocationCache
                         val cachedAddr = lastAddressCache
+
+                        // 严格频率控制：5分钟内或者位移小于50米，都返回缓存内容
                         if (lastLoc != null && cachedAddr != null) {
-                            if (loc.distanceTo(lastLoc) < LOCATION_UPDATE_THRESHOLD) {
+                            val isWithinTime = now - lastUpdateTime < TIME_UPDATE_THRESHOLD
+                            val isWithinDistance = loc.distanceTo(lastLoc) < LOCATION_UPDATE_THRESHOLD
+
+                            if (isWithinTime || isWithinDistance) {
                                 return@placeholder cachedAddr
                             }
                         }
@@ -148,9 +155,10 @@ object DefaultPlaceholderProvider : PlaceholderProvider {
                                 "${loc.latitude},${loc.longitude}"
                             }
 
-                            // 更新缓存
+                            // 更新缓存和最后更新时间
                             lastLocationCache = loc
                             lastAddressCache = result
+                            lastUpdateTime = now
 
                             result
                         } catch (e: Exception) {

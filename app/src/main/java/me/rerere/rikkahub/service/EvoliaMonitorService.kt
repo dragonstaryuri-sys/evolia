@@ -92,6 +92,7 @@ class EvoliaMonitorService : AccessibilityService() {
         pollingJob?.cancel()
         pollingJob = scope.launch {
             while (isActive) {
+                // 恢复 30 秒轮询，确保 WiFi 等非定位状态实时同步
                 delay(30_000)
                 syncDeviceState()
             }
@@ -163,7 +164,7 @@ class EvoliaMonitorService : AccessibilityService() {
     ) {
         val now = System.currentTimeMillis()
 
-        // --- 核心隐私锁：全局 5 分钟频率限制 ---
+        // --- 地理位置专用频率锁：5 分钟 ---
         val canRefreshLocation = now - lastLocationCheckTime >= 5 * 60 * 1000
         if (canRefreshLocation) {
             lastLocationCheckTime = now
@@ -177,7 +178,7 @@ class EvoliaMonitorService : AccessibilityService() {
             val isScreenOn = screenOn ?: powerManager.isInteractive
             val packageName = (if (isScreenOn) newPackage ?: oldState.foregroundApp else "").ifBlank { "" }
 
-            // 1. 更新时长与应用状态 (实时更新)
+            // 1. 更新时长与应用状态 (始终保持 30s 实时)
             var appSessionStart = oldState.appSessionStartMs
             var continuousStart = oldState.continuousSessionStartMs
             if (!isScreenOn) {
@@ -203,7 +204,7 @@ class EvoliaMonitorService : AccessibilityService() {
                 realTodayDurationMs = maxOf(systemTotal, oldState.todayDurationMs, now - appSessionStart)
             }
 
-            // 2. 更新地理位置 (受 5 分钟锁保护)
+            // 2. 更新地理位置 (只有在满足 5 分钟锁时才真正调用系统调用)
             val locationResult = if (canRefreshLocation) {
                 if (ContextCompat.checkSelfPermission(
                         this@EvoliaMonitorService,
@@ -238,10 +239,11 @@ class EvoliaMonitorService : AccessibilityService() {
                     }
                 } else Triple(oldState.latitude, oldState.longitude, oldState.locationName)
             } else {
+                // 未到 5 分钟，复用旧位置，不触发请求
                 Triple(oldState.latitude, oldState.longitude, oldState.locationName)
             }
 
-            // 3. 更新 WiFi 状态
+            // 3. 更新 WiFi 状态 (始终保持 30s 实时)
             val wifiInfo = getWifiStatus()
 
             val currentState = oldState.copy(
