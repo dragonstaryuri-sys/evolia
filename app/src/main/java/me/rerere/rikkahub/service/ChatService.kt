@@ -427,6 +427,7 @@ class ChatService(
 
     suspend fun initializeConversation(conversationId: Uuid, targetAssistantId: Uuid? = null) {
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
+        val isGenerating = _generationJobs.value[conversationId] != null
         val currentConv = conversations[conversationId]?.value ?: currentConvInDb
 
         val currentAssistantId = targetAssistantId
@@ -486,7 +487,12 @@ class ChatService(
 
         lastConversationId = conversationId
         if (currentConvInDb != null) {
-            updateConversation(conversationId, currentConvInDb)
+            if (isGenerating) {
+                // 【核心修复】：如果正在生成中，绝对不能用数据库的旧数据覆盖内存状态！
+                Log.d(TAG, "会话 $conversationId 正在后台生成中，跳过内存重置以保护当前生成状态")
+            } else {
+                updateConversation(conversationId, currentConvInDb)
+            }
             if (targetAssistantId == null) {
                 settingsStore.updateAssistant(currentConvInDb.assistantId)
             }
@@ -831,6 +837,7 @@ class ChatService(
             ?: return
 
         var lastDisplayedSentenceCount = 0
+        var lastTotalFullText = ""
 
         runCatching {
             currentConversation = currentConversation.copy(chatSuggestions = emptyList())
@@ -895,10 +902,20 @@ class ChatService(
 
             val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
-            // 核心修改：如果是微信模式，我们需要把本轮用户连续发送的消息拼接后发送给模型
             val baseMessages = currentConversation.currentMessages.let {
-                if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
+                val raw = if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
+                // 核心过滤：剔除掉内容为空且没有工具调用的助手消息
+                val filtered = raw.filter { msg ->
+                    msg.role != MessageRole.ASSISTANT ||
+                        msg.toContentText().isNotBlank() ||
+                        msg.parts.any { it is UIMessagePart.ToolCall }
+                }
+                if (filtered.size < raw.size) {
+                    Log.w(TAG, "已自动过滤历史中的 ${raw.size - filtered.size} 条空 AI 消息，防止干扰上下文")
+                }
+                filtered
             }
+            Log.d(TAG, "发送给 AI 的上下文消息总数: ${baseMessages.size}")
 
             val finalContextMessages = if (wechatMode) {
                 val messages = baseMessages.toMutableList()
@@ -1024,19 +1041,24 @@ class ChatService(
                             msg.copy(id = processMessageIds.getOrPut(index) { msg.id })
                         }
                         if (newMessages.isEmpty()) return@collect
+                        val lastAiMsg = newMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                        if (lastAiMsg != null) {
+                            val content = lastAiMsg.toContentText()
+                            lastTotalFullText = content
+                            Log.v(TAG, "收到 AI 消息块 (ID: ${lastAiMsg.id}), 长度: ${content.length}, 内容预览: '${content.take(50)}...'")
+                        }
+                        val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
                         val containsNewAssistant = newMessages.any { it.role == MessageRole.ASSISTANT }
                         if (containsNewAssistant && currentConversation.messageNodes.none { node ->
                                 node.messages.any { m -> newMessages.any { nm -> nm.id == m.id } }
                             }) {
                             // 第一次见到这条 AI 消息，将其加入列表（初始 parts 保持为空，由微信模式逻辑填充）
                             val toUpdate = baseMessages + newMessages.map {
-                                if (it.role == MessageRole.ASSISTANT) it.copy(parts = emptyList()) else it
+                                if (it.role == MessageRole.ASSISTANT && wechatMode) it.copy(parts = emptyList()) else it
                             }
                             currentConversation = currentConversation.updateCurrentMessages(toUpdate)
                             updateConversation(conversationId, currentConversation)
                         }
-                        // 微信模式检测
-                        val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
                         val wechatSentenceRegex = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]") // 分句正则
                         val lastAI = finalMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
                         val fullText = lastAI?.toContentText() ?: ""
@@ -1113,9 +1135,19 @@ class ChatService(
                             currentConversation = currentConversation.copy(messageNodes = finalNodes)
                             updateConversation(conversationId, currentConversation)
                         } else {
-                            val toUpdate = baseMessages + newMessages
-                            currentConversation = currentConversation.updateCurrentMessages(toUpdate)
-                            updateConversation(conversationId, currentConversation)
+                            val lastAiInNew = newMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                            val isEffectivelyEmpty = lastAiInNew != null &&
+                                lastAiInNew.toContentText().trim().isEmpty() &&
+                                lastAiInNew.parts.none { it is UIMessagePart.ToolCall }
+
+                            if (lastAiInNew == null || !isEffectivelyEmpty) {
+                                val toUpdate = baseMessages + newMessages
+                                currentConversation = currentConversation.updateCurrentMessages(toUpdate)
+                                updateConversation(conversationId, currentConversation)
+                            } else {
+                                // 这里打印出到底收到了什么，导致它没被当成空消息
+                                Log.w(TAG, "检测到 AI 返回了实质空消息。内容原文: '${lastAiInNew.toContentText()}'，已跳过更新")
+                            }
                         }
                     }
                 }
@@ -1125,7 +1157,7 @@ class ChatService(
                 if (wechatMode) {
                     val lastAI = currentConversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
                     if (lastAI != null) {
-                        val fullText = lastAI.toContentText()
+                        val fullText = lastTotalFullText
                         val isToolCalling = lastAI.parts.any { it is UIMessagePart.ToolCall }
                         if (!isToolCalling && fullText.isNotBlank()) {
                             val wechatSentenceRegex = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]")
@@ -1150,7 +1182,7 @@ class ChatService(
 
                             while (lastDisplayedSentenceCount < sentences.size && currentJob.isActive) {
                                 val sentence = sentences[lastDisplayedSentenceCount]
-                                val charSpeed = 300L
+                                val charSpeed = 200L
                                 val baseTime = 300L
                                 val finalDelay = (sentence.length * charSpeed + baseTime).coerceIn(500L, 20000L)
                                 delay(finalDelay)
@@ -1513,6 +1545,7 @@ class ChatService(
     }
 
     suspend fun saveConversation(id: Uuid, conversation: Conversation) {
+        Log.v(TAG, "Saving conversation $id, messages: ${conversation.currentMessages.size}")
         if (temporaryConversations.contains(id)) {
             updateConversation(id, conversation); return
         }

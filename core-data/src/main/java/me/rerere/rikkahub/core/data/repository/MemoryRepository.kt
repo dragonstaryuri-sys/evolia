@@ -448,14 +448,18 @@ class MemoryRepository(
         includeCore: Boolean = true,
         includeEpisodes: Boolean = true,
         mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID,
-        excludeConversationId: String? = null
+        excludeConversationId: String? = null,
+        onEmbeddingFailure: (suspend (Exception) -> Unit)? = null
     ): List<Pair<AssistantMemory, Float>> {
         if (mode == MemoryRetrievalMode.OFF || query.trim().isBlank()) return emptyList()
         Log.d(TAG, "RAG Retrieval started: query='$query', threshold=$similarityThreshold, includeEpisodes=$includeEpisodes")
 
         val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
-            try { embeddingService.embed(query, assistantId) } catch (e: Exception) {
+            try {
+                embeddingService.embed(query, assistantId)
+            } catch (e: Exception) {
                 Log.e(TAG, "Embedding failed: ${e.message}")
+                onEmbeddingFailure?.invoke(e)
                 null
             }
         } else null
@@ -471,7 +475,7 @@ class MemoryRepository(
                 memoryDAO.updateMemory(memory.copy(keywords = local))
                 local
             } else memory.keywords
-            val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
+            val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC || queryEmbedding == null) {
                 calculateKeywordScore(query, effectiveKeywords)
             } else 0f
 
@@ -481,7 +485,9 @@ class MemoryRepository(
             } else 0f
 
             val score = when(mode) {
-                MemoryRetrievalMode.SEMANTIC -> similarity * 1.05f
+                MemoryRetrievalMode.SEMANTIC -> {
+                    if (queryEmbedding == null) keywordScore else similarity * 1.05f
+                }
                 MemoryRetrievalMode.KEYWORD -> keywordScore
                 MemoryRetrievalMode.HYBRID -> {
                     if (queryEmbedding == null) keywordScore
@@ -494,7 +500,7 @@ class MemoryRepository(
         }
 
         val segmentScores = segments.mapNotNull { segment ->
-            val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC) {
+            val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC || queryEmbedding == null) {
                 calculateKeywordScore(query, segment.keywords)
             } else 0f
 
@@ -512,7 +518,10 @@ class MemoryRepository(
 
             val score = when(mode) {
                 // 相似度/关键词 70%, 新鲜度 20%, 召回率 10%
-                MemoryRetrievalMode.SEMANTIC -> (similarity * 0.8f) + (recency * 0.2f)
+                MemoryRetrievalMode.SEMANTIC -> {
+                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
+                    else (similarity * 0.8f) + (recency * 0.2f)
+                }
                 MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.8f) + (recency * 0.2f)
                 MemoryRetrievalMode.HYBRID -> {
                     if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
