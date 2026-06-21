@@ -242,6 +242,25 @@ fun AssistantToolsSubPage(
                     }
                 )
 
+                // Web Page Reader
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_web_page_reader_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_web_page_reader_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.WebPageReader),
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.WebPageReader
+                                } else {
+                                    assistant.localTools - LocalToolOption.WebPageReader
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    }
+                )
+
                 // Peek User (手机状态监控)
                 SettingGroupItem(
                     title = stringResource(R.string.assistant_page_local_tools_peek_user_title),

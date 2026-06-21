@@ -44,4 +44,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("peek_user")
     data object PeekUser : LocalToolOption()
+
+    @Serializable
+    @SerialName("web_page_reader")
+    data object WebPageReader : LocalToolOption()
 }

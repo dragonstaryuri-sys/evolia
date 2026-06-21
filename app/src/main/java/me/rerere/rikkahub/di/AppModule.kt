@@ -42,7 +42,8 @@ val appModule = module {
             extendedStateRepo = get(),
             milestoneRepo = get(),
             monitorTaskRepo = get(),
-            userDeviceStateRepo = get()
+            userDeviceStateRepo = get(),
+            okHttpClient = get(),
         )
     }
 

@@ -40,6 +40,9 @@ import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 import me.rerere.rikkahub.core.data.repository.UserDeviceStateRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
 import kotlinx.coroutines.flow.MutableSharedFlow
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.jsoup.Jsoup
 
 // 用于在 Tool 和 AccessibilityService 之间传递即时控制指令
 object DeviceCommandHub {
@@ -58,6 +61,7 @@ fun rememberLocalTools(): LocalTools {
     val milestoneRepo = koinInject<MilestoneRepository>()
     val monitorTaskRepo = koinInject<AgentMonitorTaskRepository>()
     val userDeviceStateRepo = koinInject<UserDeviceStateRepository>()
+    val okHttpClient = koinInject<OkHttpClient>()
 
     return remember {
         LocalTools(
@@ -70,7 +74,8 @@ fun rememberLocalTools(): LocalTools {
             extendedStateRepo,
             milestoneRepo,
             monitorTaskRepo,
-            userDeviceStateRepo
+            userDeviceStateRepo,
+            okHttpClient
         )
     }
 }
@@ -85,7 +90,8 @@ class LocalTools(
     private val extendedStateRepo: AssistantExtendedStateRepository,
     private val milestoneRepo: MilestoneRepository,
     private val monitorTaskRepo: AgentMonitorTaskRepository,
-    private val userDeviceStateRepo: UserDeviceStateRepository
+    private val userDeviceStateRepo: UserDeviceStateRepository,
+    private val okHttpClient: OkHttpClient
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -1675,6 +1681,61 @@ class LocalTools(
         )
     }
 
+    fun getWebPageReaderTools(): List<Tool> {
+        return listOf(
+            Tool(
+                name = "fetch_url_content",
+                description = "获取指定 URL 网页的内容。该工具会自动提取网页正文并转换为易读的文本，适合用于阅读新闻、文章、文档等。",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("url", buildJsonObject {
+                                put("type", "string")
+                                put("description", "要访问的完整 URL 链接")
+                            })
+                        },
+                        required = listOf("url")
+                    )
+                },
+                execute = {
+                    val url = it.jsonObject["url"]?.jsonPrimitive?.contentOrNull ?: ""
+                    if (url.isBlank()) {
+                        return@Tool buildJsonObject { put("error", "URL 不能为空") }
+                    }
+
+                    withContext(Dispatchers.IO) {
+                        try {
+                            val request = Request.Builder()
+                                .url(url)
+                                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                                .build()
+
+                            okHttpClient.newCall(request).execute().use { response ->
+                                if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+                                val html = response.body?.string() ?: ""
+
+                                val doc = Jsoup.parse(html, url)
+                                // 移除不必要的标签
+                                doc.select("script, style, noscript, iframe, head").remove()
+                                val bodyText = doc.body().text()
+
+                                buildJsonObject {
+                                    put("content", bodyText.take(5000))
+                                    put("status", response.code)
+                                    if (bodyText.length > 5000) {
+                                        put("note", "内容过长，已截断。如果需要更多内容或特定解析，请尝试使用 eval_python。")
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            buildJsonObject { put("error", "访问失败: ${e.message}") }
+                        }
+                    }
+                }
+            )
+        )
+    }
+
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
@@ -1693,6 +1754,7 @@ class LocalTools(
         if (options.contains(LocalToolOption.UpdateProfile)) tools.addAll(getUpdateProfileTools(assistantId))
         if (options.contains(LocalToolOption.MilestoneManagement)) tools.addAll(getMilestoneTools(assistantId))
         if (options.contains(LocalToolOption.PeekUser)) tools.addAll(getPeekUserTools(assistantId))
+        if (options.contains(LocalToolOption.WebPageReader)) tools.addAll(getWebPageReaderTools())
         return tools
     }
 }

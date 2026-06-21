@@ -1686,4 +1686,7 @@
   <string name="ui_mode_picker_title">UI 模式</string>
   <string name="ui_mode_normal">普通模式</string>
   <string name="ui_mode_wechat">微信模式</string>
+  <string name="assistant_page_local_tools_web_page_reader_title">网页链接读取</string>
+  <string name="assistant_page_local_tools_web_page_reader_desc">提取 URL 链接的正文内容，供智能体阅读与总结</string>
+
 </resources>
