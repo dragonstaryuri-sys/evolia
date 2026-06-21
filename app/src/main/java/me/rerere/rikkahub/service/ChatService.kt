@@ -1024,6 +1024,17 @@ class ChatService(
                             msg.copy(id = processMessageIds.getOrPut(index) { msg.id })
                         }
                         if (newMessages.isEmpty()) return@collect
+                        val containsNewAssistant = newMessages.any { it.role == MessageRole.ASSISTANT }
+                        if (containsNewAssistant && currentConversation.messageNodes.none { node ->
+                                node.messages.any { m -> newMessages.any { nm -> nm.id == m.id } }
+                            }) {
+                            // 第一次见到这条 AI 消息，将其加入列表（初始 parts 保持为空，由微信模式逻辑填充）
+                            val toUpdate = baseMessages + newMessages.map {
+                                if (it.role == MessageRole.ASSISTANT) it.copy(parts = emptyList()) else it
+                            }
+                            currentConversation = currentConversation.updateCurrentMessages(toUpdate)
+                            updateConversation(conversationId, currentConversation)
+                        }
                         // 微信模式检测
                         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
                         val wechatSentenceRegex = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]") // 分句正则
