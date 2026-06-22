@@ -1688,5 +1688,7 @@
   <string name="ui_mode_wechat">微信模式</string>
   <string name="assistant_page_local_tools_web_page_reader_title">网页链接读取</string>
   <string name="assistant_page_local_tools_web_page_reader_desc">提取 URL 链接的正文内容，供智能体阅读与总结</string>
-
+  <string name="api_error_html">请求地址有误或 API 服务异常（收到了 HTML 页面），请检查提供商设置。</string>
+  <string name="api_error_401">认证失败 (401)，请检查 API Key 是否正确。</string>
+  <string name="api_error_404">服务地址未找到 (404)，请检查 API 基础地址。</string>
 </resources>

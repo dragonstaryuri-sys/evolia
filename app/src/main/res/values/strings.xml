@@ -1729,4 +1729,7 @@
   <string name="ui_mode_wechat">WeChat Mode</string>
   <string name="assistant_page_local_tools_web_page_reader_title">Web Page Reader</string>
   <string name="assistant_page_local_tools_web_page_reader_desc">Extract main content from URL links for AI to read and summarize</string>
+  <string name="api_error_html">The request address is incorrect or the API service is abnormal (an HTML page was received). Please check the provider settings.</string>
+  <string name="api_error_401">Authentication failed (401). Please verify that the API Key is correct.</string>
+  <string name="api_error_404">Service address not found (404). Please check the API base address.</string>
 </resources>
