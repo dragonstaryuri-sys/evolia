@@ -1039,7 +1039,7 @@ class ChatService(
                                         ?.map { it.url } ?: emptyList()))
 
                             if (isMain && !isVirtual) {
-                                val nameRegex = Regex("[^a-zA-Z0-9_.:-]")
+                                val nameRegex = Regex("[^a-zA-Z0-9_-]")
                                 mcpManager.getAllAvailableTools().forEach { mcpTool ->
                                     val originalName = mcpTool.name
                                     val sanitizedName = "mcp_" + originalName.replace(nameRegex, "_").let {
@@ -1051,8 +1051,9 @@ class ChatService(
                                             name = sanitizedName,
                                             description = mcpTool.description ?: "",
                                             parameters = { mcpTool.inputSchema },
-                                            execute = {
-                                                mcpManager.callTool(originalName, it.jsonObject).truncateLargeJsonText()
+                                            execute = { jsonElement ->
+                                                val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
+                                                mcpManager.callTool(originalName, input).truncateLargeJsonText()
                                             })
                                     )
                                 }
@@ -1147,7 +1148,7 @@ class ChatService(
                                     // 模拟打字速度：根据字数计算延迟
                                     val charSpeed = 200L
                                     val baseTime = 300L
-                                    val finalDelay = (sentence.length * charSpeed + baseTime).coerceIn(500L, 20000L)
+                                    val finalDelay = (sentence.length * charSpeed + baseTime).coerceIn(400L, 8000L)
 
                                     delay(finalDelay)
                                     if (!currentJob.isActive) {
@@ -1352,7 +1353,7 @@ class ChatService(
             add(Tool(name = "search_web", description = "search web", parameters = {
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 SearchService.getService(opt).parameters
-            }, execute = {
+            }, execute = { jsonElement -> // 1. 显式命名参数，避免使用隐式的 it
                 if (callCount >= 1) {
                     return@Tool buildJsonObject {
                         put(
@@ -1366,7 +1367,8 @@ class ChatService(
                 val resultSize = 6
                 val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
 
-                val searchResult = SearchService.getService(opt).search(it.jsonObject, commonOptions, opt).getOrThrow()
+                val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
+                val searchResult = SearchService.getService(opt).search(input, commonOptions, opt).getOrThrow()
 
                 Log.d(TAG, "Web Search Raw Results (Fixed Request: $resultSize, Got: ${searchResult.items.size})")
                 searchResult.items.forEachIndexed { i, item ->
@@ -1409,7 +1411,6 @@ class ChatService(
             }))
         }
     }
-
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
