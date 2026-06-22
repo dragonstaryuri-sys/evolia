@@ -875,6 +875,7 @@ class ChatService(
         mutex.withLock {
             checkInvalidMessages(conversationId)
             val currentJob = coroutineContext.job
+            var currentSearchCount = 0
             val settings = settingsStore.settingsFlow.first()
             val processMessageIds = mutableMapOf<Int, Uuid>()
             var currentConversation = conversations[conversationId]?.value
@@ -1009,7 +1010,13 @@ class ChatService(
                             val searchMode = assistant.searchMode
 
                             if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) {
-                                addAll(createSearchTool(settings, assistant, searchMode.index))
+                                addAll(createSearchTool(
+                                    settings,
+                                    assistant,
+                                    searchMode.index,
+                                    searchCounter = { currentSearchCount },
+                                    onSearchCalled = { currentSearchCount++ }
+                                ))
                             }
 
                             val targetOptions = if (isVirtual) {
@@ -1346,7 +1353,13 @@ class ChatService(
         }
     }
 
-    private fun createSearchTool(settings: Settings, assistant: Assistant, providerIndex: Int? = null): Set<Tool> {
+    private fun createSearchTool(
+        settings: Settings,
+        assistant: Assistant,
+        providerIndex: Int? = null,
+        searchCounter: () -> Int,
+        onSearchCalled: () -> Unit
+    ): Set<Tool> {
         val idx = providerIndex ?: settings.searchServiceSelected
         var callCount = 0
         return buildSet {
@@ -1354,15 +1367,12 @@ class ChatService(
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 SearchService.getService(opt).parameters
             }, execute = { jsonElement -> // 1. 显式命名参数，避免使用隐式的 it
-                if (callCount >= 1) {
+                if (searchCounter() >= 1) { // 检查外部传入的计数
                     return@Tool buildJsonObject {
-                        put(
-                            "error",
-                            "Search limit reached (1/1). Do not attempt to search again in this turn. Please summarize what you have or ask the user for clarification."
-                        )
+                        put("error", "Search limit reached (1/1)...")
                     }
                 }
-                callCount++
+                onSearchCalled()
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 val resultSize = 6
                 val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
@@ -1411,6 +1421,7 @@ class ChatService(
             }))
         }
     }
+
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory) return
