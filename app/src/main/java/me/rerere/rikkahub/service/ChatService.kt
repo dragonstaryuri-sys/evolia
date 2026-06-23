@@ -835,6 +835,7 @@ class ChatService(
                 } ?: false
 
                 if (lockAcquired) {
+                    setGenerationJob(conversationId, coroutineContext.job)
                     pendingAction?.invoke()
                     _generationDoneFlow.emit(conversationId)
                 } else {
@@ -846,8 +847,6 @@ class ChatService(
                 }
             }
         }
-
-        setGenerationJob(conversationId, job)
         job.invokeOnCompletion {
             _generationJobs.update { current ->
                 if (current[conversationId] == job) current - conversationId else current
