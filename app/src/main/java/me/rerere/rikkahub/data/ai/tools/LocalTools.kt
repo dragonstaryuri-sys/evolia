@@ -162,7 +162,7 @@ class LocalTools(
                     val code = it.jsonObject["code"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
                         val filesBefore = pythonSandbox.listFiles(conversationId)
-                        val beforeNames = filesBefore.map { file -> file.name }.toSet()
+                        val beforeMap = filesBefore.associateBy { it.name }
 
                         val python = com.chaquo.python.Python.getInstance()
                         val executor = python.getModule("executor")
@@ -171,7 +171,11 @@ class LocalTools(
 
                         val filesAfter = pythonSandbox.listFiles(conversationId)
                         val generatedFiles = filesAfter
-                            .filter { file -> !beforeNames.contains(file.name) }
+                            .filter { file ->
+                                val before = beforeMap[file.name]
+                                // 只有新创建的文件或内容被修改过的文件才被视为生成文件
+                                before == null || file.lastModified > (before.lastModified + 500) // 容差 500ms
+                            }
                             .map { file ->
                                 val uri = pythonSandbox.getFileUri(conversationId, file.name)
                                 buildJsonObject {
@@ -308,11 +312,12 @@ class LocalTools(
                         val resultObj = kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
 
                         if (resultObj["success"]?.jsonPrimitive?.booleanOrNull == true) {
-                            val uri = pythonSandbox.getFileUri(conversationId, path)
+                            val relativePath = resultObj["path"]?.jsonPrimitive?.contentOrNull ?: path
+                            val uri = pythonSandbox.getFileUri(conversationId, relativePath)
                             kotlinx.serialization.json.buildJsonObject {
                                 resultObj.forEach { (k, v) -> put(k, v) }
                                 put("uri", uri.toString())
-                                put("markdown_link", "[$path]($uri)")
+                                put("markdown_link", "[$relativePath]($uri)")
                             }
                         } else {
                             resultObj
@@ -351,7 +356,7 @@ class LocalTools(
             ),
             Tool(
                 name = "import_attachment",
-                description = "将用户在消息中上传的附件文件导入到 Python 沙盒中以便后续处理。",
+                description = "将用户在消息中上传的附件文件导入到 Python 沙盒中以便后续处理。返回文件在沙盒中的相对路径。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -372,11 +377,11 @@ class LocalTools(
                     val filename = it.jsonObject["filename"]?.jsonPrimitive?.contentOrNull ?: ""
                     try {
                         val uriArg = android.net.Uri.parse(url)
-                        val savedPath = pythonSandbox.importFile(conversationId, uriArg, filename)
-                        val fileUri = pythonSandbox.getFileUri(conversationId, filename)
+                        val relativePath = pythonSandbox.importFile(conversationId, uriArg, filename)
+                        val fileUri = pythonSandbox.getFileUri(conversationId, relativePath)
                         buildJsonObject {
                             put("success", true)
-                            put("path", savedPath)
+                            put("path", relativePath)
                             put("filename", filename)
                             put("uri", fileUri.toString())
                             put("markdown_link", "[$filename]($fileUri)")
@@ -421,7 +426,7 @@ class LocalTools(
             ),
             Tool(
                 name = "device_alarm_timer_manager",
-                description = "管理设备上的闹钟和定时器。操作 'set_alarm' 需要 'hour' 和 'minutes'。操作 'set_timer' 需要 'seconds'。",
+                description = "管理设备上的闹钟 and 定时器。操作 'set_alarm' 需要 'hour' 和 'minutes'。操作 'set_timer' 需要 'seconds'。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {

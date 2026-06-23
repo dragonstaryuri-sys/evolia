@@ -47,7 +47,7 @@ class PythonSandbox(private val context: Context) {
 
     /**
      * Copy a user-provided file into the sandbox for Python to access.
-     * Returns the path within the sandbox.
+     * Returns the path within the sandbox (relative to the conversation directory).
      */
     fun importFile(conversationId: Uuid, sourceUri: Uri, filename: String): String {
         val dir = getConversationDir(conversationId)
@@ -59,7 +59,7 @@ class PythonSandbox(private val context: Context) {
             }
         } ?: throw java.io.FileNotFoundException("Could not open input stream for URI: $sourceUri (File not found or no permission)")
 
-        return destFile.absolutePath
+        return filename
     }
 
     /**
@@ -84,7 +84,8 @@ class PythonSandbox(private val context: Context) {
                     name = file.relativeTo(dir).path,
                     size = file.length(),
                     isImage = file.extension.lowercase() in listOf("jpg", "jpeg", "png", "gif", "webp", "bmp"),
-                    mimeType = getMimeType(file.extension)
+                    mimeType = getMimeType(file.extension),
+                    lastModified = file.lastModified()
                 )
             }
             .toList()
@@ -159,6 +160,7 @@ class PythonSandbox(private val context: Context) {
         val name: String,
         val size: Long,
         val isImage: Boolean,
-        val mimeType: String
+        val mimeType: String,
+        val lastModified: Long
     )
 }

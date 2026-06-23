@@ -368,7 +368,7 @@ private fun ChatPageContent(
                         .padding(padding)
                 ) {
                     ChatList(
-                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 80.dp),
+                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 100.dp),
                         conversation = conversation,
                         uiItems = uiMessages,
                         state = chatListState,

@@ -396,7 +396,7 @@ fun MinimalChatInput(
                                         else showPicker = true
                                     },
                                     shape = CircleShape,
-                                    //color = if (isAiTyping && !wechatMode) MaterialTheme.colorScheme.surfaceVariant else containerColor,
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
