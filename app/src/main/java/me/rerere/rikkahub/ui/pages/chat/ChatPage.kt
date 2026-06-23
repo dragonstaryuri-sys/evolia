@@ -544,7 +544,6 @@ private fun ChatPageContent(
                     when (effectiveDisplaySetting.chatInputStyle) {
                         ChatInputStyle.MINIMAL -> {
                             MinimalChatInput(
-                                //isAiTyping = isAiTyping,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 state = inputState,
                                 settings = setting,
@@ -575,9 +574,6 @@ private fun ChatPageContent(
                                     }
                                 },
                                 onSendClick = {
-                                    if (isAiTyping) {
-                                        return@MinimalChatInput
-                                    }
                                     if (inputState.isEditing()) vm.handleMessageEdit(
                                         parts = inputState.getContents(),
                                         messageId = inputState.editingMessage!!
@@ -653,7 +649,6 @@ private fun ChatPageContent(
 
                         ChatInputStyle.FLOATING -> {
                             ChatInput(
-                                //isAiTyping = isAiTyping,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 state = inputState,
                                 settings = setting,
@@ -684,9 +679,6 @@ private fun ChatPageContent(
                                     }
                                 },
                                 onSendClick = {
-                                    if (isAiTyping) {
-                                        return@ChatInput
-                                    }
                                     if (inputState.isEditing()) vm.handleMessageEdit(
                                         parts = inputState.getContents(),
                                         messageId = inputState.editingMessage!!
