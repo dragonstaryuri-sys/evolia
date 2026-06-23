@@ -20,7 +20,10 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
 @Composable
-fun BackButton(modifier: Modifier = Modifier) {
+fun BackButton(
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
     val navController = LocalNavController.current
     val haptics = rememberPremiumHaptics()
 
@@ -29,7 +32,6 @@ fun BackButton(modifier: Modifier = Modifier) {
     val isPressed by interactionSource.collectIsPressedAsState()
 
     // Physics-based scale animation
-    // Golden standard for round/clicky elements: damping 0.6, stiffness 300
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.85f else 1f,
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
@@ -39,7 +41,11 @@ fun BackButton(modifier: Modifier = Modifier) {
     IconButton(
         onClick = {
             haptics.perform(HapticPattern.Pop)
-            navController.popBackStack()
+            if (onClick != null) {
+                onClick()
+            } else {
+                navController.popBackStack()
+            }
         },
         modifier = modifier
             .graphicsLayer {

@@ -114,6 +114,9 @@ sealed interface Screen {
     data class DiaryList(val assistantId: String? = null) : Screen
 
     @Serializable
+    data class DiaryEditor(val diaryId: String) : Screen
+
+    @Serializable
     data object Favorites : Screen
 
     @Serializable

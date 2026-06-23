@@ -1732,4 +1732,6 @@
   <string name="api_error_html">The request address is incorrect or the API service is abnormal (an HTML page was received). Please check the provider settings.</string>
   <string name="api_error_401">Authentication failed (401). Please verify that the API Key is correct.</string>
   <string name="api_error_404">Service address not found (404). Please check the API base address.</string>
+  <string name="diary_edit">Edit Diary</string>
+  <string name="diary_edit_save_hint">Changes will be saved automatically when you leave</string>
 </resources>

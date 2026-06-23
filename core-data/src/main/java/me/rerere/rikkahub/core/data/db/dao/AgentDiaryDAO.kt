@@ -18,6 +18,9 @@ interface AgentDiaryDAO {
     @Query("SELECT * FROM AgentDiaryEntity ORDER BY date DESC")
     fun getAllDiaries(): Flow<List<AgentDiaryEntity>>
 
+    @Query("SELECT * FROM AgentDiaryEntity WHERE id = :id LIMIT 1")
+    suspend fun getDiaryById(id: String): AgentDiaryEntity?
+
     @Query("SELECT * FROM AgentDiaryEntity WHERE assistant_id = :assistantId AND date = :date LIMIT 1")
     suspend fun getDiaryByDate(assistantId: String, date: String): AgentDiaryEntity?
 

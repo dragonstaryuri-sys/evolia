@@ -19,6 +19,10 @@ class DiaryRepository(
         return agentDiaryDao.getAllDiaries()
     }
 
+    suspend fun getDiaryById(id: String): AgentDiaryEntity? {
+        return agentDiaryDao.getDiaryById(id)
+    }
+
     suspend fun getDiaryByDate(assistantId: String, date: String): AgentDiaryEntity? {
         return agentDiaryDao.getDiaryByDate(assistantId, date)
     }

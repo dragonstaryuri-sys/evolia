@@ -35,6 +35,12 @@ class DiaryVM(
         diaryRepo.getDiariesByAssistant(assistantId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    fun getDiaryById(diaryId: String) = flow {
+        // Since there is no direct getDiaryById in Repository, I'll use getAllDiaries or similar
+        // Better yet, I should check if I can add getDiaryById to Repository/DAO
+        emit(diaryRepo.getAllDiaries().map { list -> list.find { it.id == diaryId } }.firstOrNull())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     // 观察 WorkManager 状态，包括手动和自动
     val isGenerating = WorkManager.getInstance(app)
         .getWorkInfosByTagFlow("diary_gen")
@@ -116,6 +122,15 @@ class DiaryVM(
     fun deleteDiary(id: String) {
         viewModelScope.launch {
             diaryRepo.deleteDiaryById(id)
+        }
+    }
+
+    fun updateDiaryContent(id: String, content: String) {
+        viewModelScope.launch {
+            val diary = diaryRepo.getAllDiaries().map { list -> list.find { it.id == id } }.firstOrNull()
+            if (diary != null) {
+                diaryRepo.insertDiary(diary.copy(content = content))
+            }
         }
     }
 

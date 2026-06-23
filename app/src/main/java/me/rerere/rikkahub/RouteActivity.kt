@@ -92,6 +92,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingPermissionCheckPage
 import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
+import me.rerere.rikkahub.ui.pages.discover.DiaryEditorPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoritesPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoriteDetailPage
 import me.rerere.rikkahub.discover.ui.ScheduleScreen
@@ -458,6 +459,10 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.DiaryList> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.DiaryList>()
                         DiaryListPage(assistantId = route.assistantId)
+                    }
+                    composable<Screen.DiaryEditor> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.DiaryEditor>()
+                        DiaryEditorPage(diaryId = route.diaryId)
                     }
                     composable<Screen.Favorites> {
                         FavoritesPage()

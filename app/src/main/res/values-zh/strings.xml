@@ -1691,4 +1691,6 @@
   <string name="api_error_html">请求地址有误或 API 服务异常（收到了 HTML 页面），请检查提供商设置。</string>
   <string name="api_error_401">认证失败 (401)，请检查 API Key 是否正确。</string>
   <string name="api_error_404">服务地址未找到 (404)，请检查 API 基础地址。</string>
+  <string name="diary_edit">修改TA的日记</string>
+  <string name="diary_edit_save_hint">离开时将自动保存修改</string>
 </resources>

@@ -7,10 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -137,6 +134,9 @@ fun DiaryListPage(
                                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("diary", diary.content)))
                                     toaster.show(copyAllText, type = ToastType.Success)
                                 }
+                            },
+                            onEdit = {
+                                navController.navigate(Screen.DiaryEditor(diaryId = diary.id))
                             }
                         )
                     }
@@ -213,7 +213,8 @@ private fun AgentDiaryCard(
 private fun DiaryItem(
     diary: AgentDiaryEntity,
     onDelete: () -> Unit,
-    onCopy: () -> Unit
+    onCopy: () -> Unit,
+    onEdit: () -> Unit
 ) {
     val displayDate = remember(diary.date) {
         try {
@@ -259,6 +260,14 @@ private fun DiaryItem(
                     IconButton(onClick = onCopy, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Rounded.ContentCopy,
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(onClick = onEdit, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            Icons.Rounded.Edit,
                             null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp)
