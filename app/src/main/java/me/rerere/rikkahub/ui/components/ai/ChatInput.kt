@@ -176,7 +176,6 @@ fun ChatInput(
     conversation: Conversation,
     settings: Settings,
     mcpManager: McpManager,
-    isAiTyping: Boolean,
     enableSearch: Boolean,
     onToggleSearch: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -538,21 +537,21 @@ fun ChatInput(
                                                             .combinedClickable(
                                                                 interactionSource = sendInteractionSource,
                                                                 indication = null,
-                                                                enabled = (state.loading || !state.isEmpty()) && !isAiTyping,
+                                                                enabled = (state.loading || !state.isEmpty()),
                                                                 onClick = {
-                                                                    if (isAiTyping) return@combinedClickable
+                                                                    //if (isAiTyping) return@combinedClickable
                                                                     expand = ExpandState.Collapsed
                                                                     sendMessage()
                                                                 },
                                                                 onLongClick = {
-                                                                    if (isAiTyping) return@combinedClickable
+                                                                    //if (isAiTyping) return@combinedClickable
                                                                     expand = ExpandState.Collapsed
                                                                     sendMessageWithoutAnswer()
                                                                 }
                                                             )
                                                             .background(
                                                                 color = when {
-                                                                    isAiTyping -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                                                    //isAiTyping -> MaterialTheme.colorScheme.surfaceContainerHigh
                                                                     state.loading && !wechatMode -> MaterialTheme.colorScheme.errorContainer
                                                                     state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh
                                                                     else -> MaterialTheme.colorScheme.primary

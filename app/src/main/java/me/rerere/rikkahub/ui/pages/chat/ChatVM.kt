@@ -69,7 +69,7 @@ class ChatVM(
     private val memoryRepo: MemoryRepository,
     private val favoriteRepo: FavoriteRepository,
 ) : ViewModel() {
-    val isAiTyping: StateFlow<Boolean> = chatService.isAiTyping
+
     suspend fun getFullMemoryContent(memoryId: Int, memoryType: Int): String? {
         return memoryRepo.getFullMemoryContent(memoryId, memoryType)
     }
@@ -78,6 +78,9 @@ class ChatVM(
     // 内存中的“当前活跃 ID”，它是发送消息的唯一目标
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
 
+    val isAiTyping: StateFlow<Boolean> = _currentActiveId
+        .flatMapLatest { id -> chatService.getAiTypingFlow(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     private val activeConversationIds = ConcurrentHashMap.newKeySet<Uuid>()
 
     private val _isConversationLoaded = MutableStateFlow(false)
@@ -404,12 +407,12 @@ class ChatVM(
     fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false) {
         val currentSettings = settings.value
         val currentAssistant = currentSettings.getCurrentAssistant()
-        val wechatMode = currentSettings.getEffectiveDisplaySetting(currentAssistant).wechatMode
+//        val wechatMode = currentSettings.getEffectiveDisplaySetting(currentAssistant).wechatMode
         if (content.isEmptyInputMessage()) return
-        if (wechatMode && isAiTyping.value) {
-            viewModelScope.launch { _toastFlow.emit("ai在回复中，等一下...") }
-            return
-        }
+//        if (wechatMode && isAiTyping.value) {
+//            viewModelScope.launch { _toastFlow.emit("ai在回复中，等一下...") }
+//            return
+//        }
         viewModelScope.launch {
             val assistantId = settings.value.assistantId
             val assistant = settings.value.assistants.find { it.id == assistantId }

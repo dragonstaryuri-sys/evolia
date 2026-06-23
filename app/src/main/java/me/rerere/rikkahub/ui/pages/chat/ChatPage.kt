@@ -544,7 +544,7 @@ private fun ChatPageContent(
                     when (effectiveDisplaySetting.chatInputStyle) {
                         ChatInputStyle.MINIMAL -> {
                             MinimalChatInput(
-                                isAiTyping = isAiTyping,
+                                //isAiTyping = isAiTyping,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 state = inputState,
                                 settings = setting,
@@ -653,7 +653,7 @@ private fun ChatPageContent(
 
                         ChatInputStyle.FLOATING -> {
                             ChatInput(
-                                isAiTyping = isAiTyping,
+                                //isAiTyping = isAiTyping,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 state = inputState,
                                 settings = setting,

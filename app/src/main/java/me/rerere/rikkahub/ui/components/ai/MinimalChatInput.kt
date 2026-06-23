@@ -147,7 +147,7 @@ fun MinimalChatInput(
     state: ChatInputState,
     conversation: Conversation,
     settings: Settings,
-    isAiTyping: Boolean,
+    //isAiTyping: Boolean,
     mcpManager: McpManager,
     enableSearch: Boolean,
     onToggleSearch: (Boolean) -> Unit,
@@ -391,12 +391,12 @@ fun MinimalChatInput(
 
                                 Surface(
                                     onClick = {
-                                        if (isAiTyping) return@Surface
+                                        //if (isAiTyping && !wechatMode) return@Surface
                                         if (currentAction == "send" || currentAction == "loading") sendMessage()
                                         else showPicker = true
                                     },
                                     shape = CircleShape,
-                                    color = if (isAiTyping) MaterialTheme.colorScheme.surfaceVariant else containerColor,
+                                    //color = if (isAiTyping && !wechatMode) MaterialTheme.colorScheme.surfaceVariant else containerColor,
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {

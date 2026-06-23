@@ -267,7 +267,6 @@ fun VirtualWorldPage(id: Uuid) {
                     }
 
                     MinimalChatInput(
-                        isAiTyping = isAiTyping,
                         modifier = Modifier.align(Alignment.BottomCenter),
                         state = inputState,
                         settings = setting,
