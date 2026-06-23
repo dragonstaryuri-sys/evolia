@@ -429,7 +429,9 @@ class ChatService(
 
     suspend fun initializeConversation(conversationId: Uuid, targetAssistantId: Uuid? = null) {
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
-        val isGenerating = _generationJobs.value[conversationId] != null
+        val currentJob = coroutineContext.job
+        val registeredJob = _generationJobs.value[conversationId]
+        val isGenerating = registeredJob != null && registeredJob.isActive && registeredJob != currentJob
         val currentConv = conversations[conversationId]?.value ?: currentConvInDb
 
         val currentAssistantId = targetAssistantId
@@ -731,16 +733,15 @@ class ChatService(
         // 1. 打断当前会话正在进行的任务
         val oldJob = _generationJobs.value[conversationId]
         oldJob?.cancel()
-
+        removeGenerationJob(conversationId)
         val job = appScope.launch {
             try {
-
+                var pendingAction: (suspend () -> Unit)? = null
                 // 2. 尝试获取锁，持有锁执行整个修改和生成逻辑
                 val lockAcquired = withTimeoutOrNull(2000) {
                     // 初始化并确保获取最新对话状态
                     initializeConversation(conversationId)
                     val conversation = getConversationFlow(conversationId).value
-
                     var updatedConv: Conversation? = null
 
                     if (message.role == MessageRole.USER) {
@@ -822,18 +823,19 @@ class ChatService(
                     if (updatedConv != null) {
                         updateConversation(conversationId) { updatedConv }
                         saveConversation(conversationId, updatedConv)
-                        handleMessageComplete(conversationId)
+                        pendingAction = { handleMessageComplete(conversationId) }
                     } else if (regenerateAssistantMsg && message.role != MessageRole.USER) {
                         // 降级处理：如果没有找到明确的用户上文，则截断到当前消息索引并生成
                         val clickedNode = conversation.getMessageNodeByMessage(message)
                         val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
-                        handleMessageComplete(conversationId, messageRange = 0..<clickedIndex)
+                        pendingAction = { handleMessageComplete(conversationId, messageRange = 0..<clickedIndex) }
                     }
                     true // 成功在锁内执行逻辑
 
                 } ?: false
 
                 if (lockAcquired) {
+                    pendingAction?.invoke()
                     _generationDoneFlow.emit(conversationId)
                 } else {
                     Log.w(TAG, "获取会话锁超时，重生操作已取消: $conversationId")
