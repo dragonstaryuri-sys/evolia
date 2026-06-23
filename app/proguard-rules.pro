@@ -78,3 +78,9 @@
 # Bugly 混淆规则
 -keep class com.tencent.bugly.** { *; }
 -dontwarn com.tencent.bugly.**
+
+# 移除 Release 版本的 Log.v 和 Log.d 日志
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}
