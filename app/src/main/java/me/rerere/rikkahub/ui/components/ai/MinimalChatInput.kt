@@ -788,7 +788,7 @@ private fun MinimalPickerContent(
                 1024 -> stringResource(R.string.reasoning_light)
                 4096 -> stringResource(R.string.reasoning_medium)
                 16384 -> stringResource(R.string.reasoning_heavy)
-                else -> stringResource(R.string.reasoning_set_budget, budget)
+                else -> stringResource(R.string.reasoning_auto)
             }
             MinimalPickerItem(
                 icon = {

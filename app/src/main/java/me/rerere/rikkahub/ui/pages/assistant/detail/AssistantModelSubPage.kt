@@ -41,6 +41,7 @@ import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.toFixed
 import kotlin.uuid.Uuid
+import me.rerere.ai.core.ReasoningLevel
 
 /**
  * Model tab - All model and generation-related settings.
@@ -380,7 +381,6 @@ fun AssistantModelSubPage(
         // ═══════════════════════════════════════════════════════════════════
         // OUTPUT GROUP
         // ═══════════════════════════════════════════════════════════════════
-        // ... (保持不变)
         SettingsGroup(title = stringResource(R.string.assistant_model_group_output)) {
             // Stream Output
             SettingGroupItem(
@@ -395,16 +395,19 @@ fun AssistantModelSubPage(
             )
 
             // Thinking Budget
-            val thinkingBudget = assistant.thinkingBudget
+            val thinkingBudget = assistant.thinkingBudget ?: 0
+            val reasoningLevel = ReasoningLevel.fromBudgetTokens(thinkingBudget)
+            val thinkingSubtitle = when {
+                reasoningLevel == ReasoningLevel.AUTO -> stringResource(R.string.reasoning_auto)
+                reasoningLevel.isEnabled -> stringResource(R.string.assistant_model_thinking_budget_value, thinkingBudget)
+                else -> stringResource(R.string.assistant_model_thinking_budget_disabled)
+            }
             SettingGroupItem(
                 title = stringResource(R.string.assistant_page_thinking_budget),
-                subtitle = if (thinkingBudget != null && thinkingBudget > 0)
-                    stringResource(R.string.assistant_model_thinking_budget_value, thinkingBudget)
-                else
-                    stringResource(R.string.assistant_model_thinking_budget_disabled),
+                subtitle = thinkingSubtitle,
                 trailing = {
                     ReasoningButton(
-                        reasoningTokens = thinkingBudget ?: 0,
+                        reasoningTokens = thinkingBudget,
                         onUpdateReasoningTokens = { tokens ->
                             onUpdate(assistant.copy(thinkingBudget = tokens))
                         }

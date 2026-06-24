@@ -16,7 +16,10 @@ enum class ReasoningLevel(
     companion object {
         fun fromBudgetTokens(budgetTokens: Int?): ReasoningLevel {
             if (budgetTokens == null) return AUTO
-            if (budgetTokens == 0) return OFF
+
+            // 优先精确匹配，解决 AUTO (-1) 无法选中的问题
+            entries.find { it.budgetTokens == budgetTokens }?.let { return it }
+
             return entries.filter { it != AUTO && it != OFF }
                 .minByOrNull { kotlin.math.abs(it.budgetTokens - budgetTokens) } ?: AUTO
         }
