@@ -34,8 +34,8 @@ android {
         applicationId = "ailand.lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 12
-        versionName = "3.4.1"
+        versionCode = 13
+        versionName = "3.5.0"
 
         buildConfigField("String", "GITHUB_REPO", "\"dragonstaryuri-sys/evolia\"")
 

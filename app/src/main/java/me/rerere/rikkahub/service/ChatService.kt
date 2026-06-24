@@ -962,7 +962,8 @@ class ChatService(
                             val searchMode = assistant.searchMode
 
                             if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) {
-                                addAll(createSearchTool(
+                                addAll(
+                                    createSearchTool(
                                     settings,
                                     assistant,
                                     searchMode.index,
@@ -1094,7 +1095,8 @@ class ChatService(
                                 }
 
                                 while (lastDisplayedSentenceCount < sentences.size && currentJob.isActive) {
-                                    val latestAiMsg = currentConversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                                    val latestAiMsg =
+                                        currentConversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
                                     val hasToolCall = latestAiMsg?.parts?.any { it is UIMessagePart.ToolCall } == true
                                     val hasText = latestAiMsg?.parts?.any { it is UIMessagePart.Text } == true
                                     // 仅纯工具无文字才中断；有文字+工具则继续渲染
@@ -1112,7 +1114,8 @@ class ChatService(
                                     if (!currentJob.isActive) return@collect
 
                                     lastDisplayedSentenceCount++
-                                    val updatedParts = buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount)
+                                    val updatedParts =
+                                        buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount)
                                     val finalParts = updatedParts.toMutableList().apply {
                                         latestAiMsg?.parts?.filter { it !is UIMessagePart.Text }?.forEach {
                                             if (it !in this) add(it)
@@ -1173,7 +1176,8 @@ class ChatService(
                                 if (remainder.isNotBlank()) sentences.add(remainder)
 
                                 while (lastDisplayedSentenceCount < sentences.size && currentJob.isActive) {
-                                    val latestAiMsg = currentConversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
+                                    val latestAiMsg =
+                                        currentConversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
                                     val hasToolCall = latestAiMsg?.parts?.any { it is UIMessagePart.ToolCall } == true
                                     val hasText = latestAiMsg?.parts?.any { it is UIMessagePart.Text } == true
                                     if (hasToolCall && !hasText) {
@@ -1197,7 +1201,8 @@ class ChatService(
                                             node.copy(messages = node.messages.map { if (it.id == lastAI.id) updatedAiMessage else it })
                                         } else node
                                     }
-                                    val finalUpdate = currentConversation.copy(messageNodes = newNodes, chatSuggestions = emptyList())
+                                    val finalUpdate =
+                                        currentConversation.copy(messageNodes = newNodes, chatSuggestions = emptyList())
                                     currentConversation = finalUpdate
                                     updateConversation(conversationId) { finalUpdate }
                                 }
@@ -1269,15 +1274,19 @@ class ChatService(
             message.contains("Unexpected JSON token") && message.contains("< instead") -> {
                 IllegalStateException(context.getString(R.string.api_error_html), e)
             }
+
             message.contains("400 Bad Request", ignoreCase = true) -> {
                 IllegalStateException("请求参数错误 (400)，请确认 API Key 或模型名称。", e)
             }
+
             message.contains("401 Unauthorized", ignoreCase = true) -> {
                 IllegalStateException(context.getString(R.string.api_error_401), e)
             }
+
             message.contains("404 Not Found", ignoreCase = true) -> {
                 IllegalStateException(context.getString(R.string.api_error_404), e)
             }
+
             else -> e
         }
     }
@@ -1291,12 +1300,14 @@ class ChatService(
     ): Set<Tool> {
         val idx = providerIndex ?: settings.searchServiceSelected
         return buildSet {
-            add(Tool(name = "search_web", description = "search web", parameters = {
+            add(Tool(name = "search_web", description = "联网检索实时信息", parameters = {
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
                 SearchService.getService(opt).parameters
             }, execute = { jsonElement ->
                 if (searchCounter() >= 1) {
-                    return@Tool buildJsonObject { put("error", "Search limit reached (1/1)...") }
+                    return@Tool buildJsonObject {
+                        put("error", "你本轮已调用过一次搜索工具，请整合现有信息回答用户，或询问用户是否要继续查询。")
+                    }
                 }
                 onSearchCalled()
                 val opt = settings.searchServices.getOrElse(idx) { SearchServiceOptions.DEFAULT }
@@ -1305,7 +1316,12 @@ class ChatService(
                 val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
                 val searchResult = SearchService.getService(opt).search(input, commonOptions, opt).getOrThrow()
                 Log.d(TAG, "Web Search Raw Results (Fixed Request: $resultSize, Got: ${searchResult.items.size})")
-                searchResult.items.forEachIndexed { i, item -> Log.v(TAG, "Raw Item [$i]: ${item.title} (${item.url})") }
+                searchResult.items.forEachIndexed { i, item ->
+                    Log.v(
+                        TAG,
+                        "Raw Item [$i]: ${item.title} (${item.url})"
+                    )
+                }
                 val htmlRegex = Regex("<[^>]*>")
                 val maxCharsPerItem = (12000 / resultSize.coerceAtLeast(1)).coerceIn(1500, 4000)
                 val cleanedItems = searchResult.items.take(resultSize).map { item ->
@@ -1331,7 +1347,9 @@ class ChatService(
                     }))
                 }
             }, systemPrompt = { _, _ ->
-                "## tool: search_web\n\nNote: Use the search results to answer the user's question directly. Only 1 search allowed per turn."
+                "## tool: search_web\n" +
+                "严重提示：每条用户消息仅允许调用该工具一次。" +
+                "如果搜索结果不够理想，就基于现有信息尽力作答，无需重新搜索。"
             }))
         }
     }
@@ -1341,7 +1359,8 @@ class ChatService(
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) assistant.detailMemoryThreshold * 2 else assistant.detailMemoryThreshold
-        val count = if (conv.contextSummaryUpToIndex >= 0) conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1) else conv.currentMessages.size
+        val count =
+            if (conv.contextSummaryUpToIndex >= 0) conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1) else conv.currentMessages.size
         if (count >= max) summarizeAndRefresh(id)
     }
 
@@ -1354,7 +1373,10 @@ class ChatService(
         }
         try {
             val settings = settingsStore.settingsFlow.first()
-            val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(false, errorMessage = "会话不存在")
+            val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(
+                false,
+                errorMessage = "会话不存在"
+            )
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
             val messages = conv.currentMessages
             if (messages.isEmpty()) return@withContext ContextRefreshResult(false)
@@ -1399,7 +1421,9 @@ class ChatService(
                 val keywordsRegex = Regex("""\[(?:Keywords|关键词)][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
                 val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
                 val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-                val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
+                val finalBackground =
+                    backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
+                    ?: aiResponse
                 val aiKeywords = keywordsMatch ?: ""
                 val fullContextualContent = """
                     [Background]: $finalBackground
@@ -1410,7 +1434,9 @@ class ChatService(
                 val keywords = mergeKeywords(aiKeywords, localKeywords)
                 val embeddingResult = try {
                     embeddingService.embedWithModelId(fullContextualContent, assistant.id.toString())
-                } catch (e: Exception) { null }
+                } catch (e: Exception) {
+                    null
+                }
                 val segment = ChatSegmentEntity(
                     assistantId = assistant.id.toString(),
                     conversationId = id.toString(),
@@ -1478,7 +1504,9 @@ class ChatService(
             updateConversation(id) { conversation }; return
         }
         updateConversation(id) { conversation }
-        if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(conversation)
+        if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(
+            conversation
+        )
     }
 
     fun getAiTypingFlow(id: Uuid): Flow<Boolean> = _isAiTypingMap.map { it[id] ?: false }
@@ -1511,8 +1539,14 @@ class ChatService(
                 when {
                     isBrokenToolCall -> {
                         val fallbackMessages = node.messages.filter { it.id != msg.id }
-                        if (fallbackMessages.isNotEmpty()) finalNodes.add(node.copy(messages = fallbackMessages, selectIndex = 0))
+                        if (fallbackMessages.isNotEmpty()) finalNodes.add(
+                            node.copy(
+                                messages = fallbackMessages,
+                                selectIndex = 0
+                            )
+                        )
                     }
+
                     isBlankAssistantAtEnd -> Log.d(TAG, "已移除结尾的无效 AI 占位消息")
                     isDuplicateAssistant -> {
                         if (!(msg.toContentText().isBlank() && msg.parts.none { it is UIMessagePart.ToolCall })) {
@@ -1521,6 +1555,7 @@ class ChatService(
                             Log.d(TAG, "检测到连续助手消息，已清理空的 AI 节点以满足 API 规范")
                         }
                     }
+
                     else -> finalNodes.add(node)
                 }
             }
@@ -1593,7 +1628,11 @@ class ChatService(
             .setSmallIcon(R.drawable.about_logo)
             .setAutoCancel(true)
             .setContentIntent(getPendingIntent(context, conversationId))
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+        if (ActivityCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             NotificationManagerCompat.from(context).notify(1, notification.build())
         }
     }
@@ -1627,7 +1666,12 @@ class ChatService(
 
 private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLength: Int = 32000): kotlinx.serialization.json.JsonElement {
     return when (this) {
-        is JsonPrimitive -> if (this.isString && this.content.length > maxLength) JsonPrimitive(this.content.take(maxLength) + "... (truncated)") else this
+        is JsonPrimitive -> if (this.isString && this.content.length > maxLength) JsonPrimitive(
+            this.content.take(
+                maxLength
+            ) + "... (truncated)"
+        ) else this
+
         is JsonObject -> JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
         is JsonArray -> JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
     }
