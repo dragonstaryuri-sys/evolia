@@ -118,6 +118,7 @@ fun ChatList(
     onJumpToMessage: (MessageNode) -> Unit = {},
     onGetFullMemoryContent: suspend (Int, Int) -> String? = { _, _ -> null },
     onAddFavorite: (List<UIMessage>) -> Unit = {},
+    onDeleteMessages: (List<UIMessage>) -> Unit = {},
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -175,6 +176,7 @@ fun ChatList(
                     onUpdateMessage = onUpdateMessage,
                     onGetFullMemoryContent = onGetFullMemoryContent,
                     onAddFavorite = onAddFavorite,
+                    onDeleteMessages = onDeleteMessages,
                     animatedVisibilityScope = this@AnimatedContent,
                 )
             }
@@ -201,6 +203,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onGetFullMemoryContent: suspend (Int, Int) -> String?,
     onAddFavorite: (List<UIMessage>) -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    onDeleteMessages: (List<UIMessage>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val loadingState by rememberUpdatedState(loading)
@@ -473,6 +476,27 @@ private fun SharedTransitionScope.ChatListNormal(
                 HorizontalFloatingToolbar(expanded = true) {
                     Tooltip(tooltip = { Text(stringResource(R.string.cancel)) }) {
                         IconButton(onClick = { selecting = false; selectedItems.clear() }) { Icon(Icons.Rounded.Close, null) }
+                    }
+                    Tooltip(tooltip = { Text(stringResource(R.string.delete)) }) {
+                        IconButton(
+                            enabled = selectedItems.isNotEmpty(),
+                            onClick = {
+                                // 从 UI 显示项中找出所有选中的消息
+                                val messages = uiItems.filterIsInstance<ChatVM.ChatUIItem.Message>()
+                                    .map { it.node }
+                                    .filter { it.id in selectedItems }
+                                    .map { it.currentMessage }
+                                onDeleteMessages(messages)
+                                selecting = false
+                                selectedItems.clear()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error // 红色警告色
+                            )
+                        }
                     }
 
                     Tooltip(tooltip = { Text(stringResource(R.string.action_favorite)) }) {

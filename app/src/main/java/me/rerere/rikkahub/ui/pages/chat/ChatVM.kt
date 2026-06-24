@@ -46,14 +46,12 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
-import androidx.compose.runtime.derivedStateOf
 import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.serialization.encodeToString
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+
 
 private const val TAG = "ChatVM"
 
@@ -406,13 +404,7 @@ class ChatVM(
 
     fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false) {
         val currentSettings = settings.value
-        val currentAssistant = currentSettings.getCurrentAssistant()
-//        val wechatMode = currentSettings.getEffectiveDisplaySetting(currentAssistant).wechatMode
         if (content.isEmptyInputMessage()) return
-//        if (wechatMode && isAiTyping.value) {
-//            viewModelScope.launch { _toastFlow.emit("ai在回复中，等一下...") }
-//            return
-//        }
         viewModelScope.launch {
             val assistantId = settings.value.assistantId
             val assistant = settings.value.assistants.find { it.id == assistantId }
@@ -500,6 +492,65 @@ class ChatVM(
             deleteMessageInternal(message)
             relatedMessages.forEach { deleteMessageInternal(it) }
         }
+    }
+
+    fun deleteMessages(messages: List<UIMessage>) {
+        viewModelScope.launch {
+            val assistantId = conversation.value.assistantId
+            // 获取该助手的所有对话，因为选中的消息可能跨越了“新话题”分隔线
+            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(assistantId).first()
+
+            // 将选中的消息按所属对话分组，提高处理效率
+            val messagesByConv = messages.mapNotNull { msg ->
+                val targetConv = allConvs.find { conv ->
+                    conv.messageNodes.any { node -> node.messages.any { it.id == msg.id } }
+                }
+                if (targetConv != null) msg to targetConv else null
+            }.groupBy({ it.second }, { it.first })
+
+            messagesByConv.forEach { (targetConv, msgs) ->
+                var currentConv = targetConv
+                msgs.forEach { msg ->
+                    // 复用内部删除逻辑并更新当前对话状态
+                    val relatedMessages = collectRelatedMessagesForConv(msg, currentConv)
+                    currentConv = deleteMessageFromConv(msg, currentConv) ?: currentConv
+                    relatedMessages.forEach { related ->
+                        currentConv = deleteMessageFromConv(related, currentConv) ?: currentConv
+                    }
+                }
+                chatService.saveConversation(targetConv.id, currentConv)
+            }
+        }
+    }
+
+    // 辅助方法：从指定对话对象中删除消息（不涉及IO）
+    private fun deleteMessageFromConv(message: UIMessage, targetConv: Conversation): Conversation? {
+        val node = targetConv.getMessageNodeByMessageId(message.id) ?: return null
+        val nodeIndex = targetConv.messageNodes.indexOf(node)
+        if (nodeIndex == -1) return null
+
+        val deleteVersionTag = message.versionTag
+        return if (node.messages.size == 1 && deleteVersionTag == null) {
+            targetConv.copy(messageNodes = targetConv.messageNodes.filterIndexed { index, _ -> index != nodeIndex })
+        } else {
+            val updatedNodes = targetConv.messageNodes.mapIndexedNotNull { index, n ->
+                val newMessages = n.messages.filter { it.id != message.id }
+                if (newMessages.isEmpty()) null
+                else n.copy(messages = newMessages, selectIndex = n.selectIndex.coerceIn(0, newMessages.size - 1))
+            }
+            targetConv.copy(messageNodes = updatedNodes)
+        }
+    }
+
+    // 辅助方法：收集相关工具消息（支持传入指定对话）
+    private fun collectRelatedMessagesForConv(message: UIMessage, conv: Conversation): List<UIMessage> {
+        val currentMessages = conv.messageNodes.flatMap { it.messages }
+        val index = currentMessages.indexOfFirst { it.id == message.id }
+        if (index == -1) return emptyList()
+        val relatedMessages = hashSetOf<UIMessage>()
+        for (i in index - 1 downTo 0) { if (currentMessages[i].hasPart<UIMessagePart.ToolCall>() || currentMessages[i].hasPart<UIMessagePart.ToolResult>()) relatedMessages.add(currentMessages[i]) else break }
+        for (i in index + 1 until currentMessages.size) { if (currentMessages[i].hasPart<UIMessagePart.ToolCall>() || currentMessages[i].hasPart<UIMessagePart.ToolResult>()) relatedMessages.add(currentMessages[i]) else break }
+        return relatedMessages.toList()
     }
 
     private suspend fun deleteMessageInternal(message: UIMessage) {

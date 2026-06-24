@@ -11,7 +11,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.currentWindowDpSize
 import androidx.compose.runtime.*
@@ -21,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -31,17 +29,12 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.StrokeCap
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
@@ -50,10 +43,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.data.datastore.ChatInputStyle
-import me.rerere.rikkahub.data.datastore.TtsTextFilterRule
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -71,7 +62,6 @@ import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.CallStatus
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
 fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
@@ -418,6 +408,20 @@ private fun ChatPageContent(
                         onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) },
                         onAddFavorite = { messages ->
                             vm.addFavorite(messages, currentAssistant, setting.displaySetting.userNickname)
+                        },
+                        onDeleteMessages = { messages ->
+                            val backup = conversation // 用于撤销
+                            vm.deleteMessages(messages)
+
+                            toaster.show(
+                                message = context.getString(R.string.message_deleted),
+                                action = me.rerere.rikkahub.ui.components.ui.ToastAction(
+                                    label = context.getString(R.string.undo),
+                                    onClick = {
+                                        vm.updateConversation(backup)
+                                    }
+                                )
+                            )
                         }
                     )
 
