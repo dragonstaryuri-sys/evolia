@@ -50,6 +50,12 @@ val PROVIDER_PRESETS = listOf(
         )
     ),
     ProviderPreset(
+        name = "MiniMax",
+        description = "MiniMax - 星野所属公司提供的大模型",
+        type = ProviderSetting.OpenAI::class,
+        baseUrl = "https://api.minimax.chat/v1"
+    ),
+    ProviderPreset(
         name = "VolcEngine",
         description = "火山引擎 - 字节跳动 AI 平台，豆包系列模型",
         type = ProviderSetting.OpenAI::class,
