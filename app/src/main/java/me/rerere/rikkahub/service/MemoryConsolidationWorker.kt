@@ -606,8 +606,9 @@ class MemoryConsolidationWorker(
 
     private fun mergeKeywords(ai: String, local: String): String {
         val aiList = ai.split(Regex("[,，、；;]")).map { it.trim().lowercase() }.filter { it.isNotBlank() }
+        if (aiList.isNotEmpty()) return aiList.distinct().joinToString(",")
         val localList = local.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
-        return (aiList + localList).distinct().joinToString(",")
+        return localList.distinct().joinToString(",")
     }
 
     @Suppress("UNCHECKED_CAST")
