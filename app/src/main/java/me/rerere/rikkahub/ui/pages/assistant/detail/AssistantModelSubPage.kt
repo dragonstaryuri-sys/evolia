@@ -45,7 +45,6 @@ import me.rerere.ai.core.ReasoningLevel
 
 /**
  * Model tab - All model and generation-related settings.
- * Designed with cohesive SettingsGroup pattern.
  */
 @Composable
 fun AssistantModelSubPage(
@@ -65,7 +64,7 @@ fun AssistantModelSubPage(
         // MODELS GROUP
         // ═══════════════════════════════════════════════════════════════════
         SettingsGroup(title = stringResource(R.string.assistant_model_group_models)) {
-            // Chat Model (Primary)
+            // Chat Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (LocalDarkMode.current)
@@ -164,7 +163,7 @@ fun AssistantModelSubPage(
                 }
             }
 
-            // Memory Model (New: Separate from Summarizer)
+            // Memory Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = if (LocalDarkMode.current)

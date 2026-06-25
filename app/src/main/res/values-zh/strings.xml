@@ -1692,4 +1692,6 @@
   <string name="api_error_404">服务地址未找到 (404)，请检查 API 基础地址。</string>
   <string name="diary_edit">修改TA的日记</string>
   <string name="diary_edit_save_hint">离开时将自动保存修改</string>
+  <string name="setting_model_page_rerank_model">重排序 (Re-rank) 模型</string>
+  <string name="setting_model_page_rerank_model_desc">可选。配置重排序模型以进一步提升 RAG 检索精度</string>
 </resources>

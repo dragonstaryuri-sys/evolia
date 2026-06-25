@@ -218,6 +218,13 @@ class AssistantDetailVM(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = ""
     )
 
+    // 重排序模型现在仅使用全局配置
+    val currentRerankModelId: StateFlow<String?> = settings
+        .map { it.rerankModelId?.toString() }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = null
+        )
+
     private val _isOptimizing = MutableStateFlow(false)
     val isOptimizing = _isOptimizing.asStateFlow()
 
@@ -750,7 +757,7 @@ class AssistantDetailVM(
             root.forEach { element ->
                 if (element !is JsonObject) return@forEach
                 val op = element["op"]?.jsonPrimitive?.contentOrNull ?: ""
-                val id = element["id"]?.jsonPrimitive?.intOrNull
+                val id = element["id"]?.jsonPrimitive?.intOrNull ?: element["id"]?.jsonPrimitive?.intOrNull
                 val contentElement = element["content"]
                 val contentString = when {
                     contentElement == null || contentElement is JsonNull -> null

@@ -28,6 +28,7 @@ enum class ModelType {
     CHAT,
     IMAGE,
     EMBEDDING,
+    RERANK, // 新增：重排序模型类型
 }
 
 @Serializable
@@ -63,4 +64,3 @@ sealed class BuiltInTools {
     @SerialName("url_context")
     data object UrlContext : BuiltInTools()
 }
-

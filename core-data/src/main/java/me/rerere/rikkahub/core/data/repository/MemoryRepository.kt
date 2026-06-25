@@ -16,6 +16,7 @@ import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
+import me.rerere.rikkahub.core.data.ai.RerankService
 import me.rerere.rikkahub.core.data.ai.rag.VectorEngine
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import kotlin.uuid.Uuid
@@ -25,6 +26,7 @@ class MemoryRepository(
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val chatSegmentDAO: ChatSegmentDAO,
     private val embeddingService: EmbeddingService,
+    private val rerankService: RerankService,
     private val embeddingCacheDAO: EmbeddingCacheDAO,
     private val conversationRepository: ConversationRepository
 ) {
@@ -452,7 +454,10 @@ class MemoryRepository(
         onEmbeddingFailure: (suspend (Exception) -> Unit)? = null
     ): List<Pair<AssistantMemory, Float>> {
         if (mode == MemoryRetrievalMode.OFF || query.trim().isBlank()) return emptyList()
-        Log.d(TAG, "RAG Retrieval started: query='$query', threshold=$similarityThreshold, includeEpisodes=$includeEpisodes")
+        Log.v(TAG, "🔍 [RAG] 开始检索 | Query: '$query' | Mode: $mode")
+
+        val rerankModelId = rerankService.getRerankModelId(assistantId)
+        val hasRerank = !rerankModelId.isNullOrBlank()
 
         val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
             try {
@@ -464,11 +469,15 @@ class MemoryRepository(
             }
         } else null
 
+
+        val retrievalLimit = if (hasRerank) limit * 3 else limit
+
         val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
         val segments = if (includeEpisodes) {
             chatSegmentDAO.getSegmentsByAssistant(assistantId)
                 .filter { it.conversationId != excludeConversationId }
         } else emptyList()
+        Log.v(TAG, "📦 [RAG] 候选池大小: Memories=${memories.size}, Segments=${segments.size}")
         val memoryScores = memories.mapNotNull { memory ->
             val effectiveKeywords = if (memory.keywords.isNullOrBlank()) {
                 val local = KeywordExtractor.extract(memory.content)
@@ -533,9 +542,9 @@ class MemoryRepository(
         }
 
         val allScored = (memoryScores + segmentScores).sortedByDescending { it.second }
-        Log.d(TAG, "Total matches after threshold: ${allScored.size}")
+        Log.v(TAG, "🎯 [RAG] 阈值筛选后匹配数: ${allScored.size}")
 
-        val finalResults = allScored.take(limit).mapNotNull { triple ->
+        val initialResults = allScored.take(retrievalLimit).mapNotNull { triple ->
             val item = triple.first
             val score = triple.second
             if (triple.third) {
@@ -547,6 +556,30 @@ class MemoryRepository(
             }
         }
 
+        val finalResults = if (hasRerank && initialResults.isNotEmpty()) {
+            try {
+                Log.v(TAG, "🧠 [RAG] 启动 Rerank 精排 | 候选数量: ${initialResults.size} | 模型: $rerankModelId")
+                val contents = initialResults.map { it.first.content }
+                val rerankResults = rerankService.rerank(query, contents, assistantId)
+                val results = rerankResults.map { r ->
+                    val pair = initialResults[r.index]
+                    pair.first.copy(score = r.score) to r.score
+                }.sortedByDescending { it.second }.take(limit)
+                if (results.isEmpty()) {
+                    Log.w(TAG, "⚠️ [RAG] Rerank 结果为空，使用初始检索结果兜底")
+                    initialResults.take(limit)
+                } else {
+                    Log.v(TAG, "✅ [RAG] Rerank 完成 | 耗时: ${System.currentTimeMillis()}ms")
+                }
+                results
+            } catch (e: Exception) {
+                Log.e(TAG, "⚠️ [RAG] Rerank 失败: ${e.message}")
+                initialResults.take(limit)
+            }
+        } else {
+            initialResults.take(limit)
+        }
+        Log.v(TAG, "🏁 [RAG] 检索结束 | 最终召回: ${finalResults.size}条")
         // 异步更新被召回片段的计数
         finalResults.forEach { (memory, _) ->
             if (memory.type == MemoryType.SEGMENT) {

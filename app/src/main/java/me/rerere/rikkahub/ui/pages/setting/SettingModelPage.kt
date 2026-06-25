@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Wallpaper
+import androidx.compose.material.icons.automirrored.rounded.Sort
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
@@ -114,6 +115,9 @@ fun SettingModelPage(vm: SettingVM = koinViewModel()) {
             }
             item {
                 DefaultEmbeddingModelSetting(settings = settings, vm = vm)
+            }
+            item {
+                DefaultRerankModelSetting(settings = settings, vm = vm)
             }
             item {
                 DefaultOcrModelSetting(settings = settings, vm = vm)
@@ -645,6 +649,45 @@ private fun DefaultEmbeddingModelSetting(
                         vm.updateSettings(
                             settings.copy(
                                 embeddingModelId = it.id
+                            )
+                        )
+                    },
+                    providers = settings.providers,
+                    allowClear = true,
+                    modifier = Modifier.wrapContentWidth()
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun DefaultRerankModelSetting(
+    settings: Settings,
+    vm: SettingVM
+) {
+    ModelFeatureCard(
+        title = {
+            Text(
+                stringResource(R.string.setting_model_page_rerank_model),
+                maxLines = 1
+            )
+        },
+        description = {
+            Text(stringResource(R.string.setting_model_page_rerank_model_desc))
+        },
+        icon = {
+            Icon(Icons.AutoMirrored.Rounded.Sort, null)
+        },
+        actions = {
+            Box(modifier = Modifier.weight(1f)) {
+                ModelSelector(
+                    modelId = settings.rerankModelId,
+                    type = ModelType.RERANK,
+                    onSelect = {
+                        vm.updateSettings(
+                            settings.copy(
+                                rerankModelId = it.id
                             )
                         )
                     },

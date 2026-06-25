@@ -594,7 +594,7 @@ private fun SiliconFlowTutorialBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
-    // 1. 将资源 ID 转换为组件支持的 String 路径
+    // 1. 将资源 ID 转换为组件支持 of String 路径
     val tutorialImages = remember {
         listOf(
             R.drawable.tutorial_siliconflow,
@@ -702,7 +702,7 @@ private fun ZhipuTutorialBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
-    // 1. 将资源 ID 转换为组件支持的 String 路径
+    // 1. 将资源 ID 转换为组件支持 of String 路径
     val tutorialImages = remember {
         listOf(
             R.drawable.tutorial_glm,
@@ -2218,6 +2218,7 @@ private fun ModelTypeSelector(
                                 ModelType.CHAT -> R.string.setting_provider_page_chat_model
                                 ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                                 ModelType.IMAGE -> R.string.setting_provider_page_image_model
+                                ModelType.RERANK -> R.string.setting_model_page_rerank_model
                             }
                         )
                     )

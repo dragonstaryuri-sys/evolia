@@ -10,14 +10,20 @@ import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import java.math.BigDecimal
 
+/**
+ * 重排序结果项
+ */
+@Serializable
+data class RerankResult(
+    val index: Int,
+    val score: Float
+)
+
 // 提供商实现
-// 采用无状态设计，使用时除了需要传入需要的参数外，还需要传入provider setting作为参数
 interface Provider<T : ProviderSetting> {
     suspend fun listModels(providerSetting: T): List<Model>
 
-    suspend fun getBalance(providerSetting: T): String {
-        return "TODO"
-    }
+    suspend fun getBalance(providerSetting: T): String = "TODO"
 
     suspend fun generateText(
         providerSetting: T,
@@ -40,9 +46,17 @@ interface Provider<T : ProviderSetting> {
         providerSetting: T,
         input: List<String>,
         model: Model,
-    ): List<List<Float>> {
-        return emptyList()
-    }
+    ): List<List<Float>> = emptyList()
+
+    /**
+     * 对检索到的文档进行重排序
+     */
+    suspend fun rerank(
+        providerSetting: T,
+        query: String,
+        documents: List<String>,
+        model: Model,
+    ): List<RerankResult> = emptyList()
 }
 
 @Serializable
@@ -68,13 +82,7 @@ data class ImageGenerationParams(
 )
 
 @Serializable
-data class CustomHeader(
-    val name: String,
-    val value: String
-)
+data class CustomHeader(val name: String, val value: String)
 
 @Serializable
-data class CustomBody(
-    val key: String,
-    val value: JsonElement
-)
+data class CustomBody(val key: String, val value: JsonElement)

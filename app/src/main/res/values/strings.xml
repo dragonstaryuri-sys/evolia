@@ -1734,4 +1734,7 @@
   <string name="api_error_404">Service address not found (404). Please check the API base address.</string>
   <string name="diary_edit">Edit Diary</string>
   <string name="diary_edit_save_hint">Changes will be saved automatically when you leave</string>
+  <string name="setting_model_page_rerank_model">Re-rank Model</string>
+  <string name="setting_model_page_rerank_model_desc">Optional. Configure the re-rank model to further improve RAG retrieval accuracy</string>
+
 </resources>

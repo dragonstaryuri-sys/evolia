@@ -870,6 +870,7 @@ fun ModelTypeTag(model: Model) {
                     ModelType.CHAT -> R.string.setting_provider_page_chat_model
                     ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
                     ModelType.IMAGE -> R.string.setting_provider_page_image_model
+                    ModelType.RERANK -> R.string.setting_model_page_rerank_model // 新增 RERANK 支持
                 }
             )
         )

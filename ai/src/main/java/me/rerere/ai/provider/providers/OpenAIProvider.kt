@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -14,6 +16,8 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.provider.RerankResult
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.providers.openai.ChatCompletionsAPI
 import me.rerere.ai.provider.providers.openai.ResponseAPI
 import me.rerere.ai.ui.ImageAspectRatio
@@ -28,12 +32,10 @@ import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.toHeaders
 import me.rerere.common.http.await
 import me.rerere.common.http.getByKey
-import me.rerere.common.http.jsonPrimitiveOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.math.BigDecimal
 
 class OpenAIProvider(
     private val client: OkHttpClient
@@ -56,7 +58,6 @@ class OpenAIProvider(
             )
 
             // For OpenRouter, also fetch embedding models using output_modalities filter
-            // OpenRouter's /models endpoint doesn't return embedding models by default
             val isOpenRouter = providerSetting.baseUrl.contains("openrouter.ai", ignoreCase = true)
             val embeddingModels = if (isOpenRouter) {
                 fetchModelsFromUrl(
@@ -90,7 +91,6 @@ class OpenAIProvider(
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
         if (!response.isSuccessful) {
-            // Don't fail completely if embedding endpoint fails, just return empty
             if (forceEmbeddingType) {
                 return emptyList()
             }
@@ -105,34 +105,33 @@ class OpenAIProvider(
             val modelObj = modelJson.jsonObject
             val id = modelObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
 
-            // Check if model is embedding type via:
-            // 1. Model ID contains "embed"
-            // 2. architecture.modality contains "embedding" (OpenRouter format)
-            // 3. architecture.output_modalities contains "embedding" (OpenRouter array format)
-            // 4. Forced by forceEmbeddingType parameter (for OpenRouter embedding endpoint)
             val architecture = modelObj["architecture"]?.jsonObject
             val modality = architecture?.get("modality")?.jsonPrimitive?.contentOrNull
             val outputModalities = architecture?.get("output_modalities")?.jsonArray
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 ?: emptyList()
 
+            // 识别逻辑：包含 "embed" 为嵌入模型，包含 "rerank" 为重排序模型
             val isEmbedding = forceEmbeddingType ||
                 id.contains("embed", ignoreCase = true) ||
                 modality?.contains("embedding", ignoreCase = true) == true ||
                 outputModalities.any { it.contains("embedding", ignoreCase = true) }
 
-            // Extract icon URL if available (some APIs provide this)
+            val isRerank = id.contains("rerank", ignoreCase = true)
+
             val iconUrl = modelObj["icon"]?.jsonPrimitive?.contentOrNull
                 ?: architecture?.get("icon")?.jsonPrimitive?.contentOrNull
 
-            // Extract provider slug from model ID (e.g., "anthropic/claude-3.5" -> "anthropic")
-            // Used for LobeHub CDN icon lookup
             val providerSlug = if (id.contains("/")) id.substringBefore("/") else null
 
             Model(
                 modelId = id,
                 displayName = modelObj["name"]?.jsonPrimitive?.contentOrNull ?: id,
-                type = if (isEmbedding) me.rerere.ai.provider.ModelType.EMBEDDING else me.rerere.ai.provider.ModelType.CHAT,
+                type = when {
+                    isEmbedding -> ModelType.EMBEDDING
+                    isRerank -> ModelType.RERANK
+                    else -> ModelType.CHAT
+                },
                 outputModalities = listOf(me.rerere.ai.provider.Modality.TEXT),
                 iconUrl = iconUrl,
                 providerSlug = providerSlug
@@ -141,17 +140,14 @@ class OpenAIProvider(
     }
 
     override suspend fun getBalance(providerSetting: ProviderSetting.OpenAI): String = withContext(Dispatchers.IO) {
-        // 1. 确定授权 Key
         val key = if (providerSetting.balanceOption.authorizeKey.isNotBlank()) {
             providerSetting.balanceOption.authorizeKey
         } else {
             keyRoulette.next(providerSetting.apiKey)
         }
 
-        // 识别是否为 4sapi
         val is4sApi = providerSetting.baseUrl.contains("4sapi.com", ignoreCase = true)
 
-        // 智能默认值：如果是 4sapi 且用户没有修改过默认路径，则自动使用 4sapi 的地址和解析规则
         val apiPath = if (is4sApi && providerSetting.balanceOption.apiPath == "/credits") {
             "https://4sapi.com/api/user/self"
         } else {
@@ -164,23 +160,13 @@ class OpenAIProvider(
             providerSetting.balanceOption.resultPath
         }
 
-        val url = if (apiPath.startsWith("http")) {
-            apiPath
-        } else {
-            "${providerSetting.baseUrl}$apiPath"
-        }
+        val url = if (apiPath.startsWith("http")) apiPath else "${providerSetting.baseUrl}$apiPath"
 
         val requestBuilder = Request.Builder().url(url).get()
 
-        // 2. 处理 Authorization Header (始终带有 Bearer 前缀)
-        val finalAuthValue = if (key.startsWith("Bearer ", ignoreCase = true)) {
-            key
-        } else {
-            "Bearer $key"
-        }
+        val finalAuthValue = if (key.startsWith("Bearer ", ignoreCase = true)) key else "Bearer $key"
         requestBuilder.addHeader("Authorization", finalAuthValue)
 
-        // 3. 处理 New-Api-User Header (User ID)
         if (providerSetting.balanceOption.userId.isNotBlank()) {
             requestBuilder.addHeader("New-Api-User", providerSetting.balanceOption.userId)
         }
@@ -196,12 +182,8 @@ class OpenAIProvider(
         val value = bodyJson.getByKey(resultPath)
 
         val digitalValue = value.toDoubleOrNull()
-        if(digitalValue != null) {
-            val finalValue = if (is4sApi && resultPath.contains("quota")) {
-                digitalValue * 0.000002
-            } else {
-                digitalValue
-            }
+        if (digitalValue != null) {
+            val finalValue = if (is4sApi && resultPath.contains("quota")) digitalValue * 0.000002 else digitalValue
             "%.2f".format(finalValue)
         } else {
             value
@@ -213,17 +195,9 @@ class OpenAIProvider(
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): Flow<MessageChunk> = if (providerSetting.useResponseApi) {
-        responseAPI.streamText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
+        responseAPI.streamText(providerSetting, messages, params)
     } else {
-        chatCompletionsAPI.streamText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
+        chatCompletionsAPI.streamText(providerSetting, messages, params)
     }
 
     override suspend fun generateText(
@@ -231,39 +205,24 @@ class OpenAIProvider(
         messages: List<UIMessage>,
         params: TextGenerationParams
     ): MessageChunk = if (providerSetting.useResponseApi) {
-        responseAPI.generateText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
+        responseAPI.generateText(providerSetting, messages, params)
     } else {
-        chatCompletionsAPI.generateText(
-            providerSetting = providerSetting,
-            messages = messages,
-            params = params
-        )
+        chatCompletionsAPI.generateText(providerSetting, messages, params)
     }
 
     override suspend fun generateImage(
         providerSetting: ProviderSetting,
         params: ImageGenerationParams
     ): ImageGenerationResult = withContext(Dispatchers.IO) {
-        require(providerSetting is ProviderSetting.OpenAI) {
-            "Expected OpenAI provider setting"
-        }
-
+        require(providerSetting is ProviderSetting.OpenAI) { "Expected OpenAI provider setting" }
         val key = keyRoulette.next(providerSetting.apiKey)
-
         val requestBody = json.encodeToString(
             buildJsonObject {
                 put("model", params.model.modelId)
                 put("prompt", params.prompt)
-                // DALL-E 3 only supports n=1, DALL-E 2 supports up to 10
                 val isDalle3 = params.model.modelId.contains("dall-e-3", ignoreCase = true)
                 put("n", if (isDalle3) 1 else params.numOfImages.coerceIn(1, 10))
                 put("response_format", "b64_json")
-                // DALL-E 3: 1024x1024, 1792x1024, 1024x1792
-                // DALL-E 2: 256x256, 512x512, 1024x1024
                 put(
                     "size", when {
                         isDalle3 -> when (params.aspectRatio) {
@@ -271,7 +230,8 @@ class OpenAIProvider(
                             ImageAspectRatio.LANDSCAPE -> "1792x1024"
                             ImageAspectRatio.PORTRAIT -> "1024x1792"
                         }
-                        else -> "1024x1024" // DALL-E 2 only supports square
+
+                        else -> "1024x1024"
                     }
                 )
             }.mergeCustomBody(params.customBody)
@@ -286,9 +246,7 @@ class OpenAIProvider(
             .build()
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) {
-            error("Failed to generate image: ${response.code} ${response.body?.string()}")
-        }
+        if (!response.isSuccessful) error("Failed to generate image: ${response.code}")
 
         val bodyStr = response.body?.string() ?: ""
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
@@ -304,50 +262,103 @@ class OpenAIProvider(
                 mimeType = "image/png"
             )
         }
-
         ImageGenerationResult(items = items)
     }
+
     override suspend fun createEmbedding(
         providerSetting: ProviderSetting.OpenAI,
         input: List<String>,
         model: Model
     ): List<List<Float>> = withContext(Dispatchers.IO) {
+        // 分批处理，防止输入过多导致请求失败（如 413 Payload Too Large 或 超过模型限制）
+        // 大多数 Provider 至少支持 16-32 个批次，这里保守取 16
+        input.chunked(16).flatMap { batch ->
+            val key = keyRoulette.next(providerSetting.apiKey)
+            val requestBody = json.encodeToString(
+                buildJsonObject {
+                    put("model", model.modelId)
+                    // 优化点：单条输入发送字符串，多条输入发送数组，提高对 SiliconFlow 等供应商的兼容性
+                    if (batch.size == 1) {
+                        put("input", batch[0])
+                    } else {
+                        put(
+                            "input",
+                            kotlinx.serialization.json.JsonArray(batch.map { kotlinx.serialization.json.JsonPrimitive(it) })
+                        )
+                    }
+                }
+            )
+
+            val request = Request.Builder()
+                .url("${providerSetting.baseUrl}/embeddings")
+                .addHeader("Authorization", "Bearer $key")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
+            if (!response.isSuccessful) error("Failed to create embedding: ${response.code} ${response.body?.string()}")
+
+            val bodyStr = response.body?.string() ?: ""
+            val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
+            val data = bodyJson["data"]?.jsonArray ?: emptyList()
+            data.map { item ->
+                item.jsonObject["embedding"]?.jsonArray?.mapNotNull {
+                    it.jsonPrimitive.floatOrNull
+                } ?: emptyList()
+            }
+        }
+    }
+
+    override suspend fun rerank(
+        providerSetting: ProviderSetting.OpenAI,
+        query: String,
+        documents: List<String>,
+        model: Model
+    ): List<RerankResult> = withContext(Dispatchers.IO) {
         val key = keyRoulette.next(providerSetting.apiKey)
         val requestBody = json.encodeToString(
             buildJsonObject {
                 put("model", model.modelId)
-                // 优化点：单条输入发送字符串，多条输入发送数组，提高对 SiliconFlow 等供应商的兼容性
-                if (input.size == 1) {
-                    put("input", input[0])
-                } else {
-                    put(
-                        "input",
-                        kotlinx.serialization.json.JsonArray(input.map { kotlinx.serialization.json.JsonPrimitive(it) })
-                    )
-                }
+                put("query", query)
+                put(
+                    "documents",
+                    kotlinx.serialization.json.JsonArray(documents.map { kotlinx.serialization.json.JsonPrimitive(it) })
+                )
             }
         )
 
+        val normalizedBaseUrl = providerSetting.baseUrl.removeSuffix("/")
+        val url = if (normalizedBaseUrl.endsWith("/v1")) {
+            "$normalizedBaseUrl/rerank"
+        } else {
+            // 兼容 SiliconFlow 等 provider 常见的 /v1/rerank 路径
+            "$normalizedBaseUrl/v1/rerank".takeIf { !normalizedBaseUrl.contains("/v1") }
+                ?: "$normalizedBaseUrl/rerank"
+        }
+
         val request = Request.Builder()
-            .url("${providerSetting.baseUrl}/embeddings")
+            .url(url)
             .addHeader("Authorization", "Bearer $key")
             .addHeader("Content-Type", "application/json")
             .post(requestBody.toRequestBody("application/json".toMediaType()))
             .build()
 
-        val response =
-            client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
+        val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
         if (!response.isSuccessful) {
-            error("Failed to create embedding: ${response.code} ${response.body?.string()}")
+            error("Failed to rerank: ${response.code} ${response.body?.string()}")
         }
 
         val bodyStr = response.body?.string() ?: ""
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-        val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
 
-        data.map { item ->
-            item.jsonObject["embedding"]?.jsonArray?.map { it.jsonPrimitive.content.toFloat() }
-                ?: error("No embedding in response")
+        val results = bodyJson["results"]?.jsonArray ?: return@withContext emptyList()
+        results.map {
+            val obj = it.jsonObject
+            RerankResult(
+                index = obj["index"]?.jsonPrimitive?.intOrNull ?: 0,
+                score = (obj["relevance_score"] ?: obj["score"])?.jsonPrimitive?.floatOrNull ?: 0f
+            )
         }
     }
 }

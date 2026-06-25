@@ -85,6 +85,7 @@ class SettingsStore(
         val OCR_MODEL = stringPreferencesKey("ocr_model")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
         val EMBEDDING_MODEL = stringPreferencesKey("embedding_model")
+        val RERANK_MODEL = stringPreferencesKey("rerank_model")
         val MEMORY_MODEL = stringPreferencesKey("memory_model")
         val DIARY_MODEL = stringPreferencesKey("diary_model")
         val DIARY_PROMPT = stringPreferencesKey("diary_prompt")
@@ -115,6 +116,10 @@ class SettingsStore(
 
     private val dataStore = context.settingsStore
 
+    private fun String?.toUuidOrNull(): Uuid? = this?.takeIf { it.isNotBlank() }?.let {
+        runCatching { Uuid.parse(it) }.getOrNull()
+    }
+
     val settingsFlowRaw = dataStore.data
         .catch { exception ->
             if (exception is IOException) {
@@ -128,27 +133,28 @@ class SettingsStore(
                 favoriteModels = preferences[FAVORITE_MODELS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                chatModelId = preferences[SELECT_MODEL]?.let { Uuid.parse(it) }
+                chatModelId = preferences[SELECT_MODEL].toUuidOrNull()
                     ?: GEMINI_2_5_FLASH_ID,
-                backgroundModelId = preferences[BACKGROUND_MODEL]?.let { Uuid.parse(it) }
+                backgroundModelId = preferences[BACKGROUND_MODEL].toUuidOrNull()
                     ?: GEMINI_2_5_FLASH_ID,
-                summarizerModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) }
+                summarizerModelId = preferences[SUMMARIZER_MODEL].toUuidOrNull()
                     ?: GEMINI_2_5_FLASH_ID,
-                translateModeId = preferences[TRANSLATE_MODEL]?.let { Uuid.parse(it) }
+                translateModeId = preferences[TRANSLATE_MODEL].toUuidOrNull()
                     ?: GEMINI_2_5_FLASH_ID,
-                suggestionModelId = preferences[SUMMARIZER_MODEL]?.let { Uuid.parse(it) }
+                suggestionModelId = preferences[SUGGESTION_MODEL].toUuidOrNull()
                     ?: GEMINI_2_5_FLASH_ID,
-                imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
+                imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL].toUuidOrNull() ?: Uuid.random(),
                 translatePrompt = preferences[TRANSLATION_PROMPT] ?: DEFAULT_TRANSLATION_PROMPT,
                 suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
                 learningModePrompt = preferences[LEARNING_MODE_PROMPT] ?: DEFAULT_LEARNING_MODE_PROMPT,
-                ocrModelId = preferences[OCR_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
+                ocrModelId = preferences[OCR_MODEL].toUuidOrNull() ?: Uuid.random(),
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
-                embeddingModelId = preferences[EMBEDDING_MODEL]?.let { Uuid.parse(it) } ?: Uuid.random(),
-                memoryModelId = preferences[MEMORY_MODEL]?.let { Uuid.parse(it) } ?: GEMINI_2_5_FLASH_ID,
-                diaryModelId = preferences[DIARY_MODEL]?.let { Uuid.parse(it) } ?: GEMINI_2_5_FLASH_ID,
+                embeddingModelId = preferences[EMBEDDING_MODEL].toUuidOrNull() ?: Uuid.random(),
+                rerankModelId = preferences[RERANK_MODEL].toUuidOrNull(),
+                memoryModelId = preferences[MEMORY_MODEL].toUuidOrNull() ?: GEMINI_2_5_FLASH_ID,
+                diaryModelId = preferences[DIARY_MODEL].toUuidOrNull() ?: GEMINI_2_5_FLASH_ID,
                 diaryPrompt = preferences[DIARY_PROMPT] ?: DEFAULT_DIARY_PROMPT,
-                assistantId = preferences[SELECT_ASSISTANT]?.let { Uuid.parse(it) }
+                assistantId = preferences[SELECT_ASSISTANT].toUuidOrNull()
                     ?: DEFAULT_ASSISTANT_ID,
                 assistantTags = preferences[ASSISTANT_TAGS]?.let {
                     JsonInstant.decodeFromString(it)
@@ -188,7 +194,7 @@ class SettingsStore(
                 ttsProviders = preferences[TTS_PROVIDERS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER]?.let { Uuid.parse(it) }
+                selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER].toUuidOrNull()
                     ?: DEFAULT_SYSTEM_TTS_ID,
                 autoPlayTts = preferences[AUTO_PLAY_TTS] ?: false,
                 consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 300,
@@ -340,6 +346,7 @@ class SettingsStore(
             preferences[OCR_MODEL] = settingsToSave.ocrModelId.toString()
             preferences[OCR_PROMPT] = settingsToSave.ocrPrompt
             preferences[EMBEDDING_MODEL] = settingsToSave.embeddingModelId.toString()
+            preferences[RERANK_MODEL] = settingsToSave.rerankModelId?.toString() ?: ""
             preferences[MEMORY_MODEL] = settingsToSave.memoryModelId.toString()
             preferences[DIARY_MODEL] = settingsToSave.diaryModelId.toString()
             preferences[DIARY_PROMPT] = settingsToSave.diaryPrompt
@@ -428,7 +435,9 @@ data class Settings(
     val ocrModelId: Uuid = Uuid.random(),
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
     val embeddingModelId: Uuid = Uuid.random(),
+    val rerankModelId: Uuid? = null,
     val memoryModelId: Uuid = Uuid.random(),
+    val memoryModelPrompt: String = "",
     val diaryModelId: Uuid = Uuid.random(),
     val diaryPrompt: String = DEFAULT_DIARY_PROMPT,
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
