@@ -88,6 +88,10 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Memory
 import kotlin.time.Duration.Companion.minutes
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
 
 private const val TAG = "ChatList"
 private const val LoadingIndicatorKey = "LoadingIndicator"
@@ -299,7 +303,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     turns.forEach { turn ->
                         val firstNodeTime = turn.firstNode.currentMessage.createdAt
                         val shouldShowTime = lastShownTime == null ||
-                            (firstNodeTime.toInstant(TimeZone.currentSystemDefault()) - lastShownTime!!.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+                            (firstNodeTime.toInstant(TimeZone.currentSystemDefault()) - lastShownTime!!.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
 
                         if (shouldShowTime) {
                             result.add(ChatListDisplayItem.Time(formatTime(firstNodeTime)))
@@ -547,9 +551,19 @@ private fun SharedTransitionScope.ChatListNormal(
 }
 
 private fun formatTime(dateTime: LocalDateTime): String {
-    val hour = dateTime.hour.toString().padStart(2, '0')
-    val minute = dateTime.minute.toString().padStart(2, '0')
-    return "$hour:$minute"
+    val now = Instant.fromEpochMilliseconds(System.currentTimeMillis())
+        .toLocalDateTime(TimeZone.currentSystemDefault())
+    val date = dateTime.date
+    val nowDate = now.date
+
+    val timeStr = "${dateTime.hour.toString().padStart(2, '0')}:${dateTime.minute.toString().padStart(2, '0')}"
+
+    return when {
+        date == nowDate -> timeStr
+        date == nowDate.minus(1, DateTimeUnit.DAY) -> "昨天 $timeStr"
+        date.year == nowDate.year -> "${date.monthNumber}月${date.dayOfMonth}日 $timeStr"
+        else -> "${date.year}年${date.monthNumber}月${date.dayOfMonth}日 $timeStr"
+    }
 }
 
 
