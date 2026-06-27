@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.components.chat
 
-import android.util.Log
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import kotlin.time.Duration.Companion.minutes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -169,8 +171,15 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     forEach { node ->
         val nodeRole = node.currentMessage.role
         val logicalRole = getGroupingRole(nodeRole)
+        val isTimeBreak = if (currentGroup.isNotEmpty()) {
+            val lastNodeTime = currentGroup.last().currentMessage.createdAt
+            val currentNodeTime = node.currentMessage.createdAt
+            // 如果间隔超过 5 分钟，则强制断开，作为一个新的 Turn 处理
+            (currentNodeTime.toInstant(TimeZone.currentSystemDefault()) -
+                lastNodeTime.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
+        } else false
 
-        if (logicalRole != currentGroupRole && currentGroup.isNotEmpty()) {
+        if ((logicalRole != currentGroupRole || isTimeBreak) && currentGroup.isNotEmpty()) {
             groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
             currentGroup = mutableListOf()
         }
