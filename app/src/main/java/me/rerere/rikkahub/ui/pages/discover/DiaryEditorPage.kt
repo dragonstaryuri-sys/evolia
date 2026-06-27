@@ -78,14 +78,17 @@ fun DiaryEditorPage(
             )
         },
         // 连接嵌套滚动，使标题栏能随滑动折叠
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime)
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .consumeWindowInsets(padding)
+                .imePadding() // 核心：弹出键盘时自动调整布局高度
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 16.dp)
         ) {
             Text(
                 text = stringResource(R.string.diary_edit_save_hint),
@@ -99,7 +102,7 @@ fun DiaryEditorPage(
                 onValueChange = { content = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
+                    .heightIn(min = 400.dp), // 在滚动容器中移除 weight，改为最小高度让内容自然增长
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface,
                     lineHeight = 24.sp
