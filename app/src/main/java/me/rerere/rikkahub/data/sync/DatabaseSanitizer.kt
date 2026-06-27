@@ -76,7 +76,8 @@ object DatabaseSanitizer {
                 "MilestoneEntity",
                 "user_device_state",
                 "agent_monitor_tasks",
-                "assistant_extended_state"
+                "assistant_extended_state",
+                "favorites" // 修复：添加收藏表到迁移白名单
             )
 
             // 3. 交叉比对迁移
