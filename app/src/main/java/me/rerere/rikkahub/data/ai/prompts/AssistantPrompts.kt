@@ -81,31 +81,32 @@ const val DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT = """
 """
 
 const val DEFAULT_FULL_SUMMARY_PROMPT = """
-You {{char}}. Now you need to update your previous conversation memory based on the conversation between the user and you (if there is no existing memory, generate a new one directly).
+你是 {{char}}。现在你需要根据你与用户之间的对话，更新你之前的对话记忆（如果不存在现有记忆，则直接生成新记忆）。
 
-**Existing Episodic Memory (L2):**
+**现有片段记忆 (L2):**
 {{previous_summary}}
 
-**New Interaction Data:**
+**新互动数据:**
 {{new_messages}}
 
-**Instructions:**
-1. **Incremental Integration**: Do NOT simply replace the old memory. You must integrate the [New Interaction Data] into the [Existing Episodic Memory] seamlessly.
-2. **Information Preservation**: Absolutely DO NOT discard specific facts, key milestones, or emotional shifts recorded in the existing memory. The goal is to APPEND and REFINE, not to prune.
-3. **Narrative Continuity**: Maintain the narrative arc. If a topic from the previous memory has progressed in the new messages, update the status of that topic while keeping its history.
-4. **Detail Focus**: Focus on specific details: key events,emotion, behaviour.
-5. **Dynamic Length**: Let the length grow naturally to accommodate important information (Max 300 words), but keep it concise by removing repetitive filler and meaningless words ,don't miss out on keywords..
-6. **Perspective**: Write from the perspective of {{char}} as a personal/professional journal.
-7. **Output Language**: {{locale}}
+**指令：**
+1. **增量整合**：不要简单地替换旧记忆。你必须将 [新互动数据] 无缝整合到 [现有片段记忆] 中。
+2. **信息保留**：绝对不要丢弃现有记忆中记录的具体事实、关键里程碑或情感转变。目标是追加和完善，而不是削减。
+3. **叙事连贯**：保持叙事弧线。如果新消息中旧记忆的主题有了进展，请在保留其历史的同时更新该主题的状态。
+4. **细节关注**：专注于具体细节：关键事件、情绪、行为。
+5. **动态长度**：字数根据信息量自然增长（最大 300 字），通过删除重复填充词和废话保持精炼，不要遗漏关键词。
+6. **视角**：以 {{char}} 的视角，以个人/专业日志的形式书写。
+7. **输出语言**：{{locale}}
 
-**Mandatory Requirement**:
-- Provide ONLY the consolidated memory text.
-- NO preamble, NO meta-talk (e.g., "Based on the messages..."), NO conversational filler.
-- START DIRECTLY with the memory text.
-- Total length MUST NOT exceed 300 words.
-- Prohibited to fabricate things that have not happened.
+**强制要求**：
+- 仅提供整合后的记忆文本。
+- 严禁任何开场白、元对话（例如“基于上述对话...”）或填充用语。
+- **直接开始**输出记忆文本。
+- 总长度不得超过 300 字。
+- 严禁捏造未发生的事情。
+- **在总结的末尾，必须单独用一句话明确写明：我们最后讨论的话题是：[此处填写话题内容]。**
 
-Consolidated Memory:
+更新后的记忆记忆：
 """
 
 const val DEFAULT_TEMP_SUMMARY_PROMPT = """
@@ -159,22 +160,6 @@ Example1: If merging IDs 1, 2, and 3:
   {"op": "update", "id": 1, "content": "Merged text..."},
   {"op": "delete", "id": 2}
 ]
-"""
-
-const val DEFAULT_KEYWORD_EXTRACTION_PROMPT = """
-Analyze the following conversation summary and extract 3-5 high-quality keywords or short phrases.
-These keywords will be used for RAG retrieval to help the assistant recall this specific memory later.
-
-**Guidelines:**
-- Focus on unique entities, main topics, or specific user needs.
-- Keep them concise (max 3 words per phrase).
-- Output language: {{locale}}
-- Format: Return ONLY keywords separated by commas.
-
-**Summary:**
-{{summary}}
-
-Keywords:
 """
 
 const val DIARY_NO_INTERACTION_PROMPT = """

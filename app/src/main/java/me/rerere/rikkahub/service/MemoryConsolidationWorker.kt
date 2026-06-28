@@ -19,7 +19,6 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
@@ -30,15 +29,9 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
-import me.rerere.common.android.appTempFolder
-import kotlinx.serialization.encodeToString
-import me.rerere.rikkahub.common.JsonInstant
-import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
@@ -215,41 +208,15 @@ class MemoryConsolidationWorker(
             )
 
             if (summary.isNotBlank()) {
-                // 1. AI 提取关键词 (使用背景模型)
-                val aiKeywords = extractKeywords(
-                    handler = background.handler,
-                    providerSetting = background.provider,
-                    model = background.model,
-                    summary = summary
-                )
-
-                // 2. 本地算法提取关键词
-                val localKeywords = KeywordExtractor.extract(summary)
-
-                // 3. 合并关键词并去重
-                val mergedKeywords = mergeKeywords(aiKeywords, localKeywords)
-
-                // 生成向量（补充逻辑）
-                val effectiveContent = if (mergedKeywords.isNotBlank()) {
-                    "Keywords: $mergedKeywords\nContent: $summary"
-                } else {
-                    summary
-                }
-                val embeddingResult = try {
-                    embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to generate embedding", e)
-                    null
-                }
 
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conv.id.toString(),
                     content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
-                    keywords = mergedKeywords,
-                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
-                    embeddingModelId = embeddingResult?.modelId,
+                    keywords = "",
+                    embedding = null,
+                    embeddingModelId = null,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
                     significance = messageCount,
@@ -347,33 +314,15 @@ class MemoryConsolidationWorker(
                     )
 
                     if (summary.isNotBlank()) {
-                        val aiKeywords = extractKeywords(
-                            handler = background.handler,
-                            providerSetting = background.provider,
-                            model = background.model,
-                            summary = summary
-                        )
-                        val localKeywords = KeywordExtractor.extract(summary)
-                        val mergedKeywords = mergeKeywords(aiKeywords, localKeywords)
-
-                        val effectiveContent =
-                            if (mergedKeywords.isNotBlank()) "Keywords: $mergedKeywords\nContent: $summary" else summary
-                        val embeddingResult = try {
-                            embeddingService.embedWithModelId(effectiveContent, currentAssistant.id.toString())
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to generate embedding", e)
-                            null
-                        }
 
                         val episode = ChatEpisodeEntity(
                             id = existingEpisode?.id ?: 0,
                             assistantId = currentAssistant.id.toString(),
                             conversationId = convIdString,
                             content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
-                            keywords = mergedKeywords,
-                            embedding = embeddingResult?.embeddings?.firstOrNull()
-                                ?.let { JsonInstant.encodeToString(it) },
-                            embeddingModelId = embeddingResult?.modelId,
+                            keywords = "",
+                            embedding = null,
+                            embeddingModelId = null,
                             startTime = conv.createAt.toEpochMilli(),
                             endTime = conv.updateAt.toEpochMilli(),
                             significance = conv.currentMessages.size,
@@ -581,28 +530,6 @@ class MemoryConsolidationWorker(
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private suspend fun extractKeywords(
-        handler: me.rerere.ai.provider.Provider<*>,
-        providerSetting: me.rerere.ai.provider.ProviderSetting,
-        model: me.rerere.ai.provider.Model,
-        summary: String
-    ): String {
-        val locale = Locale.getDefault().displayName
-        val prompt = DEFAULT_KEYWORD_EXTRACTION_PROMPT.applyPlaceholders(
-            "summary" to summary,
-            "locale" to locale
-        )
-        val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = retryIO(times = 2) {
-            h.generateText(
-                providerSetting = providerSetting,
-                messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(model = model, temperature = 0.3f, topP = 0.5f, maxTokens = 256)
-            )
-        }
-        return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
-    }
 
     private fun mergeKeywords(ai: String, local: String): String {
         val aiList = ai.split(Regex("[,，、；;]")).map { it.trim().lowercase() }.filter { it.isNotBlank() }

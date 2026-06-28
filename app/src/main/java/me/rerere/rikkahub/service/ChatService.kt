@@ -75,7 +75,6 @@ import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_KEYWORD_EXTRACTION_PROMPT
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
@@ -578,48 +577,22 @@ class ChatService(
             }
 
             if (summary.isNotBlank() && (!newMessages.isEmpty() || force)) {
-                val aiKeywords = extractKeywords(
-                    handler = backgroundHandler,
-                    providerSetting = backgroundProvider,
-                    model = backgroundModel,
-                    summary = summary,
-                    assistantId = assistant.id.toString()
-                )
-                val localKeywords = KeywordExtractor.extract(summary)
-                val keywords = mergeKeywords(aiKeywords, localKeywords)
-
-                val embeddingResult = if (skipEmbedding) {
-                    null
-                } else {
-                    val effectiveContent =
-                        if (keywords.isNotBlank()) "Keywords: $keywords\nContent: $summary" else summary
-                    try {
-                        embeddingService.embedWithModelId(effectiveContent, assistant.id.toString())
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to generate embedding", e)
-                        null
-                    }
-                }
 
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conversationId.toString(),
                     content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
-                    keywords = keywords,
-                    embedding = if (skipEmbedding) {
-                        existingEpisode?.embedding
-                    } else {
-                        embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) }
-                    },
-                    embeddingModelId = embeddingResult?.modelId,
+                    keywords = "",
+                    embedding = null,
+                    embeddingModelId = null,
                     startTime = conv.createAt.toEpochMilli(),
                     endTime = conv.updateAt.toEpochMilli(),
                     significance = messages.size,
                     lastAccessedAt = System.currentTimeMillis()
                 )
                 memoryRepository.saveEpisode(episode)
-                Log.i(TAG, "Archived L2 memory for $conversationId. force=$force, skipEmbedding=$skipEmbedding")
+                Log.i(TAG, "Archived L2 memory for $conversationId. force=$force")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to archive conversation $conversationId", e)
@@ -1462,35 +1435,6 @@ class ChatService(
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private suspend fun extractKeywords(
-        handler: Provider<*>,
-        providerSetting: ProviderSetting,
-        model: me.rerere.ai.provider.Model,
-        summary: String,
-        assistantId: String
-    ): String {
-        return try {
-            val locale = Locale.getDefault().getDisplayName(Locale.ROOT)
-            val prompt = fillPrompt(
-                DEFAULT_KEYWORD_EXTRACTION_PROMPT, mapOf(
-                    "summary" to summary,
-                    "locale" to locale
-                )
-            )
-            val h = handler as Provider<ProviderSetting>
-            val resp = h.generateText(
-                providerSetting = providerSetting,
-                messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f, maxTokens = 256)
-            )
-            resp.usage?.let { conversationRepo.recordTokenUsage(assistantId, it) }
-            resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to extract keywords", e)
-            ""
-        }
-    }
 
     private fun mergeKeywords(ai: String, local: String): String {
         val aiList = ai.split(Regex("[,，、；;]")).map { it.trim().lowercase() }.filter { it.isNotBlank() }
