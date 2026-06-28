@@ -15,8 +15,6 @@ import me.rerere.rikkahub.core.data.db.dao.*
 import me.rerere.rikkahub.core.data.db.entity.*
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.jsonArray
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -177,6 +175,7 @@ class ConversationRepository(
                 val nodesFromDb = allNodes[entity.id] ?: emptyList()
                 val messageNodes = nodesFromDb.map { nodeEntity ->
                     val messages = allMessages[nodeEntity.id]
+                        ?.filter { !it.isDeleted }
                         ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
                         ?: emptyList()
                     MessageNode(
@@ -278,7 +277,8 @@ class ConversationRepository(
                     conversationId = convId,
                     contentJson = JsonInstant.encodeToString(msg),
                     createdAt = msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
-                    orderIndex = index
+                    orderIndex = index,
+                    isDeleted = false
                 )
             }
         }
@@ -317,6 +317,7 @@ class ConversationRepository(
             isConsolidated = conversation.isConsolidated,
             enabledModeIds = JsonInstant.encodeToString(conversation.enabledModeIds.map { it.toString() }),
             contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
+            lastSummarizedMessageTime = conversation.lastSummarizedMessageTime,
             lastPruneTime = conversation.lastPruneTime,
             lastPruneMessageCount = conversation.lastPruneMessageCount,
             lastRefreshTime = conversation.lastRefreshTime,
@@ -345,6 +346,7 @@ class ConversationRepository(
             isConsolidated = entity.isConsolidated,
             enabledModeIds = enabledModeIds,
             contextSummaryUpToIndex = entity.contextSummaryUpToIndex,
+            lastSummarizedMessageTime = entity.lastSummarizedMessageTime,
             lastPruneTime = entity.lastPruneTime,
             lastPruneMessageCount = entity.lastPruneMessageCount,
             lastRefreshTime = entity.lastRefreshTime,
@@ -485,5 +487,26 @@ class ConversationRepository(
     fun getDailyTotalUsageFlow(days: Int = 7): Flow<List<DailyUsageSummary>> {
         val startDate = LocalDate.now().minusDays(days.toLong()).toString()
         return tokenUsageDAO.getDailyTotalUsageFlow(startDate)
+    }
+
+    /**
+     * 逻辑删除单条消息
+     */
+    suspend fun markMessageAsDeleted(messageId: Uuid) {
+        chatMessageDAO.markMessageAsDeleted(messageId.toString())
+    }
+
+    /**
+     * 统计指定时间戳之后的新消息数量
+     */
+    suspend fun countNewMessages(convId: String, lastTime: Long): Int {
+        return chatMessageDAO.countNewMessages(convId, lastTime)
+    }
+
+    /**
+     * 获取指定时间戳之后的消息列表用于总结
+     */
+    suspend fun getMessagesForSummary(convId: String, lastTime: Long): List<ChatMessageEntity> {
+        return chatMessageDAO.getMessagesForSummary(convId, lastTime)
     }
 }

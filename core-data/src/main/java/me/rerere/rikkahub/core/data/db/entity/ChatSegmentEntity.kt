@@ -12,7 +12,7 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "chat_segments",
     indices = [
-        Index(value = ["conversation_id", "start_index"], unique = true), // 强制唯一索引，防止重叠
+        Index(value = ["conversation_id", "start_time"], unique = true), // 强制唯一索引，防止重叠
         Index(value = ["conversation_id"]),
         Index(value = ["assistant_id"])
     ]
@@ -28,10 +28,16 @@ data class ChatSegmentEntity(
     val content: String, // 该片段的具体摘要内容
     @ColumnInfo("keywords")
     val keywords: String? = null,
+    @Deprecated("使用start_time代替")
     @ColumnInfo("start_index")
-    val startMessageIndex: Int, // 对应对话中的起始消息索引
+    val startMessageIndex: Int,
+    @Deprecated("使用end_time代替")
     @ColumnInfo("end_index")
-    val endMessageIndex: Int,   // 对应对话中的结束消息索引
+    val endMessageIndex: Int,
+    @ColumnInfo("start_time")
+    val startTime: Long,
+    @ColumnInfo("end_time")
+    val endTime: Long,
     @ColumnInfo("timestamp")
     val timestamp: Long = System.currentTimeMillis(),
     @ColumnInfo("embedding")

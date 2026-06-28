@@ -42,10 +42,12 @@ interface ChatMessageDAO {
     suspend fun getMessagesByConversationIds(conversationIds: List<String>): List<ChatMessageEntity>
 
     // 流式获取某个助手的全部消息内容 (用于统计)
-    @Query("""
+    @Query(
+        """
         SELECT content_json FROM chat_messages
         WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = 0)
-    """)
+    """
+    )
     fun getAllMessagesContentByAssistant(assistantId: String): Flow<List<String>>
 
     @Update
@@ -56,12 +58,19 @@ interface ChatMessageDAO {
 
     @Transaction
     suspend fun syncConversationMessages(
-        conversationId: String,
-        nodes: List<ChatMessageNodeEntity>,
-        messages: List<ChatMessageEntity>
+        conversationId: String, nodes: List<ChatMessageNodeEntity>, messages: List<ChatMessageEntity>
     ) {
         deleteNodesByConversationId(conversationId)
         insertNodes(nodes)
         insertMessages(messages)
     }
+
+    @Query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0")
+    suspend fun countNewMessages(convId: String, lastTime: Long): Int
+
+    @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC")
+    suspend fun getMessagesForSummary(convId: String, lastTime: Long): List<ChatMessageEntity>
+
+    @Query("UPDATE chat_messages SET is_deleted = 1 WHERE id = :messageId")
+    suspend fun markMessageAsDeleted(messageId: String)
 }

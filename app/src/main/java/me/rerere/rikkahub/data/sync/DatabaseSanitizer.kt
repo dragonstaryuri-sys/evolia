@@ -42,6 +42,10 @@ object DatabaseSanitizer {
             .build()
 
         val targetDbInfo = targetRoomDb.openHelper.writableDatabase
+
+        // 关键：关闭外键约束，防止因为拷贝顺序导致插入失败
+        targetDbInfo.execSQL("PRAGMA foreign_keys = OFF")
+
         var totalResult = SanitizationResult()
         var sourceDb: SQLiteDatabase? = null
 
@@ -53,7 +57,11 @@ object DatabaseSanitizer {
                 while (c.moveToNext()) sourceTables.add(c.getString(0))
             }
 
-            // 白名单中必须包含新消息表
+            val targetTables = mutableListOf<String>()
+            targetDbInfo.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'room_%'").use { c ->
+                while (c.moveToNext()) targetTables.add(c.getString(0))
+            }
+
             val whiteList = listOf(
                 "ConversationEntity", "MemoryEntity", "GenMediaEntity",
                 "ChatEpisodeEntity", "chat_episode_entity", "EmbeddingCacheEntity",
@@ -61,27 +69,33 @@ object DatabaseSanitizer {
                 "agent_tasks", "token_usage", "books", "book_progress",
                 "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
                 "assistant_extended_state", "favorites",
-                "chat_messages",
-                "chat_message_nodes"
+                "chat_messages", "chat_message_nodes"
             )
 
-            for (tableName in sourceTables) {
-                val isWhitelisted = whiteList.any { it.replace("_", "").equals(tableName.replace("_", ""), ignoreCase = true) }
+            for (sourceTableName in sourceTables) {
+                val isWhitelisted = whiteList.any { it.replace("_", "").equals(sourceTableName.replace("_", ""), ignoreCase = true) }
                 if (isWhitelisted) {
-                    // 恢复 rowCount 检查，用于精细日志输出并跳过空表
-                    val rowCount = sourceDb.rawQuery("SELECT COUNT(*) FROM `$tableName`", null).use { c ->
-                        if (c.moveToFirst()) c.getInt(0) else 0
-                    }
+                    val targetTableName = targetTables.find { it.replace("_", "").equals(sourceTableName.replace("_", ""), ignoreCase = true) }
 
-                    if (rowCount > 0) {
-                        LogUtil.i(TAG, "发现数据表 '$tableName' ($rowCount 行). 正在执行物理拷贝...")
-                        val result = copyTable(sourceDb, targetDbInfo, tableName)
-                        totalResult += result
+                    if (targetTableName != null) {
+                        val rowCount = sourceDb.rawQuery("SELECT COUNT(*) FROM `$sourceTableName`", null).use { c ->
+                            if (c.moveToFirst()) c.getInt(0) else 0
+                        }
+
+                        if (rowCount > 0) {
+                            LogUtil.i(TAG, "迁移表: $sourceTableName -> $targetTableName ($rowCount 行)")
+                            val result = copyTable(sourceDb, targetDbInfo, sourceTableName, targetTableName)
+                            totalResult += result
+                        }
                     }
                 }
             }
+
+            // 重新开启外键
+            targetDbInfo.execSQL("PRAGMA foreign_keys = ON")
+
         } catch (e: Exception) {
-            LogUtil.e(TAG, "物理清洗失败", e)
+            LogUtil.e(TAG, "清洗过程中发生严重错误", e)
             throw e
         } finally {
             sourceDb?.close()
@@ -90,42 +104,95 @@ object DatabaseSanitizer {
         return targetDbFile to totalResult
     }
 
-    private fun copyTable(source: SQLiteDatabase, target: androidx.sqlite.db.SupportSQLiteDatabase, tableName: String): SanitizationResult {
+    private fun copyTable(
+        source: SQLiteDatabase,
+        target: androidx.sqlite.db.SupportSQLiteDatabase,
+        sourceTableName: String,
+        targetTableName: String
+    ): SanitizationResult {
         var rows = 0
         var skipped = 0
         try {
-            source.query("`$tableName`", null, null, null, null, null, null).use { cursor ->
-                val columns = cursor.columnNames
+            val targetColumnsInfo = mutableMapOf<String, ColumnInfo>()
+            target.query("PRAGMA table_info(`$targetTableName`)").use { c ->
+                val nameIdx = c.getColumnIndex("name")
+                val notNullIdx = c.getColumnIndex("notnull")
+                val dfltIdx = c.getColumnIndex("dflt_value")
+                val typeIdx = c.getColumnIndex("type")
+                while (c.moveToNext()) {
+                    val name = c.getString(nameIdx)
+                    targetColumnsInfo[name] = ColumnInfo(
+                        name = name,
+                        type = c.getString(typeIdx).uppercase(),
+                        isNotNull = c.getInt(notNullIdx) == 1,
+                        hasDefault = !c.isNull(dfltIdx)
+                    )
+                }
+            }
+
+            source.query("`$sourceTableName`", null, null, null, null, null, null).use { cursor ->
+                val sourceColumns = cursor.columnNames.toSet()
+
                 while (cursor.moveToNext()) {
                     rows++
                     try {
                         val values = ContentValues()
-                        for (col in columns) {
-                            val idx = cursor.getColumnIndex(col)
-                            if (idx != -1) {
-                                when (cursor.getType(idx)) {
-                                    Cursor.FIELD_TYPE_NULL -> values.putNull(col)
-                                    Cursor.FIELD_TYPE_INTEGER -> values.put(col, cursor.getLong(idx))
-                                    Cursor.FIELD_TYPE_FLOAT -> values.put(col, cursor.getDouble(idx))
-                                    Cursor.FIELD_TYPE_STRING -> values.put(col, cursor.getString(idx))
-                                    Cursor.FIELD_TYPE_BLOB -> values.put(col, cursor.getBlob(idx))
+                        for ((colName, info) in targetColumnsInfo) {
+                            if (sourceColumns.contains(colName)) {
+                                val idx = cursor.getColumnIndex(colName)
+                                if (idx != -1) {
+                                    when (cursor.getType(idx)) {
+                                        Cursor.FIELD_TYPE_NULL -> values.putNull(colName)
+                                        Cursor.FIELD_TYPE_INTEGER -> values.put(colName, cursor.getLong(idx))
+                                        Cursor.FIELD_TYPE_FLOAT -> values.put(colName, cursor.getDouble(idx))
+                                        Cursor.FIELD_TYPE_STRING -> values.put(colName, cursor.getString(idx))
+                                        Cursor.FIELD_TYPE_BLOB -> values.put(colName, cursor.getBlob(idx))
+                                    }
+                                }
+                            } else if (info.isNotNull && !info.hasDefault) {
+                                when {
+                                    info.type.contains("INT") -> values.put(colName, 0L)
+                                    info.type.contains("REAL") || info.type.contains("FLOA") -> values.put(colName, 0.0)
+                                    else -> values.put(colName, "")
                                 }
                             }
                         }
-                        target.insert(tableName, SQLiteDatabase.CONFLICT_REPLACE, values)
-                    } catch (e: Exception) {
-                        // 恢复针对特定“表不存在”错误的容错逻辑
-                        if (e.message?.contains("no such table") == true) {
-                             LogUtil.e(TAG, "目标库缺失物理表 '$tableName'，跳过内容迁移")
-                             return SanitizationResult(skippedRows = rows)
+
+                        // 针对 v14/v15 chat_segments 唯一索引 (conv_id, start_time) 的特殊补全逻辑
+                        if (targetTableName.equals("chat_segments", ignoreCase = true)) {
+                            val startTime = values.getAsLong("start_time") ?: 0L
+                            if (startTime == 0L) {
+                                val timestamp = values.getAsLong("timestamp") ?: System.currentTimeMillis()
+                                val idIdx = cursor.getColumnIndex("id")
+                                val id = if (idIdx != -1) cursor.getLong(idIdx) else rows.toLong()
+                                // 加上 id 偏移量确保 start_time 绝对唯一，防止 CONFLICT_REPLACE 导致数据被覆盖
+                                val fixedTime = (if (timestamp > 0) timestamp else System.currentTimeMillis()) + id
+                                values.put("start_time", fixedTime)
+                                values.put("end_time", fixedTime + 1)
+                            }
                         }
+
+                        val result = target.insert(targetTableName, SQLiteDatabase.CONFLICT_REPLACE, values)
+                        if (result == -1L) {
+                            LogUtil.e(TAG, "[$targetTableName] 第 $rows 行插入失败")
+                            skipped++
+                        }
+                    } catch (e: Exception) {
+                        LogUtil.e(TAG, "[$targetTableName] 行处理异常: ${e.message}")
                         skipped++
                     }
                 }
             }
         } catch (e: Exception) {
-            LogUtil.e(TAG, "物理拷贝 $tableName 失败", e)
+            LogUtil.e(TAG, "拷贝表 $sourceTableName 失败", e)
         }
         return SanitizationResult(totalRows = rows, skippedRows = skipped)
     }
+
+    private data class ColumnInfo(
+        val name: String,
+        val type: String,
+        val isNotNull: Boolean,
+        val hasDefault: Boolean
+    )
 }

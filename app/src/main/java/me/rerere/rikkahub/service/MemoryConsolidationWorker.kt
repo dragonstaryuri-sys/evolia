@@ -35,6 +35,7 @@ import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.common.JsonInstant
 import java.io.IOException
 
 private val TAG = "MemoryConsolidation"
@@ -170,11 +171,12 @@ class MemoryConsolidationWorker(
         val settings = settingsStore.settingsFlow.first()
         val messageCount = conv.currentMessages.size
         val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
+        val anchorTime = existingEpisode?.endTime ?: 0L
+        val increment = conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
 
         // 校验：新消息达到阈值 (4条)
         if (existingEpisode != null) {
-            val increment = messageCount - existingEpisode.significance
-            if (increment < 4) {
+            if (increment < 4)  {
                 updateLastResult(
                     assistantId = assistant.id,
                     result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data),
@@ -208,7 +210,10 @@ class MemoryConsolidationWorker(
             )
 
             if (summary.isNotBlank()) {
-
+                val summarizedMessages = conversationRepository.getMessagesForSummary(
+                    conv.id.toString(),
+                    anchorTime
+                )
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
@@ -217,9 +222,9 @@ class MemoryConsolidationWorker(
                     keywords = "",
                     embedding = null,
                     embeddingModelId = null,
-                    startTime = conv.createAt.toEpochMilli(),
-                    endTime = conv.updateAt.toEpochMilli(),
-                    significance = messageCount,
+                    startTime = summarizedMessages.firstOrNull()?.createdAt ?: conv.createAt.toEpochMilli(),
+                    endTime = summarizedMessages.lastOrNull()?.createdAt ?: conv.updateAt.toEpochMilli(),
+                    significance = conv.currentMessages.size,
                     lastAccessedAt = System.currentTimeMillis()
                 )
 
@@ -265,16 +270,14 @@ class MemoryConsolidationWorker(
 
         val toConsolidateEpisodes = conversations.filter { conv ->
             if (!currentAssistant.enableMemoryConsolidation) return@filter false
-
-            val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
-            val messageCount = conv.currentMessages.size
-
-            if (existingEpisode != null) {
-                if (messageCount - existingEpisode.significance < 4) return@filter false
-            } else {
-                if (messageCount < 4) return@filter false
+            val existingEpisode = kotlinx.coroutines.runBlocking {
+                chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
             }
-
+            val anchorTime = existingEpisode?.endTime ?: 0L
+            val increment = kotlinx.coroutines.runBlocking {
+                conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
+            }
+            if (increment < 4) return@filter false
             val delayMillis = currentAssistant.consolidationDelayMinutes * 60 * 1000L
             val timeSinceUpdate = System.currentTimeMillis() - conv.updateAt.toEpochMilli()
             timeSinceUpdate >= delayMillis
@@ -314,6 +317,7 @@ class MemoryConsolidationWorker(
                     )
 
                     if (summary.isNotBlank()) {
+                        val summarizedMessages = conversationRepository.getMessagesForSummary(convIdString, existingEpisode?.endTime ?: 0L)
 
                         val episode = ChatEpisodeEntity(
                             id = existingEpisode?.id ?: 0,
@@ -323,8 +327,8 @@ class MemoryConsolidationWorker(
                             keywords = "",
                             embedding = null,
                             embeddingModelId = null,
-                            startTime = conv.createAt.toEpochMilli(),
-                            endTime = conv.updateAt.toEpochMilli(),
+                            startTime = summarizedMessages.firstOrNull()?.createdAt ?: conv.createAt.toEpochMilli(),
+                            endTime = summarizedMessages.lastOrNull()?.createdAt ?: conv.updateAt.toEpochMilli(),
                             significance = conv.currentMessages.size,
                             lastAccessedAt = System.currentTimeMillis()
                         )
@@ -463,20 +467,20 @@ class MemoryConsolidationWorker(
         conv: Conversation,
         existingEpisode: ChatEpisodeEntity?
     ): String {
-        val episodeSignificance = existingEpisode?.significance ?: 0
-        val baseSummary = existingEpisode?.content
-        val skipCount = episodeSignificance
-        val newMessages = conv.currentMessages.drop(skipCount)
-
-        return if (newMessages.isEmpty() && baseSummary != null) {
-            baseSummary
+        val anchorTime = existingEpisode?.endTime ?: 0L
+        val newMessagesEntities = conversationRepository.getMessagesForSummary(conv.id.toString(), anchorTime)
+        return if (newMessagesEntities.isEmpty() && existingEpisode != null) {
+            existingEpisode.content
         } else {
+            val newMessages = newMessagesEntities.map {
+                JsonInstant.decodeFromString<UIMessage>(it.contentJson)
+            }
             generateConversationSummary(
                 handler = handler,
                 providerSetting = providerSetting,
                 model = model,
                 assistantName = assistant.name,
-                previousSummary = baseSummary,
+                previousSummary = existingEpisode?.content,
                 messages = newMessages
             )
         }

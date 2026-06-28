@@ -40,7 +40,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 14,
+    version = 16,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -67,10 +67,68 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         const val TAG = "AppDatabase"
 
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. 首先删除旧的、基于索引的唯一约束
+                db.execSQL("DROP INDEX IF EXISTS `index_chat_segments_conversation_id_start_index` ")
+
+                // 2. 【安全补全】：如果数据依然为 0（虽然 14-15 已经补过一次），则再次强制唯一化处理
+                db.execSQL("""
+                    UPDATE chat_segments
+                    SET start_time = (CASE WHEN timestamp > 0 THEN timestamp ELSE ${System.currentTimeMillis()} END) + id,
+                        end_time = (CASE WHEN timestamp > 0 THEN timestamp ELSE ${System.currentTimeMillis()} END) + id + 1
+                    WHERE start_time = 0 OR start_time IS NULL
+                """.trimIndent())
+
+                // 3. 【精准去重】：清理因补全可能产生的重复数据
+                db.execSQL("""
+                    DELETE FROM chat_segments
+                    WHERE id NOT IN (
+                        SELECT MAX(id)
+                        FROM chat_segments
+                        GROUP BY conversation_id, start_time
+                    )
+                """.trimIndent())
+
+                // 4. 【同步进度】：确保 ConversationEntity 知道水位线
+                db.execSQL("""
+                    UPDATE ConversationEntity
+                    SET last_summarized_message_time = (
+                        SELECT MAX(end_time)
+                        FROM chat_segments
+                        WHERE chat_segments.conversation_id = ConversationEntity.id
+                    )
+                    WHERE (last_summarized_message_time = 0 OR last_summarized_message_time IS NULL)
+                    AND id IN (SELECT conversation_id FROM chat_segments)
+                """.trimIndent())
+
+                // 5. 最后，创建唯一索引 (conversation_id, start_time)
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_segments_conversation_id_start_time` ON `chat_segments` (`conversation_id`, `start_time`)")
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // 1. 为消息表增加逻辑删除字段
+                db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `is_deleted` INTEGER NOT NULL DEFAULT 0")
+
+                // 2. 为会话表增加时间戳进度字段
+                db.execSQL("ALTER TABLE `ConversationEntity` ADD COLUMN `last_summarized_message_time` INTEGER NOT NULL DEFAULT 0")
+
+                // 3. 为片段表增加时间范围字段，并根据创建时间进行初始化
+                db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `start_time` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `end_time` INTEGER NOT NULL DEFAULT 0")
+
+                // 数据补偿逻辑：start_time = timestamp, end_time = timestamp + id
+                db.execSQL("UPDATE `chat_segments` SET `start_time` = `timestamp`, `end_time` = `timestamp` + `id`")
+            }
+        }
+
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // 1. 创建 chat_message_nodes 表
-                db.execSQL("""
+                db.execSQL(
+                    """
             CREATE TABLE IF NOT EXISTS `chat_message_nodes` (
                 `id` TEXT NOT NULL,
                 `conversation_id` TEXT NOT NULL,
@@ -79,13 +137,15 @@ abstract class AppDatabase : RoomDatabase() {
                 PRIMARY KEY(`id`),
                 FOREIGN KEY(`conversation_id`) REFERENCES `ConversationEntity`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
             )
-        """.trimIndent())
+        """.trimIndent()
+                )
 
                 // 补上索引
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_message_nodes_conversation_id` ON `chat_message_nodes` (`conversation_id`)")
 
                 // 2. 创建 chat_messages 表
-                db.execSQL("""
+                db.execSQL(
+                    """
             CREATE TABLE IF NOT EXISTS `chat_messages` (
                 `id` TEXT NOT NULL,
                 `node_id` TEXT NOT NULL,
@@ -96,20 +156,19 @@ abstract class AppDatabase : RoomDatabase() {
                 PRIMARY KEY(`id`),
                 FOREIGN KEY(`node_id`) REFERENCES `chat_message_nodes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
             )
-        """.trimIndent())
+        """.trimIndent()
+                )
 
                 // 补上索引
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_messages_node_id` ON `chat_messages` (`node_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_messages_conversation_id` ON `chat_messages` (`conversation_id`)")
 
-                // 3. 数据迁移逻辑 (保持不变)
                 val cursor = db.query("SELECT id, nodes FROM ConversationEntity")
                 if (cursor.moveToFirst()) {
                     do {
                         val convId = cursor.getString(0)
                         val nodesJson = cursor.getString(1)
                         if (nodesJson.isNullOrBlank() || nodesJson == "[]") continue
-
                         try {
                             val nodes = JsonInstant.decodeFromString<List<MessageNode>>(nodesJson)
                             nodes.forEachIndexed { nodeIdx, node ->
@@ -119,10 +178,18 @@ abstract class AppDatabase : RoomDatabase() {
                                 )
                                 node.messages.forEachIndexed { msgIdx, msg ->
                                     val msgJson = JsonInstant.encodeToString(msg)
-                                    val timestamp = msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                                    val timestamp =
+                                        msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
                                     db.execSQL(
                                         "INSERT OR REPLACE INTO chat_messages (id, node_id, conversation_id, content_json, created_at, order_index) VALUES (?, ?, ?, ?, ?, ?)",
-                                        arrayOf(msg.id.toString(), node.id.toString(), convId, msgJson, timestamp, msgIdx)
+                                        arrayOf(
+                                            msg.id.toString(),
+                                            node.id.toString(),
+                                            convId,
+                                            msgJson,
+                                            timestamp,
+                                            msgIdx
+                                        )
                                     )
                                 }
                             }
@@ -132,8 +199,6 @@ abstract class AppDatabase : RoomDatabase() {
                     } while (cursor.moveToNext())
                 }
                 cursor.close()
-
-                // 清空旧数据
                 db.execSQL("UPDATE ConversationEntity SET nodes = ''")
             }
         }

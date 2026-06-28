@@ -59,5 +59,7 @@ data class ChatMessageEntity(
     @ColumnInfo("created_at")
     val createdAt: Long,
     @ColumnInfo("order_index")
-    val orderIndex: Int // 在节点内的版本顺序
+    val orderIndex: Int,
+    @ColumnInfo(name = "is_deleted", defaultValue = "0")
+    val isDeleted: Boolean = false
 )

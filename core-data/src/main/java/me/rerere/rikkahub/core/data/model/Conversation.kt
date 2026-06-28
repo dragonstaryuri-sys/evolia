@@ -28,7 +28,9 @@ data class Conversation(
     val temporarySummaries: List<String> = emptyList(),
     @Deprecated("Use ChatEpisode instead")
     val contextSummary: String? = null,
+    @Deprecated("Use lastSummarizedMessageTime instead")
     val contextSummaryUpToIndex: Int = -1,
+    val lastSummarizedMessageTime: Long = 0L,
     val lastPruneTime: Long = 0L,
     val lastPruneMessageCount: Int = 0,
     val lastRefreshTime: Long = 0L,
@@ -89,8 +91,7 @@ data class Conversation(
                 updatedMessages[msgIndex] = messageWithTag
                 newNodes[existingNodeIndex] = node.copy(messages = updatedMessages)
             } else {
-                // 3. 只要是新 ID，就添加为新节点（不再限制必须是 ASSISTANT）
-                // 这样 Tool Result 和 合并后的 User 消息也能正确占位，不会导致索引偏移
+                // 3. 只要是新 ID，就添加为新节点
                 newNodes.add(messageWithTag.toMessageNode())
             }
         }
@@ -111,7 +112,6 @@ data class MessageNode(
     val messages: List<UIMessage>,
     val selectIndex: Int = 0,
 ) {
-    // 增加安全性保护，防止索引越界崩溃
     val currentMessage
         get() = messages.getOrElse(selectIndex) {
             messages.lastOrNull() ?: UIMessage.system("Error: Node has no messages")

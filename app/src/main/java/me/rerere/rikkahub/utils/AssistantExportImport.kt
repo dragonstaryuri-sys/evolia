@@ -57,7 +57,9 @@ data class ChatSegmentExport(
     val keywords: String? = null,
     val startMessageIndex: Int,
     val endMessageIndex: Int,
-    val timestamp: Long
+    val timestamp: Long,
+    val startTime: Long = 0L,
+    val endTime: Long = 0L
 )
 
 object AssistantExportImport : KoinComponent {
@@ -156,7 +158,9 @@ object AssistantExportImport : KoinComponent {
                     keywords = it.keywords,
                     startMessageIndex = it.startMessageIndex,
                     endMessageIndex = it.endMessageIndex,
-                    timestamp = it.timestamp
+                    timestamp = it.timestamp,
+                    startTime = it.startTime,
+                    endTime = it.endTime
                 )
             }
         }
@@ -286,8 +290,10 @@ object AssistantExportImport : KoinComponent {
                         conversationId = seg.conversationId,
                         content = seg.content,
                         keywords = seg.keywords,
-                        startMessageIndex = seg.startMessageIndex,
-                        endMessageIndex = seg.endMessageIndex,
+                        startMessageIndex = -1,
+                        endMessageIndex = -1,
+                        startTime = if (seg.startTime != 0L) seg.startTime else seg.timestamp,
+                        endTime = if (seg.endTime != 0L) seg.endTime else seg.timestamp,
                         timestamp = seg.timestamp,
                         embedding = null
                     )

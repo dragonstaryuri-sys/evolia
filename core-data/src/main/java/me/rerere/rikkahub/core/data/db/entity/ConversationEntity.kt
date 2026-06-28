@@ -37,8 +37,11 @@ data class ConversationEntity(
     val enabledModeIds: String = "[]",
     @ColumnInfo(name = "context_summary", defaultValue = "")
     val contextSummary: String = "",
+    @Deprecated("使用 lastSummarizedMessageTime 代替")
     @ColumnInfo(name = "context_summary_up_to_index", defaultValue = "-1")
     val contextSummaryUpToIndex: Int = -1,
+    @ColumnInfo(name = "last_summarized_message_time", defaultValue = "0")
+    val lastSummarizedMessageTime: Long = 0L,
     @ColumnInfo(name = "last_prune_time", defaultValue = "0")
     val lastPruneTime: Long = 0L,
     @ColumnInfo(name = "last_prune_message_count", defaultValue = "0")

@@ -105,6 +105,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
 import android.net.Uri
+import kotlin.text.append
 
 private const val TAG = "ChatService"
 
@@ -510,10 +511,10 @@ class ChatService(
             val messages = conv.currentMessages
             val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
             val episodeSignificance = existingEpisode?.significance ?: 0
-
+            val increment = conversationRepo.countNewMessages(conversationId.toString(), existingEpisode?.endTime ?: 0L)
             if (!force) {
                 if (existingEpisode != null) {
-                    if (messages.size - episodeSignificance < 4) return
+                    if (!force && increment < 4) return
                 } else if (messages.size < 4) {
                     return
                 }
@@ -525,7 +526,8 @@ class ChatService(
             if (!assistant.enableMemoryConsolidation && !force) return
 
             val baseSummary = existingEpisode?.content
-            val newMessages = messages.drop(episodeSignificance)
+            val newMessagesEntities = conversationRepo.getMessagesForSummary(conversationId.toString(), existingEpisode?.endTime ?: 0L)
+            val newMessages = newMessagesEntities.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
 
             if (newMessages.isEmpty() && baseSummary != null && !force) {
                 return
@@ -586,8 +588,8 @@ class ChatService(
                     keywords = "",
                     embedding = null,
                     embeddingModelId = null,
-                    startTime = conv.createAt.toEpochMilli(),
-                    endTime = conv.updateAt.toEpochMilli(),
+                    startTime = newMessagesEntities.firstOrNull()?.createdAt ?: conv.createAt.toEpochMilli(),
+                    endTime = newMessagesEntities.lastOrNull()?.createdAt ?: conv.updateAt.toEpochMilli(),
                     significance = messages.size,
                     lastAccessedAt = System.currentTimeMillis()
                 )
@@ -1332,8 +1334,7 @@ class ChatService(
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) assistant.detailMemoryThreshold * 2 else assistant.detailMemoryThreshold
-        val count =
-            if (conv.contextSummaryUpToIndex >= 0) conv.currentMessages.size - (conv.contextSummaryUpToIndex + 1) else conv.currentMessages.size
+        val count = conversationRepo.countNewMessages(id.toString(), conv.lastSummarizedMessageTime)
         if (count >= max) summarizeAndRefresh(id)
     }
 
@@ -1351,13 +1352,9 @@ class ChatService(
                 errorMessage = "会话不存在"
             )
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
-            val messages = conv.currentMessages
-            if (messages.isEmpty()) return@withContext ContextRefreshResult(false)
-            val latestSegmentEndIndex = memoryRepository.getLatestSegmentEndIndex(id.toString()) ?: -1
-            val actualStartIdx = if (latestSegmentEndIndex >= 0) latestSegmentEndIndex + 1 else 0
-            val lastIdx = (messages.size - 1).coerceAtLeast(0)
-            if (actualStartIdx >= lastIdx || lastIdx - actualStartIdx < 2) {
-                Log.d(TAG, "summarizeAndRefresh: Range [$actualStartIdx, $lastIdx] is covered or too small, skipping.")
+            val toSummarizeEntities = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime)
+
+            if (toSummarizeEntities.size < 2) {
                 return@withContext ContextRefreshResult(false, errorMessage = "当前没有足够的新消息需要压缩")
             }
             val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
@@ -1367,10 +1364,10 @@ class ChatService(
                 ?: return@withContext ContextRefreshResult(false, errorMessage = "没有找到可用模型")
             val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
             val handler = providerManager.getProviderByType(provider)
-            val toSummarize = messages.subList(actualStartIdx, lastIdx + 1)
             val text = StringBuilder().apply {
-                toSummarize.forEach { msg ->
-                    append(msg.role).append(": ").append(msg.toContentText().take(500)).append("\n")
+                toSummarizeEntities.forEach { entity ->// 解析出 UIMessage 对象
+                    val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
+                    append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
                 }
             }.toString()
             val locale = Locale.getDefault().displayName
@@ -1415,18 +1412,24 @@ class ChatService(
                     conversationId = id.toString(),
                     content = finalBackground,
                     keywords = keywords,
-                    startMessageIndex = actualStartIdx,
-                    endMessageIndex = lastIdx,
+                    startMessageIndex = -1,
+                    endMessageIndex = -1,
+                    startTime = toSummarizeEntities.first().createdAt,
+                    endTime = toSummarizeEntities.last().createdAt,
                     embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
                     embeddingModelId = embeddingResult?.modelId
                 )
                 memoryRepository.saveSegment(segment)
             }
-            val updated = conv.copy(contextSummaryUpToIndex = lastIdx, lastRefreshTime = System.currentTimeMillis())
+            val lastMsgTime = toSummarizeEntities.last().createdAt
+            val updated = conv.copy(
+                lastSummarizedMessageTime = lastMsgTime,
+                lastRefreshTime = System.currentTimeMillis()
+            )
             conversationRepo.updateConversation(updated)
             updateConversation(id) { updated }
             if (!skipArchive) archiveConversation(id, force = true, skipEmbedding = true)
-            ContextRefreshResult(true, "Segments updated", toSummarize.size)
+            ContextRefreshResult(true, "Segments updated", toSummarizeEntities.size)
         } catch (e: Exception) {
             Log.e(TAG, "summarizeAndRefresh failed for $id", e)
             ContextRefreshResult(false, errorMessage = e.message)

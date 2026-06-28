@@ -16,11 +16,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.ui.UIMessage
@@ -35,7 +32,6 @@ import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.db.entity.TokenUsageEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
-import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.Tag
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
@@ -62,6 +58,7 @@ import java.util.Locale
 import java.time.LocalDate
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CancellationException
+import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.model.Conversation
 import java.time.Instant
@@ -279,19 +276,19 @@ class AssistantDetailVM(
 
                     val toConsolidateEpisodes = conversations.filter { conv ->
                         val existing = episodeMap[conv.id.toString()]
-                        val messageCount = conv.currentMessages.size
-                        if (existing != null) {
-                            messageCount - existing.significance >= 4
-                        } else {
-                            messageCount >= 4
+                        val anchorTime = existing?.endTime ?: 0L
+                        val increment = kotlinx.coroutines.runBlocking {
+                            conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
                         }
+                        increment >= 4
                     }
 
                     for (conv in toConsolidateEpisodes) {
                         yield()
                         val existingEpisode = episodeMap[conv.id.toString()]
-                        val skipCount = existingEpisode?.significance ?: 0
-                        val newMessages = conv.currentMessages.drop(skipCount)
+                        val anchorTime = existingEpisode?.endTime ?: 0L
+                        val newMessagesEntities = conversationRepository.getMessagesForSummary(conv.id.toString(), anchorTime)
+                        val newMessages = newMessagesEntities.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
 
                         val summary = if (newMessages.isEmpty() && existingEpisode != null) {
                             existingEpisode.content
@@ -313,8 +310,8 @@ class AssistantDetailVM(
                                 assistantId = currentAssistant.id.toString(),
                                 conversationId = conv.id.toString(),
                                 content = summary,
-                                startTime = conv.createAt.toEpochMilli(),
-                                endTime = conv.updateAt.toEpochMilli(),
+                                startTime = newMessagesEntities.firstOrNull()?.createdAt ?: conv.createAt.toEpochMilli(),
+                                endTime = newMessagesEntities.lastOrNull()?.createdAt ?: conv.updateAt.toEpochMilli(),
                                 significance = conv.currentMessages.size,
                                 lastAccessedAt = System.currentTimeMillis()
                             )
@@ -423,16 +420,17 @@ class AssistantDetailVM(
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_messages))
                     return@launch
                 }
-
-                val messages = conversation.currentMessages
-                val startIdx = if (conversation.contextSummaryUpToIndex >= 0) (conversation.contextSummaryUpToIndex + 1) else 0
-                val totalNewMessages = messages.size - startIdx
-
-                if (totalNewMessages < 2) {
+                val toSummarizeEntities = conversationRepository.getMessagesForSummary(
+                    lastConvId,
+                    conversation.lastSummarizedMessageTime
+                )
+                if (toSummarizeEntities.size < 2) {
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_messages))
                     return@launch
                 }
-
+                val wechatMode = currentSettings.getEffectiveDisplaySetting(currentAssistant).wechatMode
+                val baseThreshold = currentAssistant.detailMemoryThreshold.coerceAtLeast(2)
+                val threshold = if (wechatMode) baseThreshold * 2 else baseThreshold
                 val modelId = currentAssistant.summarizerModelId ?: currentSettings.summarizerModelId
                 val model = currentSettings.findModelById(modelId)
                 if (model == null) {
@@ -448,20 +446,16 @@ class AssistantDetailVM(
                     return@launch
                 }
 
-                val wechatMode = settings.value.getEffectiveDisplaySetting(currentAssistant).wechatMode
-                val baseThreshold = currentAssistant.detailMemoryThreshold.coerceAtLeast(2)
-                val threshold = if (wechatMode) baseThreshold * 2 else baseThreshold
 
                 var archiveCount = 0
-                var currentStart = startIdx
+                var processedOffset = 0
 
-                while (currentStart < messages.size - 1) {
-                    val currentEnd = (currentStart + threshold - 1).coerceAtMost(messages.size - 1)
-                    if (currentEnd - currentStart < 1) break
-
-                    val toSummarize = messages.subList(currentStart, currentEnd + 1)
-                    val text = toSummarize.joinToString("\n") {
-                        "${it.role}: ${it.toContentText().take(500)}"
+                while (processedOffset < toSummarizeEntities.size) {
+                    val currentBatch = toSummarizeEntities.drop(processedOffset).take(threshold)
+                    if (currentBatch.size < 2) break
+                    val text = currentBatch.joinToString("\n") { entity ->
+                        val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
+                        "${uiMsg.role}: ${uiMsg.toContentText().take(500)}"
                     }
 
                     val locale = Locale.getDefault().displayName
@@ -494,50 +488,60 @@ class AssistantDetailVM(
                         null
                     }
 
-                    if (aiResponse == null) {
+                    if (!aiResponse.isNullOrBlank()) {
+
+                        val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                        val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+
+                        val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                        val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+
+                        val finalBackground =
+                            backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
+                            ?: aiResponse
+                        val aiKeywords = keywordsMatch ?: ""
+
+                        val mergedKeywords = if (aiKeywords.isNotBlank()) {
+                            aiKeywords.split(Regex("[,，、；;]"))
+                                .map { it.trim().lowercase() }
+                                .filter { it.isNotBlank() }
+                                .distinct()
+                                .joinToString(",")
+                        } else {
+                            KeywordExtractor.extract(finalBackground)
+                        }
+
+                        val fullContextualContent = "[Background]: $finalBackground\n[Original Text]:\n$text"
+                        val embeddingResult = try {
+                            embeddingService.embedWithModelId(fullContextualContent, currentAssistant.id.toString())
+                        } catch (e: Exception) {
+                            null
+                        }
+
+                        val segment = ChatSegmentEntity(
+                            assistantId = currentAssistant.id.toString(),
+                            conversationId = lastConvId,
+                            content = finalBackground,
+                            keywords = mergedKeywords,
+                            startMessageIndex = -1,
+                            endMessageIndex = -1,
+                            startTime = currentBatch.first().createdAt, // 本段第一条消息的时间
+                            endTime = currentBatch.last().createdAt,
+                            embedding = embeddingResult?.embeddings?.firstOrNull()
+                                ?.let { JsonInstant.encodeToString(it) },
+                            embeddingModelId = embeddingResult?.modelId
+                        )
+                        memoryRepository.saveSegment(segment)
+                        val updatedConv = conversation.copy(
+                            lastSummarizedMessageTime = currentBatch.last().createdAt,
+                            lastRefreshTime = System.currentTimeMillis()
+                        )
+                        conversationRepository.updateConversation(updatedConv)
+                        archiveCount++
+                        processedOffset += currentBatch.size
+                    } else {
                         break
                     }
-
-                    val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-                    val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-
-                    val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-                    val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-
-                    val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
-                    val aiKeywords = keywordsMatch ?: ""
-
-                    val mergedKeywords = if (aiKeywords.isNotBlank()) {
-                        aiKeywords.split(Regex("[,，、；;]"))
-                            .map { it.trim().lowercase() }
-                            .filter { it.isNotBlank() }
-                            .distinct()
-                            .joinToString(",")
-                    } else {
-                        KeywordExtractor.extract(finalBackground)
-                    }
-
-                    val fullContextualContent = "[Background]: $finalBackground\n[Original Text]:\n$text"
-                    val embeddingResult = try {
-                        embeddingService.embedWithModelId(fullContextualContent, currentAssistant.id.toString())
-                    } catch (e: Exception) { null }
-
-                    val segment = ChatSegmentEntity(
-                        assistantId = currentAssistant.id.toString(),
-                        conversationId = lastConvId,
-                        content = finalBackground,
-                        keywords = mergedKeywords,
-                        startMessageIndex = currentStart,
-                        endMessageIndex = currentEnd,
-                        embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
-                        embeddingModelId = embeddingResult?.modelId
-                    )
-                    memoryRepository.saveSegment(segment)
-                    archiveCount++
-                    currentStart = currentEnd + 1
-
-                    val updatedConv = conversation.copy(contextSummaryUpToIndex = currentEnd, lastRefreshTime = System.currentTimeMillis())
-                    conversationRepository.updateConversation(updatedConv)
                 }
 
                 if (archiveCount > 0) {
@@ -825,21 +829,26 @@ class AssistantDetailVM(
             val segment = memoryRepository.getSegmentById(segmentId)
             if (segment != null) {
                 val convId = segment.conversationId
-                val startIndex = segment.startMessageIndex
-                val endIndex = segment.endMessageIndex
+                val startTime = segment.startTime
+                val endTime = segment.endTime
                 // 2. 执行物理删除
                 memoryRepository.deleteSegment(segmentId)
 
                 // 3. 更新会话的水位线，回退到该片段开始之前
                 if (!convId.isNullOrBlank()) {
                     val conversation = conversationRepository.getConversationById(kotlin.uuid.Uuid.parse(convId))
-                    if (conversation != null && conversation.contextSummaryUpToIndex == endIndex) {
-                        val newIndex = (startIndex - 1).coerceAtLeast(-1)
-                        val updatedConv = conversation.copy(contextSummaryUpToIndex = newIndex)
+                    if (conversation != null && conversation.lastSummarizedMessageTime == endTime) {
+                        // 回退到该片段开始时间的前 1 毫秒
+                        // 这样 SQL 查询 "created_at > lastTime" 时，就会重新包含原本属于这个片段的消息
+                        val newTime = (startTime - 1).coerceAtLeast(0L)
+                        val updatedConv = conversation.copy(
+                            lastSummarizedMessageTime = newTime,
+                            contextSummaryUpToIndex = -1
+                        )
+
                         conversationRepository.updateConversation(updatedConv)
-                        Log.i(TAG, "最新L1 片段已删除，会话 $convId 进度回退至: $newIndex")
-                    }
-                    else {
+                        Log.i(TAG, "最新L1 片段已删除，会话 $convId 进度回退至时间戳: $newTime")
+                    } else {
                         Log.i(TAG, "删除非末尾 L1 片段，水位线保持不变")
                     }
                 }
