@@ -243,6 +243,7 @@ private fun ChatPageContent(
 
     val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
     val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
+    val isConsolidating by vm.isConsolidating.collectAsStateWithLifecycle()
 
     val tts = LocalTTSState.current
     var lastProcessedMessageId by remember { mutableStateOf<Uuid?>(null) }
@@ -648,6 +649,7 @@ private fun ChatPageContent(
                                 onStartCall = { isCallActive = true },
                                 onRefreshContext = { vm.refreshContext() },
                                 onDeleteFile = { vm.deleteFile(it) },
+                                onConsolidate = { vm.consolidateConversation(conversation) }
                             )
                         }
 
@@ -747,12 +749,13 @@ private fun ChatPageContent(
                                 onStartCall = { isCallActive = true },
                                 onRefreshContext = { vm.refreshContext() },
                                 onDeleteFile = { vm.deleteFile(it) },
+                                onConsolidate = { vm.consolidateConversation(conversation) }
                             )
                         }
                     }
 
                     AnimatedVisibility(
-                        visible = isSyncingContext,
+                        visible = isSyncingContext || isConsolidating,
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
@@ -776,7 +779,7 @@ private fun ChatPageContent(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 DocumentLoadingAnimation(modifier = Modifier.padding(bottom = 24.dp))
                                 Text(
-                                    text = stringResource(R.string.syncing_context_animation_hint),
+                                    text = if (isConsolidating) stringResource(R.string.consolidating_in_progress) else stringResource(R.string.syncing_context_animation_hint),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onBackground
                                 )

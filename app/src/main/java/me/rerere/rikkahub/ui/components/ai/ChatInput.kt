@@ -1,12 +1,10 @@
 package me.rerere.rikkahub.ui.components.ai
 
 import android.content.Context
-
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
@@ -16,10 +14,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.content.MediaType
-import androidx.compose.foundation.content.ReceiveContentListener
 import androidx.compose.foundation.content.consume
-import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -41,12 +36,11 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.wrapContentHeight
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
@@ -124,6 +118,7 @@ import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Summarize
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.ui.draw.rotate
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -160,10 +155,13 @@ import java.io.File
 import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.ui.graphics.graphicsLayer
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.ReceiveContentListener
 
 enum class ExpandState {
     Collapsed,
@@ -198,6 +196,7 @@ fun ChatInput(
         )
     },
     onDeleteFile: (Uri) -> Unit = {},
+    onConsolidate: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -638,6 +637,7 @@ fun ChatInput(
                             onNavigateToLorebook = onNavigateToLorebook,
                             onStartCall = onStartCall,
                             onRefreshContext = onRefreshContext,
+                            onConsolidate = onConsolidate,
                             onDismiss = { dismissExpand() }
                         )
                     }
@@ -674,6 +674,7 @@ private fun TextInputRow(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        @Suppress("DEPRECATION")
                         Text(
                             text = stringResource(R.string.editing),
                             style = MaterialTheme.typography.labelMedium,
@@ -1154,6 +1155,7 @@ private fun ChatSuggestionsRow(
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
                         )
                     ) {
+                        @Suppress("DEPRECATION")
                         Text(
                             text = suggestion,
                             style = MaterialTheme.typography.bodySmall,
@@ -1178,6 +1180,7 @@ internal fun FilesPicker(
     onNavigateToLorebook: (String) -> Unit,
     onStartCall: () -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
+    onConsolidate: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val amoledMode by rememberAmoledDarkMode()
@@ -1441,7 +1444,31 @@ internal fun FilesPicker(
                 }
             }
 
-            // Row 4: Context Refresh
+            // Row 4: Consolidation Button
+            CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = if (showContextRefresh) middleLeftShape else fullBottomShape,
+                    color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
+                    onClick = {
+                        onConsolidate()
+                        onDismiss()
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Summarize, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.assistant_memory_consolidate_now), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+
+            // Row 5: Context Refresh
             if (showContextRefresh) {
                 CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && isDarkMode) 0.dp else LocalAbsoluteTonalElevation.current) {
                     Surface(
@@ -1519,6 +1546,7 @@ private fun FullScreenEditor(
                                 onDone()
                             }
                         ) {
+                            @Suppress("DEPRECATION")
                             Text(stringResource(R.string.chat_page_save))
                         }
                     }
@@ -1600,6 +1628,7 @@ private fun ImagePickButton(
     BigIconTextButton(
         shape = shape,
         icon = {
+            @Suppress("DEPRECATION")
             Icon(Icons.Rounded.Photo, null)
         }
     ) {
@@ -1899,6 +1928,7 @@ private fun BigIconTextButtonPreview() {
     ) {
         BigIconTextButton(
             icon = {
+                @Suppress("DEPRECATION")
                 Icon(Icons.Rounded.Photo, null)
             }
         ) {}
@@ -2103,6 +2133,7 @@ internal fun LorebooksPickerSheet(
             )
 
             if (settings.lorebooks.isEmpty()) {
+                @Suppress("DEPRECATION")
                 Text(
                     text = stringResource(R.string.lorebooks_picker_none),
                     style = MaterialTheme.typography.bodyMedium,

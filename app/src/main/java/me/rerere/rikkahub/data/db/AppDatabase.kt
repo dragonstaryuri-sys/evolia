@@ -69,24 +69,28 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_15_16 = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v("AppDatabase", "开始 15->16 迁移，当前数据库文件版本为: ${db.version}")
                 // 1. 首先删除旧的、基于索引的唯一约束
                 db.execSQL("DROP INDEX IF EXISTS `index_chat_segments_conversation_id_start_index` ")
 
-                // 2. 【安全补全】：如果数据依然为 0（虽然 14-15 已经补过一次），则再次强制唯一化处理
+                // 2. 【强化修复逻辑】：针对差值为 1 或错误的迁移结果进行拨乱反正
+                // 如果 end_time - start_time 不等于 900,000 (15min)，说明迁移逻辑错误，强制重置
                 db.execSQL("""
-                    UPDATE chat_segments
-                    SET start_time = (CASE WHEN timestamp > 0 THEN timestamp ELSE ${System.currentTimeMillis()} END) + id,
-                        end_time = (CASE WHEN timestamp > 0 THEN timestamp ELSE ${System.currentTimeMillis()} END) + id + 1
-                    WHERE start_time = 0 OR start_time IS NULL
+                    UPDATE `chat_segments`
+                    SET `start_time` = CAST(`timestamp` AS INTEGER) - 900000,
+                        `end_time` = CAST(`timestamp` AS INTEGER)
+                    WHERE `start_time` IS NULL
+                       OR `start_time` = 0
+                       OR ABS(`end_time` - `start_time` - 900000) > 100
                 """.trimIndent())
 
                 // 3. 【精准去重】：清理因补全可能产生的重复数据
                 db.execSQL("""
-                    DELETE FROM chat_segments
-                    WHERE id NOT IN (
-                        SELECT MAX(id)
-                        FROM chat_segments
-                        GROUP BY conversation_id, start_time
+                    DELETE FROM `chat_segments`
+                    WHERE `id` NOT IN (
+                        SELECT MAX(`id`)
+                        FROM `chat_segments`
+                        GROUP BY `conversation_id`, `start_time`
                     )
                 """.trimIndent())
 
@@ -108,24 +112,31 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         val MIGRATION_14_15 = object : Migration(14, 15) {
+
             override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v("AppDatabase", "开始 14->15 迁移，当前数据库文件版本为: ${db.version}")
                 // 1. 为消息表增加逻辑删除字段
                 db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `is_deleted` INTEGER NOT NULL DEFAULT 0")
 
                 // 2. 为会话表增加时间戳进度字段
                 db.execSQL("ALTER TABLE `ConversationEntity` ADD COLUMN `last_summarized_message_time` INTEGER NOT NULL DEFAULT 0")
 
-                // 3. 为片段表增加时间范围字段，并根据创建时间进行初始化
+                // 3. 为片段表增加时间范围字段
                 db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `start_time` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `end_time` INTEGER NOT NULL DEFAULT 0")
 
-                // 数据补偿逻辑：start_time = timestamp, end_time = timestamp + id
-                db.execSQL("UPDATE `chat_segments` SET `start_time` = `timestamp`, `end_time` = `timestamp` + `id`")
+                // 4. 数据补偿逻辑：显式转换 timestamp 确保读取的是大整数
+                db.execSQL("""
+                    UPDATE `chat_segments`
+                    SET `start_time` = CAST(`timestamp` AS INTEGER) - 900000,
+                        `end_time` = CAST(`timestamp` AS INTEGER)
+                """.trimIndent())
             }
         }
 
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v("AppDatabase", "开始 13->14 迁移，当前数据库文件版本为: ${db.version}")
                 // 1. 创建 chat_message_nodes 表
                 db.execSQL(
                     """

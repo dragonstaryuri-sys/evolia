@@ -91,6 +91,8 @@ class ChatVM(
         syncingIds.contains(activeId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    private val _isConsolidating = MutableStateFlow(false)
+    val isConsolidating: StateFlow<Boolean> = _isConsolidating.asStateFlow()
 
     val conversation: StateFlow<Conversation> = _currentActiveId
         .flatMapLatest { chatService.getConversationFlow(it) }
@@ -625,40 +627,60 @@ class ChatVM(
     fun updatePinnedStatus(conversation: Conversation) { viewModelScope.launch { conversationRepo.togglePinStatus(conversation.id) } }
     fun updateConversationTitle(conversation: Conversation, title: String) { viewModelScope.launch { conversationRepo.updateConversation(conversation.copy(title = title)) } }
 
+    /**
+     * 针对指定会话强制执行记忆整合 (L2 Archiving)
+     */
     fun consolidateConversation(conversation: Conversation) {
         viewModelScope.launch {
-            conversationRepo.markAsNotConsolidated(conversation.id)
-            val workManager = androidx.work.WorkManager.getInstance(context)
-            val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
-                .setInputData(androidx.work.workDataOf("FORCE_CONVERSATION_ID" to conversation.id.toString()))
-                .build()
+            _isConsolidating.value = true
+            try {
+                // 1. 将该会话标记为“未整合”，以绕过增量检查
+                conversationRepo.markAsNotConsolidated(conversation.id)
 
-            workManager.enqueueUniqueWork(
-                "consolidate_${conversation.id}",
-                androidx.work.ExistingWorkPolicy.KEEP,
-                request
-            )
+                // 2. 启动 Worker 并传入强制指定的会话 ID
+                val workManager = androidx.work.WorkManager.getInstance(context)
+                val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
+                    .setInputData(androidx.work.workDataOf(
+                        "FORCE_CONVERSATION_ID" to conversation.id.toString(),
+                        "IS_MANUAL" to true
+                    ))
+                    .build()
 
-            workManager.getWorkInfoByIdFlow(request.id).collect { workInfo ->
+                workManager.enqueueUniqueWork(
+                    "consolidate_${conversation.id}",
+                    androidx.work.ExistingWorkPolicy.KEEP,
+                    request
+                )
+
+                // 3. 监听结果并反馈给 UI
+                val workInfo = workManager.getWorkInfoByIdFlow(request.id)
+                    .filter { it?.state?.isFinished == true }
+                    .firstOrNull()
+
                 if (workInfo != null) {
                     when (workInfo.state) {
                         androidx.work.WorkInfo.State.SUCCEEDED -> {
-                            val updatedSettings = settingsStore.settingsFlow.first()
-                            val result = updatedSettings.assistants
-                                .find { it.id == conversation.assistantId }
-                                ?.lastConsolidationResult ?: "Consolidation Successful"
-                            _toastFlow.emit(result)
+                            _toastFlow.emit(context.getString(R.string.consolidate_success))
                         }
                         androidx.work.WorkInfo.State.FAILED -> {
-                            val updatedSettings = settingsStore.settingsFlow.first()
-                            val result = updatedSettings.assistants
-                                .find { it.id == conversation.assistantId }
-                                ?.lastConsolidationResult ?: "Consolidation Failed"
-                            _toastFlow.emit(result)
+                            val errorTag = workInfo.outputData.getString("error_tag") ?: ""
+                            val message = when {
+                                errorTag == "ERROR_NO_MESSAGES" -> context.getString(R.string.consolidate_failed_no_messages)
+                                errorTag == "ERROR_NO_MODEL" -> context.getString(R.string.consolidate_failed_no_model)
+                                errorTag == "ERROR_EMPTY_SUMMARY" -> context.getString(R.string.consolidate_failed_empty_summary)
+                                errorTag.startsWith("ERROR_EXCEPTION:") -> {
+                                    val exception = errorTag.removePrefix("ERROR_EXCEPTION:")
+                                    context.getString(R.string.consolidate_failed_unknown, exception)
+                                }
+                                else -> context.getString(R.string.consolidate_failed_unknown, errorTag)
+                            }
+                            _toastFlow.emit(message)
                         }
                         else -> {}
                     }
                 }
+            } finally {
+                _isConsolidating.value = false
             }
         }
     }
@@ -670,7 +692,7 @@ class ChatVM(
             val assistantId = conversation.value.assistantId
             val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(assistantId).first()
             val targetConv = allConvs.find { conv ->
-                conv.messageNodes.any { it.id == newNode.id }
+                conv.messageNodes.any { node -> node.messages.any { it.id == newNode.id } }
             } ?: return@launch
 
             val updatedConv = targetConv.copy(

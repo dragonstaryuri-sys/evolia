@@ -73,4 +73,16 @@ interface ChatMessageDAO {
 
     @Query("UPDATE chat_messages SET is_deleted = 1 WHERE id = :messageId")
     suspend fun markMessageAsDeleted(messageId: String)
+
+    // D:/proj_code/as/DreamLand_lc/core-data/src/main/java/me/rerere/rikkahub/core/data/db/dao/ChatMessageDAO.kt
+
+    @Query("""
+    SELECT * FROM chat_messages
+    WHERE conversation_id = :conversationId
+    AND created_at >= :startTime
+    AND created_at <= :endTime
+    AND is_deleted = 0
+    ORDER BY created_at ASC
+""")
+    suspend fun getMessagesByTimeRange(conversationId: String, startTime: Long, endTime: Long): List<ChatMessageEntity>
 }

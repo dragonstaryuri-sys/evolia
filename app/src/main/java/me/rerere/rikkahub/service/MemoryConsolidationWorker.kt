@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import me.rerere.ai.provider.ProviderManager
@@ -15,6 +16,7 @@ import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Conversation
+import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
@@ -81,7 +83,7 @@ class MemoryConsolidationWorker(
             "Starting memory consolidation (Force: $forceConversationId, Assistant: $assistantIdString, IncrementalMaster: $incrementalMaster)"
         )
 
-        try {
+        return try {
             // 自动清理已执行的任务数据
             try {
                 agentTaskRepository.deleteExecutedTasks()
@@ -101,44 +103,48 @@ class MemoryConsolidationWorker(
 
                     if (conv == null) {
                         Log.e(TAG, "Conversation not found: $forceConversationId")
-                        return Result.failure()
+                        return Result.failure(workDataOf("error_tag" to "ERROR_EXCEPTION:Conversation not found"))
                     }
 
                     val settings = settingsStore.settingsFlow.first()
-                    val assistant = settings.assistants.find { it.id == conv.assistantId } ?: return Result.failure()
+                    val assistant = settings.assistants.find { it.id == conv.assistantId }
+                        ?: return Result.failure(workDataOf("error_tag" to "ERROR_EXCEPTION:Assistant not found"))
 
-                    val success = manualConsolidate(assistant, conv)
-                    return if (success) Result.success() else Result.failure()
+                    val errorTag = manualConsolidate(assistant, conv, isManual)
+                    if (errorTag == null) {
+                        Result.success()
+                    } else {
+                        Result.failure(workDataOf("error_tag" to errorTag))
+                    }
                 } finally {
                     unlock(forceConversationId)
                 }
-            }
-
-            val settings = settingsStore.settingsFlow.first()
-            val assistants = if (assistantIdString != null) {
-                settings.assistants.filter { it.id.toString() == assistantIdString }
             } else {
-                // 如果是定时器触发，筛选开启了任一记忆整合功能的助理
-                settings.assistants.filter { it.enableMemoryConsolidation || it.enableMasterMemory }
-            }
+                val settings = settingsStore.settingsFlow.first()
+                val assistants = if (assistantIdString != null) {
+                    settings.assistants.filter { it.id.toString() == assistantIdString }
+                } else {
+                    // 如果是定时器触发，筛选开启了任一记忆整合功能的助理
+                    settings.assistants.filter { it.enableMemoryConsolidation || it.enableMasterMemory }
+                }
 
-            if (assistants.isEmpty()) {
-                Log.i(TAG, "No assistants to process.")
-                return Result.success()
+                if (assistants.isEmpty()) {
+                    Log.i(TAG, "No assistants to process.")
+                    Result.success()
+                } else {
+                    for (assistant in assistants) {
+                        consolidateAssistantMemories(assistant, false, forceMaster, incrementalMaster, isManual)
+                    }
+                    Result.success()
+                }
             }
-
-            for (assistant in assistants) {
-                consolidateAssistantMemories(assistant, false, forceMaster, incrementalMaster, isManual)
-            }
-
-            return Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Consolidation failed", e)
             if (e is IOException || e.cause is IOException) {
-                Log.w(TAG, "Network error detected, scheduling retry.")
-                return Result.retry()
+                Result.retry()
+            } else {
+                Result.failure(workDataOf("error_tag" to "ERROR_EXCEPTION:${e.message ?: "Unknown Error"}"))
             }
-            return Result.failure()
         }
     }
 
@@ -167,36 +173,36 @@ class MemoryConsolidationWorker(
         return block()
     }
 
-    private suspend fun manualConsolidate(assistant: Assistant, conv: Conversation): Boolean {
+    private suspend fun manualConsolidate(assistant: Assistant, conv: Conversation, isManual: Boolean): String? {
         val settings = settingsStore.settingsFlow.first()
         val messageCount = conv.currentMessages.size
         val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
         val anchorTime = existingEpisode?.endTime ?: 0L
         val increment = conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
 
-        // 校验：新消息达到阈值 (4条)
+        // 校验：手动触发时只要有新消息即可归档；自动任务则需达到阈值 (4条)
+        val threshold = if (isManual) 1 else 4
         if (existingEpisode != null) {
-            if (increment < 4)  {
+            if (increment < threshold)  {
                 updateLastResult(
                     assistantId = assistant.id,
                     result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data),
                     wasUpdated = false
                 )
-                return false
+                return "ERROR_NO_MESSAGES"
             }
-        } else if (messageCount < 4) {
+        } else if (messageCount < threshold) {
             updateLastResult(
                 assistantId = assistant.id,
                 result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data),
                 wasUpdated = false
             )
-            return false
+            return "ERROR_NO_MESSAGES"
         }
 
         // 修改：情节记忆使用 summarizerModelId
         val summarizer =
-            resolveModel(assistant.summarizerModelId ?: settings.summarizerModelId, settings) ?: return false
-        val background = resolveModel(assistant.backgroundModelId ?: settings.backgroundModelId, settings) ?: summarizer
+            resolveModel(assistant.summarizerModelId ?: settings.summarizerModelId, settings) ?: return "ERROR_NO_MODEL"
 
         return try {
             // 执行增量滚动式总结
@@ -236,14 +242,14 @@ class MemoryConsolidationWorker(
                     result = "Consolidation Successful",
                     wasUpdated = true
                 )
-                true
+                null
             } else {
                 updateLastResult(
                     assistantId = assistant.id,
                     result = "Consolidation Failed: Empty Summary",
                     wasUpdated = false
                 )
-                false
+                "ERROR_EMPTY_SUMMARY"
             }
         } catch (e: Exception) {
             Log.e(TAG, "Manual consolidation failed", e)
@@ -252,7 +258,7 @@ class MemoryConsolidationWorker(
                 result = "Consolidation Failed: ${e.message}",
                 wasUpdated = false
             )
-            false
+            "ERROR_EXCEPTION:${e.message ?: "Unknown API Error"}"
         }
     }
 
@@ -277,6 +283,7 @@ class MemoryConsolidationWorker(
             val increment = kotlinx.coroutines.runBlocking {
                 conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
             }
+            // 自动扫描依然保持 4 条阈值
             if (increment < 4) return@filter false
             val delayMillis = currentAssistant.consolidationDelayMinutes * 60 * 1000L
             val timeSinceUpdate = System.currentTimeMillis() - conv.updateAt.toEpochMilli()
@@ -528,7 +535,13 @@ class MemoryConsolidationWorker(
             h.generateText(
                 providerSetting = providerSetting,
                 messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(model = model, temperature = 0.3f, topP = 0.5f, maxTokens = 1024)
+                params = TextGenerationParams(
+                    model = model,
+                    temperature = 0.3f,
+                    topP = 0.5f,
+                    maxTokens = 1024,
+                    thinkingBudget = 0 // 显式关闭深度思考，防止干扰总结输出
+                )
             )
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""

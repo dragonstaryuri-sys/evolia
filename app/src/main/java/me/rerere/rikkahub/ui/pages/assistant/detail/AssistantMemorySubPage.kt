@@ -594,12 +594,6 @@ fun AssistantMemorySettings(
                     ConsolidationSettingsCard(
                         assistant = assistant,
                         onUpdateAssistant = onUpdateAssistant,
-                        onConsolidate = {
-                            assistantDetailVM.runManualConsolidation(
-                                consolidateEpisodes = true,
-                                updateMaster = false
-                            )
-                        },
                         showSummarizerWarning = assistant.summarizerModelId == null,
                         onNavigateToModels = onNavigateToModels
                     )
@@ -1147,7 +1141,6 @@ private fun MasterMemoryCard(
 private fun ConsolidationSettingsCard(
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit,
-    onConsolidate: () -> Unit,
     showSummarizerWarning: Boolean = false,
     onNavigateToModels: () -> Unit = {}
 ) {
@@ -1243,15 +1236,6 @@ private fun ConsolidationSettingsCard(
             shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onConsolidate,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Psychology, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.assistant_memory_consolidate_now))
-                }
-
                 if (assistant.lastConsolidationTime > 0) {
                     val time = java.time.Instant.ofEpochMilli(assistant.lastConsolidationTime)
                         .atZone(java.time.ZoneId.systemDefault())

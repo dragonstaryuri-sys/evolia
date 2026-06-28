@@ -36,7 +36,7 @@ import me.rerere.ai.ui.UsedMode
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
-import me.rerere.common.android.Logging
+import kotlinx.serialization.decodeFromString
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
@@ -84,7 +84,6 @@ import kotlin.text.appendLine
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
-import kotlinx.coroutines.delay
 
 /**
  * Result of building messages, includes both the messages and info about activated context sources.
@@ -208,9 +207,9 @@ class GenerationHandler(
                                 )
                             },
                             execute = { params ->
-                                val json = params.jsonObject
-                                val segmentId = json["segment_id"]?.jsonPrimitive?.intOrNull
-                                val keyWords = json["key_words"]?.jsonPrimitive?.contentOrNull
+                                val args = params.jsonObject
+                                val segmentId = args["segment_id"]?.jsonPrimitive?.intOrNull
+                                val keyWords = args["key_words"]?.jsonPrimitive?.contentOrNull
 
                                 when {
                                     keyWords != null -> {
@@ -236,27 +235,26 @@ class GenerationHandler(
 
                                     segmentId != null -> {
                                         val chatSegment = chatSegmentDAO.getSegmentById(segmentId)
-                                            ?: return@Tool buildJsonObject {
-                                                put(
-                                                    "error",
-                                                    JsonPrimitive("Segment not found.")
-                                                )
+                                        if (chatSegment == null || chatSegment.assistantId != assistant.id.toString()) {
+                                            return@Tool buildJsonObject {
+                                                put("error", JsonPrimitive("Segment not found or access denied."))
                                             }
-
-                                        val conversation =
-                                            conversationRepo.getConversationById(Uuid.parse(chatSegment.conversationId))
-                                        val messages = conversation?.currentMessages ?: emptyList()
-
-                                        val start = chatSegment.startMessageIndex.coerceIn(messages.indices)
-                                        val end = (chatSegment.endMessageIndex + 1).coerceIn(
-                                            messages.indices.first,
-                                            messages.size
+                                        }
+                                        val messageEntities = conversationRepo.chatMessageDAO.getMessagesByTimeRange(
+                                            conversationId = chatSegment.conversationId,
+                                            startTime = chatSegment.startTime,
+                                            endTime = chatSegment.endTime
                                         )
 
-                                        val details = if (start < end) {
-                                            messages.subList(start, end)
-                                                .joinToString("\n") { "${it.role}: ${it.toContentText()}" }
-                                        } else "No details found."
+                                        val details = if (messageEntities.isNotEmpty()) {
+                                            messageEntities.joinToString("\n") { entity ->
+                                                // 从 JSON 反序列化出 UIMessage 对象
+                                                val uiMsg = json.decodeFromString<UIMessage>(entity.contentJson)
+                                                "${uiMsg.role}: ${uiMsg.toContentText()}"
+                                            }
+                                        } else {
+                                            "No original messages found in this time range."
+                                        }
 
                                         buildJsonObject {
                                             put("segment_id", JsonPrimitive(segmentId))
@@ -1293,6 +1291,12 @@ class GenerationHandler(
                 val params = it.jsonObject
                 val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("必须提供id")
                 val content = params["content"]?.jsonPrimitive?.contentOrNull ?: error("必须提供记忆内容")
+                val entity = memoryRepo.getMemoryEntitiesOfAssistant(assistantId).find { it.id == id }
+                if (entity == null) {
+                    return@Tool buildJsonObject {
+                        put("error", JsonPrimitive("Memory not found or access denied."))
+                    }
+                }
                 val before = memoryRepo.getMemoryById(id)
                 val updated = onUpdate(id, content)
                 buildJsonObject {
@@ -1327,6 +1331,12 @@ class GenerationHandler(
             execute = {
                 val params = it.jsonObject
                 val id = params["id"]?.jsonPrimitive?.intOrNull ?: error("必须提供记忆条目的id")
+                val entity = memoryRepo.getMemoryEntitiesOfAssistant(assistantId).find { it.id == id }
+                if (entity == null) {
+                    return@Tool buildJsonObject {
+                        put("error", JsonPrimitive("Memory not found or access denied."))
+                    }
+                }
                 val before = memoryRepo.getMemoryById(id)
                 onDelete(id)
                 buildJsonObject {

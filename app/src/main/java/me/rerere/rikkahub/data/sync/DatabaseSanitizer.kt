@@ -4,10 +4,17 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.utils.LogUtil
 import androidx.room.Room
-import me.rerere.rikkahub.data.db.AppDatabase
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import java.io.File
+import kotlin.math.abs
 
 object DatabaseSanitizer {
     private const val TAG = "DatabaseSanitizer"
@@ -29,7 +36,7 @@ object DatabaseSanitizer {
     }
 
     fun sanitize(context: Context, sourceDbFile: File): Pair<File, SanitizationResult> {
-        LogUtil.i(TAG, "开始数据库物理清洗: ${sourceDbFile.absolutePath}")
+        LogUtil.i(TAG, "开始数据库物理清洗与逻辑同步: ${sourceDbFile.absolutePath}")
         val targetDbName = "rikka_hub_sanitized"
         val targetDbFile = context.getDatabasePath(targetDbName)
 
@@ -42,8 +49,6 @@ object DatabaseSanitizer {
             .build()
 
         val targetDbInfo = targetRoomDb.openHelper.writableDatabase
-
-        // 关键：关闭外键约束，防止因为拷贝顺序导致插入失败
         targetDbInfo.execSQL("PRAGMA foreign_keys = OFF")
 
         var totalResult = SanitizationResult()
@@ -64,7 +69,7 @@ object DatabaseSanitizer {
 
             val whiteList = listOf(
                 "ConversationEntity", "MemoryEntity", "GenMediaEntity",
-                "ChatEpisodeEntity", "chat_episode_entity", "EmbeddingCacheEntity",
+                "ChatEpisodeEntity", "EmbeddingCacheEntity",
                 "daily_activity", "AgentDiaryEntity", "schedules", "chat_segments",
                 "agent_tasks", "token_usage", "books", "book_progress",
                 "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
@@ -83,7 +88,7 @@ object DatabaseSanitizer {
                         }
 
                         if (rowCount > 0) {
-                            LogUtil.i(TAG, "迁移表: $sourceTableName -> $targetTableName ($rowCount 行)")
+                            LogUtil.i(TAG, "清洗迁移表: $sourceTableName -> $targetTableName ($rowCount 行)")
                             val result = copyTable(sourceDb, targetDbInfo, sourceTableName, targetTableName)
                             totalResult += result
                         }
@@ -91,7 +96,18 @@ object DatabaseSanitizer {
                 }
             }
 
-            // 重新开启外键
+            // 同步进度水位线
+            targetDbInfo.execSQL("""
+                UPDATE `ConversationEntity`
+                SET `last_summarized_message_time` = (
+                    SELECT MAX(`end_time`)
+                    FROM `chat_segments`
+                    WHERE `chat_segments`.`conversation_id` = `ConversationEntity`.`id`
+                )
+                WHERE (`last_summarized_message_time` = 0 OR `last_summarized_message_time` IS NULL)
+                AND `id` IN (SELECT `conversation_id` FROM `chat_segments`)
+            """.trimIndent())
+
             targetDbInfo.execSQL("PRAGMA foreign_keys = ON")
 
         } catch (e: Exception) {
@@ -132,6 +148,8 @@ object DatabaseSanitizer {
 
             source.query("`$sourceTableName`", null, null, null, null, null, null).use { cursor ->
                 val sourceColumns = cursor.columnNames.toSet()
+                val timestampIdx = cursor.getColumnIndex("timestamp")
+                val idIdx = cursor.getColumnIndex("id")
 
                 while (cursor.moveToNext()) {
                     rows++
@@ -158,27 +176,66 @@ object DatabaseSanitizer {
                             }
                         }
 
-                        // 针对 v14/v15 chat_segments 唯一索引 (conv_id, start_time) 的特殊补全逻辑
+                        // 【逻辑同步 1】：JSON 消息炸开
+                        if (targetTableName.equals("ConversationEntity", ignoreCase = true)) {
+                            val nodesJson = values.getAsString("nodes")
+                            if (!nodesJson.isNullOrBlank() && nodesJson != "[]") {
+                                try {
+                                    val convId = values.getAsString("id")
+                                    val nodes = JsonInstant.decodeFromString<List<MessageNode>>(nodesJson)
+                                    nodes.forEachIndexed { nodeIdx, node ->
+                                        val nodeValues = ContentValues().apply {
+                                            put("id", node.id.toString())
+                                            put("conversation_id", convId)
+                                            put("select_index", node.selectIndex)
+                                            put("order_index", nodeIdx)
+                                        }
+                                        target.insert("chat_message_nodes", SQLiteDatabase.CONFLICT_REPLACE, nodeValues)
+
+                                        node.messages.forEachIndexed { msgIdx, msg ->
+                                            val msgJson = JsonInstant.encodeToString(msg)
+                                            val timestamp = msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                                            val msgValues = ContentValues().apply {
+                                                put("id", msg.id.toString())
+                                                put("node_id", node.id.toString())
+                                                put("conversation_id", convId)
+                                                put("content_json", msgJson)
+                                                put("created_at", timestamp)
+                                                put("order_index", msgIdx)
+                                            }
+                                            target.insert("chat_messages", SQLiteDatabase.CONFLICT_REPLACE, msgValues)
+                                        }
+                                    }
+                                    values.put("nodes", "")
+                                } catch (e: Exception) {
+                                    LogUtil.e(TAG, "消息拆解失败: ${e.message}")
+                                }
+                            }
+                        }
+
+                        // 【逻辑同步 2】：片段时间修复 (彻底解决 start_time == end_time 的问题)
                         if (targetTableName.equals("chat_segments", ignoreCase = true)) {
-                            val startTime = values.getAsLong("start_time") ?: 0L
-                            if (startTime == 0L) {
-                                val timestamp = values.getAsLong("timestamp") ?: System.currentTimeMillis()
-                                val idIdx = cursor.getColumnIndex("id")
-                                val id = if (idIdx != -1) cursor.getLong(idIdx) else rows.toLong()
-                                // 加上 id 偏移量确保 start_time 绝对唯一，防止 CONFLICT_REPLACE 导致数据被覆盖
-                                val fixedTime = (if (timestamp > 0) timestamp else System.currentTimeMillis()) + id
-                                values.put("start_time", fixedTime)
-                                values.put("end_time", fixedTime + 1)
+                            val originalTimestamp = if (timestampIdx != -1) cursor.getLong(timestampIdx) else 0L
+                            val finalTimestamp = if (originalTimestamp > 1000000L) originalTimestamp else System.currentTimeMillis()
+                            val startVal = values.getAsLong("start_time") ?: 0L
+                            val endVal = values.getAsLong("end_time") ?: 0L
+                            LogUtil.d("原始时间戳：","$originalTimestamp -> $finalTimestamp")
+                            // 核心判定：如果差值异常（包括相等），则执行强制修复
+                            if (startVal == 0L || endVal ==0L || abs(endVal - startVal) < 500) {
+                                val computedEndTime: Long = finalTimestamp
+                                val computedStartTime: Long = computedEndTime - 3600000L // 明确减去 60 分钟
+                                values.put("end_time", computedEndTime)
+                                values.put("start_time", computedStartTime)
                             }
                         }
 
                         val result = target.insert(targetTableName, SQLiteDatabase.CONFLICT_REPLACE, values)
                         if (result == -1L) {
-                            LogUtil.e(TAG, "[$targetTableName] 第 $rows 行插入失败")
+                            LogUtil.e(TAG, "[$targetTableName] 插入失败")
                             skipped++
                         }
                     } catch (e: Exception) {
-                        LogUtil.e(TAG, "[$targetTableName] 行处理异常: ${e.message}")
+                        LogUtil.e(TAG, "[$targetTableName] 处理异常: ${e.message}")
                         skipped++
                     }
                 }

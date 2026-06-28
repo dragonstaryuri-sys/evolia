@@ -166,6 +166,7 @@ fun MinimalChatInput(
     onStartCall: () -> Unit = {},
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
     onDeleteFile: (Uri) -> Unit = {},
+    onConsolidate: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -470,6 +471,7 @@ fun MinimalChatInput(
                 onStartCall = onStartCall,
                 onRefreshContext = onRefreshContext,
                 onDeleteFile = onDeleteFile,
+                onConsolidate = onConsolidate,
                 onDismiss = { showPicker = false }
             )
         }
@@ -493,6 +495,7 @@ private fun MinimalPickerContent(
     onStartCall: () -> Unit,
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult,
     onDeleteFile: (Uri) -> Unit,
+    onConsolidate: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -895,6 +898,25 @@ private fun MinimalPickerContent(
             onClick = {
                 showLorebooksPicker = false
                 showLorebooksPicker = true
+            }
+        )
+
+        // Consolidate Memory
+        MinimalPickerItem(
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.Summarize,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            title = stringResource(R.string.assistant_memory_now),
+            subtitle = stringResource(R.string.assistant_memory_now_tip),
+            onClick = {
+                haptics.perform(HapticPattern.Pop)
+                onConsolidate()
+                onDismiss()
             }
         )
 

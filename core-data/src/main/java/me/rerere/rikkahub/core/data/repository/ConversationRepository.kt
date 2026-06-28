@@ -34,7 +34,7 @@ class ConversationRepository(
     private val context: Context,
     private val db: RoomDatabase,
     private val conversationDAO: ConversationDAO,
-    private val chatMessageDAO: ChatMessageDAO,
+    val chatMessageDAO: ChatMessageDAO,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val chatSegmentDAO: ChatSegmentDAO,
     private val dailyActivityDAO: DailyActivityDAO,
