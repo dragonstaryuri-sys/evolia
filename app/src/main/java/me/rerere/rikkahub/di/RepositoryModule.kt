@@ -6,13 +6,23 @@ import me.rerere.rikkahub.core.data.ai.EmbeddingService as IEmbeddingService
 import me.rerere.rikkahub.core.data.ai.RerankService as IRerankService
 import me.rerere.rikkahub.core.data.repository.*
 import me.rerere.rikkahub.core.data.db.repository.GenMediaRepository
+import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.discover.repo.BookRepository
 import org.koin.dsl.module
 
 val repositoryModule = module {
     single {
-        ConversationRepository(get(), get(), get(), get(), get(), get())
+        ConversationRepository(
+            context = get(),
+            db = get<AppDatabase>(),
+            conversationDAO = get(),
+            chatMessageDAO = get(),
+            chatEpisodeDAO = get(),
+            chatSegmentDAO = get(),
+            dailyActivityDAO = get(),
+            tokenUsageDAO = get()
+        )
     }
 
     single {

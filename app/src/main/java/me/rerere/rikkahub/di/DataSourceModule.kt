@@ -54,7 +54,6 @@ val dataSourceModule = module {
         SettingsStore(context = get(), scope = get(), quickCache = get(), secretKeyManager = get())
     }
 
-    // 注入供 :discover 模块使用的助手列表流，实现解耦
     single<StateFlow<List<Assistant>>> {
         get<SettingsStore>().settingsFlow
             .map { it.assistants }
@@ -79,97 +78,40 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_9_10,
                 AppDatabase.MIGRATION_10_11,
                 AppDatabase.MIGRATION_11_12,
-                AppDatabase.MIGRATION_12_13
+                AppDatabase.MIGRATION_12_13,
+                AppDatabase.MIGRATION_13_14 // 新增迁移
             )
             .build()
     }
 
+    single { AssistantTemplateLoader(settingsStore = get()) }
     single {
-        AssistantTemplateLoader(settingsStore = get())
+        PebbleEngine.Builder().loader(get<AssistantTemplateLoader>()).defaultLocale(Locale.getDefault())
+            .autoEscaping(false).build()
     }
-
-    single {
-        PebbleEngine.Builder()
-            .loader(get<AssistantTemplateLoader>())
-            .defaultLocale(Locale.getDefault())
-            .autoEscaping(false)
-            .build()
-    }
-
     single { TemplateTransformer(engine = get(), settingsStore = get()) }
 
-    single {
-        get<AppDatabase>().conversationDao()
-    }
-
-    single {
-        get<AppDatabase>().memoryDao()
-    }
-
-    single {
-        get<AppDatabase>().genMediaDao()
-    }
-
-    single {
-        get<AppDatabase>().chatEpisodeDao()
-    }
-
-    single {
-        get<AppDatabase>().embeddingCacheDao()
-    }
-
-    single {
-        get<AppDatabase>().dailyActivityDao()
-    }
-
-    single {
-        get<AppDatabase>().agentDiaryDao()
-    }
-
-    single {
-        get<AppDatabase>().scheduleDao()
-    }
-
-    single {
-        get<AppDatabase>().agentTaskDao()
-    }
-
-    single {
-        get<AppDatabase>().chatSegmentDao()
-    }
-
-    single {
-        get<AppDatabase>().tokenUsageDao()
-    }
-
-    single {
-        get<AppDatabase>().bookDao()
-    }
-
-    single {
-        get<AppDatabase>().assistantExtendedStateDao()
-    }
-
-    single {
-        get<AppDatabase>().milestoneDao()
-    }
-
-    single {
-        get<AppDatabase>().userDeviceStateDao()
-    }
-
-    single {
-        get<AppDatabase>().agentMonitorTaskDao()
-    }
-
-    single {
-        get<AppDatabase>().favoriteDao()
-    }
+    single { get<AppDatabase>().conversationDao() }
+    single { get<AppDatabase>().chatMessageDao() } // 新增 DAO 注入
+    single { get<AppDatabase>().memoryDao() }
+    single { get<AppDatabase>().genMediaDao() }
+    single { get<AppDatabase>().chatEpisodeDao() }
+    single { get<AppDatabase>().embeddingCacheDao() }
+    single { get<AppDatabase>().dailyActivityDao() }
+    single { get<AppDatabase>().agentDiaryDao() }
+    single { get<AppDatabase>().scheduleDao() }
+    single { get<AppDatabase>().agentTaskDao() }
+    single { get<AppDatabase>().chatSegmentDao() }
+    single { get<AppDatabase>().tokenUsageDao() }
+    single { get<AppDatabase>().bookDao() }
+    single { get<AppDatabase>().assistantExtendedStateDao() }
+    single { get<AppDatabase>().milestoneDao() }
+    single { get<AppDatabase>().userDeviceStateDao() }
+    single { get<AppDatabase>().agentMonitorTaskDao() }
+    single { get<AppDatabase>().favoriteDao() }
 
     single { MilestoneRepository(milestoneDAO = get()) }
-
     single { DiaryRepository(agentDiaryDao = get()) }
-
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single {
@@ -190,13 +132,12 @@ val dataSourceModule = module {
     }
 
     single<OkHttpClient> {
-        val acceptLang = AcceptLanguageBuilder.fromAndroid(get())
-            .build()
+        val acceptLang = AcceptLanguageBuilder.fromAndroid(get()).build()
         OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS) // 修改：从10分钟减为60秒，防止死等
+            .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
-            .pingInterval(30, TimeUnit.SECONDS) // 新增：每30秒发心跳包，检测TCP连接是否存活
+            .pingInterval(30, TimeUnit.SECONDS)
             .followSslRedirects(true)
             .followRedirects(true)
             .retryOnConnectionFailure(true)
@@ -207,33 +148,36 @@ val dataSourceModule = module {
                     .build()
                 chain.proceed(request)
             }
-            .addInterceptor(AIRequestInterceptor(remoteConfig = get()))
+            .addInterceptor(
+                AIRequestInterceptor(
+                    siliconCloudApiKey = "",
+                    siliconCloudFreeModels = listOf(
+                        "deepseek-ai/DeepSeek-V3",
+                        "deepseek-ai/DeepSeek-R1"
+                    )
+                )
+            )
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
             })
             .build()
     }
 
+    single { SponsorAPI.create(get()) }
+    single { ProviderManager(client = get()) }
     single {
-        SponsorAPI.create(get())
+        WebdavSync(
+            settingsStore = get(),
+            json = get(),
+            context = get(),
+            secureStore = get(),
+            secretKeyManager = get(),
+            conversationRepo = get() // 新增这一行
+        )
     }
-
-    single {
-        ProviderManager(client = get())
-    }
-
-    single {
-        WebdavSync(settingsStore = get(), json = get(), context = get(), secureStore = get(), secretKeyManager = get())
-    }
-
     single<Retrofit> {
-        Retrofit.Builder()
-            .baseUrl("https://api.rikka-ai.com")
-            .addConverterFactory(get<Json>().asConverterFactory("application/json; charset=UTF8".toMediaType()))
-            .build()
+        Retrofit.Builder().baseUrl("https://api.rikka-ai.com")
+            .addConverterFactory(get<Json>().asConverterFactory("application/json; charset=UTF8".toMediaType())).build()
     }
-
-    single<EvoliaAPI> {
-        get<Retrofit>().create(EvoliaAPI::class.java)
-    }
+    single<EvoliaAPI> { get<Retrofit>().create(EvoliaAPI::class.java) }
 }

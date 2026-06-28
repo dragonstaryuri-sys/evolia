@@ -4,8 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationManagerCompat
-import com.google.firebase.remoteconfig.FirebaseRemoteConfig
-import com.google.firebase.remoteconfig.remoteConfigSettings
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -86,14 +84,6 @@ class EvoliaApp : Application() {
 
         DatabaseUtil.setCursorWindowSize(16 * 1024 * 1024)
         deleteTempFiles()
-
-        get<FirebaseRemoteConfig>().apply {
-            setConfigSettingsAsync(remoteConfigSettings {
-                minimumFetchIntervalInSeconds = 1800
-            })
-            setDefaultsAsync(R.xml.remote_config_defaults)
-            fetchAndActivate()
-        }
 
         try {
             val agentTaskScheduler: AgentTaskScheduler = get()

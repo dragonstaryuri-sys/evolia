@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.WebDavConfig
 import me.rerere.rikkahub.data.datastore.sanitize
 import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
@@ -43,6 +44,7 @@ class WebdavSync(
     private val context: Context,
     private val secureStore: SecureStore,
     private val secretKeyManager: SecretKeyManager,
+    private val conversationRepo: ConversationRepository,
 ) {
     suspend fun testWebdav(webDavConfig: WebDavConfig) {
         val davCollection = webDavConfig.requireCollection()
@@ -66,7 +68,18 @@ class WebdavSync(
             }
         }
     }
-
+    /**
+     * 在还原备份后调用，触发数据库结构的强制迁移。
+     */
+    suspend fun triggerDataMigration() {
+        try {
+            LogUtil.i(TAG, "开始执行数据迁移...")
+            conversationRepo.migrateAllOldConversations()
+            LogUtil.i(TAG, "数据迁移执行完毕")
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "触发数据迁移失败", e)
+        }
+    }
     suspend fun backupToWebDav(webDavConfig: WebDavConfig) = withContext(Dispatchers.IO) {
         val file = prepareBackupFile(webDavConfig)
         if (!file.exists() || file.length() == 0L) {
@@ -422,6 +435,7 @@ class WebdavSync(
                     LogUtil.w(TAG, "No rikka_hub database found in the backup ZIP entries")
                 }
                 LogUtil.i(TAG, "Restore process completed successfully.")
+                triggerDataMigration()
                 RestoreResult(sanitization, settingsCleanup.copy(unsupportedZipEntriesBytes = unsupportedBytes))
             } catch (e: Exception) {
                 LogUtil.e(TAG, "Error during restore process", e)

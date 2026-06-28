@@ -18,6 +18,7 @@ data class ConversationEntity(
     val assistantId: String,
     @ColumnInfo("title")
     val title: String,
+    @Deprecated("消息数据已迁移至 chat_message_nodes 和 chat_messages 表。请使用 ChatMessageDAO 进行访问。")
     @ColumnInfo("nodes")
     val nodes: String,
     @ColumnInfo("create_at")

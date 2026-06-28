@@ -1,34 +1,42 @@
 package me.rerere.rikkahub.core.data.repository
 
 import android.content.Context
+import android.util.Log
+import androidx.room.RoomDatabase
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.map
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.core.data.db.dao.*
-import me.rerere.rikkahub.core.data.db.entity.ConversationEntity
-import me.rerere.rikkahub.core.data.db.entity.DailyActivityEntity
-import me.rerere.rikkahub.core.data.db.entity.TokenUsageEntity
-import me.rerere.rikkahub.core.data.db.entity.DailyUsageSummary
+import me.rerere.rikkahub.core.data.db.entity.*
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.deleteChatFiles
+import me.rerere.ai.ui.UIMessage
 import java.time.Instant
 import java.time.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlin.uuid.Uuid
+import kotlin.time.ExperimentalTime
 
 class ConversationRepository(
     private val context: Context,
+    private val db: RoomDatabase,
     private val conversationDAO: ConversationDAO,
+    private val chatMessageDAO: ChatMessageDAO,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val chatSegmentDAO: ChatSegmentDAO,
     private val dailyActivityDAO: DailyActivityDAO,
@@ -37,29 +45,32 @@ class ConversationRepository(
     companion object {
         private const val PAGE_SIZE = 20
         private const val INITIAL_LOAD_SIZE = 40
+        private const val TAG = "ConversationRepo"
     }
 
     suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10, isVirtual: Boolean = false): List<Conversation> {
-        return conversationDAO.getRecentConversationsOfAssistant(
+        val entities = conversationDAO.getRecentConversationsOfAssistant(
             assistantId = assistantId.toString(),
             limit = limit,
             isVirtual = isVirtual
-        ).map { conversationEntityToConversation(it) }
+        )
+        return fetchFullConversations(entities)
     }
 
     suspend fun getLatestConversations(assistantId: Uuid, limit: Int = 1, isVirtual: Boolean = false): List<Conversation> {
-        return conversationDAO.getLatestConversationsOfAssistant(
+        val entities = conversationDAO.getLatestConversationsOfAssistant(
             assistantId = assistantId.toString(),
             limit = limit,
             isVirtual = isVirtual
-        ).map { conversationEntityToConversation(it) }
+        )
+        return fetchFullConversations(entities)
     }
 
     suspend fun getLatestConversation(assistantId: Uuid): Conversation? {
         return conversationDAO.getRecentConversationsOfAssistantAnyMode(
             assistantId = assistantId.toString(),
             limit = 1
-        ).firstOrNull()?.let { conversationEntityToConversation(it) }
+        ).firstOrNull()?.let { fetchFullConversation(it) }
     }
 
     suspend fun getPreviousConversation(assistantId: Uuid, currentConversationId: Uuid): Conversation? {
@@ -67,27 +78,19 @@ class ConversationRepository(
             assistantId = assistantId.toString(),
             excludeId = currentConversationId.toString(),
             limit = 1
-        ).firstOrNull()?.let { conversationEntityToConversation(it) }
+        ).firstOrNull()?.let { fetchFullConversation(it) }
     }
 
     fun getConversationsOfAssistant(assistantId: Uuid, isVirtual: Boolean = false): Flow<List<Conversation>> {
         return conversationDAO
             .getConversationsOfAssistant(assistantId.toString(), isVirtual = isVirtual)
-            .map { list ->
-                list.map { entity ->
-                    conversationEntityToConversation(entity)
-                }
-            }
+            .map { list -> fetchFullConversations(list) }
     }
 
     fun getConversationsOfAssistantAnyMode(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO
             .getConversationsOfAssistantAnyMode(assistantId.toString())
-            .map { list ->
-                list.map { entity ->
-                    conversationEntityToConversation(entity)
-                }
-            }
+            .map { list -> fetchFullConversations(list) }
     }
 
     fun getAllLightConversations(): Flow<List<Conversation>> {
@@ -113,11 +116,7 @@ class ConversationRepository(
     fun searchConversations(titleKeyword: String, isVirtual: Boolean = false): Flow<List<Conversation>> {
         return conversationDAO
             .searchConversations(titleKeyword, isVirtual = isVirtual)
-            .map { flow ->
-                flow.map { entity ->
-                    conversationEntityToConversation(entity)
-                }
-            }
+            .map { list -> fetchFullConversations(list) }
     }
 
     fun searchConversationsPaging(titleKeyword: String, isVirtual: Boolean = false): Flow<PagingData<Conversation>> = Pager(
@@ -136,11 +135,7 @@ class ConversationRepository(
     fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String, isVirtual: Boolean = false): Flow<List<Conversation>> {
         return conversationDAO
             .searchConversationsOfAssistant(assistantId.toString(), titleKeyword, isVirtual = isVirtual)
-            .map { flow ->
-                flow.map { entity ->
-                    conversationEntityToConversation(entity)
-                }
-            }
+            .map { list -> fetchFullConversations(list) }
     }
 
     fun searchConversationsOfAssistantPaging(assistantId: Uuid, titleKeyword: String, isVirtual: Boolean = false): Flow<PagingData<Conversation>> = Pager(
@@ -158,39 +153,140 @@ class ConversationRepository(
 
     suspend fun getConversationById(uuid: Uuid): Conversation? {
         val entity = conversationDAO.getConversationById(uuid.toString())
-        return if (entity != null) {
-            conversationEntityToConversation(entity)
-        } else null
+        return entity?.let { fetchFullConversation(it) }
     }
 
     suspend fun getConversationById(id: String): Conversation? {
         return runCatching { getConversationById(Uuid.parse(id)) }.getOrNull()
     }
 
-    suspend fun insertConversation(conversation: Conversation) {
-        conversationDAO.insert(
-            conversationToConversationEntity(conversation)
-        )
+    private suspend fun fetchFullConversation(entity: ConversationEntity): Conversation {
+        return fetchFullConversations(listOf(entity)).first()
     }
 
-    suspend fun updateConversation(conversation: Conversation) {
-        if (conversation.isConsolidated) {
-            // 只把状态改回 false，标记该会话内容已变动，需要下次重新滚动整合
-            val updatedConversation = conversation.copy(isConsolidated = false)
-            conversationDAO.update(
-                conversationToConversationEntity(updatedConversation)
-            )
-        } else {
-            conversationDAO.update(
-                conversationToConversationEntity(conversation)
-            )
+    private suspend fun fetchFullConversations(entities: List<ConversationEntity>): List<Conversation> =
+        withContext(Dispatchers.IO) {
+            if (entities.isEmpty()) return@withContext emptyList()
+            val convIds = entities.map { it.id }
+
+            val allNodes = chatMessageDAO.getNodesByConversationIds(convIds).groupBy { it.conversationId }
+            val allMessages = chatMessageDAO.getMessagesByConversationIds(convIds).groupBy { it.nodeId }
+
+            entities.map { entity ->
+                // 1. 获取新表中的消息
+                val nodesFromDb = allNodes[entity.id] ?: emptyList()
+                val messageNodes = nodesFromDb.map { nodeEntity ->
+                    val messages = allMessages[nodeEntity.id]
+                        ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+                        ?: emptyList()
+                    MessageNode(
+                        id = Uuid.parse(nodeEntity.id),
+                        messages = messages,
+                        selectIndex = nodeEntity.selectIndex
+                    )
+                }
+
+                // 2. 获取旧字段中的消息
+                val oldNodes = try {
+                    if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
+                        JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes)
+                    } else emptyList()
+                } catch (e: Exception) {
+                    Log.e(TAG, "解析旧节点失败: ${entity.id}", e)
+                    emptyList()
+                }
+
+                // 3. 【核心修复】：合并策略
+                // 解决导入备份后“聊了几句”再导出的混合状态。
+                // 我们以 ID 为准进行合并，新表的消息代表“现状”，旧字段代表“历史”。
+                val finalNodes = if (oldNodes.isEmpty()) {
+                    messageNodes
+                } else if (messageNodes.isEmpty()) {
+                    oldNodes
+                } else {
+                    val newIds = messageNodes.map { it.id }.toSet()
+                    oldNodes.filter { it.id !in newIds } + messageNodes
+                }
+
+                conversationEntityToConversation(entity, finalNodes)
+            }
+        }
+
+    /**
+     * 强制迁移所有尚未拆表的会话数据。
+     */
+    suspend fun migrateAllOldConversations() = withContext(Dispatchers.IO) {
+        try {
+            val allEntities = conversationDAO.getAll().first()
+            val entitiesToMigrate = allEntities.filter { it.nodes.isNotBlank() && it.nodes != "[]" }
+
+            if (entitiesToMigrate.isEmpty()) return@withContext
+
+            db.withTransaction {
+                entitiesToMigrate.forEach { entity ->
+                    try {
+                        // 【核心修复】：基于合并后的全量视图进行同步，防止 syncMessages 的 delete 冲掉新聊的内容
+                        val fullConversation = fetchFullConversation(entity)
+
+                        // 同步到新表
+                        syncMessages(fullConversation)
+
+                        // 搬运成功后，清空旧字段
+                        conversationDAO.update(entity.copy(nodes = ""))
+                        Log.i(TAG, "迁移旧数据成功: ${entity.title} (ID: ${entity.id})")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "迁移单个会话数据失败: ${entity.id}", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "执行迁移任务全局失败", e)
         }
     }
 
+    suspend fun insertConversation(conversation: Conversation) {
+        db.withTransaction {
+            conversationDAO.insert(conversationToConversationEntity(conversation))
+            syncMessages(conversation)
+        }
+    }
+
+    suspend fun updateConversation(conversation: Conversation) {
+        val updatedConv = if (conversation.isConsolidated) conversation.copy(isConsolidated = false) else conversation
+        db.withTransaction {
+            conversationDAO.update(conversationToConversationEntity(updatedConv))
+            syncMessages(updatedConv)
+        }
+    }
+
+    @OptIn(ExperimentalTime::class)
+    private suspend fun syncMessages(conversation: Conversation) {
+        val convId = conversation.id.toString()
+        val nodeEntities = conversation.messageNodes.mapIndexed { index, node ->
+            ChatMessageNodeEntity(
+                id = node.id.toString(),
+                conversationId = convId,
+                selectIndex = node.selectIndex,
+                orderIndex = index
+            )
+        }
+        val messageEntities = conversation.messageNodes.flatMap { node ->
+            node.messages.mapIndexed { index, msg ->
+                ChatMessageEntity(
+                    id = msg.id.toString(),
+                    nodeId = node.id.toString(),
+                    conversationId = convId,
+                    contentJson = JsonInstant.encodeToString(msg),
+                    createdAt = msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
+                    orderIndex = index
+                )
+            }
+        }
+        chatMessageDAO.syncConversationMessages(convId, nodeEntities, messageEntities)
+    }
+
     suspend fun deleteConversation(conversation: Conversation, deleteFiles: Boolean = true) {
-        conversationDAO.delete(
-            conversationToConversationEntity(conversation)
-        )
+        conversationDAO.delete(conversationToConversationEntity(conversation))
         chatEpisodeDAO.deleteEpisodeByConversationId(conversation.id.toString())
         chatSegmentDAO.deleteSegmentsByConversation(conversation.id.toString())
         if (deleteFiles) {
@@ -199,20 +295,19 @@ class ConversationRepository(
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {
-        // Delete both normal and virtual conversations
-        conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = false).first().forEach { conversation ->
-            deleteConversation(conversationEntityToConversation(conversation))
+        conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = false).first().forEach {
+            deleteConversation(fetchFullConversation(it))
         }
-        conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true).first().forEach { conversation ->
-            deleteConversation(conversationEntityToConversation(conversation))
+        conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true).first().forEach {
+            deleteConversation(fetchFullConversation(it))
         }
     }
 
-    fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
+    private fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
         return ConversationEntity(
             id = conversation.id.toString(),
             title = conversation.title,
-            nodes = JsonInstant.encodeToString(conversation.messageNodes),
+            nodes = "",
             createAt = conversation.createAt.toEpochMilli(),
             updateAt = conversation.updateAt.toEpochMilli(),
             assistantId = conversation.assistantId.toString(),
@@ -229,45 +324,37 @@ class ConversationRepository(
         )
     }
 
-    fun conversationEntityToConversation(conversationEntity: ConversationEntity): Conversation {
-        val messageNodes = JsonInstant
-            .decodeFromString<List<MessageNode>>(conversationEntity.nodes)
-            .filter { it.messages.isNotEmpty() }
+    private fun conversationEntityToConversation(entity: ConversationEntity, nodes: List<MessageNode>): Conversation {
         val enabledModeIds = try {
-            JsonInstant.decodeFromString<List<String>>(conversationEntity.enabledModeIds)
+            JsonInstant.decodeFromString<List<String>>(entity.enabledModeIds)
                 .map { Uuid.parse(it) }
                 .toSet()
         } catch (e: Exception) {
             emptySet()
         }
         return Conversation(
-            id = Uuid.parse(conversationEntity.id),
-            title = conversationEntity.title,
-            messageNodes = messageNodes,
-            createAt = Instant.ofEpochMilli(conversationEntity.createAt),
-            updateAt = Instant.ofEpochMilli(conversationEntity.updateAt),
-            assistantId = Uuid.parse(conversationEntity.assistantId),
-            truncateIndex = conversationEntity.truncateIndex,
-            chatSuggestions = JsonInstant.decodeFromString(conversationEntity.chatSuggestions),
-            isPinned = conversationEntity.isPinned,
-            isConsolidated = conversationEntity.isConsolidated,
+            id = Uuid.parse(entity.id),
+            title = entity.title,
+            messageNodes = nodes,
+            createAt = Instant.ofEpochMilli(entity.createAt),
+            updateAt = Instant.ofEpochMilli(entity.updateAt),
+            assistantId = Uuid.parse(entity.assistantId),
+            truncateIndex = entity.truncateIndex,
+            chatSuggestions = JsonInstant.decodeFromString(entity.chatSuggestions),
+            isPinned = entity.isPinned,
+            isConsolidated = entity.isConsolidated,
             enabledModeIds = enabledModeIds,
-            contextSummaryUpToIndex = conversationEntity.contextSummaryUpToIndex,
-            lastPruneTime = conversationEntity.lastPruneTime,
-            lastPruneMessageCount = conversationEntity.lastPruneMessageCount,
-            lastRefreshTime = conversationEntity.lastRefreshTime,
-            isVirtual = conversationEntity.isVirtual
+            contextSummaryUpToIndex = entity.contextSummaryUpToIndex,
+            lastPruneTime = entity.lastPruneTime,
+            lastPruneMessageCount = entity.lastPruneMessageCount,
+            lastRefreshTime = entity.lastRefreshTime,
+            isVirtual = entity.isVirtual
         )
     }
 
     fun getPinnedConversations(): Flow<List<Conversation>> {
-        return conversationDAO
-            .getPinnedConversations()
-            .map { flow ->
-                flow.map { entity ->
-                    conversationEntityToConversation(entity)
-                }
-            }
+        return conversationDAO.getPinnedConversations()
+            .map { list -> fetchFullConversations(list) }
     }
 
     suspend fun togglePinStatus(conversationId: Uuid) {
@@ -278,44 +365,28 @@ class ConversationRepository(
     }
 
     suspend fun markAsConsolidated(conversationId: Uuid) {
-        conversationDAO.updateConsolidatedStatus(
-            id = conversationId.toString(),
-            isConsolidated = true
-        )
+        conversationDAO.updateConsolidatedStatus(id = conversationId.toString(), isConsolidated = true)
     }
 
     suspend fun markAsNotConsolidated(conversationId: Uuid) {
-        conversationDAO.updateConsolidatedStatus(
-            id = conversationId.toString(),
-            isConsolidated = false
-        )
+        conversationDAO.updateConsolidatedStatus(id = conversationId.toString(), isConsolidated = false)
     }
 
-    suspend fun getEpisodeCount(): Int {
-        return chatEpisodeDAO.getCount()
-    }
+    suspend fun getEpisodeCount(): Int = chatEpisodeDAO.getCount()
 
-    fun getEpisodeCountFlow(): Flow<Int> {
-        return chatEpisodeDAO.getCountFlow()
-    }
+    fun getEpisodeCountFlow(): Flow<Int> = chatEpisodeDAO.getCountFlow()
 
     fun getAllConversations(): Flow<List<Conversation>> {
-        return conversationDAO.getAll()
-            .map { list ->
-                list.map { conversationEntityToConversation(it) }
-            }
+        return conversationDAO.getAll().map { list -> fetchFullConversations(list) }
     }
 
     fun getConversationCountFlow(): Flow<Int> = conversationDAO.getConversationCountFlow()
 
     fun getDistinctCreateDatesFlow(): Flow<List<String>> = conversationDAO.getDistinctCreateDatesFlow()
 
-    fun getDistinctCreateDates(): List<String> {
-        return emptyList() // Not used in this project
-    }
+    suspend fun getDistinctCreateDates(): List<String> = conversationDAO.getDistinctCreateDates()
 
-    fun getMostActiveAssistantIdFlow(): Flow<String?> = conversationDAO.getMostActiveAssistantFlow()
-        .map { it?.assistantId }
+    fun getMostActiveAssistantIdFlow(): Flow<String?> = conversationDAO.getMostActiveAssistantFlow().map { it?.assistantId }
 
     fun getConversationHoursFlow(): Flow<List<Int>> = conversationDAO.getConversationHoursFlow()
 
@@ -327,31 +398,16 @@ class ConversationRepository(
         conversationDAO.getConversationCountByAssistantFlow(assistantId)
 
     fun getMostUsedModelIdForAssistantFlow(assistantId: String): Flow<String?> =
-        conversationDAO.getConversationsOfAssistant(assistantId, isVirtual = false)
-            .map { conversations ->
-                val modelCounts = mutableMapOf<String, Int>()
-
-                for (conversation in conversations) {
-                    try {
-                        val nodesJson = JsonInstant.parseToJsonElement(conversation.nodes)
-                        if (nodesJson is JsonArray) {
-                            for (nodeElement in nodesJson) {
-                                val node = nodeElement.jsonObject
-                                val messages = node["messages"]?.jsonArray ?: continue
-                                for (messageElement in messages) {
-                                    val message = messageElement.jsonObject
-                                    val modelId = message["modelId"]?.jsonPrimitive?.content ?: continue
-                                    modelCounts[modelId] = (modelCounts[modelId] ?: 0) + 1
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        // Ignore parsing errors for individual conversations
-                    }
-                }
-
-                modelCounts.maxByOrNull { it.value }?.key
+        chatMessageDAO.getAllMessagesContentByAssistant(assistantId)
+            .map { jsonList ->
+                jsonList.asSequence()
+                    .map { JsonInstant.decodeFromString<UIMessage>(it) }
+                    .mapNotNull { it.modelId?.toString() }
+                    .groupingBy { it }
+                    .eachCount()
+                    .maxByOrNull { it.value }?.key
             }
+            .flowOn(Dispatchers.IO)
 
     private fun conversationSummaryToConversation(summary: LightConversationEntity): Conversation {
         return Conversation(
@@ -362,40 +418,21 @@ class ConversationRepository(
             updateAt = Instant.ofEpochMilli(summary.updateAt),
             isPinned = summary.isPinned,
             isConsolidated = summary.isConsolidated,
-            messageNodes = emptyList(), // Summary doesn't include nodes
+            messageNodes = emptyList(),
             isVirtual = summary.isVirtual
         )
     }
 
     fun getAverageMessageLength(assistantId: Uuid): Flow<Int> {
-        return conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = false)
-            .map { list ->
-                val recent = list.take(50)
-                if (recent.isEmpty()) return@map 100 // Default estimate
-
-                var totalLength = 0L
-                var messageCount = 0
-
-                recent.forEach { entity ->
-                    try {
-                        val nodes = JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes)
-                        nodes.forEach { node ->
-                            node.messages.forEach { msg ->
-                                totalLength += msg.toText().length
-                                messageCount++
-                            }
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+        return chatMessageDAO.getAllMessagesContentByAssistant(assistantId.toString())
+            .map { jsonList ->
+                if (jsonList.isEmpty()) return@map 100
+                val totalLength = jsonList.sumOf {
+                    JsonInstant.decodeFromString<UIMessage>(it).toText().length.toLong()
                 }
-
-                if (messageCount > 0) {
-                    (totalLength / messageCount).toInt()
-                } else {
-                    100 // Default
-                }
+                (totalLength / jsonList.size).toInt()
             }
+            .flowOn(Dispatchers.IO)
     }
 
     suspend fun recordDailyActivity() {
@@ -406,22 +443,16 @@ class ConversationRepository(
     fun getAllVirtualMessagesOfAssistant(assistantId: Uuid): Flow<List<MessageNode>> {
         return conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true)
             .map { conversations ->
-                // 按时间升序排序，然后打平所有的消息节点
                 conversations.sortedBy { it.createAt }
-                    .flatMap { entity ->
-                        // 解码每个会话的消息节点
-                        conversationEntityToConversation(entity).messageNodes
-                    }
+                    .flatMap { entity -> fetchFullConversation(entity).messageNodes }
             }
     }
-
 
     fun getVirtualConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true)
-            .map { entities ->
-                entities.map { conversationEntityToConversation(it) }
-            }
+            .map { entities -> entities.map { fetchFullConversation(it) } }
     }
+
     suspend fun migrateConversationDatesToActivity() {
         val dates = conversationDAO.getDistinctCreateDates()
         dates.forEach { date ->
@@ -438,7 +469,6 @@ class ConversationRepository(
             completion = usage.completionTokens,
             cached = usage.cachedTokens
         )
-        // 清理 30 天前的旧记录，防止无限增长
         val thirtyDaysAgo = LocalDate.now().minusDays(30).toString()
         tokenUsageDAO.deleteOldUsage(thirtyDaysAgo)
     }
