@@ -415,29 +415,35 @@ private fun ScheduleEditDialog(
 
     val haptic = LocalHapticFeedback.current
 
+    // 统一处理保存逻辑
+    val handleSave = {
+        if (title.isNotBlank()) {
+            val schedule = (initialSchedule ?: ScheduleEntity(
+                title = title,
+                startTime = startTime
+            )).copy(
+                title = title,
+                content = content, // 静默保存原有 content
+                priority = priority,
+                urgency = urgency,
+                difficulty = difficulty,
+                startTime = startTime,
+                endTime = endTime,
+                reminderTime = reminderTime,
+                updatedAt = System.currentTimeMillis()
+            )
+            onSave(schedule)
+        } else {
+            // 如果标题为空（可能是误触添加），则直接关闭
+            onDismiss()
+        }
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = handleSave, // 点击外部或物理返回时触发自动保存
         confirmButton = {
             Button(
-                onClick = {
-                    if (title.isNotBlank()) {
-                        val schedule = (initialSchedule ?: ScheduleEntity(
-                            title = title,
-                            startTime = startTime
-                        )).copy(
-                            title = title,
-                            content = content, // 静默保存原有 content
-                            priority = priority,
-                            urgency = urgency,
-                            difficulty = difficulty,
-                            startTime = startTime,
-                            endTime = endTime,
-                            reminderTime = reminderTime,
-                            updatedAt = System.currentTimeMillis()
-                        )
-                        onSave(schedule)
-                    }
-                },
+                onClick = handleSave,
                 enabled = title.isNotBlank()
             ) {
                 Text(stringResource(android.R.string.ok))
