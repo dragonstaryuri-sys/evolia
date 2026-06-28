@@ -506,8 +506,16 @@ class AssistantDetailVM(
 
                     val finalBackground = backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") } ?: aiResponse
                     val aiKeywords = keywordsMatch ?: ""
-                    val localKeywords = KeywordExtractor.extract(finalBackground)
-                    val mergedKeywords = (aiKeywords.split(Regex("[,，、；;]")) + localKeywords.split(",")).map { it.trim().lowercase() }.filter { it.isNotBlank() }.distinct().joinToString(",")
+
+                    val mergedKeywords = if (aiKeywords.isNotBlank()) {
+                        aiKeywords.split(Regex("[,，、；;]"))
+                            .map { it.trim().lowercase() }
+                            .filter { it.isNotBlank() }
+                            .distinct()
+                            .joinToString(",")
+                    } else {
+                        KeywordExtractor.extract(finalBackground)
+                    }
 
                     val fullContextualContent = "[Background]: $finalBackground\n[Original Text]:\n$text"
                     val embeddingResult = try {
@@ -841,7 +849,7 @@ class AssistantDetailVM(
         }
     }
 
-    val providers: StateFlow<List<me.rerere.ai.provider.ProviderSetting>> =
+    val providers: StateFlow<List<ProviderSetting>> =
         settingsStore.settingsFlow.map { it.providers }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun update(assistant: Assistant) {
