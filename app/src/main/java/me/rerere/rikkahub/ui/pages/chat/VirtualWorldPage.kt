@@ -223,7 +223,6 @@ fun VirtualWorldPage(id: Uuid) {
                         onUpdateMessage = { newNode ->
                             vm.updateMessageNodeInAnyConversation(newNode)
                         },
-                        onForkMessage = { scope.launch { vm.forkMessage(it) } },
                         onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) },
                         onJumpToMessage = { targetNode ->
                             previewMode = false

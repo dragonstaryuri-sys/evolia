@@ -403,9 +403,6 @@ private fun ChatPageContent(
                         onUpdateMessage = { newNode ->
                             vm.updateMessageNodeInAnyConversation(newNode)
                         },
-                        onForkMessage = {
-                            scope.launch { vm.forkMessage(it) }
-                        },
                         onGetFullMemoryContent = { id, type -> vm.getFullMemoryContent(id, type) },
                         onAddFavorite = { messages ->
                             vm.addFavorite(messages, currentAssistant, setting.displaySetting.userNickname)

@@ -37,7 +37,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.CallSplit
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -215,7 +214,6 @@ fun ChatMessageActionsSheet(
     onDelete: () -> Unit,
     onEdit: () -> Unit,
     onShare: () -> Unit,
-    onFork: () -> Unit,
     onSelectAndCopy: () -> Unit,
     onWebViewPreview: () -> Unit,
     onDismissRequest: () -> Unit
@@ -366,38 +364,6 @@ fun ChatMessageActionsSheet(
                         text = stringResource(R.string.chat_page_multi_select),
                         style = MaterialTheme.typography.titleMedium,
                     )
-                }
-            }
-
-            if (!wechatMode) {
-                // Create a Fork
-                Card(
-                    onClick = {
-                        onDismissRequest()
-                        onFork()
-                    },
-                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier
-                            .padding(16.dp)
-                            .fillMaxWidth()
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.CallSplit,
-                            contentDescription = null,
-                            modifier = Modifier.padding(4.dp)
-                        )
-                        Text(
-                            text = stringResource(R.string.create_fork),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                    }
                 }
             }
 
