@@ -89,7 +89,9 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Memory
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
+import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
@@ -296,28 +298,42 @@ private fun SharedTransitionScope.ChatListNormal(
             val result = mutableListOf<ChatListDisplayItem>()
             val currentNodes = mutableListOf<MessageNode>()
             var lastShownTime: LocalDateTime? = null
+            var lastMessageTime: LocalDateTime? = null
 
             fun flush() {
                 if (currentNodes.isNotEmpty()) {
                     val turns = currentNodes.groupIntoTurns()
                     turns.forEach { turn ->
-                        val firstNodeTime = turn.firstNode.currentMessage.createdAt
-                        val shouldShowTime = lastShownTime == null ||
-                            (firstNodeTime.toInstant(TimeZone.currentSystemDefault()) - lastShownTime!!.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
-
-                        if (shouldShowTime) {
-                            result.add(ChatListDisplayItem.Time(formatTime(firstNodeTime)))
-                            lastShownTime = firstNodeTime
-                        }
                         result.add(ChatListDisplayItem.TurnGroup(turn))
                     }
                     currentNodes.clear()
                 }
             }
 
+            // 重要：uiItems 在 ChatVM 中是按从旧到新排序的。
+            // 我们必须按正向时间流处理间隔判定，否则 (msgTime - lastMessageTime) 会是负数。
             uiItems.forEach { item ->
                 when (item) {
-                    is ChatVM.ChatUIItem.Message -> if (!item.node.currentMessage.skipContext) currentNodes.add(item.node)
+                    is ChatVM.ChatUIItem.Message -> {
+                        val msg = item.node.currentMessage
+                        val msgTime = msg.createdAt
+
+                        // 判定逻辑：第一条消息或距离上一条消息超过 10 分钟
+                        val shouldShowTime = lastShownTime == null ||
+                            (msgTime.toInstant(TimeZone.currentSystemDefault()) -
+                             (lastMessageTime ?: msgTime).toInstant(TimeZone.currentSystemDefault())) > 10.minutes
+
+                        if (shouldShowTime) {
+                            flush()
+                            result.add(ChatListDisplayItem.Time(formatTime(msgTime)))
+                            lastShownTime = msgTime
+                        }
+                        lastMessageTime = msgTime
+
+                        if (!msg.skipContext) {
+                            currentNodes.add(item.node)
+                        }
+                    }
                     is ChatVM.ChatUIItem.Separator -> {
                         flush()
                         result.add(ChatListDisplayItem.Separator(item.text))
@@ -325,8 +341,23 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            if (needsPhantomLoadingTurn) currentNodes.add(MessageNode.of(UIMessage.assistant("")))
+            // 处理正在输入的消息
+            if (needsPhantomLoadingTurn) {
+                val phantomNode = MessageNode.of(UIMessage.assistant(""))
+                val msgTime = phantomNode.currentMessage.createdAt
+                val shouldShowTime = lastShownTime == null ||
+                        (msgTime.toInstant(TimeZone.currentSystemDefault()) -
+                         (lastMessageTime ?: msgTime).toInstant(TimeZone.currentSystemDefault())) > 10.minutes
+
+                if (shouldShowTime) {
+                    flush()
+                    result.add(ChatListDisplayItem.Time(formatTime(msgTime)))
+                }
+                currentNodes.add(phantomNode)
+            }
+
             flush()
+            // 最终反转列表，因为 LazyColumn(reverseLayout=true) 期待索引 0 在最底部（最新）
             result.asReversed()
         }
 
@@ -463,7 +494,11 @@ private fun SharedTransitionScope.ChatListNormal(
                     }
                     is ChatListDisplayItem.Time -> {
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                            Text(text = item.timeText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outlineVariant)
+                            Text(
+                                text = item.timeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
                         }
                     }
                 }
@@ -561,8 +596,8 @@ private fun formatTime(dateTime: LocalDateTime): String {
     return when {
         date == nowDate -> timeStr
         date == nowDate.minus(1, DateTimeUnit.DAY) -> "昨天 $timeStr"
-        date.year == nowDate.year -> "${date.monthNumber}月${date.dayOfMonth}日 $timeStr"
-        else -> "${date.year}年${date.monthNumber}月${date.dayOfMonth}日 $timeStr"
+        date.year == nowDate.year -> "${date.month.number}月${date.day}日 $timeStr"
+        else -> "${date.year}年${date.month.number}月${date.day}日 $timeStr"
     }
 }
 
