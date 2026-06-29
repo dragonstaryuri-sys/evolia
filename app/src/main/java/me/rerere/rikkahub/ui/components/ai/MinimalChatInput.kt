@@ -135,6 +135,9 @@ import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.core.data.model.LocalToolOption
 import java.io.File
 import kotlin.uuid.Uuid
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import me.rerere.rikkahub.ui.components.ui.KeepScreenOn
 
 /**
  * Minimal ChatGPT-style input bar with bottom sheet picker.
@@ -397,7 +400,7 @@ fun MinimalChatInput(
                                         else showPicker = true
                                     },
                                     shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    color = containerColor,
                                     modifier = Modifier.size(36.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
