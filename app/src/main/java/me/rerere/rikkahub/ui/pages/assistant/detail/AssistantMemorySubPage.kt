@@ -182,10 +182,31 @@ fun AssistantMemorySettings(
         mutableFloatStateOf(assistant.detailMemoryThreshold.toFloat())
     }
 
-    // 强制开启细节记忆逻辑：只要启用记忆，就强制开启细节记忆并处理旧用户迁移
-    LaunchedEffect(assistant.enableMemory) {
-        if (assistant.enableMemory && !assistant.enableDetailMemory) {
-            onUpdateAssistant(assistant.copy(enableDetailMemory = true))
+    // 强制设置与迁移逻辑
+    LaunchedEffect(assistant.enableMemory, assistant.isMain) {
+        var updated = assistant
+        var changed = false
+
+        // 1. 定期回忆按钮去掉，强制关闭，不允许用户修改(对所有智能体生效)
+        if (updated.enableMemoryConsolidation) {
+            updated = updated.copy(enableMemoryConsolidation = false)
+            changed = true
+        }
+
+        // 2. 只要启用记忆，就强制开启细节记忆并处理旧用户迁移
+        if (updated.enableMemory && !updated.enableDetailMemory) {
+            updated = updated.copy(enableDetailMemory = true)
+            changed = true
+        }
+
+        // 3. 主智能体开启记忆时，强制开启跨会话对话连贯
+        if (updated.isMain && updated.enableMemory && !updated.enableRecentChatsReference) {
+            updated = updated.copy(enableRecentChatsReference = true)
+            changed = true
+        }
+
+        if (changed) {
+            onUpdateAssistant(updated)
         }
     }
 
@@ -316,7 +337,8 @@ fun AssistantMemorySettings(
                                         onUpdateAssistant(
                                             assistant.copy(
                                                 enableMemory = false,
-                                                enableMasterMemory = false
+                                                enableMasterMemory = false,
+                                                enableMemoryConsolidation = false
                                             )
                                         )
                                     } else {
@@ -326,7 +348,8 @@ fun AssistantMemorySettings(
                                                 enableMemory = true,
                                                 enableRecentChatsReference = true,
                                                 enableMasterMemory = true,
-                                                enableDetailMemory = true
+                                                enableDetailMemory = true,
+                                                enableMemoryConsolidation = false
                                             )
                                         )
                                     }
@@ -416,33 +439,16 @@ fun AssistantMemorySettings(
                                 }
                             )
 
-                            MemorySettingsItem(
-                                title = stringResource(R.string.assistant_page_recent_chats),
-                                subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
-                                position = "MIDDLE",
-                                trailing = {
-                                    HapticSwitch(
-                                        checked = assistant.enableRecentChatsReference,
-                                        onCheckedChange = { onUpdateAssistant(assistant.copy(enableRecentChatsReference = it)) }
-                                    )
-                                }
-                            )
-
-                            if (assistant.useRagMemoryRetrieval) {
+                            // release版本只要开启了记忆按钮则跨会话对话连贯按钮固定开启，隐藏该选项（debug版本不隐藏选项），不允许用户配置（仅对主智能体做该改造）
+                            if (BuildConfig.DEBUG || !assistant.isMain) {
                                 MemorySettingsItem(
-                                    title = stringResource(R.string.assistant_memory_enable_consolidation_title),
-                                    subtitle = stringResource(R.string.assistant_memory_enable_consolidation_desc),
+                                    title = stringResource(R.string.assistant_page_recent_chats),
+                                    subtitle = stringResource(R.string.assistant_page_recent_chats_desc),
                                     position = "MIDDLE",
                                     trailing = {
                                         HapticSwitch(
-                                            checked = assistant.enableMemoryConsolidation,
-                                            onCheckedChange = {
-                                                onUpdateAssistant(
-                                                    assistant.copy(
-                                                        enableMemoryConsolidation = it
-                                                    )
-                                                )
-                                            }
+                                            checked = assistant.enableRecentChatsReference,
+                                            onCheckedChange = { onUpdateAssistant(assistant.copy(enableRecentChatsReference = it)) }
                                         )
                                     }
                                 )
@@ -578,24 +584,6 @@ fun AssistantMemorySettings(
                                 updateMaster = true
                             )
                         }
-                    )
-                }
-            }
-        }
-
-        item {
-            AnimatedVisibility(
-                visible = assistant.enableMemory && assistant.enableMemoryConsolidation,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SettingsGroupHeader(title = stringResource(R.string.assistant_memory_group_consolidation))
-                    ConsolidationSettingsCard(
-                        assistant = assistant,
-                        onUpdateAssistant = onUpdateAssistant,
-                        showSummarizerWarning = assistant.summarizerModelId == null,
-                        onNavigateToModels = onNavigateToModels
                     )
                 }
             }
@@ -1131,121 +1119,6 @@ private fun MasterMemoryCard(
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConsolidationSettingsCard(
-    assistant: Assistant,
-    onUpdateAssistant: (Assistant) -> Unit,
-    showSummarizerWarning: Boolean = false,
-    onNavigateToModels: () -> Unit = {}
-) {
-    var localDelay by remember(assistant.consolidationDelayMinutes) {
-        mutableFloatStateOf(assistant.consolidationDelayMinutes.toFloat())
-    }
-    val haptics = rememberPremiumHaptics()
-
-    Column(
-        modifier = Modifier.clip(RoundedCornerShape(24.dp)),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        AnimatedVisibility(
-            visible = showSummarizerWarning,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
-        ) {
-            Surface(
-                onClick = onNavigateToModels,
-                color = MaterialTheme.colorScheme.errorContainer,
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.summarizer_warning),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                }
-            }
-        }
-
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = if (showSummarizerWarning) {
-                RoundedCornerShape(10.dp)
-            } else {
-                RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
-            }
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        stringResource(R.string.assistant_memory_consolidation_delay_title),
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = stringResource(R.string.assistant_memory_consolidation_delay_value, localDelay.toInt()),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.assistant_memory_enable_consolidation_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Slider(
-                    value = localDelay,
-                    onValueChange = {
-                        if (it != localDelay) {
-                            localDelay = it
-                            haptics.perform(HapticPattern.Pop)
-                        }
-                    },
-                    onValueChangeFinished = {
-                        onUpdateAssistant(assistant.copy(consolidationDelayMinutes = localDelay.toInt()))
-                    },
-                    valueRange = 30f..300f,
-                    steps = 26,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        }
-
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (assistant.lastConsolidationTime > 0) {
-                    val time = java.time.Instant.ofEpochMilli(assistant.lastConsolidationTime)
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDateTime()
-                        .toLocalString()
-                    Text(
-                        text = stringResource(R.string.assistant_memory_last_consolidation, time),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }
