@@ -109,7 +109,7 @@ import kotlin.text.append
 
 private const val TAG = "ChatService"
 
-private val WECHAT_SENTENCE_REGEX = Regex("[，。！？~\\n\\s]|[,!?~\\n\\s]")
+private val WECHAT_SENTENCE_REGEX = Regex("[，。！？~\\n]|[,!?~\\n]")
 private val PUNC_REGEX = Regex("^[，,。！？!?.~\\n]$")
 private val PUNCS = "，,。！!."
 
