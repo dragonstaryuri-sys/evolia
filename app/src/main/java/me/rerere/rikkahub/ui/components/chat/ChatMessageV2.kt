@@ -83,6 +83,7 @@ import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import me.rerere.rikkahub.BuildConfig
 
 // WeChat Colors
 private val WeChatUserGreen = Color(0xFF95EC69)
@@ -977,14 +978,14 @@ private fun AssistantMessageTurn(
             }
         }
 
-        if (showTokenUsage && group.combinedUsage != null && !loading && !wechatMode) {
+        if (showTokenUsage && group.combinedUsage != null && !loading && (!wechatMode || BuildConfig.DEBUG)) {
             TokenStatisticsInline(
                 usage = group.combinedUsage!!,
                 generationDurationMs = group.combinedGenerationDurationMs
             )
         }
 
-        val showActions = !loading && (isLastTurn || actionsExpanded)
+        val showActions = !loading && (isLastTurn || actionsExpanded || (wechatMode && BuildConfig.DEBUG))
         AnimatedVisibility(
             visible = showActions,
             enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) + slideInVertically(

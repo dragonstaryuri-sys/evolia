@@ -526,7 +526,8 @@ class ChatService(
             if (!assistant.enableMemoryConsolidation && !force) return
 
             val baseSummary = existingEpisode?.content
-            val newMessagesEntities = conversationRepo.getMessagesForSummary(conversationId.toString(), existingEpisode?.endTime ?: 0L)
+            val newMessagesEntities =
+                conversationRepo.getMessagesForSummary(conversationId.toString(), existingEpisode?.endTime ?: 0L)
             val newMessages = newMessagesEntities.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
 
             if (newMessages.isEmpty() && baseSummary != null && !force) {
@@ -846,10 +847,18 @@ class ChatService(
                     ) {
                         withTimeoutOrNull(4000) {
                             if (assistant.useRagMemoryRetrieval) {
-                                val lastUserMsg =
+                                val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+                                val rawUserMsg = if (wechatMode) {
+                                    val messages = currentConversation.currentMessages
+                                    val lastNonUser = messages.indexOfLast { it.role != MessageRole.USER }
+                                    messages.subList(lastNonUser + 1, messages.size)
+                                        .joinToString(" ") { it.toText() }
+                                } else {
                                     currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }
                                         ?.toText()
                                         ?: ""
+                                }
+                                val lastUserMsg = rawUserMsg.replace("\n", " ").trim()
                                 if (lastUserMsg.isNotBlank()) {
                                     val results = memoryRepository.retrieveRelevantMemoriesWithScores(
                                         assistantId = assistant.id.toString(),
@@ -939,12 +948,12 @@ class ChatService(
                             if (searchMode is AssistantSearchMode.Provider && !useBuiltIn) {
                                 addAll(
                                     createSearchTool(
-                                    settings,
-                                    assistant,
-                                    searchMode.index,
-                                    searchCounter = { currentSearchCount },
-                                    onSearchCalled = { currentSearchCount++ }
-                                ))
+                                        settings,
+                                        assistant,
+                                        searchMode.index,
+                                        searchCounter = { currentSearchCount },
+                                        onSearchCalled = { currentSearchCount++ }
+                                    ))
                             }
 
                             val targetOptions = if (isVirtual) {
@@ -1323,8 +1332,8 @@ class ChatService(
                 }
             }, systemPrompt = { _, _ ->
                 "## tool: search_web\n" +
-                "严重提示：每条用户消息仅允许调用该工具一次。" +
-                "如果搜索结果不够理想，就基于现有信息尽力作答，无需重新搜索。"
+                    "严重提示：每条用户消息仅允许调用该工具一次。" +
+                    "如果搜索结果不够理想，就基于现有信息尽力作答，无需重新搜索。"
             }))
         }
     }
@@ -1352,7 +1361,8 @@ class ChatService(
                 errorMessage = "会话不存在"
             )
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
-            val toSummarizeEntities = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime)
+            val toSummarizeEntities =
+                conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime)
 
             if (toSummarizeEntities.size < 2) {
                 return@withContext ContextRefreshResult(false, errorMessage = "当前没有足够的新消息需要压缩")

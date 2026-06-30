@@ -161,6 +161,8 @@ val dataSourceModule = module {
             )
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.HEADERS
+                redactHeader("Authorization")
+                redactHeader("Cookie")
             })
             .build()
     }

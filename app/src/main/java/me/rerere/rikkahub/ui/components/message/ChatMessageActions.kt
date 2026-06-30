@@ -61,6 +61,7 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.toLocalString
+import me.rerere.rikkahub.BuildConfig
 
 @Composable
 fun ChatMessageActionButtons(
@@ -121,7 +122,8 @@ fun ChatMessageActionButtons(
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
         // Context stack indicator at the start
-        if (showContextStacks && !wechatMode) {
+        // In debug mode, show even in WeChat mode for testing
+        if (showContextStacks && (!wechatMode || BuildConfig.DEBUG)) {
             ContextStackIndicator(
                 modes = usedModes,
                 memories = usedMemories,
