@@ -39,10 +39,11 @@ fun Settings.sanitize(): Pair<Settings, BackupCleanupResult> {
             currentAssistant = currentAssistant.copy(tags = sanitizedTags)
         }
 
+
         currentAssistant
     }
 
-    // 3. Check orphaned favorite models
+    // 4. Check orphaned favorite models
     // Remove model IDs that are no longer present in any provider
     val allModelIds = providers.flatMap { it.models }.map { it.id }.toSet()
     val sanitizedFavoriteModels = favoriteModels.filter { it in allModelIds }

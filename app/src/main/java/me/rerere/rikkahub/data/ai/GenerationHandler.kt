@@ -144,7 +144,7 @@ class GenerationHandler(
             Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
 
             val toolsInternal = buildList {
-                Log.i(TAG, "generateInternal: build tools($assistant)")
+                Log.d(TAG, "generateInternal: build tools($assistant)")
                 if (assistant.enableMemory && assistant.memoryRetrievalMode != MemoryRetrievalMode.OFF) {
                     buildMemoryTools(
                         assistantId = assistant.id.toString(),

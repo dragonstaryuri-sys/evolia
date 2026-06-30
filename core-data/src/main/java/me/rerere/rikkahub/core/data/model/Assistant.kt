@@ -101,18 +101,13 @@ data class Assistant(
     val enableContextRefresh: Boolean = false,
     val autoRegenerateSummary: Boolean = false,
     val maxTemporarySummariesToInclude: Int = 3,
-    val fullSummaryPrompt: String = "",
-    val temporarySummaryPrompt: String = "",
     val enableScheduleAccess: Boolean = true,
-
     val uiSettings: AssistantUISettings = AssistantUISettings(),
-
     val consolidationDelayMinutes: Int = 30,
     val lastConsolidationTime: Long = 0L,
     val lastConsolidationResult: String = "",
 
     val enableMasterMemory: Boolean = true,
-    val masterMemoryPrompt: String = "",
     val masterMemoryContent: String = "",
     val lastMasterMemoryUpdate: Long = 0L,
 
@@ -132,7 +127,6 @@ data class Assistant(
     val detailMemoryThreshold: Int = 20,
 
     val hasExtendedState: Boolean = isMain,
-    // 简化逻辑：主智能体默认开启，普通智能体默认关闭。用户修改后通过 copy 覆盖此默认值。
     val includeUserProfile: Boolean = isMain,
 )
 
@@ -152,8 +146,8 @@ data class AssistantMemory(
     val embeddingModelId: String? = null,
     val timestamp: Long = 0L,
     val significance: Int? = null,
-    val score: Float? = null, // 新增分数记录
-    val recallCount: Int = 0 // 新增召回次数记录
+    val score: Float? = null,
+    val recallCount: Int = 0
 )
 
 @Serializable
