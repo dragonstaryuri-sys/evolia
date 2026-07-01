@@ -96,21 +96,17 @@ class UpdateChecker(private val client: OkHttpClient) {
     }.flowOn(Dispatchers.IO)
 
     /**
-     * 执行更新下载：
-     * 这里是核心，点击“确定”后先进行 3-5 秒的快速测速，然后再发起下载。
+     * 执行更新下载
      */
     fun downloadUpdate(context: Context, download: UpdateDownload) {
         checkerScope.launch {
-            // 1. 弹出状态提示
             Toast.makeText(context, "🚀 正在为您匹配最快下载通道...", Toast.LENGTH_SHORT).show()
 
-            // 2. 实时测速（设置 5 秒总超时，并行探测）
             val fastestMirror = withTimeoutOrNull(5000) {
                 Log.i(TAG, "Starting real-time mirror speed test...")
                 findFastestMirror()
             }
 
-            // 3. 决定下载地址
             val finalUrl = fastestMirror?.let { mirror ->
                 val prefix = if (mirror.endsWith("/")) mirror else "$mirror/"
                 "$prefix${download.url}"
@@ -118,14 +114,12 @@ class UpdateChecker(private val client: OkHttpClient) {
 
             Log.i(TAG, "Speed test result -> Mirror: ${fastestMirror ?: "NONE"}, Final URL: $finalUrl")
 
-            // 4. 给用户反馈
             if (fastestMirror != null) {
                 Toast.makeText(context, "✨ 已连接加速节点，正在起飞！", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(context, "⚠️ 镜像连接超时，正在直连 GitHub...", Toast.LENGTH_SHORT).show()
             }
 
-            // 5. 提交系统下载任务
             try {
                 val request = DownloadManager.Request(finalUrl.toUri()).apply {
                     setTitle("Evolia 更新下载")
@@ -162,7 +156,6 @@ class UpdateChecker(private val client: OkHttpClient) {
 
                     testClient.newCall(request).await().use { resp ->
                         val delay = System.currentTimeMillis() - start
-                        // 镜像站根目录能响应（HTTP < 500）即为可用
                         if (resp.code < 500) {
                             Log.d(TAG, "Mirror available: $mirror ($delay ms)")
                             mirror to delay
@@ -173,41 +166,45 @@ class UpdateChecker(private val client: OkHttpClient) {
                 }
             }
         }
-
-        // 等待所有结果，并挑选最快的
         tasks.awaitAll().filterNotNull().minByOrNull { it.second }?.first
     }
 
     /**
      * 根据文件名和设备支持的 ABI 计算匹配分数
-     * 分数越高表示越适配当前设备
+     * 优化：优先匹配 Native ABI，并防止模拟器环境下被 ARM 包误导
      */
     private fun calculateMatchScore(fileName: String): Int {
         val name = fileName.lowercase()
         val supportedAbis = Build.SUPPORTED_ABIS
+        if (supportedAbis.isEmpty()) return 0
 
-        // 查找第一个匹配的 ABI
+        // 1. 优先检查是否完全匹配第一个（原生）ABI
+        val primaryAbi = supportedAbis[0].lowercase()
+        val isPrimaryMatch = isAbiMatch(name, primaryAbi)
+        if (isPrimaryMatch) return 200 // 给一个极高的基础分
+
+        // 2. 备选方案：遍历支持列表
         for ((index, abi) in supportedAbis.withIndex()) {
-            val isMatch = when (abi.lowercase()) {
-                "arm64-v8a" -> name.contains("arm64") || name.contains("v8a") || name.contains("arm64-v8a")
-                "armeabi-v7a" -> name.contains("armeabi-v7a") || name.contains("v7a") || name.contains("armv7")
-                "x86_64" -> name.contains("x86_64") || name.contains("x64")
-                "x86" -> name.contains("x86") && !name.contains("x86_64")
-                else -> name.contains(abi.lowercase())
-            }
-
-            if (isMatch) {
-                // 基础分 100，根据在 SUPPORTED_ABIS 中的位置扣分（越靠前越好）
+            if (isAbiMatch(name, abi.lowercase())) {
+                // 根据优先级降序给分
                 return 100 - index
             }
         }
 
-        // 如果包含 universal，给一个固定中等分数
-        if (name.contains("universal")) {
-            return 50
-        }
+        // 3. 通用版兜底
+        if (name.contains("universal")) return 50
 
         return 0
+    }
+
+    private fun isAbiMatch(fileName: String, abi: String): Boolean {
+        return when (abi) {
+            "arm64-v8a" -> fileName.contains("arm64") || fileName.contains("v8a")
+            "armeabi-v7a" -> fileName.contains("armeabi-v7a") || fileName.contains("v7a") || fileName.contains("armv7")
+            "x86_64" -> fileName.contains("x86_64") || fileName.contains("x64")
+            "x86" -> fileName.contains("x86") && !fileName.contains("x86_64")
+            else -> fileName.contains(abi)
+        }
     }
 
     private fun formatFileSize(bytes: Long): String {
