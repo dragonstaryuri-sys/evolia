@@ -819,6 +819,7 @@ class ChatService(
             // 修复：每次生成全新重置句子计数器
             var lastDisplayedSentenceCount = 0
             var lastTotalFullText = ""
+            var lastAiId: Uuid? = null
 
             runCatching {
                 currentConversation = currentConversation.copy(chatSuggestions = emptyList())
@@ -1050,18 +1051,41 @@ class ChatService(
                             val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
                             val containsNewAssistant = newMessages.any { it.role == MessageRole.ASSISTANT }
 
-                            if (containsNewAssistant && conversationSnapshot.messageNodes.none { node ->
-                                    node.messages.any { m -> newMessages.any { nm -> nm.id == m.id } }
-                                }) {
-                                // 修复核心：彻底移除微信模式初始化隐藏Text的逻辑，无论有无工具都完整保留所有部件
-                                val toUpdate = baseMessages + newMessages
-                                conversationSnapshot = conversationSnapshot.updateCurrentMessages(toUpdate)
-                                currentConversation = conversationSnapshot
-                                updateConversation(conversationId) { conversationSnapshot }
+                            // 1.提前定义 fullText
+                            val fullText = lastAI?.toContentText() ?: ""
+
+                            // 2. 检查是否有任何消息（包括工具结果、AI 最终回答）尚未加入会话
+                            val anyNewMessages = newMessages.any { nm ->
+                                conversationSnapshot.messageNodes.none { node ->
+                                    node.messages.any { m -> m.id == nm.id }
+                                }
                             }
 
-                            val fullText = lastAI?.toContentText() ?: ""
-                            val isToolCalling = lastAI?.parts?.any { it is UIMessagePart.ToolCall } == true
+                            // 3. 如果 AI 消息 ID 变了（比如从工具调用切换到了最终回答），重置微信模式的分句计数器
+                            if (lastAI != null && lastAI.id != lastAiId) {
+                                lastAiId = lastAI.id
+                                lastDisplayedSentenceCount = 0
+                            }
+
+                            // 4. 执行同步
+                            if (anyNewMessages) {
+                                // 微信模式下，同步时先过滤掉正在回答的消息的文本部分，防止动画还没开始就“闪现”出完整文本
+                                val syncMessages = if (wechatMode && lastAI != null && fullText.isNotBlank()) {
+                                    newMessages.map { msg ->
+                                        if (msg.id == lastAI.id) {
+                                            // 仅保留非文本部分（如思考过程、工具调用图标），文本部分交给下方的逐句动画逻辑
+                                            msg.copy(parts = msg.parts.filter { it !is UIMessagePart.Text })
+                                        } else msg
+                                    }
+                                } else newMessages
+
+                                val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + syncMessages)
+                                    .copy(chatSuggestions = emptyList())
+                                currentConversation = nextState
+                                updateConversation(conversationId) { nextState }
+                                conversationSnapshot = nextState
+                            }
+
 
                             if (wechatMode && lastAI != null && fullText.isNotBlank()) {
                                 val matches = WECHAT_SENTENCE_REGEX.findAll(fullText).toList()
@@ -1166,7 +1190,6 @@ class ChatService(
                                     val hasText = latestAiMsg?.parts?.any { it is UIMessagePart.Text } == true
                                     if (hasToolCall && !hasText) {
                                         lastDisplayedSentenceCount = 0
-                                        Log.d(TAG, "仅纯工具调用，终止微信模式收尾动画")
                                         break
                                     }
                                     val sentence = sentences[lastDisplayedSentenceCount]
@@ -1176,17 +1199,20 @@ class ChatService(
                                     delay(finalDelay)
                                     Log.v(TAG, "收尾渲染句子：$sentence")
                                     if (!currentJob.isActive) return@withTimeout
-
                                     lastDisplayedSentenceCount++
                                     val newParts = buildWechatMessages(lastAI, sentences, lastDisplayedSentenceCount)
-                                    val updatedAiMessage = lastAI.copy(parts = newParts)
+                                    val finalParts = newParts.toMutableList().apply {
+                                        latestAiMsg?.parts?.filter { it !is UIMessagePart.Text }?.forEach {
+                                            if (it !in this) add(it)
+                                        }
+                                    }
+                                    val updatedAiMessage = lastAI.copy(parts = finalParts)
                                     val newNodes = currentConversation.messageNodes.map { node ->
                                         if (node.messages.any { it.id == lastAI.id }) {
                                             node.copy(messages = node.messages.map { if (it.id == lastAI.id) updatedAiMessage else it })
                                         } else node
                                     }
-                                    val finalUpdate =
-                                        currentConversation.copy(messageNodes = newNodes, chatSuggestions = emptyList())
+                                    val finalUpdate = currentConversation.copy(messageNodes = newNodes, chatSuggestions = emptyList())
                                     currentConversation = finalUpdate
                                     updateConversation(conversationId) { finalUpdate }
                                 }
