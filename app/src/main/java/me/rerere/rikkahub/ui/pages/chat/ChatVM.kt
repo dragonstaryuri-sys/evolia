@@ -692,7 +692,7 @@ class ChatVM(
             val assistantId = conversation.value.assistantId
             val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(assistantId).first()
             val targetConv = allConvs.find { conv ->
-                conv.messageNodes.any { node -> node.messages.any { it.id == newNode.id } }
+                conv.messageNodes.any { node -> node.id == newNode.id }
             } ?: return@launch
 
             val updatedConv = targetConv.copy(
