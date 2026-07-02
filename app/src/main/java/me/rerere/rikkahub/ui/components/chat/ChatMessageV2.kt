@@ -175,7 +175,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         val isTimeBreak = if (currentGroup.isNotEmpty()) {
             val lastNodeTime = currentGroup.last().currentMessage.createdAt
             val currentNodeTime = node.currentMessage.createdAt
-            // 如果间隔超过 5 分钟，则强制断开，作为一个新的 Turn 处理
+            // 如果间隔超过 10 分钟，则强制断开，作为一个新的 Turn 处理
             (currentNodeTime.toInstant(TimeZone.currentSystemDefault()) -
                 lastNodeTime.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
         } else false
@@ -781,14 +781,42 @@ private fun AssistantMessageTurn(
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     val hasInterestingActivity = activityState !is ActivityState.Hidden && !wechatMode
 
-    val allTextBubbles = mutableListOf<Pair<MessageNode, UIMessagePart.Text>>()
-    group.filteredNodes.forEach { node ->
-        node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().forEach { part ->
-            if (part.text.isNotBlank()) {
-                allTextBubbles.add(node to part)
+    val allTextBubbles = remember(group.filteredNodes, wechatMode) {
+        mutableListOf<Pair<MessageNode, UIMessagePart.Text>>().apply {
+            group.filteredNodes.forEach { node ->
+                node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().forEach { part ->
+                    if (part.text.isNotBlank()) {
+                        if (wechatMode) {
+                            // 微信模式：使用正则动态切分
+                            val regex = Regex("[，。！？~\\n]|[,!?~\\n]")
+                            var lastIndex = 0
+                            // 查找所有的分隔符位置
+                            val matches = regex.findAll(part.text).toList()
+
+                            matches.forEach { match ->
+                                // 截取分隔符之前的文本
+                                val sentence = part.text.substring(lastIndex, match.range.first).trim()
+                                if (sentence.isNotBlank()) {
+                                    add(node to UIMessagePart.Text(sentence))
+                                }
+                                lastIndex = match.range.last + 1
+                            }
+
+                            // 处理最后剩下的尾巴
+                            val remainder = part.text.substring(lastIndex).trim()
+                            if (remainder.isNotBlank()) {
+                                add(node to UIMessagePart.Text(remainder))
+                            }
+                        } else {
+                            // 普通模式：直接添加
+                            add(node to part)
+                        }
+                    }
+                }
             }
         }
     }
+
 
     val elementSpacing = 4.dp
 
