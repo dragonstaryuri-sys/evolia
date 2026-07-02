@@ -105,6 +105,8 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
 import android.net.Uri
+import androidx.compose.ui.geometry.isEmpty
+import androidx.compose.ui.semantics.role
 import kotlin.text.append
 
 private const val TAG = "ChatService"
@@ -811,10 +813,17 @@ class ChatService(
             val currentJob = coroutineContext.job
             var currentSearchCount = 0
             val settings = settingsStore.settingsFlow.first()
-            val processMessageIds = mutableMapOf<Int, Uuid>()
             var currentConversation = conversations[conversationId]?.value
                 ?: conversationRepo.getConversationById(conversationId)
                 ?: return@withLock
+            val processMessageIds = mutableMapOf<Int, Uuid>()
+            val placeholderId = currentConversation.currentMessages.lastOrNull()?.let {
+                if (it.role == MessageRole.ASSISTANT && it.toContentText().isBlank() && it.parts.isEmpty()) it.id else null
+            }
+            if (placeholderId != null) {
+                // 强制让 AI 生成的第一条消息复用这个占位符的 ID
+                processMessageIds[0] = placeholderId
+            }
 
             // 修复：每次生成全新重置句子计数器
             var lastDisplayedSentenceCount = 0
