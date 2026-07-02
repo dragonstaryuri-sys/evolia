@@ -829,11 +829,6 @@ private fun AssistantMessageTurn(
     }
 
     LaunchedEffect(group.firstNode.id) {
-        // Initial "thinking" delay for new messages
-        if (isAiLoading && displayedCount == 0) {
-            delay(400)
-        }
-
         while (true) {
             val latest = currentBubbles
             val totalAvailable = latest.size
@@ -842,7 +837,7 @@ private fun AssistantMessageTurn(
                 // If AI already cut the next bubble, or generation stopped, delay the current one
                 if (displayedCount < totalAvailable - 1 || !isAiLoading) {
                     val sentence = latest.getOrNull(displayedCount)?.second?.text ?: ""
-                    val delayTime = (sentence.length * 60L + 400L).coerceIn(500L, 3000L)
+                    val delayTime = (sentence.length * 200L + 400L).coerceIn(500L, 3000L)
                     delay(delayTime)
                     displayedCount++
                 } else {
@@ -1054,7 +1049,8 @@ private fun AssistantMessageTurn(
             )
         }
 
-        val showActions = !loading && (isLastTurn || actionsExpanded || (wechatMode && BuildConfig.DEBUG))
+        val allBubblesShown = !wechatMode || (displayedCount >= allTextBubbles.size)
+        val showActions = !loading && allBubblesShown && (isLastTurn || actionsExpanded || (wechatMode && BuildConfig.DEBUG))
         AnimatedVisibility(
             visible = showActions,
             enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) + slideInVertically(
@@ -1076,9 +1072,9 @@ private fun AssistantMessageTurn(
                 onUpdate = onUpdate,
                 showRegenerate = showRegenerate,
                 onOpenActionSheet = onOpenActionSheet,
-                onEditLorebookEntry = onEditLorebookEntry,
-                onModeClick = onModeClick,
-                onMemoryClick = onMemoryClick
+                onEditLorebookEntry = if (wechatMode && !BuildConfig.DEBUG) null else onEditLorebookEntry,
+                onModeClick = if (wechatMode && !BuildConfig.DEBUG) null else onModeClick,
+                onMemoryClick = if (wechatMode && !BuildConfig.DEBUG) null else onMemoryClick
             )
         }
     }
