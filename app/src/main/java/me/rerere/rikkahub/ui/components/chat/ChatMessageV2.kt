@@ -41,9 +41,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +56,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -817,6 +821,41 @@ private fun AssistantMessageTurn(
         }
     }
 
+    // --- WeChat Mode Dynamics ---
+    val currentBubbles by rememberUpdatedState(allTextBubbles)
+    val isAiLoading by rememberUpdatedState(loading)
+    var displayedCount by remember(group.firstNode.id) {
+        mutableIntStateOf(if (loading) 0 else allTextBubbles.size)
+    }
+
+    LaunchedEffect(group.firstNode.id) {
+        // Initial "thinking" delay for new messages
+        if (isAiLoading && displayedCount == 0) {
+            delay(400)
+        }
+
+        while (true) {
+            val latest = currentBubbles
+            val totalAvailable = latest.size
+
+            if (displayedCount < totalAvailable) {
+                // If AI already cut the next bubble, or generation stopped, delay the current one
+                if (displayedCount < totalAvailable - 1 || !isAiLoading) {
+                    val sentence = latest.getOrNull(displayedCount)?.second?.text ?: ""
+                    val delayTime = (sentence.length * 60L + 400L).coerceIn(500L, 3000L)
+                    delay(delayTime)
+                    displayedCount++
+                } else {
+                    // AI is still typing the CURRENT last bubble, wait for separator
+                    delay(200)
+                }
+            } else {
+                // All available bubbles shown, check if AI finished
+                if (!isAiLoading) break
+                delay(200)
+            }
+        }
+    }
 
     val elementSpacing = 4.dp
 
@@ -892,7 +931,8 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            allTextBubbles.forEachIndexed { index, (node, part) ->
+            val bubblesToShow = if (wechatMode) allTextBubbles.take(displayedCount) else allTextBubbles
+            bubblesToShow.forEachIndexed { index, (node, part) ->
                 val position = if (wechatMode) BubblePosition.SINGLE else when {
                     allTextBubbles.size == 1 -> BubblePosition.SINGLE
                     index == 0 -> BubblePosition.FIRST
@@ -979,7 +1019,8 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            allTextBubbles.forEach { (node, part) ->
+            val bubblesToShow = if (wechatMode) allTextBubbles.take(displayedCount) else allTextBubbles
+            bubblesToShow.forEach { (node, part) ->
                 Row(verticalAlignment = Alignment.Top) {
                     if (wechatMode) {
                         UIAvatar(
