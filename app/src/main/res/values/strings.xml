@@ -892,18 +892,6 @@
 
   <!-- New Chat Settings -->
   <string name="use_global">Use Global</string>
-  <string name="setting_new_chat_title">New Chat</string>
-  <string name="setting_new_chat_header">Header</string>
-  <string name="setting_new_chat_header_desc">Style shown at top of empty chat</string>
-  <string name="setting_new_chat_header_none">None</string>
-  <string name="setting_new_chat_header_greeting">Greeting</string>
-  <string name="setting_new_chat_header_big_icon">Assistant</string>
-  <string name="setting_new_chat_content">Content</string>
-  <string name="setting_new_chat_content_desc">Content shown below header</string>
-  <string name="setting_new_chat_content_none">None</string>
-  <string name="setting_new_chat_content_templates">Templates</string>
-  <string name="setting_new_chat_content_stats">Stats</string>
-  <string name="setting_new_chat_content_actions">Actions</string>
 
   <!-- New Chat Actions -->
   <string name="new_chat_action_create_image">Create image</string>
@@ -1116,8 +1104,6 @@
   <string name="assistant_tools_mcp_servers_title">MCP Servers</string>
   <string name="assistant_tools_mcp_servers_desc">Enable external tool servers</string>
   <!-- Assistant UI SubPage -->
-  <string name="assistant_ui_new_chat_show_avatar_title">Show Avatar in Header</string>
-  <string name="assistant_ui_new_chat_show_avatar_desc">Display character avatar in the new chat header</string>
   <string name="assistant_ui_show_assistant_avatar_title">Show Character Avatar</string>
   <string name="assistant_ui_show_assistant_avatar_desc">Show the character\'s avatar before messages</string>
   <string name="assistant_ui_show_assistant_bubbles_title">Message Bubbles for Characters</string>

@@ -864,14 +864,9 @@
   <string name="new_chat_stat_streak">"连续天数 "</string>
   <string name="new_chat_stat_days">天</string>
   <string name="new_chat_stat_total_chats">对话数</string>
-  <string name="setting_new_chat_content_actions">操作</string>
   <string name="new_chat_action_create_image">生成图片</string>
   <string name="new_chat_action_translate">翻译</string>
   <string name="new_chat_action_more">更多</string>
-  <string name="setting_new_chat_header_greeting">问候</string>
-  <string name="setting_new_chat_header_big_icon">助手</string>
-  <string name="setting_new_chat_title">新会话</string>
-  <string name="setting_new_chat_header">标题栏</string>
   <string name="new_chat_template_learn_prompt">解释</string>
   <string name="use_global">使用全局配置</string>
   <string name="context_refresh_no_summarizer">先在设置里配置一个摘要模型</string>
@@ -889,10 +884,6 @@
   <string name="setting_android_integration">安卓端集成</string>
   <string name="minimal_input_thinking">深度思考</string>
   <string name="setting_chat_input_style_desc">消息输入栏的外观</string>
-  <string name="setting_new_chat_content_desc">标题下方显示的内容</string>
-  <string name="setting_new_chat_content_none">无</string>
-  <string name="setting_new_chat_content_templates">模板</string>
-  <string name="setting_new_chat_content_stats">数据</string>
   <string name="new_chat_template_brainstorm_prompt">我们来一起想想关于……</string>
   <string name="new_chat_template_learn">学习</string>
   <string name="context_refresh_confirm_message">这会把你的对话历史总结成精简格式。 AI 会记住关键要点，但详细的消息会被摘要替代。</string>
@@ -940,9 +931,6 @@
   <string name="setting_model_page_diary_model_desc">用于生成智能体日记的模型，建议选择按次计费的模型</string>
   <string name="setting_model_page_diary_prompt">日记提示词</string>
   <string name="setting_model_page_diary_prompt_desc">日记生成的提示词。变量: {content}</string>
-  <string name="setting_new_chat_header_desc">空聊天顶部显示的样式</string>
-  <string name="setting_new_chat_header_none">没有</string>
-  <string name="setting_new_chat_content">内容</string>
   <string name="assistant_detail_group_configuration">配置</string>
   <string name="assistant_detail_group_capabilities">能力</string>
   <string name="assistant_detail_group_other">其他</string>
@@ -1062,8 +1050,6 @@
   <string name="assistant_tools_mcp_servers_title">MCP 服务器</string>
   <string name="assistant_tools_mcp_servers_desc">启用外部工具服务器</string>
   <!-- Assistant UI SubPage -->
-  <string name="assistant_ui_new_chat_show_avatar_title">在顶部显示头像</string>
-  <string name="assistant_ui_new_chat_show_avatar_desc">在新建聊天的顶部栏中显示角色头像</string>
   <string name="assistant_ui_show_assistant_avatar_title">显示角色头像</string>
   <string name="assistant_ui_show_assistant_avatar_desc">在消息前方显示角色头像</string>
   <string name="assistant_ui_show_assistant_bubbles_title">角色消息气泡</string>

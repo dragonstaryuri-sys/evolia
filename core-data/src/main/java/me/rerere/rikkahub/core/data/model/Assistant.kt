@@ -22,9 +22,6 @@ data class AssistantUISettings(
     val codeBlockAutoCollapse: Boolean? = null,
     val showContextStacks: Boolean? = null,
     val chatInputStyle: String? = null,
-    val newChatHeaderStyle: String? = null,
-    val newChatContentStyle: String? = null,
-    val newChatShowAvatar: Boolean? = null,
     val wechatMode: Boolean? = null,
 )
 

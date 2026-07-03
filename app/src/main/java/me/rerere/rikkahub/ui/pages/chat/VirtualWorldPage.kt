@@ -235,7 +235,7 @@ fun VirtualWorldPage(id: Uuid) {
                     }
                     val isFirstVirtualChat by vm.isFirstVirtualChat.collectAsStateWithLifecycle()
 
-                    androidx.compose.animation.AnimatedVisibility(
+                    AnimatedVisibility(
                         visible = isConversationLoaded && !hasUserSentMessages && currentAssistant.presetMessages.isEmpty() && isFirstVirtualChat,
                         enter = fadeIn(),
                         exit = fadeOut(),
@@ -243,14 +243,12 @@ fun VirtualWorldPage(id: Uuid) {
                     ) {
                         NewChatContent(
                             assistant = currentAssistant,
-                            headerStyle = me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON,
-                            contentStyle = me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE,
                             stats = newChatStats,
                             onTemplateClick = { prompt -> inputState.setMessageTextAndFocus(prompt, scope) }
                         )
                     }
 
-                    androidx.compose.animation.AnimatedVisibility(
+                    AnimatedVisibility(
                         visible = hasUserSentMessages || currentAssistant.presetMessages.isNotEmpty() || !isFirstVirtualChat,
                         enter = fadeIn(),
                         exit = fadeOut(),

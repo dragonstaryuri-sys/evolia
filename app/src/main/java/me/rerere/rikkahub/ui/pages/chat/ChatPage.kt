@@ -491,9 +491,6 @@ private fun ChatPageContent(
                     ) {
                         NewChatContent(
                             assistant = currentAssistant,
-                            headerStyle = effectiveDisplaySetting.newChatHeaderStyle,
-                            contentStyle = effectiveDisplaySetting.newChatContentStyle,
-                            showAvatarInHeader = effectiveDisplaySetting.newChatShowAvatar,
                             stats = newChatStats,
                             hasBackgroundImage = currentAssistant.background != null,
                             onTemplateClick = { prompt -> inputState.setMessageTextAndFocus(prompt, scope) },
@@ -967,19 +964,14 @@ private fun TopBar(
                         isTemporaryChat = isTemporaryChat,
                         shouldUseCompactTemporaryToggle = run {
                             val hasPresetMessages = currentAssistant.presetMessages.isNotEmpty()
-                            val effectiveDisplay = settings.getEffectiveDisplaySetting(currentAssistant)
-                            val headerShowsAvatar = effectiveDisplay.newChatShowAvatar && (
-                                effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON ||
-                                    effectiveDisplay.newChatHeaderStyle == me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING
-                                )
-                            !hasPresetMessages && headerShowsAvatar
+                            !hasPresetMessages
                         },
                         assistantId = currentAssistant.id,
                         conversationId = conversationId
                     ),
                     transitionSpec = {
-                        (androidx.compose.animation.fadeIn(
-                            animationSpec = androidx.compose.animation.core.spring(
+                        (fadeIn(
+                            animationSpec = spring(
                                 dampingRatio = 0.6f,
                                 stiffness = 300f
                             )

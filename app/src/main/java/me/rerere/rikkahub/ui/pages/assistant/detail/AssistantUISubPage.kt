@@ -52,15 +52,6 @@ fun AssistantUISubPage(
     ) {
         // Chat Settings
         SettingsGroup(title = stringResource(R.string.setting_page_chat_settings)) {
-            // WeChat Mode Card - Placed at the top as requested
-            TriStateSettingItem(
-                title = stringResource(R.string.assistant_ui_wechat_mode_title),
-                subtitle = stringResource(R.string.assistant_ui_wechat_mode_desc),
-                value = uiSettings.wechatMode,
-                globalValue = settings.displaySetting.wechatMode,
-                onValueChange = { updateUI(uiSettings.copy(wechatMode = it)) }
-            )
-
             val inputOptions: List<me.rerere.rikkahub.data.datastore.ChatInputStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.ChatInputStyle.entries
             SettingGroupItem(
                 title = stringResource(R.string.setting_chat_input_style),
@@ -112,65 +103,6 @@ fun AssistantUISubPage(
                 value = uiSettings.autoCloseThinking,
                 globalValue = settings.displaySetting.autoCloseThinking,
                 onValueChange = { updateUI(uiSettings.copy(autoCloseThinking = it)) }
-            )
-        }
-
-        // New Chat Settings
-        SettingsGroup(title = stringResource(R.string.setting_new_chat_title)) {
-            val headerOptions: List<me.rerere.rikkahub.data.datastore.NewChatHeaderStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.entries
-            SettingGroupItem(
-                title = stringResource(R.string.setting_new_chat_header),
-                subtitle = stringResource(R.string.setting_new_chat_header_desc),
-                trailing = {
-                    me.rerere.rikkahub.ui.components.ui.Select(
-                        options = headerOptions,
-                        selectedOption = headerOptions.find { it?.name == uiSettings.newChatHeaderStyle },
-                        onOptionSelected = { updateUI(uiSettings.copy(newChatHeaderStyle = it?.name)) },
-                        optionToString = { style ->
-                            when (style) {
-                                null -> stringResource(R.string.use_global)
-                                me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE -> stringResource(R.string.setting_new_chat_header_none)
-                                me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.GREETING -> stringResource(R.string.setting_new_chat_header_greeting)
-                                me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.BIG_ICON -> stringResource(R.string.setting_new_chat_header_big_icon)
-                            }
-                        },
-                        modifier = Modifier.width(130.dp)
-                    )
-                }
-            )
-
-            val effectiveHeaderStyle = uiSettings.newChatHeaderStyle ?: settings.displaySetting.newChatHeaderStyle.name
-            if (effectiveHeaderStyle != me.rerere.rikkahub.data.datastore.NewChatHeaderStyle.NONE.name) {
-                TriStateSettingItem(
-                    title = stringResource(R.string.assistant_ui_new_chat_show_avatar_title),
-                    subtitle = stringResource(R.string.assistant_ui_new_chat_show_avatar_desc),
-                    value = uiSettings.newChatShowAvatar,
-                    globalValue = settings.displaySetting.newChatShowAvatar,
-                    onValueChange = { updateUI(uiSettings.copy(newChatShowAvatar = it)) }
-                )
-            }
-
-            val contentOptions: List<me.rerere.rikkahub.data.datastore.NewChatContentStyle?> = listOf(null) + me.rerere.rikkahub.data.datastore.NewChatContentStyle.entries
-            SettingGroupItem(
-                title = stringResource(R.string.setting_new_chat_content),
-                subtitle = stringResource(R.string.setting_new_chat_content_desc),
-                trailing = {
-                    me.rerere.rikkahub.ui.components.ui.Select(
-                        options = contentOptions,
-                        selectedOption = contentOptions.find { it?.name == uiSettings.newChatContentStyle },
-                        onOptionSelected = { updateUI(uiSettings.copy(newChatContentStyle = it?.name)) },
-                        optionToString = { style ->
-                            when (style) {
-                                null -> stringResource(R.string.use_global)
-                                me.rerere.rikkahub.data.datastore.NewChatContentStyle.NONE -> stringResource(R.string.setting_new_chat_content_none)
-                                me.rerere.rikkahub.data.datastore.NewChatContentStyle.TEMPLATES -> stringResource(R.string.setting_new_chat_content_templates)
-                                me.rerere.rikkahub.data.datastore.NewChatContentStyle.STATS -> stringResource(R.string.setting_new_chat_content_stats)
-                                me.rerere.rikkahub.data.datastore.NewChatContentStyle.ACTIONS -> stringResource(R.string.setting_new_chat_content_actions)
-                            }
-                        },
-                        modifier = Modifier.width(130.dp)
-                    )
-                }
             )
         }
 

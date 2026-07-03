@@ -562,9 +562,6 @@ data class DisplaySetting(
     val filterEmojis: Boolean = false,
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
     val showContextStacks: Boolean = true,
-    val newChatHeaderStyle: NewChatHeaderStyle = NewChatHeaderStyle.BIG_ICON,
-    val newChatContentStyle: NewChatContentStyle = NewChatContentStyle.ACTIONS,
-    val newChatShowAvatar: Boolean = true,
     val hasShownProviderGuide: Boolean = false,
     val wechatMode: Boolean = false
 )
@@ -621,12 +618,6 @@ fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySe
         codeBlockAutoWrap = ui.codeBlockAutoWrap ?: displaySetting.codeBlockAutoWrap,
         codeBlockAutoCollapse = ui.codeBlockAutoCollapse ?: displaySetting.codeBlockAutoCollapse,
         showContextStacks = ui.showContextStacks ?: displaySetting.showContextStacks,
-        newChatHeaderStyle = ui.newChatHeaderStyle?.let { runCatching { NewChatHeaderStyle.valueOf(it) }.getOrNull() }
-            ?: displaySetting.newChatHeaderStyle,
-        newChatContentStyle = ui.newChatContentStyle?.let { runCatching { NewChatContentStyle.valueOf(it) }.getOrNull() }
-            ?: displaySetting.newChatContentStyle,
-        newChatShowAvatar = ui.newChatShowAvatar ?: displaySetting.newChatShowAvatar,
-        wechatMode = ui.wechatMode ?: displaySetting.wechatMode
     )
 }
 
