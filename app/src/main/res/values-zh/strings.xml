@@ -1679,8 +1679,6 @@
   <string name="pet_trigger_manual">让我看看你在看什么...</string>
   <string name="pet_input_hint">给机回复</string>
   <!-- Wechat mode -->
-  <string name="setting_display_wechat_mode">微信模式</string>
-  <string name="setting_display_wechat_mode_desc">启用后，对话将以类似微信的形式展示：简洁回复、按句分段、显示头像且隐藏思考过程。</string>
   <string name="chat_status_typing">正在输入中...</string>
   <string name="assistant_ui_wechat_mode_title">微信模式</string>
   <string name="assistant_ui_wechat_mode_desc">使该智能体的对话风格和展示形式接近微信聊天</string>
