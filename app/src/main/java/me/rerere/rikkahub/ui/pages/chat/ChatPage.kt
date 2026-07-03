@@ -199,6 +199,14 @@ private fun ChatPageContent(
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
+
+    // Track messages that are visually animating (bubbles popping up in WeChat mode)
+    val animatingMessages = remember(conversation.id) { mutableStateMapOf<Uuid, Boolean>() }
+    val isAnyMessageAnimating = animatingMessages.values.any { it }
+
+    // Combined typing status
+    val effectiveTypingIndicator = isAiTyping || isAnyMessageAnimating
+
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
@@ -347,7 +355,7 @@ private fun ChatPageContent(
                         onToggleTemporaryChat = {
                             isTemporaryChat = !isTemporaryChat
                         },
-                        isLoading = isAiTyping
+                        isLoading = effectiveTypingIndicator
                     )
                 },
                 containerColor = Color.Transparent,
@@ -420,6 +428,10 @@ private fun ChatPageContent(
                                     }
                                 )
                             )
+                        },
+                        onTypingStateChange = { nodeId, isTyping ->
+                            if (isTyping) animatingMessages[nodeId] = true
+                            else animatingMessages.remove(nodeId)
                         }
                     )
 

@@ -407,6 +407,7 @@ fun ChatMessageTurn(
     onEditLorebookEntry: ((me.rerere.ai.ui.UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
+    onTypingStateChange: (Boolean) -> Unit = {},
 ) {
     val settings = LocalSettings.current
     val navController = LocalNavController.current
@@ -531,6 +532,7 @@ fun ChatMessageTurn(
                     onModeClick = onModeClick,
                     onMemoryClick = onMemoryClick,
                     wechatMode = wechatMode,
+                    onTypingStateChange = onTypingStateChange,
                     modifier = modifier
                 )
             }
@@ -767,6 +769,7 @@ private fun AssistantMessageTurn(
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)?,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
     wechatMode: Boolean,
+    onTypingStateChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -824,31 +827,52 @@ private fun AssistantMessageTurn(
     // --- WeChat Mode Dynamics ---
     val currentBubbles by rememberUpdatedState(allTextBubbles)
     val isAiLoading by rememberUpdatedState(loading)
-    var displayedCount by remember(group.firstNode.id) {
+    var displayedCount by remember(group.firstNode.id, wechatMode) {
         mutableIntStateOf(if (loading) 0 else allTextBubbles.size)
     }
 
-    LaunchedEffect(group.firstNode.id) {
-        while (true) {
-            val latest = currentBubbles
-            val totalAvailable = latest.size
+    LaunchedEffect(group.firstNode.id, wechatMode) {
+        if (!wechatMode) {
+            onTypingStateChange(false)
+            return@LaunchedEffect
+        }
 
-            if (displayedCount < totalAvailable) {
-                // If AI already cut the next bubble, or generation stopped, delay the current one
-                if (displayedCount < totalAvailable - 1 || !isAiLoading) {
-                    val sentence = latest.getOrNull(displayedCount)?.second?.text ?: ""
-                    val delayTime = (sentence.length * 200L + 400L).coerceIn(500L, 3000L)
+        try {
+            // Initial typing notification
+            onTypingStateChange(true)
+
+            // Initial "thinking" wait
+            if (displayedCount == 0) {
+                while (currentBubbles.isEmpty() && isAiLoading) {
+                    delay(100)
+                }
+                if (currentBubbles.isNotEmpty()) {
+                    displayedCount = 1
+                }
+            }
+
+            while (true) {
+                val latest = currentBubbles
+                val totalAvailable = latest.size
+
+                // Report whether we are still visually animating OR physically generating
+                onTypingStateChange(displayedCount < totalAvailable || isAiLoading)
+
+                if (displayedCount < totalAvailable) {
+                    // If AI already cut the next bubble, or generation stopped, delay the current one
+                    val prevSentence = latest.getOrNull(displayedCount - 1)?.second?.text ?: ""
+                    // 打字速度建议：每个字 60ms + 500ms 基础延迟
+                    val delayTime = (prevSentence.length * 60L + 500L).coerceIn(800L, 3000L)
                     delay(delayTime)
                     displayedCount++
                 } else {
-                    // AI is still typing the CURRENT last bubble, wait for separator
+                    // All available bubbles shown, check if AI finished
+                    if (!isAiLoading) break
                     delay(200)
                 }
-            } else {
-                // All available bubbles shown, check if AI finished
-                if (!isAiLoading) break
-                delay(200)
             }
+        } finally {
+            onTypingStateChange(false)
         }
     }
 

@@ -124,6 +124,7 @@ fun ChatList(
     onGetFullMemoryContent: suspend (Int, Int) -> String? = { _, _ -> null },
     onAddFavorite: (List<UIMessage>) -> Unit = {},
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
+    onTypingStateChange: (Uuid, Boolean) -> Unit = { _, _ -> },
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -181,6 +182,7 @@ fun ChatList(
                     onGetFullMemoryContent = onGetFullMemoryContent,
                     onAddFavorite = onAddFavorite,
                     onDeleteMessages = onDeleteMessages,
+                    onTypingStateChange = onTypingStateChange,
                     animatedVisibilityScope = this@AnimatedContent,
                 )
             }
@@ -205,6 +207,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onUpdateMessage: (MessageNode) -> Unit,
     onGetFullMemoryContent: suspend (Int, Int) -> String?,
     onAddFavorite: (List<UIMessage>) -> Unit,
+    onTypingStateChange: (Uuid, Boolean) -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
 ) {
@@ -461,6 +464,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                         }
                                     },
                                     showRegenerate = showRegenerate,
+                                    onTypingStateChange = { onTypingStateChange(group.firstNode.id, it) },
                                 )
                             }
 
