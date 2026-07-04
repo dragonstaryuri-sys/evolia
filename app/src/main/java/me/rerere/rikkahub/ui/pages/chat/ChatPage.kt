@@ -36,6 +36,8 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessagePart
@@ -254,6 +256,8 @@ private fun ChatPageContent(
     val isConsolidating by vm.isConsolidating.collectAsStateWithLifecycle()
 
     val tts = LocalTTSState.current
+    val ttsMutex = remember { Mutex() }
+    val ttsScope = rememberCoroutineScope()
     var lastProcessedMessageId by remember { mutableStateOf<Uuid?>(null) }
     var lastProcessedIndex by remember { mutableStateOf(0) }
 
@@ -293,7 +297,11 @@ private fun ChatPageContent(
                 if (rawContent[i] in terminators) {
                     val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
                     if (sentence.isNotEmpty()) {
-                        tts.speak(sentence, flushCalled = false)
+                        ttsScope.launch {
+                            ttsMutex.withLock {
+                                tts.speak(sentence, flushCalled = false)
+                            }
+                        }
                     }
                     lastProcessedIndex = i + 1
                 }
@@ -303,7 +311,11 @@ private fun ChatPageContent(
             if (loadingJob == null && lastProcessedIndex < rawContent.length) {
                 val remaining = rawContent.substring(lastProcessedIndex).trim()
                 if (remaining.isNotEmpty()) {
-                    tts.speak(remaining, flushCalled = false)
+                    ttsScope.launch {
+                        ttsMutex.withLock {
+                            tts.speak(remaining, flushCalled = false)
+                        }
+                    }
                 }
                 lastProcessedIndex = rawContent.length
             }
@@ -480,25 +492,6 @@ private fun ChatPageContent(
                     val shouldShowNewChatContent =
                         isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen
                     val errorSelectModelText = stringResource(R.string.error_select_model_first)
-                    AnimatedVisibility(
-                        visible = shouldShowNewChatContent,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .offset(y = 28.dp)
-                    ) {
-                        NewChatContent(
-                            assistant = currentAssistant,
-                            stats = newChatStats,
-                            hasBackgroundImage = currentAssistant.background != null,
-                            onTemplateClick = { prompt -> inputState.setMessageTextAndFocus(prompt, scope) },
-                            onNavigateToImageGen = { navController.navigate(Screen.ImageGen) },
-                            onAvatarClick = {
-                                navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                            }
-                        )
-                    }
 
                     if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
                         AlertDialog(
