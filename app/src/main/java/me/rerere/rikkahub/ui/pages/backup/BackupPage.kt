@@ -300,6 +300,7 @@ private fun WebDavPage(
                                     when (item) {
                                         DATABASE -> stringResource(R.string.backup_page_chat_records)
                                         FILES -> stringResource(R.string.backup_page_files)
+                                        TTS_CACHE -> stringResource(R.string.backup_page_tts_cache)
                                     }
                                 )
                             }

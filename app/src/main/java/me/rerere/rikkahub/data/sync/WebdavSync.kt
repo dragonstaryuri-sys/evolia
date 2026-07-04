@@ -345,6 +345,17 @@ class WebdavSync(
                     }
                 }
             }
+
+            if (webDavConfig.items.contains(WebDavConfig.BackupItem.TTS_CACHE)) {
+                val ttsCacheDir = File(context.cacheDir, "tts_cache")
+                if (ttsCacheDir.exists() && ttsCacheDir.isDirectory) {
+                    val files = ttsCacheDir.listFiles()?.filter { it.isFile }
+                    LogUtil.i(TAG, "Found ${files?.size ?: 0} files in tts_cache folder")
+                    files?.forEach { file ->
+                        addFileToZip(zipOut, file, "tts_cache/${file.name}")
+                    }
+                }
+            }
         }
         backupFile
     }
@@ -381,6 +392,15 @@ class WebdavSync(
                                         val targetFile = File(tempDir, ze.name)
                                         FileOutputStream(targetFile).use { zipIn.copyTo(it) }
                                         LogUtil.i(TAG, "Database component extracted: ${ze.name}")
+                                    }
+                                }
+                                ze.name.startsWith("tts_cache/") -> {
+                                    if (webDavConfig.items.contains(WebDavConfig.BackupItem.TTS_CACHE)) {
+                                        val fileName = ze.name.substringAfter("/")
+                                        val targetFolder = File(context.cacheDir, "tts_cache").apply { mkdirs() }
+                                        val targetFile = File(targetFolder, fileName)
+                                        FileOutputStream(targetFile).use { zipIn.copyTo(it) }
+                                        LogUtil.d(TAG, "TTS Cache file extracted: ${ze.name}")
                                     }
                                 }
                                 ze.name.contains("/") -> {

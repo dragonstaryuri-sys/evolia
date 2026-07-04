@@ -356,6 +356,7 @@ class SettingsStore(
             preferences[ASSISTANT_TAGS] = JsonInstant.encodeToString(settingsToSave.assistantTags)
             preferences[PROVIDER_TAGS] = JsonInstant.encodeToString(settingsToSave.providerTags)
             preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.recentlyUsedAssistants)
+            preferences[RECENTLY_USED_ASSISTANTS] = JsonInstant.encodeToString(settingsToSave.recentlyUsedAssistants)
             preferences[SEARCH_SERVICES] = JsonInstant.encodeToString(settingsToSave.searchServices)
             preferences[SEARCH_COMMON] = JsonInstant.encodeToString(settingsToSave.searchCommonOptions)
             preferences[SEARCH_SELECTED] =
@@ -584,7 +585,7 @@ data class WebDavConfig(
     val maxBackupFiles: Int = 3
 ) {
     @Serializable
-    enum class BackupItem { DATABASE, FILES }
+    enum class BackupItem { DATABASE, FILES, TTS_CACHE }
 }
 
 @Serializable
