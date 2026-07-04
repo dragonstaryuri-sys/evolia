@@ -1730,4 +1730,10 @@
   <!-- Image Generation -->
   <string name="img_gen_title">Image Generation</string>
   <string name="assistant_page_local_tools_image_generation_desc">Allow the assistant to generate images based on prompts and automatically save them to the image generation records</string>
+  <string name="systemtts_dct">Uses device\'s built-in TTS engine</string>
+  <string name="openia_dct">High-quality voices with emotion</string>
+  <string name="gemini_dct">Google\'s TTS with natural voices</string>
+  <string name="azure_dct">Microsoft\'s high-quality cloud TTS</string>
+  <string name="elevenlabs_dct">ElevenLabs Speech Synthesis Service</string>
+  <string name="minimax_dct">Professional voice cloning,Chinese TTS with emotions</string>
 </resources>

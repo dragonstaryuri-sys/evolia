@@ -1686,4 +1686,10 @@
   <!-- 图片生成 -->
   <string name="img_gen_title">图像生成</string>
   <string name="assistant_page_local_tools_image_generation_desc">允许助手根据提示词生成图片，并自动保存到生图记录中</string>
+  <string name="systemtts_dct">使用设备内置的文本转语音引擎</string>
+  <string name="openia_dct">openAI的语音合成服务</string>
+  <string name="gemini_dct">谷歌的语音合成服务</string>
+  <string name="azure_dct">微软的语音合成服务</string>
+  <string name="elevenlabs_dct">elevenlabs语音合成服务</string>
+  <string name="minimax_dct">minimax的语音合成服务</string>
 </resources>

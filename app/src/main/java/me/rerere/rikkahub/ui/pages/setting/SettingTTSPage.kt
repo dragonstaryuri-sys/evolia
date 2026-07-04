@@ -819,28 +819,29 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
         data class TTSPreset(
             val type: kotlin.reflect.KClass<out TTSProviderSetting>,
             val name: String,
-            val description: String,
+            val description: Int,
             val isLocal: Boolean = false
         )
 
         val allTtsPresets = remember {
             listOf(
-                TTSPreset(TTSProviderSetting.SystemTTS::class, "System TTS", "Uses device's built-in TTS engine", isLocal = true),
-                TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", "High-quality voices with emotion"),
-                TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", "Google's TTS with natural voices"),
-                TTSPreset(TTSProviderSetting.Azure::class, "Azure TTS", "Microsoft's high-quality cloud TTS"),
-                TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", "Professional voice cloning"),
-                TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", "Chinese TTS with emotions"),
+                TTSPreset(TTSProviderSetting.SystemTTS::class, "System TTS", R.string.systemtts_dct, isLocal = true),
+                TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", R.string.openia_dct),
+                TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", R.string.gemini_dct),
+                TTSPreset(TTSProviderSetting.Azure::class, "Azure TTS",R.string.azure_dct ),
+                TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", R.string.elevenlabs_dct),
+                TTSPreset(TTSProviderSetting.MiniMax::class, "MiniMax", R.string.minimax_dct),
             )
         }
 
-        val filteredPresets = remember(searchQuery) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val filteredPresets = remember(searchQuery, allTtsPresets) {
             if (searchQuery.isBlank()) {
                 allTtsPresets
             } else {
                 allTtsPresets.filter { preset ->
                     preset.name.contains(searchQuery, ignoreCase = true) ||
-                    preset.description.contains(searchQuery, ignoreCase = true)
+                    context.getString(preset.description).contains(searchQuery, ignoreCase = true)
                 }
             }
         }
@@ -988,7 +989,7 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                         style = MaterialTheme.typography.titleMedium
                                     )
                                     Text(
-                                        text = preset.description,
+                                        text = stringResource(preset.description),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
