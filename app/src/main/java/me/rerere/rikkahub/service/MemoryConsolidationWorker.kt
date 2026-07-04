@@ -224,7 +224,7 @@ class MemoryConsolidationWorker(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conv.id.toString(),
-                    content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
+                    content = summary,
                     keywords = "",
                     embedding = null,
                     embeddingModelId = null,
@@ -330,7 +330,7 @@ class MemoryConsolidationWorker(
                             id = existingEpisode?.id ?: 0,
                             assistantId = currentAssistant.id.toString(),
                             conversationId = convIdString,
-                            content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
+                            content = summary,
                             keywords = "",
                             embedding = null,
                             embeddingModelId = null,
@@ -371,7 +371,7 @@ class MemoryConsolidationWorker(
                     for (conv in newConversations) {
                         val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
                         if (!summary.isNullOrBlank()) {
-                            contextParts.add("Conversation Summary: ${summary.removePrefix("虚拟世界：")}")
+                            contextParts.add("Conversation Summary: $summary")
                         } else {
                             val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
                                 "${it.role}: ${it.toContentText().take(1000)}"
@@ -525,7 +525,7 @@ class MemoryConsolidationWorker(
         }
         val locale = Locale.getDefault().displayName
         val prompt = DEFAULT_FULL_SUMMARY_PROMPT.applyPlaceholders(
-            "previous_summary" to (previousSummary?.removePrefix("虚拟世界：") ?: "None"),
+            "previous_summary" to (previousSummary ?: "None"),
             "new_messages" to messagesText,
             "locale" to locale,
             "char" to assistantName

@@ -395,7 +395,6 @@ class ChatService(
                 Conversation.ofId(
                     id = conversationId,
                     assistantId = currentAssistant.id,
-                    isVirtual = currentAssistant.isVirtualWorldMode
                 )
             )
         }
@@ -490,8 +489,7 @@ class ChatService(
             val settings = settingsStore.settingsFlow.value
             val assistant = settings.getAssistantById(currentAssistantId) ?: settings.getCurrentAssistant()
             val newConversation = Conversation.ofId(
-                id = conversationId, assistantId = assistant.id, isVirtual = assistant.isVirtualWorldMode
-            ).updateCurrentMessages(assistant.presetMessages)
+                id = conversationId, assistantId = assistant.id).updateCurrentMessages(assistant.presetMessages)
             updateConversation(conversationId) { newConversation }
         }
     }
@@ -581,7 +579,7 @@ class ChatService(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
                     conversationId = conversationId.toString(),
-                    content = if (conv.isVirtual) "虚拟世界：${summary.removePrefix("虚拟世界：")}" else summary,
+                    content = summary,
                     keywords = "",
                     embedding = null,
                     embeddingModelId = null,
@@ -944,7 +942,7 @@ class ChatService(
                         outputTransformers = outputTransformers,
                         tools = buildList {
                             val isMain = assistant.isMain
-                            val isVirtual = currentConversation.isVirtual
+
 
                             val supportsBuiltIn =
                                 model.tools.isNotEmpty() || ModelRegistry.GEMINI_SERIES.match(model.modelId)
@@ -962,9 +960,7 @@ class ChatService(
                                     ))
                             }
 
-                            val targetOptions = if (isVirtual) {
-                                assistant.localTools.filter { it is LocalToolOption.TimeSense }
-                            } else if (isMain) {
+                            val targetOptions = if (isMain) {
                                 if (assistant.enableMemory) {
                                     assistant.localTools.toMutableList().apply {
                                         if (!any { it is LocalToolOption.MilestoneManagement }) {
@@ -990,7 +986,7 @@ class ChatService(
                                     userImageUrls = currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()
                                         ?.map { it.url } ?: emptyList()))
 
-                            if (isMain && !isVirtual) {
+                            if (isMain) {
                                 val nameRegex = Regex("[^a-zA-Z0-9_-]")
                                 mcpManager.getAllAvailableTools().forEach { mcpTool ->
                                     val originalName = mcpTool.name

@@ -10,7 +10,6 @@ import androidx.paging.map
 import androidx.paging.filter
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -40,19 +39,15 @@ class ChatListVM(
 
     val recentlyRestoredIds = chatService.recentlyRestoredIds
 
-    // 模式切换状态：用于控制全屏转场动画
-    private val _isSwitchingMode = MutableStateFlow(false)
-    val isSwitchingMode: StateFlow<Boolean> = _isSwitchingMode.asStateFlow()
-
     /**
-     * 每个助手的最后一条消息内容 (根据当前模式显示)
+     * 每个助手的最后一条消息内容
      */
     val assistantsLastMessages: StateFlow<Map<Uuid, String>> = settings
         .flatMapLatest { settings ->
             if (settings.assistants.isEmpty()) return@flatMapLatest flowOf(emptyMap())
             combine(
                 settings.assistants.map { assistant ->
-                    conversationRepo.getConversationsOfAssistant(assistant.id, isVirtual = assistant.isVirtualWorldMode)
+                    conversationRepo.getConversationsOfAssistant(assistant.id)
                         .map { conversations ->
                             assistant.id to (conversations.firstOrNull { it.messageNodes.isNotEmpty() }?.lastMessageContent ?: "")
                         }
@@ -65,14 +60,13 @@ class ChatListVM(
 
     val conversations: Flow<PagingData<ConversationListItem>> = combine(
         settings.map { it.assistantId }.distinctUntilChanged(),
-        _searchQuery,
-        settings.map { s -> s.assistants.find { it.id == s.assistantId }?.isVirtualWorldMode ?: false }.distinctUntilChanged()
-    ) { assistantId, query, isVirtual -> Triple(assistantId, query, isVirtual) }
-        .flatMapLatest { (assistantId, query, isVirtual) ->
+        _searchQuery
+    ) { assistantId, query -> assistantId to query }
+        .flatMapLatest { (assistantId, query) ->
             if (query.isBlank()) {
-                conversationRepo.getConversationsOfAssistantPaging(assistantId, isVirtual = isVirtual)
+                conversationRepo.getConversationsOfAssistantPaging(assistantId)
             } else {
-                conversationRepo.searchConversationsOfAssistantPaging(assistantId, query, isVirtual = isVirtual)
+                conversationRepo.searchConversationsOfAssistantPaging(assistantId, query)
             }
         }
         .map { pagingData: PagingData<Conversation> ->
@@ -135,76 +129,9 @@ class ChatListVM(
         _searchQuery.value = query
     }
 
-    fun deleteConversation(conversation: Conversation) {
-        chatService.deleteConversation(conversation)
-    }
-
-    fun undoDeleteConversation(id: Uuid) {
-        chatService.undoDeleteConversation(id)
-    }
-
     fun updatePinnedStatus(conversation: Conversation) {
         viewModelScope.launch {
             conversationRepo.togglePinStatus(conversation.id)
-        }
-    }
-
-    fun updateConversationTitle(conversation: Conversation, title: String) {
-        viewModelScope.launch {
-            conversationRepo.updateConversation(conversation.copy(title = title))
-        }
-    }
-
-
-    /**
-     * 切换虚拟 world 模式，优化逻辑：
-     * 1. 离场清理：如果是空对话，删除；如果有内容，归档并标记 Consolidated。
-     * 2. 模式切换。
-     */
-    fun toggleVirtualMode(assistant: Assistant) {
-        viewModelScope.launch {
-            _isSwitchingMode.value = true
-            try {
-                // 1. 获取当前模式的最后一次对话
-                val lastConv = conversationRepo.getConversationsOfAssistant(
-                    assistantId = assistant.id,
-                    isVirtual = assistant.isVirtualWorldMode
-                ).firstOrNull()?.firstOrNull()
-
-                if (lastConv != null) {
-                    if (lastConv.messageNodes.isNotEmpty()) {
-                        // 有内容的，归档并标记为 Consolidated，暗示话题已结束
-                        android.util.Log.i("ChatListVM", "Switching mode: Archiving current session")
-                        val archiveJob = launch {
-                            try {
-                                chatService.archiveConversation(lastConv.id, force = true)
-                                conversationRepo.markAsConsolidated(lastConv.id)
-                            } catch (e: Exception) {
-                                android.util.Log.e("ChatListVM", "Archive failed", e)
-                            }
-                        }
-                        withTimeoutOrNull(5000) { archiveJob.join() }
-                    } else if (!lastConv.isPinned) {
-                        // 没发过消息且未置顶，直接删掉，不留痕迹
-                        conversationRepo.deleteConversation(lastConv, deleteFiles = false)
-                    }
-                }
-
-                // 2. 更新设置
-                val currentSettings = settings.value
-                val updatedSettings = currentSettings.copy(
-                    assistants = currentSettings.assistants.map {
-                        if (it.id == assistant.id) it.copy(isVirtualWorldMode = !it.isVirtualWorldMode) else it
-                    }
-                )
-                settingsStore.update(updatedSettings)
-
-                kotlinx.coroutines.delay(300)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                _isSwitchingMode.value = false
-            }
         }
     }
 

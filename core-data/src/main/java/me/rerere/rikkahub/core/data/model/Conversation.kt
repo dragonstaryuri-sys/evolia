@@ -34,7 +34,6 @@ data class Conversation(
     val lastPruneTime: Long = 0L,
     val lastPruneMessageCount: Int = 0,
     val lastRefreshTime: Long = 0L,
-    val isVirtual: Boolean = false,
 ) {
     val files: List<Uri>
         get() {
@@ -99,8 +98,8 @@ data class Conversation(
     }
 
     companion object {
-        fun ofId(id: Uuid, assistantId: Uuid, messages: List<MessageNode> = emptyList(), isVirtual: Boolean = false) =
-            Conversation(id = id, assistantId = assistantId, messageNodes = messages, isVirtual = isVirtual)
+        fun ofId(id: Uuid, assistantId: Uuid, messages: List<MessageNode> = emptyList()) =
+            Conversation(id = id, assistantId = assistantId, messageNodes = messages)
 
         fun dummy() = Conversation(assistantId = Uuid.random(), messageNodes = emptyList())
     }

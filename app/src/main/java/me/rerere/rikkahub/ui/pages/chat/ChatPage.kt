@@ -444,7 +444,7 @@ private fun ChatPageContent(
                     AnimatedVisibility(
                         visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages,
                         enter = fadeIn(),
-                        exit = androidx.compose.animation.fadeOut(),
+                        exit = fadeOut(),
                         modifier = Modifier.align(Alignment.Center)
                     ) {
                         Column(
@@ -454,7 +454,7 @@ private fun ChatPageContent(
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
                                 modifier = Modifier.padding(32.dp)
                             ) {
                                 Icon(
@@ -476,10 +476,9 @@ private fun ChatPageContent(
                     val isKeyboardOpen = WindowInsets.isImeVisible
                     val hasTextInput =
                         inputState.textContent.text.isNotEmpty() || inputState.messageContent.isNotEmpty()
-                    val isFirstVirtualChat by vm.isFirstVirtualChat.collectAsStateWithLifecycle()
 
                     val shouldShowNewChatContent =
-                        isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen && currentAssistant.isVirtualWorldMode && isFirstVirtualChat
+                        isConversationLoaded && !isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && !hasTextInput && !isKeyboardOpen
                     val errorSelectModelText = stringResource(R.string.error_select_model_first)
                     AnimatedVisibility(
                         visible = shouldShowNewChatContent,
@@ -533,8 +532,8 @@ private fun ChatPageContent(
 
                     AnimatedVisibility(
                         visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent,
-                        enter = androidx.compose.animation.fadeIn(),
-                        exit = androidx.compose.animation.fadeOut(),
+                        enter = fadeIn(),
+                        exit = fadeOut(),
                         modifier = Modifier.align(Alignment.BottomCenter)
                     ) {
                         Box(
@@ -564,7 +563,7 @@ private fun ChatPageContent(
                                 onClickSuggestion = { suggestion ->
                                     if (currentChatModel != null) {
                                         vm.handleMessageSend(
-                                            listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)),
+                                            listOf(UIMessagePart.Text(suggestion)),
                                             isTemporaryChat = isTemporaryChat
                                         )
                                     } else {
@@ -670,7 +669,7 @@ private fun ChatPageContent(
                                 onClickSuggestion = { suggestion ->
                                     if (currentChatModel != null) {
                                         vm.handleMessageSend(
-                                            listOf(me.rerere.ai.ui.UIMessagePart.Text(suggestion)),
+                                            listOf(UIMessagePart.Text(suggestion)),
                                             isTemporaryChat = isTemporaryChat
                                         )
                                     } else {
@@ -840,14 +839,14 @@ private data class TopBarActionState(
     val isEmpty: Boolean,
     val isTemporaryChat: Boolean,
     val shouldUseCompactTemporaryToggle: Boolean,
-    val assistantId: kotlin.uuid.Uuid,
-    val conversationId: kotlin.uuid.Uuid
+    val assistantId: Uuid,
+    val conversationId: Uuid
 )
 
 @Composable
 private fun TopBar(
     settings: Settings,
-    conversationId: kotlin.uuid.Uuid,
+    conversationId: Uuid,
     hasUserMessages: Boolean,
     bigScreen: Boolean,
     previewMode: Boolean,
@@ -859,7 +858,6 @@ private fun TopBar(
     onToggleTemporaryChat: () -> Unit,
     isLoading: Boolean
 ) {
-    val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
     val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
@@ -958,7 +956,7 @@ private fun TopBar(
                 border = topContainerBorder,
                 modifier = Modifier.graphicsLayer { scaleX = topPillScale; scaleY = topPillScale }
             ) {
-                androidx.compose.animation.AnimatedContent(
+                AnimatedContent(
                     targetState = TopBarActionState(
                         isEmpty = isEmpty,
                         isTemporaryChat = isTemporaryChat,
@@ -1084,9 +1082,8 @@ private fun TopBar(
             currentAssistant = currentAssistant,
             onAssistantSelected = { selectedAssistant ->
                 assistantState.setSelectAssistant(selectedAssistant)
-                showAssistantPicker = false
             },
-            onDismiss = { showAssistantPicker = false }
+            onDismiss = {}
         )
     }
 

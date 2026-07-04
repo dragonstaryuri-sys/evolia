@@ -108,7 +108,7 @@ class ChatVM(
         .map { it.assistantId }
         .distinctUntilChanged()
         .flatMapLatest { assistantId ->
-            conversationRepo.getConversationsOfAssistantAnyMode(assistantId)
+            conversationRepo.getConversationsOfAssistant(assistantId)
         }
 
     val uiMessages: StateFlow<List<ChatUIItem>> = combine(
@@ -293,15 +293,6 @@ class ChatVM(
         assistant?.searchMode ?: me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off
     }.stateIn(viewModelScope, SharingStarted.Lazily, me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
 
-    val isFirstVirtualChat: StateFlow<Boolean> = conversation
-        .map { it.assistantId }
-        .distinctUntilChanged()
-        .flatMapLatest { assistantId ->
-            conversationRepo.getVirtualConversationsOfAssistant(assistantId)
-                .map { convs -> convs.all { it.messageNodes.isEmpty() } }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-
     fun updateAssistantSearchMode(searchMode: me.rerere.rikkahub.core.data.model.AssistantSearchMode) {
         viewModelScope.launch {
             val currentSettings = settingsStore.settingsFlow.value
@@ -324,14 +315,13 @@ class ChatVM(
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(
             currentAssistantIdFlow,
-            _searchQuery,
-            conversation.map { it.isVirtual }.distinctUntilChanged()
-        ) { assistantId, query, isVirtual -> Triple(assistantId, query, isVirtual) }
-            .flatMapLatest { (assistantId, query, isVirtual) ->
+            _searchQuery
+        ) { assistantId, query -> assistantId to query }
+            .flatMapLatest { (assistantId, query) ->
                 if (query.isBlank()) {
-                    conversationRepo.getConversationsOfAssistantPaging(assistantId, isVirtual = isVirtual)
+                    conversationRepo.getConversationsOfAssistantPaging(assistantId)
                 } else {
-                    conversationRepo.searchConversationsOfAssistantPaging(assistantId, query, isVirtual = isVirtual)
+                    conversationRepo.searchConversationsOfAssistantPaging(assistantId, query)
                 }
             }
             .map { pagingData ->
@@ -447,7 +437,7 @@ class ChatVM(
         } else parts
 
         viewModelScope.launch {
-            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
+            val allConvs = conversationRepo.getConversationsOfAssistant(conversation.value.assistantId).first()
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { node -> node.messages.any { it.id == messageId } }
             } ?: conversation.value
@@ -472,7 +462,7 @@ class ChatVM(
             val currentConv = conversation.value
             val assistantId = currentConv.assistantId
             val newId = Uuid.random()
-            val newConv = Conversation.ofId(id = newId, assistantId = assistantId, isVirtual = currentConv.isVirtual)
+            val newConv = Conversation.ofId(id = newId, assistantId = assistantId)
             chatService.saveConversation(newId, newConv)
             trackConversation(newId)
             chatService.initializeConversation(newId)
@@ -495,7 +485,7 @@ class ChatVM(
                 })
             })
         }
-        val newConversation = Conversation(id = Uuid.random(), assistantId = conversation.value.assistantId, messageNodes = nodes, isVirtual = conversation.value.isVirtual)
+        val newConversation = Conversation(id = Uuid.random(), assistantId = conversation.value.assistantId, messageNodes = nodes)
         chatService.saveConversation(newConversation.id, newConversation)
         return newConversation
     }
@@ -512,7 +502,7 @@ class ChatVM(
         viewModelScope.launch {
             val assistantId = conversation.value.assistantId
             // 获取该助手的所有对话，因为选中的消息可能跨越了“新话题”分隔线
-            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(assistantId).first()
+            val allConvs = conversationRepo.getConversationsOfAssistant(assistantId).first()
 
             // 将选中的消息按所属对话分组，提高处理效率
             val messagesByConv = messages.mapNotNull { msg ->
@@ -568,7 +558,7 @@ class ChatVM(
     }
 
     private suspend fun deleteMessageInternal(message: UIMessage) {
-        val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
+        val allConvs = conversationRepo.getConversationsOfAssistant(conversation.value.assistantId).first()
         val targetConv = allConvs.find { conv ->
             conv.messageNodes.any { node -> node.messages.any { it.id == message.id } }
         } ?: return
@@ -616,7 +606,7 @@ class ChatVM(
 
     fun regenerateAtMessage(message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false) {
         viewModelScope.launch {
-            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(conversation.value.assistantId).first()
+            val allConvs = conversationRepo.getConversationsOfAssistant(conversation.value.assistantId).first()
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { node -> node.messages.any { it.id == message.id } }
             } ?: conversation.value
@@ -702,7 +692,7 @@ class ChatVM(
     fun updateMessageNodeInAnyConversation(newNode: MessageNode) {
         viewModelScope.launch {
             val assistantId = conversation.value.assistantId
-            val allConvs = conversationRepo.getConversationsOfAssistantAnyMode(assistantId).first()
+            val allConvs = conversationRepo.getConversationsOfAssistant(assistantId).first()
             val targetConv = allConvs.find { conv ->
                 conv.messageNodes.any { node -> node.id == newNode.id }
             } ?: return@launch

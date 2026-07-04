@@ -7,6 +7,5 @@ data class LightConversationEntity(
     val isPinned: Boolean,
     val createAt: Long,
     val updateAt: Long,
-    val isConsolidated: Boolean,
-    val isVirtual: Boolean
+    val isConsolidated: Boolean
 )

@@ -801,52 +801,14 @@ private fun LanguageStyleExamplesSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                if (assistant.isMain) {
-                    // Normal Mode
-                    if (BuildConfig.DEBUG) {
-                        Text(
-                            text = stringResource(R.string.assistant_style_examples_normal),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    StyleExampleList(
-                        assistant = assistant,
-                        examples = assistant.languageStyleExamples,
-                        onUpdate = { newList ->
-                            onUpdate(assistant.copy(languageStyleExamples = newList))
-                        },
-                        stateKeyPrefix = "normal"
-                    )
-
-                    if (BuildConfig.DEBUG) {
-                        Spacer(modifier = Modifier.size(8.dp))
-
-                        // Virtual Mode
-                        Text(
-                            text = stringResource(R.string.assistant_style_examples_virtual),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        StyleExampleList(
-                            assistant = assistant,
-                            examples = assistant.virtualLanguageStyleExamples,
-                            onUpdate = { newList ->
-                                onUpdate(assistant.copy(virtualLanguageStyleExamples = newList))
-                            },
-                            stateKeyPrefix = "virtual"
-                        )
-                    }
-                } else {
-                    StyleExampleList(
-                        assistant = assistant,
-                        examples = assistant.languageStyleExamples,
-                        onUpdate = { newList ->
-                            onUpdate(assistant.copy(languageStyleExamples = newList))
-                        },
-                        stateKeyPrefix = "default"
-                    )
-                }
+                StyleExampleList(
+                    assistant = assistant,
+                    examples = assistant.languageStyleExamples,
+                    onUpdate = { newList ->
+                        onUpdate(assistant.copy(languageStyleExamples = newList))
+                    },
+                    stateKeyPrefix = "default"
+                )
             }
         }
     }

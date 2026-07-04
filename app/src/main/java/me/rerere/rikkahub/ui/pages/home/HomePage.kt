@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -53,7 +52,6 @@ import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.uuid.Uuid
-import com.airbnb.lottie.compose.*
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.ChatModelWarningBanner
 import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
@@ -121,9 +119,6 @@ fun AgentListPage() {
     val navController = LocalNavController.current
     val settings by assistantVm.settings.collectAsStateWithLifecycle()
     val lastMessages by chatVm.assistantsLastMessages.collectAsStateWithLifecycle()
-
-    // 获取转场加载状态
-    val isSwitchingMode by chatVm.isSwitchingMode.collectAsStateWithLifecycle()
 
     val toaster = LocalToaster.current
     val scope = rememberCoroutineScope()
@@ -232,12 +227,10 @@ fun AgentListPage() {
             ) {
                 val isNotConfigured = settings.isNotConfigured()
                 if (isNotConfigured) {
-                    // 优先级 1：提示配置 API
                     item {
                         ProviderConfigWarningCard(navController)
                     }
                 } else {
-                    // 优先级 2：只有配了 API，才检查是否选了默认模型
                     val noDefaultChatModel = settings.findModelById(settings.chatModelId) == null
                     if (noDefaultChatModel) {
                         item {
@@ -262,22 +255,14 @@ fun AgentListPage() {
                                 scope.launch {
                                     chatVm.selectAssistant(assistant.id)
                                     val lastConv = repo.getConversationsOfAssistant(
-                                        assistant.id,
-                                        isVirtual = assistant.isVirtualWorldMode
+                                        assistant.id
                                     )
                                         .firstOrNull()
                                         ?.firstOrNull()
                                     val chatId = lastConv?.id ?: Uuid.random()
-                                    if (assistant.isVirtualWorldMode && BuildConfig.DEBUG) {
-                                        navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
-                                    } else {
-                                        navController.navigate(Screen.Chat(id = chatId.toString()))
-                                    }
+                                    navController.navigate(Screen.Chat(id = chatId.toString()))
                                 }
-                            },
-                            onModeToggle = if (BuildConfig.DEBUG) {
-                                { chatVm.toggleVirtualMode(assistant) }
-                            } else null
+                            }
                         )
                     }
                 }
@@ -323,17 +308,12 @@ fun AgentListPage() {
                                     scope.launch {
                                         chatVm.selectAssistant(assistant.id)
                                         val lastConv = repo.getConversationsOfAssistant(
-                                            assistant.id,
-                                            isVirtual = assistant.isVirtualWorldMode
+                                            assistant.id
                                         )
                                             .firstOrNull()
                                             ?.firstOrNull()
                                         val chatId = lastConv?.id ?: Uuid.random()
-                                        if (assistant.isVirtualWorldMode && BuildConfig.DEBUG) {
-                                            navController.navigate(Screen.VirtualWorld(id = chatId.toString()))
-                                        } else {
-                                            navController.navigate(Screen.Chat(id = chatId.toString()))
-                                        }
+                                        navController.navigate(Screen.Chat(id = chatId.toString()))
                                     }
                                 },
                                 onCopy = { assistantVm.copyAssistant(assistant) },
@@ -369,6 +349,7 @@ fun AgentListPage() {
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.height(20.dp))
+                        @Suppress("DEPRECATION")
                         Text(
                             text = stringResource(R.string.app_slogan),
                             style = MaterialTheme.typography.bodySmall.copy(
@@ -384,11 +365,6 @@ fun AgentListPage() {
                 }
             }
         }
-
-        TransitionOverlay(
-            visible = isSwitchingMode,
-            assistant = mainAgents.firstOrNull()
-        )
     }
 
     AssistantCreationSheet(
@@ -401,200 +377,71 @@ fun AgentListPage() {
 }
 
 @Composable
-private fun TransitionOverlay(
-    visible: Boolean,
-    assistant: Assistant?
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(400)),
-        exit = fadeOut(tween(600))
-    ) {
-        val lottieComposition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.world_change))
-        val lottieProgress by animateLottieCompositionAsState(
-            composition = lottieComposition,
-            iterations = LottieConstants.IterateForever
-        )
-
-        val infiniteTransition = rememberInfiniteTransition(label = "portal")
-        val alpha by infiniteTransition.animateFloat(
-            initialValue = 0.6f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1500, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "alpha"
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
-                .clickable(enabled = false) {},
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 使用原色彩渲染 Lottie 动画
-                LottieAnimation(
-                    composition = lottieComposition,
-                    progress = { lottieProgress },
-                    modifier = Modifier.size(200.dp)
-                )
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = if (assistant?.isVirtualWorldMode == true) "正在返回现实世界..." else "正在进入虚拟世界...",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.alpha(alpha)
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .width(140.dp)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(99.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 fun AgentItem(
     assistant: Assistant,
     lastMessage: String,
     onClick: () -> Unit,
     onCopy: (() -> Unit)? = null,
-    onModeToggle: (() -> Unit)? = null,
     dragHandle: (@Composable () -> Unit)? = null
 ) {
-    val haptics = rememberPremiumHaptics()
-    val isVirtual = assistant.isVirtualWorldMode && BuildConfig.DEBUG
-    val animatedColor by animateColorAsState(
-        if (isVirtual) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) else Color.Transparent,
-        label = "bg_color"
-    )
-
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        color = animatedColor,
+        color = Color.Transparent,
         shape = RoundedCornerShape(0.dp)
     ) {
-        Box {
-            if (isVirtual) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f)
-                                )
-                            )
-                        )
-                )
-            }
-
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                UIAvatar(
-                    name = assistant.name,
-                    value = assistant.avatar,
-                    modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp)
-                )
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = assistant.name,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = if (isVirtual) MaterialTheme.colorScheme.primary else Color.Unspecified
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (assistant.isMain) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.Rounded.Star,
-                                contentDescription = "Master",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        if (isVirtual) {
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = "虚拟",
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            UIAvatar(
+                name = assistant.name,
+                value = assistant.avatar,
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(8.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = lastMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = assistant.name,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
-
-                if (onModeToggle != null && assistant.isMain && BuildConfig.DEBUG) {
-                    IconButton(onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        onModeToggle()
-                    }) {
+                    if (assistant.isMain) {
+                        Spacer(Modifier.width(4.dp))
                         Icon(
-                            imageVector = if (isVirtual) Icons.Rounded.Public else Icons.Rounded.PublicOff,
-                            contentDescription = "Toggle Virtual Mode",
-                            modifier = Modifier.size(22.dp),
-                            tint = if (isVirtual) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                                alpha = 0.6f
-                            )
+                            imageVector = Icons.Rounded.Star,
+                            contentDescription = "Master",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
-
-                if (onCopy != null) {
-                    IconButton(onClick = onCopy) {
-                        Icon(
-                            imageVector = Icons.Rounded.ContentCopy,
-                            contentDescription = "Copy",
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
-                        )
-                    }
-                }
-                dragHandle?.invoke()
+                Text(
+                    text = lastMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+
+            if (onCopy != null) {
+                IconButton(onClick = onCopy) {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentCopy,
+                        contentDescription = "Copy",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
+                    )
+                }
+            }
+            dragHandle?.invoke()
         }
     }
 }

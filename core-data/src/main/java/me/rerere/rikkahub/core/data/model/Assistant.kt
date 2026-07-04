@@ -48,7 +48,6 @@ data class Assistant(
     val systemPrompt: String = "",
     val referenceVariables: String = "",
     val languageStyleExamples: List<String> = emptyList(),
-    val virtualLanguageStyleExamples: List<String> = emptyList(),
     val temperature: Float? = null,
     val topP: Float? = null,
     val maxTokenUsage: Int = 81920,
@@ -115,7 +114,6 @@ data class Assistant(
     val maxDiariesToInclude: Int = 5,
 
     val isMain: Boolean = false,
-    val isVirtualWorldMode: Boolean = false,
 
     @ColumnInfo(name = "last_conversation_id")
     val lastConversationId: String? = null,

@@ -46,20 +46,18 @@ class ConversationRepository(
         private const val TAG = "ConversationRepo"
     }
 
-    suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10, isVirtual: Boolean = false): List<Conversation> {
+    suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10): List<Conversation> {
         val entities = conversationDAO.getRecentConversationsOfAssistant(
             assistantId = assistantId.toString(),
-            limit = limit,
-            isVirtual = isVirtual
+            limit = limit
         )
         return fetchFullConversations(entities)
     }
 
-    suspend fun getLatestConversations(assistantId: Uuid, limit: Int = 1, isVirtual: Boolean = false): List<Conversation> {
+    suspend fun getLatestConversations(assistantId: Uuid, limit: Int = 1): List<Conversation> {
         val entities = conversationDAO.getLatestConversationsOfAssistant(
             assistantId = assistantId.toString(),
-            limit = limit,
-            isVirtual = isVirtual
+            limit = limit
         )
         return fetchFullConversations(entities)
     }
@@ -79,9 +77,9 @@ class ConversationRepository(
         ).firstOrNull()?.let { fetchFullConversation(it) }
     }
 
-    fun getConversationsOfAssistant(assistantId: Uuid, isVirtual: Boolean = false): Flow<List<Conversation>> {
+    fun getConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO
-            .getConversationsOfAssistant(assistantId.toString(), isVirtual = isVirtual)
+            .getConversationsOfAssistant(assistantId.toString())
             .map { list -> fetchFullConversations(list) }
     }
 
@@ -98,51 +96,51 @@ class ConversationRepository(
             }
     }
 
-    fun getConversationsOfAssistantPaging(assistantId: Uuid, isVirtual: Boolean = false): Flow<PagingData<Conversation>> = Pager(
+    fun getConversationsOfAssistantPaging(assistantId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = { conversationDAO.getConversationsOfAssistantPaging(assistantId.toString(), isVirtual = isVirtual) }
+        pagingSourceFactory = { conversationDAO.getConversationsOfAssistantPaging(assistantId.toString()) }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
         }
     }
 
-    fun searchConversations(titleKeyword: String, isVirtual: Boolean = false): Flow<List<Conversation>> {
+    fun searchConversations(titleKeyword: String): Flow<List<Conversation>> {
         return conversationDAO
-            .searchConversations(titleKeyword, isVirtual = isVirtual)
+            .searchConversations(titleKeyword)
             .map { list -> fetchFullConversations(list) }
     }
 
-    fun searchConversationsPaging(titleKeyword: String, isVirtual: Boolean = false): Flow<PagingData<Conversation>> = Pager(
+    fun searchConversationsPaging(titleKeyword: String): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = { conversationDAO.searchConversationsPaging(titleKeyword, isVirtual = isVirtual) }
+        pagingSourceFactory = { conversationDAO.searchConversationsPaging(titleKeyword) }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
         }
     }
 
-    fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String, isVirtual: Boolean = false): Flow<List<Conversation>> {
+    fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String): Flow<List<Conversation>> {
         return conversationDAO
-            .searchConversationsOfAssistant(assistantId.toString(), titleKeyword, isVirtual = isVirtual)
+            .searchConversationsOfAssistant(assistantId.toString(), titleKeyword)
             .map { list -> fetchFullConversations(list) }
     }
 
-    fun searchConversationsOfAssistantPaging(assistantId: Uuid, titleKeyword: String, isVirtual: Boolean = false): Flow<PagingData<Conversation>> = Pager(
+    fun searchConversationsOfAssistantPaging(assistantId: Uuid, titleKeyword: String): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
             enablePlaceholders = false
         ),
-        pagingSourceFactory = { conversationDAO.searchConversationsOfAssistantPaging(assistantId.toString(), titleKeyword, isVirtual) }
+        pagingSourceFactory = { conversationDAO.searchConversationsOfAssistantPaging(assistantId.toString(), titleKeyword) }
     ).flow.map { pagingData ->
         pagingData.map { entity ->
             conversationSummaryToConversation(entity)
@@ -195,9 +193,7 @@ class ConversationRepository(
                     emptyList()
                 }
 
-                // 3. 【核心修复】：合并策略
-                // 解决导入备份后“聊了几句”再导出的混合状态。
-                // 我们以 ID 为准进行合并，新表的消息代表“现状”，旧字段代表“历史”。
+                // 3. 合并策略
                 val finalNodes = if (oldNodes.isEmpty()) {
                     messageNodes
                 } else if (messageNodes.isEmpty()) {
@@ -224,15 +220,9 @@ class ConversationRepository(
             db.withTransaction {
                 entitiesToMigrate.forEach { entity ->
                     try {
-                        // 【核心修复】：基于合并后的全量视图进行同步，防止 syncMessages 的 delete 冲掉新聊的内容
                         val fullConversation = fetchFullConversation(entity)
-
-                        // 同步到新表
                         syncMessages(fullConversation)
-
-                        // 搬运成功后，清空旧字段
                         conversationDAO.update(entity.copy(nodes = ""))
-                        Log.i(TAG, "迁移旧数据成功: ${entity.title} (ID: ${entity.id})")
                     } catch (e: Exception) {
                         Log.e(TAG, "迁移单个会话数据失败: ${entity.id}", e)
                     }
@@ -295,10 +285,7 @@ class ConversationRepository(
     }
 
     suspend fun deleteConversationOfAssistant(assistantId: Uuid) {
-        conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = false).first().forEach {
-            deleteConversation(fetchFullConversation(it))
-        }
-        conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true).first().forEach {
+        conversationDAO.getConversationsOfAssistant(assistantId.toString()).first().forEach {
             deleteConversation(fetchFullConversation(it))
         }
     }
@@ -321,7 +308,7 @@ class ConversationRepository(
             lastPruneTime = conversation.lastPruneTime,
             lastPruneMessageCount = conversation.lastPruneMessageCount,
             lastRefreshTime = conversation.lastRefreshTime,
-            isVirtual = conversation.isVirtual
+            isVirtual = false // 写入数据库时固定为 false，维持列兼容
         )
     }
 
@@ -349,8 +336,7 @@ class ConversationRepository(
             lastSummarizedMessageTime = entity.lastSummarizedMessageTime,
             lastPruneTime = entity.lastPruneTime,
             lastPruneMessageCount = entity.lastPruneMessageCount,
-            lastRefreshTime = entity.lastRefreshTime,
-            isVirtual = entity.isVirtual
+            lastRefreshTime = entity.lastRefreshTime
         )
     }
 
@@ -420,8 +406,7 @@ class ConversationRepository(
             updateAt = Instant.ofEpochMilli(summary.updateAt),
             isPinned = summary.isPinned,
             isConsolidated = summary.isConsolidated,
-            messageNodes = emptyList(),
-            isVirtual = summary.isVirtual
+            messageNodes = emptyList()
         )
     }
 
@@ -440,19 +425,6 @@ class ConversationRepository(
     suspend fun recordDailyActivity() {
         val date = LocalDate.now().toString()
         dailyActivityDAO.recordActivity(date)
-    }
-
-    fun getAllVirtualMessagesOfAssistant(assistantId: Uuid): Flow<List<MessageNode>> {
-        return conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true)
-            .map { conversations ->
-                conversations.sortedBy { it.createAt }
-                    .flatMap { entity -> fetchFullConversation(entity).messageNodes }
-            }
-    }
-
-    fun getVirtualConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
-        return conversationDAO.getConversationsOfAssistant(assistantId.toString(), isVirtual = true)
-            .map { entities -> entities.map { fetchFullConversation(it) } }
     }
 
     suspend fun migrateConversationDatesToActivity() {

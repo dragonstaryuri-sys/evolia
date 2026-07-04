@@ -40,7 +40,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -66,6 +66,14 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 16->17 迁移：清理弃用的虚拟世界索引")
+                // 物理删除旧索引，Room 在代码中删除索引后，必须在此手动执行 SQL 才能通过启动校验
+                db.execSQL("DROP INDEX IF EXISTS `index_ConversationEntity_is_virtual` ")
+            }
+        }
 
         val MIGRATION_15_16 = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {

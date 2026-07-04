@@ -41,9 +41,6 @@ import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_WORLD_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_TRANSITION_TO_NORMAL
-import me.rerere.rikkahub.data.ai.prompts.VIRTUAL_TRANSITION_TO_VIRTUAL
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -607,11 +604,7 @@ class GenerationHandler(
         val afterSystemEntries = activatedEntries.filter { it.injectionPosition != InjectionPosition.BEFORE_SYSTEM }
 
         val staticSystemPromptBuilder = StringBuilder()
-        val modeDescription = if (assistant.isMain && assistant.isVirtualWorldMode) {
-            "用户和你现在在你的电子（虚拟）世界。\n"
-        } else {
-            "**你是ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。你通过evolia这个app和用户对话互动。**\n"
-        }
+        val modeDescription = "**你是ai。你的能力范围仅限于文字及工具列表中可调用的工具，无法为用户做更多的事情，不要向用户隐瞒这一点或编造你的能力。你通过evolia这个app和用户对话互动。**\n"
         if (assistant.isMain) {
             staticSystemPromptBuilder.append(modeDescription)
         }
@@ -631,17 +624,6 @@ class GenerationHandler(
             staticSystemPromptBuilder.appendLine("\n")
         }
 
-        val styleExamples = if (assistant.isMain && assistant.isVirtualWorldMode) {
-            assistant.virtualLanguageStyleExamples
-        } else {
-            assistant.languageStyleExamples
-        }
-
-
-        if (assistant.isVirtualWorldMode) {
-            staticSystemPromptBuilder.append(VIRTUAL_WORLD_PROMPT)
-            staticSystemPromptBuilder.appendLine("\n")
-        }
 
         if (assistant.learningMode) {
             val promptTemplate = settings.learningModePrompt.ifEmpty { DEFAULT_LEARNING_MODE_PROMPT }
@@ -893,35 +875,6 @@ class GenerationHandler(
                         memoriesToInject.addAll(todayL2Memories)
                     }
 
-                    // 2. Mode Transition: 带入另一模式的聊天记录用于衔接
-                    val lastConv = assistant.lastConversationId?.let { conversationRepo.getConversationById(it) }
-                    val isLastFromToday = lastConv?.updateAt?.atZone(zoneId)?.toLocalDate() == today
-                    if (isLastFromToday && lastConv != null && assistant.isVirtualWorldMode != lastConv.isVirtual) {
-                        val transitionPrompt = if (assistant.isVirtualWorldMode) {
-                            VIRTUAL_TRANSITION_TO_VIRTUAL
-                        } else {
-                            VIRTUAL_TRANSITION_TO_NORMAL
-                        }
-
-                        val lastRawHistory = lastConv.currentMessages
-                            .filter { !it.skipContext }
-                            .takeLast(6)
-                            .joinToString("\n") { msg ->
-                                "${msg.role.name}: ${msg.toContentText()}"
-                            }
-
-                        if (lastRawHistory.isNotBlank()) {
-                            Log.i(TAG, "Injecting mode transition raw messages.")
-                            memoriesToInject.add(
-                                AssistantMemory(
-                                    id = 0,
-                                    content = "$transitionPrompt\n\nRecent messages from previous mode:\n$lastRawHistory",
-                                    type = 2,
-                                    timestamp = lastConv.updateAt.toEpochMilli()
-                                )
-                            )
-                        }
-                    }
                     memoriesToInject
                 } else {
                     emptyList()
@@ -1095,7 +1048,7 @@ class GenerationHandler(
                             appendLine()
                         }
                         // Reference Variables
-                        if (!assistant.isVirtualWorldMode && assistant.referenceVariables.isNotBlank()) {
+                        if (assistant.referenceVariables.isNotBlank()) {
                             appendLine("## 其他信息")
                             appendLine(
                                 assistant.referenceVariables.applyPlaceholders(
@@ -1169,9 +1122,9 @@ class GenerationHandler(
                             appendLine("编造时间将会受到系统处罚。")
                             appendLine()
                         }
-                        if (styleExamples.isNotEmpty()) {
+                        if (assistant.languageStyleExamples.isNotEmpty()) {
                             appendLine("## 语言风格示例")
-                            styleExamples.forEach { example ->
+                            assistant.languageStyleExamples.forEach { example ->
                                 append("- ").appendLine(example)
                             }
                         }

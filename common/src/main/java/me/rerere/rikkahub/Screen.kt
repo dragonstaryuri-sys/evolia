@@ -10,9 +10,6 @@ sealed interface Screen {
     data class Chat(val id: String, val text: String? = null, val files: List<String> = emptyList(), val searchQuery: String? = null) : Screen
 
     @Serializable
-    data class VirtualWorld(val id: String) : Screen
-
-    @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
 
     @Serializable
