@@ -279,6 +279,25 @@ fun AssistantToolsSubPage(
                         )
                     }
                 )
+
+                // Image Generation
+                SettingGroupItem(
+                    title = stringResource(R.string.img_gen_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_image_generation_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.ImageGeneration),
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.ImageGeneration
+                                } else {
+                                    assistant.localTools - LocalToolOption.ImageGeneration
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    }
+                )
             }
 
             // Email Service (Available for all assistants)

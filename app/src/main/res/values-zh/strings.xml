@@ -1683,4 +1683,7 @@
   <string name="assistant_memory_now">立即整合</string>
   <string name="assistant_memory_now_tip">立即为当前会话生成总结</string>
   <string name="consolidate_failed_empty_summary">返回结果为空</string>
+  <!-- 图片生成 -->
+  <string name="img_gen_title">图像生成</string>
+  <string name="assistant_page_local_tools_image_generation_desc">允许助手根据提示词生成图片，并自动保存到生图记录中</string>
 </resources>

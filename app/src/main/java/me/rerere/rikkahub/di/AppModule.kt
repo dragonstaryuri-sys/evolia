@@ -42,6 +42,8 @@ val appModule = module {
             monitorTaskRepo = get(),
             userDeviceStateRepo = get(),
             okHttpClient = get(),
+            providerManager = get(),
+            genMediaRepository = get(),
         )
     }
 

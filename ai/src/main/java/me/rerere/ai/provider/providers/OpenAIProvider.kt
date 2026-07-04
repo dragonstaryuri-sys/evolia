@@ -36,6 +36,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import android.util.Base64
 
 class OpenAIProvider(
     private val client: OkHttpClient
@@ -255,12 +256,29 @@ class OpenAIProvider(
         val items = data.map { imageJson ->
             val imageObj = imageJson.jsonObject
             val b64Json = imageObj["b64_json"]?.jsonPrimitive?.contentOrNull
-                ?: error("No b64_json in response")
 
-            ImageGenerationItem(
-                data = b64Json,
-                mimeType = "image/png"
-            )
+            if (b64Json != null) {
+                ImageGenerationItem(
+                    data = b64Json,
+                    mimeType = "image/png"
+                )
+            } else {
+                // 如果没有 b64_json，尝试获取 url 并下载转换为 base64
+                val imageUrl = imageObj["url"]?.jsonPrimitive?.contentOrNull
+                    ?: error("No b64_json or url in response")
+
+                val imageRequest = Request.Builder().url(imageUrl).get().build()
+                val imageResponse = client.newCall(imageRequest).await()
+                if (!imageResponse.isSuccessful) error("Failed to download image from URL: $imageUrl")
+
+                val bytes = imageResponse.body?.bytes() ?: error("Empty image body")
+                val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+
+                ImageGenerationItem(
+                    data = base64,
+                    mimeType = "image/png"
+                )
+            }
         }
         ImageGenerationResult(items = items)
     }

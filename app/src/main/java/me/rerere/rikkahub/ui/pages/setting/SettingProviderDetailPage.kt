@@ -1317,6 +1317,8 @@ private fun ModelSettingsForm(
         val inputModality = ModelRegistry.MODEL_INPUT_MODALITIES.getData(id)
         val outputModality = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(id)
         val abilities = ModelRegistry.MODEL_ABILITIES.getData(id)
+        val modelType = ModelRegistry.MODEL_TYPE.getData(id)
+        val imageGenMethod = ModelRegistry.MODEL_IMAGE_GEN_METHOD.getData(id)
         // Extract providerSlug from model ID if it contains "/" (e.g., "anthropic/claude-3.5" -> "anthropic")
         val providerSlug = if (id.contains("/")) id.substringBefore("/") else null
         onModelChange(
@@ -1326,7 +1328,9 @@ private fun ModelSettingsForm(
                 inputModalities = inputModality,
                 outputModalities = outputModality,
                 abilities = abilities,
-                providerSlug = providerSlug
+                providerSlug = providerSlug,
+                type = modelType,
+                imageGenerationMethod = imageGenMethod
             )
         )
     }
@@ -1555,11 +1559,15 @@ private fun AddModelButton(
                 val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
                 val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
                 val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
+                val modelType = ModelRegistry.MODEL_TYPE.getData(model.modelId)
+                val imageGenMethod = ModelRegistry.MODEL_IMAGE_GEN_METHOD.getData(model.modelId)
                 onAddModel(
                     model.copy(
                         inputModalities = inputModalities,
                         outputModalities = outputModalities,
-                        abilities = abilities
+                        abilities = abilities,
+                        type = modelType,
+                        imageGenerationMethod = imageGenMethod
                     )
                 )
             },
@@ -1754,10 +1762,14 @@ private fun ModelPickerFab(
                             val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
                             val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
                             val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
+                            val modelType = ModelRegistry.MODEL_TYPE.getData(model.modelId)
+                            val imageGenMethod = ModelRegistry.MODEL_IMAGE_GEN_METHOD.getData(model.modelId)
                             model.copy(
                                 inputModalities = inputModalities,
                                 outputModalities = outputModalities,
-                                abilities = abilities
+                                abilities = abilities,
+                                type = modelType,
+                                imageGenerationMethod = imageGenMethod
                             )
                         }
                         if (modelsToAdd.isNotEmpty()) {
@@ -1801,7 +1813,7 @@ private fun ModelPickerFab(
                         }
                     }
                     items(filteredModels) { model ->
-                        val isSelected = selectedModels.any { it.modelId == model.modelId }
+                        val isSelected = selectedModels.any { modelId -> modelId.modelId == model.modelId }
                         Card(
                             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                             colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -1837,6 +1849,8 @@ private fun ModelPickerFab(
                                                 inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId),
                                                 outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId),
                                                 abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId),
+                                                type = ModelRegistry.MODEL_TYPE.getData(model.modelId),
+                                                imageGenerationMethod = ModelRegistry.MODEL_IMAGE_GEN_METHOD.getData(model.modelId)
                                             )
                                         }
                                         ModelModalityTag(model = modelMeta)
@@ -1850,11 +1864,15 @@ private fun ModelPickerFab(
                                             val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
                                             val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
                                             val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
+                                            val modelType = ModelRegistry.MODEL_TYPE.getData(model.modelId)
+                                            val imageGenMethod = ModelRegistry.MODEL_IMAGE_GEN_METHOD.getData(model.modelId)
                                             onAddModel(
                                                 model.copy(
                                                     inputModalities = inputModalities,
                                                     outputModalities = outputModalities,
-                                                    abilities = abilities
+                                                    abilities = abilities,
+                                                    type = modelType,
+                                                    imageGenerationMethod = imageGenMethod
                                                 )
                                             )
                                         }
@@ -2040,10 +2058,14 @@ private fun ModelPicker(
                             val inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(model.modelId)
                             val outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(model.modelId)
                             val abilities = ModelRegistry.MODEL_ABILITIES.getData(model.modelId)
+                            val modelType = ModelRegistry.MODEL_TYPE.getData(model.modelId)
+                            val imageGenMethod = ModelRegistry.MODEL_IMAGE_GEN_METHOD.getData(model.modelId)
                             model.copy(
                                 inputModalities = inputModalities,
                                 outputModalities = outputModalities,
-                                abilities = abilities
+                                abilities = abilities,
+                                type = modelType,
+                                imageGenerationMethod = imageGenMethod
                             )
                         }
                         if (modelsToAdd.isNotEmpty()) {
@@ -2132,6 +2154,8 @@ private fun ModelPicker(
                                                 inputModalities = ModelRegistry.MODEL_INPUT_MODALITIES.getData(it.modelId),
                                                 outputModalities = ModelRegistry.MODEL_OUTPUT_MODALITIES.getData(it.modelId),
                                                 abilities = ModelRegistry.MODEL_ABILITIES.getData(it.modelId),
+                                                type = ModelRegistry.MODEL_TYPE.getData(it.modelId),
+                                                imageGenerationMethod = ModelRegistry.MODEL_IMAGE_GEN_METHOD.getData(it.modelId)
                                             )
                                         }
                                         ModelModalityTag(

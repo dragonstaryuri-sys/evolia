@@ -48,4 +48,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("web_page_reader")
     data object WebPageReader : LocalToolOption()
+
+    @Serializable
+    @SerialName("image_generation")
+    data object ImageGeneration : LocalToolOption()
 }

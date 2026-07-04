@@ -2,6 +2,8 @@ package me.rerere.ai.registry
 
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.ImageGenerationMethod
 
 fun interface ModelData<T> {
     fun getData(modelId: String): T
@@ -64,6 +66,8 @@ object ModelRegistry {
     private val LLAMA_3_3 = ModelMatcher.containsRegex("llama-3.3")
     private val LLAMA_4 = ModelMatcher.containsRegex("llama-4")
 
+    private val IMAGE_GEN_MODELS_MATCH = ModelMatcher.containsRegex("cogview|glm-image|dall-e|flux|stable-diffusion|sdxl")
+
     val VISION_MODELS =
         GPT4O + GPT_4_1 + GPT_5 + GPT_5_MULTI + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 +
             GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + DOUBAO_SEED + VISION_SUFFIX + OMNI_SUFFIX
@@ -89,7 +93,7 @@ object ModelRegistry {
     }
 
     val MODEL_OUTPUT_MODALITIES = ModelData { modelId ->
-        if (CHAT_IMAGE_GEN_MODELS.match(modelId)) {
+        if (CHAT_IMAGE_GEN_MODELS.match(modelId) || IMAGE_GEN_MODELS_MATCH.match(modelId)) {
             listOf(Modality.TEXT, Modality.IMAGE)
         } else {
             listOf(Modality.TEXT)
@@ -104,6 +108,22 @@ object ModelRegistry {
             if (REASONING_MODELS.match(modelId)) {
                 add(ModelAbility.REASONING)
             }
+        }
+    }
+
+    val MODEL_TYPE = ModelData { modelId ->
+        if (IMAGE_GEN_MODELS_MATCH.match(modelId)) {
+            ModelType.IMAGE
+        } else {
+            ModelType.CHAT
+        }
+    }
+
+    val MODEL_IMAGE_GEN_METHOD = ModelData { modelId ->
+        if (IMAGE_GEN_MODELS_MATCH.match(modelId)) {
+            ImageGenerationMethod.DIFFUSION
+        } else {
+            null
         }
     }
 }

@@ -43,6 +43,23 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
+import me.rerere.ai.provider.ProviderManager
+import me.rerere.rikkahub.core.data.db.repository.GenMediaRepository
+import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.data.datastore.findProvider
+import me.rerere.ai.provider.ImageGenerationParams
+import me.rerere.ai.ui.ImageAspectRatio
+import me.rerere.ai.ui.ImageGenerationItem
+import me.rerere.rikkahub.utils.getImagesDir
+import me.rerere.rikkahub.utils.createCompressedImageFromBase64
+import me.rerere.rikkahub.core.data.db.entity.GenMediaEntity
+import java.io.File
+import me.rerere.ai.provider.ImageGenerationMethod
+import me.rerere.ai.provider.TextGenerationParams
+import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.provider.Modality
 
 // 用于在 Tool 和 AccessibilityService 之间传递即时控制指令
 object DeviceCommandHub {
@@ -62,6 +79,8 @@ fun rememberLocalTools(): LocalTools {
     val monitorTaskRepo = koinInject<AgentMonitorTaskRepository>()
     val userDeviceStateRepo = koinInject<UserDeviceStateRepository>()
     val okHttpClient = koinInject<OkHttpClient>()
+    val providerManager = koinInject<ProviderManager>()
+    val genMediaRepository = koinInject<GenMediaRepository>()
 
     return remember {
         LocalTools(
@@ -75,7 +94,9 @@ fun rememberLocalTools(): LocalTools {
             milestoneRepo,
             monitorTaskRepo,
             userDeviceStateRepo,
-            okHttpClient
+            okHttpClient,
+            providerManager,
+            genMediaRepository
         )
     }
 }
@@ -91,7 +112,9 @@ class LocalTools(
     private val milestoneRepo: MilestoneRepository,
     private val monitorTaskRepo: AgentMonitorTaskRepository,
     private val userDeviceStateRepo: UserDeviceStateRepository,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val providerManager: ProviderManager,
+    private val genMediaRepository: GenMediaRepository
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -1005,6 +1028,15 @@ class LocalTools(
         }
     }
 
+    private fun extractTextFromUIMessage(uiMessage: UIMessage): String {
+        return uiMessage.parts.joinToString("\n") { part ->
+            when (part) {
+                is UIMessagePart.Text -> part.text
+                else -> ""
+            }
+        }
+    }
+
     data class MailData(val subject: String, val from: String, val date: String, val content: String)
 
     fun getAgentTaskTools(assistantId: Uuid): List<Tool> {
@@ -1741,6 +1773,142 @@ class LocalTools(
         )
     }
 
+    fun getImageGenerationTools(): List<Tool> {
+        return listOf(
+            Tool(
+                name = "generate_image",
+                description = "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接。建议提示词使用详细的英文描述以获得更好效果。",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("prompt", buildJsonObject {
+                                put("type", "string")
+                                put("description", "描述要生成的图像的提示词")
+                            })
+                            put("num_images", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "生成的图像数量，1-4，默认为 1")
+                            })
+                            put("aspect_ratio", buildJsonObject {
+                                put("type", "string")
+                                put("description", "图像纵横比：SQUARE (1:1), PORTRAIT (2:3), LANDSCAPE (3:2)")
+                                put("enum", JsonArray(listOf(JsonPrimitive("SQUARE"), JsonPrimitive("PORTRAIT"), JsonPrimitive("LANDSCAPE"))))
+                            })
+                        },
+                        required = listOf("prompt")
+                    )
+                },
+                execute = { args ->
+                    val prompt = args.jsonObject["prompt"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val numImages = (args.jsonObject["num_images"]?.jsonPrimitive?.intOrNull ?: 1).coerceIn(1, 4)
+                    val aspectRatioStr = args.jsonObject["aspect_ratio"]?.jsonPrimitive?.contentOrNull ?: "SQUARE"
+                    val aspectRatio = try { ImageAspectRatio.valueOf(aspectRatioStr) } catch (e: Exception) { ImageAspectRatio.SQUARE }
+
+                    withContext(Dispatchers.IO) {
+                        try {
+                            val settings = settingsStore.settingsFlow.value
+                            val model = settings.findModelById(settings.imageGenerationModelId)
+                                ?: return@withContext buildJsonObject { put("error", "未配置生图模型，请在设置中配置。") }
+
+                            val provider = model.findProvider(settings.providers)
+                                ?: return@withContext buildJsonObject { put("error", "找不到对应的 Provider 实例。") }
+
+                            val providerSetting = settings.providers.find { it.id == provider.id }
+                                ?: return@withContext buildJsonObject { put("error", "找不到 Provider 设置。") }
+
+                            val method = model.imageGenerationMethod ?: ImageGenerationMethod.DIFFUSION
+
+                            val items = when (method) {
+                                ImageGenerationMethod.MULTIMODAL -> {
+                                    val modelWithImageOutput = model.copy(
+                                        outputModalities = model.outputModalities + Modality.IMAGE
+                                    )
+                                    val textParams = TextGenerationParams(
+                                        model = modelWithImageOutput,
+                                        temperature = null,
+                                        topP = null,
+                                        maxTokens = null,
+                                        tools = emptyList(),
+                                        thinkingBudget = null,
+                                        customHeaders = model.customHeaders,
+                                        customBody = model.customBodies
+                                    )
+                                    val messages = listOf(UIMessage(role = MessageRole.USER, parts = listOf(UIMessagePart.Text(prompt))))
+                                    val result = providerManager.getProviderByType(provider).generateText(providerSetting, messages, textParams)
+                                    val images = mutableListOf<ImageGenerationItem>()
+                                    val textResponse = mutableListOf<String>()
+
+                                    result.choices.forEach { choice ->
+                                        choice.message?.parts?.forEach { part ->
+                                            when (part) {
+                                                is UIMessagePart.Image -> images.add(ImageGenerationItem(data = part.url, mimeType = "image/png"))
+                                                is UIMessagePart.Text -> textResponse.add(part.text)
+                                                else -> {}
+                                            }
+                                        }
+                                    }
+
+                                    if (images.isEmpty()) {
+                                        val reason = textResponse.joinToString("\n").ifBlank { "模型未返回任何图像内容，且没有提供文字解释。" }
+                                        throw IllegalStateException("生图失败。模型回复：$reason")
+                                    }
+                                    images
+                                }
+                                ImageGenerationMethod.DIFFUSION -> {
+                                    val params = ImageGenerationParams(
+                                        model = model,
+                                        prompt = prompt,
+                                        numOfImages = numImages,
+                                        aspectRatio = aspectRatio,
+                                        customHeaders = model.customHeaders,
+                                        customBody = model.customBodies
+                                    )
+                                    providerManager.getProviderByType(provider).generateImage(providerSetting, params).items
+                                }
+                            }
+
+                            val generatedFiles = mutableListOf<JsonObject>()
+                            val imagesDir = context.getImagesDir()
+
+                            items.forEachIndexed { index, item ->
+                                val timestamp = System.currentTimeMillis()
+                                val filename = "${timestamp}_${model.displayName}_$index.webp"
+                                val imageFile = File(imagesDir, filename)
+
+                                context.createCompressedImageFromBase64(item.data, imageFile.absolutePath, 80)
+
+                                val relativePath = "images/${imageFile.name}"
+                                val entity = GenMediaEntity(
+                                    path = relativePath,
+                                    modelId = model.displayName,
+                                    prompt = prompt,
+                                    createAt = timestamp
+                                )
+                                genMediaRepository.insertMedia(entity)
+
+                                val uri = android.net.Uri.fromFile(imageFile)
+                                generatedFiles.add(buildJsonObject {
+                                    put("name", filename)
+                                    put("uri", uri.toString())
+                                    put("markdown_link", "![generated_image]($uri)")
+                                })
+                            }
+
+                            buildJsonObject {
+                                put("success", true)
+                                put("generated_images", JsonArray(generatedFiles))
+                                put("note", "请在你的回复中直接包含 generated_images[].markdown_link 以便用户查看图片。")
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("LocalTools", "Failed to generate image in tool", e)
+                            buildJsonObject { put("error", e.message ?: "图像生成失败") }
+                        }
+                    }
+                }
+            )
+        )
+    }
+
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
@@ -1760,6 +1928,7 @@ class LocalTools(
         if (options.contains(LocalToolOption.MilestoneManagement)) tools.addAll(getMilestoneTools(assistantId))
         if (options.contains(LocalToolOption.PeekUser)) tools.addAll(getPeekUserTools(assistantId))
         if (options.contains(LocalToolOption.WebPageReader)) tools.addAll(getWebPageReaderTools())
+        if (options.contains(LocalToolOption.ImageGeneration)) tools.addAll(getImageGenerationTools())
         return tools
     }
 }
