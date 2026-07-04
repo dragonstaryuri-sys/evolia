@@ -280,24 +280,6 @@ fun AssistantToolsSubPage(
                     }
                 )
 
-                // Image Generation
-                SettingGroupItem(
-                    title = stringResource(R.string.img_gen_title),
-                    subtitle = stringResource(R.string.assistant_page_local_tools_image_generation_desc),
-                    trailing = {
-                        HapticSwitch(
-                            checked = assistant.localTools.contains(LocalToolOption.ImageGeneration),
-                            onCheckedChange = { enabled ->
-                                val newLocalTools = if (enabled) {
-                                    assistant.localTools + LocalToolOption.ImageGeneration
-                                } else {
-                                    assistant.localTools - LocalToolOption.ImageGeneration
-                                }
-                                onUpdate(assistant.copy(localTools = newLocalTools))
-                            }
-                        )
-                    }
-                )
             }
 
             // Email Service (Available for all assistants)
@@ -319,11 +301,29 @@ fun AssistantToolsSubPage(
                     )
                 }
             )
+            // Image Generation
+            SettingGroupItem(
+                title = stringResource(R.string.img_gen_title),
+                subtitle = stringResource(R.string.assistant_page_local_tools_image_generation_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.ImageGeneration),
+                        onCheckedChange = { enabled ->
+                            val newLocalTools = if (enabled) {
+                                assistant.localTools + LocalToolOption.ImageGeneration
+                            } else {
+                                assistant.localTools - LocalToolOption.ImageGeneration
+                            }
+                            onUpdate(assistant.copy(localTools = newLocalTools))
+                        }
+                    )
+                }
+            )
 
             // Update Profile (资料维护)
             // 改造：只有主智能体显示，且默认开启（业务上主智能体通常自带此工具）。
             // 其他智能体仅在 Debug 模式下显示，Release 版不显示。
-            if (assistant.isMain || BuildConfig.DEBUG) {
+            if (assistant.isMain) {
                 val updateProfileEnabled = assistant.localTools.contains(LocalToolOption.UpdateProfile)
                 SettingGroupItem(
                     title = stringResource(R.string.assistant_page_local_tools_update_profile_title),

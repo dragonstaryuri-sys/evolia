@@ -976,7 +976,9 @@ class ChatService(
                                 }
                             } else {
                                 assistant.localTools.filter {
-                                    it is LocalToolOption.TimeSense || it is LocalToolOption.EmailService
+                                    it is LocalToolOption.TimeSense ||
+                                    it is LocalToolOption.EmailService ||
+                                    it is LocalToolOption.ImageGeneration
                                 }
                             }
 
