@@ -20,6 +20,7 @@ import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
+import me.rerere.ai.ui.isEmptyUIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -126,7 +127,18 @@ class ChatVM(
         var hasSeenContent = false
         finalConvs.forEachIndexed { index, c ->
             val isCurrentActive = c.id == activeId
-            val hasContent = c.messageNodes.isNotEmpty()
+
+            // 过滤掉完全为空的消息节点
+            val filteredNodes = c.messageNodes.filter { node ->
+                val msg = node.currentMessage
+                if (msg.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
+                    !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
+                } else {
+                    true
+                }
+            }
+
+            val hasContent = filteredNodes.isNotEmpty()
 
             if (index > 0 && (hasContent || isCurrentActive)) {
                 if (hasSeenContent) {
@@ -137,7 +149,7 @@ class ChatVM(
             if (hasContent) {
                 hasSeenContent = true
             }
-            items.addAll(c.messageNodes.map { ChatUIItem.Message(it) })
+            items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
         }
         items
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())

@@ -336,8 +336,11 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
             is UIMessagePart.Image -> message.url.isBlank()
             is UIMessagePart.Document -> message.url.isBlank()
             is UIMessagePart.Reasoning -> message.reasoning.isBlank()
+            is UIMessagePart.Thinking -> message.thinking.isBlank()
             is UIMessagePart.Video -> message.url.isBlank()
             is UIMessagePart.Audio -> message.url.isBlank()
+            is UIMessagePart.ToolCall -> false
+            is UIMessagePart.ToolResult -> false
             else -> true
         }
     }

@@ -618,6 +618,7 @@ fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySe
         codeBlockAutoWrap = ui.codeBlockAutoWrap ?: displaySetting.codeBlockAutoWrap,
         codeBlockAutoCollapse = ui.codeBlockAutoCollapse ?: displaySetting.codeBlockAutoCollapse,
         showContextStacks = ui.showContextStacks ?: displaySetting.showContextStacks,
+        wechatMode = ui.wechatMode ?: displaySetting.wechatMode,
     )
 }
 

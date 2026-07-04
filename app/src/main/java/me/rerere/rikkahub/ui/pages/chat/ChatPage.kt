@@ -73,7 +73,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+
 
     LaunchedEffect(Unit) {
         launch {
@@ -337,7 +337,7 @@ private fun ChatPageContent(
                         settings = setting,
                         conversationId = conversation.id,
                         hasUserMessages = remember(conversation.messageNodes) {
-                            conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                            conversation.messageNodes.any { it.role == MessageRole.USER }
                         },
                         bigScreen = bigScreen,
                         previewMode = previewMode,
@@ -436,14 +436,14 @@ private fun ChatPageContent(
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {
-                        conversation.messageNodes.any { it.role == me.rerere.ai.core.MessageRole.USER }
+                        conversation.messageNodes.any { it.role == MessageRole.USER }
                     }
                     val hasAnyPresetMessages = currentAssistant.presetMessages.isNotEmpty()
                     val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
 
                     AnimatedVisibility(
                         visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages,
-                        enter = androidx.compose.animation.fadeIn(),
+                        enter = fadeIn(),
                         exit = androidx.compose.animation.fadeOut(),
                         modifier = Modifier.align(Alignment.Center)
                     ) {
@@ -975,27 +975,27 @@ private fun TopBar(
                                 dampingRatio = 0.6f,
                                 stiffness = 300f
                             )
-                        ) + androidx.compose.animation.scaleIn(
+                        ) + scaleIn(
                             initialScale = 0.92f,
-                            animationSpec = androidx.compose.animation.core.spring(
+                            animationSpec = spring(
                                 dampingRatio = 0.6f,
                                 stiffness = 300f
                             )
-                        )) togetherWith (androidx.compose.animation.fadeOut(
-                            animationSpec = androidx.compose.animation.core.spring(
+                        )) togetherWith (fadeOut(
+                            animationSpec = spring(
                                 dampingRatio = 0.75f,
                                 stiffness = 400f
                             )
-                        ) + androidx.compose.animation.scaleOut(
+                        ) + scaleOut(
                             targetScale = 0.92f,
-                            animationSpec = androidx.compose.animation.core.spring(
+                            animationSpec = spring(
                                 dampingRatio = 0.75f,
                                 stiffness = 400f
                             )
-                        )) using androidx.compose.animation.SizeTransform(
+                        )) using SizeTransform(
                             clip = false,
                             sizeAnimationSpec = { _, _ ->
-                                androidx.compose.animation.core.spring(
+                                spring(
                                     dampingRatio = 0.6f,
                                     stiffness = 300f
                                 )
