@@ -838,18 +838,21 @@ private fun AssistantMessageTurn(
         }
 
         try {
-            // Initial typing notification
-            onTypingStateChange(true)
-
-            // Initial "thinking" wait
             if (displayedCount == 0) {
+                // 等待条件：直到 AI 真正开始产生内容，或者 activityState 进入了非空闲状态
                 while (currentBubbles.isEmpty() && isAiLoading) {
+                    // 如果你的 activityState 有 "正在请求" 之类的状态，也可以加入判断
+                    // 例如: if (activityState !is ActivityState.Hidden) break
                     delay(100)
                 }
+
+                // 当跳出上面的循环，说明 AI 已经开始响应了
                 if (currentBubbles.isNotEmpty()) {
                     displayedCount = 1
                 }
             }
+            // Initial typing notification
+            onTypingStateChange(isAiLoading || displayedCount < currentBubbles.size)
 
             while (true) {
                 val latest = currentBubbles
@@ -861,8 +864,8 @@ private fun AssistantMessageTurn(
                 if (displayedCount < totalAvailable) {
                     // If AI already cut the next bubble, or generation stopped, delay the current one
                     val prevSentence = latest.getOrNull(displayedCount - 1)?.second?.text ?: ""
-                    // 打字速度建议：每个字 60ms + 500ms 基础延迟
-                    val delayTime = (prevSentence.length * 150L + 500L).coerceIn(800L, 3000L)
+                    // 打字速度建议：每个字 300ms 基础延迟
+                    val delayTime = (prevSentence.length * 300L + 500L).coerceIn(800L, 5000L)
                     delay(delayTime)
                     displayedCount++
                 } else {
