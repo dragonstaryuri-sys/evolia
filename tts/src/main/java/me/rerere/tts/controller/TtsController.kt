@@ -40,7 +40,7 @@ class TtsController(
 
     // 组件
     private val chunker = TextChunker(maxChunkLength = 160)
-    private val synthesizer = TtsSynthesizer(ttsManager)
+    private val synthesizer = TtsSynthesizer(context, ttsManager)
     private val audio = AudioPlayer(context)
 
     // Provider & 作业
