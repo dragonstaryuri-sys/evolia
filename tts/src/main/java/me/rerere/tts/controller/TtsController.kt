@@ -149,7 +149,7 @@ class TtsController(
      */
     fun speakWithProvider(text: String, provider: TTSProviderSetting, flush: Boolean = true) {
         if (text.isBlank()) return
-        
+
         val newChunks = chunker.split(text)
         if (newChunks.isEmpty()) return
 
@@ -287,12 +287,11 @@ class TtsController(
                     prefetchFrom(chunk.index + 1)
 
                     // Retry logic for synthesis with exponential backoff
-                    // We keep retrying until success to ensure no chunk is skipped
                     var response: TTSResponse? = null
                     var lastError: Exception? = null
-                    val maxRetries = 5  // Increased from 3
+                    val maxRetries = 5
                     var totalAttempts = 0
-                    
+
                     while (response == null && isActive) {
                         for (attempt in 1..maxRetries) {
                             totalAttempts++
@@ -303,38 +302,42 @@ class TtsController(
                                 if (e is CancellationException) throw e
                                 lastError = e
                                 Log.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}", e)
-                                
+
                                 if (attempt < maxRetries) {
                                     // Exponential backoff: 500ms, 1s, 2s, 4s, 8s
                                     delay((500L * (1 shl (attempt - 1))).coerceAtMost(8000L))
                                 }
                             }
                         }
-                        
-                        // If still no response after max retries, wait longer and try again
+
                         if (response == null) {
                             val errorMsg = lastError?.message ?: "Unknown error"
                             Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
-                            delay(5000L) // Wait 5 seconds before retrying the whole loop
-                            
-                            // After too many overall attempts, give up on this chunk
+
+                            // If it's a rate limit error (often indicated by message or code), wait longer
+                            val waitTime = if (errorMsg.contains("rate_limit", ignoreCase = true) || errorMsg.contains("concurrent", ignoreCase = true)) {
+                                10000L // 10 seconds for rate limits
+                            } else {
+                                5000L
+                            }
+                            delay(waitTime)
+
                             if (totalAttempts >= 15) {
-                                val errorMsg = lastError?.message ?: "Unknown error"
-                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $errorMsg", lastError)
-                                _error.update { "TTS failed after $totalAttempts attempts: $errorMsg" }
+                                val finalErrorMsg = lastError?.message ?: "Unknown error"
+                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $finalErrorMsg")
+                                _error.update { "TTS failed after $totalAttempts attempts: $finalErrorMsg" }
                                 break
                             }
                         }
                     }
-                    
+
                     if (response == null) {
-                        // Only skip if we gave up after many attempts
                         processedCount++
                         continue
                     }
 
-                    // 播放 with retry - never skip playback failures either
+                    // 播放 with retry
                     var playbackSuccess = false
                     for (attempt in 1..3) {
                         try {
@@ -382,13 +385,18 @@ class TtsController(
     }
 
     private suspend fun awaitOrCreate(chunk: TtsChunk, provider: TTSProviderSetting): TTSResponse {
-        val deferred = cache.computeIfAbsent(chunk.id) {
-            scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
+        var deferred = cache[chunk.id]
+        if (deferred == null || deferred.isCancelled) {
+            deferred = scope.async(Dispatchers.IO) { synthesizer.synthesize(provider, chunk) }
+            cache[chunk.id] = deferred
         }
+
         return try {
             deferred.await()
-        } finally {
-            // 可按需保留缓存（此处保留，便于重播/重试）
+        } catch (e: Exception) {
+            // CRITICAL: Remove from cache if it fails so that next attempt (retry loop) triggers a fresh request
+            cache.remove(chunk.id)
+            throw e
         }
     }
 
@@ -417,13 +425,11 @@ class TtsController(
 
                     prefetchFromWithProvider(chunk.index + 1, provider)
 
-                    // Retry logic for synthesis with exponential backoff
-                    // We keep retrying until success to ensure no chunk is skipped
                     var response: TTSResponse? = null
                     var lastError: Exception? = null
                     val maxRetries = 5
                     var totalAttempts = 0
-                    
+
                     while (response == null && isActive) {
                         for (attempt in 1..maxRetries) {
                             totalAttempts++
@@ -434,28 +440,34 @@ class TtsController(
                                 if (e is CancellationException) throw e
                                 lastError = e
                                 Log.w(TAG, "Synthesis attempt $attempt/$maxRetries failed for chunk ${chunk.index}", e)
-                                
+
                                 if (attempt < maxRetries) {
                                     delay((500L * (1 shl (attempt - 1))).coerceAtMost(8000L))
                                 }
                             }
                         }
-                        
+
                         if (response == null) {
                             val errorMsg = lastError?.message ?: "Unknown error"
                             Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
-                            delay(5000L)
-                            
+
+                            val waitTime = if (errorMsg.contains("rate_limit", ignoreCase = true) || errorMsg.contains("concurrent", ignoreCase = true)) {
+                                10000L
+                            } else {
+                                5000L
+                            }
+                            delay(waitTime)
+
                             if (totalAttempts >= 15) {
-                                val errorMsg = lastError?.message ?: "Unknown error"
-                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $errorMsg", lastError)
-                                _error.update { "TTS failed after $totalAttempts attempts: $errorMsg" }
+                                val finalErrorMsg = lastError?.message ?: "Unknown error"
+                                Log.e(TAG, "Giving up on chunk ${chunk.index} after $totalAttempts attempts: $finalErrorMsg")
+                                _error.update { "TTS failed after $totalAttempts attempts: $finalErrorMsg" }
                                 break
                             }
                         }
                     }
-                    
+
                     if (response == null) {
                         processedCount++
                         continue
