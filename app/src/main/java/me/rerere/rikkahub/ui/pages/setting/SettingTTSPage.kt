@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -90,6 +89,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Close
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import androidx.compose.foundation.layout.fillMaxHeight
 
 @Composable
 fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
@@ -337,6 +337,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
             }
         ) {
 
+            @Suppress("RemoveExplicitTypeArguments")
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -351,11 +352,13 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 ) {
                     val providerTypeName = when (currentProvider) {
                         is TTSProviderSetting.OpenAI -> "OpenAI"
+                        is TTSProviderSetting.Mimo -> "MiMo"
+                        is TTSProviderSetting.Custom -> "OpenAI(兼容)"
                         is TTSProviderSetting.Gemini -> "Google"
                         is TTSProviderSetting.MiniMax -> "MiniMax"
                         is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
                         is TTSProviderSetting.Azure -> "Azure"
-                        else -> "System"
+                        is TTSProviderSetting.SystemTTS -> "System"
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -827,6 +830,8 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
             listOf(
                 TTSPreset(TTSProviderSetting.SystemTTS::class, "System TTS", R.string.systemtts_dct, isLocal = true),
                 TTSPreset(TTSProviderSetting.OpenAI::class, "OpenAI", R.string.openia_dct),
+                TTSPreset(TTSProviderSetting.Mimo::class, "MiMo", R.string.mimo_dct),
+                TTSPreset(TTSProviderSetting.Custom::class, "Custom(OpenAI兼容)", R.string.openia_dct),
                 TTSPreset(TTSProviderSetting.Gemini::class, "Gemini", R.string.gemini_dct),
                 TTSPreset(TTSProviderSetting.Azure::class, "Azure TTS",R.string.azure_dct ),
                 TTSPreset(TTSProviderSetting.ElevenLabs::class, "ElevenLabs", R.string.elevenlabs_dct),
@@ -929,6 +934,8 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                 val newProvider = when (preset.type) {
                                     TTSProviderSetting.SystemTTS::class -> TTSProviderSetting.SystemTTS(builtIn = true)
                                     TTSProviderSetting.OpenAI::class -> TTSProviderSetting.OpenAI(builtIn = true)
+                                    TTSProviderSetting.Mimo::class -> TTSProviderSetting.Mimo(builtIn = true)
+                                    TTSProviderSetting.Custom::class -> TTSProviderSetting.Custom(builtIn = true)
                                     TTSProviderSetting.Gemini::class -> TTSProviderSetting.Gemini(builtIn = true)
                                     TTSProviderSetting.Azure::class -> TTSProviderSetting.Azure(builtIn = true)
                                     TTSProviderSetting.ElevenLabs::class -> TTSProviderSetting.ElevenLabs(builtIn = true)
@@ -970,6 +977,8 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                                     else -> {
                                         val providerName = when (preset.type) {
                                             TTSProviderSetting.OpenAI::class -> "OpenAI"
+                                            TTSProviderSetting.Mimo::class -> "Mimo"
+                                            TTSProviderSetting.Custom::class -> "OpenAI"
                                             TTSProviderSetting.Gemini::class -> "Google"
                                             TTSProviderSetting.Azure::class -> "Azure"
                                             TTSProviderSetting.ElevenLabs::class -> "ElevenLabs"
@@ -1082,11 +1091,13 @@ private fun TTSProviderItemContent(
             else -> {
                 val providerTypeName = when (provider) {
                     is TTSProviderSetting.OpenAI -> "OpenAI"
+                    is TTSProviderSetting.Mimo -> "Mimo"
                     is TTSProviderSetting.Gemini -> "Google"
                     is TTSProviderSetting.MiniMax -> "MiniMax"
                     is TTSProviderSetting.ElevenLabs -> "ElevenLabs"
                     is TTSProviderSetting.Azure -> "Azure"
-                    else -> "Unknown"
+                    is TTSProviderSetting.SystemTTS -> "System"
+                    is TTSProviderSetting.Custom -> "OpenAI"
                 }
                 AutoProviderIcon(
                     name = providerTypeName,

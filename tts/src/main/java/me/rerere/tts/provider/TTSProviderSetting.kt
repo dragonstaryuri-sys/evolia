@@ -2,7 +2,7 @@ package me.rerere.tts.provider
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
+import me.rerere.rikkahub.common.R
 import kotlin.uuid.Uuid
 
 @Serializable
@@ -22,11 +22,60 @@ sealed class TTSProviderSetting {
     data class OpenAI(
         override var id: Uuid = Uuid.random(),
         override var name: String = "OpenAI TTS",
-        override val builtIn: Boolean = false, // 默认设为 false，通过预设添加时设为 true
+        override val builtIn: Boolean = false,
         val apiKey: String = "",
         val baseUrl: String = "https://api.openai.com/v1",
         val model: String = "gpt-4o-mini-tts",
         val voice: String = "alloy"
+    ) : TTSProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+            builtIn: Boolean
+        ): TTSProviderSetting {
+            return this.copy(
+                id = id,
+                name = name,
+                builtIn = builtIn
+            )
+        }
+    }
+
+    // 新增：小米 MiMo TTS
+    @Serializable
+    @SerialName("mimo")
+    data class Mimo(
+        override var id: Uuid = Uuid.random(),
+        override var name: String = "MiMo TTS",
+        override val builtIn: Boolean = false,
+        val apiKey: String = "",
+        val baseUrl: String = "https://api.xiaomimimo.com/v1/chat/completions",
+        val model: String = "mimo-v2.5-tts",
+        val voice: String = "白桦"
+    ) : TTSProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+            builtIn: Boolean
+        ): TTSProviderSetting {
+            return this.copy(
+                id = id,
+                name = name,
+                builtIn = builtIn
+            )
+        }
+    }
+
+    @Serializable
+    @SerialName("custom")
+    data class Custom(
+        override var id: Uuid = Uuid.random(),
+        override var name: String = "自定义TTS(openAI兼容)",
+        override val builtIn: Boolean = false,
+        val apiKey: String = "",
+        val baseUrl: String = "",
+        val model: String = "",
+        val voice: String = ""
     ) : TTSProviderSetting() {
         override fun copyProvider(
             id: Uuid,
@@ -70,7 +119,7 @@ sealed class TTSProviderSetting {
     data class SystemTTS(
         override var id: Uuid = Uuid.random(),
         override var name: String = "System TTS",
-        override val builtIn: Boolean = true, // 系统 TTS 始终视为内置
+        override val builtIn: Boolean = true,
         val speechRate: Float = 1.0f,
         val pitch: Float = 1.0f,
         val voiceName: String? = null
@@ -121,7 +170,7 @@ sealed class TTSProviderSetting {
         override var name: String = "ElevenLabs TTS",
         override val builtIn: Boolean = false,
         val apiKey: String = "",
-        val voiceId: String = "21m00Tcm4TlvDq8ikWAM", // Default "Rachel" voice
+        val voiceId: String = "21m00Tcm4TlvDq8ikWAM",
         val modelId: String = "eleven_multilingual_v2"
     ) : TTSProviderSetting() {
         override fun copyProvider(
@@ -166,6 +215,8 @@ sealed class TTSProviderSetting {
         val Types by lazy {
             listOf(
                 OpenAI::class,
+                Mimo::class,
+                Custom::class,
                 Gemini::class,
                 SystemTTS::class,
                 MiniMax::class,

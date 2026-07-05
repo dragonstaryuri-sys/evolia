@@ -6,14 +6,18 @@ import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.TTSRequest
 import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.providers.AzureTTSProvider
+import me.rerere.tts.provider.providers.CustomTTSProvider
 import me.rerere.tts.provider.providers.ElevenLabsTTSProvider
 import me.rerere.tts.provider.providers.GeminiTTSProvider
+import me.rerere.tts.provider.providers.MimoTTSProvider
 import me.rerere.tts.provider.providers.MiniMaxTTSProvider
 import me.rerere.tts.provider.providers.OpenAITTSProvider
 import me.rerere.tts.provider.providers.SystemTTSProvider
 
 class TTSManager(private val context: Context) {
     private val openAIProvider = OpenAITTSProvider()
+    private val mimoProvider = MimoTTSProvider()
+    private val customProvider = CustomTTSProvider()
     private val geminiProvider = GeminiTTSProvider()
     private val systemProvider = SystemTTSProvider()
     private val miniMaxProvider = MiniMaxTTSProvider()
@@ -26,6 +30,8 @@ class TTSManager(private val context: Context) {
     ): Flow<AudioChunk> {
         return when (providerSetting) {
             is TTSProviderSetting.OpenAI -> openAIProvider.generateSpeech(context, providerSetting, request)
+            is TTSProviderSetting.Mimo -> mimoProvider.generateSpeech(context, providerSetting, request)
+            is TTSProviderSetting.Custom -> customProvider.generateSpeech(context, providerSetting, request)
             is TTSProviderSetting.Gemini -> geminiProvider.generateSpeech(context, providerSetting, request)
             is TTSProviderSetting.SystemTTS -> systemProvider.generateSpeech(context, providerSetting, request)
             is TTSProviderSetting.MiniMax -> miniMaxProvider.generateSpeech(context, providerSetting, request)
@@ -39,6 +45,8 @@ class TTSManager(private val context: Context) {
     ): List<TTSVoice> {
         return when (providerSetting) {
             is TTSProviderSetting.OpenAI -> openAIProvider.getVoices(context, providerSetting)
+            is TTSProviderSetting.Mimo -> mimoProvider.getVoices(context, providerSetting)
+            is TTSProviderSetting.Custom -> customProvider.getVoices(context, providerSetting)
             is TTSProviderSetting.Gemini -> geminiProvider.getVoices(context, providerSetting)
             is TTSProviderSetting.SystemTTS -> systemProvider.getVoices(context, providerSetting)
             is TTSProviderSetting.MiniMax -> miniMaxProvider.getVoices(context, providerSetting)

@@ -100,12 +100,196 @@ fun TTSProviderConfigure(
         // Provider-specific fields
         when (setting) {
             is TTSProviderSetting.OpenAI -> OpenAITTSConfiguration(setting, onValueChange)
+            is TTSProviderSetting.Mimo -> MimoTTSConfiguration(setting, onValueChange)
+            is TTSProviderSetting.Custom -> CustomTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.Gemini -> GeminiTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.MiniMax -> MiniMaxTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.ElevenLabs -> ElevenLabsTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.SystemTTS -> SystemTTSConfiguration(setting, onValueChange)
             is TTSProviderSetting.Azure -> AzureTTSConfiguration(setting, onValueChange)
         }
+    }
+}
+
+@Composable
+private fun MimoTTSConfiguration(
+    setting: TTSProviderSetting.Mimo,
+    onValueChange: (TTSProviderSetting) -> Unit
+) {
+    // 自动修正预设地址
+    LaunchedEffect(setting.id) {
+        if (setting.baseUrl != "https://api.xiaomimimo.com/v1/chat/completions") {
+            onValueChange(setting.copy(baseUrl = "https://api.xiaomimimo.com/v1/chat/completions"))
+        }
+    }
+
+    var apiKeyVisible by remember { mutableStateOf(false) }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
+        description = { Text("小米 MiMo API Key") }
+    ) {
+        OutlinedTextField(
+            value = setting.apiKey,
+            onValueChange = { newApiKey ->
+                onValueChange(setting.copy(apiKey = newApiKey))
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
+            placeholder = { Text("MIMO_API_KEY") },
+            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                    Icon(
+                        imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = "Toggle Visibility"
+                    )
+                }
+            }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
+        description = { Text("接口地址 (预设地址，不可编辑)") }
+    ) {
+        OutlinedTextField(
+            value = setting.baseUrl,
+            onValueChange = {},
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("https://api.xiaomimimo.com/v1/chat/completions") },
+            enabled = false
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_model)) },
+        description = { Text("模型名称") }
+    ) {
+        OutlinedTextField(
+            value = setting.model,
+            onValueChange = { newModel ->
+                onValueChange(setting.copy(model = newModel))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("mimo-v2.5-tts") }
+        )
+    }
+
+    var voiceExpanded by remember { mutableStateOf(false) }
+    val voices = listOf("mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean")
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_voice)) },
+        description = { Text("预置音色") }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = voiceExpanded,
+            onExpandedChange = { voiceExpanded = !voiceExpanded }
+        ) {
+            OutlinedTextField(
+                value = setting.voice,
+                onValueChange = { newVoice ->
+                    onValueChange(setting.copy(voice = newVoice))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
+                }
+            )
+            ExposedDropdownMenu(
+                expanded = voiceExpanded,
+                onDismissRequest = { voiceExpanded = false }
+            ) {
+                voices.forEach { voice ->
+                    DropdownMenuItem(
+                        text = { Text(voice) },
+                        onClick = {
+                            voiceExpanded = false
+                            onValueChange(setting.copy(voice = voice))
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomTTSConfiguration(
+    setting: TTSProviderSetting.Custom,
+    onValueChange: (TTSProviderSetting) -> Unit
+) {
+    var apiKeyVisible by remember { mutableStateOf(false) }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
+        description = { Text(stringResource(R.string.setting_tts_page_api_key_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.apiKey,
+            onValueChange = { newApiKey ->
+                onValueChange(setting.copy(apiKey = newApiKey))
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
+            placeholder = { Text(stringResource(R.string.setting_tts_page_api_key_placeholder_openai)) },
+            visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                    Icon(
+                        imageVector = if (apiKeyVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = "Toggle Visibility"
+                    )
+                }
+            }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
+        description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.baseUrl,
+            onValueChange = { newBaseUrl ->
+                onValueChange(setting.copy(baseUrl = newBaseUrl))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_model)) },
+        description = { Text(stringResource(R.string.setting_tts_page_model_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.model,
+            onValueChange = { newModel ->
+                onValueChange(setting.copy(model = newModel))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.setting_tts_page_model_placeholder_openai)) }
+        )
+    }
+
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_voice)) },
+        description = { Text(stringResource(R.string.setting_tts_page_voice_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.voice,
+            onValueChange = { newVoice ->
+                onValueChange(setting.copy(voice = newVoice))
+            },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("alloy") }
+        )
     }
 }
 
@@ -311,9 +495,9 @@ private fun MiniMaxTTSConfiguration(
     var voices by remember { mutableStateOf<List<TTSVoice>>(emptyList()) }
     var isLoadingVoices by remember { mutableStateOf(false) }
 
-    // Auto-correction logic for built-in provider
+    // 自动修正预设地址
     LaunchedEffect(setting.id) {
-        if (setting.builtIn && setting.baseUrl != "https://api.minimaxi.com/v1") {
+        if (setting.baseUrl != "https://api.minimaxi.com/v1") {
             onValueChange(setting.copy(baseUrl = "https://api.minimaxi.com/v1"))
         }
     }
@@ -375,12 +559,15 @@ private fun MiniMaxTTSConfiguration(
         )
     }
 
-    FormItem(label = { Text(stringResource(R.string.setting_tts_page_base_url)) }) {
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
+        description = { Text("接口地址 (预设地址，不可编辑)") }
+    ) {
         OutlinedTextField(
             value = localBaseUrl,
-            onValueChange = { localBaseUrl = it },
+            onValueChange = {},
             modifier = Modifier.fillMaxWidth(),
-            enabled = !setting.builtIn
+            enabled = false
         )
     }
 
@@ -877,9 +1064,9 @@ private fun OpenAITTSConfiguration(
     setting: TTSProviderSetting.OpenAI,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
-    // Auto-correction logic for built-in provider
+    // 自动修正预设地址
     LaunchedEffect(setting.id) {
-        if (setting.builtIn && setting.baseUrl != "https://api.openai.com/v1") {
+        if (setting.baseUrl != "https://api.openai.com/v1") {
             onValueChange(setting.copy(baseUrl = "https://api.openai.com/v1"))
         }
     }
@@ -912,16 +1099,14 @@ private fun OpenAITTSConfiguration(
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
-        description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
+        description = { Text("接口地址 (预设地址，不可编辑)") }
     ) {
         OutlinedTextField(
             value = setting.baseUrl,
-            onValueChange = { newBaseUrl ->
-                onValueChange(setting.copy(baseUrl = newBaseUrl))
-            },
+            onValueChange = {},
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) },
-            enabled = !setting.builtIn
+            enabled = false
         )
     }
 
@@ -985,9 +1170,9 @@ private fun GeminiTTSConfiguration(
     setting: TTSProviderSetting.Gemini,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
-    // Auto-correction logic for built-in provider
+    // 自动修正预设地址
     LaunchedEffect(setting.id) {
-        if (setting.builtIn && setting.baseUrl != "https://generativelanguage.googleapis.com/v1beta") {
+        if (setting.baseUrl != "https://generativelanguage.googleapis.com/v1beta") {
             onValueChange(setting.copy(baseUrl = "https://generativelanguage.googleapis.com/v1beta"))
         }
     }
@@ -1020,16 +1205,14 @@ private fun GeminiTTSConfiguration(
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
-        description = { Text(stringResource(R.string.setting_tts_page_base_url_description)) }
+        description = { Text("接口地址 (预设地址，不可编辑)") }
     ) {
         OutlinedTextField(
             value = setting.baseUrl,
-            onValueChange = { newBaseUrl ->
-                onValueChange(setting.copy(baseUrl = newBaseUrl))
-            },
+            onValueChange = {},
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(R.string.setting_tts_page_base_url_placeholder)) },
-            enabled = !setting.builtIn
+            enabled = false
         )
     }
 

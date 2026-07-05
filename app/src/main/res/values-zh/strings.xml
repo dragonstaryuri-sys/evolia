@@ -1694,4 +1694,6 @@
   <string name="minimax_dct">minimax的语音合成服务</string>
   <string name="tts_error_concurrency">ElevenLabs 账号并发受限，正在排队朗读...</string>
   <string name="backup_page_tts_cache">语音缓存</string>
+  <string name="mimo_dct">小米 MiMo 语音合成，超真实音色</string>
+
 </resources>

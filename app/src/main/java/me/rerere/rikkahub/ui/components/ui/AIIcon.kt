@@ -192,7 +192,8 @@ fun AutoAIIcon(
  * Uses fallback strategy:
  * 1. Local pattern matching (for known provider names)
  * 2. LobeHub CDN for known provider slugs or derived from name
- * 3. Text avatar (final fallback)
+ * 3. Favicon from baseUrl
+ * 4. Text avatar (final fallback)
  */
 @Composable
 fun AutoProviderIcon(
@@ -235,13 +236,15 @@ fun AutoProviderIcon(
         color = color,
         padding = padding,
         fallback = {
-            // Priority 3: Text avatar (final fallback)
-            TextAvatar(
-                text = name,
+            // Priority 3: Favicon from baseUrl
+            ProviderFaviconFallback(
+                name = name,
+                baseUrl = baseUrl,
                 modifier = modifier,
                 loading = loading,
                 color = color,
-                contentColor = contentColor
+                contentColor = contentColor,
+                padding = padding
             )
         }
     )
@@ -327,6 +330,7 @@ private fun getProviderSlugFromName(name: String): String? {
         lowerName.contains("cerebras") -> "cerebras"
         lowerName.contains("cloudflare") -> "cloudflare"
         lowerName.contains("hunyuan") || lowerName.contains("tencent") -> "hunyuan"
+        lowerName.contains("mimo") || lowerName.contains("xiaomi") -> "xiaomi"
         else -> null
     }
 }
@@ -771,6 +775,7 @@ private fun matchProviderPattern(providerName: String): String? {
         providerName == "4sapi" -> "xinglian4sapi.png"
         providerName == "volcengine" -> "volcengine-color.svg"
         providerName == "siliconflow" || providerName.contains("silicon") || providerName.contains("硅基") -> "siliconflow.svg"
+        providerName.contains("mimo") || providerName.contains("xiaomi") -> null // Fallback to CDN/Text
 
         // Fallback patterns using contains for partial matches
         providerName.contains("llama") -> "meta-color.svg"
@@ -804,7 +809,7 @@ private fun matchModelPattern(modelName: String): String? {
         PATTERN_HERMES.containsMatchIn(modelName) -> "openrouter.svg"
         PATTERN_SOLAR.containsMatchIn(modelName) -> "openrouter.svg"
         PATTERN_YI.containsMatchIn(modelName) -> "openrouter.svg"
-        PATTERN_WIZARDLM.containsMatchIn(modelName) -> "openrouter.svg"
+        PATTERN_WIZARDLM.containsMatchIn(modelName) -> "wizardlm|wizard"
         PATTERN_NOVA.containsMatchIn(modelName) -> "openrouter.svg" // Amazon Nova
         PATTERN_TOPPY.containsMatchIn(modelName) -> "openrouter.svg"
         PATTERN_MYTHOMAX.containsMatchIn(modelName) -> "openrouter.svg"
@@ -864,7 +869,7 @@ private fun matchIconPattern(searchName: String): String? {
         PATTERN_NVIDIA.containsMatchIn(searchName) -> "nvidia-color.svg"
         PATTERN_PPIO.containsMatchIn(searchName) -> "ppio-color.svg"
         PATTERN_VERCEL.containsMatchIn(searchName) -> "vercel.svg"
-        PATTERN_GROQ.containsMatchIn(searchName) -> "groq.svg"
+        PATTERN_GROK.containsMatchIn(searchName) -> "groq.svg"
         PATTERN_TOKENPONY.containsMatchIn(searchName) -> "tokenpony.svg"
         PATTERN_LING.containsMatchIn(searchName) -> "ling.png"
 

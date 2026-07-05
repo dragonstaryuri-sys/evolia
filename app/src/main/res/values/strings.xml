@@ -1738,4 +1738,6 @@
   <string name="minimax_dct">Professional voice cloning,Chinese TTS with emotions</string>
   <string name="tts_error_concurrency">ElevenLabs account concurrency limit reached, queuing for speech synthesis...</string>
   <string name="backup_page_tts_cache">Voice cache</string>
+  <string name="mimo_dct">Xiaomi MiMo Speech Synthesis, Ultra-Realistic Timbre</string>
+
 </resources>
