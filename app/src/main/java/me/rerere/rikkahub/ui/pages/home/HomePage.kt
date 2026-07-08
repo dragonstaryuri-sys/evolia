@@ -192,9 +192,6 @@ fun AgentListPage() {
                         )
                     },
                     actions = {
-                        IconButton(onClick = { navController.navigate(Screen.AssistantImportDoubao) }) {
-                            Icon(Icons.Rounded.CloudUpload, contentDescription = "Import Doubao Agent")
-                        }
                         IconButton(onClick = { navController.navigate(Screen.AssistantSearch) }) {
                             Icon(Icons.Rounded.Search, contentDescription = "Search")
                         }
@@ -373,6 +370,10 @@ fun AgentListPage() {
     AssistantCreationSheet(
         state = createState,
         onImportClick = {
+            createState.dismiss()
+            importLauncher.launch(arrayOf("*/*"))
+        },
+        onImportOtherClick = {
             createState.dismiss()
             navController.navigate(Screen.AssistantImportDoubao)
         }

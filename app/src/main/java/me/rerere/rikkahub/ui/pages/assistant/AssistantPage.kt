@@ -112,8 +112,7 @@ import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.utils.AssistantExportImport
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.rounded.Upload
-import me.rerere.rikkahub.utils.navigateToChatPage
+import androidx.compose.material.icons.rounded.CloudDownload
 
 
 @Composable
@@ -427,6 +426,10 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
         onImportClick = {
             createState.dismiss()
             importLauncher.launch(arrayOf("*/*"))
+        },
+        onImportOtherClick = {
+            createState.dismiss()
+            navController.navigate(Screen.AssistantImportDoubao)
         }
     )
 }
@@ -435,6 +438,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 fun AssistantCreationSheet(
     state: EditState<Assistant>,
     onImportClick: () -> Unit,
+    onImportOtherClick: (() -> Unit)? = null,
 ) {
     state.EditStateContent { assistant, update ->
         ModalBottomSheet(
@@ -482,6 +486,20 @@ fun AssistantCreationSheet(
                             modifier = Modifier.padding(end = 8.dp)
                         )
                         Text(stringResource(R.string.assistant_importer_import_character))
+                    }
+
+                    if (onImportOtherClick != null) {
+                        OutlinedButton(
+                            onClick = onImportOtherClick,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CloudDownload,
+                                contentDescription = null,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text(stringResource(R.string.assistant_importer_import_other_platform))
+                        }
                     }
                 }
                 Row(

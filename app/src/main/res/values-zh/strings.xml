@@ -1717,4 +1717,5 @@
   <string name="import_doubao_confirm_continue">确认，继续导入</string>
   <string name="import_doubao_cancel_import">终止导入</string>
   <string name="import_doubao_log_saved">日志已保存到私有目录</string>
+  <string name="assistant_importer_import_other_platform">导入其他平台智能体</string>
 </resources>

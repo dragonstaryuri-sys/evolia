@@ -1761,5 +1761,6 @@
   <string name="import_doubao_confirm_continue">Confirm and Continue Import</string>
   <string name="import_doubao_cancel_import">Abort Import</string>
   <string name="import_doubao_log_saved">Logs saved to private directory</string>
+  <string name="assistant_importer_import_other_platform">Import Agents from Other Platforms</string>
 
 </resources>
