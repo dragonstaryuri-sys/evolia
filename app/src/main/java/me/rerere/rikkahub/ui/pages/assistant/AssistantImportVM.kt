@@ -6,7 +6,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CompletableDeferred
@@ -36,6 +35,10 @@ class AssistantImportVM(
     var roundsPerSession by mutableIntStateOf(50)
     var importData by mutableStateOf<DoubaoImportData?>(null)
 
+    // 可编辑的智能体信息
+    var botName by mutableStateOf("")
+    var botDescription by mutableStateOf("")
+
     // 运行状态
     var isImporting by mutableStateOf(false)
     var previewConversation by mutableStateOf<Conversation?>(null)
@@ -46,18 +49,14 @@ class AssistantImportVM(
 
     val importLog: String get() = importManager.getLog()
 
-    /**
-     * 准备导入：解析数据并进行合法性校验
-     */
     fun prepareImport(uri: Uri, onError: (String) -> Unit) {
         viewModelScope.launch {
             val data = importManager.parseData(uri)
             if (data == null) {
-                onError("文件解析失败，请确保导入的是符合evolia要求的JSON 格式文档")
+                onError("文件解析失败，请确保导入的是标准豆包 JSON 格式文档")
                 return@launch
             }
 
-            // 校验消息有效性
             val validCount = importManager.getValidMessageCount(data)
             if (validCount == 0) {
                 onError("该文档中未检测到有效的对话记录，请检查文档内容")
@@ -65,6 +64,9 @@ class AssistantImportVM(
             }
 
             importData = data
+            // 初始化可编辑字段
+            botName = data.botInfo.name
+            botDescription = data.botInfo.description
         }
     }
 
@@ -88,19 +90,17 @@ class AssistantImportVM(
                 assistantId = newAssistantId,
                 roundsPerSession = roundsPerSession
             ) { preview ->
-                // 1. 设置预览会话，供 UI 显示
                 previewConversation = preview
                 previewDeferred = CompletableDeferred()
 
-                // 2. 等待用户在 UI 上点击“确认”或“取消”
                 val confirmed = previewDeferred!!.await()
 
                 if (confirmed) {
-                    // 3. 确认后才真正创建智能体对象
+                    // 使用用户修改后的名称和描述
                     val assistant = Assistant(
                         id = newAssistantId,
-                        name = data.botInfo.name,
-                        systemPrompt = data.botInfo.description,
+                        name = botName.ifBlank { data.botInfo.name },
+                        systemPrompt = botDescription.ifBlank { data.botInfo.description },
                         avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else Avatar.Dummy,
                         isMain = isMainAgent,
                         chatModelId = initialSettings.chatModelId,
@@ -119,7 +119,6 @@ class AssistantImportVM(
                 confirmed
             }
 
-            // 4. 清理逻辑：如果导入最终未成功且已经创建了 Assistant，则删除
             if (!success) {
                 val currentSettings = settingsStore.settingsFlow.value
                 if (currentSettings.assistants.any { it.id == newAssistantId }) {
@@ -155,6 +154,8 @@ class AssistantImportVM(
     fun reset() {
         importManager.clear()
         importData = null
+        botName = ""
+        botDescription = ""
         isMainAgent = false
         roundsPerSession = 50
         isImporting = false

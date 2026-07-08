@@ -52,7 +52,7 @@ fun AssistantImportDoubaoPage(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            // 这里增加了错误处理回调，利用 toaster 弹出提示
+            // 接入错误回调：处理格式错误或消息提取为空的情况
             vm.prepareImport(uri) { errorMsg ->
                 toaster.show(errorMsg)
             }
@@ -212,6 +212,10 @@ fun AssistantImportDoubaoPage(
             if (vm.previewConversation != null) {
                 PreviewDialog(
                     conversation = vm.previewConversation!!,
+                    botName = vm.botName,
+                    onBotNameChange = { vm.botName = it },
+                    botDescription = vm.botDescription,
+                    onBotDescriptionChange = { vm.botDescription = it },
                     onConfirm = { vm.confirmPreview(true) },
                     onCancel = { vm.confirmPreview(false) }
                 )
@@ -223,16 +227,43 @@ fun AssistantImportDoubaoPage(
 @Composable
 fun PreviewDialog(
     conversation: Conversation,
+    botName: String,
+    onBotNameChange: (String) -> Unit,
+    botDescription: String,
+    onBotDescriptionChange: (String) -> Unit,
     onConfirm: () -> Unit,
     onCancel: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("数据预览") },
+        title = { Text("数据预览与编辑") },
         text = {
-            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-                Text("第一个会话已生成。此时数据尚未入库，请确认解析是否正确。", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(12.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("请确认或修改智能体信息，此时数据尚未入库。", style = MaterialTheme.typography.bodySmall)
+
+                // 编辑区域
+                OutlinedTextField(
+                    value = botName,
+                    onValueChange = onBotNameChange,
+                    label = { Text("智能体名称") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                OutlinedTextField(
+                    value = botDescription,
+                    onValueChange = onBotDescriptionChange,
+                    label = { Text("人物设定(后面再修改也行)") },
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 120.dp),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Text("会话预览 (第一个片段)", style = MaterialTheme.typography.labelLarge)
+
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
