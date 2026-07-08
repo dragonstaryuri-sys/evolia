@@ -44,8 +44,9 @@ class AssistantImportVM(
     var previewConversation by mutableStateOf<Conversation?>(null)
     private var previewDeferred: CompletableDeferred<Boolean>? = null
 
-    // 记录本次创建的智能体 ID
-    private var currentAssistantId: Uuid? = null
+    // 记录本次导入使用的智能体 ID
+    private var targetAssistantId: Uuid? = null
+    private var isOverwriteMode = false
 
     val importLog: String get() = importManager.getLog()
 
@@ -80,14 +81,24 @@ class AssistantImportVM(
         isImporting = true
 
         viewModelScope.launch {
-            val initialSettings = settingsStore.settingsFlow.value
-            val newAssistantId = Uuid.random()
-            currentAssistantId = newAssistantId
+            val currentSettings = settingsStore.settingsFlow.value
+            val existingMain = currentSettings.assistants.find { it.isMain }
+
+            // 确定目标 ID 和是否为覆盖模式
+            val finalTargetId: Uuid
+            if (isMainAgent && existingMain != null) {
+                finalTargetId = existingMain.id
+                isOverwriteMode = true
+            } else {
+                finalTargetId = Uuid.random()
+                isOverwriteMode = false
+            }
+            targetAssistantId = finalTargetId
 
             // 执行导入过程
             val success = importManager.performImport(
                 data = data,
-                assistantId = newAssistantId,
+                assistantId = finalTargetId,
                 roundsPerSession = roundsPerSession
             ) { preview ->
                 previewConversation = preview
@@ -96,38 +107,58 @@ class AssistantImportVM(
                 val confirmed = previewDeferred!!.await()
 
                 if (confirmed) {
-                    // 使用用户修改后的名称和描述
-                    val assistant = Assistant(
-                        id = newAssistantId,
-                        name = botName.ifBlank { data.botInfo.name },
-                        systemPrompt = botDescription.ifBlank { data.botInfo.description },
-                        avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else Avatar.Dummy,
-                        isMain = isMainAgent,
-                        chatModelId = initialSettings.chatModelId,
-                        embeddingModelId = initialSettings.embeddingModelId
-                    )
+                    val settings = settingsStore.settingsFlow.value
 
-                    val currentSettings = settingsStore.settingsFlow.value
-                    val updatedAssistants = if (isMainAgent) {
-                        currentSettings.assistants.map { it.copy(isMain = false) } + assistant
+                    val updatedAssistants = if (isOverwriteMode) {
+                        // 覆盖模式：更新现有智能体的信息
+                        settings.assistants.map {
+                            if (it.id == finalTargetId) {
+                                it.copy(
+                                    name = botName.ifBlank { data.botInfo.name },
+                                    systemPrompt = botDescription.ifBlank { data.botInfo.description },
+                                    avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else it.avatar,
+                                    isMain = true
+                                )
+                            } else if (isMainAgent) {
+                                // 如果设为主智能体，确保其他智能体不是主智能体
+                                it.copy(isMain = false)
+                            } else {
+                                it
+                            }
+                        }
                     } else {
-                        currentSettings.assistants + assistant
+                        // 新建模式
+                        val newAssistant = Assistant(
+                            id = finalTargetId,
+                            name = botName.ifBlank { data.botInfo.name },
+                            systemPrompt = botDescription.ifBlank { data.botInfo.description },
+                            avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else Avatar.Dummy,
+                            isMain = isMainAgent,
+                            chatModelId = settings.chatModelId,
+                            embeddingModelId = settings.embeddingModelId
+                        )
+                        if (isMainAgent) {
+                            settings.assistants.map { it.copy(isMain = false) } + newAssistant
+                        } else {
+                            settings.assistants + newAssistant
+                        }
                     }
-                    settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+                    settingsStore.update(settings.copy(assistants = updatedAssistants))
                 }
 
                 confirmed
             }
 
-            if (!success) {
-                val currentSettings = settingsStore.settingsFlow.value
-                if (currentSettings.assistants.any { it.id == newAssistantId }) {
+            // 如果导入失败且不是覆盖模式，则尝试清理新建的智能体
+            if (!success && !isOverwriteMode) {
+                val settings = settingsStore.settingsFlow.value
+                if (settings.assistants.any { it.id == finalTargetId }) {
                     settingsStore.update(
-                        currentSettings.copy(
-                            assistants = currentSettings.assistants.filter { it.id != newAssistantId }
+                        settings.copy(
+                            assistants = settings.assistants.filter { it.id != finalTargetId }
                         )
                     )
-                    conversationRepo.deleteConversationOfAssistant(newAssistantId)
+                    conversationRepo.deleteConversationOfAssistant(finalTargetId)
                 }
             }
 
@@ -160,7 +191,8 @@ class AssistantImportVM(
         roundsPerSession = 50
         isImporting = false
         previewConversation = null
-        currentAssistantId = null
+        targetAssistantId = null
+        isOverwriteMode = false
     }
 
     override fun onCleared() {

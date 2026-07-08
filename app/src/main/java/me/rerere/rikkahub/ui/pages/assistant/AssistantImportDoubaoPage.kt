@@ -19,11 +19,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -52,7 +54,6 @@ fun AssistantImportDoubaoPage(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            // 接入错误回调：处理格式错误或消息提取为空的情况
             vm.prepareImport(uri) { errorMsg ->
                 toaster.show(errorMsg)
             }
@@ -62,19 +63,19 @@ fun AssistantImportDoubaoPage(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("导入豆包智能体") },
+                title = { Text(stringResource(R.string.import_doubao_title)) },
                 navigationIcon = { BackButton() },
                 actions = {
                     if (vm.importLog.isNotBlank()) {
                         IconButton(onClick = {
                             val path = vm.saveLogToDisk(context)
                             if (path != null) {
-                                toaster.show("日志已导出至: $path")
+                                toaster.show(context.getString(R.string.import_doubao_log_saved))
                             } else {
-                                toaster.show("导出日志失败")
+                                toaster.show("Error saving log")
                             }
                         }) {
-                            Icon(Icons.Rounded.Download, contentDescription = "下载日志")
+                            Icon(Icons.Rounded.Download, contentDescription = "Download Log")
                         }
                     }
                 }
@@ -103,12 +104,14 @@ fun AssistantImportDoubaoPage(
                         Spacer(Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = vm.importData?.botInfo?.name ?: "选择 JSON 导入文件",
+                                text = vm.importData?.botInfo?.name ?: stringResource(R.string.import_doubao_select_file),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (vm.importData != null) "已解析 ${vm.importData?.chatHistory?.size ?: 0} 条消息" else "点击选择从豆包导出的聊天记录",
+                                text = if (vm.importData != null)
+                                    stringResource(R.string.import_doubao_selected_count, vm.importData?.chatHistory?.size ?: 0)
+                                    else stringResource(R.string.import_doubao_select_file_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -126,11 +129,11 @@ fun AssistantImportDoubaoPage(
                     exit = shrinkVertically() + fadeOut()
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("导入设置", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.import_doubao_options), style = MaterialTheme.typography.labelLarge)
 
                         ListItem(
-                            headlineContent = { Text("设为主智能体") },
-                            supportingContent = { Text("导入后将自动切换为当前激活的智能体") },
+                            headlineContent = { Text(stringResource(R.string.import_doubao_set_main)) },
+                            supportingContent = { Text(stringResource(R.string.import_doubao_set_main_desc)) },
                             trailingContent = {
                                 Switch(checked = vm.isMainAgent, onCheckedChange = { vm.isMainAgent = it })
                             },
@@ -143,14 +146,21 @@ fun AssistantImportDoubaoPage(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                         ) {
                             Column(Modifier.padding(16.dp)) {
-                                Text("消息切分: 每会话 ${vm.roundsPerSession} 轮", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = stringResource(R.string.import_doubao_rounds_label, vm.roundsPerSession),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
                                 Slider(
                                     value = vm.roundsPerSession.toFloat(),
                                     onValueChange = { vm.roundsPerSession = it.toInt() },
                                     valueRange = 1f..50f,
                                     steps = 49
                                 )
-                                Text("系统将按此频率自动切分会话，防止单会话过长", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = stringResource(R.string.import_doubao_rounds_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
 
@@ -158,7 +168,7 @@ fun AssistantImportDoubaoPage(
                             onClick = {
                                 vm.startImport { success ->
                                     if (success) {
-                                        toaster.show("所有数据已同步完成")
+                                        toaster.show(context.getString(R.string.import_doubao_success))
                                         navController.popBackStack()
                                     }
                                 }
@@ -168,7 +178,7 @@ fun AssistantImportDoubaoPage(
                         ) {
                             Icon(Icons.Rounded.CloudUpload, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("开始导入")
+                            Text(stringResource(R.string.import_doubao_start_button))
                         }
                     }
                 }
@@ -176,7 +186,7 @@ fun AssistantImportDoubaoPage(
                 // 实时进度与日志展示
                 AnimatedVisibility(visible = vm.isImporting || vm.importLog.isNotBlank()) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("运行日志", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.import_doubao_progress_title), style = MaterialTheme.typography.labelLarge)
 
                         LinearProgressIndicator(
                             progress = { progress },
@@ -236,19 +246,19 @@ fun PreviewDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("数据预览与编辑") },
+        title = { Text(stringResource(R.string.import_doubao_preview_title)) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("请确认或修改智能体信息，此时数据尚未入库。", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.import_doubao_preview_desc), style = MaterialTheme.typography.bodySmall)
 
                 // 编辑区域
                 OutlinedTextField(
                     value = botName,
                     onValueChange = onBotNameChange,
-                    label = { Text("智能体名称") },
+                    label = { Text(stringResource(R.string.assistant_import_page_agent_name_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
@@ -257,7 +267,7 @@ fun PreviewDialog(
                 OutlinedTextField(
                     value = botDescription,
                     onValueChange = onBotDescriptionChange,
-                    label = { Text("人物设定(后面再修改也行)") },
+                    label = { Text(stringResource(R.string.assistant_import_page_system_prompt_label)) },
                     modifier = Modifier.fillMaxWidth().heightIn(max = 120.dp),
                     shape = RoundedCornerShape(12.dp)
                 )
@@ -275,7 +285,7 @@ fun PreviewDialog(
                         val msg = node.currentMessage
                         Column {
                             Text(
-                                text = if(msg.role.name == "ASSISTANT") "智能体" else "用户",
+                                text = if(msg.role.name == "ASSISTANT") stringResource(R.string.import_doubao_role_assistant) else stringResource(R.string.import_doubao_role_user),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -291,10 +301,10 @@ fun PreviewDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("确认并继续导入") }
+            Button(onClick = onConfirm) { Text(stringResource(R.string.import_doubao_confirm_continue)) }
         },
         dismissButton = {
-            TextButton(onClick = onCancel) { Text("终止导入") }
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.import_doubao_cancel_import)) }
         }
     )
 }
