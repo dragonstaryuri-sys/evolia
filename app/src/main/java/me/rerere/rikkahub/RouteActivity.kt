@@ -60,6 +60,7 @@ import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.AssistantSearchPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
+import me.rerere.rikkahub.ui.pages.assistant.AssistantImportDoubaoPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
@@ -136,7 +137,6 @@ class RouteActivity : AppCompatActivity() {
 
         cancelAllNotifications()
 
-        // 启动自动任务心跳闹钟，并立即检查是否有过期任务
         agentTaskScheduler.setupHeartbeatAlarm()
         agentTaskScheduler.checkAndRescheduleOverdueTasks()
 
@@ -207,7 +207,6 @@ class RouteActivity : AppCompatActivity() {
                     if (targetScreen == "diary") {
                         navStack?.navigate(Screen.DiaryList(assistantId.toString()))
                     } else {
-                        // 默认逻辑：先重置到首页，确保返回时回到列表
                         navStack?.navigate(Screen.Home) {
                             popUpTo(0) { inclusive = true }
                         }
@@ -222,19 +221,16 @@ class RouteActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 只要 Activity 恢复前台并可交互（包括点击图标返回、点击通知进入、冷启动完成），就清理所有通知
         cancelAllNotifications()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // 处理 singleTop 模式下的新意图进入，优先清理通知
         cancelAllNotifications()
         handleIntent(intent)
     }
 
     private fun cancelAllNotifications() {
-        // 使用 NotificationManagerCompat 以获得更好的版本兼容性
         NotificationManagerCompat.from(this).cancelAll()
     }
 
@@ -401,6 +397,10 @@ class RouteActivity : AppCompatActivity() {
                         CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
                             AssistantDetailPage(id = route.id, startRoute = route.startRoute, initialMemoryTab = route.initialMemoryTab, scrollToMemoryId = route.scrollToMemoryId)
                         }
+                    }
+
+                    composable<Screen.AssistantImportDoubao> {
+                        AssistantImportDoubaoPage()
                     }
 
                     composable<Screen.Menu> { MenuPage() }
