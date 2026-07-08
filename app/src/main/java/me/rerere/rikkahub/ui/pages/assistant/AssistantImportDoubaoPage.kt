@@ -43,7 +43,7 @@ fun AssistantImportDoubaoPage(
     val progressText by vm.progressText.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
 
-    // 4. 用户进入页面时自动清空上次的导入日志和信息
+    // 页面进入时重置状态
     LaunchedEffect(Unit) {
         vm.reset()
     }
@@ -52,7 +52,10 @@ fun AssistantImportDoubaoPage(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            vm.prepareImport(uri)
+            // 这里增加了错误处理回调，利用 toaster 弹出提示
+            vm.prepareImport(uri) { errorMsg ->
+                toaster.show(errorMsg)
+            }
         }
     }
 
@@ -66,7 +69,6 @@ fun AssistantImportDoubaoPage(
                         IconButton(onClick = {
                             val path = vm.saveLogToDisk(context)
                             if (path != null) {
-                                // 2. 显示保存到的具体路径
                                 toaster.show("日志已导出至: $path")
                             } else {
                                 toaster.show("导出日志失败")
@@ -229,7 +231,7 @@ fun PreviewDialog(
         title = { Text("数据预览") },
         text = {
             Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-                Text("第一个会话已生成。如果角色或内容解析不正确，请点击终止。", style = MaterialTheme.typography.bodySmall)
+                Text("第一个会话已生成。此时数据尚未入库，请确认解析是否正确。", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(12.dp))
                 LazyColumn(
                     modifier = Modifier
@@ -258,7 +260,7 @@ fun PreviewDialog(
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) { Text("确认，继续导入") }
+            Button(onClick = onConfirm) { Text("确认并继续导入") }
         },
         dismissButton = {
             TextButton(onClick = onCancel) { Text("终止导入") }

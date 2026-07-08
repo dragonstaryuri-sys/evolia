@@ -56,10 +56,22 @@ class DoubaoImportManager(
     suspend fun parseData(uri: Uri): DoubaoImportData? = withContext(Dispatchers.IO) {
         try {
             val content = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            content?.let { JsonInstant.decodeFromString<DoubaoImportData>(it) }
+            if (content.isNullOrBlank()) return@withContext null
+            JsonInstant.decodeFromString<DoubaoImportData>(content)
         } catch (e: Exception) {
-            log("解析文件失败: ${e.localizedMessage}")
+            log("文件解析失败，可能格式不正确: ${e.localizedMessage}")
             null
+        }
+    }
+
+    /**
+     * 校验数据，返回有效消息的数量
+     */
+    fun getValidMessageCount(data: DoubaoImportData): Int {
+        return data.chatHistory.count { item ->
+            val textContent = item.content?.text?.trim()
+            val ttsContent = item.content?.ttsContent?.trim()
+            (!textContent.isNullOrBlank() && textContent != "[卡片]") || !ttsContent.isNullOrBlank()
         }
     }
 
@@ -72,17 +84,14 @@ class DoubaoImportManager(
         try {
             log("开始导入流程，目标智能体: ${data.botInfo.name}")
 
-            // 1. 完善提取逻辑: text 优先 (过滤[卡片]), 备选 tts_content
+            // 复用提取逻辑
             val validHistory = data.chatHistory.mapNotNull { item ->
                 val textContent = item.content?.text?.trim()
                 val ttsContent = item.content?.ttsContent?.trim()
 
                 val finalContent = when {
-                    // 如果 text 有内容且不是 [卡片]，则使用它
                     !textContent.isNullOrBlank() && textContent != "[卡片]" -> textContent
-                    // 否则，如果 tts_content 有内容，则使用它
                     !ttsContent.isNullOrBlank() -> ttsContent
-                    // 两者都没有或者是 text 为 [卡片] 且 tts 为空，则跳过
                     else -> null
                 }
 

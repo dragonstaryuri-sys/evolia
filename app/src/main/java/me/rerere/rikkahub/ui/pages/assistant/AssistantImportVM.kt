@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CompletableDeferred
@@ -45,9 +46,25 @@ class AssistantImportVM(
 
     val importLog: String get() = importManager.getLog()
 
-    fun prepareImport(uri: Uri) {
+    /**
+     * 准备导入：解析数据并进行合法性校验
+     */
+    fun prepareImport(uri: Uri, onError: (String) -> Unit) {
         viewModelScope.launch {
-            importData = importManager.parseData(uri)
+            val data = importManager.parseData(uri)
+            if (data == null) {
+                onError("文件解析失败，请确保导入的是符合evolia要求的JSON 格式文档")
+                return@launch
+            }
+
+            // 校验消息有效性
+            val validCount = importManager.getValidMessageCount(data)
+            if (validCount == 0) {
+                onError("该文档中未检测到有效的对话记录，请检查文档内容")
+                return@launch
+            }
+
+            importData = data
         }
     }
 
@@ -79,7 +96,7 @@ class AssistantImportVM(
                 val confirmed = previewDeferred!!.await()
 
                 if (confirmed) {
-                    // 3. 真正开始创建智能体并存入 DataStore
+                    // 3. 确认后才真正创建智能体对象
                     val assistant = Assistant(
                         id = newAssistantId,
                         name = data.botInfo.name,
@@ -102,17 +119,15 @@ class AssistantImportVM(
                 confirmed
             }
 
-            // 4. 如果最终结果为失败（可能是用户在预览时取消，也可能是入库出错）
+            // 4. 清理逻辑：如果导入最终未成功且已经创建了 Assistant，则删除
             if (!success) {
                 val currentSettings = settingsStore.settingsFlow.value
-                // 检查是否已经创建了智能体（如果是在入库阶段失败的，可能已经创建了）
                 if (currentSettings.assistants.any { it.id == newAssistantId }) {
                     settingsStore.update(
                         currentSettings.copy(
                             assistants = currentSettings.assistants.filter { it.id != newAssistantId }
                         )
                     )
-                    // 清理可能已经插入的部分会话
                     conversationRepo.deleteConversationOfAssistant(newAssistantId)
                 }
             }
