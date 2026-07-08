@@ -507,7 +507,7 @@ class GenerationHandler(
                         null
                     } else {
                         val similarity = cosineSimilarity(entryEmbedding, queryEmbedding)
-                        val threshold = 0.7f
+                        val threshold = 0.5f
                         val activated = similarity >= threshold
                         if (activated) {
                             val scoreStr = try {
@@ -551,7 +551,7 @@ class GenerationHandler(
             try {
                 val queryText = recentMessagesForScan.takeLast(3).joinToString("\n")
                 if (queryText.isNotBlank()) {
-                    embeddingService.embed(queryText, assistant.id.toString())
+                    embeddingService.embed(queryText, null)
                 } else null
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to compute query embedding for RAG", e)
