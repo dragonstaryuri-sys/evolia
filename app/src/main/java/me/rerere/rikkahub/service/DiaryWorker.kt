@@ -106,8 +106,9 @@ class DiaryWorker(
             // 1. 获取新消息
             val conversations = conversationRepo.getConversationsOfAssistantAnyMode(assistant.id).first()
             val allMessages = conversations.flatMap { conv ->
-                conv.messageNodes.flatMap { node ->
-                    node.messages.filter {
+                conv.messageNodes.mapNotNull { node ->
+                    // 仅获取当前选中的消息版本，避免将已刷新的回复也丢给 AI
+                    node.messages.getOrNull(node.selectIndex)?.takeIf {
                         it.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds() > startTimeThreshold
                     }
                 }
