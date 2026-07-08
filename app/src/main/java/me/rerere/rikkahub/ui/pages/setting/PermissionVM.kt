@@ -61,12 +61,6 @@ class PermissionVM(private val context: Context) : ViewModel() {
             PermissionType.NOTIFICATION -> {
                 NotificationManagerCompat.from(context).areNotificationsEnabled()
             }
-            PermissionType.WIFI -> {
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.CHANGE_WIFI_STATE
-                ) == PackageManager.PERMISSION_GRANTED
-            }
             PermissionType.USAGE_STATS -> {
                 val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
                 val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -194,7 +188,6 @@ enum class PermissionType {
     LOCATION,
     CAMERA,
     NOTIFICATION,
-    WIFI,
     AUTO_START,
     USAGE_STATS,
     ACCESSIBILITY
