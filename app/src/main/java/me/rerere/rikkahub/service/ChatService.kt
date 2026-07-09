@@ -105,6 +105,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
 import android.net.Uri
+import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
 
@@ -979,20 +980,42 @@ class ChatService(
                             }
 
                             val targetOptions = if (isMain) {
-                                if (assistant.enableMemory) {
-                                    assistant.localTools.toMutableList().apply {
-                                        if (!any { it is LocalToolOption.MilestoneManagement }) {
-                                            add(LocalToolOption.MilestoneManagement)
+                                // 1. 获取当前数据库里的工具配置
+                                val list = assistant.localTools.toMutableList()
+
+                                // 2. ✨ 只有在 Release 模式下，才强制把这 9 个工具塞进去
+                                if (!BuildConfig.DEBUG) {
+                                    val coreTools = listOf(
+                                        LocalToolOption.ScheduleManagement,
+                                        LocalToolOption.JavascriptEngine,
+                                        LocalToolOption.DeviceControl,
+                                        LocalToolOption.PythonEngine,
+                                        LocalToolOption.AgentAutomation,
+                                        LocalToolOption.WebPageReader,
+                                        LocalToolOption.PeekUser,
+                                        LocalToolOption.UpdateProfile,
+                                        LocalToolOption.TimeSense
+                                    )
+                                    coreTools.forEach { tool ->
+                                        if (list.none { it::class == tool::class }) {
+                                            list.add(tool)
                                         }
                                     }
-                                } else {
-                                    assistant.localTools.filter { it !is LocalToolOption.MilestoneManagement }
                                 }
+                                if (assistant.enableMemory) {
+                                    if (list.none { it is LocalToolOption.MilestoneManagement }) {
+                                        list.add(LocalToolOption.MilestoneManagement)
+                                    }
+                                } else {
+                                    list.removeAll { it is LocalToolOption.MilestoneManagement }
+                                }
+                                list
                             } else {
+                                // 普通助手逻辑保持不变
                                 assistant.localTools.filter {
                                     it is LocalToolOption.TimeSense ||
-                                    it is LocalToolOption.EmailService ||
-                                    it is LocalToolOption.ImageGeneration
+                                        it is LocalToolOption.EmailService ||
+                                        it is LocalToolOption.ImageGeneration
                                 }
                             }
 

@@ -128,7 +128,7 @@ fun AssistantToolsSubPage(
         }
 
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
-            if (assistant.isMain) {
+            if (assistant.isMain && BuildConfig.DEBUG) {
                 // Schedule Management
                 SettingGroupItem(
                     title = stringResource(R.string.discover_page_schedule),
@@ -323,7 +323,7 @@ fun AssistantToolsSubPage(
             // Update Profile (资料维护)
             // 改造：只有主智能体显示，且默认开启（业务上主智能体通常自带此工具）。
             // 其他智能体仅在 Debug 模式下显示，Release 版不显示。
-            if (assistant.isMain) {
+            if (assistant.isMain && BuildConfig.DEBUG) {
                 val updateProfileEnabled = assistant.localTools.contains(LocalToolOption.UpdateProfile)
                 SettingGroupItem(
                     title = stringResource(R.string.assistant_page_local_tools_update_profile_title),
