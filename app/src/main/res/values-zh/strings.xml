@@ -1696,4 +1696,7 @@
   <string name="backup_page_tts_cache">语音缓存</string>
   <string name="mimo_dct">小米 MiMo 语音合成，超真实音色</string>
 
+  <string name="chat_page_regenerate_requirement_title">优化回复要求</string>
+  <string name="chat_page_regenerate_requirement_placeholder">输入你对本次回复的特定要求（可选），如：简短一点...</string>
+  <string name="chat_page_regenerate_requirement_label">优化要求</string>
 </resources>

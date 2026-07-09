@@ -169,6 +169,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
         inputState = inputState,
         loadingJob = loadingJob,
         setting = setting,
+        bigScreen = isBigScreen,
         conversation = conversation,
         isConversationLoaded = isConversationLoaded,
         navController = navController,
@@ -177,7 +178,6 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
         enableWebSearch = enableWebSearch,
         currentSearchMode = currentSearchMode,
         currentChatModel = currentChatModel,
-        bigScreen = isBigScreen,
         initialSearchQuery = searchQuery,
         newChatStats = newChatStats
     )
@@ -247,7 +247,10 @@ private fun ChatPageContent(
     BackHandler(enabled = true, onBack = handleBack)
 
     var showRegenerateConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    var showRegenerateRequirementDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by remember { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
+    var pendingRegenerateRequirement by remember { mutableStateOf<String?>(null) }
+
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
 
@@ -354,7 +357,7 @@ private fun ChatPageContent(
                         bigScreen = bigScreen,
                         previewMode = previewMode,
                         isTemporaryChat = isTemporaryChat,
-                        onBack = handleBack, // 顶部返回按钮也走 handleBack
+                        onBack = handleBack,
                         onNewChat = {
                             vm.startNewTopic()
                         },
@@ -392,12 +395,8 @@ private fun ChatPageContent(
                             previewMode = false
                         },
                         onRegenerate = { message ->
-                            if (vm.canPreserveVersionHistory(message)) {
-                                vm.regenerateAtMessage(message, forceWipe = false)
-                            } else {
-                                pendingRegenerateMessage = message
-                                showRegenerateConfirmDialog = true
-                            }
+                            pendingRegenerateMessage = message
+                            showRegenerateRequirementDialog = true
                         },
                         onEdit = {
                             inputState.editingMessage = it.id
@@ -498,6 +497,7 @@ private fun ChatPageContent(
                             onDismissRequest = {
                                 showRegenerateConfirmDialog = false
                                 pendingRegenerateMessage = null
+                                pendingRegenerateRequirement = null
                             },
                             title = { Text(stringResource(R.string.regenerate_title)) },
                             text = {
@@ -507,16 +507,66 @@ private fun ChatPageContent(
                                 TextButton(
                                     onClick = {
                                         pendingRegenerateMessage?.let { message ->
-                                            vm.regenerateAtMessage(message, forceWipe = true)
+                                            vm.regenerateAtMessage(
+                                                message,
+                                                forceWipe = true,
+                                                requirement = pendingRegenerateRequirement
+                                            )
                                         }
                                         showRegenerateConfirmDialog = false
                                         pendingRegenerateMessage = null
+                                        pendingRegenerateRequirement = null
                                     }
                                 ) { Text(stringResource(R.string.regenerate_confirm)) }
                             },
                             dismissButton = {
                                 TextButton(onClick = {
                                     showRegenerateConfirmDialog = false
+                                    pendingRegenerateMessage = null
+                                    pendingRegenerateRequirement = null
+                                }) { Text(stringResource(R.string.cancel)) }
+                            }
+                        )
+                    }
+
+                    if (showRegenerateRequirementDialog && pendingRegenerateMessage != null) {
+                        var requirement by remember { mutableStateOf("") }
+                        AlertDialog(
+                            onDismissRequest = {
+                                showRegenerateRequirementDialog = false
+                                pendingRegenerateMessage = null
+                            },
+                            title = { Text(stringResource(R.string.chat_page_regenerate_requirement_title)) },
+                            text = {
+                                OutlinedTextField(
+                                    value = requirement,
+                                    onValueChange = { requirement = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text(stringResource(R.string.chat_page_regenerate_requirement_placeholder)) },
+                                    label = { Text(stringResource(R.string.chat_page_regenerate_requirement_label)) }
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        pendingRegenerateMessage?.let { message ->
+                                            val req = requirement.ifBlank { null }
+                                            if (vm.canPreserveVersionHistory(message)) {
+                                                vm.regenerateAtMessage(message, forceWipe = false, requirement = req)
+                                                showRegenerateRequirementDialog = false
+                                                pendingRegenerateMessage = null
+                                            } else {
+                                                pendingRegenerateRequirement = req
+                                                showRegenerateRequirementDialog = false
+                                                showRegenerateConfirmDialog = true
+                                            }
+                                        }
+                                    }
+                                ) { Text(stringResource(R.string.regenerate_confirm)) }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    showRegenerateRequirementDialog = false
                                     pendingRegenerateMessage = null
                                 }) { Text(stringResource(R.string.cancel)) }
                             }
@@ -622,7 +672,7 @@ private fun ChatPageContent(
                                     )
                                 },
                                 onUpdateAssistant = { updatedAssistant ->
-                                    vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
+                                    vm.updateAssistant(updatedAssistant)
                                 },
                                 onUpdateSearchService = { index ->
                                     vm.updateAssistantSearchMode(
@@ -722,7 +772,7 @@ private fun ChatPageContent(
                                     )
                                 },
                                 onUpdateAssistant = { updatedAssistant ->
-                                    vm.updateSettings(setting.copy(assistants = setting.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }))
+                                    vm.updateAssistant(updatedAssistant)
                                 },
                                 onUpdateSearchService = { index ->
                                     vm.updateAssistantSearchMode(
@@ -777,7 +827,9 @@ private fun ChatPageContent(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 DocumentLoadingAnimation(modifier = Modifier.padding(bottom = 24.dp))
                                 Text(
-                                    text = if (isConsolidating) stringResource(R.string.consolidating_in_progress) else stringResource(R.string.syncing_context_animation_hint),
+                                    text = if (isConsolidating) stringResource(R.string.consolidating_in_progress) else stringResource(
+                                        R.string.syncing_context_animation_hint
+                                    ),
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onBackground
                                 )
@@ -801,7 +853,6 @@ private fun ChatPageContent(
                             onHangup = { isCallActive = false },
                             modifier = Modifier.fillMaxSize()
                         )
-                        // 移除此处的独立 BackHandler，逻辑已整合至 handleBack
                     }
                 }
             }
@@ -844,7 +895,7 @@ private fun TopBar(
     bigScreen: Boolean,
     previewMode: Boolean,
     isTemporaryChat: Boolean,
-    onBack: () -> Unit, // 新增参数：统一的回退逻辑
+    onBack: () -> Unit,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
@@ -887,9 +938,8 @@ private fun TopBar(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 返回按钮
             Surface(
-                onClick = onBack, // 调用统一的回退逻辑
+                onClick = onBack,
                 shape = buttonShape,
                 color = topContainerColor,
                 border = topContainerBorder
@@ -901,7 +951,6 @@ private fun TopBar(
 
             Spacer(Modifier.width(8.dp))
 
-            // 喇叭图标移动到返回按钮右侧
             Surface(
                 onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) },
                 shape = buttonShape,
@@ -1076,7 +1125,7 @@ private fun TopBar(
             onAssistantSelected = { selectedAssistant ->
                 assistantState.setSelectAssistant(selectedAssistant)
             },
-            onDismiss = {}
+            onDismiss = { showAssistantPicker = false }
         )
     }
 

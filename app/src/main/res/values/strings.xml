@@ -1740,4 +1740,7 @@
   <string name="backup_page_tts_cache">Voice cache</string>
   <string name="mimo_dct">Xiaomi MiMo Speech Synthesis, Ultra-Realistic Timbre</string>
 
+  <string name="chat_page_regenerate_requirement_title">Requirements for Optimizing Replies</string>
+  <string name="chat_page_regenerate_requirement_placeholder">Enter your specific requirements for this reply (optional), e.g., keep it brief...</string>
+  <string name="chat_page_regenerate_requirement_label">Optimization Requirements</string>
 </resources>

@@ -675,7 +675,8 @@ class ChatService(
         conversationId: Uuid,
         message: UIMessage,
         regenerateAssistantMsg: Boolean = true,
-        forceWipe: Boolean = false
+        forceWipe: Boolean = false,
+        requirement: String? = null
     ) {
         val oldJob = _generationJobs.value[conversationId]
         oldJob?.cancel()
@@ -760,13 +761,13 @@ class ChatService(
                     }
 
                     if (updatedConv != null) {
-                        updateConversation(conversationId) { updatedConv }
-                        saveConversation(conversationId, updatedConv)
-                        pendingAction = { handleMessageComplete(conversationId) }
+                        updateConversation(conversationId) { updatedConv!! }
+                        saveConversation(conversationId, updatedConv!!)
+                        pendingAction = { handleMessageComplete(conversationId, requirement = requirement) }
                     } else if (regenerateAssistantMsg && message.role != MessageRole.USER) {
                         val clickedNode = conversation.getMessageNodeByMessage(message)
                         val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
-                        pendingAction = { handleMessageComplete(conversationId, messageRange = 0..<clickedIndex) }
+                        pendingAction = { handleMessageComplete(conversationId, messageRange = 0..<clickedIndex, requirement = requirement) }
                     }
                     true
                 } ?: false
@@ -794,10 +795,11 @@ class ChatService(
 
     private suspend fun handleMessageComplete(
         conversationId: Uuid,
-        messageRange: ClosedRange<Int>? = null,
+        messageRange: IntRange? = null,
         assistantOverride: Assistant? = null,
         skipContextForResponse: Boolean = false,
-        includeSkipContextMessages: Boolean = false
+        includeSkipContextMessages: Boolean = false,
+        requirement: String? = null
     ) {
         val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
         mutex.withLock {
@@ -900,20 +902,36 @@ class ChatService(
                 val baseMessages = currentConversation.currentMessages.let {
                     val raw =
                         if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
-                    val filtered = raw.filter { msg ->
+                    raw.filter { msg ->
                         msg.role != MessageRole.ASSISTANT ||
                             msg.toContentText().isNotBlank() ||
                             msg.parts.any { it is UIMessagePart.ToolCall }
                     }
-                    if (filtered.size < raw.size) {
-                        Log.w(TAG, "已自动过滤历史中的 ${raw.size - filtered.size} 条空 AI 消息，防止干扰上下文")
-                    }
-                    filtered
                 }
-                Log.d(TAG, "发送给 AI 的上下文消息总数: ${baseMessages.size}")
+
+                // 临时处理优化要求：仅针对发送给 AI 的上下文做拼接，不修改 baseMessages (用于 UI 同步)
+                val messagesForModel = if (!requirement.isNullOrBlank()) {
+                    val list = baseMessages.toMutableList()
+                    val lastUserIdx = list.indexOfLast { it.role == MessageRole.USER }
+                    if (lastUserIdx != -1) {
+                        val lastUserMsg = list[lastUserIdx]
+                        val updatedParts = lastUserMsg.parts.toMutableList()
+                        val lastTextIdx = updatedParts.indexOfLast { it is UIMessagePart.Text }
+                        if (lastTextIdx != -1) {
+                            val textPart = updatedParts[lastTextIdx] as UIMessagePart.Text
+                            updatedParts[lastTextIdx] = textPart.copy(text = textPart.text + " (回复要求：$requirement)")
+                        } else {
+                            updatedParts.add(UIMessagePart.Text("(回复要求：$requirement)"))
+                        }
+                        list[lastUserIdx] = lastUserMsg.copy(parts = updatedParts)
+                    }
+                    list
+                } else baseMessages
+
+                Log.d(TAG, "发送给 AI 的上下文消息总数: ${messagesForModel.size}")
 
                 val finalContextMessages = if (wechatMode) {
-                    val messages = baseMessages.toMutableList()
+                    val messages = messagesForModel.toMutableList()
                     val lastUserGroupStart = messages.indexOfLast { it.role != MessageRole.USER } + 1
                     if (lastUserGroupStart in messages.indices && messages.size - lastUserGroupStart > 1) {
                         val userMessages = messages.subList(lastUserGroupStart, messages.size)
@@ -929,7 +947,7 @@ class ChatService(
                         messages.add(combinedMsg)
                     }
                     messages
-                } else baseMessages
+                } else messagesForModel
 
                 kotlinx.coroutines.withTimeout(20 * 60 * 1000L) {
                     generationHandler.generateText(
@@ -1068,7 +1086,7 @@ class ChatService(
                                 lastDisplayedSentenceCount = 0
                             }
 
-                            // 4. 执行同步
+                            // 4. 执行同步 (注意这里恢复使用 baseMessages 而不是 modifiedMessages，确保 DB 中没有临时要求)
                             if (anyNewMessages) {
                                 // 微信模式下，同步时先过滤掉正在回答的消息的文本部分，防止动画还没开始就“闪现”出完整文本
                                 val syncMessages = if (wechatMode && lastAI != null && fullText.isNotBlank()) {

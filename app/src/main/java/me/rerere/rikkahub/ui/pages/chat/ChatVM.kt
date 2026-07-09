@@ -12,7 +12,6 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -31,7 +30,6 @@ import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.core.data.model.replaceRegexes
-import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.FavoriteRepository
@@ -49,7 +47,6 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.common.JsonInstant
-import kotlinx.serialization.encodeToString
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 
@@ -604,7 +601,7 @@ class ChatVM(
         return true
     }
 
-    fun regenerateAtMessage(message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false) {
+    fun regenerateAtMessage(message: UIMessage, regenerateAssistantMsg: Boolean = true, forceWipe: Boolean = false, requirement: String? = null) {
         viewModelScope.launch {
             val allConvs = conversationRepo.getConversationsOfAssistant(conversation.value.assistantId).first()
             val targetConv = allConvs.find { conv ->
@@ -613,7 +610,7 @@ class ChatVM(
 
             _currentActiveId.value = targetConv.id
             trackConversation(targetConv.id)
-            chatService.regenerateAtMessage(targetConv.id, message, regenerateAssistantMsg, forceWipe)
+            chatService.regenerateAtMessage(targetConv.id, message, regenerateAssistantMsg, forceWipe, requirement = requirement)
         }
     }
 
