@@ -105,16 +105,35 @@ class AgentTaskWorker(
 
                 // Handle repeating tasks
                 if (task.repeatInterval > 0) {
-                    val nextTime = task.scheduledTime + task.repeatInterval
+                    val now = System.currentTimeMillis()
+                    val threshold = 5 * 60 * 60 * 1000L // 5 小时阈值
+
+                    // 根据重复间隔决定调度策略
+                    val calculatedNextTime = if (task.repeatInterval < threshold) {
+                        // 1. 动态间隔模式 (高频任务)：基于“实际执行时间”计算，防止关机后的通知轰炸
+                        now + task.repeatInterval
+                    } else {
+                        // 2. 固定网格模式 (长周期任务)：基于“原定计划时间”计算，保证如每日/每周任务的准时性
+                        task.scheduledTime + task.repeatInterval
+                    }
+
+                    // 安全检查：如果计算出的下一次时间依然早于或等于现在（比如手机关机时间超过了一个重复周期）
+                    // 则强制切换到从“现在”开始计算，确保不会陷入连续补发通知的死循环
+                    val finalNextTime = if (calculatedNextTime <= now) {
+                        now + task.repeatInterval
+                    } else {
+                        calculatedNextTime
+                    }
+
                     val nextTask = task.copy(
-                        id = 0, // Create as new record
-                        scheduledTime = nextTime,
+                        id = 0, // 创建新记录
+                        scheduledTime = finalNextTime,
                         isExecuted = false,
-                        createdAt = System.currentTimeMillis()
+                        createdAt = now
                     )
                     val newId = agentTaskRepository.addTask(nextTask)
                     agentTaskScheduler.scheduleTask(nextTask.copy(id = newId))
-                    Log.d(TAG, "Scheduled next repeat task: $newId at $nextTime")
+                    Log.d(TAG, "Scheduled next repeat task: $newId at $finalNextTime (Interval: ${task.repeatInterval}ms)")
                 }
 
                 Result.success()
