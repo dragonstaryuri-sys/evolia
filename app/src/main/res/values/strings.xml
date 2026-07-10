@@ -1364,6 +1364,20 @@
   <string name="email_error_protocol">Protocol loading failed. Please check the Release obfuscation configuration.</string>
   <string name="email_error_auth">Authentication failed. Please check the authorization code.</string>
   <!-- Scheduled Tasks -->
+  <string name="agent_task_add">Add Scheduled Task</string>
+  <string name="agent_task_presets">Presets</string>
+  <string name="agent_task_preset_good_night">Nightly Reminder</string>
+  <string name="agent_task_preset_good_morning">Morning Greeting</string>
+  <string name="agent_task_preset_weekly_report">Weekly Report</string>
+  <string name="agent_task_name">Task Name (Scenario)</string>
+  <string name="agent_task_scheduled_time">First Execution Time</string>
+  <string name="agent_task_repeat_interval">Repeat Interval</string>
+  <string name="agent_task_repeat_never">Never</string>
+  <string name="agent_task_repeat_daily">Daily</string>
+  <string name="agent_task_repeat_weekly">Weekly</string>
+  <string name="agent_task_repeat_monthly">Monthly</string>
+  <string name="agent_task_repeat_yearly">Yearly</string>
+  <string name="agent_task_instruction">Task Instruction</string>
   <string name="agent_task_manager">Scheduled Task Management</string>
   <string name="agent_task_empty">No scheduled tasks yet</string>
   <string name="agent_task_type_email">Scheduled Email</string>

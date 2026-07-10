@@ -1314,6 +1314,20 @@
   <string name="email_error_auth">认证失败，请检查授权码</string>
 
   <!--定时任务 -->
+  <string name="agent_task_add">新建定时任务</string>
+  <string name="agent_task_presets">快捷预置</string>
+  <string name="agent_task_preset_good_night">每日晚安提醒</string>
+  <string name="agent_task_preset_good_morning">每日早安问候</string>
+  <string name="agent_task_preset_weekly_report">每周报告</string>
+  <string name="agent_task_name">场景名称</string>
+  <string name="agent_task_scheduled_time">首次任务执行时间</string>
+  <string name="agent_task_repeat_interval">重复频率</string>
+  <string name="agent_task_repeat_never">从不</string>
+  <string name="agent_task_repeat_daily">每天</string>
+  <string name="agent_task_repeat_weekly">每周</string>
+  <string name="agent_task_repeat_monthly">每月</string>
+  <string name="agent_task_repeat_yearly">每年</string>
+  <string name="agent_task_instruction">任务描述</string>
   <string name="agent_task_manager">定时任务管理</string>
   <string name="agent_task_empty">暂无定时任务</string>
   <string name="agent_task_type_email">定时邮件</string>

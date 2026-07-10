@@ -128,6 +128,12 @@ class AssistantDetailVM(
         .map { tasks -> tasks.filter { !it.isExecuted } }
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    fun addAgentTask(task: AgentTaskEntity) {
+        viewModelScope.launch {
+            agentTaskRepository.addTask(task)
+        }
+    }
+
     fun deleteAgentTask(task: AgentTaskEntity) {
         viewModelScope.launch {
             agentTaskRepository.deleteTask(task)
