@@ -1036,7 +1036,7 @@
   <string name="assistant_model_top_p_enabled">已开启（%s）</string>
   <string name="assistant_model_top_p_default">默认</string>
   <string name="assistant_model_group_output">输出设置</string>
-  <string name="assistant_model_thinking_budget_value">%d 个令牌</string>
+  <string name="assistant_model_thinking_budget_value">%d token</string>
   <string name="assistant_model_thinking_budget_disabled">已关闭</string>
   <string name="assistant_model_max_tokens_auto">自动</string>
   <!-- Assistant Tools Page -->

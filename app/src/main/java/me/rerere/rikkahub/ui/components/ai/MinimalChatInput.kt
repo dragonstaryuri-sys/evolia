@@ -20,7 +20,7 @@ import me.rerere.rikkahub.ui.components.ui.AutoAIIcon
 import me.rerere.search.SearchServiceOptions
 import coil3.compose.AsyncImage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.utils.deleteChatFiles
+import me.rerere.ai.core.ReasoningLevel
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.util.fastForEach
@@ -788,14 +788,14 @@ private fun MinimalPickerContent(
 
         // Reasoning picker - only show if model has reasoning ability (same as floating toolbar)
         if (currentModel?.abilities?.contains(me.rerere.ai.provider.ModelAbility.REASONING) == true) {
-            val reasoningSubtitle = when (val budget = assistant.thinkingBudget) {
-                null, 0 -> stringResource(R.string.reasoning_off)
-                1 -> stringResource(R.string.reasoning_auto)
-                1024 -> stringResource(R.string.reasoning_light)
-                4096 -> stringResource(R.string.reasoning_medium)
-                16384 -> stringResource(R.string.reasoning_heavy)
-                else -> stringResource(R.string.reasoning_auto)
-            }
+            val reasoningLevel = ReasoningLevel.fromBudgetTokens(assistant.thinkingBudget)
+            val reasoningSubtitle = stringResource(when (reasoningLevel) {
+                ReasoningLevel.OFF -> R.string.reasoning_off
+                ReasoningLevel.AUTO -> R.string.reasoning_auto
+                ReasoningLevel.LOW -> R.string.reasoning_light
+                ReasoningLevel.MEDIUM -> R.string.reasoning_medium
+                ReasoningLevel.HIGH -> R.string.reasoning_heavy
+            })
             MinimalPickerItem(
                 icon = {
                     Icon(

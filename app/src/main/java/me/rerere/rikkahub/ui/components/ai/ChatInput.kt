@@ -1351,7 +1351,7 @@ internal fun FilesPicker(
             ) {
                 // Reasoning picker
                 val chatModel = settings.getCurrentChatModel()
-                val reasoningTokens = assistant.thinkingBudget ?: 0
+                val reasoningTokens = assistant.thinkingBudget ?: -1
                 val reasoningLevel = ReasoningLevel.fromBudgetTokens(reasoningTokens)
                 val reasoningActive = reasoningLevel.isEnabled
                 val reasoningLevelTitle = when (reasoningLevel) {
