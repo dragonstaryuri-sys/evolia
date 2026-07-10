@@ -50,6 +50,10 @@ class AgentTaskWorker(
         }
 
         return try {
+            // 自动清理：在执行新任务前，先清理数据库中所有已执行完成的记录
+            agentTaskRepository.deleteExecutedTasks()
+            Log.d(TAG, "Auto cleanup: Deleted all executed tasks from database.")
+
             val task = agentTaskRepository.getTaskById(taskId)
             if (task == null) {
                 Log.e(TAG, "Worker failed: Task with ID $taskId not found in database")
