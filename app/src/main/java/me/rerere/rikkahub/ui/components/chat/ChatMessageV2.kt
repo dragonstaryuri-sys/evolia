@@ -465,6 +465,7 @@ fun ChatMessageTurn(
                 UserMessageTurn(
                     group = group,
                     assistant = assistant,
+                    isLastTurn = isLastTurn,
                     maxWidth = maxBubbleWidth,
                     showToolbar = showUserToolbar,
                     onToggleToolbar = {
@@ -573,6 +574,27 @@ fun ChatMessageTurn(
     }
 }
 
+@Composable
+private fun WeChatRegenerateButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .clickable(onClick = onClick)
+            .padding(8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Refresh,
+            contentDescription = "Regenerate",
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        )
+    }
+}
+
 /**
  * User message turn - right-aligned stacked bubbles.
  */
@@ -580,6 +602,7 @@ fun ChatMessageTurn(
 private fun UserMessageTurn(
     group: MessageTurnGroup,
     assistant: Assistant?,
+    isLastTurn: Boolean,
     maxWidth: androidx.compose.ui.unit.Dp,
     showToolbar: Boolean,
     onToggleToolbar: (MessageNode) -> Unit,
@@ -632,21 +655,25 @@ private fun UserMessageTurn(
                 val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()
                 textParts.forEachIndexed { partIndex, part ->
                     val isFirst = nodeIndex == 0 && partIndex == 0
-                    val isLast = nodeIndex == group.filteredNodes.lastIndex && partIndex == textParts.lastIndex
+                    val isLastPart = nodeIndex == group.filteredNodes.lastIndex && partIndex == textParts.lastIndex
                     val totalBubbles = group.filteredNodes.sumOf { n ->
                         n.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().size
                     }
                     val position = if (wechatMode) BubblePosition.SINGLE else when {
                         totalBubbles == 1 -> BubblePosition.SINGLE
                         isFirst -> BubblePosition.FIRST
-                        isLast -> BubblePosition.LAST
+                        isLastPart -> BubblePosition.LAST
                         else -> BubblePosition.MIDDLE
                     }
 
                     Row(
-                        verticalAlignment = Alignment.Top,
+                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
                     ) {
+                        if (wechatMode && isLastTurn && isLastPart && showRegenerate) {
+                            WeChatRegenerateButton(onClick = onRegenerate)
+                        }
+
                         GroupedMessageBubble(
                             position = position,
                             role = BubbleRole.USER,
@@ -955,15 +982,16 @@ private fun AssistantMessageTurn(
 
             val bubblesToShow = if (wechatMode) allTextBubbles.take(displayedCount) else allTextBubbles
             bubblesToShow.forEachIndexed { index, (node, part) ->
+                val isLastBubble = index == allTextBubbles.lastIndex
                 val position = if (wechatMode) BubblePosition.SINGLE else when {
                     allTextBubbles.size == 1 -> BubblePosition.SINGLE
                     index == 0 -> BubblePosition.FIRST
-                    index == allTextBubbles.lastIndex -> BubblePosition.LAST
+                    isLastBubble -> BubblePosition.LAST
                     else -> BubblePosition.MIDDLE
                 }
 
                 Row(
-                    verticalAlignment = Alignment.Top,
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Start
                 ) {
                     if (wechatMode) {
@@ -995,6 +1023,10 @@ private fun AssistantMessageTurn(
                             ),
                             onClickCitation = { onCitationClick(it) }
                         )
+                    }
+
+                    if (wechatMode && isLastTurn && isLastBubble && showRegenerate && !loading) {
+                        WeChatRegenerateButton(onClick = onRegenerate)
                     }
                 }
             }
@@ -1042,8 +1074,9 @@ private fun AssistantMessageTurn(
             }
 
             val bubblesToShow = if (wechatMode) allTextBubbles.take(displayedCount) else allTextBubbles
-            bubblesToShow.forEach { (node, part) ->
-                Row(verticalAlignment = Alignment.Top) {
+            bubblesToShow.forEachIndexed { index, (node, part) ->
+                val isLastBubble = index == allTextBubbles.lastIndex
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     if (wechatMode) {
                         UIAvatar(
                             name = avatarName,
@@ -1065,6 +1098,9 @@ private fun AssistantMessageTurn(
                             onBubbleClick(node)
                         }
                     )
+                    if (wechatMode && isLastTurn && isLastBubble && showRegenerate && !loading) {
+                        WeChatRegenerateButton(onClick = onRegenerate)
+                    }
                 }
             }
         }
