@@ -490,7 +490,8 @@ class ChatService(
             val settings = settingsStore.settingsFlow.value
             val assistant = settings.getAssistantById(currentAssistantId) ?: settings.getCurrentAssistant()
             val newConversation = Conversation.ofId(
-                id = conversationId, assistantId = assistant.id).updateCurrentMessages(assistant.presetMessages)
+                id = conversationId, assistantId = assistant.id
+            ).updateCurrentMessages(assistant.presetMessages)
             updateConversation(conversationId) { newConversation }
         }
     }
@@ -768,7 +769,13 @@ class ChatService(
                     } else if (regenerateAssistantMsg && message.role != MessageRole.USER) {
                         val clickedNode = conversation.getMessageNodeByMessage(message)
                         val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
-                        pendingAction = { handleMessageComplete(conversationId, messageRange = 0..<clickedIndex, requirement = requirement) }
+                        pendingAction = {
+                            handleMessageComplete(
+                                conversationId,
+                                messageRange = 0..<clickedIndex,
+                                requirement = requirement
+                            )
+                        }
                     }
                     true
                 } ?: false
@@ -1027,26 +1034,26 @@ class ChatService(
                                     userImageUrls = currentConversation.currentMessages.lastOrNull { it.role == MessageRole.USER }?.parts?.filterIsInstance<UIMessagePart.Image>()
                                         ?.map { it.url } ?: emptyList()))
 
-                            if (isMain) {
-                                val nameRegex = Regex("[^a-zA-Z0-9_-]")
-                                mcpManager.getAllAvailableTools().forEach { mcpTool ->
-                                    val originalName = mcpTool.name
-                                    val sanitizedName = "mcp_" + originalName.replace(nameRegex, "_").let {
-                                        if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
-                                    }
 
-                                    add(
-                                        Tool(
-                                            name = sanitizedName,
-                                            description = mcpTool.description ?: "",
-                                            parameters = { mcpTool.inputSchema },
-                                            execute = { jsonElement ->
-                                                val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
-                                                mcpManager.callTool(originalName, input).truncateLargeJsonText()
-                                            })
-                                    )
+                            val nameRegex = Regex("[^a-zA-Z0-9_-]")
+                            mcpManager.getAllAvailableTools().forEach { mcpTool ->
+                                val originalName = mcpTool.name
+                                val sanitizedName = "mcp_" + originalName.replace(nameRegex, "_").let {
+                                    if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
                                 }
+
+                                add(
+                                    Tool(
+                                        name = sanitizedName,
+                                        description = mcpTool.description ?: "",
+                                        parameters = { mcpTool.inputSchema },
+                                        execute = { jsonElement ->
+                                            val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
+                                            mcpManager.callTool(originalName, input).truncateLargeJsonText()
+                                        })
+                                )
                             }
+
                         },
                         truncateIndex = currentConversation.truncateIndex,
                         enabledModeIds = currentConversation.enabledModeIds,
