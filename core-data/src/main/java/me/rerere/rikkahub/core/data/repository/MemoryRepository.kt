@@ -71,6 +71,10 @@ class MemoryRepository(
         return chatSegmentDAO.getLatestSegmentEndIndex(conversationId)
     }
 
+    suspend fun getSegmentsByAssistantAndTimeRange(assistantId: String, startTime: Long, endTime: Long): List<ChatSegmentEntity> {
+        return chatSegmentDAO.getSegmentsByAssistantAndTimeRange(assistantId, startTime, endTime)
+    }
+
     suspend fun retrieveRelevantSegments(
         assistantId: String,
         conversationId: String,

@@ -15,6 +15,9 @@ interface ChatSegmentDAO {
     @Query("SELECT * FROM chat_segments WHERE assistant_id = :assistantId")
     suspend fun getSegmentsByAssistant(assistantId: String): List<ChatSegmentEntity>
 
+    @Query("SELECT * FROM chat_segments WHERE assistant_id = :assistantId AND timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp ASC")
+    suspend fun getSegmentsByAssistantAndTimeRange(assistantId: String, startTime: Long, endTime: Long): List<ChatSegmentEntity>
+
     @Query("SELECT * FROM chat_segments WHERE assistant_id = :assistantId ORDER BY timestamp DESC")
     fun getSegmentsByAssistantFlow(assistantId: String): Flow<List<ChatSegmentEntity>>
 

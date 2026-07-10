@@ -182,7 +182,7 @@ class GenerationHandler(
                     add(
                         Tool(
                             name = "retrieve_memory",
-                            description = "可通过关键词检索历史记忆片段，或根据指定片段编号调取完整消息历史记录。",
+                            description = "可通过关键词检索历史记忆片段，根据指定片段编号调取完整消息历史记录，或通过时间范围查询该智能体下一段时间内的所有记忆片段（一次最多返回一周，建议返回一天）。",
                             parameters = {
                                 InputSchema.Obj(
                                     properties = buildJsonObject {
@@ -200,6 +200,14 @@ class GenerationHandler(
                                                 "需在历史记忆库（RAG检索）中检索的关键词。"
                                             )
                                         })
+                                        put("start_time", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "查询范围的开始时间 (yyyy-MM-dd HH:mm:ss)")
+                                        })
+                                        put("end_time", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "查询范围的结束时间 (yyyy-MM-dd HH:mm:ss)")
+                                        })
                                     }
                                 )
                             },
@@ -207,8 +215,48 @@ class GenerationHandler(
                                 val args = params.jsonObject
                                 val segmentId = args["segment_id"]?.jsonPrimitive?.intOrNull
                                 val keyWords = args["key_words"]?.jsonPrimitive?.contentOrNull
+                                val startTimeStr = args["start_time"]?.jsonPrimitive?.contentOrNull
+                                val endTimeStr = args["end_time"]?.jsonPrimitive?.contentOrNull
 
                                 when {
+                                    startTimeStr != null && endTimeStr != null -> {
+                                        try {
+                                            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                                            val start = LocalDateTime.parse(startTimeStr, formatter)
+                                            val end = LocalDateTime.parse(endTimeStr, formatter)
+
+                                            val duration = Duration.between(start, end)
+                                            if (duration.toHours() > 24 * 7) {
+                                                return@Tool buildJsonObject {
+                                                    put("error", JsonPrimitive("一次最多只能查询一周的记忆片段"))
+                                                }
+                                            }
+
+                                            val startTimeLong = start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                            val endTimeLong = end.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+                                            val segments = memoryRepo.getSegmentsByAssistantAndTimeRange(
+                                                assistantId = assistant.id.toString(),
+                                                startTime = startTimeLong,
+                                                endTime = endTimeLong
+                                            )
+
+                                            buildJsonObject {
+                                                put("results", JsonArray(segments.map { seg ->
+                                                    buildJsonObject {
+                                                        put("segment_id", JsonPrimitive(seg.id))
+                                                        put("time", JsonPrimitive(formatMemoryDate(seg.timestamp)))
+                                                        put("content", JsonPrimitive(seg.content))
+                                                    }
+                                                }))
+                                            }
+                                        } catch (e: Exception) {
+                                            buildJsonObject {
+                                                put("error", JsonPrimitive("时间格式错误或查询失败: ${e.message}"))
+                                            }
+                                        }
+                                    }
+
                                     keyWords != null -> {
                                         val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
                                             assistantId = assistant.id.toString(),
@@ -263,7 +311,7 @@ class GenerationHandler(
                                     else -> buildJsonObject {
                                         put(
                                             "error",
-                                            JsonPrimitive("必须传入`segment_id`或`key_words`其中一个参数")
+                                            JsonPrimitive("必须传入`segment_id`、`key_words`或`start_time/end_time`其中一个参数")
                                         )
                                     }
                                 }
