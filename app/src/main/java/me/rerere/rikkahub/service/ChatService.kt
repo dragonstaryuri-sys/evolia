@@ -635,7 +635,7 @@ class ChatService(
 
             val debounceJob = appScope.launch {
                 if (wechatMode) {
-                    delay(5000)
+                    delay(8000)
                     _isAiTypingMap.update { it + (conversationId to true) }
                 } else {
                     _isAiTypingMap.update { it - conversationId }

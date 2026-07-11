@@ -891,8 +891,8 @@ private fun AssistantMessageTurn(
                 if (displayedCount < totalAvailable) {
                     // If AI already cut the next bubble, or generation stopped, delay the current one
                     val prevSentence = latest.getOrNull(displayedCount - 1)?.second?.text ?: ""
-                    // 打字速度建议：每个字 300ms 基础延迟
-                    val delayTime = (prevSentence.length * 300L + 500L).coerceIn(800L, 5000L)
+                    // 打字速度建议：每个字 100ms 基础延迟
+                    val delayTime = (prevSentence.length * 200L + 100L).coerceIn(500L, 3000L)
                     delay(delayTime)
                     displayedCount++
                 } else {
