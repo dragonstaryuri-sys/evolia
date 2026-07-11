@@ -968,7 +968,7 @@
   <string name="rag_memory_retrieval_desc">基于上下文的智能记忆检索</string>
   <string name="advanced_memory">高级记忆</string>
   <string name="advanced_memory_desc">从对话中生成片段记忆</string>
-  <string name="similarity_threshold">相似度阈值</string>
+  <string name="similarity_threshold">综合评分阈值</string>
   <string name="similarity_all">全部</string>
   <string name="similarity_exact">精确</string>
   <string name="consolidation_delay">整合延迟</string>
@@ -1541,7 +1541,7 @@
   <string name="assistant_import_page_importing">正在导入...</string>
   <string name="assistant_import_page_history_group_title">会话历史导入</string>
   <string name="assistant_import_page_history_hint">请使用模板填写对话历史，最多支持 30 轮对话。</string>
-  <string name="context_source_segment_match">匹配历史片段 (相关度: %s)</string>
+  <string name="context_source_segment_match">匹配历史片段 (召回评分: %s)</string>
   <string name="context_source_historical_segment">历史对话片段</string>
   <string name="notification_channel_agent_task">AI 任务</string>
   <string name="notification_channel_assistant_updates">主动消息提醒</string>

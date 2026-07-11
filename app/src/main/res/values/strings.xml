@@ -1010,7 +1010,7 @@
   <string name="advanced_memory">Advanced Memory</string>
   <string name="advanced_memory_desc">Form episodic memories from conversations</string>
 
-  <string name="similarity_threshold">Similarity Threshold</string>
+  <string name="similarity_threshold">Retrieval Score Threshold</string>
   <string name="similarity_all">All</string>
   <string name="similarity_exact">Exact</string>
 
