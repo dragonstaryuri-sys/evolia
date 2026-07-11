@@ -33,13 +33,14 @@ class OpenAITTSProvider : TTSProvider<TTSProviderSetting.OpenAI> {
             put("model", providerSetting.model)
             put("input", request.text)
             put("voice", providerSetting.voice)
+            put("speed", providerSetting.speed)
             put("response_format", "mp3") // Default to MP3
         }
 
         Log.i(
             TAG,
             "generateSpeech: model=${providerSetting.model}, " +
-                "voice=${providerSetting.voice}, textLength=${request.text.length}"
+                "voice=${providerSetting.voice}, speed=${providerSetting.speed}, textLength=${request.text.length}"
         )
 
         val httpRequest = Request.Builder()
@@ -67,7 +68,8 @@ class OpenAITTSProvider : TTSProvider<TTSProviderSetting.OpenAI> {
                 metadata = mapOf(
                     "provider" to "openai",
                     "model" to providerSetting.model,
-                    "voice" to providerSetting.voice
+                    "voice" to providerSetting.voice,
+                    "speed" to providerSetting.speed.toString()
                 )
             )
         )

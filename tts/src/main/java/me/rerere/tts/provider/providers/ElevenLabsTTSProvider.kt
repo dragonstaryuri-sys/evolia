@@ -20,8 +20,7 @@ import java.util.concurrent.TimeUnit
 
 private const val TAG = "ElevenLabsTTSProvider"
 
-// 全局信号量，确保即使 Provider 被多次创建，并发限制依然生效
-// 虽然 ElevenLabs 允许 2 个并发，但设为 1 可以有效避免因为网络抖动或预取机制导致的边缘触发错误
+// 全局信号量，确保并发限制生效
 private val globalSemaphore = Semaphore(1)
 
 class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
@@ -38,9 +37,18 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
             val requestBody = JSONObject().apply {
                 put("text", request.text)
                 put("model_id", providerSetting.modelId)
+
+                // ElevenLabs 语速调节通常在 voice_settings 中
+                // 如果模型支持（如 turbo v2.5），则会生效
+                put("voice_settings", JSONObject().apply {
+                    put("speed", providerSetting.speed)
+                    // 默认值，避免接口报错
+                    put("stability", 0.5)
+                    put("similarity_boost", 0.75)
+                })
             }
 
-            Log.i(TAG, "generateSpeech: voiceId=${providerSetting.voiceId}, model=${providerSetting.modelId}")
+            Log.i(TAG, "generateSpeech: voiceId=${providerSetting.voiceId}, model=${providerSetting.modelId}, speed=${providerSetting.speed}")
 
             val httpRequest = Request.Builder()
                 .url("https://api.elevenlabs.io/v1/text-to-speech/${providerSetting.voiceId}")
@@ -69,7 +77,8 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
                         metadata = mapOf(
                             "provider" to "elevenlabs",
                             "model" to providerSetting.modelId,
-                            "voice" to providerSetting.voiceId
+                            "voice" to providerSetting.voiceId,
+                            "speed" to providerSetting.speed.toString()
                         )
                     )
                 )
