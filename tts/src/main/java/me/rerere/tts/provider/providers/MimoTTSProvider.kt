@@ -50,12 +50,13 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
             put("audio", JSONObject().apply {
                 put("format", "mp3") // Support mp3, wav, pcm
                 put("voice", providerSetting.voice)
+                put("speed", providerSetting.speed)
             })
 
             put("stream", false) // Non-streaming for now as per simple implementation
         }
 
-        Log.i(TAG, "generateSpeech: model=${providerSetting.model}, voice=${providerSetting.voice}")
+        Log.i(TAG, "generateSpeech: model=${providerSetting.model}, voice=${providerSetting.voice}, speed=${providerSetting.speed}")
 
         val httpRequest = Request.Builder()
             .url(providerSetting.baseUrl)
@@ -100,7 +101,8 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                 metadata = mapOf(
                     "provider" to "mimo",
                     "model" to providerSetting.model,
-                    "voice" to providerSetting.voice
+                    "voice" to providerSetting.voice,
+                    "speed" to providerSetting.speed.toString()
                 )
             )
         )
