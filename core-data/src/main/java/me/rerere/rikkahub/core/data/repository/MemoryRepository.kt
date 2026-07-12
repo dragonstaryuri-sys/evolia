@@ -465,33 +465,33 @@ class MemoryRepository(
         } else null
 
         val retrievalLimit = if (hasRerank) limit * 3 else limit
-
-        val memories = if (includeCore) memoryDAO.getMemoriesOfAssistant(assistantId) else emptyList()
-        val segments = if (includeEpisodes) {
-            chatSegmentDAO.getSegmentsByAssistant(assistantId)
+        val currentModelId = embeddingService.getEmbeddingModelId(assistantId)
+        val startTime = System.currentTimeMillis()
+        val memoryProjections = if (includeCore) memoryDAO.getMemoryProjections(assistantId) else emptyList()
+        val segmentProjections = if (includeEpisodes) {
+            chatSegmentDAO.getSegmentProjections(assistantId)
                 .filter { it.conversationId != excludeConversationId }
         } else emptyList()
-        Log.v(TAG, "📦 [RAG] 候选池大小: Memories=${memories.size}, Segments=${segments.size}")
 
-        val memoryScores = memories.mapNotNull { memory ->
-            val effectiveKeywords = if (memory.keywords.isNullOrBlank()) {
-                val local = KeywordExtractor.extract(memory.content)
-                memoryDAO.updateMemory(memory.copy(keywords = local))
-                local
-            } else memory.keywords
+// 📍 插入点 2：投影查询结束
+        val projectionTime = System.currentTimeMillis() - startTime
+        Log.d(TAG, "⏱️ [RAG-Perf] 加载 ${memoryProjections.size + segmentProjections.size} 条投影耗时: ${projectionTime}ms")
+        Log.v(TAG, "📦 [RAG] 候选池大小: Memories=${memoryProjections.size}, Segments=${segmentProjections.size}")
+
+        val memoryScores = memoryProjections.mapNotNull { proj ->
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC || queryEmbedding == null) {
-                calculateKeywordScore(query, effectiveKeywords)
+                calculateKeywordScore(query, proj.keywords)
             } else 0f
 
             val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
-                val embedding = getOrCreateEmbedding(memory.id, memory.type, memory.content, memory.keywords, assistantId, memory.embedding, memory.embeddingModelId)
-                embedding?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
+                val emb = proj.embedding?.let { VectorUtils.fromByteArray(it) }
+                if (emb != null && proj.embeddingModelId == currentModelId) {
+                    VectorEngine.cosineSimilarity(queryEmbedding, emb)
+                } else 0f
             } else 0f
 
             val score = when(mode) {
-                MemoryRetrievalMode.SEMANTIC -> {
-                    if (queryEmbedding == null) keywordScore else similarity * 1.05f
-                }
+                MemoryRetrievalMode.SEMANTIC -> if (queryEmbedding == null) keywordScore else similarity * 1.05f
                 MemoryRetrievalMode.KEYWORD -> keywordScore
                 MemoryRetrievalMode.HYBRID -> {
                     if (queryEmbedding == null) keywordScore
@@ -499,51 +499,61 @@ class MemoryRepository(
                 }
                 MemoryRetrievalMode.OFF -> 0f
             }
-
-            if (score >= similarityThreshold) Triple(memory, score, true) else null
+            if (score >= similarityThreshold) Triple(proj.id, score, true) else null
         }
 
-        val segmentScores = segments.mapNotNull { segment ->
+        val segmentScores = segmentProjections.mapNotNull { proj ->
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC || queryEmbedding == null) {
-                calculateKeywordScore(query, segment.keywords)
+                calculateKeywordScore(query, proj.keywords)
             } else 0f
 
             val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
-                val embedding = getOrCreateEmbedding(segment.id, MemoryType.SEGMENT, segment.content, segment.keywords, assistantId, segment.embedding, segment.embeddingModelId)
-                embedding?.let { VectorEngine.cosineSimilarity(queryEmbedding, it) } ?: 0f
+                val emb = proj.embedding?.let { VectorUtils.fromByteArray(it) }
+                if (emb != null && proj.embeddingModelId == currentModelId) {
+                    VectorEngine.cosineSimilarity(queryEmbedding, emb)
+                } else 0f
             } else 0f
 
-            val ageInMillis = System.currentTimeMillis() - segment.timestamp
-            val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
-            val recency = (1.0 / (1.0 + (ageInDays / 7.0))).toFloat()
+            val ageInMillis = System.currentTimeMillis() - proj.timestamp
+            val recency = (1.0 / (1.0 + (ageInMillis / (1000.0 * 60 * 60 * 24 * 7.0)))).toFloat()
 
             val score = when(mode) {
-                MemoryRetrievalMode.SEMANTIC -> {
-                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
-                    else (similarity * 0.8f) + (recency * 0.2f)
-                }
+                MemoryRetrievalMode.SEMANTIC -> if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f) else (similarity * 0.8f) + (recency * 0.2f)
                 MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.8f) + (recency * 0.2f)
-                MemoryRetrievalMode.HYBRID -> {
-                    if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
-                    else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.2f)
-                }
+                MemoryRetrievalMode.HYBRID -> if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f) else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.2f)
                 MemoryRetrievalMode.OFF -> 0f
             }
-            if (score >= similarityThreshold) Triple(segment, score, false) else null
+            if (score >= similarityThreshold) Triple(proj.id, score, false) else null
         }
 
         val allScored = (memoryScores + segmentScores).sortedByDescending { it.second }
+        val scoringTime = System.currentTimeMillis() - startTime - projectionTime
+        Log.d(TAG, "⏱️ [RAG-Perf] 内存评分排序耗时: ${scoringTime}ms")
         Log.v(TAG, "🎯 [RAG] 阈值筛选后匹配数: ${allScored.size}")
 
-        val initialResults = allScored.take(retrievalLimit).mapNotNull { triple ->
-            val item = triple.first
-            val score = triple.second
-            if (triple.third) {
-                val m = item as MemoryEntity
-                AssistantMemory(m.id, m.content, m.keywords, m.type, true, m.embeddingModelId, m.createdAt, null, score) to score
+        val topCandidates = allScored.take(retrievalLimit)
+        val topMemoryIds = topCandidates.filter { it.third }.map { it.first }
+        val topSegmentIds = topCandidates.filter { !it.third }.map { it.first }
+
+        // 📍 插入点 3：开始按需加载全量数据
+        val fetchFullStart = System.currentTimeMillis()
+
+        val fullMemories = if (topMemoryIds.isNotEmpty()) memoryDAO.getMemoriesByIds(topMemoryIds).associateBy { it.id } else emptyMap()
+        val fullSegments = if (topSegmentIds.isNotEmpty()) chatSegmentDAO.getSegmentsByIds(topSegmentIds).associateBy { it.id } else emptyMap()
+        // 📍 插入点 4：按需加载结束
+        val fetchFullTime = System.currentTimeMillis() - fetchFullStart
+        Log.d(TAG, "⏱️ [RAG-Perf] 按需加载 ${topCandidates.size} 条全量文本耗时: ${fetchFullTime}ms")
+        val totalTime = System.currentTimeMillis() - startTime
+        Log.i(TAG, "🏁 [RAG-Perf] 检索总耗时: ${totalTime}ms (投影:${projectionTime}ms, 评分:${scoringTime}ms, 内容加载:${fetchFullTime}ms)")
+        val initialResults = topCandidates.mapNotNull { (id, score, isMemory) ->
+            if (isMemory) {
+                fullMemories[id]?.let { m ->
+                    AssistantMemory(m.id, m.content, m.keywords, m.type, true, m.embeddingModelId, m.createdAt, null, score) to score
+                }
             } else {
-                val s = item as ChatSegmentEntity
-                AssistantMemory(s.id, s.content, s.keywords, MemoryType.SEGMENT, true, s.embeddingModelId, s.timestamp, null, score, s.recallCount) to score
+                fullSegments[id]?.let { s ->
+                    AssistantMemory(s.id, s.content, s.keywords, MemoryType.SEGMENT, true, s.embeddingModelId, s.timestamp, null, score, s.recallCount) to score
+                }
             }
         }
 

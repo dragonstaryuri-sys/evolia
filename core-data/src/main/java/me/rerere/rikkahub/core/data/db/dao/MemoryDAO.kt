@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
+import me.rerere.rikkahub.core.data.db.entity.MemoryEmbeddingProjection
 import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
 
 @Dao
@@ -29,4 +30,10 @@ interface MemoryDAO {
 
     @Query("DELETE FROM memoryentity WHERE assistant_id = :assistantId")
     suspend fun deleteMemoriesOfAssistant(assistantId: String)
+
+    @Query("SELECT id, embedding, embedding_model_id, keywords, type, created_at FROM memoryentity WHERE assistant_id = :assistantId")
+    suspend fun getMemoryProjections(assistantId: String): List<MemoryEmbeddingProjection>
+
+    @Query("SELECT * FROM memoryentity WHERE id IN (:ids)")
+    suspend fun getMemoriesByIds(ids: List<Int>): List<MemoryEntity>
 }

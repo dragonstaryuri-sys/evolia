@@ -26,6 +26,18 @@ data class MemoryEntity(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+
+data class MemoryEmbeddingProjection(
+    val id: Int,
+    val embedding: ByteArray?,
+    @ColumnInfo(name = "embedding_model_id") // 显式映射
+    val embeddingModelId: String?,
+    val keywords: String?,
+    val type: Int,
+    @ColumnInfo(name = "created_at") // 显式映射
+    val createdAt: Long
+)
+
 object MemoryType {
     const val CORE = 0
     const val EPISODIC = 1 // L2: Episode

@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
+import me.rerere.rikkahub.core.data.db.entity.SegmentEmbeddingProjection
 
 @Dao
 interface ChatSegmentDAO {
@@ -44,4 +45,11 @@ interface ChatSegmentDAO {
 
     @Query("SELECT MAX(end_index) FROM chat_segments WHERE conversation_id = :conversationId")
     suspend fun getLatestSegmentEndIndex(conversationId: String): Int?
+
+    @Query("SELECT id, embedding, embedding_model_id, keywords, timestamp, conversation_id FROM chat_segments WHERE assistant_id = :assistantId")
+    suspend fun getSegmentProjections(assistantId: String): List<SegmentEmbeddingProjection>
+
+    @Query("SELECT * FROM chat_segments WHERE id IN (:ids)")
+    suspend fun getSegmentsByIds(ids: List<Int>): List<ChatSegmentEntity>
+
 }

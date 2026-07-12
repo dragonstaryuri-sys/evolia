@@ -47,3 +47,14 @@ data class ChatSegmentEntity(
     @ColumnInfo(name = "recall_count", defaultValue = "0")
     val recallCount: Int = 0 // 被召回的次数
 )
+
+data class SegmentEmbeddingProjection(
+    val id: Int,
+    val embedding: ByteArray?,
+    @ColumnInfo(name = "embedding_model_id") // 显式映射
+    val embeddingModelId: String?,
+    val keywords: String?,
+    val timestamp: Long,
+    @ColumnInfo(name = "conversation_id") // 显式映射
+    val conversationId: String
+)

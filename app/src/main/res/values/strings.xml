@@ -1288,7 +1288,7 @@
   <string name="assistant_memory_enable_desc">Allow character to remember past interactions using RAG</string>
   <string name="assistant_memory_use_rag_retrieval_title">Vector Retrieval (RAG)</string>
   <string name="assistant_memory_use_rag_retrieval_desc">Use semantic search to find relevant memories</string>
-  <string name="assistant_memory_similarity_threshold_title">Similarity Threshold</string>
+  <string name="assistant_memory_similarity_threshold_title">Comprehensive scoring threshold</string>
   <string name="assistant_prompt_variables_hint">Available variables: %s</string>
   <string name="assistant_memory_rag_limit_title">Memory Retrieval Limit</string>
   <string name="assistant_memory_rag_limit_desc">Maximum number of relevant memories to retrieve for each conversation.</string>
