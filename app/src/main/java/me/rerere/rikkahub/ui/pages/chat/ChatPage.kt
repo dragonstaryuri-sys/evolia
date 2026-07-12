@@ -66,7 +66,13 @@ import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 
 @Composable
-fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = null) {
+fun ChatPage(
+    id: Uuid,
+    text: String?,
+    files: List<Uri>,
+    searchQuery: String? = null,
+    targetMessageId: String? = null
+) {
     val vm: ChatVM = koinViewModel(
         parameters = {
             parametersOf(id.toString())
@@ -179,6 +185,7 @@ fun ChatPage(id: Uuid, text: String?, files: List<Uri>, searchQuery: String? = n
         currentSearchMode = currentSearchMode,
         currentChatModel = currentChatModel,
         initialSearchQuery = searchQuery,
+        targetMessageId = targetMessageId,
         newChatStats = newChatStats
     )
 }
@@ -198,6 +205,7 @@ private fun ChatPageContent(
     currentSearchMode: me.rerere.rikkahub.core.data.model.AssistantSearchMode,
     currentChatModel: Model?,
     initialSearchQuery: String? = null,
+    targetMessageId: String? = null,
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
@@ -391,6 +399,7 @@ private fun ChatPageContent(
                         settings = setting,
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
                         initialSearchQuery = initialSearchQuery,
+                        targetMessageId = targetMessageId,
                         onJumpToMessage = { targetNode ->
                             previewMode = false
                         },
@@ -1099,12 +1108,6 @@ private fun TopBar(
                                 }
 
                                 else -> {
-                                    IconButton(onClick = { onClickMenu() }, modifier = Modifier.size(topPillSize)) {
-                                        Icon(
-                                            if (previewMode) Icons.Rounded.Close else Icons.Rounded.Search,
-                                            "Chat Options"
-                                        )
-                                    }
                                     IconButton(onClick = { onNewChat() }, modifier = Modifier.size(topPillSize)) {
                                         Icon(Icons.Rounded.Add, "New Message")
                                     }

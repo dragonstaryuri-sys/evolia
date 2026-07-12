@@ -7,7 +7,13 @@ sealed interface Screen {
     data object Home : Screen
 
     @Serializable
-    data class Chat(val id: String, val text: String? = null, val files: List<String> = emptyList(), val searchQuery: String? = null) : Screen
+    data class Chat(
+        val id: String,
+        val text: String? = null,
+        val files: List<String> = emptyList(),
+        val searchQuery: String? = null,
+        val targetMessageId: String? = null
+    ) : Screen
 
     @Serializable
     data class ShareHandler(val text: String, val streamUri: String? = null) : Screen
@@ -25,6 +31,9 @@ sealed interface Screen {
         val initialMemoryTab: Int? = null,
         val scrollToMemoryId: Int? = null
     ) : Screen
+
+    @Serializable
+    data class ChatHistorySearch(val assistantId: String) : Screen
 
     @Serializable
     data object Menu : Screen

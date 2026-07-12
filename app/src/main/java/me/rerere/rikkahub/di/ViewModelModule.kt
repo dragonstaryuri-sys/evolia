@@ -6,6 +6,7 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
+import me.rerere.rikkahub.ui.pages.chat.ChatHistorySearchVM
 import me.rerere.rikkahub.ui.pages.developer.DeveloperVM
 import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
@@ -29,6 +30,7 @@ import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.repository.FavoriteRepository
+import org.koin.core.parameter.parametersOf
 
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
@@ -54,24 +56,30 @@ val viewModelModule = module {
     }
     viewModelOf(::ChatListVM)
     viewModelOf(::AssistantVM)
-    viewModel<AssistantDetailVM> {
+    viewModel<AssistantDetailVM> { params ->
         AssistantDetailVM(
-            id = it.get(),
+            id = params.get(),
             settingsStore = get(),
-            memoryRepository = get<MemoryRepository>(),
-            conversationRepository = get<ConversationRepository>(),
+            memoryRepository = get(),
+            conversationRepository = get(),
             context = get(),
-            chatEpisodeDAO = get<ChatEpisodeDAO>(),
+            chatEpisodeDAO = get(),
             providerManager = get(),
-            agentTaskRepository = get<AgentTaskRepository>(),
-            extendedStateRepository = get<AssistantExtendedStateRepository>(),
-            agentMonitorTaskRepository = get<AgentMonitorTaskRepository>(),
-            embeddingService = get<EmbeddingService>()
+            agentTaskRepository = get(),
+            extendedStateRepository = get(),
+            agentMonitorTaskRepository = get(),
+            embeddingService = get()
         )
     }
-    viewModel<ShareHandlerVM> {
+    viewModel<ChatHistorySearchVM> { params ->
+        ChatHistorySearchVM(
+            assistantId = params.get(),
+            conversationRepository = get()
+        )
+    }
+    viewModel<ShareHandlerVM> { params ->
         ShareHandlerVM(
-            text = it.get(),
+            text = params.get(),
             settingsStore = get(),
         )
     }

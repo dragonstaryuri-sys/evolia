@@ -98,6 +98,7 @@ import me.rerere.rikkahub.discover.ui.ScheduleScreen
 import me.rerere.rikkahub.discover.ui.TokenReportScreen
 import me.rerere.rikkahub.discover.ui.BookShelfScreen
 import me.rerere.rikkahub.discover.ui.BookReaderScreen
+import me.rerere.rikkahub.ui.pages.chat.ChatHistorySearchPage
 import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import okhttp3.OkHttpClient
 import org.koin.android.ext.android.inject
@@ -377,7 +378,8 @@ class RouteActivity : AppCompatActivity() {
                             id = Uuid.parse(route.id),
                             text = route.text,
                             files = route.files.map { it.toUri() },
-                            searchQuery = route.searchQuery
+                            searchQuery = route.searchQuery,
+                            targetMessageId = route.targetMessageId
                         )
                     }
 
@@ -401,6 +403,11 @@ class RouteActivity : AppCompatActivity() {
                         CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@composable) {
                             AssistantDetailPage(id = route.id, startRoute = route.startRoute, initialMemoryTab = route.initialMemoryTab, scrollToMemoryId = route.scrollToMemoryId)
                         }
+                    }
+
+                    composable<Screen.ChatHistorySearch> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.ChatHistorySearch>()
+                        ChatHistorySearchPage(assistantId = route.assistantId)
                     }
 
                     composable<Screen.Menu> { MenuPage() }

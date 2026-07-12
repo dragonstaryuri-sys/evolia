@@ -1713,4 +1713,9 @@
   <string name="chat_page_regenerate_requirement_title">优化回复要求</string>
   <string name="chat_page_regenerate_requirement_placeholder">输入你对本次回复的特定要求（可选），如：简短一点...</string>
   <string name="chat_page_regenerate_requirement_label">优化要求</string>
+
+  <string name="assistant_detail_search_history">查找聊天记录</string>
+  <string name="chat_history_search_title">搜索聊天记录</string>
+  <string name="chat_history_search_hint">搜索与 %s 的聊天内容</string>
+  <string name="chat_history_search_empty">没有找到匹配的记录</string>
 </resources>

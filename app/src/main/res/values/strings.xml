@@ -1757,4 +1757,9 @@
   <string name="chat_page_regenerate_requirement_title">Requirements for Optimizing Replies</string>
   <string name="chat_page_regenerate_requirement_placeholder">Enter your specific requirements for this reply (optional), e.g., keep it brief...</string>
   <string name="chat_page_regenerate_requirement_label">Optimization Requirements</string>
+
+  <string name="assistant_detail_search_history">Search Chat History</string>
+  <string name="chat_history_search_title">Search Chat Records</string>
+  <string name="chat_history_search_hint">Search chat content with %s</string>
+  <string name="chat_history_search_empty">No matching records found</string>
 </resources>

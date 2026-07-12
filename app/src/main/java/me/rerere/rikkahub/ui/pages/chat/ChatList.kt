@@ -1,38 +1,9 @@
 package me.rerere.rikkahub.ui.pages.chat
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
@@ -45,7 +16,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -96,7 +69,6 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 private const val TAG = "ChatList"
-private const val LoadingIndicatorKey = "LoadingIndicator"
 private const val ScrollBottomKey = "ScrollBottomKey"
 
 sealed class ChatListDisplayItem {
@@ -116,6 +88,7 @@ fun ChatList(
     settings: Settings,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     initialSearchQuery: String? = null,
+    targetMessageId: String? = null,
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
     onDelete: (UIMessage) -> Unit = {},
@@ -128,17 +101,34 @@ fun ChatList(
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
+    var instantScroll by remember { mutableStateOf(false) }
 
-    LaunchedEffect(initialSearchQuery, uiItems) {
-        if (!initialSearchQuery.isNullOrBlank()) {
+    // 使用 alpha 遮罩实现“微信效果”：在跳转定位完成前不显示列表，防止看到滑动过程
+    var isWaitingForJump by remember(targetMessageId) { mutableStateOf(!targetMessageId.isNullOrBlank()) }
+
+    LaunchedEffect(initialSearchQuery, targetMessageId, uiItems) {
+        if (!targetMessageId.isNullOrBlank()) {
+            val node = uiItems.filterIsInstance<ChatVM.ChatUIItem.Message>()
+                .find { it.node.messages.any { msg -> msg.id.toString() == targetMessageId } }
+                ?.node
+            if (node != null) {
+                instantScroll = true
+                scrollToNodeId = node.id
+            } else {
+                // 数据可能还在加载中
+            }
+        } else if (!initialSearchQuery.isNullOrBlank()) {
             val node = uiItems.filterIsInstance<ChatVM.ChatUIItem.Message>()
                 .map { it.node }
-                .findLast { it.currentMessage.toText().contains(initialSearchQuery, ignoreCase = true) }
+                .findLast { it.currentMessage.toContentText().contains(initialSearchQuery, ignoreCase = true) }
 
             if (node != null) {
-                delay(150)
+                instantScroll = false
                 scrollToNodeId = node.id
             }
+            isWaitingForJump = false
+        } else {
+            isWaitingForJump = false
         }
     }
 
@@ -160,31 +150,39 @@ fun ChatList(
                     state = previewState,
                     loading = loading,
                     onJumpToMessage = { node ->
+                        instantScroll = true
                         scrollToNodeId = node.id
                         onJumpToMessage(node)
                     },
                 )
             } else {
-                ChatListNormal(
-                    innerPadding = innerPadding,
-                    conversation = conversation,
-                    uiItems = uiItems,
-                    state = state,
-                    scrollToNodeId = scrollToNodeId,
-                    onScrolledToNode = { scrollToNodeId = null },
-                    loading = loading,
-                    settings = settings,
-                    recentlyRestoredNodeIds = recentlyRestoredNodeIds,
-                    onRegenerate = onRegenerate,
-                    onEdit = onEdit,
-                    onDelete = onDelete,
-                    onUpdateMessage = onUpdateMessage,
-                    onGetFullMemoryContent = onGetFullMemoryContent,
-                    onAddFavorite = onAddFavorite,
-                    onDeleteMessages = onDeleteMessages,
-                    onTypingStateChange = onTypingStateChange,
-                    animatedVisibilityScope = this@AnimatedContent,
-                )
+                Box(modifier = Modifier.fillMaxSize().alpha(if (isWaitingForJump) 0f else 1f)) {
+                    ChatListNormal(
+                        innerPadding = innerPadding,
+                        conversation = conversation,
+                        uiItems = uiItems,
+                        state = state,
+                        scrollToNodeId = scrollToNodeId,
+                        instantScroll = instantScroll,
+                        onScrolledToNode = {
+                            scrollToNodeId = null
+                            instantScroll = false
+                            isWaitingForJump = false
+                        },
+                        loading = loading,
+                        settings = settings,
+                        recentlyRestoredNodeIds = recentlyRestoredNodeIds,
+                        onRegenerate = onRegenerate,
+                        onEdit = onEdit,
+                        onDelete = onDelete,
+                        onUpdateMessage = onUpdateMessage,
+                        onGetFullMemoryContent = onGetFullMemoryContent,
+                        onAddFavorite = onAddFavorite,
+                        onDeleteMessages = onDeleteMessages,
+                        onTypingStateChange = onTypingStateChange,
+                        animatedVisibilityScope = this@AnimatedContent,
+                    )
+                }
             }
         }
     }
@@ -200,6 +198,7 @@ private fun SharedTransitionScope.ChatListNormal(
     settings: Settings,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     scrollToNodeId: Uuid? = null,
+    instantScroll: Boolean = false,
     onScrolledToNode: () -> Unit = {},
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
@@ -216,6 +215,7 @@ private fun SharedTransitionScope.ChatListNormal(
     var isRecentScroll by remember { mutableStateOf(false) }
     var userScrolledUp by remember { mutableStateOf(false) }
     val navController = LocalNavController.current
+    val density = LocalDensity.current
 
     val currentConversationState = rememberUpdatedState(conversation)
     val onCitationClick = remember {
@@ -255,7 +255,6 @@ private fun SharedTransitionScope.ChatListNormal(
     Box(
         modifier = Modifier.fillMaxSize(),
     ) {
-        // 自动跟随滚动逻辑
         LaunchedEffect(state) {
             var previousFirstIndex = state.firstVisibleItemIndex
             var previousFirstOffset = state.firstVisibleItemScrollOffset
@@ -310,15 +309,12 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // 重要：uiItems 在 ChatVM 中是按从旧到新排序的。
-            // 我们必须按正向时间流处理间隔判定，否则 (msgTime - lastMessageTime) 会是负数。
             uiItems.forEach { item ->
                 when (item) {
                     is ChatVM.ChatUIItem.Message -> {
                         val msg = item.node.currentMessage
                         val msgTime = msg.createdAt
 
-                        // 判定逻辑：第一条消息或距离上一条消息超过 10 分钟
                         val shouldShowTime = lastShownTime == null ||
                             (msgTime.toInstant(TimeZone.currentSystemDefault()) -
                              (lastMessageTime ?: msgTime).toInstant(TimeZone.currentSystemDefault())) > 10.minutes
@@ -341,7 +337,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // 处理正在输入的消息
             if (needsPhantomLoadingTurn) {
                 val phantomNode = MessageNode.of(UIMessage.assistant(""))
                 val msgTime = phantomNode.currentMessage.createdAt
@@ -357,18 +352,27 @@ private fun SharedTransitionScope.ChatListNormal(
             }
 
             flush()
-            // 最终反转列表，因为 LazyColumn(reverseLayout=true) 期待索引 0 在最底部（最新）
             result.asReversed()
         }
 
+        // 精准跳转核心逻辑
         LaunchedEffect(displayItems, scrollToNodeId) {
             val targetId = scrollToNodeId ?: return@LaunchedEffect
             val realIndex = displayItems.indexOfFirst { item ->
                 item is ChatListDisplayItem.TurnGroup && item.group.nodes.any { it.id == targetId }
             }
             if (realIndex >= 0) {
-                delay(200)
-                state.animateScrollToItem(realIndex)
+                if (instantScroll) {
+                    // 反向布局优化：增加一个正向 offset 补偿。
+                    // 这样系统会把该 item 往屏幕上方推，让它出现在视野中上部，接近微信体验。
+                    val offsetPx = with(density) { 350.dp.toPx().toInt() }
+                    state.scrollToItem(realIndex, scrollOffset = offsetPx)
+                    // 给系统一帧时间完成布局测量
+                    kotlinx.coroutines.yield()
+                } else {
+                    delay(200)
+                    state.animateScrollToItem(realIndex)
+                }
                 onScrolledToNode()
             }
         }
@@ -443,7 +447,6 @@ private fun SharedTransitionScope.ChatListNormal(
                                     onShare = { node ->
                                         selecting = true
                                         selectedItems.clear()
-                                        // 仅选中长按的消息
                                         selectedItems.add(node.id)
                                     },
                                     onUpdate = { onUpdateMessage(it) },
@@ -520,7 +523,6 @@ private fun SharedTransitionScope.ChatListNormal(
                         IconButton(
                             enabled = selectedItems.isNotEmpty(),
                             onClick = {
-                                // 从 UI 显示项中找出所有选中的消息
                                 val messages = uiItems.filterIsInstance<ChatVM.ChatUIItem.Message>()
                                     .map { it.node }
                                     .filter { it.id in selectedItems }
@@ -533,7 +535,7 @@ private fun SharedTransitionScope.ChatListNormal(
                             Icon(
                                 imageVector = Icons.Rounded.Delete,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error // 红色警告色
+                                tint = MaterialTheme.colorScheme.error
                             )
                         }
                     }
@@ -643,7 +645,7 @@ private fun SharedTransitionScope.ChatListPreview(
     val filteredMessages = remember(conversation.messageNodes, searchQuery) {
         val visibleNodes = conversation.messageNodes.filter { !it.currentMessage.skipContext }
         if (searchQuery.isBlank()) conversation.messageNodes
-        else visibleNodes.filter { it.currentMessage.toText().contains(searchQuery, ignoreCase = true) }
+        else visibleNodes.filter { it.currentMessage.toContentText().contains(searchQuery, ignoreCase = true) }
     }
 
     Column(modifier = Modifier.padding(innerPadding).padding(top = previewTopPadding).fillMaxSize()) {
@@ -672,7 +674,7 @@ private fun SharedTransitionScope.ChatListPreview(
                 val isUser = message.role == me.rerere.ai.core.MessageRole.USER
                 Column(modifier = Modifier.fillMaxWidth().then(if (!isUser) Modifier.padding(end = 24.dp) else Modifier), horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
                     Surface(shape = MaterialTheme.shapes.medium, color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer) {
-                        val highlightedText = remember(searchQuery, message, highlightColor) { buildHighlightedText(extractMatchingSnippet(message.toText().trim().ifBlank { "[...]" }, searchQuery), searchQuery, highlightColor) }
+                        val highlightedText = remember(searchQuery, message, highlightColor) { buildHighlightedText(extractMatchingSnippet(message.toContentText().trim().ifBlank { "[...]" }, searchQuery), searchQuery, highlightColor) }
                         Text(text = highlightedText, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable { onJumpToMessage(node) }.padding(horizontal = 8.dp, vertical = 6.dp))
                     }
                 }

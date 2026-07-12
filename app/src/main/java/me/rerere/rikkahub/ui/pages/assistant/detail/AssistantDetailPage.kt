@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.MoveToInbox
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -61,6 +62,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -75,6 +77,7 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import me.rerere.rikkahub.utils.AssistantExportImport
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.context.LocalNavController
 
 
 // Sub-routes within assistant detail
@@ -107,6 +110,7 @@ fun AssistantDetailPage(
     )
 
     val navController = rememberNavController()
+    val globalNavController = LocalNavController.current
     val toaster = LocalToaster.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -363,7 +367,10 @@ fun AssistantDetailPage(
                     onNavigateToTools = { navController.navigate(AssistantDetailRoutes.TOOLS) },
                     onNavigateToMemory = { navController.navigate(AssistantDetailRoutes.MEMORY) },
                     onNavigateToUI = { navController.navigate(AssistantDetailRoutes.UI) },
-                    onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) }
+                    onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) },
+                    onNavigateToChatHistorySearch = {
+                        globalNavController.navigate(Screen.ChatHistorySearch(assistantId = assistant.id.toString()))
+                    }
                 )
             }
 
@@ -538,7 +545,8 @@ private fun AssistantDetailHome(
     onNavigateToTools: () -> Unit,
     onNavigateToMemory: () -> Unit,
     onNavigateToUI: () -> Unit,
-    onNavigateToAdvanced: () -> Unit
+    onNavigateToAdvanced: () -> Unit,
+    onNavigateToChatHistorySearch: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -584,6 +592,38 @@ private fun AssistantDetailHome(
 
                 }
 
+                Icon(
+                    imageVector = Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+
+        // --- NEW SEARCH BUTTON ---
+        Surface(
+            onClick = onNavigateToChatHistorySearch,
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = MaterialTheme.shapes.large
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = stringResource(R.string.assistant_detail_search_history),
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f)
+                )
                 Icon(
                     imageVector = Icons.Rounded.ChevronRight,
                     contentDescription = null,
