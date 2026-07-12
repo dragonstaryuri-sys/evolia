@@ -241,11 +241,9 @@ private fun ChatPageContent(
             }
 
             else -> {
-                // 尝试正常回退，如果回退失败（栈中只有当前页）则导航回主页并清空栈
-                if (!navController.popBackStack()) {
-                    navController.navigate(Screen.Home) {
-                        popUpTo(0) { inclusive = true }
-                    }
+                // 强制返回主页并清空所有中间栈（如检索页），实现“一键回主页”
+                navController.navigate(Screen.Home) {
+                    popUpTo(0) { inclusive = true }
                 }
             }
         }
@@ -1108,6 +1106,14 @@ private fun TopBar(
                                 }
 
                                 else -> {
+                                    IconButton(
+                                        onClick = {
+                                            navController.navigate(Screen.ChatHistorySearch(assistantId = currentAssistant.id.toString()))
+                                        },
+                                        modifier = Modifier.size(topPillSize)
+                                    ) {
+                                        Icon(Icons.Rounded.Search, "Search")
+                                    }
                                     IconButton(onClick = { onNewChat() }, modifier = Modifier.size(topPillSize)) {
                                         Icon(Icons.Rounded.Add, "New Message")
                                     }

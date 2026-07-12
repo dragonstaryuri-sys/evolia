@@ -367,10 +367,7 @@ fun AssistantDetailPage(
                     onNavigateToTools = { navController.navigate(AssistantDetailRoutes.TOOLS) },
                     onNavigateToMemory = { navController.navigate(AssistantDetailRoutes.MEMORY) },
                     onNavigateToUI = { navController.navigate(AssistantDetailRoutes.UI) },
-                    onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) },
-                    onNavigateToChatHistorySearch = {
-                        globalNavController.navigate(Screen.ChatHistorySearch(assistantId = assistant.id.toString()))
-                    }
+                    onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) }
                 )
             }
 
@@ -545,8 +542,7 @@ private fun AssistantDetailHome(
     onNavigateToTools: () -> Unit,
     onNavigateToMemory: () -> Unit,
     onNavigateToUI: () -> Unit,
-    onNavigateToAdvanced: () -> Unit,
-    onNavigateToChatHistorySearch: () -> Unit
+    onNavigateToAdvanced: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -592,38 +588,6 @@ private fun AssistantDetailHome(
 
                 }
 
-                Icon(
-                    imageVector = Icons.Rounded.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outline
-                )
-            }
-        }
-
-        // --- NEW SEARCH BUTTON ---
-        Surface(
-            onClick = onNavigateToChatHistorySearch,
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = MaterialTheme.shapes.large
-        ) {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Search,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.width(16.dp))
-                Text(
-                    text = stringResource(R.string.assistant_detail_search_history),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f)
-                )
                 Icon(
                     imageVector = Icons.Rounded.ChevronRight,
                     contentDescription = null,
