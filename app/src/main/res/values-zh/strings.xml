@@ -1699,7 +1699,7 @@
   <string name="consolidate_failed_empty_summary">返回结果为空</string>
   <!-- 图片生成 -->
   <string name="img_gen_title">图像生成</string>
-  <string name="assistant_page_local_tools_image_generation_desc">允许助手根据提示词生成图片，并自动保存到生图记录中</string>
+  <string name="assistant_page_local_tools_image_generation_desc">允许助手根据你的要求生成图片</string>
   <string name="systemtts_dct">使用设备内置的文本转语音引擎</string>
   <string name="openia_dct">openAI的语音合成服务</string>
   <string name="gemini_dct">谷歌的语音合成服务</string>

@@ -193,7 +193,7 @@ fun SettingAboutPage() {
                     subtitle = stringResource(R.string.operation_description),
                     trailing = Icons.AutoMirrored.Rounded.OpenInNew,
                     onClick = {
-                        context.openUrl("https://my.feishu.cn/wiki/MozEwVogTicUMQkbFtPcQK69nSh?from=from_copylink")
+                        context.openUrl("https://my.feishu.cn/wiki/C7ZywAiCbiUfmEkcuK6cRal6nuc?from=from_copylink")
                     }
                 )
             }

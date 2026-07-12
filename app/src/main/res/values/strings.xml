@@ -1743,7 +1743,7 @@
   <string name="consolidate_failed_empty_summary">Return result is empty</string>
   <!-- Image Generation -->
   <string name="img_gen_title">Image Generation</string>
-  <string name="assistant_page_local_tools_image_generation_desc">Allow the assistant to generate images based on prompts and automatically save them to the image generation records</string>
+  <string name="assistant_page_local_tools_image_generation_desc">Allow the assistant to generate images according to your requirements</string>
   <string name="systemtts_dct">Uses device\'s built-in TTS engine</string>
   <string name="openia_dct">High-quality voices with emotion</string>
   <string name="gemini_dct">Google\'s TTS with natural voices</string>
