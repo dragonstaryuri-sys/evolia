@@ -156,6 +156,12 @@ object DatabaseSanitizer {
                     try {
                         val values = ContentValues()
                         for ((colName, info) in targetColumnsInfo) {
+                            // 特殊处理：清空向量列，防止从 TEXT 迁移到 BLOB 时崩溃
+                            if (colName == "embedding") {
+                                values.putNull(colName)
+                                continue
+                            }
+
                             if (sourceColumns.contains(colName)) {
                                 val idx = cursor.getColumnIndex(colName)
                                 if (idx != -1) {
@@ -213,17 +219,15 @@ object DatabaseSanitizer {
                             }
                         }
 
-                        // 【逻辑同步 2】：片段时间修复 (彻底解决 start_time == end_time 的问题)
+                        // 【逻辑同步 2】：片段时间修复
                         if (targetTableName.equals("chat_segments", ignoreCase = true)) {
                             val originalTimestamp = if (timestampIdx != -1) cursor.getLong(timestampIdx) else 0L
                             val finalTimestamp = if (originalTimestamp > 1000000L) originalTimestamp else System.currentTimeMillis()
                             val startVal = values.getAsLong("start_time") ?: 0L
                             val endVal = values.getAsLong("end_time") ?: 0L
-                            LogUtil.d("原始时间戳：","$originalTimestamp -> $finalTimestamp")
-                            // 核心判定：如果差值异常（包括相等），则执行强制修复
-                            if (startVal == 0L || endVal ==0L || abs(endVal - startVal) < 500) {
+                            if (startVal == 0L || endVal == 0L || abs(endVal - startVal) < 500) {
                                 val computedEndTime: Long = finalTimestamp
-                                val computedStartTime: Long = computedEndTime - 3600000L // 明确减去 60 分钟
+                                val computedStartTime: Long = computedEndTime - 3600000L
                                 values.put("end_time", computedEndTime)
                                 values.put("start_time", computedStartTime)
                             }

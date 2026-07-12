@@ -82,7 +82,8 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_13_14,
                 AppDatabase.MIGRATION_14_15,
                 AppDatabase.MIGRATION_15_16,
-                AppDatabase.MIGRATION_16_17
+                AppDatabase.MIGRATION_16_17,
+                AppDatabase.MIGRATION_17_18
             )
             .build()
     }
@@ -95,7 +96,7 @@ val dataSourceModule = module {
     single { TemplateTransformer(engine = get(), settingsStore = get()) }
 
     single { get<AppDatabase>().conversationDao() }
-    single { get<AppDatabase>().chatMessageDao() } // 新增 DAO 注入
+    single { get<AppDatabase>().chatMessageDao() }
     single { get<AppDatabase>().memoryDao() }
     single { get<AppDatabase>().genMediaDao() }
     single { get<AppDatabase>().chatEpisodeDao() }
@@ -177,7 +178,7 @@ val dataSourceModule = module {
             context = get(),
             secureStore = get(),
             secretKeyManager = get(),
-            conversationRepo = get() // 新增这一行
+            conversationRepo = get()
         )
     }
     single<Retrofit> {

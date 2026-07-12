@@ -14,11 +14,11 @@ import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
-import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.ai.RerankService
 import me.rerere.rikkahub.core.data.ai.rag.VectorEngine
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
+import me.rerere.rikkahub.core.data.utils.VectorUtils
 import kotlin.uuid.Uuid
 
 class MemoryRepository(
@@ -58,8 +58,7 @@ class MemoryRepository(
                         content = it.content,
                         keywords = it.keywords,
                         type = MemoryType.SEGMENT,
-                        // 必须同时拥有 embedding 和 modelId 才认为已嵌入
-                        hasEmbedding = !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                        hasEmbedding = it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                         embeddingModelId = it.embeddingModelId,
                         timestamp = it.timestamp,
                         recallCount = it.recallCount
@@ -86,8 +85,9 @@ class MemoryRepository(
         val segments = chatSegmentDAO.getSegmentsByConversation(conversationId)
         if (segments.isEmpty()) return emptyList()
 
-        val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
-            try { embeddingService.embed(query, assistantId) } catch (e: Exception) { null }
+        // 显式声明为 FloatArray 避免类型模糊
+        val queryEmbedding: FloatArray? = if (mode != MemoryRetrievalMode.KEYWORD) {
+            try { embeddingService.embed(query, assistantId).toFloatArray() } catch (e: Exception) { null }
         } else null
 
         val conversation = conversationRepository.getConversationById(Uuid.parse(conversationId))
@@ -99,28 +99,35 @@ class MemoryRepository(
             } else 0f
 
             val similarity = if (mode != MemoryRetrievalMode.KEYWORD && queryEmbedding != null) {
-                val segmentEmbedding = segment.embedding?.let {
-                    runCatching { JsonInstant.decodeFromString<List<Float>>(it) }.getOrNull()
-                } ?: run {
+                // 1. 提取或生成向量
+                val segmentEmb: FloatArray? = if (segment.embedding != null) {
+                    VectorUtils.fromByteArray(segment.embedding)
+                } else {
                     val originalText = if (messages.isNotEmpty()) {
-                        messages.subList(
-                            segment.startMessageIndex.coerceIn(messages.indices),
-                            (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
-                        ).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                        val start = segment.startMessageIndex.coerceIn(messages.indices)
+                        val end = (segment.endMessageIndex + 1).coerceIn(messages.indices.first, messages.size)
+                        if (start < end) {
+                            messages.subList(start, end).joinToString("\n") { "${it.role}: ${it.toContentText()}" }
+                        } else ""
                     } else ""
 
                     val effectiveContent = "[Background]: ${segment.content}\n[Original Text]:\n$originalText"
-                    val newEmb = try { embeddingService.embed(effectiveContent, assistantId) } catch (e: Exception) { null }
-                    if (newEmb != null) {
+                    try {
+                        val newEmb = embeddingService.embed(effectiveContent, assistantId)
                         val modelId = embeddingService.getEmbeddingModelId(assistantId)
-                        chatSegmentDAO.insertSegment(segment.copy(embedding = JsonInstant.encodeToString(newEmb), embeddingModelId = modelId))
+                        val byteArray = VectorUtils.fromList(newEmb)
+                        chatSegmentDAO.insertSegment(segment.copy(embedding = byteArray, embeddingModelId = modelId))
+                        newEmb.toFloatArray()
+                    } catch (e: Exception) {
+                        null
                     }
-                    newEmb
                 }
-                segmentEmbedding?.let { VectorEngine.cosineSimilarity(it, queryEmbedding) } ?: 0f
-            } else 0f
 
-            val recallScore = calculateRecallScore(segment.recallCount)
+                // 2. 确保类型匹配调用 FloatArray 重载
+                if (segmentEmb != null) {
+                    VectorEngine.cosineSimilarity(segmentEmb, queryEmbedding)
+                } else 0f
+            } else 0f
 
             val score = when(mode) {
                 MemoryRetrievalMode.SEMANTIC -> similarity
@@ -137,7 +144,6 @@ class MemoryRepository(
 
         val topSegments = scoredSegments.sortedByDescending { it.second }.take(limit)
 
-        // 增加召回计数
         topSegments.forEach { (segment, _) ->
             chatSegmentDAO.incrementRecallCount(segment.id)
         }
@@ -165,7 +171,7 @@ class MemoryRepository(
                 entities.map {
                     AssistantMemory(
                         it.id, it.content, it.keywords, it.type,
-                        !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                        it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                         it.embeddingModelId, it.createdAt
                     )
                 }
@@ -179,14 +185,14 @@ class MemoryRepository(
             val coreMemories = memories.map {
                 AssistantMemory(
                     it.id, it.content, it.keywords, it.type,
-                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                     it.embeddingModelId, it.createdAt
                 )
             }
             val episodicMemories = episodes.map {
                 AssistantMemory(
                     -it.id, it.content, it.keywords, MemoryType.EPISODIC,
-                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                     it.embeddingModelId, it.endTime, it.significance
                 )
             }
@@ -206,7 +212,7 @@ class MemoryRepository(
             .map {
                 AssistantMemory(
                     it.id, it.content, it.keywords, it.type,
-                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                     it.embeddingModelId, it.createdAt
                 )
             }
@@ -219,7 +225,7 @@ class MemoryRepository(
             content = memory.content,
             keywords = memory.keywords,
             type = memory.type,
-            hasEmbedding = !memory.embedding.isNullOrBlank() && !memory.embeddingModelId.isNullOrBlank(),
+            hasEmbedding = memory.embedding != null && !memory.embeddingModelId.isNullOrBlank(),
             embeddingModelId = memory.embeddingModelId,
             timestamp = memory.createdAt
         )
@@ -239,7 +245,7 @@ class MemoryRepository(
             .map {
                 AssistantMemory(
                     -it.id, it.content, it.keywords, MemoryType.EPISODIC,
-                    !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                    it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                     it.embeddingModelId, it.endTime, it.significance
                 )
             }
@@ -258,7 +264,7 @@ class MemoryRepository(
                     .map {
                         AssistantMemory(
                             it.id, it.content, it.keywords, it.type,
-                            !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                            it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                             it.embeddingModelId, it.createdAt
                         )
                     }
@@ -269,7 +275,7 @@ class MemoryRepository(
                     .map {
                         AssistantMemory(
                             it.id, it.content, it.keywords, MemoryType.SEGMENT,
-                            !it.embedding.isNullOrBlank() && !it.embeddingModelId.isNullOrBlank(),
+                            it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                             it.embeddingModelId, it.timestamp,
                             recallCount = it.recallCount
                         )
@@ -294,9 +300,9 @@ class MemoryRepository(
         content: String,
         keywords: String?,
         assistantId: String,
-        existingEmbedding: String? = null,
+        existingEmbedding: ByteArray? = null,
         existingModelId: String? = null
-    ): List<Float>? {
+    ): FloatArray? {
         if (content.trim().isBlank()) {
             return null
         }
@@ -309,29 +315,23 @@ class MemoryRepository(
 
         val cached = embeddingCacheDAO.getEmbedding(memoryId, memoryType, modelId)
         if (cached != null) {
-            return try {
-                JsonInstant.decodeFromString<List<Float>>(cached.embedding)
-            } catch (e: Exception) {
-                null
-            }
+            return VectorUtils.fromByteArray(cached.embedding)
         }
 
         if (existingEmbedding != null && existingModelId == modelId) {
-            try {
-                val emb = JsonInstant.decodeFromString<List<Float>>(existingEmbedding)
-                embeddingCacheDAO.insertEmbedding(
-                    EmbeddingCacheEntity(memoryId = memoryId, memoryType = memoryType, modelId = modelId, embedding = existingEmbedding)
-                )
-                return emb
-            } catch (e: Exception) { e.printStackTrace() }
+            embeddingCacheDAO.insertEmbedding(
+                EmbeddingCacheEntity(memoryId = memoryId, memoryType = memoryType, modelId = modelId, embedding = existingEmbedding)
+            )
+            return VectorUtils.fromByteArray(existingEmbedding)
         }
 
         return try {
             val embedding = embeddingService.embed(effectiveContent, assistantId)
+            val byteArray = VectorUtils.fromList(embedding)
             embeddingCacheDAO.insertEmbedding(
-                EmbeddingCacheEntity(memoryId = memoryId, memoryType = memoryType, modelId = modelId, embedding = JsonInstant.encodeToString(embedding))
+                EmbeddingCacheEntity(memoryId = memoryId, memoryType = memoryType, modelId = modelId, embedding = byteArray)
             )
-            embedding
+            embedding.toFloatArray()
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -397,7 +397,7 @@ class MemoryRepository(
             assistantId = assistantId,
             content = content,
             keywords = finalKeywords,
-            embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+            embedding = embeddingResult?.embeddings?.firstOrNull()?.let { VectorUtils.fromList(it) },
             embeddingModelId = embeddingResult?.modelId,
             type = type,
             createdAt = System.currentTimeMillis(),
@@ -408,7 +408,7 @@ class MemoryRepository(
 
         if (embeddingResult != null && embeddingResult.embeddings.isNotEmpty()) {
             embeddingCacheDAO.insertEmbedding(
-                EmbeddingCacheEntity(memoryId = id.toInt(), memoryType = type, modelId = embeddingResult.modelId, embedding = JsonInstant.encodeToString(embeddingResult.embeddings.first()))
+                EmbeddingCacheEntity(memoryId = id.toInt(), memoryType = type, modelId = embeddingResult.modelId, embedding = VectorUtils.fromList(embeddingResult.embeddings.first()))
             )
         }
 
@@ -437,15 +437,6 @@ class MemoryRepository(
         return (baseScore + bonusScore).coerceAtMost(1.0f)
     }
 
-    // 新增：召回得分计算
-    private fun calculateRecallScore(count: Int): Float {
-        // 使用饱和函数：1 - 1/(1 + 0.2*x)
-        // 0次 -> 0
-        // 5次 -> 0.5
-        // 20次 -> 0.8
-        return (1.0f - 1.0f / (1.0f + count.toFloat() * 0.2f))
-    }
-
     suspend fun retrieveRelevantMemoriesWithScores(
         assistantId: String,
         query: String,
@@ -463,16 +454,15 @@ class MemoryRepository(
         val rerankModelId = rerankService.getRerankModelId(assistantId)
         val hasRerank = !rerankModelId.isNullOrBlank()
 
-        val queryEmbedding = if (mode != MemoryRetrievalMode.KEYWORD) {
+        val queryEmbedding: FloatArray? = if (mode != MemoryRetrievalMode.KEYWORD) {
             try {
-                embeddingService.embed(query, assistantId)
+                embeddingService.embed(query, assistantId).toFloatArray()
             } catch (e: Exception) {
                 Log.e(TAG, "Embedding failed: ${e.message}")
                 onEmbeddingFailure?.invoke(e)
                 null
             }
         } else null
-
 
         val retrievalLimit = if (hasRerank) limit * 3 else limit
 
@@ -482,6 +472,7 @@ class MemoryRepository(
                 .filter { it.conversationId != excludeConversationId }
         } else emptyList()
         Log.v(TAG, "📦 [RAG] 候选池大小: Memories=${memories.size}, Segments=${segments.size}")
+
         val memoryScores = memories.mapNotNull { memory ->
             val effectiveKeywords = if (memory.keywords.isNullOrBlank()) {
                 val local = KeywordExtractor.extract(memory.content)
@@ -526,11 +517,7 @@ class MemoryRepository(
             val ageInDays = ageInMillis / (1000.0 * 60 * 60 * 24)
             val recency = (1.0 / (1.0 + (ageInDays / 7.0))).toFloat()
 
-            // 召回率得分
-            val recallScore = calculateRecallScore(segment.recallCount)
-
             val score = when(mode) {
-                // 相似度/关键词 70%, 新鲜度 20%, 召回率 10%
                 MemoryRetrievalMode.SEMANTIC -> {
                     if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f)
                     else (similarity * 0.8f) + (recency * 0.2f)
@@ -584,7 +571,6 @@ class MemoryRepository(
             initialResults.take(limit)
         }
         Log.v(TAG, "🏁 [RAG] 检索结束 | 最终召回: ${finalResults.size}条")
-        // 异步更新被召回片段的计数
         finalResults.forEach { (memory, _) ->
             if (memory.type == MemoryType.SEGMENT) {
                 chatSegmentDAO.incrementRecallCount(memory.id)
@@ -625,13 +611,13 @@ class MemoryRepository(
                     KeywordExtractor.extract(memory.content)
                 } else memory.keywords
                 val embedding = embeddingService.embed(memory.content, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
+                val byteArray = VectorUtils.fromList(embedding)
                 memoryDAO.updateMemory(memory.copy(
                     keywords = finalKeywords,
-                    embedding = embeddingJson,
+                    embedding = byteArray,
                     embeddingModelId = currentModelId
                 ))
-                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = memory.id, memoryType = memory.type, modelId = currentModelId, embedding = embeddingJson))
+                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = memory.id, memoryType = memory.type, modelId = currentModelId, embedding = byteArray))
                 successCount++
             } catch (e: Exception) { failureCount++ }
             onProgress(current, total)
@@ -645,9 +631,9 @@ class MemoryRepository(
                 } else segment.keywords
                 val effectiveContent = if (!finalKeywords.isNullOrBlank()) "Keywords: $finalKeywords\nContent: ${segment.content}" else segment.content
                 val embedding = embeddingService.embed(effectiveContent, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
-                chatSegmentDAO.insertSegment(segment.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
-                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = segment.id, memoryType = MemoryType.SEGMENT, modelId = currentModelId, embedding = embeddingJson))
+                val byteArray = VectorUtils.fromList(embedding)
+                chatSegmentDAO.insertSegment(segment.copy(embedding = byteArray, embeddingModelId = currentModelId))
+                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = segment.id, memoryType = MemoryType.SEGMENT, modelId = currentModelId, embedding = byteArray))
                 successCount++
             } catch (e: Exception) { failureCount++ }
             onProgress(current, total)
@@ -663,26 +649,24 @@ class MemoryRepository(
         var successCount = 0
         var failureCount = 0
         val memoriesNeedingEmbedding = memories.filter { it.embedding == null || it.embeddingModelId != currentModelId }
-        val segmentsNeedingEmbedding = segments.count { it.embedding == null || it.embeddingModelId != currentModelId }
 
         memoriesNeedingEmbedding.forEach { memory ->
             try {
                 val embedding = embeddingService.embed(memory.content, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
-                memoryDAO.updateMemory(memory.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
-                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = memory.id, memoryType = memory.type, modelId = currentModelId, embedding = embeddingJson))
+                val byteArray = VectorUtils.fromList(embedding)
+                memoryDAO.updateMemory(memory.copy(embedding = byteArray, embeddingModelId = currentModelId))
+                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = memory.id, memoryType = memory.type, modelId = currentModelId, embedding = byteArray))
                 successCount++
             } catch (e: Exception) { failureCount++ }
         }
 
-        // Fix segmentsNeedingEmbedding type error
         segments.filter { it.embedding == null || it.embeddingModelId != currentModelId }.forEach { segment ->
             try {
                 val effectiveContent = if (!segment.keywords.isNullOrBlank()) "Keywords: ${segment.keywords}\nContent: ${segment.content}" else segment.content
                 val embedding = embeddingService.embed(effectiveContent, assistantId)
-                val embeddingJson = JsonInstant.encodeToString(embedding)
-                chatSegmentDAO.insertSegment(segment.copy(embedding = embeddingJson, embeddingModelId = currentModelId))
-                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = segment.id, memoryType = MemoryType.SEGMENT, modelId = currentModelId, embedding = embeddingJson))
+                val byteArray = VectorUtils.fromList(embedding)
+                chatSegmentDAO.insertSegment(segment.copy(embedding = byteArray, embeddingModelId = currentModelId))
+                embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = segment.id, memoryType = MemoryType.SEGMENT, modelId = currentModelId, embedding = byteArray))
                 successCount++
             } catch (e: Exception) { failureCount++ }
         }

@@ -41,7 +41,7 @@ data class ChatSegmentEntity(
     @ColumnInfo("timestamp")
     val timestamp: Long = System.currentTimeMillis(),
     @ColumnInfo("embedding")
-    val embedding: String? = null, // 存储 JSON 化的向量
+    val embedding: ByteArray? = null, // 存储 BLOB 化的向量
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")
     val embeddingModelId: String? = null,
     @ColumnInfo(name = "recall_count", defaultValue = "0")

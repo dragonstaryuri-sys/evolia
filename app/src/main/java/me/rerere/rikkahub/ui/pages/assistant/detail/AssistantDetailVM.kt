@@ -50,6 +50,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
+import me.rerere.rikkahub.core.data.utils.VectorUtils
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import kotlinx.serialization.Serializable
@@ -534,7 +535,7 @@ class AssistantDetailVM(
                             startTime = currentBatch.first().createdAt, // 本段第一条消息的时间
                             endTime = currentBatch.last().createdAt,
                             embedding = embeddingResult?.embeddings?.firstOrNull()
-                                ?.let { JsonInstant.encodeToString(it) },
+                                ?.let { VectorUtils.fromList(it) },
                             embeddingModelId = embeddingResult?.modelId
                         )
                         memoryRepository.saveSegment(segment)

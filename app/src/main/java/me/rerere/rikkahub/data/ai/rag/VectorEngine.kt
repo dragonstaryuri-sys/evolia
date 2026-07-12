@@ -3,7 +3,7 @@ package me.rerere.rikkahub.data.ai.rag
 import kotlin.math.sqrt
 
 object VectorEngine {
-    fun cosineSimilarity(v1: List<Float>, v2: List<Float>): Float {
+    fun cosineSimilarity(v1: FloatArray, v2: FloatArray): Float {
         if (v1.size != v2.size) return 0f
         var dotProduct = 0.0
         var normA = 0.0
@@ -14,5 +14,9 @@ object VectorEngine {
             normB += v2[i] * v2[i]
         }
         return if (normA == 0.0 || normB == 0.0) 0f else (dotProduct / (sqrt(normA) * sqrt(normB))).toFloat()
+    }
+
+    fun cosineSimilarity(v1: List<Float>, v2: List<Float>): Float {
+        return cosineSimilarity(v1.toFloatArray(), v2.toFloatArray())
     }
 }

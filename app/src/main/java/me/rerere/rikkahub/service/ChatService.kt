@@ -101,6 +101,7 @@ import kotlin.uuid.Uuid
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
+import me.rerere.rikkahub.core.data.utils.VectorUtils
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
@@ -1100,7 +1101,7 @@ class ChatService(
                             val lastAiMsg = newMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
                             val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
 
-                            // 1.提前定义 fullText
+                            // 1.提前 definition fullText
                             val fullText = lastAI?.toContentText() ?: ""
 
                             // 2. 检查是否有任何消息（包括工具结果、AI 最终回答）尚未加入会话
@@ -1384,7 +1385,7 @@ class ChatService(
                     endMessageIndex = -1,
                     startTime = toSummarizeEntities.first().createdAt,
                     endTime = toSummarizeEntities.last().createdAt,
-                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { JsonInstant.encodeToString(it) },
+                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { VectorUtils.fromList(it) },
                     embeddingModelId = embeddingResult?.modelId
                 )
                 memoryRepository.saveSegment(segment)

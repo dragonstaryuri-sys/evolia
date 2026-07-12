@@ -21,7 +21,7 @@ data class ChatEpisodeEntity(
     @ColumnInfo("keywords")
     val keywords: String? = null, // Extracted keywords for better RAG matching
     @ColumnInfo("embedding")
-    val embedding: String? = null,
+    val embedding: ByteArray? = null,
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")
     val embeddingModelId: String? = null, // UUID of the embedding model used
     @ColumnInfo("start_time")

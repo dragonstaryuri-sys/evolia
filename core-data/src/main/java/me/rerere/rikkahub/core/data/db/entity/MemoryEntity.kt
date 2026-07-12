@@ -15,7 +15,7 @@ data class MemoryEntity(
     @ColumnInfo("keywords")
     val keywords: String? = null,
     @ColumnInfo("embedding")
-    val embedding: String? = null,
+    val embedding: ByteArray? = null,
     @ColumnInfo(name = "embedding_model_id", defaultValue = "")
     val embeddingModelId: String? = null,
     @ColumnInfo(name = "type", defaultValue = "0")
