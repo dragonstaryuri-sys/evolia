@@ -518,9 +518,9 @@ class MemoryRepository(
             val recency = (1.0 / (1.0 + (ageInMillis / (1000.0 * 60 * 60 * 24 * 7.0)))).toFloat()
 
             val score = when(mode) {
-                MemoryRetrievalMode.SEMANTIC -> if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f) else (similarity * 0.8f) + (recency * 0.2f)
-                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.8f) + (recency * 0.2f)
-                MemoryRetrievalMode.HYBRID -> if (queryEmbedding == null) (keywordScore * 0.8f) + (recency * 0.2f) else (keywordScore * 0.4f) + (similarity * 0.4f) + (recency * 0.2f)
+                MemoryRetrievalMode.SEMANTIC -> if (queryEmbedding == null) (keywordScore * 0.9f) + (recency * 0.1f) else (similarity * 0.9f) + (recency * 0.1f)
+                MemoryRetrievalMode.KEYWORD -> (keywordScore * 0.9f) + (recency * 0.1f)
+                MemoryRetrievalMode.HYBRID -> if (queryEmbedding == null) (keywordScore * 0.9f) + (recency * 0.1f) else (keywordScore * 0.45f) + (similarity * 0.45f) + (recency * 0.1f)
                 MemoryRetrievalMode.OFF -> 0f
             }
             if (score >= similarityThreshold) Triple(proj.id, score, false) else null
