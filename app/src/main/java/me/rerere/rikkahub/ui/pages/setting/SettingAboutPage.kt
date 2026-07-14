@@ -3,7 +3,6 @@ package me.rerere.rikkahub.ui.pages.setting
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -70,6 +69,7 @@ import me.rerere.rikkahub.utils.Version
 import me.rerere.rikkahub.utils.openUrl
 import okhttp3.OkHttpClient
 import org.koin.compose.koinInject
+import androidx.core.net.toUri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,7 +171,7 @@ fun SettingAboutPage() {
                     subtitle = stringResource(R.string.about_page_source_code_desc),
                     trailing = Icons.AutoMirrored.Rounded.OpenInNew,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/dragonstaryuri-sys/evolia"))
+                        val intent = Intent(Intent.ACTION_VIEW, "https://github.com/dragonstaryuri-sys/evolia".toUri())
                         context.startActivity(intent)
                     }
                 )
@@ -181,7 +181,7 @@ fun SettingAboutPage() {
                     subtitle = stringResource(R.string.about_page_introduction_desc),
                     trailing = Icons.AutoMirrored.Rounded.OpenInNew,
                     onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://xx-evolia.mysxl.cn/"))
+                        val intent = Intent(Intent.ACTION_VIEW, "https://xx-evolia.mysxl.cn/".toUri())
                         context.startActivity(intent)
                     }
                 )
