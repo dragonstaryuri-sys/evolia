@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.core.data.repository
 
+import android.content.ContentValues
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import androidx.room.RoomDatabase
 import androidx.paging.Pager
@@ -27,6 +29,7 @@ import java.time.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import me.rerere.rikkahub.core.data.model.Assistant
 import kotlin.uuid.Uuid
 import kotlin.time.ExperimentalTime
 
@@ -39,6 +42,7 @@ class ConversationRepository(
     private val chatSegmentDAO: ChatSegmentDAO,
     private val dailyActivityDAO: DailyActivityDAO,
     private val tokenUsageDAO: TokenUsageDAO,
+    private val scheduleDAO: ScheduleDAO,
 ) {
     companion object {
         private const val PAGE_SIZE = 20
@@ -230,6 +234,48 @@ class ConversationRepository(
             }
         } catch (e: Exception) {
             Log.e(TAG, "执行迁移任务全局失败", e)
+        }
+    }
+
+    /**
+     * 从智能体主记忆 (L3) 中提取待办事项并迁移到 schedules 表。
+     */
+    suspend fun extractSchedulesFromAssistants(assistants: List<Assistant>) = withContext(Dispatchers.IO) {
+        try {
+            Log.i(TAG, "开始从 ${assistants.size} 个智能体提取 L3 待办...")
+            val writableDb = db.openHelper.writableDatabase
+            assistants.forEach { assistant ->
+                val masterContent = assistant.masterMemoryContent
+                if (masterContent.contains("约定与待办")) {
+                    val section = masterContent.substringAfter("约定与待办")
+                        .substringBefore("##")
+                        .trim()
+
+                    val lines = section.split("\n")
+                        .map { it.trim().trimStart('-', '*', ' ', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ':', '：') }
+                        .filter { it.isNotBlank() && !it.startsWith("#") }
+
+                    lines.forEach { line ->
+                        val values = ContentValues().apply {
+                            put("title", line)
+                            put("content", "Extracted from ${assistant.name}'s L3 Memory")
+                            put("start_time", System.currentTimeMillis())
+                            put("is_completed", 0) // 标为未完成
+                            put("category", "assistant")
+                            put("created_at", System.currentTimeMillis())
+                            put("updated_at", System.currentTimeMillis())
+                            put("priority", 1)
+                            put("urgency", 1)
+                            put("difficulty", 1)
+                        }
+                        // 使用 SQL 原生插入以支持 CONFLICT_IGNORE，避免重复
+                        writableDb.insert("schedules", SQLiteDatabase.CONFLICT_IGNORE, values)
+                    }
+                }
+            }
+            Log.i(TAG, "L3 待办提取完成")
+        } catch (e: Exception) {
+            Log.e(TAG, "提取 L3 待办失败", e)
         }
     }
 

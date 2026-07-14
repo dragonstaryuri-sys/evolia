@@ -124,9 +124,7 @@ android {
                 "proguard-rules.pro"
             )
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
-            buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
-
-            // Release 版本禁用
+            buildConfigField("int", "VERSION_CODE", "${android.defaultConfig.versionCode}")
             resValue("bool", "text_selection_enabled", "false")
         }
         debug {
@@ -134,8 +132,7 @@ android {
             isDebuggable = true
             isZipAlignEnabled = true
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
-            buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
-
+            buildConfigField("int", "VERSION_CODE", "${android.defaultConfig.versionCode}")
             // Debug 版本启用
             resValue("bool", "text_selection_enabled", "true")
         }

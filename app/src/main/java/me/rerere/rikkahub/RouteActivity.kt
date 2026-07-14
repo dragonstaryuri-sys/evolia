@@ -3,6 +3,7 @@ package me.rerere.rikkahub
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.setContent
@@ -107,6 +108,9 @@ import me.rerere.rikkahub.service.AgentTaskScheduler
 import kotlin.uuid.Uuid
 import android.content.Context
 import androidx.core.app.NotificationManagerCompat
+import me.rerere.rikkahub.data.sync.WebdavSync
+import me.rerere.rikkahub.utils.LogUtil
+import androidx.core.content.edit
 
 private const val TAG = "RouteActivity"
 
@@ -124,6 +128,7 @@ class RouteActivity : AppCompatActivity() {
     private val settingsStore by inject<SettingsStore>()
     private val chatService by inject<me.rerere.rikkahub.service.ChatService>()
     private val agentTaskScheduler by inject<AgentTaskScheduler>()
+    private val webdavSync by inject<WebdavSync>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
     private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
@@ -137,9 +142,14 @@ class RouteActivity : AppCompatActivity() {
 
         cancelAllNotifications()
 
-        // 启动自动任务心跳闹钟，并立即检查是否有过期任务
+        // 启动自动任务心跳闹钟
         agentTaskScheduler.setupHeartbeatAlarm()
         agentTaskScheduler.checkAndRescheduleOverdueTasks()
+
+        // 检测版本升级并触发数据迁移
+        lifecycleScope.launch {
+            checkVersionAndMigrate()
+        }
 
         handleIntent(intent)
 
@@ -172,6 +182,18 @@ class RouteActivity : AppCompatActivity() {
                 }
                 AppRoutes(navStack)
             }
+        }
+    }
+
+    private suspend fun checkVersionAndMigrate() {
+        val prefs = getSharedPreferences("app_version_prefs", MODE_PRIVATE)
+        val lastVersion: Int = prefs.getInt("last_version_code", 0)
+        val currentVersion: Int = BuildConfig.VERSION_CODE.toInt()
+
+        if (currentVersion > lastVersion) {
+            LogUtil.i(TAG, "Detecting app upgrade ($lastVersion -> $currentVersion), triggering data migration...")
+            webdavSync.triggerDataMigration()
+            prefs.edit { putInt("last_version_code", currentVersion) }
         }
     }
 
@@ -208,10 +230,7 @@ class RouteActivity : AppCompatActivity() {
                     if (targetScreen == "diary") {
                         navStack?.navigate(Screen.DiaryList(assistantId.toString()))
                     } else {
-                        // 默认逻辑：先重置到首页，确保返回时回到列表
-                        navStack?.navigate(Screen.Home) {
-                            popUpTo(0) { inclusive = true }
-                        }
+                        navStack?.navigate(Screen.Home) { popUpTo(0) { inclusive = true } }
                         navStack?.navigate(Screen.Chat(Uuid.random().toString()))
                     }
                 } catch (e: Exception) {
@@ -223,19 +242,16 @@ class RouteActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 只要 Activity 恢复前台并可交互（包括点击图标返回、点击通知进入、冷启动完成），就清理所有通知
         cancelAllNotifications()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // 处理 singleTop 模式下的新意图进入，优先清理通知
         cancelAllNotifications()
         handleIntent(intent)
     }
 
     private fun cancelAllNotifications() {
-        // 使用 NotificationManagerCompat 以获得更好的版本兼容性
         NotificationManagerCompat.from(this).cancelAll()
     }
 
@@ -286,9 +302,7 @@ class RouteActivity : AppCompatActivity() {
                 try {
                     val conversationId = Uuid.random()
                     val userContent = buildString {
-                        if (!data.selectedText.isNullOrBlank()) {
-                            append(data.selectedText)
-                        }
+                        if (!data.selectedText.isNullOrBlank()) append(data.selectedText)
                         if (!data.userPrompt.isNullOrBlank()) {
                             append("\n\n")
                             append(data.userPrompt)
@@ -308,7 +322,7 @@ class RouteActivity : AppCompatActivity() {
 
                     if (messages.isNotEmpty()) {
                         val assistantId = data.selectionAssistantId?.takeIf { it.isNotBlank() }?.let {
-                            try { Uuid.parse(it) } catch (e: Exception) { null }
+                            runCatching { Uuid.parse(it) }.getOrNull()
                         } ?: settings.assistantId
 
                         val conversation = me.rerere.rikkahub.core.data.model.Conversation.ofId(

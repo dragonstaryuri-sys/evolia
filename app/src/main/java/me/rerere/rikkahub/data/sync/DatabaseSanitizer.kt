@@ -13,6 +13,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
+import me.rerere.rikkahub.data.datastore.Settings
 import java.io.File
 import kotlin.math.abs
 
@@ -35,7 +36,7 @@ object DatabaseSanitizer {
         )
     }
 
-    fun sanitize(context: Context, sourceDbFile: File): Pair<File, SanitizationResult> {
+    fun sanitize(context: Context, sourceDbFile: File, settings: Settings? = null): Pair<File, SanitizationResult> {
         LogUtil.i(TAG, "开始数据库物理清洗与逻辑同步: ${sourceDbFile.absolutePath}")
         val targetDbName = "rikka_hub_sanitized"
         val targetDbFile = context.getDatabasePath(targetDbName)
@@ -92,6 +93,37 @@ object DatabaseSanitizer {
                             val result = copyTable(sourceDb, targetDbInfo, sourceTableName, targetTableName)
                             totalResult += result
                         }
+                    }
+                }
+            }
+
+            // 从 Settings 中提取智能体待办并同步到 schedules 表 (适配旧备份导入)
+            settings?.assistants?.forEach { assistant ->
+                val masterContent = assistant.masterMemoryContent
+                if (masterContent.contains("约定与待办")) {
+                    val section = masterContent.substringAfter("约定与待办")
+                        .substringBefore("##")
+                        .trim()
+
+                    val lines = section.split("\n")
+                        .map { it.trim().trimStart('-', '*', ' ', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ':', '：') }
+                        .filter { it.isNotBlank() && !it.startsWith("#") }
+
+                    lines.forEach { line ->
+                        val values = ContentValues().apply {
+                            put("title", line)
+                            put("content", "来自原记忆档案提取)")
+                            put("start_time", System.currentTimeMillis())
+                            put("is_completed", 0) // 标为未完成
+                            put("category", "assistant")
+                            put("created_at", System.currentTimeMillis())
+                            put("updated_at", System.currentTimeMillis())
+                            put("priority", 1)
+                            put("urgency", 1)
+                            put("difficulty", 1)
+                        }
+                        // 避免重复插入完全相同的标题
+                        targetDbInfo.insert("schedules", SQLiteDatabase.CONFLICT_IGNORE, values)
                     }
                 }
             }
@@ -156,7 +188,6 @@ object DatabaseSanitizer {
                     try {
                         val values = ContentValues()
                         for ((colName, info) in targetColumnsInfo) {
-                            // 特殊处理：清空向量列，防止从 TEXT 迁移到 BLOB 时崩溃
                             if (colName == "embedding") {
                                 values.putNull(colName)
                                 continue
@@ -169,7 +200,16 @@ object DatabaseSanitizer {
                                         Cursor.FIELD_TYPE_NULL -> values.putNull(colName)
                                         Cursor.FIELD_TYPE_INTEGER -> values.put(colName, cursor.getLong(idx))
                                         Cursor.FIELD_TYPE_FLOAT -> values.put(colName, cursor.getDouble(idx))
-                                        Cursor.FIELD_TYPE_STRING -> values.put(colName, cursor.getString(idx))
+                                        Cursor.FIELD_TYPE_STRING -> {
+                                            var strValue = cursor.getString(idx)
+                                            // 【数据迁移】：schedules 表 category 字段 General -> user
+                                            if (targetTableName.equals("schedules", ignoreCase = true) && colName == "category") {
+                                                if (strValue == "General") {
+                                                    strValue = "user"
+                                                }
+                                            }
+                                            values.put(colName, strValue)
+                                        }
                                         Cursor.FIELD_TYPE_BLOB -> values.put(colName, cursor.getBlob(idx))
                                     }
                                 }

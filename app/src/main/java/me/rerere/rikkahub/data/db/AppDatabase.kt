@@ -11,8 +11,6 @@ import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.core.data.db.dao.*
 import me.rerere.rikkahub.core.data.db.entity.*
 import me.rerere.rikkahub.common.JsonInstant
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.core.data.model.MessageNode
@@ -40,7 +38,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -66,6 +64,14 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 18->19 迁移：迁移 schedules 表 category 数据 (General -> user)")
+                // 将旧有的 General 迁移为 user
+                db.execSQL("UPDATE `schedules` SET `category` = 'user' WHERE `category` = 'General'")
+            }
+        }
 
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -148,7 +154,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AND id IN (SELECT conversation_id FROM chat_segments)
                 """.trimIndent())
 
-                // 5. 最后，创建唯一索引 (conversation_id, start_time)
+                // 5. 最后，创建 unique index (conversation_id, start_time)
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_segments_conversation_id_start_time` ON `chat_segments` (`conversation_id`, `start_time`)")
             }
         }

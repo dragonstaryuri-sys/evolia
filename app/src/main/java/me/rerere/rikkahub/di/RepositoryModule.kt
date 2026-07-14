@@ -21,7 +21,8 @@ val repositoryModule = module {
             chatEpisodeDAO = get(),
             chatSegmentDAO = get(),
             dailyActivityDAO = get(),
-            tokenUsageDAO = get()
+            tokenUsageDAO = get(),
+            scheduleDAO = get() // 新增注入
         )
     }
 
@@ -43,7 +44,6 @@ val repositoryModule = module {
     }
 
     single {
-        // 现在 MemoryRepository 接收 7 个参数，包括新加的 RerankService
         MemoryRepository(get(), get(), get(), get(), get(), get(), get())
     }
 

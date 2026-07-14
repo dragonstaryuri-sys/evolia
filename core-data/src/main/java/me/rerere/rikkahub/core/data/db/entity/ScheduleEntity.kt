@@ -29,7 +29,7 @@ data class ScheduleEntity(
     @ColumnInfo(name = "is_completed")
     val isCompleted: Boolean = false,
     @ColumnInfo(name = "category")
-    val category: String = "General",
+    val category: String = "user",
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "updated_at")

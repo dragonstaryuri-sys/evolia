@@ -11,6 +11,7 @@ import at.bitfire.dav4jvm.property.DisplayName
 import at.bitfire.dav4jvm.property.GetContentLength
 import at.bitfire.dav4jvm.property.GetLastModified
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.data.datastore.Settings
@@ -68,18 +69,27 @@ class WebdavSync(
             }
         }
     }
+
     /**
-     * 在还原备份后调用，触发数据库结构的强制迁移。
+     * 在还原备份或数据库升级后调用，触发数据逻辑迁移。
      */
     suspend fun triggerDataMigration() {
         try {
             LogUtil.i(TAG, "开始执行数据迁移...")
+
+            // 1. 迁移旧会话节点数据
             conversationRepo.migrateAllOldConversations()
+
+            // 2. 提取所有智能体 L3 记忆中的约定到 schedules 表 (适配 18->19 升级)
+            val settings = settingsStore.settingsFlow.first()
+            conversationRepo.extractSchedulesFromAssistants(settings.assistants)
+
             LogUtil.i(TAG, "数据迁移执行完毕")
         } catch (e: Exception) {
             LogUtil.e(TAG, "触发数据迁移失败", e)
         }
     }
+
     suspend fun backupToWebDav(webDavConfig: WebDavConfig) = withContext(Dispatchers.IO) {
         val file = prepareBackupFile(webDavConfig)
         if (!file.exists() || file.length() == 0L) {
@@ -294,7 +304,6 @@ class WebdavSync(
             if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
                 val dbFile = context.getDatabasePath("rikka_hub")
                 if (dbFile.exists()) {
-                    // 统一命名为 rikka_hub 开头，不带 .db 后缀以免混淆
                     addFileToZip(zipOut, dbFile, "rikka_hub")
                     LogUtil.i(TAG, "Added rikka_hub to backup")
                 }
@@ -360,11 +369,6 @@ class WebdavSync(
         backupFile
     }
 
-    data class RestoreResult(
-        val sanitization: DatabaseSanitizer.SanitizationResult,
-        val settingsCleanup: BackupCleanupResult
-    )
-
     private suspend fun restoreFromBackupFile(backupFile: File, webDavConfig: WebDavConfig): RestoreResult =
         withContext(Dispatchers.IO) {
             LogUtil.i(TAG, "Starting restore from backup file. Size: ${backupFile.length()} bytes")
@@ -374,24 +378,24 @@ class WebdavSync(
             var sanitization = DatabaseSanitizer.SanitizationResult()
 
             try {
+                var restoredSettings: Settings? = null
                 ZipInputStream(FileInputStream(backupFile)).use { zipIn ->
                     var entry: ZipEntry?
                     while (zipIn.nextEntry.also { entry = it } != null) {
                         entry?.let { ze ->
-                            LogUtil.i(TAG, "Extracting zip entry: ${ze.name}")
                             when {
                                 ze.name == "settings.json" -> {
                                     val content = zipIn.readBytes().toString(Charsets.UTF_8)
                                     val (cleaned, res) = json.decodeFromString<Settings>(content).sanitize()
                                     settingsCleanup = res
+                                    restoredSettings = cleaned
                                     settingsStore.update(cleaned)
-                                    LogUtil.i(TAG, "Settings restored. Cleanup results: $res")
+                                    LogUtil.i(TAG, "Settings restored.")
                                 }
-                                ze.name.startsWith("rikka_hub") -> { // 只要以 rikka_hub 开头都提取，包括带有 .db 后缀的旧版本
+                                ze.name.startsWith("rikka_hub") -> {
                                     if (webDavConfig.items.contains(WebDavConfig.BackupItem.DATABASE)) {
                                         val targetFile = File(tempDir, ze.name)
                                         FileOutputStream(targetFile).use { zipIn.copyTo(it) }
-                                        LogUtil.i(TAG, "Database component extracted: ${ze.name}")
                                     }
                                 }
                                 ze.name.startsWith("tts_cache/") -> {
@@ -400,22 +404,18 @@ class WebdavSync(
                                         val targetFolder = File(context.cacheDir, "tts_cache").apply { mkdirs() }
                                         val targetFile = File(targetFolder, fileName)
                                         FileOutputStream(targetFile).use { zipIn.copyTo(it) }
-                                        LogUtil.d(TAG, "TTS Cache file extracted: ${ze.name}")
                                     }
                                 }
                                 ze.name.contains("/") -> {
-                                    // 处理子目录文件 (upload/, avatars/, lorebook_attachments/)
                                     if (webDavConfig.items.contains(WebDavConfig.BackupItem.FILES)) {
                                         val folderName = ze.name.substringBefore("/")
                                         val fileName = ze.name.substringAfter("/")
                                         val targetFolder = File(context.filesDir, folderName).apply { mkdirs() }
                                         val targetFile = File(targetFolder, fileName)
                                         FileOutputStream(targetFile).use { zipIn.copyTo(it) }
-                                        LogUtil.d(TAG, "File extracted: ${ze.name}")
                                     }
                                 }
                                 else -> {
-                                    LogUtil.w(TAG, "Unsupported entry in backup: ${ze.name}")
                                     unsupportedBytes += ze.size
                                 }
                             }
@@ -424,7 +424,6 @@ class WebdavSync(
                     }
                 }
 
-                // 尝试查找主数据库文件，可能是 rikka_hub 或 rikka_hub.db
                 val tempDb = File(tempDir, "rikka_hub").let { if (it.exists()) it else File(tempDir, "rikka_hub.db") }
 
                 if (tempDb.exists()) {
@@ -433,28 +432,24 @@ class WebdavSync(
                     // 关键：确保同目录下的日志文件名与 tempDb 匹配，这样 SQLite 才能正确打开
                     val baseName = tempDb.name
                     listOf("-wal", "-shm").forEach { suffix ->
-                        val logFile = File(tempDir, "rikka_hub$suffix") // 之前版本可能存的名字
+                        val logFile = File(tempDir, "rikka_hub$suffix")
                         if (logFile.exists() && logFile.name != baseName + suffix) {
                             logFile.renameTo(File(tempDir, baseName + suffix))
                         }
                     }
 
-                    val (cleanDb, res) = DatabaseSanitizer.sanitize(context, tempDb)
+                    // 还原备份时，将解出的 Settings 传给 sanitizer 提取 L3 待办
+                    val (cleanDb, res) = DatabaseSanitizer.sanitize(context, tempDb, restoredSettings)
                     sanitization = res
 
                     val finalDb = context.getDatabasePath("rikka_hub")
                     cleanDb.copyTo(finalDb, true)
-                    LogUtil.i(TAG, "Final database moved to: ${finalDb.absolutePath}")
-
-                    // 恢复后清理掉 finalDb 可能存在的旧日志文件
                     listOf("-wal", "-shm").forEach { s ->
                         val dest = File(finalDb.path + s)
                         if (dest.exists()) dest.delete()
                     }
-                } else {
-                    LogUtil.w(TAG, "No rikka_hub database found in the backup ZIP entries")
                 }
-                LogUtil.i(TAG, "Restore process completed successfully.")
+
                 triggerDataMigration()
                 RestoreResult(sanitization, settingsCleanup.copy(unsupportedZipEntriesBytes = unsupportedBytes))
             } catch (e: Exception) {
@@ -464,6 +459,11 @@ class WebdavSync(
                 tempDir.deleteRecursively()
             }
         }
+
+    data class RestoreResult(
+        val sanitization: DatabaseSanitizer.SanitizationResult,
+        val settingsCleanup: BackupCleanupResult
+    )
 }
 
 private fun addFileToZip(zipOut: ZipOutputStream, file: File, name: String) {
