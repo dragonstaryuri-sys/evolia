@@ -599,7 +599,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "schedule_manager",
-                description = "管理用户的日程和任务。支持的操作：add（添加）, list（列表获取）, edit（编辑修改）, toggle（切换完成/未完成状态）, delete（物理移除）。",
+                description = "管理你或用户的日程和待办。重要原则：凡是你向用户承诺的事、两人共同的约定、你答应要提醒的事或你自己的计划，必须归类为 'assistant'；仅用户纯粹的个人私事（如用户自己去取快递）才记为 'user'。支持操作：add, list, edit, toggle, delete。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -655,6 +655,21 @@ class LocalTools(
                                     "具体提醒时间，请使用 ISO 8601 格式（例如：2023-10-27T09:30:00）。"
                                 )
                             })
+                            put("category", buildJsonObject {
+                                put("type", "string")
+                                put(
+                                    "description",
+                                    "待办类型：user（用户个人待办）, assistant（你的待办项）"
+                                )
+                                put(
+                                    "enum", JsonArray(
+                                        listOf(
+                                            JsonPrimitive("user"),
+                                            JsonPrimitive("assistant")
+                                        )
+                                    )
+                                )
+                            })
                         },
                         required = listOf("action")
                     )
@@ -669,6 +684,7 @@ class LocalTools(
                                 val priority = json["priority"]?.jsonPrimitive?.intOrNull ?: 1
                                 val urgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: 1
                                 val difficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
+                                val category = json["category"]?.jsonPrimitive?.contentOrNull ?: "user"
 
                                 val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
 
@@ -699,7 +715,8 @@ class LocalTools(
                                         difficulty = difficulty,
                                         startTime = System.currentTimeMillis(),
                                         endTime = endTime,
-                                        reminderTime = reminderTime
+                                        reminderTime = reminderTime,
+                                        category = category
                                     )
                                 )
 
@@ -720,20 +737,21 @@ class LocalTools(
                                 val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
                                 val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
                                 buildJsonObject {
-                                    put("schedules", JsonArray(schedules.map { s ->
-                                        buildJsonObject {
-                                            put("id", s.id)
-                                            put("title", s.title)
-                                            put("priority", s.priority)
-                                            put("urgency", s.urgency)
-                                            put("difficulty", s.difficulty)
-                                            put("start_time", df.format(java.util.Date(s.startTime)))
-                                            s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
-                                            s.reminderTime?.let { put("reminder_time", df.format(java.util.Date(it))) }
-                                            put("is_completed", s.isCompleted)
-                                        }
-                                    }))
-                                }
+                    put("schedules", JsonArray(schedules.map { s ->
+                        buildJsonObject {
+                            put("id", s.id)
+                            put("title", s.title)
+                            put("priority", s.priority)
+                            put("urgency", s.urgency)
+                            put("difficulty", s.difficulty)
+                            put("start_time", df.format(java.util.Date(s.startTime)))
+                            s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
+                            s.reminderTime?.let { put("reminder_time", df.format(java.util.Date(it))) }
+                            put("is_completed", s.isCompleted)
+                            put("category", s.category)
+                        }
+                    }))
+                }
                             }
 
                             "edit" -> {
@@ -745,6 +763,7 @@ class LocalTools(
                                     val newUrgency = json["urgency"]?.jsonPrimitive?.intOrNull ?: schedule.urgency
                                     val newDifficulty =
                                         json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
+                                    val newCategory = json["category"]?.jsonPrimitive?.contentOrNull ?: schedule.category
 
                                     val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
 
@@ -774,6 +793,7 @@ class LocalTools(
                                             difficulty = newDifficulty,
                                             endTime = newEndTime,
                                             reminderTime = newReminderTime,
+                                            category = newCategory,
                                             updatedAt = System.currentTimeMillis()
                                         )
                                     )
