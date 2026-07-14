@@ -239,14 +239,15 @@ class ConversationRepository(
 
     /**
      * 从智能体主记忆 (L3) 中提取待办事项并迁移到 schedules 表。
+     * 返回处理后的 Assistant 列表（已清除主智能体中的冗余待办内容）
      */
-    suspend fun extractSchedulesFromAssistants(assistants: List<Assistant>) = withContext(Dispatchers.IO) {
+    suspend fun extractSchedulesFromAssistants(assistants: List<Assistant>): List<Assistant> = withContext(Dispatchers.IO) {
         try {
-            Log.i(TAG, "开始从 ${assistants.size} 个智能体提取 L3 待办...")
+            Log.i(TAG, "开始从智能体提取 L3 待办...")
             val writableDb = db.openHelper.writableDatabase
-            assistants.forEach { assistant ->
-                val masterContent = assistant.masterMemoryContent
-                if (masterContent.contains("约定与待办")) {
+            assistants.map { assistant ->
+                if (assistant.isMain && assistant.masterMemoryContent.contains("约定与待办")) {
+                    val masterContent = assistant.masterMemoryContent
                     val section = masterContent.substringAfter("约定与待办")
                         .substringBefore("##")
                         .trim()
@@ -258,7 +259,7 @@ class ConversationRepository(
                     lines.forEach { line ->
                         val values = ContentValues().apply {
                             put("title", line)
-                            put("content", "Extracted from ${assistant.name}'s L3 Memory")
+                            put("content", "来自原记忆档案提取")
                             put("start_time", System.currentTimeMillis())
                             put("is_completed", 0) // 标为未完成
                             put("category", "assistant")
@@ -268,14 +269,31 @@ class ConversationRepository(
                             put("urgency", 1)
                             put("difficulty", 1)
                         }
-                        // 使用 SQL 原生插入以支持 CONFLICT_IGNORE，避免重复
                         writableDb.insert("schedules", SQLiteDatabase.CONFLICT_IGNORE, values)
                     }
+
+                    // 【新逻辑】：删除已提取的内容和标题
+                    val textIndex = masterContent.indexOf("约定与待办")
+                    val hashIndex = masterContent.lastIndexOf("##", textIndex)
+                    // 寻找标题起点，兼容 "## 1. 约定与待办"
+                    val startIndex = if (hashIndex != -1 && masterContent.substring(hashIndex, textIndex).length < 20) hashIndex else textIndex
+                    val nextHashIndex = masterContent.indexOf("##", textIndex + 5)
+
+                    val newContent = if (nextHashIndex != -1) {
+                        (masterContent.substring(0, startIndex).trimEnd() + "\n\n" + masterContent.substring(nextHashIndex).trimStart()).trim()
+                    } else {
+                        masterContent.substring(0, startIndex).trim()
+                    }
+                    assistant.copy(masterMemoryContent = newContent)
+                } else {
+                    assistant
                 }
             }
-            Log.i(TAG, "L3 待办提取完成")
         } catch (e: Exception) {
             Log.e(TAG, "提取 L3 待办失败", e)
+            assistants
+        } finally {
+            Log.i(TAG, "L3 待办提取完成")
         }
     }
 

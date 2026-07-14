@@ -36,7 +36,7 @@ import me.rerere.ai.ui.UsedMode
 import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
-import kotlinx.serialization.decodeFromString
+import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
@@ -113,6 +113,7 @@ class GenerationHandler(
     private val chatSegmentDAO: ChatSegmentDAO,
     private val diaryRepo: DiaryRepository,
     private val appScope: AppScope,
+    private val scheduleRepo: ScheduleRepository,
 ) {
     fun generateText(
         settings: Settings,
@@ -752,10 +753,36 @@ class GenerationHandler(
         }
 
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
-            staticSystemPromptBuilder.append("## 记忆档案\n")
+            staticSystemPromptBuilder.append("## 情感现状\n")
             staticSystemPromptBuilder.append(assistant.masterMemoryContent)
             staticSystemPromptBuilder.append("\n\n")
         }
+
+        // 只有主智能体才注入约定与待办项
+        if (assistant.isMain) {
+            try {
+                // 获取助理类别且未完成的日程
+                val assistantSchedules = scheduleRepo.getPendingAndTodayCompleted().first()
+                    .filter { it.category == "assistant" && !it.isCompleted }
+
+                if (assistantSchedules.isNotEmpty()) {
+                    staticSystemPromptBuilder.append("## 你的约定与待办项\n")
+                    // 使用 ISO 8601 格式
+                    val isoFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+                    assistantSchedules.forEach { s ->
+                        val timeStr = s.endTime?.let {
+                            LocalDateTime.ofInstant(Instant.ofEpochMilli(it), ZoneId.systemDefault())
+                                .format(isoFormatter)
+                        } ?: "无明确截止时间"
+                        staticSystemPromptBuilder.append("- 【$timeStr】: ${s.title}\n")
+                    }
+                    staticSystemPromptBuilder.append("\n")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to include assistant schedules in context", e)
+            }
+        }
+
         if (assistant.includeDiariesInContext) {
             try {
                 // 获取最新的 N 篇日记

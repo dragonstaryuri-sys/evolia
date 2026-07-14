@@ -132,7 +132,8 @@ val dataSourceModule = module {
             embeddingService = get(),
             chatSegmentDAO = get(),
             diaryRepo = get(),
-            appScope = get()
+            appScope = get(),
+            scheduleRepo = get()
         )
     }
 

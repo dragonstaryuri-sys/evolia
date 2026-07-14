@@ -80,9 +80,15 @@ class WebdavSync(
             // 1. 迁移旧会话节点数据
             conversationRepo.migrateAllOldConversations()
 
-            // 2. 提取所有智能体 L3 记忆中的约定到 schedules 表 (适配 18->19 升级)
-            val settings = settingsStore.settingsFlow.first()
-            conversationRepo.extractSchedulesFromAssistants(settings.assistants)
+            // 2. 提取主智能体 L3 记忆中的约定到 schedules 表 (适配 18->19 升级)
+            // 修改：获取处理后（已清理 masterMemoryContent）的智能体列表并写回 DataStore
+            val currentSettings = settingsStore.settingsFlow.first()
+            val updatedAssistants = conversationRepo.extractSchedulesFromAssistants(currentSettings.assistants)
+
+            if (updatedAssistants != currentSettings.assistants) {
+                LogUtil.i(TAG, "迁移清理完成，正在保存更新后的智能体设置...")
+                settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
+            }
 
             LogUtil.i(TAG, "数据迁移执行完毕")
         } catch (e: Exception) {
@@ -441,6 +447,12 @@ class WebdavSync(
                     // 还原备份时，将解出的 Settings 传给 sanitizer 提取 L3 待办
                     val (cleanDb, res) = DatabaseSanitizer.sanitize(context, tempDb, restoredSettings)
                     sanitization = res
+
+                    // 【新逻辑】：如果 Sanitizer 清理了设置中的旧待办内容，将其持久化
+                    res.modifiedSettings?.let {
+                        LogUtil.i(TAG, "Sanitizer modified settings, updating...")
+                        settingsStore.update(it)
+                    }
 
                     val finalDb = context.getDatabasePath("rikka_hub")
                     cleanDb.copyTo(finalDb, true)

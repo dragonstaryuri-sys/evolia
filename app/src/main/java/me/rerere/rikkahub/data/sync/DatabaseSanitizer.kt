@@ -25,14 +25,16 @@ object DatabaseSanitizer {
         val skippedRows: Int = 0,
         val skippedBytes: Long = 0,
         val issuesFixed: Int = 0,
-        val details: String = ""
+        val details: String = "",
+        val modifiedSettings: Settings? = null
     ) {
         operator fun plus(other: SanitizationResult) = SanitizationResult(
             totalRows = this.totalRows + other.totalRows,
             skippedRows = this.skippedRows + other.skippedRows,
             skippedBytes = this.skippedBytes + other.skippedBytes,
             issuesFixed = this.issuesFixed + other.issuesFixed,
-            details = (this.details + "\n" + other.details).trim()
+            details = (this.details + "\n" + other.details).trim(),
+            modifiedSettings = other.modifiedSettings ?: this.modifiedSettings
         )
     }
 
@@ -54,6 +56,7 @@ object DatabaseSanitizer {
 
         var totalResult = SanitizationResult()
         var sourceDb: SQLiteDatabase? = null
+        var finalSettings = settings
 
         try {
             sourceDb = SQLiteDatabase.openDatabase(sourceDbFile.path, null, SQLiteDatabase.OPEN_READONLY)
@@ -98,34 +101,52 @@ object DatabaseSanitizer {
             }
 
             // 从 Settings 中提取智能体待办并同步到 schedules 表 (适配旧备份导入)
-            settings?.assistants?.forEach { assistant ->
-                val masterContent = assistant.masterMemoryContent
-                if (masterContent.contains("约定与待办")) {
-                    val section = masterContent.substringAfter("约定与待办")
-                        .substringBefore("##")
-                        .trim()
+            settings?.let { s ->
+                val newAssistants = s.assistants.map { assistant ->
+                    if (assistant.isMain && assistant.masterMemoryContent.contains("约定与待办")) {
+                        val masterContent = assistant.masterMemoryContent
+                        val section = masterContent.substringAfter("约定与待办")
+                            .substringBefore("##")
+                            .trim()
 
-                    val lines = section.split("\n")
-                        .map { it.trim().trimStart('-', '*', ' ', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ':', '：') }
-                        .filter { it.isNotBlank() && !it.startsWith("#") }
+                        val lines = section.split("\n")
+                            .map { it.trim().trimStart('-', '*', ' ', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ':', '：') }
+                            .filter { it.isNotBlank() && !it.startsWith("#") }
 
-                    lines.forEach { line ->
-                        val values = ContentValues().apply {
-                            put("title", line)
-                            put("content", "来自原记忆档案提取)")
-                            put("start_time", System.currentTimeMillis())
-                            put("is_completed", 0) // 标为未完成
-                            put("category", "assistant")
-                            put("created_at", System.currentTimeMillis())
-                            put("updated_at", System.currentTimeMillis())
-                            put("priority", 1)
-                            put("urgency", 1)
-                            put("difficulty", 1)
+                        lines.forEach { line ->
+                            val values = ContentValues().apply {
+                                put("title", line)
+                                put("content", "来自原记忆档案提取")
+                                put("start_time", System.currentTimeMillis())
+                                put("is_completed", 0)
+                                put("category", "assistant")
+                                put("created_at", System.currentTimeMillis())
+                                put("updated_at", System.currentTimeMillis())
+                                put("priority", 1)
+                                put("urgency", 1)
+                                put("difficulty", 1)
+                            }
+                            targetDbInfo.insert("schedules", SQLiteDatabase.CONFLICT_IGNORE, values)
                         }
-                        // 避免重复插入完全相同的标题
-                        targetDbInfo.insert("schedules", SQLiteDatabase.CONFLICT_IGNORE, values)
-                    }
+
+                        // 【清理逻辑】：删除已提取的内容和标题
+                        val textToFind = "约定与待办"
+                        val textIndex = masterContent.indexOf(textToFind)
+                        val beforeText = masterContent.substring(0, textIndex)
+                        val hashIndex = beforeText.lastIndexOf("##")
+                        // 寻找标题起点，兼容 "## 1. 约定与待办"
+                        val startIndex = if (hashIndex != -1 && (textIndex - hashIndex) < 20) hashIndex else textIndex
+                        val nextHashIndex = masterContent.indexOf("##", textIndex + textToFind.length)
+
+                        val newContent = if (nextHashIndex != -1) {
+                            (masterContent.substring(0, startIndex).trimEnd() + "\n\n" + masterContent.substring(nextHashIndex).trimStart()).trim()
+                        } else {
+                            masterContent.substring(0, startIndex).trim()
+                        }
+                        assistant.copy(masterMemoryContent = newContent)
+                    } else assistant
                 }
+                finalSettings = s.copy(assistants = newAssistants)
             }
 
             // 同步进度水位线
@@ -149,7 +170,7 @@ object DatabaseSanitizer {
             sourceDb?.close()
             targetRoomDb.close()
         }
-        return targetDbFile to totalResult
+        return targetDbFile to totalResult.copy(modifiedSettings = finalSettings)
     }
 
     private fun copyTable(
