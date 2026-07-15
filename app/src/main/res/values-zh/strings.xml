@@ -1718,4 +1718,27 @@
   <string name="chat_history_search_title">搜索聊天记录</string>
   <string name="chat_history_search_hint">搜索与 %s 的聊天内容</string>
   <string name="chat_history_search_empty">没有找到匹配的记录</string>
+  <!-- 豆包导入功能相关 -->
+  <string name="import_doubao_title">导入豆包智能体</string>
+  <string name="import_doubao_download_log">下载日志</string>
+  <string name="import_doubao_select_file">选择 JSON 导入文件</string>
+  <string name="import_doubao_select_file_hint">点击选择从豆包导出的聊天记录</string>
+  <string name="import_doubao_selected_count">已选择 %d 条消息</string>
+  <string name="import_doubao_options">导入选项</string>
+  <string name="import_doubao_set_main">设为主智能体</string>
+  <string name="import_doubao_set_main_desc">导入后将覆盖当前列表中的主智能体状态</string>
+  <string name="import_doubao_rounds_label">每会话对话轮数: %d</string>
+  <string name="import_doubao_rounds_desc">最大 50 轮，超出将自动创建新会话 ID</string>
+  <string name="import_doubao_start_button">开始同步数据</string>
+  <string name="import_doubao_success">导入成功</string>
+  <string name="import_doubao_failed">导入中断或失败</string>
+  <string name="import_doubao_progress_title">任务进度</string>
+  <string name="import_doubao_preview_title">数据格式校验 (预览)</string>
+  <string name="import_doubao_preview_desc">系统已生成第一个会话，请检查内容是否解析正确。</string>
+  <string name="import_doubao_role_assistant">智能体</string>
+  <string name="import_doubao_role_user">用户</string>
+  <string name="import_doubao_confirm_continue">确认，继续导入</string>
+  <string name="import_doubao_cancel_import">终止导入</string>
+  <string name="import_doubao_log_saved">日志已保存到私有目录</string>
+  <string name="assistant_importer_import_other_platform">导入其他平台智能体</string>
 </resources>

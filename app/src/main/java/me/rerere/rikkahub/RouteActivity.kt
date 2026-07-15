@@ -61,6 +61,7 @@ import me.rerere.rikkahub.ui.hooks.rememberCustomTtsState
 import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.AssistantSearchPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
+import me.rerere.rikkahub.ui.pages.assistant.AssistantImportDoubaoPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
@@ -231,6 +232,9 @@ class RouteActivity : AppCompatActivity() {
                         navStack?.navigate(Screen.DiaryList(assistantId.toString()))
                     } else {
                         navStack?.navigate(Screen.Home) { popUpTo(0) { inclusive = true } }
+                        navStack?.navigate(Screen.Home) {
+                            popUpTo(0) { inclusive = true }
+                        }
                         navStack?.navigate(Screen.Chat(Uuid.random().toString()))
                     }
                 } catch (e: Exception) {
@@ -422,6 +426,10 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.ChatHistorySearch> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.ChatHistorySearch>()
                         ChatHistorySearchPage(assistantId = route.assistantId)
+                    }
+
+                    composable<Screen.AssistantImportDoubao> {
+                        AssistantImportDoubaoPage()
                     }
 
                     composable<Screen.Menu> { MenuPage() }

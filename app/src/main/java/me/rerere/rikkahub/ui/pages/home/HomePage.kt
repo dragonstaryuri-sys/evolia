@@ -372,6 +372,10 @@ fun AgentListPage() {
         onImportClick = {
             createState.dismiss()
             importLauncher.launch(arrayOf("*/*"))
+        },
+        onImportOtherClick = {
+            createState.dismiss()
+            navController.navigate(Screen.AssistantImportDoubao)
         }
     )
 }

@@ -28,6 +28,7 @@ import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
+import me.rerere.rikkahub.core.data.repository.DoubaoImportManager
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -118,6 +119,8 @@ val dataSourceModule = module {
     single { MilestoneRepository(milestoneDAO = get()) }
     single { DiaryRepository(agentDiaryDao = get()) }
     single { McpManager(settingsStore = get(), appScope = get()) }
+
+    single { DoubaoImportManager(context = get(), conversationRepo = get()) }
 
     single {
         GenerationHandler(

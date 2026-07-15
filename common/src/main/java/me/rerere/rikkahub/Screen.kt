@@ -2,6 +2,7 @@ package me.rerere.rikkahub
 
 import kotlinx.serialization.Serializable
 
+@Serializable
 sealed interface Screen {
     @Serializable
     data object Home : Screen
@@ -31,6 +32,9 @@ sealed interface Screen {
         val initialMemoryTab: Int? = null,
         val scrollToMemoryId: Int? = null
     ) : Screen
+
+    @Serializable
+    data object AssistantImportDoubao : Screen
 
     @Serializable
     data class ChatHistorySearch(val assistantId: String) : Screen

@@ -3,6 +3,7 @@ package me.rerere.rikkahub.di
 import me.rerere.rikkahub.ui.activity.TextSelectionVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
+import me.rerere.rikkahub.ui.pages.assistant.AssistantImportVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
@@ -56,6 +57,7 @@ val viewModelModule = module {
     }
     viewModelOf(::ChatListVM)
     viewModelOf(::AssistantVM)
+    viewModelOf(::AssistantImportVM)
     viewModel<AssistantDetailVM> { params ->
         AssistantDetailVM(
             id = params.get(),
