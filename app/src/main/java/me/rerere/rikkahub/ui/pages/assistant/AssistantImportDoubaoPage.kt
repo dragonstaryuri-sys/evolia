@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -89,7 +90,7 @@ fun AssistantImportDoubaoPage(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 顶部配置区域（可滚动，但不强制占满）
+                // 顶部配置区域
                 Column(
                     modifier = Modifier
                         .weight(1f, fill = false)
@@ -172,10 +173,21 @@ fun AssistantImportDoubaoPage(
 
                             Button(
                                 onClick = {
-                                    vm.startImport { success ->
-                                        if (success) {
+                                    vm.startImport { success, assistantId, sessionCount ->
+                                        if (success && assistantId != null) {
                                             toaster.show(context.getString(R.string.import_doubao_success))
-                                            navController.popBackStack()
+                                            // 跳转到记忆处理页面
+                                            navController.navigate(
+                                                Screen.AssistantImportMemory(
+                                                    assistantId = assistantId,
+                                                    isMain = vm.isMainAgent,
+                                                    sessionCount = sessionCount
+                                                )
+                                            ) {
+                                                popUpTo(Screen.AssistantImportDoubao) { inclusive = true }
+                                            }
+                                        } else if (!success) {
+                                            toaster.show("导入失败或被用户终止")
                                         }
                                     }
                                 },
@@ -190,7 +202,7 @@ fun AssistantImportDoubaoPage(
                     }
                 }
 
-                // 实时进度与日志展示（占据剩余高度并支持内部滚动）
+                // 实时进度与日志展示
                 AnimatedVisibility(
                     visible = vm.isImporting || vm.importLog.isNotBlank(),
                     modifier = Modifier.weight(1f)
@@ -220,7 +232,6 @@ fun AssistantImportDoubaoPage(
                         ) {
                             val logScrollState = rememberScrollState()
 
-                            // 每次日志更新时自动滚动到底部
                             LaunchedEffect(vm.importLog) {
                                 logScrollState.animateScrollTo(Int.MAX_VALUE)
                             }

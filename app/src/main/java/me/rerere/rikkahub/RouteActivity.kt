@@ -62,6 +62,7 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantPage
 import me.rerere.rikkahub.ui.pages.assistant.AssistantSearchPage
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailPage
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportDoubaoPage
+import me.rerere.rikkahub.ui.pages.assistant.AssistantImportMemoryPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
@@ -430,6 +431,15 @@ class RouteActivity : AppCompatActivity() {
 
                     composable<Screen.AssistantImportDoubao> {
                         AssistantImportDoubaoPage()
+                    }
+
+                    composable<Screen.AssistantImportMemory> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.AssistantImportMemory>()
+                        AssistantImportMemoryPage(
+                            assistantId = route.assistantId,
+                            isMain = route.isMain,
+                            sessionCount = route.sessionCount
+                        )
                     }
 
                     composable<Screen.Menu> { MenuPage() }

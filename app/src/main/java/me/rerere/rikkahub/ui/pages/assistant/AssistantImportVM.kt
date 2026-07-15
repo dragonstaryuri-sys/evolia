@@ -76,7 +76,11 @@ class AssistantImportVM(
         previewConversation = null
     }
 
-    fun startImport(onFinish: (Boolean) -> Unit) {
+    /**
+     * 开始导入
+     * @param onFinish 回调函数，参数为：(成功状态, assistantId, 会话数量)
+     */
+    fun startImport(onFinish: (Boolean, String?, Int) -> Unit) {
         val data = importData ?: return
         isImporting = true
 
@@ -96,7 +100,7 @@ class AssistantImportVM(
             targetAssistantId = finalTargetId
 
             // 执行导入过程
-            val success = importManager.performImport(
+            val sessionCount = importManager.performImport(
                 data = data,
                 assistantId = finalTargetId,
                 roundsPerSession = roundsPerSession
@@ -149,6 +153,8 @@ class AssistantImportVM(
                 confirmed
             }
 
+            val success = sessionCount > 0
+
             // 如果导入失败且不是覆盖模式，则尝试清理新建的智能体
             if (!success && !isOverwriteMode) {
                 val settings = settingsStore.settingsFlow.value
@@ -163,7 +169,7 @@ class AssistantImportVM(
             }
 
             isImporting = false
-            onFinish(success)
+            onFinish(success, finalTargetId.toString(), sessionCount)
         }
     }
 

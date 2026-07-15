@@ -1741,4 +1741,26 @@
   <string name="import_doubao_cancel_import">终止导入</string>
   <string name="import_doubao_log_saved">日志已保存到私有目录</string>
   <string name="assistant_importer_import_other_platform">导入其他平台智能体</string>
+  <!-- 智能体导入记忆处理页面 -->
+  <string name="import_memory_title">完善智能体记忆</string>
+  <string name="import_memory_l3_title">关系档案 (L3)</string>
+  <string name="import_memory_l3_placeholder">描述你们之间的羁绊、约定和核心身份标识...</string>
+  <string name="import_memory_milestone_title">里程碑事件及长期约定</string>
+  <string name="import_memory_add">添加</string>
+  <string name="import_memory_milestone_time_label">发生时间 (如: 2024-05-20)</string>
+  <string name="import_memory_milestone_content_label">事件内容</string>
+  <string name="import_memory_core_title">核心记忆 (Core Memory)</string>
+  <string name="import_memory_core_keywords_label">关键词 (选填，逗号分隔)</string>
+  <string name="import_memory_core_content_label">记忆详情</string>
+  <string name="import_memory_l1_title">片段记忆生成 (L1)</string>
+  <string name="import_memory_l1_desc">本次一共导入了 %1$d 个会话。选择最新的 N 个会话生成片段记忆：</string>
+  <string name="import_memory_l1_generating">正在生成: %1$s</string>
+  <string name="import_memory_l1_stop">停止生成</string>
+  <string name="import_memory_submit_button">保存并完成导入</string>
+  <string name="import_memory_success_toast">记忆同步完成</string>
+  <string name="milestone_label">事件标签</string>
+  <string name="milestone_label_placeholder">如：第一次旅行 / 确立关系</string>
+  <string name="milestone_time">发生时间</string>
+  <string name="milestone_time_placeholder">如：2024-05-20</string>
+  <string name="milestone_content">详细内容</string>
 </resources>

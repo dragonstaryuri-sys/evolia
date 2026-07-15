@@ -19,7 +19,7 @@ interface ChatSegmentDAO {
     @Query("SELECT * FROM chat_segments WHERE assistant_id = :assistantId AND timestamp >= :startTime AND timestamp <= :endTime ORDER BY timestamp ASC")
     suspend fun getSegmentsByAssistantAndTimeRange(assistantId: String, startTime: Long, endTime: Long): List<ChatSegmentEntity>
 
-    @Query("SELECT * FROM chat_segments WHERE assistant_id = :assistantId ORDER BY timestamp DESC")
+    @Query("SELECT * FROM chat_segments WHERE assistant_id = :assistantId ORDER BY end_time DESC")
     fun getSegmentsByAssistantFlow(assistantId: String): Flow<List<ChatSegmentEntity>>
 
     @Query("SELECT * FROM chat_segments WHERE conversation_id = :conversationId ORDER BY start_index ASC")
@@ -46,7 +46,7 @@ interface ChatSegmentDAO {
     @Query("SELECT MAX(end_index) FROM chat_segments WHERE conversation_id = :conversationId")
     suspend fun getLatestSegmentEndIndex(conversationId: String): Int?
 
-    @Query("SELECT id, embedding, embedding_model_id, keywords, timestamp, conversation_id FROM chat_segments WHERE assistant_id = :assistantId")
+    @Query("SELECT id, embedding, embedding_model_id, keywords, end_time as timestamp, conversation_id FROM chat_segments WHERE assistant_id = :assistantId")
     suspend fun getSegmentProjections(assistantId: String): List<SegmentEmbeddingProjection>
 
     @Query("SELECT * FROM chat_segments WHERE id IN (:ids)")

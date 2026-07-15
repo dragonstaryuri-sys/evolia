@@ -75,12 +75,16 @@ class DoubaoImportManager(
         }
     }
 
+    /**
+     * 执行导入过程
+     * @return 成功导入的会话（Conversation）数量，如果失败则返回 -1
+     */
     suspend fun performImport(
         data: DoubaoImportData,
         assistantId: Uuid,
         roundsPerSession: Int,
         onPreviewRequest: suspend (Conversation) -> Boolean
-    ): Boolean = withContext(Dispatchers.IO) {
+    ): Int = withContext(Dispatchers.IO) {
         try {
             log("开始导入流程，目标智能体: ${data.botInfo.name}")
 
@@ -107,11 +111,21 @@ class DoubaoImportManager(
 
             if (totalMessages == 0) {
                 log("数据源中未检测到有效对话，导入终止。")
-                return@withContext false
+                return@withContext -1
             }
 
             val messagesPerSession = (roundsPerSession * 2).coerceIn(2, 100)
-            val chunks = validHistory.chunked(messagesPerSession)
+            val rawChunks = validHistory.chunked(messagesPerSession)
+
+            // 优化逻辑：如果最后一个分片消息少于20条，且存在上一个分片，则合并
+            val chunks = if (rawChunks.size > 1 && rawChunks.last().size < 20) {
+                val lastChunk = rawChunks.last()
+                val secondLastChunk = rawChunks[rawChunks.size - 2]
+                rawChunks.dropLast(2) + listOf(secondLastChunk + lastChunk)
+            } else {
+                rawChunks
+            }
+
             log("计划切分为 ${chunks.size} 个会话片段。")
 
             var importedCount = 0
@@ -145,7 +159,7 @@ class DoubaoImportManager(
                     log("正在展示第一个会话预览，等待确认...")
                     if (!onPreviewRequest(conversation)) {
                         log("用户在预览阶段选择了终止导入。")
-                        return@withContext false
+                        return@withContext -1
                     }
                     log("预览确认通过，开始批量入库...")
                 }
@@ -159,11 +173,11 @@ class DoubaoImportManager(
             }
 
             log("导入同步已圆满完成！")
-            true
+            chunks.size
         } catch (e: Exception) {
             log("导入发生异常: ${e.localizedMessage}")
             e.printStackTrace()
-            false
+            -1
         }
     }
 }

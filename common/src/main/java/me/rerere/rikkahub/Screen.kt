@@ -37,6 +37,13 @@ sealed interface Screen {
     data object AssistantImportDoubao : Screen
 
     @Serializable
+    data class AssistantImportMemory(
+        val assistantId: String,
+        val isMain: Boolean,
+        val sessionCount: Int
+    ) : Screen
+
+    @Serializable
     data class ChatHistorySearch(val assistantId: String) : Screen
 
     @Serializable

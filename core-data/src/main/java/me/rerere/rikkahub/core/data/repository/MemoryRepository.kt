@@ -60,7 +60,7 @@ class MemoryRepository(
                         type = MemoryType.SEGMENT,
                         hasEmbedding = it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
                         embeddingModelId = it.embeddingModelId,
-                        timestamp = it.timestamp,
+                        timestamp = it.endTime, // 使用 endTime 作为展示时间戳
                         recallCount = it.recallCount
                     )
                 }
@@ -271,12 +271,12 @@ class MemoryRepository(
             }
             MemoryType.SEGMENT -> {
                 chatSegmentDAO.getSegmentsByAssistant(assistantId)
-                    .filter { it.timestamp >= startTime }
+                    .filter { it.endTime >= startTime }
                     .map {
                         AssistantMemory(
                             it.id, it.content, it.keywords, MemoryType.SEGMENT,
                             it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
-                            it.embeddingModelId, it.timestamp,
+                            it.embeddingModelId, it.endTime, // 使用 endTime 作为展示时间戳
                             recallCount = it.recallCount
                         )
                     }
@@ -378,7 +378,7 @@ class MemoryRepository(
         val newSegment = segment.copy(content = content, keywords = keywords, embedding = null, embeddingModelId = null)
         chatSegmentDAO.insertSegment(newSegment)
         embeddingCacheDAO.deleteByMemoryId(id, MemoryType.SEGMENT)
-        return AssistantMemory(newSegment.id, newSegment.content, newSegment.keywords, MemoryType.SEGMENT, false, null, newSegment.timestamp, recallCount = newSegment.recallCount)
+        return AssistantMemory(newSegment.id, newSegment.content, newSegment.keywords, MemoryType.SEGMENT, false, null, newSegment.endTime, recallCount = newSegment.recallCount)
     }
 
     suspend fun addMemory(assistantId: String, content: String, type: Int = MemoryType.CORE, keywords: String? = null): AssistantMemory {
@@ -547,7 +547,7 @@ class MemoryRepository(
                 }
             } else {
                 fullSegments[id]?.let { s ->
-                    AssistantMemory(s.id, s.content, s.keywords, MemoryType.SEGMENT, true, s.embeddingModelId, s.timestamp, null, score, s.recallCount) to score
+                    AssistantMemory(s.id, s.content, s.keywords, MemoryType.SEGMENT, true, s.embeddingModelId, s.endTime, null, score, s.recallCount) to score
                 }
             }
         }
