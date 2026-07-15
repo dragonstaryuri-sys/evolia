@@ -562,17 +562,17 @@ class MemoryRepository(
                 Log.v(TAG, "🧠 [RAG] 启动 Rerank 精排 | 候选数量: ${initialResults.size} | 模型: $rerankModelId")
                 val contents = initialResults.map { it.first.content }
                 val rerankResults = rerankService.rerank(query, contents, assistantId)
-                val results = rerankResults.map { r ->
+                val results = rerankResults.filter { it.score >= similarityThreshold }.map { r ->
                     val pair = initialResults[r.index]
                     pair.first.copy(score = r.score) to r.score
                 }.sortedByDescending { it.second }.take(limit)
                 if (results.isEmpty()) {
-                    Log.w(TAG, "⚠️ [RAG] Rerank 结果为空，使用初始检索结果兜底")
-                    initialResults.take(limit)
+                    Log.w(TAG, "⚠️ [RAG] Rerank 后无符合阈值的记忆，或结果为空")
+                    emptyList() // 如果 Rerank 后都不达标，返回空，符合用户要求
                 } else {
-                    Log.v(TAG, "✅ [RAG] Rerank 完成 | 耗时: ${System.currentTimeMillis()}ms")
+                    Log.v(TAG, "✅ [RAG] Rerank 完成 | 符合阈值的数量: ${results.size}")
+                    results
                 }
-                results
             } catch (e: Exception) {
                 Log.e(TAG, "⚠️ [RAG] Rerank 失败: ${e.message}")
                 initialResults.take(limit)
