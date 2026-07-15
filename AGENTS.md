@@ -93,31 +93,32 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 
 ### 6.1 Context Refresh (L1 - Auto-Summarization)
 - **Mechanism**: Compresses older L0 messages within the active session into segments.
-- **L0 Sliding Window**: Even if a message is summarized into L1, it remains visible as "Raw Message" in L0 if it falls within the `maxHistoryMessages` limit.
-- **Segment Strategy (Split Storage & Hybrid Retrieval)**:
-    - **Selective Storage**: `ChatSegmentEntity` only persists the AI-generated **background summary** in its `content` field.
-    - **RAG searchable**: L1 segments are embedded and searchable via vector/keyword hybrid retrieval.
-    - **High-Fidelity Embedding**: System concatenates `[Background Summary] + [Original Text]` for vector search.
+- **Segment Strategy**: `ChatSegmentEntity` only persists the AI-generated **background summary**. L1 segments are embedded and searchable via vector/keyword hybrid retrieval.
 - **Temporal Grouping**: In the prompt, L1 segments are grouped by "Today", "Yesterday", "This Week", and "Older".
 
 ### 6.2 Episodic Memory (L2 - Consolidation)
 - **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation.
-- **Cross-Window Continuity (All-Day L2 Injection)**: 
-    - **Dynamic Tail Injection**: System automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
-    - **NON-RAG RESOURCE**: L2 is **NOT** part of the vector memory library. It is never "searched"; it is either "injected" (if from today) or "archived" into L3.
-    - **High-Precision Time**: Injected L2 items include `HH:mm` timestamps to help AI sequence daily events.
+- **Cross-Window Continuity**: System automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
+- **NON-RAG RESOURCE**: L2 is **NOT** part of the vector memory library. It is never "searched"; it is either "injected" (if from today) or "archived" into L3.
 
 ### 6.3 Master Memory (L3 - Master Archive)
 - **Mechanism**: A structured relationship record that transcends individual conversations, injected into the Stable System Prompt.
-- **Sync Logic**: 
-    - **Scheduled Daily Sync**: Executed at **3:00 AM** daily via `master_memory_daily_sync`.
-    - **Incremental Update**: Only processes L2 episodes generated since the last sync.
-- **Core Content Modules**:
-    - **1. Agreement & TODOs (约定与待办)**: Pending promises, plans, and unresolved commitments.
-    - **2. Emotional Status (情感现状)**: Relationship positioning (e.g., friends, lovers) and current interaction temperature.
-- **Maintenance Protocols**:
-    - **Stability Rule**: AI must output the existing archive **verbatim** if no core state changes occur.
-    - **Auto-Compression**: Triggers a "Lossless Compression" protocol when the archive content becomes too large.
+- **Sync Logic**: Scheduled Daily Sync executed at **3:00 AM**.
+
+### 6.4 RAG Retrieval & Scoring Logic (Double-Stage Filter)
+
+#### Stage 1: Recall (宽口径召回)
+- **Multi-Mode Support**:
+    - **Keyword**: `Score = 0.2 + (MatchCount / KeywordsCount) * 0.8`.
+    - **Semantic**: Cosine similarity via `VectorEngine`.
+    - **Hybrid**: `0.5 * Keyword + 0.5 * Semantic`.
+- **Recency Boost (Temporal Decay)**: Applies to L1 Segments. `Recency = 1.0 / (1.0 + (AgeInMillis / (7 Days)))`. Final Score includes 10% Recency weight.
+- **Recall Strategy**: Ignores the user-defined `similarityThreshold` and retrieves the top **`limit * 3`** candidates. This ensures the Rerank model has a rich enough candidate pool to find highly relevant content that might have had a mediocre initial score.
+
+#### Stage 2: Rerank & Filtering (严格精选)
+- **Rerank Refinement**: If a Rerank model is active, it re-scores candidates based on deep semantic context.
+- **Strict Threshold Filtering**: **CRITICAL:** After scoring (via Rerank or Recall), any memory with a score below the **`similarityThreshold` (综合评分阈值)** is immediately discarded.
+- **Final Selection**: Returns the top **`limit`** memories that passed the threshold. This prevents low-relevance "noise" from cluttering the AI context.
 
 ## 7. Agent Automation (Task Manager)
 
@@ -126,12 +127,9 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 7.2 Core Logic
 - **Scheduling**: Reliable execution via `WorkManager`. Tasks are persisted in `AgentTaskEntity` (Room).
-- **Smart Session Routing**: Automatic detection of the most relevant conversation for execution.
 
 ### 7.3 Execution Modes & Visibility
-- **Type: EMAIL / AGENT_TASK**: 
-    - **Trigger**: System sends a "Virtual Instruction" message to the AI.
-    - **Visibility**: The trigger instruction uses `skipContext = true` and is invisible to the user.
+- **Type: EMAIL / AGENT_TASK**: The trigger instruction uses `skipContext = true` and is invisible to the user.
 - **Type: NOTIFICATION**: Directly pushes a system notification.
 - **Type: DIARY**: Automatically records an entry into the Agent's internal diary database.
 
@@ -143,18 +141,9 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 8.2 Productivity & Device Control
 - **Schedule Manager (`schedule_manager`)**: Manages internal tasks with priority/urgency.
-- **Device Control (`device_control`)**: 
-    - **System Commands**: Perform global actions (LOCK_SCREEN, GO_HOME, BACK, etc.).
-    - **App & Connection**: OPEN_APP, WIFI_ON/OFF.
-    - **Alarm & Timer**: Manage system alarms and countdown timers via Intents.
-- **App Explorer (`list_apps`)**: Lists installed applications and package names for automation.
+- **Device Control (`device_control`)**: LOCK_SCREEN, GO_HOME, OPEN_APP, etc.
 - **Email Service**: Full SMTP/IMAP support via `qq_email_service`.
 
 ### 8.3 Relationship & Dynamic Profile
 - **Profile Updater (`update_profile`)**: Allows AI to dynamically update User/Assistant Profile fields.
-- **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Perception, Commitment, Emotion, Identity).
-
-### 8.4 User Observation & Monitoring
-- **User Observer (`peek_user`)**: Sets up persistent high-precision monitors for phone status.
-    - **Data Dimensions**: Foreground App, Today Usage, Session Duration, Screen Context (OCR), and Recent Actions.
-    - **Implementation**: Powered by `EvoliaMonitorService` (Accessibility Service).
+- **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Commitment, Identity, etc.).
