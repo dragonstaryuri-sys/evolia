@@ -35,6 +35,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.work.workDataOf
+import kotlinx.coroutines.withTimeout
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
@@ -42,7 +43,7 @@ import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
 import me.rerere.ai.core.MessageRole
 
 private const val TAG = "DiaryWorker"
-private const val MAX_CHAT_CONTENT_LENGTH = 80_000 // 最大允许的聊天内容字符数
+private const val CHUNK_SIZE = 40_000 // 每一段处理的文字长度
 
 /**
  * Markdown formatting instruction for the AI.
@@ -88,7 +89,6 @@ class DiaryWorker(
             // 检查今天是否已有日记
             val todayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
             if (todayDiary != null) {
-                // 如果是手动触发且日记已存在，标记为 skipped，由 UI 层显示更精确的提示
                 return if (isManual) {
                     Result.success(workDataOf("skipped" to true, "reason" to "already_exists"))
                 } else {
@@ -96,10 +96,7 @@ class DiaryWorker(
                 }
             }
 
-            // 获取最后一次日记
             val lastDiary = diaryRepo.getLastDiaryOfAssistant(assistant.id.toString())
-
-            // 确定时间起点
             val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
@@ -107,14 +104,12 @@ class DiaryWorker(
             val conversations = conversationRepo.getConversationsOfAssistantAnyMode(assistant.id).first()
             val allMessages = conversations.flatMap { conv ->
                 conv.messageNodes.mapNotNull { node ->
-                    // 仅获取当前选中的消息版本，避免将已刷新的回复也丢给 AI
                     node.messages.getOrNull(node.selectIndex)?.takeIf {
                         it.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds() > startTimeThreshold
                     }
                 }
             }.sortedBy { it.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds() }
 
-            // 核心修改：日记生成只拼接消息文本内容，不拼接思考链和工具调用的信息
             val newMessages = allMessages.filter {
                 it.role != MessageRole.TOOL && it.toContentText().isNotBlank()
             }
@@ -122,80 +117,96 @@ class DiaryWorker(
             val triggerTime = LocalDateTime.now().format(timeFormatter)
             val locale = Locale.getDefault().toLanguageTag()
 
-            // 2. 构造 Prompt
-            val finalPrompt: String = if (newMessages.isEmpty()) {
+            // 2. 准备模型
+            val diaryModelId = assistant.diaryModelId ?: currentSettings.diaryModelId
+            val model = currentSettings.findModelById(diaryModelId)
+                ?: currentSettings.findModelById(currentSettings.chatModelId)
+                ?: error("没有可用模型")
+
+            var generatedContent = ""
+
+            // 3. 开始生成逻辑
+            if (newMessages.isEmpty()) {
                 val memories = memoryRepo.getCombinedMemoriesFlow(assistant.id.toString()).first()
                 val selectedMemories = if (memories.isNotEmpty()) {
                     memories.shuffled().take(3).joinToString("\n") { "- ${it.content}" }
                 } else "No significant memories found yet."
 
-                DIARY_NO_INTERACTION_PROMPT.applyPlaceholders(
+                val finalPrompt = DIARY_NO_INTERACTION_PROMPT.applyPlaceholders(
                     "char" to assistant.name,
                     "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
                     "memories" to selectedMemories,
                     "system_prompt" to assistant.systemPrompt,
                     "locale" to locale
                 ) + DIARY_MARKDOWN_INSTRUCTION
+
+                generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt, isManual)
             } else {
-                var chatContent = newMessages.joinToString("\n") { message ->
-                    val time = formatTimestamp(message.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
-                    // 仅使用文本正文，过滤推理过程
-                    "[$time] ${message.role}: ${message.toContentText()}"
-                }
-
-                // 处理超长文本：取头部和尾部
-                if (chatContent.length > MAX_CHAT_CONTENT_LENGTH) {
-                    val half = MAX_CHAT_CONTENT_LENGTH / 2
-                    val head = chatContent.take(half)
-                    val tail = chatContent.takeLast(half)
-                    chatContent = "$head\n\n...[Content omitted due to length]...\n\n$tail"
-                    Log.w(TAG, "Chat content for diary truncated: original length ${chatContent.length}")
-                }
-
-                val firstMsgTime = formatTimestamp(newMessages.first().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
-                val lastMsgTime = formatTimestamp(newMessages.last().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
-
-                val timeRef = "\n\n" + DIARY_TIME_REFERENCE_PROMPT.applyPlaceholders(
-                    "today_date" to LocalDate.now().toString() + " (" + LocalDate.now().dayOfWeek.name + ")",
-                    "start_time" to firstMsgTime,
-                    "end_time" to lastMsgTime,
-                    "trigger_time" to triggerTime
-                )
-
-                DEFAULT_DIARY_PROMPT.applyPlaceholders(
-                    "content" to chatContent,
-                    "char" to assistant.name,
-                    "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
-                    "system_prompt" to assistant.systemPrompt,
-                    "locale" to locale
-                ) + timeRef + DIARY_MARKDOWN_INSTRUCTION
-            }
-
-            // 3. AI 生成
-            val diaryModelId = assistant.diaryModelId ?: currentSettings.diaryModelId
-            val model = currentSettings.findModelById(diaryModelId)
-                ?: currentSettings.findModelById(currentSettings.chatModelId)
-                ?: error("No model available")
-
-            var generatedContent = ""
-            generationHandler.generateText(
-                settings = currentSettings,
-                model = model,
-                messages = listOf(UIMessage.user(finalPrompt)),
-                assistant = assistant.copy(
-                    temperature = 0.9f,
-                    topP = 0.6f,
-                )
-            ).collect { chunk ->
-                if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
-                    val lastMessage = chunk.messages.lastOrNull()
-                    if (lastMessage?.role == MessageRole.ASSISTANT) {
-                        generatedContent = lastMessage.toContentText()
+                // 将消息分段
+                val messageGroups = mutableListOf<List<UIMessage>>()
+                var currentGroup = mutableListOf<UIMessage>()
+                var currentLen = 0
+                for (msg in newMessages) {
+                    val text = msg.toContentText()
+                    if (currentLen + text.length > CHUNK_SIZE && currentGroup.isNotEmpty()) {
+                        messageGroups.add(currentGroup)
+                        currentGroup = mutableListOf()
+                        currentLen = 0
                     }
+                    currentGroup.add(msg)
+                    currentLen += text.length
+                }
+                if (currentGroup.isNotEmpty()) messageGroups.add(currentGroup)
+
+                // 迭代更新日记内容
+                messageGroups.forEachIndexed { index, group ->
+                    val isFirst = index == 0
+                    val chatContent = group.joinToString("\n") { message ->
+                        val time = formatTimestamp(message.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
+                        "[$time] ${message.role}: ${message.toContentText()}"
+                    }
+
+                    val firstMsgTime = formatTimestamp(group.first().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
+                    val lastMsgTime = formatTimestamp(group.last().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
+
+                    val timeRef = "\n\n" + DIARY_TIME_REFERENCE_PROMPT.applyPlaceholders(
+                        "today_date" to LocalDate.now().toString() + " (" + LocalDate.now().dayOfWeek.name + ")",
+                        "start_time" to firstMsgTime,
+                        "end_time" to lastMsgTime,
+                        "trigger_time" to triggerTime
+                    )
+
+                    val promptBase = if (isFirst) {
+                        DEFAULT_DIARY_PROMPT
+                    } else {
+                        """
+                        你正在编写一篇日记。
+                        这是你根据之前的对话记录已经生成的日记草稿：
+                        ---
+                        $generatedContent
+                        ---
+
+                        现在，请结合接下来的这一段新对话记录，对上面的日记草稿进行完善、补充或继续编写。
+                        请保持人称一致，风格连贯，并在最后输出一份包含之前内容和新内容的完整日记。
+
+                        新的对话记录如下：
+                        {{content}}
+                        """.trimIndent()
+                    }
+
+                    val finalPrompt = promptBase.applyPlaceholders(
+                        "content" to chatContent,
+                        "char" to assistant.name,
+                        "user" to (currentSettings.displaySetting.userNickname.ifBlank { "User" }),
+                        "system_prompt" to assistant.systemPrompt,
+                        "locale" to locale
+                    ) + timeRef + (if (isFirst) DIARY_MARKDOWN_INSTRUCTION else "")
+
+                    generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt, isManual)
                 }
             }
 
-            // 4. 保存为“今天”的日记
+            // 4. 保存结果
             if (generatedContent.isNotBlank()) {
                 val diary = AgentDiaryEntity(
                     id = Uuid.random().toString(),
@@ -206,7 +217,6 @@ class DiaryWorker(
                 )
                 diaryRepo.insertDiary(diary)
 
-                // 只有自动生成时才发送系统通知。如果是手动生成，UI 层已经有对应的 Toast 提示了。
                 if (!isManual) {
                     showSuccessNotification(assistant.name, assistant.id.toString())
                 }
@@ -218,9 +228,37 @@ class DiaryWorker(
                 val errorInfo = e.localizedMessage ?: e.toString()
                 val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
                 showSimpleNotification(errorMsg, assistantIdStr)
+                return Result.failure(workDataOf("error" to errorInfo))
             }
-            Result.retry()
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
+    }
+
+    private suspend fun performGeneration(
+        settings: me.rerere.rikkahub.data.datastore.Settings,
+        model: me.rerere.ai.provider.Model,
+        assistant: me.rerere.rikkahub.core.data.model.Assistant,
+        prompt: String,
+        isManual: Boolean
+    ): String {
+        var result = ""
+        val timeoutMillis = if (isManual) 180_000L else 300_000L
+        withTimeout(timeoutMillis) {
+            generationHandler.generateText(
+                settings = settings,
+                model = model,
+                messages = listOf(UIMessage.user(prompt)),
+                assistant = assistant.copy(temperature = 0.8f)
+            ).collect { chunk ->
+                if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
+                    val lastMessage = chunk.messages.lastOrNull()
+                    if (lastMessage?.role == MessageRole.ASSISTANT) {
+                        result = lastMessage.toContentText()
+                    }
+                }
+            }
+        }
+        return result
     }
 
     private fun formatTimestamp(ts: Long): String =
