@@ -15,7 +15,8 @@ import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -48,6 +49,7 @@ fun ScheduleScreen(
 ) {
     val pendingSchedules by viewModel.allPendingSchedules.collectAsState()
     val completedSchedules by viewModel.allCompletedSchedules.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
@@ -78,6 +80,18 @@ fun ScheduleScreen(
                             onBack()
                         }) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.setCategory(if (selectedCategory == "user") "assistant" else "user")
+                        }) {
+                            Icon(
+                                imageVector = if (selectedCategory == "user") Icons.Rounded.Person else Icons.Rounded.SmartToy,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                     },
                     scrollBehavior = scrollBehavior
@@ -208,6 +222,7 @@ fun ScheduleScreen(
     if (showEditDialog) {
         ScheduleEditDialog(
             initialSchedule = editingSchedule,
+            defaultCategory = selectedCategory,
             onDismiss = { showEditDialog = false },
             onSave = { schedule ->
                 viewModel.saveSchedule(schedule)
@@ -401,6 +416,7 @@ private fun PropertyTag(
 @Composable
 private fun ScheduleEditDialog(
     initialSchedule: ScheduleEntity?,
+    defaultCategory: String = "user",
     onDismiss: () -> Unit,
     onSave: (ScheduleEntity) -> Unit
 ) {
@@ -409,7 +425,7 @@ private fun ScheduleEditDialog(
     var priority by remember { mutableIntStateOf(initialSchedule?.priority ?: 1) }
     var urgency by remember { mutableIntStateOf(initialSchedule?.urgency ?: 1) }
     var difficulty by remember { mutableIntStateOf(initialSchedule?.difficulty ?: 1) }
-    var category by remember { mutableStateOf(initialSchedule?.category ?: "user") }
+    var category by remember { mutableStateOf(initialSchedule?.category ?: defaultCategory) }
 
     var startTime by remember { mutableLongStateOf(initialSchedule?.startTime ?: System.currentTimeMillis()) }
     var endTime by remember { mutableStateOf(initialSchedule?.endTime) }
