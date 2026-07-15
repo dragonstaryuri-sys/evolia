@@ -79,30 +79,37 @@ abstract class AppDatabase : RoomDatabase() {
 
                 // 1. 处理 MemoryEntity
                 db.execSQL("CREATE TABLE `MemoryEntity_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assistant_id` TEXT NOT NULL, `content` TEXT NOT NULL, `keywords` TEXT, `embedding` BLOB, `embedding_model_id` TEXT DEFAULT '', `type` INTEGER NOT NULL DEFAULT 0, `last_accessed_at` INTEGER NOT NULL DEFAULT 0, `created_at` INTEGER NOT NULL DEFAULT 0)")
-                db.execSQL("INSERT INTO `MemoryEntity_new` (`id`, `assistant_id`, `content`, `keywords`, `embedding_model_id`, `type`, `last_accessed_at`, `created_at`) SELECT `id`, `assistant_id`, `content`, `keywords`, `embedding_model_id`, `type`, `last_accessed_at`, `created_at` FROM `MemoryEntity`")
+                // 【修复】：加入 embedding 字段到迁移列表
+                db.execSQL("INSERT INTO `MemoryEntity_new` (`id`, `assistant_id`, `content`, `keywords`, `embedding`, `embedding_model_id`, `type`, `last_accessed_at`, `created_at`) SELECT `id`, `assistant_id`, `content`, `keywords`, `embedding`, `embedding_model_id`, `type`, `last_accessed_at`, `created_at` FROM `MemoryEntity`")
                 db.execSQL("DROP TABLE `MemoryEntity`")
                 db.execSQL("ALTER TABLE `MemoryEntity_new` RENAME TO `MemoryEntity`")
 
                 // 2. 处理 chat_segments
                 db.execSQL("CREATE TABLE `chat_segments_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assistant_id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, `content` TEXT NOT NULL, `keywords` TEXT, `start_index` INTEGER NOT NULL, `end_index` INTEGER NOT NULL, `start_time` INTEGER NOT NULL, `end_time` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, `embedding` BLOB, `embedding_model_id` TEXT DEFAULT '', `recall_count` INTEGER NOT NULL DEFAULT 0)")
-                db.execSQL("INSERT INTO `chat_segments_new` (`id`, `assistant_id`, `conversation_id`, `content`, `keywords`, `start_index`, `end_index`, `start_time`, `end_time`, `timestamp`, `embedding_model_id`, `recall_count`) SELECT `id`, `assistant_id`, `conversation_id`, `content`, `keywords`, `start_index`, `end_index`, `start_time`, `end_time`, `timestamp`, `embedding_model_id`, `recall_count` FROM `chat_segments`")
+                // 【修复】：加入 embedding 字段到迁移列表
+                db.execSQL("INSERT INTO `chat_segments_new` (`id`, `assistant_id`, `conversation_id`, `content`, `keywords`, `start_index`, `end_index`, `start_time`, `end_time`, `timestamp`, `embedding`, `embedding_model_id`, `recall_count`) SELECT `id`, `assistant_id`, `conversation_id`, `content`, `keywords`, `start_index`, `end_index`, `start_time`, `end_time`, `timestamp`, `embedding`, `embedding_model_id`, `recall_count` FROM `chat_segments`")
                 db.execSQL("DROP TABLE `chat_segments`")
                 db.execSQL("ALTER TABLE `chat_segments_new` RENAME TO `chat_segments`")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_segments_conversation_id_start_time` ON `chat_segments` (`conversation_id`, `start_time`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_segments_conversation_id` ON `chat_segments` (`conversation_id`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_segments_assistant_id` ON `chat_segments` (`assistant_id`)")
 
-                // 3. 处理 ChatEpisodeEntity (修正了导致闪退的默认值定义)
+                // 3. 处理 ChatEpisodeEntity
                 db.execSQL("CREATE TABLE `ChatEpisodeEntity_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assistant_id` TEXT NOT NULL, `content` TEXT NOT NULL, `keywords` TEXT, `embedding` BLOB, `embedding_model_id` TEXT DEFAULT '', `start_time` INTEGER NOT NULL, `end_time` INTEGER NOT NULL, `last_accessed_at` INTEGER NOT NULL DEFAULT 0, `significance` INTEGER NOT NULL DEFAULT 5, `conversation_id` TEXT DEFAULT '')")
-                db.execSQL("INSERT INTO `ChatEpisodeEntity_new` (`id`, `assistant_id`, `content`, `keywords`, `embedding_model_id`, `start_time`, `end_time`, `last_accessed_at`, `significance`, `conversation_id`) SELECT `id`, `assistant_id`, `content`, `keywords`, `embedding_model_id`, `start_time`, `end_time`, `last_accessed_at`, `significance`, `conversation_id` FROM `ChatEpisodeEntity`")
+                // 【修复】：加入 embedding 字段到迁移列表
+                db.execSQL("INSERT INTO `ChatEpisodeEntity_new` (`id`, `assistant_id`, `content`, `keywords`, `embedding`, `embedding_model_id`, `start_time`, `end_time`, `last_accessed_at`, `significance`, `conversation_id`) SELECT `id`, `assistant_id`, `content`, `keywords`, `embedding`, `embedding_model_id`, `start_time`, `end_time`, `last_accessed_at`, `significance`, `conversation_id` FROM `ChatEpisodeEntity`")
                 db.execSQL("DROP TABLE `ChatEpisodeEntity`")
                 db.execSQL("ALTER TABLE `ChatEpisodeEntity_new` RENAME TO `ChatEpisodeEntity`")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_ChatEpisodeEntity_assistant_id_end_time` ON `ChatEpisodeEntity` (`assistant_id`, `end_time`)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_ChatEpisodeEntity_conversation_id` ON `ChatEpisodeEntity` (`conversation_id`)")
 
-                // 4. 重建缓存表
+                // 4. 处理缓存表 (尽量迁移而非直接删除)
+                db.execSQL("CREATE TABLE IF NOT EXISTS `embedding_cache_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `memory_id` INTEGER NOT NULL, `memory_type` INTEGER NOT NULL, `model_id` TEXT NOT NULL, `embedding` BLOB NOT NULL, `created_at` INTEGER NOT NULL)")
+                runCatching {
+                    db.execSQL("INSERT INTO `embedding_cache_new` (`memory_id`, `memory_type`, `model_id`, `embedding`, `created_at`) SELECT `memory_id`, `memory_type`, `model_id`, `embedding`, `created_at` FROM `embedding_cache`")
+                }
                 db.execSQL("DROP TABLE IF EXISTS `embedding_cache`")
-                db.execSQL("CREATE TABLE IF NOT EXISTS `embedding_cache` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `memory_id` INTEGER NOT NULL, `memory_type` INTEGER NOT NULL, `model_id` TEXT NOT NULL, `embedding` BLOB NOT NULL, `created_at` INTEGER NOT NULL)")
+                db.execSQL("ALTER TABLE `embedding_cache_new` RENAME TO `embedding_cache`")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_embedding_cache_memory_id_memory_type_model_id` ON `embedding_cache` (`memory_id`, `memory_type`, `model_id`)")
             }
         }
@@ -110,7 +117,6 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_16_17 = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.v(TAG, "开始 16->17 迁移：清理弃用的虚拟世界索引")
-                // 物理删除旧索引，Room 在代码中删除索引后，必须在此手动执行 SQL 才能通过启动校验
                 db.execSQL("DROP INDEX IF EXISTS `index_ConversationEntity_is_virtual` ")
             }
         }
@@ -118,11 +124,7 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_15_16 = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.v("AppDatabase", "开始 15->16 迁移，当前数据库文件版本为: ${db.version}")
-                // 1. 首先删除旧的、基于索引的唯一约束
                 db.execSQL("DROP INDEX IF EXISTS `index_chat_segments_conversation_id_start_index` ")
-
-                // 2. 【强化修复逻辑】：针对差值为 1 或错误的迁移结果进行拨乱反正
-                // 如果 end_time - start_time 不等于 900,000 (15min)，说明迁移逻辑错误，强制重置
                 db.execSQL("""
                     UPDATE `chat_segments`
                     SET `start_time` = CAST(`timestamp` AS INTEGER) - 900000,
@@ -131,8 +133,6 @@ abstract class AppDatabase : RoomDatabase() {
                        OR `start_time` = 0
                        OR ABS(`end_time` - `start_time` - 900000) > 100
                 """.trimIndent())
-
-                // 3. 【精准去重】：清理因补全可能产生的重复数据
                 db.execSQL("""
                     DELETE FROM `chat_segments`
                     WHERE `id` NOT IN (
@@ -141,8 +141,6 @@ abstract class AppDatabase : RoomDatabase() {
                         GROUP BY `conversation_id`, `start_time`
                     )
                 """.trimIndent())
-
-                // 4. 【同步进度】：确保 ConversationEntity 知道水位线
                 db.execSQL("""
                     UPDATE ConversationEntity
                     SET last_summarized_message_time = (
@@ -153,8 +151,6 @@ abstract class AppDatabase : RoomDatabase() {
                     WHERE (last_summarized_message_time = 0 OR last_summarized_message_time IS NULL)
                     AND id IN (SELECT conversation_id FROM chat_segments)
                 """.trimIndent())
-
-                // 5. 最后，创建 unique index (conversation_id, start_time)
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_chat_segments_conversation_id_start_time` ON `chat_segments` (`conversation_id`, `start_time`)")
             }
         }
@@ -163,17 +159,10 @@ abstract class AppDatabase : RoomDatabase() {
 
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.v("AppDatabase", "开始 14->15 迁移，当前数据库文件版本为: ${db.version}")
-                // 1. 为消息表增加逻辑删除字段
                 db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `is_deleted` INTEGER NOT NULL DEFAULT 0")
-
-                // 2. 为会话表增加时间戳进度字段
                 db.execSQL("ALTER TABLE `ConversationEntity` ADD COLUMN `last_summarized_message_time` INTEGER NOT NULL DEFAULT 0")
-
-                // 3. 为片段表增加时间范围字段
                 db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `start_time` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `chat_segments` ADD COLUMN `end_time` INTEGER NOT NULL DEFAULT 0")
-
-                // 4. 数据补偿逻辑：显式转换 timestamp 确保读取的是大整数
                 db.execSQL("""
                     UPDATE `chat_segments`
                     SET `start_time` = CAST(`timestamp` AS INTEGER) - 900000,
@@ -185,7 +174,6 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.v("AppDatabase", "开始 13->14 迁移，当前数据库文件版本为: ${db.version}")
-                // 1. 创建 chat_message_nodes 表
                 db.execSQL(
                     """
             CREATE TABLE IF NOT EXISTS `chat_message_nodes` (
@@ -198,11 +186,7 @@ abstract class AppDatabase : RoomDatabase() {
             )
         """.trimIndent()
                 )
-
-                // 补上索引
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_message_nodes_conversation_id` ON `chat_message_nodes` (`conversation_id`)")
-
-                // 2. 创建 chat_messages 表
                 db.execSQL(
                     """
             CREATE TABLE IF NOT EXISTS `chat_messages` (

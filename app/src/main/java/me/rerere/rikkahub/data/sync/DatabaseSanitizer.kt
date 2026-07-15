@@ -14,6 +14,7 @@ import kotlinx.datetime.toInstant
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.core.data.utils.VectorUtils
 import java.io.File
 import kotlin.math.abs
 
@@ -71,9 +72,10 @@ object DatabaseSanitizer {
                 while (c.moveToNext()) targetTables.add(c.getString(0))
             }
 
+            // 白名单：包含类名和物理表名，确保能匹配上
             val whiteList = listOf(
                 "ConversationEntity", "MemoryEntity", "GenMediaEntity",
-                "ChatEpisodeEntity", "EmbeddingCacheEntity",
+                "ChatEpisodeEntity", "EmbeddingCacheEntity", "embedding_cache",
                 "daily_activity", "AgentDiaryEntity", "schedules", "chat_segments",
                 "agent_tasks", "token_usage", "books", "book_progress",
                 "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
@@ -82,9 +84,18 @@ object DatabaseSanitizer {
             )
 
             for (sourceTableName in sourceTables) {
-                val isWhitelisted = whiteList.any { it.replace("_", "").equals(sourceTableName.replace("_", ""), ignoreCase = true) }
+                val isWhitelisted = whiteList.any {
+                    val cleanWhite = it.replace("_", "").lowercase()
+                    val cleanSource = sourceTableName.replace("_", "").lowercase()
+                    cleanWhite == cleanSource || cleanWhite == cleanSource + "entity" || cleanSource == cleanWhite + "entity"
+                }
+
                 if (isWhitelisted) {
-                    val targetTableName = targetTables.find { it.replace("_", "").equals(sourceTableName.replace("_", ""), ignoreCase = true) }
+                    val targetTableName = targetTables.find {
+                        val cleanTarget = it.replace("_", "").lowercase()
+                        val cleanSource = sourceTableName.replace("_", "").lowercase()
+                        cleanTarget == cleanSource
+                    }
 
                     if (targetTableName != null) {
                         val rowCount = sourceDb.rawQuery("SELECT COUNT(*) FROM `$sourceTableName`", null).use { c ->
@@ -134,7 +145,6 @@ object DatabaseSanitizer {
                         val textIndex = masterContent.indexOf(textToFind)
                         val beforeText = masterContent.substring(0, textIndex)
                         val hashIndex = beforeText.lastIndexOf("##")
-                        // 寻找标题起点，兼容 "## 1. 约定与待办"
                         val startIndex = if (hashIndex != -1 && (textIndex - hashIndex) < 20) hashIndex else textIndex
                         val nextHashIndex = masterContent.indexOf("##", textIndex + textToFind.length)
 
@@ -209,11 +219,6 @@ object DatabaseSanitizer {
                     try {
                         val values = ContentValues()
                         for ((colName, info) in targetColumnsInfo) {
-                            if (colName == "embedding") {
-                                values.putNull(colName)
-                                continue
-                            }
-
                             if (sourceColumns.contains(colName)) {
                                 val idx = cursor.getColumnIndex(colName)
                                 if (idx != -1) {
@@ -223,13 +228,23 @@ object DatabaseSanitizer {
                                         Cursor.FIELD_TYPE_FLOAT -> values.put(colName, cursor.getDouble(idx))
                                         Cursor.FIELD_TYPE_STRING -> {
                                             var strValue = cursor.getString(idx)
-                                            // 【数据迁移】：schedules 表 category 字段 General -> user
+                                            // 【数据迁移 1】：schedules 表 category 字段 General -> user
                                             if (targetTableName.equals("schedules", ignoreCase = true) && colName == "category") {
-                                                if (strValue == "General") {
-                                                    strValue = "user"
-                                                }
+                                                if (strValue == "General") strValue = "user"
                                             }
-                                            values.put(colName, strValue)
+
+                                            // 【数据迁移 2】：处理旧版本 String 类型 embedding
+                                            if (colName == "embedding" && info.type == "BLOB" && strValue.startsWith("[")) {
+                                                try {
+                                                    val floats = JsonInstant.decodeFromString<List<Float>>(strValue)
+                                                    values.put(colName, VectorUtils.fromList(floats))
+                                                } catch (e: Exception) {
+                                                    LogUtil.w(TAG, "解析旧向量字符串失败: $strValue")
+                                                    values.put(colName, strValue)
+                                                }
+                                            } else {
+                                                values.put(colName, strValue)
+                                            }
                                         }
                                         Cursor.FIELD_TYPE_BLOB -> values.put(colName, cursor.getBlob(idx))
                                     }
