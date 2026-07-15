@@ -293,7 +293,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 (uiItems.lastOrNull() as? ChatVM.ChatUIItem.Message)?.node?.currentMessage?.role == me.rerere.ai.core.MessageRole.USER
             )
 
-        val displayItems = remember(uiItems, needsPhantomLoadingTurn) {
+        val displayItems = remember(uiItems, needsPhantomLoadingTurn, selecting) {
             val result = mutableListOf<ChatListDisplayItem>()
             val currentNodes = mutableListOf<MessageNode>()
             var lastShownTime: LocalDateTime? = null
@@ -301,9 +301,23 @@ private fun SharedTransitionScope.ChatListNormal(
 
             fun flush() {
                 if (currentNodes.isNotEmpty()) {
-                    val turns = currentNodes.groupIntoTurns()
-                    turns.forEach { turn ->
-                        result.add(ChatListDisplayItem.TurnGroup(turn))
+                    if (selecting) {
+                        // 在多选模式下，不进行 Turn 合并，让每一条消息都拥有独立的选框
+                        currentNodes.forEach { node ->
+                            result.add(
+                                ChatListDisplayItem.TurnGroup(
+                                    MessageTurnGroup(
+                                        nodes = listOf(node),
+                                        role = node.currentMessage.role
+                                    )
+                                )
+                            )
+                        }
+                    } else {
+                        val turns = currentNodes.groupIntoTurns()
+                        turns.forEach { turn ->
+                            result.add(ChatListDisplayItem.TurnGroup(turn))
+                        }
                     }
                     currentNodes.clear()
                 }
