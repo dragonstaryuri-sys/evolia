@@ -18,6 +18,8 @@ import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -403,11 +405,11 @@ private fun ScheduleEditDialog(
     onSave: (ScheduleEntity) -> Unit
 ) {
     var title by remember { mutableStateOf(initialSchedule?.title ?: "") }
-    // 保持 content 状态但不再 UI 中显示，用于静默保留历史数据
     val content by remember { mutableStateOf(initialSchedule?.content ?: "") }
     var priority by remember { mutableIntStateOf(initialSchedule?.priority ?: 1) }
     var urgency by remember { mutableIntStateOf(initialSchedule?.urgency ?: 1) }
     var difficulty by remember { mutableIntStateOf(initialSchedule?.difficulty ?: 1) }
+    var category by remember { mutableStateOf(initialSchedule?.category ?: "user") }
 
     var startTime by remember { mutableLongStateOf(initialSchedule?.startTime ?: System.currentTimeMillis()) }
     var endTime by remember { mutableStateOf(initialSchedule?.endTime) }
@@ -427,6 +429,7 @@ private fun ScheduleEditDialog(
                 priority = priority,
                 urgency = urgency,
                 difficulty = difficulty,
+                category = category,
                 startTime = startTime,
                 endTime = endTime,
                 reminderTime = reminderTime,
@@ -470,8 +473,37 @@ private fun ScheduleEditDialog(
                     singleLine = true
                 )
 
-                // 详细描述 (Content) 已移除，以节省空间并弃用该功能
-
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.schedule_category),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        val categories = listOf("user", "assistant")
+                        categories.forEachIndexed { index, cat ->
+                            SegmentedButton(
+                                selected = category == cat,
+                                onClick = {
+                                    if (category != cat) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        category = cat
+                                    }
+                                },
+                                shape = SegmentedButtonDefaults.itemShape(index = index, count = 2),
+                                label = {
+                                    Text(
+                                        text = if (cat == "user")
+                                            stringResource(R.string.schedule_category_user)
+                                        else
+                                            stringResource(R.string.schedule_category_assistant),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
                 // Compact Property Selectors
                 PropertySelector(
                     label = stringResource(R.string.schedule_priority),

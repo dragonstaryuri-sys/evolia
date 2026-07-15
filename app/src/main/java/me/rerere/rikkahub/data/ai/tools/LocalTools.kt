@@ -607,7 +607,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "要执行的操作：add（新任务）, list（获取所有）, edit（修改现有）, toggle（切换完成状态）, delete（移除）"
+                                    "要执行的操作：add（新任务）, list（获取未完成列表）, edit（修改现有）, toggle（切换完成状态）, delete（移除）"
                                 )
                                 put(
                                     "enum", JsonArray(
@@ -645,7 +645,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "截止日期/结束时间，请使用 ISO 8601 格式（例如：2023-10-27T10:00:00）。"
+                                    "截止日期/结束时间，请使用 ISO 8601 格式（例如：2023-10-27T10:00:00）。注意：当该任务为你的待办或共享待办时，该字段必填。"
                                 )
                             })
                             put("reminder_time", buildJsonObject {
@@ -659,7 +659,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "待办类型：user（用户个人待办）, assistant（你的待办项）"
+                                    "待办类型：user（用户个人待办）, assistant（你的待办项）。注意：执行 list 操作时此参数必填。"
                                 )
                                 put(
                                     "enum", JsonArray(
@@ -721,7 +721,7 @@ class LocalTools(
                                 )
 
                                 // 自动同步到系统日历 (如果包含结束时间或提醒时间)
-                                if (endTime != null || reminderTime != null) {
+                                if (category == "user" && endTime != null || reminderTime != null) {
                                     openSystemCalendar(
                                         title = title,
                                         startTime = reminderTime ?: System.currentTimeMillis(),
@@ -734,24 +734,36 @@ class LocalTools(
                             }
 
                             "list" -> {
+                                // 1. 获取并校验 category 参数
+                                val category = json["category"]?.jsonPrimitive?.contentOrNull
+                                if (category == null) {
+                                    return@Tool buildJsonObject {
+                                        put("success", false)
+                                        put("error", "list 操作必须提供 category 参数 (user 或 assistant)")
+                                    }
+                                }
+
+                                // 2. 从仓库获取数据，并过滤：匹配分类 且 未完成
                                 val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
-                                val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                    .filter { it.category == category && !it.isCompleted }
+
+                                val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
                                 buildJsonObject {
-                    put("schedules", JsonArray(schedules.map { s ->
-                        buildJsonObject {
-                            put("id", s.id)
-                            put("title", s.title)
-                            put("priority", s.priority)
-                            put("urgency", s.urgency)
-                            put("difficulty", s.difficulty)
-                            put("start_time", df.format(java.util.Date(s.startTime)))
-                            s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
-                            s.reminderTime?.let { put("reminder_time", df.format(java.util.Date(it))) }
-                            put("is_completed", s.isCompleted)
-                            put("category", s.category)
-                        }
-                    }))
-                }
+                                    put("schedules", JsonArray(schedules.map { s ->
+                                        buildJsonObject {
+                                            put("id", s.id)
+                                            put("title", s.title)
+                                            put("priority", s.priority)
+                                            put("urgency", s.urgency)
+                                            put("difficulty", s.difficulty)
+                                            put("start_time", df.format(java.util.Date(s.startTime)))
+                                            s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
+                                            s.reminderTime?.let { put("reminder_time", df.format(java.util.Date(it))) }
+                                            put("is_completed", s.isCompleted)
+                                            put("category", s.category)
+                                        }
+                                    }))
+                                }
                             }
 
                             "edit" -> {
@@ -799,7 +811,7 @@ class LocalTools(
                                     )
 
                                     // 自动同步到系统日历
-                                    if (newEndTime != null || newReminderTime != null) {
+                                    if (newCategory == "user" && newEndTime != null || newReminderTime != null) {
                                         openSystemCalendar(
                                             title = newTitle,
                                             startTime = newReminderTime ?: System.currentTimeMillis(),
@@ -1210,7 +1222,7 @@ class LocalTools(
 
                             "list" -> {
                                 val tasks = agentTaskRepository.getTasksByAssistant(assistantId.toString()).first()
-                                val df = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
                                 buildJsonObject {
                                     put("tasks", JsonArray(tasks.map { t ->
                                         val data = try {

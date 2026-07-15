@@ -766,7 +766,7 @@ class GenerationHandler(
                     .filter { it.category == "assistant" && !it.isCompleted }
 
                 if (assistantSchedules.isNotEmpty()) {
-                    staticSystemPromptBuilder.append("## 你的约定与待办项\n")
+                    staticSystemPromptBuilder.append("## 你的承诺与待办项\n")
                     // 使用 ISO 8601 格式
                     val isoFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
                     assistantSchedules.forEach { s ->

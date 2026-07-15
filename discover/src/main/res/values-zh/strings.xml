@@ -37,6 +37,9 @@
   <string name="schedule_end_time">结束时间</string>
   <string name="schedule_reminder_time">提醒时间</string>
   <string name="schedule_none">无</string>
+  <string name="schedule_category">任务归属</string>
+  <string name="schedule_category_user">人类</string>
+  <string name="schedule_category_assistant">小机</string>
 
   <string name="auto_task_optimization_title">自动任务运行优化</string>
   <string name="auto_task_optimization_desc">如果发现定时任务（如自动日记）没有按时执行，请确保已开启应用的“自启动”权限并关闭“电池优化”。</string>
@@ -56,4 +59,16 @@
   <string name="token_report_stat_output">输出</string>
   <string name="token_report_stat_cached">缓存命中</string>
 
+  <string name="discover_reading_title">共读</string>
+  <string name="discover_reading_desc">和智能体一起看书吧~</string>
+  <string name="reading_shelf_title">书架</string>
+  <string name="reading_upload_book">上传书籍</string>
+  <string name="reading_category_entertainment">休闲读物</string>
+  <string name="reading_category_knowledge">知识读物</string>
+  <string name="reading_select_assistant">选择共读智能体</string>
+  <string name="reading_no_assistant">不使用AI共读</string>
+  <string name="reading_start_reading">开始阅读</string>
+  <string name="reading_delete_confirm">确定删除这本书吗？</string>
+  <string name="reading_empty_shelf">你的书架空空如也，上传书籍开启阅读之旅吧！</string>
+  <string name="reading_ai_thought">AI阅读感悟</string>
 </resources>

@@ -68,4 +68,8 @@
   <string name="reading_delete_confirm">Delete book?</string>
   <string name="reading_empty_shelf">Your bookshelf is empty. Add a book to start your journey!</string>
   <string name="reading_ai_thought">AI Thoughts</string>
+
+  <string name="schedule_category">Task Ownership</string>
+  <string name="schedule_category_user">User</string>
+  <string name="schedule_category_assistant">Assistant</string>
 </resources>
