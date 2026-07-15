@@ -312,6 +312,8 @@ fun AssistantDetailPage(
                             }
 
                             // 迁移（搬家）按钮 - 只有主智能体显示
+                            // 暂时隐藏导入按钮，待确认后再删除代码
+                            /*
                             if (assistant.isMain) {
                                 IconButton(onClick = { navController.navigate(AssistantDetailRoutes.IMPORT) }) {
                                     Icon(
@@ -320,6 +322,7 @@ fun AssistantDetailPage(
                                     )
                                 }
                             }
+                            */
                         }
                     }
                 }
