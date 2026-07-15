@@ -358,21 +358,26 @@ class MemoryConsolidationWorker(
         var masterError: String? = null
         // 仅在明确传入指令且开启了功能时更新
         if ((forceMaster || incrementalMaster) && currentAssistant.enableMasterMemory) {
-            val newConversations = conversations.filter {
-                val updateTime = it.updateAt.toEpochMilli()
-                // forceMaster -> 全量更新；否则 -> 增量更新（仅包含上次更新后的对话）
-                val timeCondition = if (forceMaster) true else updateTime > currentAssistant.lastMasterMemoryUpdate
-                timeCondition && it.currentMessages.size >= 2
-            }.sortedBy { it.updateAt }
+            // 不管手动还是自动触发，都只取最新的 5 个会话作为素材
+            val targetConversations = conversations
+                .filter { it.currentMessages.size >= 2 }
+                .sortedByDescending { it.updateAt.toEpochMilli() }
+                .take(5)
+                .reversed() // 恢复时间正序排列，利于 AI 理解
 
-            if (newConversations.isNotEmpty() || forceMaster) {
+            // 触发条件：强制更新 或 最新会话有增量消息
+            val latestConversationTime = targetConversations.lastOrNull()?.updateAt?.toEpochMilli() ?: 0L
+            val shouldUpdate = forceMaster || (latestConversationTime > currentAssistant.lastMasterMemoryUpdate)
+
+            if (shouldUpdate && targetConversations.isNotEmpty()) {
                 try {
                     val contextParts = mutableListOf<String>()
-                    for (conv in newConversations) {
+                    for (conv in targetConversations) {
                         val summary = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())?.content
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
+                            // 对应需求：未生成 L2 则取最后 20 条，每条限 1000 字符
                             val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
                                 "${it.role}: ${it.toContentText().take(1000)}"
                             }

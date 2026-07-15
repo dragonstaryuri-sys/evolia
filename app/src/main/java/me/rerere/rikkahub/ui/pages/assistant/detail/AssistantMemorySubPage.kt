@@ -989,7 +989,7 @@ private fun MasterMemoryCard(
     ) {
         Surface(
             color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = if (assistant.enableMasterMemory && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing))
+            shape = if (assistant.enableMasterMemory)
                 RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
             else
                 RoundedCornerShape(24.dp)
@@ -1034,89 +1034,84 @@ private fun MasterMemoryCard(
             }
         }
 
-        AnimatedVisibility(visible = assistant.enableMasterMemory && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing)) {
+        AnimatedVisibility(visible = assistant.enableMasterMemory) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
+                    Surface(
+                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.HistoryEdu,
+                                    null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.tertiary
+                                )
+                                Text(
+                                    stringResource(R.string.assistant_memory_master_content_title),
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                            }
+
+                            if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
+                                DebouncedTextField(
+                                    value = assistant.masterMemoryContent,
+                                    onValueChange = { onUpdateAssistant(assistant.copy(masterMemoryContent = it)) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = 3,
+                                    maxLines = 10,
+                                    stateKey = "master_content_${assistant.id}"
+                                )
+                            } else {
+                                Text(
+                                    text = assistant.masterMemoryContent.ifBlank { stringResource(R.string.assistant_memory_master_never_updated) },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp)
+                                )
+                            }
+
+                            if (assistant.lastMasterMemoryUpdate <= 0 && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing)) {
+                                Text(
+                                    text = stringResource(R.string.assistant_memory_master_never_updated),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Surface(
                     color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) RoundedCornerShape(10.dp) else RoundedCornerShape(
+                    shape = RoundedCornerShape(
                         bottomStart = 24.dp,
                         bottomEnd = 24.dp,
                         topStart = 10.dp,
                         topEnd = 10.dp
                     )
                 ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Box(modifier = Modifier.padding(16.dp)) {
+                        Button(
+                            onClick = {
+                                if (BuildConfig.DEBUG && assistant.masterMemoryContent.isNotBlank()) {
+                                    showBackupDialog = true
+                                } else {
+                                    onConsolidate()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                Icons.Rounded.HistoryEdu,
-                                null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.tertiary
-                            )
-                            Text(
-                                stringResource(R.string.assistant_memory_master_content_title),
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                        }
-
-                        if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
-                            DebouncedTextField(
-                                value = assistant.masterMemoryContent,
-                                onValueChange = { onUpdateAssistant(assistant.copy(masterMemoryContent = it)) },
-                                modifier = Modifier.fillMaxWidth(),
-                                minLines = 3,
-                                maxLines = 10,
-                                stateKey = "master_content_${assistant.id}"
-                            )
-                        } else {
-                            Text(
-                                text = assistant.masterMemoryContent.ifBlank { stringResource(R.string.assistant_memory_master_never_updated) },
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp)
-                            )
-                        }
-
-                        if (assistant.lastMasterMemoryUpdate <= 0 && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing)) {
-                            Text(
-                                text = stringResource(R.string.assistant_memory_master_never_updated),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
-                    Surface(
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = RoundedCornerShape(
-                            bottomStart = 24.dp,
-                            bottomEnd = 24.dp,
-                            topStart = 10.dp,
-                            topEnd = 10.dp
-                        )
-                    ) {
-                        Box(modifier = Modifier.padding(16.dp)) {
-                            Button(
-                                onClick = {
-                                    if (assistant.masterMemoryContent.isNotBlank()) {
-                                        showBackupDialog = true
-                                    } else {
-                                        onConsolidate()
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.assistant_memory_update_masterfile))
-                            }
+                            Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.assistant_memory_update_masterfile))
                         }
                     }
                 }

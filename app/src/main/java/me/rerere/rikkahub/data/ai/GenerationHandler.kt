@@ -753,7 +753,7 @@ class GenerationHandler(
         }
 
         if (assistant.enableMasterMemory && assistant.masterMemoryContent.isNotBlank()) {
-            staticSystemPromptBuilder.append("## 情感现状\n")
+            staticSystemPromptBuilder.append("## 关系档案\n")
             staticSystemPromptBuilder.append(assistant.masterMemoryContent)
             staticSystemPromptBuilder.append("\n\n")
         }
