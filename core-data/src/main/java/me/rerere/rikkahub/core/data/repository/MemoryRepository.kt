@@ -464,7 +464,8 @@ class MemoryRepository(
             }
         } else null
 
-        val retrievalLimit = if (hasRerank) limit * 3 else limit
+        // 初排候选集大小：固定为 limit * 3
+        val retrievalLimit = limit * 3
         val currentModelId = embeddingService.getEmbeddingModelId(assistantId)
         val startTime = System.currentTimeMillis()
         val memoryProjections = if (includeCore) memoryDAO.getMemoryProjections(assistantId) else emptyList()
@@ -473,12 +474,11 @@ class MemoryRepository(
                 .filter { it.conversationId != excludeConversationId }
         } else emptyList()
 
-// 📍 插入点 2：投影查询结束
         val projectionTime = System.currentTimeMillis() - startTime
         Log.d(TAG, "⏱️ [RAG-Perf] 加载 ${memoryProjections.size + segmentProjections.size} 条投影耗时: ${projectionTime}ms")
-        Log.v(TAG, "📦 [RAG] 候选池大小: Memories=${memoryProjections.size}, Segments=${segmentProjections.size}")
 
-        val memoryScores = memoryProjections.mapNotNull { proj ->
+        // 初排：不进行阈值过滤
+        val memoryScores = memoryProjections.map { proj ->
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC || queryEmbedding == null) {
                 calculateKeywordScore(query, proj.keywords)
             } else 0f
@@ -499,10 +499,10 @@ class MemoryRepository(
                 }
                 MemoryRetrievalMode.OFF -> 0f
             }
-            if (score >= similarityThreshold) Triple(proj.id, score, true) else null
+            Triple(proj.id, score, true)
         }
 
-        val segmentScores = segmentProjections.mapNotNull { proj ->
+        val segmentScores = segmentProjections.map { proj ->
             val keywordScore = if (mode != MemoryRetrievalMode.SEMANTIC || queryEmbedding == null) {
                 calculateKeywordScore(query, proj.keywords)
             } else 0f
@@ -523,28 +523,23 @@ class MemoryRepository(
                 MemoryRetrievalMode.HYBRID -> if (queryEmbedding == null) (keywordScore * 0.9f) + (recency * 0.1f) else (keywordScore * 0.45f) + (similarity * 0.45f) + (recency * 0.1f)
                 MemoryRetrievalMode.OFF -> 0f
             }
-            if (score >= similarityThreshold) Triple(proj.id, score, false) else null
+            Triple(proj.id, score, false)
         }
 
         val allScored = (memoryScores + segmentScores).sortedByDescending { it.second }
         val scoringTime = System.currentTimeMillis() - startTime - projectionTime
         Log.d(TAG, "⏱️ [RAG-Perf] 内存评分排序耗时: ${scoringTime}ms")
-        Log.v(TAG, "🎯 [RAG] 阈值筛选后匹配数: ${allScored.size}")
 
         val topCandidates = allScored.take(retrievalLimit)
         val topMemoryIds = topCandidates.filter { it.third }.map { it.first }
         val topSegmentIds = topCandidates.filter { !it.third }.map { it.first }
 
-        // 📍 插入点 3：开始按需加载全量数据
         val fetchFullStart = System.currentTimeMillis()
-
         val fullMemories = if (topMemoryIds.isNotEmpty()) memoryDAO.getMemoriesByIds(topMemoryIds).associateBy { it.id } else emptyMap()
         val fullSegments = if (topSegmentIds.isNotEmpty()) chatSegmentDAO.getSegmentsByIds(topSegmentIds).associateBy { it.id } else emptyMap()
-        // 📍 插入点 4：按需加载结束
         val fetchFullTime = System.currentTimeMillis() - fetchFullStart
-        Log.d(TAG, "⏱️ [RAG-Perf] 按需加载 ${topCandidates.size} 条全量文本耗时: ${fetchFullTime}ms")
-        val totalTime = System.currentTimeMillis() - startTime
-        Log.i(TAG, "🏁 [RAG-Perf] 检索总耗时: ${totalTime}ms (投影:${projectionTime}ms, 评分:${scoringTime}ms, 内容加载:${fetchFullTime}ms)")
+        Log.d(TAG, "⏱️ [RAG-Perf] 加载 ${topCandidates.size} 条全量文本耗时: ${fetchFullTime}ms")
+
         val initialResults = topCandidates.mapNotNull { (id, score, isMemory) ->
             if (isMemory) {
                 fullMemories[id]?.let { m ->
@@ -562,24 +557,34 @@ class MemoryRepository(
                 Log.v(TAG, "🧠 [RAG] 启动 Rerank 精排 | 候选数量: ${initialResults.size} | 模型: $rerankModelId")
                 val contents = initialResults.map { it.first.content }
                 val rerankResults = rerankService.rerank(query, contents, assistantId)
-                val results = rerankResults.filter { it.score >= similarityThreshold }.map { r ->
-                    val pair = initialResults[r.index]
-                    pair.first.copy(score = r.score) to r.score
-                }.sortedByDescending { it.second }.take(limit)
+
+                // Rerank 后过滤低于阈值的项
+                val results = rerankResults
+                    .filter { it.score >= similarityThreshold }
+                    .map { r ->
+                        val pair = initialResults[r.index]
+                        pair.first.copy(score = r.score) to r.score
+                    }
+                    .sortedByDescending { it.second }
+                    .take(limit)
+
                 if (results.isEmpty()) {
-                    Log.w(TAG, "⚠️ [RAG] Rerank 后无符合阈值的记忆，或结果为空")
-                    emptyList() // 如果 Rerank 后都不达标，返回空，符合用户要求
+                    Log.w(TAG, "⚠️ [RAG] Rerank 后无符合阈值的记忆")
+                    emptyList()
                 } else {
                     Log.v(TAG, "✅ [RAG] Rerank 完成 | 符合阈值的数量: ${results.size}")
                     results
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "⚠️ [RAG] Rerank 失败: ${e.message}")
-                initialResults.take(limit)
+                // 降级：手动过滤初排结果
+                initialResults.filter { it.second >= similarityThreshold }.take(limit)
             }
         } else {
-            initialResults.take(limit)
+            // 无 Rerank 模型：直接过滤初排结果
+            initialResults.filter { it.second >= similarityThreshold }.take(limit)
         }
+
         Log.v(TAG, "🏁 [RAG] 检索结束 | 最终召回: ${finalResults.size}条")
         finalResults.forEach { (memory, _) ->
             if (memory.type == MemoryType.SEGMENT) {
