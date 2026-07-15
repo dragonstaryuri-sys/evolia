@@ -86,106 +86,119 @@ fun AssistantImportDoubaoPage(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 文件选择卡片
-                Card(
-                    onClick = { if (!vm.isImporting) importLauncher.launch(arrayOf("application/json")) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp)
+                // 顶部配置区域（可滚动，但不强制占满）
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // 文件选择卡片
+                    Card(
+                        onClick = { if (!vm.isImporting) importLauncher.launch(arrayOf("application/json")) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp)
                     ) {
-                        Icon(Icons.Rounded.Description, null, modifier = Modifier.size(32.dp))
-                        Spacer(Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = vm.importData?.botInfo?.name ?: stringResource(R.string.import_doubao_select_file),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = if (vm.importData != null)
-                                    stringResource(R.string.import_doubao_selected_count, vm.importData?.chatHistory?.size ?: 0)
-                                    else stringResource(R.string.import_doubao_select_file_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (vm.importData != null) {
-                            Icon(Icons.Rounded.CheckCircle, null, tint = Color.Green)
-                        }
-                    }
-                }
-
-                // 导入配置选项
-                AnimatedVisibility(
-                    visible = vm.importData != null && !vm.isImporting,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(stringResource(R.string.import_doubao_options), style = MaterialTheme.typography.labelLarge)
-
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.import_doubao_set_main)) },
-                            supportingContent = { Text(stringResource(R.string.import_doubao_set_main_desc)) },
-                            trailingContent = {
-                                Switch(checked = vm.isMainAgent, onCheckedChange = { vm.isMainAgent = it })
-                            },
-                            modifier = Modifier.clip(RoundedCornerShape(16.dp))
-                        )
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                        Row(
+                            modifier = Modifier.padding(20.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(Modifier.padding(16.dp)) {
+                            Icon(Icons.Rounded.Description, null, modifier = Modifier.size(32.dp))
+                            Spacer(Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = stringResource(R.string.import_doubao_rounds_label, vm.roundsPerSession),
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Slider(
-                                    value = vm.roundsPerSession.toFloat(),
-                                    onValueChange = { vm.roundsPerSession = it.toInt() },
-                                    valueRange = 1f..50f,
-                                    steps = 49
+                                    text = vm.importData?.botInfo?.name ?: stringResource(R.string.import_doubao_select_file),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = stringResource(R.string.import_doubao_rounds_desc),
+                                    text = if (vm.importData != null)
+                                        stringResource(R.string.import_doubao_selected_count, vm.importData?.chatHistory?.size ?: 0)
+                                    else stringResource(R.string.import_doubao_select_file_hint),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            if (vm.importData != null) {
+                                Icon(Icons.Rounded.CheckCircle, null, tint = Color.Green)
+                            }
                         }
+                    }
 
-                        Button(
-                            onClick = {
-                                vm.startImport { success ->
-                                    if (success) {
-                                        toaster.show(context.getString(R.string.import_doubao_success))
-                                        navController.popBackStack()
-                                    }
+                    // 导入配置选项
+                    AnimatedVisibility(
+                        visible = vm.importData != null && !vm.isImporting,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(stringResource(R.string.import_doubao_options), style = MaterialTheme.typography.labelLarge)
+
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.import_doubao_set_main)) },
+                                supportingContent = { Text(stringResource(R.string.import_doubao_set_main_desc)) },
+                                trailingContent = {
+                                    Switch(checked = vm.isMainAgent, onCheckedChange = { vm.isMainAgent = it })
+                                },
+                                modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                            )
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                            ) {
+                                Column(Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = stringResource(R.string.import_doubao_rounds_label, vm.roundsPerSession),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Slider(
+                                        value = vm.roundsPerSession.toFloat(),
+                                        onValueChange = { vm.roundsPerSession = it.toInt() },
+                                        valueRange = 1f..50f,
+                                        steps = 49
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.import_doubao_rounds_desc),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Icon(Icons.Rounded.CloudUpload, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.import_doubao_start_button))
+                            }
+
+                            Button(
+                                onClick = {
+                                    vm.startImport { success ->
+                                        if (success) {
+                                            toaster.show(context.getString(R.string.import_doubao_success))
+                                            navController.popBackStack()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Icon(Icons.Rounded.CloudUpload, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.import_doubao_start_button))
+                            }
                         }
                     }
                 }
 
-                // 实时进度与日志展示
-                AnimatedVisibility(visible = vm.isImporting || vm.importLog.isNotBlank()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // 实时进度与日志展示（占据剩余高度并支持内部滚动）
+                AnimatedVisibility(
+                    visible = vm.isImporting || vm.importLog.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         Text(stringResource(R.string.import_doubao_progress_title), style = MaterialTheme.typography.labelLarge)
 
                         LinearProgressIndicator(
@@ -199,11 +212,25 @@ fun AssistantImportDoubaoPage(
                         }
 
                         Surface(
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 300.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Box(Modifier.padding(12.dp)) {
+                            val logScrollState = rememberScrollState()
+
+                            // 每次日志更新时自动滚动到底部
+                            LaunchedEffect(vm.importLog) {
+                                logScrollState.animateScrollTo(Int.MAX_VALUE)
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(logScrollState)
+                                    .padding(12.dp)
+                            ) {
                                 Text(
                                     text = vm.importLog,
                                     style = MaterialTheme.typography.bodySmall.copy(
