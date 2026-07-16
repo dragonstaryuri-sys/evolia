@@ -39,6 +39,8 @@ import androidx.core.app.NotificationManagerCompat
 import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.common.JsonInstant
 import java.io.IOException
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 
 private val TAG = "MemoryConsolidation"
 
@@ -175,29 +177,30 @@ class MemoryConsolidationWorker(
 
     private suspend fun manualConsolidate(assistant: Assistant, conv: Conversation, isManual: Boolean): String? {
         val settings = settingsStore.settingsFlow.first()
-        val messageCount = conv.currentMessages.size
         val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conv.id.toString())
         val anchorTime = existingEpisode?.endTime ?: 0L
-        val increment = conversationRepository.countNewMessages(conv.id.toString(), anchorTime)
 
-        // 校验：手动触发时只要有新消息即可归档；自动任务则需达到阈值 (4条)
-        val threshold = if (isManual) 1 else 4
-        if (existingEpisode != null) {
-            if (increment < threshold)  {
-                updateLastResult(
-                    assistantId = assistant.id,
-                    result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data),
-                    wasUpdated = false
-                )
-                return "ERROR_NO_MESSAGES"
-            }
-        } else if (messageCount < threshold) {
-            updateLastResult(
-                assistantId = assistant.id,
-                result = applicationContext.getString(R.string.assistant_memory_consolidation_insufficient_data),
-                wasUpdated = false
-            )
-            return "ERROR_NO_MESSAGES"
+        // 获取当前所有生效（非删除，当前选定版本）的消息
+        val currentMessages = conv.currentMessages
+
+        // 过滤掉已经在旧归档中的消息
+        val visibleMessages = currentMessages.filter { msg ->
+            msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() > anchorTime
+        }
+
+        // 手动归档时：
+        // 归档数量 = 未归档总数 - 保留数量(10)
+        // 校验：归档数量 >= 10
+        val totalUnconsolidated = visibleMessages.size
+        val consolidateCount = totalUnconsolidated - 10
+
+        if (isManual && consolidateCount < 10) {
+            return "ERROR_INSUFFICIENT_MESSAGES"
+        }
+
+        // 如果是自动任务，则按原有阈值或逻辑
+        if (!isManual && totalUnconsolidated < 4) {
+             return "ERROR_NO_MESSAGES"
         }
 
         // 修改：情节记忆使用 summarizerModelId
@@ -206,20 +209,26 @@ class MemoryConsolidationWorker(
 
         return try {
             // 执行增量滚动式总结
-            val summary = generateRollingSummary(
+            val messagesToProcess = if (isManual) {
+                visibleMessages.take(consolidateCount)
+            } else {
+                visibleMessages
+            }
+
+            if (messagesToProcess.isEmpty()) return "ERROR_NO_MESSAGES"
+
+            val summary = generateConversationSummary(
                 handler = summarizer.handler,
                 providerSetting = summarizer.provider,
                 model = summarizer.model,
-                assistant = assistant,
-                conv = conv,
-                existingEpisode = existingEpisode
+                assistantName = assistant.name,
+                previousSummary = existingEpisode?.content,
+                messages = messagesToProcess
             )
 
             if (summary.isNotBlank()) {
-                val summarizedMessages = conversationRepository.getMessagesForSummary(
-                    conv.id.toString(),
-                    anchorTime
-                )
+                val lastArchivedMessage = messagesToProcess.last()
+                val lastArchivedTime = lastArchivedMessage.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
                 val episode = ChatEpisodeEntity(
                     id = existingEpisode?.id ?: 0,
                     assistantId = assistant.id.toString(),
@@ -228,14 +237,31 @@ class MemoryConsolidationWorker(
                     keywords = "",
                     embedding = null,
                     embeddingModelId = null,
-                    startTime = summarizedMessages.firstOrNull()?.createdAt ?: conv.createAt.toEpochMilli(),
-                    endTime = summarizedMessages.lastOrNull()?.createdAt ?: conv.updateAt.toEpochMilli(),
-                    significance = conv.currentMessages.size,
+                    startTime = messagesToProcess.first().createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
+                    endTime = lastArchivedTime,
+                    significance = messagesToProcess.size + (existingEpisode?.significance ?: 0),
                     lastAccessedAt = System.currentTimeMillis()
                 )
 
                 memoryRepository.saveEpisode(episode)
-                conversationRepository.markAsConsolidated(conv.id)
+
+                // 重点：手动归档后，更新 Conversation 的 truncateIndex 以清理后续上下文
+                if (isManual) {
+                    // 找到归档后的第一个消息在 messageNodes 中的索引
+                    // 即 messagesToProcess.last() 之后的消息节点
+                    var lastArchivedNodeIndex = -1
+                    conv.messageNodes.forEachIndexed { index, node ->
+                        val nodeTime = node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                        if (nodeTime <= lastArchivedTime) {
+                            lastArchivedNodeIndex = index
+                        }
+                    }
+
+                    if (lastArchivedNodeIndex != -1) {
+                         // 下次带入上下文从 lastArchivedNodeIndex + 1 开始
+                         conversationRepository.updateTruncateIndex(conv.id, lastArchivedNodeIndex + 1)
+                    }
+                }
 
                 updateLastResult(
                     assistantId = assistant.id,
@@ -324,25 +350,31 @@ class MemoryConsolidationWorker(
                     )
 
                     if (summary.isNotBlank()) {
-                        val summarizedMessages = conversationRepository.getMessagesForSummary(convIdString, existingEpisode?.endTime ?: 0L)
+                        val fullConv = conversationRepository.getConversationById(conv.id) ?: conv
+                        val anchorTime = existingEpisode?.endTime ?: 0L
+                        val newMessages = fullConv.currentMessages.filter {
+                            it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() > anchorTime
+                        }
 
-                        val episode = ChatEpisodeEntity(
-                            id = existingEpisode?.id ?: 0,
-                            assistantId = currentAssistant.id.toString(),
-                            conversationId = convIdString,
-                            content = summary,
-                            keywords = "",
-                            embedding = null,
-                            embeddingModelId = null,
-                            startTime = summarizedMessages.firstOrNull()?.createdAt ?: conv.createAt.toEpochMilli(),
-                            endTime = summarizedMessages.lastOrNull()?.createdAt ?: conv.updateAt.toEpochMilli(),
-                            significance = conv.currentMessages.size,
-                            lastAccessedAt = System.currentTimeMillis()
-                        )
+                        if (newMessages.isNotEmpty()) {
+                            val episode = ChatEpisodeEntity(
+                                id = existingEpisode?.id ?: 0,
+                                assistantId = currentAssistant.id.toString(),
+                                conversationId = convIdString,
+                                content = summary,
+                                keywords = "",
+                                embedding = null,
+                                embeddingModelId = null,
+                                startTime = newMessages.first().createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
+                                endTime = newMessages.last().createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds(),
+                                significance = newMessages.size + (existingEpisode?.significance ?: 0),
+                                lastAccessedAt = System.currentTimeMillis()
+                            )
 
-                        memoryRepository.saveEpisode(episode)
-                        conversationRepository.markAsConsolidated(conv.id)
-                        episodicSuccessCount++
+                            memoryRepository.saveEpisode(episode)
+                            conversationRepository.markAsConsolidated(conv.id)
+                            episodicSuccessCount++
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to consolidate conversation ${conv.id} to episode", e)
@@ -377,8 +409,8 @@ class MemoryConsolidationWorker(
                         if (!summary.isNullOrBlank()) {
                             contextParts.add("Conversation Summary: $summary")
                         } else {
-                            // 对应需求：未生成 L2 则取最后 20 条，每条限 1000 字符
-                            val messagesText = conv.currentMessages.takeLast(20).joinToString("\n") {
+                            // 对应需求：未生成 L2 则取最后 10 条，每条限 1000 字符
+                            val messagesText = conv.currentMessages.takeLast(10).joinToString("\n") {
                                 "${it.role}: ${it.toContentText().take(1000)}"
                             }
                             contextParts.add("Recent Messages:\n$messagesText")
@@ -480,13 +512,14 @@ class MemoryConsolidationWorker(
         existingEpisode: ChatEpisodeEntity?
     ): String {
         val anchorTime = existingEpisode?.endTime ?: 0L
-        val newMessagesEntities = conversationRepository.getMessagesForSummary(conv.id.toString(), anchorTime)
-        return if (newMessagesEntities.isEmpty() && existingEpisode != null) {
+        val fullConv = conversationRepository.getConversationById(conv.id) ?: conv
+        val newMessages = fullConv.currentMessages.filter {
+            it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() > anchorTime
+        }
+
+        return if (newMessages.isEmpty() && existingEpisode != null) {
             existingEpisode.content
         } else {
-            val newMessages = newMessagesEntities.map {
-                JsonInstant.decodeFromString<UIMessage>(it.contentJson)
-            }
             generateConversationSummary(
                 handler = handler,
                 providerSetting = providerSetting,

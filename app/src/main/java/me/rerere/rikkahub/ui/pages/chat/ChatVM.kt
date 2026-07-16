@@ -660,6 +660,14 @@ class ChatVM(
                     when (workInfo.state) {
                         androidx.work.WorkInfo.State.SUCCEEDED -> {
                             _toastFlow.emit(context.getString(R.string.consolidate_success))
+
+                            // ✨ 新增：归档成功后，立即从数据库同步最新的会话状态（包含新的 truncateIndex）到内存
+                            viewModelScope.launch {
+                                val updated = conversationRepo.getConversationById(conversation.id)
+                                if (updated != null) {
+                                    chatService.saveConversation(conversation.id, updated)
+                                }
+                            }
                         }
                         androidx.work.WorkInfo.State.FAILED -> {
                             val errorTag = workInfo.outputData.getString("error_tag") ?: ""
@@ -667,6 +675,7 @@ class ChatVM(
                                 errorTag == "ERROR_NO_MESSAGES" -> context.getString(R.string.consolidate_failed_no_messages)
                                 errorTag == "ERROR_NO_MODEL" -> context.getString(R.string.consolidate_failed_no_model)
                                 errorTag == "ERROR_EMPTY_SUMMARY" -> context.getString(R.string.consolidate_failed_empty_summary)
+                                errorTag == "ERROR_INSUFFICIENT_MESSAGES" -> context.getString(R.string.consolidate_failed_insufficient)
                                 errorTag.startsWith("ERROR_EXCEPTION:") -> {
                                     val exception = errorTag.removePrefix("ERROR_EXCEPTION:")
                                     context.getString(R.string.consolidate_failed_unknown, exception)

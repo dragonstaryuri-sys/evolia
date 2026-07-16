@@ -424,6 +424,10 @@ class ConversationRepository(
         conversationDAO.updateConsolidatedStatus(id = conversationId.toString(), isConsolidated = false)
     }
 
+    suspend fun updateTruncateIndex(conversationId: Uuid, truncateIndex: Int) {
+        conversationDAO.updateTruncateIndex(id = conversationId.toString(), truncateIndex = truncateIndex)
+    }
+
     suspend fun getEpisodeCount(): Int = chatEpisodeDAO.getCount()
 
     fun getEpisodeCountFlow(): Flow<Int> = chatEpisodeDAO.getCountFlow()

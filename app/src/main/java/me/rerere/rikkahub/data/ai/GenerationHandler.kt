@@ -942,7 +942,7 @@ class GenerationHandler(
                     val todayL2Memories = memoryRepo.getEpisodesAfter(
                         assistantId = assistant.id.toString(),
                         startTime = startOfDay,
-                        excludeConversationId = currentConvIdStr
+                        excludeConversationId = null
                     ).map { it.copy(type = 2) }
 
                     if (todayL2Memories.isNotEmpty()) {
@@ -1411,9 +1411,11 @@ class GenerationHandler(
 
             if (boostedMemories.isNotEmpty()) {
                 append("### 今日会话梗概\n")
+                val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+                    .withZone(ZoneId.systemDefault())
                 boostedMemories.forEach { memory ->
-                    val dateStr = formatMemoryDate(memory.timestamp)
-                    append("- [时间: $dateStr] ${memory.content}\n")
+                    val timeStr = timeFormatter.format(Instant.ofEpochMilli(memory.timestamp))
+                    append("- [时间: $timeStr] ${memory.content}\n")
                 }
             }
 

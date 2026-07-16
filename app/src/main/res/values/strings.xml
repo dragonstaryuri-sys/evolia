@@ -1806,6 +1806,8 @@
   <string name="chat_history_search_title">Search Chat Records</string>
   <string name="chat_history_search_hint">Search chat content with %s</string>
   <string name="chat_history_search_empty">No matching records found</string>
+  <string name="consolidate_failed_insufficient">The number of archived messages is not met</string>
+
 
 
 

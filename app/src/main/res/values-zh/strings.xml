@@ -1763,4 +1763,6 @@
   <string name="milestone_time">发生时间</string>
   <string name="milestone_time_placeholder">如：2024-05-20</string>
   <string name="milestone_content">详细内容</string>
+
+  <string name="consolidate_failed_insufficient">未达到归档消息数量</string>
 </resources>
