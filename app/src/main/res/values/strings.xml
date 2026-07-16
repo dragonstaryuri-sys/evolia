@@ -1808,7 +1808,8 @@
   <string name="chat_history_search_empty">No matching records found</string>
   <string name="consolidate_failed_insufficient">The number of archived messages is not met</string>
 
-
+  <string name="agent_task_preset_memory_consolidation">Memory Consolidation</string>
+  <string name="agent_task_instruction_memory_consolidation">Sort out the user profile, my profile, milestone events and to-do items based on today\'s chat records, check if any updates are needed, and call tools independently to update them if so.</string>
 
 
 </resources>

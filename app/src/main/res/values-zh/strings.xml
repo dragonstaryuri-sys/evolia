@@ -1765,4 +1765,8 @@
   <string name="milestone_content">详细内容</string>
 
   <string name="consolidate_failed_insufficient">未达到归档消息数量</string>
+
+  <string name="agent_task_preset_memory_consolidation">记忆整理</string>
+  <string name="agent_task_instruction_memory_consolidation">"根据今日的聊天记录，整理一下用户档案、你的档案、里程碑事件、及待办事项，看看有没有要更新的地方，如果有请自主调用工具进行更新"</string>
+
 </resources>

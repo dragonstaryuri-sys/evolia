@@ -43,6 +43,7 @@ import kotlinx.serialization.json.put
 fun AssistantAgentTaskPage(assistantId: String) {
     val vm: AssistantDetailVM = koinViewModel(parameters = { parametersOf(assistantId) })
     val tasks by vm.agentTasks.collectAsStateWithLifecycle()
+    val assistant by vm.assistant.collectAsStateWithLifecycle()
     var showCreateDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -88,6 +89,7 @@ fun AssistantAgentTaskPage(assistantId: String) {
     if (showCreateDialog) {
         CreateTaskDialog(
             assistantId = assistantId,
+            isMainAgent = assistant.isMain,
             onDismiss = { showCreateDialog = false },
             onConfirm = { task ->
                 vm.addAgentTask(task)
@@ -101,6 +103,7 @@ fun AssistantAgentTaskPage(assistantId: String) {
 @Composable
 private fun CreateTaskDialog(
     assistantId: String,
+    isMainAgent: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (AgentTaskEntity) -> Unit
 ) {
@@ -144,11 +147,21 @@ private fun CreateTaskDialog(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val presets = listOf(
+                    val presets = mutableListOf(
                         Triple(stringResource(R.string.agent_task_preset_good_night), 86400000L, "提醒用户该睡觉了"),
                         Triple(stringResource(R.string.agent_task_preset_good_morning), 86400000L, "给用户发一个早安问候"),
                         Triple(stringResource(R.string.agent_task_preset_weekly_report), 604800000L, "总结用户本周作息情况")
                     )
+
+                    // 仅为主智能体添加记忆整理预置
+                    if (isMainAgent) {
+                        presets.add(0, Triple(
+                            stringResource(R.string.agent_task_preset_memory_consolidation),
+                            86400000L,
+                            stringResource(R.string.agent_task_instruction_memory_consolidation)
+                        ))
+                    }
+
                     presets.forEach { (name, interval, desc) ->
                         SuggestionChip(
                             onClick = {

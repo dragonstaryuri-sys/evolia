@@ -1479,7 +1479,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "milestone_manager",
-                description = "记录并管理关系发展中的重大里程碑。里程碑指重塑“我们”定义或轨迹的事件，包括：关系定位（地址或边界变化）、认知（ renewed 理解）、承诺（形成新长期约定）、情感（表达模式变化）、身份（披露自我身份相关变化）。",
+                description = "记录并管理关系发展中的重大里程碑。里程碑指重塑“我们”定义或轨迹的事件或永久性的约定，包括：关系定位（你和用户的关系定位发生变化，如：朋友->恋人，助手->家人）、认知（认知发生重大变化）、承诺（形成新长期约定）、情感（互动方式更加深入、情感更加浓厚）、身份（披露自我身份相关变化）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
