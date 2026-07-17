@@ -22,13 +22,11 @@ import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.Lorebook
 import me.rerere.rikkahub.core.data.model.Mode
 import me.rerere.rikkahub.core.data.model.Tag
-import me.rerere.rikkahub.core.data.model.TextSelectionConfig
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRANSLATION_PROMPT
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -76,10 +74,8 @@ class SettingsStore(
         val SELECT_MODEL = stringPreferencesKey("chat_model")
         val BACKGROUND_MODEL = stringPreferencesKey("background_model")
         val SUMMARIZER_MODEL = stringPreferencesKey("summarizer_model")
-        val TRANSLATE_MODEL = stringPreferencesKey("translate_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
         val IMAGE_GENERATION_MODEL = stringPreferencesKey("image_generation_model")
-        val TRANSLATION_PROMPT = stringPreferencesKey("translation_prompt")
         val SUGGESTION_PROMPT = stringPreferencesKey("suggestion_prompt")
         val LEARNING_MODE_PROMPT = stringPreferencesKey("learning_mode_prompt")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
@@ -109,7 +105,6 @@ class SettingsStore(
         val CONSOLIDATION_REQUIRES_DEVICE_IDLE = booleanPreferencesKey("consolidation_requires_device_idle")
         val MODES = stringPreferencesKey("modes")
         val LOREBOOKS = stringPreferencesKey("lorebooks")
-        val TEXT_SELECTION_CONFIG = stringPreferencesKey("text_selection_config")
         val AUTO_BACKUP_ON_START = booleanPreferencesKey("auto_backup_on_start")
         val LAST_AUTO_BACKUP_TIME = longPreferencesKey("last_auto_backup_time")
     }
@@ -139,12 +134,9 @@ class SettingsStore(
                     ?: GEMINI_2_5_FLASH_ID,
                 summarizerModelId = preferences[SUMMARIZER_MODEL].toUuidOrNull()
                     ?: GEMINI_2_5_FLASH_ID,
-                translateModeId = preferences[TRANSLATE_MODEL].toUuidOrNull()
-                    ?: GEMINI_2_5_FLASH_ID,
                 suggestionModelId = preferences[SUGGESTION_MODEL].toUuidOrNull()
                     ?: GEMINI_2_5_FLASH_ID,
                 imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL].toUuidOrNull() ?: Uuid.random(),
-                translatePrompt = preferences[TRANSLATION_PROMPT] ?: DEFAULT_TRANSLATION_PROMPT,
                 suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
                 learningModePrompt = preferences[LEARNING_MODE_PROMPT] ?: DEFAULT_LEARNING_MODE_PROMPT,
                 ocrModelId = preferences[OCR_MODEL].toUuidOrNull() ?: Uuid.random(),
@@ -205,9 +197,6 @@ class SettingsStore(
                 lorebooks = preferences[LOREBOOKS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                textSelectionConfig = preferences[TEXT_SELECTION_CONFIG]?.let {
-                    JsonInstant.decodeFromString(it)
-                } ?: TextSelectionConfig(),
                 autoBackupOnStart = preferences[AUTO_BACKUP_ON_START] ?: false,
                 lastAutoBackupTime = preferences[LAST_AUTO_BACKUP_TIME] ?: 0L,
             )
@@ -250,9 +239,6 @@ class SettingsStore(
                     assistants[0] = assistants[0].copy(isMain = true)
                 }
             }
-
-            // ⚠️ 注意：原本写在此处的强制补全逻辑已移除，改由 PreferenceStoreV2Migration 进行单次迁移。
-            // 这样用户在 UI 关掉工具后，重启 App 不会再被强制开启。
 
             val ttsProviders = it.ttsProviders.ifEmpty { DEFAULT_TTS_PROVIDERS }.toMutableList()
             DEFAULT_TTS_PROVIDERS.forEach { defaultTTSProvider ->
@@ -337,10 +323,8 @@ class SettingsStore(
             preferences[SELECT_MODEL] = settingsToSave.chatModelId.toString()
             preferences[BACKGROUND_MODEL] = settingsToSave.backgroundModelId.toString()
             preferences[SUMMARIZER_MODEL] = settingsToSave.summarizerModelId.toString()
-            preferences[TRANSLATE_MODEL] = settingsToSave.translateModeId.toString()
             preferences[SUGGESTION_MODEL] = settingsToSave.suggestionModelId.toString()
             preferences[IMAGE_GENERATION_MODEL] = settingsToSave.imageGenerationModelId.toString()
-            preferences[TRANSLATION_PROMPT] = settingsToSave.translatePrompt
             preferences[SUGGESTION_PROMPT] = settingsToSave.suggestionPrompt
             preferences[LEARNING_MODE_PROMPT] = settingsToSave.learningModePrompt
             preferences[OCR_MODEL] = settingsToSave.ocrModelId.toString()
@@ -372,7 +356,6 @@ class SettingsStore(
             preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = settingsToSave.consolidationRequiresDeviceIdle
             preferences[MODES] = JsonInstant.encodeToString(settingsToSave.modes)
             preferences[LOREBOOKS] = JsonInstant.encodeToString(settingsToSave.lorebooks)
-            preferences[TEXT_SELECTION_CONFIG] = JsonInstant.encodeToString(settingsToSave.textSelectionConfig)
             preferences[AUTO_BACKUP_ON_START] = settingsToSave.autoBackupOnStart
             preferences[LAST_AUTO_BACKUP_TIME] = settingsToSave.lastAutoBackupTime
         }
@@ -428,8 +411,6 @@ data class Settings(
     val backgroundModelId: Uuid = Uuid.random(),
     val summarizerModelId: Uuid = Uuid.random(),
     val imageGenerationModelId: Uuid = Uuid.random(),
-    val translateModeId: Uuid = Uuid.random(),
-    val translatePrompt: String = DEFAULT_TRANSLATION_PROMPT,
     val suggestionModelId: Uuid = Uuid.random(),
     val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
     val learningModePrompt: String = DEFAULT_LEARNING_MODE_PROMPT,
@@ -461,7 +442,6 @@ data class Settings(
     val consolidationRequiresDeviceIdle: Boolean = false,
     val modes: List<Mode> = emptyList(),
     val lorebooks: List<Lorebook> = emptyList(),
-    val textSelectionConfig: TextSelectionConfig = TextSelectionConfig(),
     val autoBackupOnStart: Boolean = false,
     val lastAutoBackupTime: Long = 0L,
 ) {

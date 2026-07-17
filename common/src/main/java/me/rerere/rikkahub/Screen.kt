@@ -110,9 +110,6 @@ sealed interface Screen {
     data object Developer : Screen
 
     @Serializable
-    data object SettingAndroidIntegration : Screen
-
-    @Serializable
     data object SettingUICustomization : Screen
 
     @Serializable

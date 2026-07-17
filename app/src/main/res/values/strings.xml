@@ -447,9 +447,6 @@
   <string name="setting_model_page_title">Default Models</string>
   <string name="setting_model_page_title_model">Title Model</string>
   <string name="setting_model_page_title_model_desc">Model for summarizing chat titles. Recommend fast/cheap model.</string>
-  <string name="setting_model_page_translate_model">Translate Model</string>
-  <string name="setting_model_page_translate_model_desc">Model for translation features</string>
-  <string name="setting_model_page_translate_prompt_vars">Vars: Source: {source_text}, Target Lang: {target_lang}</string>
   <string name="setting_page_about">About</string>
   <string name="setting_page_about_desc">About this App</string>
   <string name="setting_page_assistant">Characters</string>
@@ -842,38 +839,7 @@
   <string name="export_format_lastchat">Evolia (Full)</string>
   <string name="export_format_sillytavern">SillyTavern</string>
   <string name="export_format_tavern">Tavern (Compatible)</string>
-
-  <!-- Text Selection Integration -->
-  <string name="text_selection_menu_label">Ask Evolia</string>
-  <string name="text_selection_translate">Translate</string>
-  <string name="text_selection_explain">Explain</string>
-  <string name="text_selection_summarize">Summarize</string>
-  <string name="text_selection_ask">Ask anything…</string>
-  <string name="text_selection_custom_placeholder">Ask a question about this text…</string>
-  <string name="text_selection_copy">Copy</string>
-  <string name="text_selection_continue_chat">Continue in App</string>
-  <string name="text_selection_generating">Generating…</string>
-
-  <!-- Android Integration Settings -->
-  <string name="setting_android_integration">Android Integration</string>
-  <string name="setting_android_integration_desc">Text selection popup settings</string>
-  <string name="text_selection_preview">Preview</string>
-  <string name="text_selection_assistant">Character</string>
-  <string name="text_selection_use_default">Use default character</string>
-  <string name="text_selection_translate_language">Translate to</string>
-  <string name="text_selection_edit_action">Edit Action</string>
-  <string name="text_selection_add_action">Add Action</string>
-  <string name="text_selection_action_name">Button Name</string>
-  <string name="text_selection_action_prompt">Prompt Template</string>
-  <string name="text_selection_actions">Quick Actions</string>
-  <string name="text_selection_action_delete">Delete Action</string>
-  <string name="text_selection_action_cannot_delete">Cannot delete this action</string>
   <string name="reset">Reset</string>
-  <string name="text_selection_try_it">Try It</string>
-  <string name="text_selection_setup_instructions">Select text anywhere on your device, look for \"Evolia\" in the toolbar that appears, and tap it to use these features.</string>
-  <string name="text_selection_demo_text">This is sample text you can select! Try long-pressing to select these words, then look for \"Evolia\" in the selection toolbar. If you don\'t see it, you may need to tap the overflow menu (⋮) to find it.</string>
-  <string name="text_selection_demo_hint">👆 Long-press the text above to try selecting it</string>
-
   <!-- Additional Greetings -->
   <string name="greeting_early_morning">Rise and shine!</string>
   <string name="greeting_lunch_time">Lunch time!</string>
@@ -1809,7 +1775,7 @@
   <string name="consolidate_failed_insufficient">The number of archived messages is not met</string>
 
   <string name="agent_task_preset_memory_consolidation">Memory Consolidation</string>
-  <string name="agent_task_instruction_memory_consolidation">Sort out the user profile, my profile, milestone events and to-do items based on today\'s chat records, check if any updates are needed, and call tools independently to update them if so.</string>
+  <string name="agent_task_instruction_memory_consolidation">"Check whether it is necessary to update user profiles/assistant profiles (corresponding tool: update_profile), milestones (corresponding tool: milestone_manager), and assistant to-do items (corresponding tool: schedule_manager). If an update is required, call the corresponding tools to complete the update automatically."</string>
 
 
 </resources>

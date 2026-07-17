@@ -85,7 +85,6 @@ import me.rerere.rikkahub.ui.pages.setting.SettingLorebookDetailPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
 import me.rerere.rikkahub.ui.pages.markdown.MarkdownViewerPage
-import me.rerere.rikkahub.ui.pages.setting.SettingAndroidIntegrationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingEmailPage
@@ -116,14 +115,6 @@ import androidx.core.content.edit
 
 private const val TAG = "RouteActivity"
 
-data class TextSelectionData(
-    val navigateTo: String?,
-    val selectedText: String?,
-    val aiResponse: String?,
-    val userPrompt: String?,
-    val selectionAssistantId: String?
-)
-
 class RouteActivity : AppCompatActivity() {
     private val highlighter by inject<Highlighter>()
     private val okHttpClient by inject<OkHttpClient>()
@@ -133,7 +124,6 @@ class RouteActivity : AppCompatActivity() {
     private val webdavSync by inject<WebdavSync>()
     private var navStack by mutableStateOf<NavHostController?>(null)
     private var pendingAssistantId by mutableStateOf<String?>(null)
-    private var pendingTextSelection by mutableStateOf<TextSelectionData?>(null)
     private var pendingConversationId by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -159,7 +149,6 @@ class RouteActivity : AppCompatActivity() {
             val navStack = rememberNavController()
             this.navStack = navStack
             ShareHandler(navStack)
-            TextSelectionHandler(navStack)
             NotificationHandler(navStack)
             RikkahubTheme {
                 setSingletonImageLoaderFactory { context ->
@@ -203,17 +192,6 @@ class RouteActivity : AppCompatActivity() {
         val targetScreen = intent?.getStringExtra("target_screen")
         val intentAssistantId = intent?.getStringExtra("assistantId")
         val intentConversationId = intent?.getStringExtra("conversationId")
-
-        val continueConversation = intent?.getBooleanExtra("continue_conversation", false) ?: false
-        if (continueConversation) {
-            pendingTextSelection = TextSelectionData(
-                navigateTo = intent?.getStringExtra("navigate_to"),
-                selectedText = intent?.getStringExtra("selected_text"),
-                aiResponse = intent?.getStringExtra("ai_response"),
-                userPrompt = intent?.getStringExtra("user_prompt"),
-                selectionAssistantId = intent?.getStringExtra("selection_assistant_id")
-            )
-        }
 
         if (intentConversationId != null) {
             pendingConversationId = intentConversationId
@@ -292,55 +270,6 @@ class RouteActivity : AppCompatActivity() {
             if (conversationIdStr != null) {
                 pendingConversationId = null
                 navBackStack.navigate(Screen.Chat(conversationIdStr))
-            }
-        }
-    }
-
-    @Composable
-    private fun TextSelectionHandler(navBackStack: NavHostController) {
-        val data = pendingTextSelection
-        val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
-
-        LaunchedEffect(data) {
-            if (data != null) {
-                pendingTextSelection = null
-                try {
-                    val conversationId = Uuid.random()
-                    val userContent = buildString {
-                        if (!data.selectedText.isNullOrBlank()) append(data.selectedText)
-                        if (!data.userPrompt.isNullOrBlank()) {
-                            append("\n\n")
-                            append(data.userPrompt)
-                        }
-                    }
-
-                    val messages = mutableListOf<me.rerere.rikkahub.core.data.model.MessageNode>()
-                    if (userContent.isNotBlank()) {
-                        val userMessage = me.rerere.ai.ui.UIMessage.user(userContent.trim())
-                        messages.add(me.rerere.rikkahub.core.data.model.MessageNode.of(userMessage))
-                    }
-                    val aiResponse = data.aiResponse
-                    if (!aiResponse.isNullOrBlank()) {
-                        val assistantMessage = me.rerere.ai.ui.UIMessage.assistant(aiResponse)
-                        messages.add(me.rerere.rikkahub.core.data.model.MessageNode.of(assistantMessage))
-                    }
-
-                    if (messages.isNotEmpty()) {
-                        val assistantId = data.selectionAssistantId?.takeIf { it.isNotBlank() }?.let {
-                            runCatching { Uuid.parse(it) }.getOrNull()
-                        } ?: settings.assistantId
-
-                        val conversation = me.rerere.rikkahub.core.data.model.Conversation.ofId(
-                            id = conversationId,
-                            assistantId = assistantId,
-                            messages = messages
-                        )
-                        chatService.saveConversation(conversationId, conversation)
-                        navBackStack.navigate(Screen.Chat(id = conversationId.toString()))
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
             }
         }
     }
@@ -478,7 +407,6 @@ class RouteActivity : AppCompatActivity() {
                         SettingLorebookDetailPage(id = route.id, scrollToEntryId = route.scrollToEntryId)
                     }
                     composable<Screen.Developer> { DeveloperPage() }
-                    composable<Screen.SettingAndroidIntegration> { SettingAndroidIntegrationPage() }
                     composable<Screen.SettingUICustomization> { SettingUICustomizationPage() }
                     composable<Screen.SettingFonts> { SettingFontsPage() }
                     composable<Screen.SettingEmail> { SettingEmailPage() }

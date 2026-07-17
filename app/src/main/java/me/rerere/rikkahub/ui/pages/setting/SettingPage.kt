@@ -331,15 +331,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         icon = { Icon(Icons.Rounded.VerifiedUser, null, modifier = Modifier.size(20.dp)) },
                         onClick = { navController.navigate(Screen.SettingPermissionCheck) }
                     )
-
-                    if (BuildConfig.DEBUG) {
-                        SettingGroupItem(
-                            title = stringResource(R.string.setting_android_integration),
-                            subtitle = stringResource(R.string.setting_android_integration_desc),
-                            icon = { Icon(Icons.Rounded.PhoneAndroid, null, modifier = Modifier.size(20.dp)) },
-                            onClick = { navController.navigate(Screen.SettingAndroidIntegration) }
-                        )
-                    }
                 }
             }
 

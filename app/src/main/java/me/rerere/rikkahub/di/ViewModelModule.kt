@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.di
 
-import me.rerere.rikkahub.ui.activity.TextSelectionVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportVM
@@ -24,15 +23,6 @@ import me.rerere.rikkahub.discover.ui.TokenReportVM
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
-import me.rerere.rikkahub.core.data.repository.MemoryRepository
-import me.rerere.rikkahub.core.data.repository.ConversationRepository
-import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
-import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
-import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
-import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
-import me.rerere.rikkahub.core.data.ai.EmbeddingService
-import me.rerere.rikkahub.core.data.repository.FavoriteRepository
-import org.koin.core.parameter.parametersOf
 
 val viewModelModule = module {
     viewModel<ChatVM> { params ->
@@ -110,7 +100,6 @@ val viewModelModule = module {
     viewModelOf(::ImgGenVM)
     viewModelOf(::DeveloperVM)
     viewModelOf(::MenuVM)
-    viewModelOf(::TextSelectionVM)
     viewModelOf(::DiaryVM)
     viewModelOf(::ScheduleViewModel)
     viewModelOf(::TokenReportVM)

@@ -823,7 +823,7 @@ class GenerationHandler(
                     - 若已存在相关记忆条目，使用`edit_memory`对原有内容修改或补充。
                     - **备注**：仅可编辑、删除带编号的**核心记忆**；L1类型历史片段仅支持查看，无法修改或删除。
 
-                    **严禁录入敏感信息**（宗教、种族歧题、政治信息等相关内容）。
+                    **严禁录入敏感信息**（宗教、种族欺题、政治信息等相关内容）。
 
                     作为用户的ai，需要**主动**记录有价值的对话片段：
                     - 事件细节、共同经历、关键语句、无法归入档案及对话梗概的字段的专属上下文内容，使用记忆工具记录。
@@ -1648,72 +1648,6 @@ class GenerationHandler(
             onUpdateMessages(currentMessages)
         }
     }
-
-    fun translateText(
-        settings: Settings,
-        sourceText: String,
-        targetLanguage: Locale,
-        modelIdOverride: Uuid? = null,
-        onStreamUpdate: (suspend (String) -> Unit)? = null
-    ): Flow<String> = flow {
-        val modelId = modelIdOverride ?: settings.translateModeId
-        val model = settings.providers.findModelById(modelId) ?: error("Translation model not found")
-        val provider = model.findProvider(settings.providers) ?: error("Translation provider not found")
-        val providerHandler = providerManager.getProviderByType(provider)
-        if (!ModelRegistry.QWEN_MT.match(model.modelId)) {
-            val prompt = settings.translatePrompt.applyPlaceholders(
-                "source_text" to sourceText,
-                "target_lang" to targetLanguage.toString(),
-            )
-
-            var currentMessages = listOf(UIMessage.user(prompt))
-            var translatedText = ""
-
-            providerHandler.streamText(
-                providerSetting = provider,
-                messages = currentMessages,
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
-                ),
-            ).collect { chunk ->
-                currentMessages = currentMessages.handleMessageChunk(chunk)
-                translatedText = currentMessages.lastOrNull()?.toContentText() ?: ""
-                if (translatedText.isNotBlank()) {
-                    onStreamUpdate?.invoke(translatedText); emit(translatedText)
-                }
-            }
-        } else {
-            val currentMessages = listOf(UIMessage.user(sourceText))
-            val chunk = providerHandler.generateText(
-                providerSetting = provider,
-                messages = currentMessages,
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
-                    topP = 0.95f,
-                    customBody = listOf(
-                        CustomBody(
-                            key = "translation_options",
-                            value = buildJsonObject {
-                                put("source_lang", JsonPrimitive("auto"))
-                                put(
-                                    "target_lang",
-                                    JsonPrimitive(targetLanguage.getDisplayLanguage(Locale.ENGLISH))
-                                )
-                            }
-                        )
-                    )
-                ),
-            )
-            val translatedText = chunk.choices.firstOrNull()?.message?.toContentText() ?: ""
-
-            if (translatedText.isNotBlank()) {
-                onStreamUpdate?.invoke(translatedText)
-                emit(translatedText)
-            }
-        }
-    }.flowOn(Dispatchers.IO)
 
     private fun sanitizeToolCallArguments(arguments: String): String {
         if (arguments.isBlank()) return "{}"
