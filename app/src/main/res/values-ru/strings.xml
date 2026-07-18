@@ -415,9 +415,6 @@
   <string name="setting_model_page_title">Настройки модели</string>
   <string name="setting_model_page_title_model">Модель сводки заголовков</string>
   <string name="setting_model_page_title_model_desc">Модель, используемая для суммаризации названий бесед, рекомендуется использовать быстрые и недорогие модели</string>
-  <string name="setting_model_page_translate_model">Модель перевода</string>
-  <string name="setting_model_page_translate_model_desc">Модель, используемая для функций перевода</string>
-  <string name="setting_model_page_translate_prompt_vars">Переменные: Исходный текст: {source_text}, Целевой язык: {target_lang}</string>
   <string name="setting_page_about">О приложении</string>
   <string name="setting_page_about_desc">Об этом приложении</string>
   <string name="setting_page_assistant">Ассистент</string>

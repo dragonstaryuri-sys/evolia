@@ -415,9 +415,6 @@
   <string name="setting_model_page_title">モデル設定</string>
   <string name="setting_model_page_title_model">タイトル要約モデル</string>
   <string name="setting_model_page_title_model_desc">会話タイトルを要約するためのモデル、高速で安価なモデルを推奨</string>
-  <string name="setting_model_page_translate_model">翻訳モデル</string>
-  <string name="setting_model_page_translate_model_desc">翻訳機能に使用されるモデル</string>
-  <string name="setting_model_page_translate_prompt_vars">変数: 原文テキスト: {source_text}, 対象言語: {target_lang}</string>
   <string name="setting_page_about">アプリについて</string>
   <string name="setting_page_about_desc">このアプリについて</string>
   <string name="setting_page_assistant">アシスタント</string>
