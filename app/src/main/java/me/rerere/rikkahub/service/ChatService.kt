@@ -1303,7 +1303,7 @@ class ChatService(
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) (assistant.detailMemoryThreshold * 1.3).toInt() else assistant.detailMemoryThreshold
         val count = conversationRepo.countNewMessages(id.toString(), conv.lastSummarizedMessageTime)
-        if (count >= max) summarizeAndRefresh(id)
+        if (count >= max) summarizeAndRefresh(id, skipArchive = true)
     }
 
     suspend fun summarizeAndRefresh(
