@@ -1779,6 +1779,8 @@
 
   <string name="agent_task_preset_memory_consolidation">Memory Consolidation</string>
   <string name="agent_task_instruction_memory_consolidation">"Check whether it is necessary to update user profiles/assistant profiles (corresponding tool: update_profile), milestones (corresponding tool: milestone_manager), and assistant to-do items (corresponding tool: schedule_manager). If an update is required, call the corresponding tools to complete the update automatically."</string>
-
+  <string name="setting_mcp_page_add_server">Add MCP Server</string>
+  <string name="setting_mcp_page_custom_server">Custom Server</string>
+  <string name="setting_mcp_page_custom_server_desc">Manually enter name and URL</string>
 
 </resources>

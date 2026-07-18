@@ -1742,5 +1742,7 @@
 
   <string name="agent_task_preset_memory_consolidation">记忆整理</string>
   <string name="agent_task_instruction_memory_consolidation">"检查是否需要更新/删除/新增用户档案/你的档案（对应工具update_profile）、里程碑（对应工具milestone_manager)、你的待办(对应工具schedule_manager)中的内容，如果需要则自行调用工具进行更新"</string>
-
+  <string name="setting_mcp_page_add_server">添加 MCP 服务器</string>
+  <string name="setting_mcp_page_custom_server">自定义服务器</string>
+  <string name="setting_mcp_page_custom_server_desc">手动输入名称和 URL</string>
 </resources>

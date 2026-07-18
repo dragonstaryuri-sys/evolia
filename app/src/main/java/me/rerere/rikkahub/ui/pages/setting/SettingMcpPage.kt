@@ -418,7 +418,18 @@ private fun McpServerAddSheet(
                         Icon(Icons.Rounded.Terminal, null, modifier = Modifier.size(40.dp))
                         Column {
                             Text(preset.name, style = MaterialTheme.typography.titleMedium)
-                            Text(preset.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = preset.url,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            preset.description?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                                )
+                            }
                         }
                     }
                 }

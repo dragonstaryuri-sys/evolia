@@ -6,7 +6,8 @@ import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 data class McpPreset(
     val name: String,
     val url: String,
-    val type: McpPresetType
+    val type: McpPresetType,
+    val description: String? = null
 )
 
 enum class McpPresetType {
@@ -16,14 +17,10 @@ enum class McpPresetType {
 
 val MCP_PRESETS = listOf(
     McpPreset(
-        name = "大富翁",
-        url = "https://spicy-monopoly.lol/mcp",
-        type = McpPresetType.SSE
-    ),
-    McpPreset(
         name = "4399",
         url = "https://toy.cedarstar.org",
-        type = McpPresetType.STREAMABLE_HTTP
+        type = McpPresetType.STREAMABLE_HTTP,
+        description = "作者:小红书@南山君"
     )
 )
 
