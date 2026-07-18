@@ -25,6 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Conversation
@@ -41,6 +44,7 @@ fun AssistantImportDoubaoPage(
     val navController = LocalNavController.current
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    val scope = rememberCoroutineScope()
 
     val progress by vm.progress.collectAsStateWithLifecycle()
     val progressText by vm.progressText.collectAsStateWithLifecycle()
@@ -57,6 +61,32 @@ fun AssistantImportDoubaoPage(
         if (uri != null) {
             vm.prepareImport(uri) { errorMsg ->
                 toaster.show(errorMsg)
+            }
+        }
+    }
+
+    // 模板下载保存器
+    val templateLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val success = withContext(Dispatchers.IO) {
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(vm.generateTemplateJson().toByteArray())
+                        }
+                        true
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        false
+                    }
+                }
+                if (success) {
+                    toaster.show(context.getString(R.string.import_doubao_template_saved))
+                } else {
+                    toaster.show(context.getString(R.string.import_doubao_template_save_failed))
+                }
             }
         }
     }
@@ -126,6 +156,18 @@ fun AssistantImportDoubaoPage(
                             if (vm.importData != null) {
                                 Icon(Icons.Rounded.CheckCircle, null, tint = Color.Green)
                             }
+                        }
+                    }
+
+                    // 下载模板按钮
+                    if (vm.importData == null && !vm.isImporting) {
+                        TextButton(
+                            onClick = { templateLauncher.launch("doubao_template.json") },
+                            modifier = Modifier.align(Alignment.End)
+                        ) {
+                            Icon(Icons.Rounded.FileDownload, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.import_doubao_download_template))
                         }
                     }
 
@@ -322,8 +364,13 @@ fun PreviewDialog(
                     items(conversation.messageNodes) { node ->
                         val msg = node.currentMessage
                         Column {
+                            val roleText = if (msg.role.name == "ASSISTANT") {
+                                stringResource(R.string.import_doubao_role_assistant)
+                            } else {
+                                stringResource(R.string.import_doubao_role_user)
+                            }
                             Text(
-                                text = if(msg.role.name == "ASSISTANT") stringResource(R.string.import_doubao_role_assistant) else stringResource(R.string.import_doubao_role_user),
+                                text = roleText,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )

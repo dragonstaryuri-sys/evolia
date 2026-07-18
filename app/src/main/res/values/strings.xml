@@ -1719,11 +1719,11 @@
   <string name="tts_error_concurrency">ElevenLabs account concurrency limit reached, queuing for speech synthesis...</string>
   <string name="backup_page_tts_cache">Voice cache</string>
   <string name="mimo_dct">Xiaomi MiMo Speech Synthesis, Ultra-Realistic Timbre</string>
-  <!-- Doubao Import Feature Related -->
-  <string name="import_doubao_title">Import Doubao Agent</string>
+  <!-- assistant Import Feature Related -->
+  <string name="import_doubao_title">Import Agent from others\' platform</string>
   <string name="import_doubao_download_log">Download Logs</string>
   <string name="import_doubao_select_file">Select JSON Import File</string>
-  <string name="import_doubao_select_file_hint">Click to select chat records exported from Doubao</string>
+  <string name="import_doubao_select_file_hint">Click to select chat records</string>
   <string name="import_doubao_selected_count">%d messages selected</string>
   <string name="import_doubao_options">Import Options</string>
   <string name="import_doubao_set_main">Set as Main Agent</string>
@@ -1741,6 +1741,9 @@
   <string name="import_doubao_confirm_continue">Confirm and Continue Import</string>
   <string name="import_doubao_cancel_import">Abort Import</string>
   <string name="import_doubao_log_saved">Logs saved to private directory</string>
+  <string name="import_doubao_download_template">Download Import Template</string>
+  <string name="import_doubao_template_saved">Template Saved</string>
+  <string name="import_doubao_template_save_failed">Failed to Save Template</string>
   <string name="assistant_importer_import_other_platform">Import Agents from Other Platforms</string>
   <string name="import_memory_title">Improve Agent Memory</string>
   <string name="import_memory_l3_title">Relationship Profile (L3)</string>

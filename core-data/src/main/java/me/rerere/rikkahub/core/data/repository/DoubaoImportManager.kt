@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import me.rerere.ai.core.MessageRole
@@ -16,6 +15,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.model.*
 import java.time.format.DateTimeFormatter
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 class DoubaoImportManager(
@@ -76,9 +77,30 @@ class DoubaoImportManager(
     }
 
     /**
+     * 生成导入模板 JSON 字符串
+     */
+    fun generateTemplateJson(): String {
+        val now = System.currentTimeMillis() / 1000
+        val templateData = DoubaoImportData(
+            botInfo = DoubaoBotInfo(
+                name = "示例智能体",
+                description = "这是一个导入模板，你可以根据这个格式修改自己的聊天记录进行导入。"
+            ),
+            chatHistory = listOf(
+                DoubaoHistoryItem("user", (now - 60).toString(), DoubaoContent("你好呀")),
+                DoubaoHistoryItem("assistant", (now - 50).toString(), DoubaoContent("你好！很高兴见到你。")),
+                DoubaoHistoryItem("user", (now - 40).toString(), DoubaoContent("你今天心情怎么样？")),
+                DoubaoHistoryItem("assistant", (now - 30).toString(), DoubaoContent("我今天心情很好，因为可以和你聊天。"))
+            )
+        )
+        return JsonInstant.encodeToString(templateData)
+    }
+
+    /**
      * 执行导入过程
      * @return 成功导入的会话（Conversation）数量，如果失败则返回 -1
      */
+    @OptIn(ExperimentalTime::class)
     suspend fun performImport(
         data: DoubaoImportData,
         assistantId: Uuid,

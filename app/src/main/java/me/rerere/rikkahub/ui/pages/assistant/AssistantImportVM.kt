@@ -76,6 +76,8 @@ class AssistantImportVM(
         previewConversation = null
     }
 
+    fun generateTemplateJson(): String = importManager.generateTemplateJson()
+
     /**
      * 开始导入
      * @param onFinish 回调函数，参数为：(成功状态, assistantId, 会话数量)
