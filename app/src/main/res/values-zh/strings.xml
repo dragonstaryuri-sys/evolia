@@ -1181,7 +1181,7 @@
 
   <!-- 整合结果 -->
   <string name="consolidation_result_episodes">已整合 %d 个对话片段。 </string>
-  <string name="consolidation_result_master_updated">记忆档案已更新。 </string>
+  <string name="consolidation_result_master_updated">关系档案已更新。 </string>
   <string name="consolidation_result_no_new_items">扫描完成，无新增内容。</string>
   <string name="consolidation_started">记忆整合已开始 (全量扫描: %b)</string>
 
@@ -1324,9 +1324,9 @@
   <string name="setting_provider_page_balance_authorize_key">余额查询授权码 (Authorize Key)</string>
   <string name="setting_provider_page_balance_user_id">用户 ID (User ID)</string>
 
-  <!-- 记忆档案备份提示 -->
+  <!-- 关系档案备份提示 -->
   <string name="master_memory_backup_title">复制当前档案</string>
-  <string name="master_memory_backup_message">更新记忆档案可能因 AI 生成异常导致旧内容丢失。建议先将当前内容备份至剪贴板，是否继续？</string>
+  <string name="master_memory_backup_message">更新关系档案可能因 AI 生成异常导致旧内容丢失。建议先将当前内容备份至剪贴板，是否继续？</string>
   <string name="master_memory_backup_confirm">确认备份并更新</string>
   <!-- 本地工具: 时间观念 -->
   <string name="error_select_model_first">请先选择一个模型</string>
@@ -1347,12 +1347,12 @@
   <string name="rag_keyword_threshold_title">匹配精度阈值</string>
 
   <!-- 异步任务提示 -->
-  <string name="master_memory_update_started">已在后台开始更新记忆档案...</string>
+  <string name="master_memory_update_started">已在后台开始更新关系档案...</string>
   <!-- 通知相关 -->
-  <string name="master_memory_update_done">记忆档案维护完成</string>
-  <string name="master_memory_update_success">%s 的记忆档案已成功更新。</string>
-  <string name="master_memory_update_compressed">%s 的记忆档案已更新，且因内容过长执行了压缩优化。</string>
-  <string name="master_memory_update_failed">记忆档案更新失败</string>
+  <string name="master_memory_update_done">关系档案维护完成</string>
+  <string name="master_memory_update_success">%s 的关系档案已成功更新。</string>
+  <string name="master_memory_update_compressed">%s 的关系档案已更新，且因内容过长执行了压缩优化。</string>
+  <string name="master_memory_update_failed">关系档案更新失败</string>
   <string name="schedule_title">智能日程</string>
   <string name="schedule_today_progress">今日进度</string>
   <string name="schedule_unfinished_tasks">%d 任务剩余</string>
@@ -1500,8 +1500,8 @@
   <string name="assistant_import_page_title">搬家</string>
   <string name="assistant_import_page_system_prompt_label">系统提示词</string>
   <string name="assistant_import_page_agent_name_label">智能体名称</string>
-  <string name="assistant_import_page_memory_archive_group_title">记忆档案 (L3 Master File)</string>
-  <string name="assistant_import_page_memory_archive_hint">记忆档案不允许手工填写，只能导入。点击“导出模板”下载 XLSX 模板，按模板内容填写后导入。</string>
+  <string name="assistant_import_page_memory_archive_group_title">关系档案 (L3 Master File)</string>
+  <string name="assistant_import_page_memory_archive_hint">关系档案不允许手工填写，只能导入。点击“导出模板”下载 XLSX 模板，按模板内容填写后导入。</string>
   <string name="assistant_import_page_core_memories_group_title">核心记忆</string>
   <string name="assistant_import_page_core_memories_hint">用于迁移零散的碎片记忆。点击“导出模板”下载 XLSX 模板，建议每个条目内容不宜过长。</string>
   <string name="assistant_import_page_export_template_button">导出模板</string>
