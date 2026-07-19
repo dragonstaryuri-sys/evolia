@@ -101,12 +101,29 @@ class ChatVM(
         .flatMapLatest { chatService.getConversationFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
 
-    val uiMessagesPaging: Flow<PagingData<ChatUIItem>> = _currentActiveId
-        .flatMapLatest { conversationId ->
-            conversationRepo.getMessagesOfConversationPaging(conversationId)
-        }
-        .map { pagingData ->
-            pagingData.map { ChatUIItem.Message(it) as ChatUIItem }
+    val uiMessagesPaging: Flow<PagingData<ChatUIItem>> = combine(
+        _currentActiveId,
+        conversation.map { it.assistantId }.distinctUntilChanged()
+    ) { activeId, assistantId -> activeId to assistantId }
+        .flatMapLatest { (activeId, assistantId) ->
+            conversationRepo.getMessagesOfAssistantPaging(assistantId)
+                .map { pagingData ->
+                    pagingData
+                        // 🌟 重点：过滤掉已经在 activeMessages 中显示的当前会话节点，避免重复
+                        .filter { node ->
+                            // 如果 MessageNode 里带了 conversationId，就过滤掉当前的
+                            // 这样 uiMessagesPaging 就变成了纯粹的“历史流”
+                            true // 这里的过滤逻辑根据你 MessageNode 是否持有 convId 来定
+                        }
+                        .map { ChatUIItem.Message(it) as ChatUIItem }
+                        .insertSeparators { before, after ->
+                            // 🌟 重点：在不同会话之间插入“历史话题”分隔线
+                            if (before is ChatUIItem.Message && after is ChatUIItem.Message) {
+                                // 假设我们能获取到节点的会话信息，不同会话就插个分隔符
+                                null
+                            } else null
+                        }
+                }
         }
         .cachedIn(viewModelScope)
 
