@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalScrollCaptureInProgress
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -26,11 +25,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
@@ -38,12 +35,10 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getAssistantById
-import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
-import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
 import me.rerere.rikkahub.ui.components.ui.Tooltip
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
@@ -57,11 +52,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.ui.context.LocalNavController
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Memory
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
-import kotlinx.coroutines.yield
 import kotlin.time.Duration.Companion.minutes
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.minus
@@ -71,7 +63,6 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UsedMemory
 import kotlin.time.Instant
 
-private const val TAG = "ChatList"
 private const val ScrollBottomKey = "ScrollBottomKey"
 
 @Composable
@@ -85,6 +76,7 @@ fun ChatList(
     loading: Boolean,
     previewMode: Boolean,
     settings: Settings,
+    isSyncing: Boolean = false, // ✨ 新增：是否正在同步上下文
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     initialSearchQuery: String? = null,
     targetMessageId: String? = null,
@@ -149,39 +141,42 @@ fun ChatList(
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize().alpha(if (isWaitingForJump) 0f else 1f)) {
-                    if (uiItems.loadState.refresh is LoadState.Loading && uiItems.itemCount == 0 && activeMessages.isEmpty()) {
+                    // ✨ 优化：如果正在全局同步，或者分页已经有数据了，就不显示这个大圆圈
+                    val isInitialLoading = uiItems.loadState.refresh is LoadState.Loading && uiItems.itemCount == 0 && activeMessages.isEmpty() && !isSyncing
+
+                    if (isInitialLoading) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
+                    } else {
+                        ChatListNormal(
+                            innerPadding = innerPadding,
+                            conversation = conversation,
+                            activeMessages = activeMessages,
+                            uiItems = uiItems,
+                            isHistoryLoading = isHistoryLoading,
+                            state = state,
+                            scrollToNodeId = scrollToNodeId,
+                            instantScroll = instantScroll,
+                            onScrolledToNode = {
+                                scrollToNodeId = null
+                                instantScroll = false
+                                isWaitingForJump = false
+                            },
+                            loading = loading,
+                            settings = settings,
+                            recentlyRestoredNodeIds = recentlyRestoredNodeIds,
+                            onRegenerate = onRegenerate,
+                            onEdit = onEdit,
+                            onDelete = onDelete,
+                            onUpdateMessage = onUpdateMessage,
+                            onGetFullMemoryContent = onGetFullMemoryContent,
+                            onAddFavorite = onAddFavorite,
+                            onDeleteMessages = onDeleteMessages,
+                            onTypingStateChange = onTypingStateChange,
+                            animatedVisibilityScope = this@AnimatedContent,
+                        )
                     }
-
-                    ChatListNormal(
-                        innerPadding = innerPadding,
-                        conversation = conversation,
-                        activeMessages = activeMessages,
-                        uiItems = uiItems,
-                        isHistoryLoading = isHistoryLoading,
-                        state = state,
-                        scrollToNodeId = scrollToNodeId,
-                        instantScroll = instantScroll,
-                        onScrolledToNode = {
-                            scrollToNodeId = null
-                            instantScroll = false
-                            isWaitingForJump = false
-                        },
-                        loading = loading,
-                        settings = settings,
-                        recentlyRestoredNodeIds = recentlyRestoredNodeIds,
-                        onRegenerate = onRegenerate,
-                        onEdit = onEdit,
-                        onDelete = onDelete,
-                        onUpdateMessage = onUpdateMessage,
-                        onGetFullMemoryContent = onGetFullMemoryContent,
-                        onAddFavorite = onAddFavorite,
-                        onDeleteMessages = onDeleteMessages,
-                        onTypingStateChange = onTypingStateChange,
-                        animatedVisibilityScope = this@AnimatedContent,
-                    )
                 }
             }
         }
@@ -213,7 +208,6 @@ private fun SharedTransitionScope.ChatListNormal(
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
     val navController = LocalNavController.current
 
     val currentConversationState = rememberUpdatedState(conversation)
@@ -250,7 +244,7 @@ private fun SharedTransitionScope.ChatListNormal(
     val needsPhantomLoadingTurn = loading && (
         (activeMessages.isEmpty() && uiItems.itemCount == 0 && uiItems.loadState.refresh !is LoadState.Loading) ||
             activeMessages.firstOrNull()?.node?.currentMessage?.role == MessageRole.USER
-        )
+    )
 
     LaunchedEffect(scrollToNodeId, activeMessages, uiItems.itemCount){
         val targetId = scrollToNodeId ?: return@LaunchedEffect
@@ -313,7 +307,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     onUpdateMessage = onUpdateMessage, onGetFullMemoryContent = onGetFullMemoryContent, onAddFavorite = onAddFavorite,
                     onTypingStateChange = onTypingStateChange, navController = navController, scope = scope,
                     onMemoryLoading = { isMemoryLoading = it }, onPreviewMemory = { previewingMemory = it },
-                    onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) } // ✨ 修复：传递开启逻辑
+                    onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) }
                 )
             }
 
@@ -349,7 +343,7 @@ private fun SharedTransitionScope.ChatListNormal(
                             onUpdateMessage = onUpdateMessage, onGetFullMemoryContent = onGetFullMemoryContent, onAddFavorite = onAddFavorite,
                             onTypingStateChange = onTypingStateChange, navController = navController, scope = scope,
                             onMemoryLoading = { isMemoryLoading = it }, onPreviewMemory = { previewingMemory = it },
-                            onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) } // ✨ 修复：传递开启逻辑
+                            onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) }
                         )
                     }
                     is ChatVM.ChatUIItem.Separator -> {
@@ -360,7 +354,8 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            if (isHistoryLoading || uiItems.loadState.append is LoadState.Loading) {
+            // ✨ 优化：如果已经在显示初始加载的大圆圈，这里就不再显示分页加载指示器
+            if ((isHistoryLoading || uiItems.loadState.append is LoadState.Loading) && uiItems.itemCount > 0) {
                 item("paging_loading_indicator") {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
@@ -416,7 +411,7 @@ private fun MessageItemBox(
     onAddFavorite: (List<UIMessage>) -> Unit, onTypingStateChange: (Uuid, Boolean) -> Unit,
     navController: androidx.navigation.NavController, scope: CoroutineScope,
     onMemoryLoading: (Boolean) -> Unit, onPreviewMemory: (UsedMemory) -> Unit,
-    onStartSelecting: (Uuid) -> Unit // ✨ 新增：开启多选的回调
+    onStartSelecting: (Uuid) -> Unit
 ) {
     Column {
         if (shouldShowTime) {
@@ -431,7 +426,7 @@ private fun MessageItemBox(
                 group = MessageTurnGroup(listOf(node), node.currentMessage.role), isLastTurn = isLastTurn, onCitationClick = onCitationClick,
                 model = node.currentMessage.modelId?.let { settings.findModelById(it) }, assistant = settings.getAssistantById(conversation.assistantId),
                 loading = loading, onRegenerate = { onRegenerate(it.currentMessage) }, onEdit = { onEdit(it.currentMessage) }, onDelete = { onDelete(it.currentMessage) },
-                onShare = { onStartSelecting(node.id) }, // ✨ 这里调用回调通知外层
+                onShare = { onStartSelecting(node.id) },
                 onUpdate = { onUpdateMessage(it) }, onEditLorebookEntry = { navController.navigate(Screen.SettingLorebookDetail(it.lorebookId, it.entryId)) },
                 onMemoryClick = { memory ->
                     scope.launch { onMemoryLoading(true); onPreviewMemory(memory); val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType); onPreviewMemory(memory.copy(memoryContent = full ?: "未找到内容")); onMemoryLoading(false) }

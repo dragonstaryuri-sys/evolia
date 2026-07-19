@@ -210,7 +210,6 @@ private fun ChatPageContent(
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
-    // ✨ 新增：收集历史加载状态
     val isHistoryLoading by vm.isHistoryLoading.collectAsStateWithLifecycle()
 
     // 自动分页加载历史记录逻辑
@@ -261,9 +260,14 @@ private fun ChatPageContent(
             }
 
             else -> {
-                // 强制返回主页并清空所有中间栈（如检索页），实现“一键回主页”
-                navController.navigate(Screen.Home) {
-                    popUpTo(0) { inclusive = true }
+                // 如果是从搜索跳转来的，直接返回上一页
+                if (!targetMessageId.isNullOrBlank()) {
+                    navController.popBackStack()
+                } else {
+                    // 强制返回主页并清空所有中间栈（如检索页），实现“一键回主页”
+                    navController.navigate(Screen.Home) {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             }
         }
@@ -281,7 +285,6 @@ private fun ChatPageContent(
     val topMessagePadding = 72.dp
 
     val uiPagingMessages = vm.uiMessagesPaging.collectAsLazyPagingItems()
-    // ✨ 收集活跃消息列表
     val activeMessages by vm.activeMessages.collectAsStateWithLifecycle()
 
     val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
@@ -399,7 +402,8 @@ private fun ChatPageContent(
                         onToggleTemporaryChat = {
                             isTemporaryChat = !isTemporaryChat
                         },
-                        isLoading = effectiveTypingIndicator
+                        isLoading = effectiveTypingIndicator,
+                        isReadOnly = !targetMessageId.isNullOrBlank() // ✨ 传递只读状态
                     )
                 },
                 containerColor = Color.Transparent,
@@ -411,15 +415,19 @@ private fun ChatPageContent(
                         .padding(padding)
                 ) {
                     ChatList(
-                        innerPadding = PaddingValues(top = topMessagePadding, bottom = 100.dp),
+                        innerPadding = PaddingValues(
+                            top = topMessagePadding,
+                            bottom = if (targetMessageId.isNullOrBlank()) 100.dp else 16.dp // ✨ 动态调整底部边距
+                        ),
                         conversation = conversation,
                         activeMessages = activeMessages,
                         uiItems = uiPagingMessages,
-                        isHistoryLoading = isHistoryLoading, // ✨ 传递给 ChatList
+                        isHistoryLoading = isHistoryLoading,
                         state = chatListState,
                         loading = loadingJob != null,
                         previewMode = previewMode,
                         settings = setting,
+                        isSyncing = isSyncingContext || isConsolidating, // ✨ 同步状态传递，修复双动画
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
                         initialSearchQuery = initialSearchQuery,
                         targetMessageId = targetMessageId,
@@ -485,7 +493,7 @@ private fun ChatPageContent(
                     val effectiveDisplaySetting = setting.getEffectiveDisplaySetting(currentAssistant)
 
                     AnimatedVisibility(
-                        visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages,
+                        visible = isTemporaryChat && !hasUserSentMessages && !hasAnyPresetMessages && targetMessageId.isNullOrBlank(),
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.align(Alignment.Center)
@@ -606,7 +614,7 @@ private fun ChatPageContent(
                     }
 
                     AnimatedVisibility(
-                        visible = hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent,
+                        visible = (hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent) && targetMessageId.isNullOrBlank(),
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.align(Alignment.BottomCenter)
@@ -626,211 +634,213 @@ private fun ChatPageContent(
                         )
                     }
 
-                    when (effectiveDisplaySetting.chatInputStyle) {
-                        ChatInputStyle.MINIMAL -> {
-                            MinimalChatInput(
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                state = inputState,
-                                settings = setting,
-                                conversation = conversation,
-                                mcpManager = vm.mcpManager,
-                                chatSuggestions = conversation.chatSuggestions,
-                                onClickSuggestion = { suggestion ->
-                                    if (currentChatModel != null) {
-                                        vm.handleMessageSend(
-                                            listOf(UIMessagePart.Text(suggestion)),
-                                            isTemporaryChat = isTemporaryChat
+                    if (targetMessageId.isNullOrBlank()) { // ✨ 搜索跳转模式下隐藏输入框
+                        when (effectiveDisplaySetting.chatInputStyle) {
+                            ChatInputStyle.MINIMAL -> {
+                                MinimalChatInput(
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    state = inputState,
+                                    settings = setting,
+                                    conversation = conversation,
+                                    mcpManager = vm.mcpManager,
+                                    chatSuggestions = conversation.chatSuggestions,
+                                    onClickSuggestion = { suggestion ->
+                                        if (currentChatModel != null) {
+                                            vm.handleMessageSend(
+                                                listOf(UIMessagePart.Text(suggestion)),
+                                                isTemporaryChat = isTemporaryChat
+                                            )
+                                        } else {
+                                            toaster.show(errorSelectModelText, type = ToastType.Error)
+                                        }
+                                    },
+                                    onCancelClick = { loadingJob?.cancel() },
+                                    enableSearch = enableWebSearch,
+                                    onToggleSearch = {
+                                        if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
+                                        else if (setting.searchServices.isNotEmpty()) {
+                                            val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                            vm.updateAssistantSearchMode(
+                                                me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
+                                                    validIndex
+                                                )
+                                            )
+                                        }
+                                    },
+                                    onSendClick = {
+                                        if (inputState.isEditing()) vm.handleMessageEdit(
+                                            parts = inputState.getContents(),
+                                            messageId = inputState.editingMessage!!
                                         )
-                                    } else {
-                                        toaster.show(errorSelectModelText, type = ToastType.Error)
-                                    }
-                                },
-                                onCancelClick = { loadingJob?.cancel() },
-                                enableSearch = enableWebSearch,
-                                onToggleSearch = {
-                                    if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
-                                    else if (setting.searchServices.isNotEmpty()) {
-                                        val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                        else {
+                                            if (currentChatModel == null) {
+                                                toaster.show(
+                                                    errorSelectModelText,
+                                                    type = ToastType.Error
+                                                ); return@MinimalChatInput
+                                            }
+                                            vm.handleMessageSend(
+                                                inputState.getContents(),
+                                                isTemporaryChat = isTemporaryChat
+                                            )
+                                        }
+                                        inputState.clearInput()
+                                    },
+                                    onLongSendClick = {
+                                        if (inputState.isEditing()) vm.handleMessageEdit(
+                                            parts = inputState.getContents(),
+                                            messageId = inputState.editingMessage!!
+                                        )
+                                        else {
+                                            if (currentChatModel == null) {
+                                                toaster.show(
+                                                    errorSelectModelText,
+                                                    type = ToastType.Error
+                                                ); return@MinimalChatInput
+                                            }
+                                            vm.handleMessageSend(
+                                                content = inputState.getContents(),
+                                                answer = false,
+                                                isTemporaryChat = isTemporaryChat
+                                            )
+                                        }
+                                        inputState.clearInput()
+                                    },
+                                    onUpdateChatModel = {
+                                        vm.setChatModel(
+                                            assistant = setting.getCurrentAssistant(),
+                                            model = it
+                                        )
+                                    },
+                                    onUpdateAssistant = { updatedAssistant ->
+                                        vm.updateAssistant(updatedAssistant)
+                                    },
+                                    onUpdateSearchService = { index ->
                                         vm.updateAssistantSearchMode(
                                             me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
-                                                validIndex
+                                                index
                                             )
                                         )
-                                    }
-                                },
-                                onSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(
-                                        parts = inputState.getContents(),
-                                        messageId = inputState.editingMessage!!
-                                    )
-                                    else {
-                                        if (currentChatModel == null) {
-                                            toaster.show(
-                                                errorSelectModelText,
-                                                type = ToastType.Error
-                                            ); return@MinimalChatInput
-                                        }
-                                        vm.handleMessageSend(
-                                            inputState.getContents(),
-                                            isTemporaryChat = isTemporaryChat
+                                    },
+                                    onClearContext = { vm.startNewTopic() },
+                                    onUpdateConversation = { updatedConversation ->
+                                        vm.updateConversation(
+                                            updatedConversation
+                                        ); vm.saveConversationAsync()
+                                    },
+                                    onNavigateToLorebook = { lorebookId ->
+                                        navController.navigate(
+                                            Screen.SettingLorebookDetail(
+                                                lorebookId
+                                            )
                                         )
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onLongSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(
-                                        parts = inputState.getContents(),
-                                        messageId = inputState.editingMessage!!
-                                    )
-                                    else {
-                                        if (currentChatModel == null) {
-                                            toaster.show(
-                                                errorSelectModelText,
-                                                type = ToastType.Error
-                                            ); return@MinimalChatInput
-                                        }
-                                        vm.handleMessageSend(
-                                            content = inputState.getContents(),
-                                            answer = false,
-                                            isTemporaryChat = isTemporaryChat
-                                        )
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onUpdateChatModel = {
-                                    vm.setChatModel(
-                                        assistant = setting.getCurrentAssistant(),
-                                        model = it
-                                    )
-                                },
-                                onUpdateAssistant = { updatedAssistant ->
-                                    vm.updateAssistant(updatedAssistant)
-                                },
-                                onUpdateSearchService = { index ->
-                                    vm.updateAssistantSearchMode(
-                                        me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
-                                            index
-                                        )
-                                    )
-                                },
-                                onClearContext = { vm.startNewTopic() },
-                                onUpdateConversation = { updatedConversation ->
-                                    vm.updateConversation(
-                                        updatedConversation
-                                    ); vm.saveConversationAsync()
-                                },
-                                onNavigateToLorebook = { lorebookId ->
-                                    navController.navigate(
-                                        Screen.SettingLorebookDetail(
-                                            lorebookId
-                                        )
-                                    )
-                                },
-                                onStartCall = { isCallActive = true },
-                                onRefreshContext = { vm.refreshContext() },
-                                onDeleteFile = { vm.deleteFile(it) },
-                                onConsolidate = { vm.consolidateConversation(conversation) }
-                            )
-                        }
+                                    },
+                                    onStartCall = { isCallActive = true },
+                                    onRefreshContext = { vm.refreshContext() },
+                                    onDeleteFile = { vm.deleteFile(it) },
+                                    onConsolidate = { vm.consolidateConversation(conversation) }
+                                )
+                            }
 
-                        ChatInputStyle.FLOATING -> {
-                            ChatInput(
-                                modifier = Modifier.align(Alignment.BottomCenter),
-                                state = inputState,
-                                settings = setting,
-                                conversation = conversation,
-                                mcpManager = vm.mcpManager,
-                                chatSuggestions = conversation.chatSuggestions,
-                                onClickSuggestion = { suggestion ->
-                                    if (currentChatModel != null) {
-                                        vm.handleMessageSend(
-                                            listOf(UIMessagePart.Text(suggestion)),
-                                            isTemporaryChat = isTemporaryChat
+                            ChatInputStyle.FLOATING -> {
+                                ChatInput(
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    state = inputState,
+                                    settings = setting,
+                                    conversation = conversation,
+                                    mcpManager = vm.mcpManager,
+                                    chatSuggestions = conversation.chatSuggestions,
+                                    onClickSuggestion = { suggestion ->
+                                        if (currentChatModel != null) {
+                                            vm.handleMessageSend(
+                                                listOf(UIMessagePart.Text(suggestion)),
+                                                isTemporaryChat = isTemporaryChat
+                                            )
+                                        } else {
+                                            toaster.show(errorSelectModelText, type = ToastType.Error)
+                                        }
+                                    },
+                                    onCancelClick = { loadingJob?.cancel() },
+                                    enableSearch = enableWebSearch,
+                                    onToggleSearch = {
+                                        if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
+                                        else if (setting.searchServices.isNotEmpty()) {
+                                            val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                            vm.updateAssistantSearchMode(
+                                                me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
+                                                    validIndex
+                                                )
+                                            )
+                                        }
+                                    },
+                                    onSendClick = {
+                                        if (inputState.isEditing()) vm.handleMessageEdit(
+                                            parts = inputState.getContents(),
+                                            messageId = inputState.editingMessage!!
                                         )
-                                    } else {
-                                        toaster.show(errorSelectModelText, type = ToastType.Error)
-                                    }
-                                },
-                                onCancelClick = { loadingJob?.cancel() },
-                                enableSearch = enableWebSearch,
-                                onToggleSearch = {
-                                    if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
-                                    else if (setting.searchServices.isNotEmpty()) {
-                                        val validIndex = lastProviderIndex.coerceIn(0, setting.searchServices.lastIndex)
+                                        else {
+                                            if (currentChatModel == null) {
+                                                toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
+                                            }
+                                            vm.handleMessageSend(
+                                                inputState.getContents(),
+                                                isTemporaryChat = isTemporaryChat
+                                            )
+                                        }
+                                        inputState.clearInput()
+                                    },
+                                    onLongSendClick = {
+                                        if (inputState.isEditing()) vm.handleMessageEdit(
+                                            parts = inputState.getContents(),
+                                            messageId = inputState.editingMessage!!
+                                        )
+                                        else {
+                                            if (currentChatModel == null) {
+                                                toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
+                                            }
+                                            vm.handleMessageSend(
+                                                content = inputState.getContents(),
+                                                answer = false,
+                                                isTemporaryChat = isTemporaryChat
+                                            )
+                                        }
+                                        inputState.clearInput()
+                                    },
+                                    onUpdateChatModel = {
+                                        vm.setChatModel(
+                                            assistant = setting.getCurrentAssistant(),
+                                            model = it
+                                        )
+                                    },
+                                    onUpdateAssistant = { updatedAssistant ->
+                                        vm.updateAssistant(updatedAssistant)
+                                    },
+                                    onUpdateSearchService = { index ->
                                         vm.updateAssistantSearchMode(
                                             me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
-                                                validIndex
+                                                index
                                             )
                                         )
-                                    }
-                                },
-                                onSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(
-                                        parts = inputState.getContents(),
-                                        messageId = inputState.editingMessage!!
-                                    )
-                                    else {
-                                        if (currentChatModel == null) {
-                                            toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
-                                        }
-                                        vm.handleMessageSend(
-                                            inputState.getContents(),
-                                            isTemporaryChat = isTemporaryChat
+                                    },
+                                    onClearContext = { vm.startNewTopic() },
+                                    onUpdateConversation = { updatedConversation ->
+                                        vm.updateConversation(
+                                            updatedConversation
+                                        ); vm.saveConversationAsync()
+                                    },
+                                    onNavigateToLorebook = { lorebookId ->
+                                        navController.navigate(
+                                            Screen.SettingLorebookDetail(
+                                                lorebookId
+                                            )
                                         )
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onLongSendClick = {
-                                    if (inputState.isEditing()) vm.handleMessageEdit(
-                                        parts = inputState.getContents(),
-                                        messageId = inputState.editingMessage!!
-                                    )
-                                    else {
-                                        if (currentChatModel == null) {
-                                            toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
-                                        }
-                                        vm.handleMessageSend(
-                                            content = inputState.getContents(),
-                                            answer = false,
-                                            isTemporaryChat = isTemporaryChat
-                                        )
-                                    }
-                                    inputState.clearInput()
-                                },
-                                onUpdateChatModel = {
-                                    vm.setChatModel(
-                                        assistant = setting.getCurrentAssistant(),
-                                        model = it
-                                    )
-                                },
-                                onUpdateAssistant = { updatedAssistant ->
-                                    vm.updateAssistant(updatedAssistant)
-                                },
-                                onUpdateSearchService = { index ->
-                                    vm.updateAssistantSearchMode(
-                                        me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider(
-                                            index
-                                        )
-                                    )
-                                },
-                                onClearContext = { vm.startNewTopic() },
-                                onUpdateConversation = { updatedConversation ->
-                                    vm.updateConversation(
-                                        updatedConversation
-                                    ); vm.saveConversationAsync()
-                                },
-                                onNavigateToLorebook = { lorebookId ->
-                                    navController.navigate(
-                                        Screen.SettingLorebookDetail(
-                                            lorebookId
-                                        )
-                                    )
-                                },
-                                onStartCall = { isCallActive = true },
-                                onRefreshContext = { vm.refreshContext() },
-                                onDeleteFile = { vm.deleteFile(it) },
-                                onConsolidate = { vm.consolidateConversation(conversation) }
-                            )
+                                    },
+                                    onStartCall = { isCallActive = true },
+                                    onRefreshContext = { vm.refreshContext() },
+                                    onDeleteFile = { vm.deleteFile(it) },
+                                    onConsolidate = { vm.consolidateConversation(conversation) }
+                                )
+                            }
                         }
                     }
 
@@ -916,7 +926,8 @@ private data class TopBarActionState(
     val isTemporaryChat: Boolean,
     val shouldUseCompactTemporaryToggle: Boolean,
     val assistantId: Uuid,
-    val conversationId: Uuid
+    val conversationId: Uuid,
+    val isReadOnly: Boolean = false // ✨ 只读状态
 )
 
 @Composable
@@ -932,7 +943,8 @@ private fun TopBar(
     onNewChat: () -> Unit,
     onUpdateSettings: (Settings) -> Unit,
     onToggleTemporaryChat: () -> Unit,
-    isLoading: Boolean
+    isLoading: Boolean,
+    isReadOnly: Boolean = false // ✨ 新增：是否为只读模式
 ) {
     val navController = LocalNavController.current
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -1000,10 +1012,10 @@ private fun TopBar(
             Spacer(Modifier.weight(1f))
 
             val wechatMode = settings.getEffectiveDisplaySetting(currentAssistant).wechatMode
-            val titleText = if (isLoading && wechatMode) {
-                stringResource(R.string.chat_status_typing)
-            } else {
-                currentAssistant.name
+            val titleText = when {
+                isReadOnly -> stringResource(R.string.chat_page_search_result_title) // ✨ 只读模式标题
+                isLoading && wechatMode -> stringResource(R.string.chat_status_typing)
+                else -> currentAssistant.name
             }
 
             Text(
@@ -1039,7 +1051,8 @@ private fun TopBar(
                             !hasPresetMessages
                         },
                         assistantId = currentAssistant.id,
-                        conversationId = conversationId
+                        conversationId = conversationId,
+                        isReadOnly = isReadOnly
                     ),
                     transitionSpec = {
                         (fadeIn(
@@ -1078,69 +1091,78 @@ private fun TopBar(
                     val isEmptyState = actionState.isEmpty
                     val isTempChat = actionState.isTemporaryChat
                     val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
-                    when {
-                        isEmptyState && !isTempChat && hideTopRightAvatar -> {
-                            Row(
-                                modifier = Modifier.height(topPillSize),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = { onToggleTemporaryChat() },
-                                    modifier = Modifier.size(topPillSize)
-                                ) {
-                                    Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
-                                }
+
+                    if (actionState.isReadOnly) { // ✨ 只读模式显示“进入对话”
+                        Box(modifier = Modifier.height(topPillSize).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                            TextButton(onClick = onBack) {
+                                Text(stringResource(R.string.chat_page_return_to_chat))
                             }
                         }
-
-                        else -> Row(
-                            modifier = Modifier.height(topPillSize),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            when {
-                                isEmptyState && !isTempChat -> {
+                    } else {
+                        when {
+                            isEmptyState && !isTempChat && hideTopRightAvatar -> {
+                                Row(
+                                    modifier = Modifier.height(topPillSize),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     IconButton(
                                         onClick = { onToggleTemporaryChat() },
                                         modifier = Modifier.size(topPillSize)
                                     ) {
                                         Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
                                     }
-                                    Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                            name = currentAssistant.name.ifBlank { "Character" },
-                                            value = currentAssistant.avatar,
-                                            modifier = Modifier.size(30.dp),
-                                            onClick = { showAssistantPicker = true })
-                                    }
                                 }
+                            }
 
-                                isEmptyState && isTempChat -> {
-                                    IconButton(
-                                        onClick = { onToggleTemporaryChat() },
-                                        modifier = Modifier.size(topPillSize)
-                                    ) {
-                                        Icon(Icons.Rounded.History, "Make Normal Chat")
+                            else -> Row(
+                                modifier = Modifier.height(topPillSize),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                when {
+                                    isEmptyState && !isTempChat -> {
+                                        IconButton(
+                                            onClick = { onToggleTemporaryChat() },
+                                            modifier = Modifier.size(topPillSize)
+                                        ) {
+                                            Icon(Icons.Rounded.HistoryToggleOff, "Temporary Chat")
+                                        }
+                                        Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
+                                            me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                                name = currentAssistant.name.ifBlank { "Character" },
+                                                value = currentAssistant.avatar,
+                                                modifier = Modifier.size(30.dp),
+                                                onClick = { showAssistantPicker = true })
+                                        }
                                     }
-                                    Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                                        me.rerere.rikkahub.ui.components.ui.UIAvatar(
-                                            name = currentAssistant.name.ifBlank { "Character" },
-                                            value = currentAssistant.avatar,
-                                            modifier = Modifier.size(30.dp),
-                                            onClick = { showAssistantPicker = true })
-                                    }
-                                }
 
-                                else -> {
-                                    IconButton(
-                                        onClick = {
-                                            navController.navigate(Screen.ChatHistorySearch(assistantId = currentAssistant.id.toString()))
-                                        },
-                                        modifier = Modifier.size(topPillSize)
-                                    ) {
-                                        Icon(Icons.Rounded.Search, "Search")
+                                    isEmptyState && isTempChat -> {
+                                        IconButton(
+                                            onClick = { onToggleTemporaryChat() },
+                                            modifier = Modifier.size(topPillSize)
+                                        ) {
+                                            Icon(Icons.Rounded.History, "Make Normal Chat")
+                                        }
+                                        Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
+                                            me.rerere.rikkahub.ui.components.ui.UIAvatar(
+                                                name = currentAssistant.name.ifBlank { "Character" },
+                                                value = currentAssistant.avatar,
+                                                modifier = Modifier.size(30.dp),
+                                                onClick = { showAssistantPicker = true })
+                                        }
                                     }
-                                    IconButton(onClick = { onNewChat() }, modifier = Modifier.size(topPillSize)) {
-                                        Icon(Icons.Rounded.Add, "New Message")
+
+                                    else -> {
+                                        IconButton(
+                                            onClick = {
+                                                navController.navigate(Screen.ChatHistorySearch(assistantId = currentAssistant.id.toString()))
+                                            },
+                                            modifier = Modifier.size(topPillSize)
+                                        ) {
+                                            Icon(Icons.Rounded.Search, "Search")
+                                        }
+                                        IconButton(onClick = { onNewChat() }, modifier = Modifier.size(topPillSize)) {
+                                            Icon(Icons.Rounded.Add, "New Message")
+                                        }
                                     }
                                 }
                             }

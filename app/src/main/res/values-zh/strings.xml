@@ -1745,4 +1745,6 @@
   <string name="setting_mcp_page_add_server">添加 MCP 服务器</string>
   <string name="setting_mcp_page_custom_server">自定义服务器</string>
   <string name="setting_mcp_page_custom_server_desc">手动输入名称和 URL</string>
+  <string name="chat_page_search_result_title">搜索结果</string>
+  <string name="chat_page_return_to_chat">返回对话</string>
 </resources>
