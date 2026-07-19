@@ -289,7 +289,7 @@ private fun SharedTransitionScope.ChatListNormal(
 
             // 🌟 第一流：实时活跃消息
             itemsIndexed(
-                items = activeMessages,
+                items = activeMessages.filter { !it.node.currentMessage.skipContext },
                 key = { _, item -> "active_${item.node.id}" }
             ) { index, item ->
                 val node = item.node
@@ -324,6 +324,9 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             ) { index ->
                 val item = uiItems[index] ?: return@items
+                if (item is ChatVM.ChatUIItem.Message && item.node.currentMessage.skipContext) {
+                    return@items
+                }
                 if (item is ChatVM.ChatUIItem.Message && activeMessages.any { it.node.id == item.node.id }) return@items
 
                 when (item) {

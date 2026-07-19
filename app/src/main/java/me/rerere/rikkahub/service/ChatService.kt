@@ -193,7 +193,6 @@ class ChatService(
             }
         }
     }
-    fun isNodeBeingGenerated(nodeId: Uuid): Boolean = generatingNodeIds.value.contains(nodeId)
 
     val syncingConversationIds: StateFlow<Set<Uuid>> = _syncingConversationIds.asStateFlow()
 
@@ -1360,7 +1359,6 @@ class ChatService(
                 val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
                 val toSummarizeEntities =
                     conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime,100)
-
                     if (toSummarizeEntities.size < 2) break
                 val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
                 val model = settings.findModelById(modelId)

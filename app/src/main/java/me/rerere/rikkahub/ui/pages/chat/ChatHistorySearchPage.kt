@@ -55,7 +55,8 @@ class ChatHistorySearchVM(
                     // 1. 核心过滤逻辑：仅检索回复中的正式内容 (Text)，排除思考内容 (Reasoning/Thinking)
                     entities.filter { entity ->
                         val message = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
-                        message.toContentText().contains(q, ignoreCase = true)
+                        // ✨ 增加过滤：排除掉 skipContext 的系统消息
+                        !message.skipContext && message.toContentText().contains(q, ignoreCase = true)
                     }
                 }
         }

@@ -15,6 +15,11 @@ data class AssistantCountResult(
     val count: Int
 )
 
+data class AssistantLastMessageResult(
+    val assistantId: String,
+    val content: String?
+)
+
 @Dao
 interface ConversationDAO {
     @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
@@ -22,6 +27,25 @@ interface ConversationDAO {
 
     @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity ORDER BY update_at DESC")
     fun getAllLight(): Flow<List<LightConversationEntity>>
+
+    /**
+     * ✨ 高效查询：精准获取每个智能体“排序最靠前会话”的“最后一条消息”
+     * 排序逻辑：会话置顶状态优先 -> 会话更新时间倒序 -> 消息创建时间倒序
+     */
+    @Query("""
+        SELECT assistant_id as assistantId,
+        (
+            SELECT m.content_json
+            FROM chat_messages m
+            INNER JOIN ConversationEntity conv ON m.conversation_id = conv.id
+            WHERE conv.assistant_id = c.assistant_id AND m.is_deleted = 0
+            ORDER BY conv.is_pinned DESC, conv.update_at DESC, m.created_at DESC, m.order_index DESC
+            LIMIT 1
+        ) as content
+        FROM ConversationEntity c
+        GROUP BY assistant_id
+    """)
+    fun getAssistantsLastMessagesFlow(): Flow<List<AssistantLastMessageResult>>
 
     @Query("SELECT * FROM conversationentity ORDER BY is_pinned DESC, update_at DESC")
     fun getAllPaging(): PagingSource<Int, ConversationEntity>

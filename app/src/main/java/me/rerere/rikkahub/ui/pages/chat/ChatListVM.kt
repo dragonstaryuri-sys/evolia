@@ -41,21 +41,9 @@ class ChatListVM(
 
     /**
      * 每个助手的最后一条消息内容
+     * 优化点：直接使用 repository 提供的轻量级 Flow，避免了昂贵的 Full Conversation 加载
      */
-    val assistantsLastMessages: StateFlow<Map<Uuid, String>> = settings
-        .flatMapLatest { settings ->
-            if (settings.assistants.isEmpty()) return@flatMapLatest flowOf(emptyMap())
-            combine(
-                settings.assistants.map { assistant ->
-                    conversationRepo.getConversationsOfAssistant(assistant.id)
-                        .map { conversations ->
-                            assistant.id to (conversations.firstOrNull { it.messageNodes.isNotEmpty() }?.lastMessageContent ?: "")
-                        }
-                }
-            ) { pairs ->
-                pairs.toMap()
-            }
-        }
+    val assistantsLastMessages: StateFlow<Map<Uuid, String>> = conversationRepo.getAssistantsLastMessagesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val conversations: Flow<PagingData<ConversationListItem>> = combine(

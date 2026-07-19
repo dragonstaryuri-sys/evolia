@@ -50,6 +50,26 @@ class ConversationRepository(
         private const val TAG = "ConversationRepo"
     }
 
+    /**
+     * 获取所有智能体的最后一条消息内容（高效版）
+     */
+    fun getAssistantsLastMessagesFlow(): Flow<Map<Uuid, String>> {
+        return conversationDAO.getAssistantsLastMessagesFlow()
+            .map { list ->
+                list.associate { result ->
+                    val content = result.content?.let { json ->
+                        try {
+                            JsonInstant.decodeFromString<UIMessage>(json).toContentText()
+                        } catch (e: Exception) {
+                            ""
+                        }
+                    } ?: ""
+                    Uuid.parse(result.assistantId) to content
+                }
+            }
+            .flowOn(Dispatchers.IO)
+    }
+
     // ✨ 新增：分页获取某个助手下的所有消息节点
     fun getMessagesOfAssistantPaging(assistantId: Uuid): Flow<PagingData<MessageNode>> = Pager(
         config = PagingConfig(
