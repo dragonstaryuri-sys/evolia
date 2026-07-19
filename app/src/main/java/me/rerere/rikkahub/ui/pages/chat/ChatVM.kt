@@ -12,6 +12,7 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
+import androidx.paging.filter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -49,6 +50,7 @@ import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlin.time.Duration.Companion.minutes
 
 
 private const val TAG = "ChatVM"
@@ -65,7 +67,6 @@ class ChatVM(
     private val memoryRepo: MemoryRepository,
     private val favoriteRepo: FavoriteRepository,
 ) : ViewModel() {
-
     suspend fun getFullMemoryContent(memoryId: Int, memoryType: Int): String? {
         return memoryRepo.getFullMemoryContent(memoryId, memoryType)
     }
@@ -96,10 +97,31 @@ class ChatVM(
         .flatMapLatest { chatService.getConversationFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
 
+    // 🌟 核心修改 1: 分页流。
+    // 分页流仅负责从数据库加载数据。由于 Paging 响应慢，不适合处理当前对话。
+    val uiMessagesPaging: Flow<PagingData<ChatUIItem>> = conversation
+        .map { it.assistantId }
+        .distinctUntilChanged()
+        .flatMapLatest { assistantId ->
+            conversationRepo.getMessagesOfAssistantPaging(assistantId)
+        }
+        .map { pagingData ->
+            pagingData.map { ChatUIItem.Message(it) as ChatUIItem }
+        }
+        .cachedIn(viewModelScope)
+
     sealed class ChatUIItem {
         data class Message(val node: MessageNode) : ChatUIItem()
         data class Separator(val text: String) : ChatUIItem()
     }
+
+    // 🌟 核心修改 2: 活跃消息列表 (直接从内存 Conversation 获取)
+    // 这样当用户点击发送，或者 AI 开始吐字（更新内存对象）时，UI 会立即重绘。
+    val activeMessages: StateFlow<List<ChatUIItem.Message>> = conversation
+        .map { conv ->
+            conv.messageNodes.reversed().map { ChatUIItem.Message(it) }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val assistantConvsFlow = conversation
         .map { it.assistantId }
@@ -111,43 +133,18 @@ class ChatVM(
     val uiMessages: StateFlow<List<ChatUIItem>> = combine(
         _currentActiveId,
         conversation,
-        assistantConvsFlow
-    ) { activeId, activeConv, dbConvs ->
-        val merged = dbConvs.map { if (it.id == activeConv.id) activeConv else it }
-        val finalConvs = if (merged.none { it.id == activeConv.id }) {
-            (merged + activeConv).sortedBy { it.createAt }
-        } else {
-            merged.sortedBy { it.createAt }
-        }
-
+        chatService.generatingNodeIds
+    ) { activeId, activeConv, generatingIds ->
         val items = mutableListOf<ChatUIItem>()
-        var hasSeenContent = false
-        finalConvs.forEachIndexed { index, c ->
-            val isCurrentActive = c.id == activeId
+        val filteredNodes = activeConv.messageNodes.filter { node ->
+            val msg = node.currentMessage
+            val isGenerating = generatingIds.contains(node.id)
+            val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
+            val isPlaceholder = node.messages.isEmpty()
 
-            // 过滤掉完全为空的消息节点
-            val filteredNodes = c.messageNodes.filter { node ->
-                val msg = node.currentMessage
-                if (msg.role == me.rerere.ai.core.MessageRole.ASSISTANT) {
-                    !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
-                } else {
-                    true
-                }
-            }
-
-            val hasContent = filteredNodes.isNotEmpty()
-
-            if (index > 0 && (hasContent || isCurrentActive)) {
-                if (hasSeenContent) {
-                    items.add(ChatUIItem.Separator("——— 已开启新话题 ———"))
-                }
-            }
-
-            if (hasContent) {
-                hasSeenContent = true
-            }
-            items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
+            hasContent || isGenerating || isPlaceholder
         }
+        items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
         items
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -741,6 +738,12 @@ class ChatVM(
             today -> context.getString(R.string.chat_page_today)
             yesterday -> context.getString(R.string.chat_page_yesterday)
             else -> date.toLocalString(date.year != today.year)
+        }
+    }
+
+    fun loadMore() {
+        viewModelScope.launch {
+            chatService.loadMoreHistory(_currentActiveId.value)
         }
     }
 }

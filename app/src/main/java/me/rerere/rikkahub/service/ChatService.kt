@@ -165,6 +165,36 @@ class ChatService(
     val isForeground: StateFlow<Boolean> = _isForeground.asStateFlow()
 
     private val _syncingConversationIds = MutableStateFlow<Set<Uuid>>(emptySet())
+
+    private val _generatingNodeIds = MutableStateFlow<Set<Uuid>>(emptySet())
+    val generatingNodeIds: StateFlow<Set<Uuid>> = _generatingNodeIds.asStateFlow()
+    suspend fun loadMoreHistory(conversationId: Uuid) {
+        // 1. 先从 ConcurrentHashMap 中获取对应的 MutableStateFlow，然后再取其 .value
+        val currentConv = conversations[conversationId]?.value ?: return
+
+        // 2. 找出已经有具体消息内容的节点 ID
+        val loadedIds = currentConv.messageNodes
+            .filter { it.messages.isNotEmpty() }
+            .map { it.id }
+            .toSet()
+
+        // 3. 从 Repository 加载更多历史消息内容
+        val moreNodes = conversationRepo.loadMoreMessages(conversationId, loadedIds)
+
+        if (moreNodes.isNotEmpty()) {
+            updateConversation(conversationId) { old ->
+                // 将新加载的消息内容合并回现有的节点列表中
+                val newMap = moreNodes.associateBy { it.id }
+                val mergedNodes = old.messageNodes.map { existingNode ->
+                    // 如果这个节点在“新加载”的列表里，就用带内容的节点替换掉原来空的节点
+                    newMap[existingNode.id] ?: existingNode
+                }
+                old.copy(messageNodes = mergedNodes)
+            }
+        }
+    }
+    fun isNodeBeingGenerated(nodeId: Uuid): Boolean = generatingNodeIds.value.contains(nodeId)
+
     val syncingConversationIds: StateFlow<Set<Uuid>> = _syncingConversationIds.asStateFlow()
 
     private var lastConversationId: Uuid? = null
@@ -1067,6 +1097,9 @@ class ChatService(
                         includeSkipContextMessages = includeSkipContextMessages,
                         conversationId = conversationId
                     ).onCompletion {
+                        _generatingNodeIds.update { old ->
+                            old - currentConversation.messageNodes.map { it.id }.toSet()
+                        }
                         val duration = firstTokenTime?.let { System.currentTimeMillis() - it }
                         updateConversation(conversationId) { old ->
                             val finalUpdated = old.copy(
@@ -1099,6 +1132,10 @@ class ChatService(
                                 msg.copy(id = processMessageIds.getOrPut(index) { msg.id })
                             }
                             if (newMessages.isEmpty()) return@collect
+                            val nodesBeingGenerated = conversationSnapshot.messageNodes
+                                .filter { n -> newMessages.any { m -> n.messages.any { nm -> nm.id == m.id } } }
+                                .map { it.id }.toSet()
+                            _generatingNodeIds.update { it + nodesBeingGenerated }
 
                             val lastAI = finalMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
                             val lastAiMsg = newMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
@@ -1308,7 +1345,6 @@ class ChatService(
         val count = conversationRepo.countNewMessages(id.toString(), conv.lastSummarizedMessageTime)
         if (count >= max) summarizeAndRefresh(id, skipArchive = true)
     }
-
     suspend fun summarizeAndRefresh(
         id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {

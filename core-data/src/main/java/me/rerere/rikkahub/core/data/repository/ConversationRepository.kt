@@ -45,9 +45,34 @@ class ConversationRepository(
     private val scheduleDAO: ScheduleDAO,
 ) {
     companion object {
-        private const val PAGE_SIZE = 20
-        private const val INITIAL_LOAD_SIZE = 40
+        private const val PAGE_SIZE = 30
+        private const val INITIAL_LOAD_SIZE = 60
         private const val TAG = "ConversationRepo"
+    }
+
+    // ✨ 新增：分页获取某个助手下的所有消息节点
+    fun getMessagesOfAssistantPaging(assistantId: Uuid): Flow<PagingData<MessageNode>> = Pager(
+        config = PagingConfig(
+            pageSize = PAGE_SIZE,
+            initialLoadSize = INITIAL_LOAD_SIZE,
+            enablePlaceholders = true, // 允许占位符，解决卡顿
+            prefetchDistance = 10
+        ),
+        pagingSourceFactory = { chatMessageDAO.getNodesOfAssistantPaging(assistantId.toString()) }
+    ).flow.map { pagingData ->
+        pagingData.map { nodeEntity ->
+            // 这里我们只加载节点信息，内容由二级缓存或延迟解析处理
+            // 注意：为了极致性能，内容解析可以在 UI 层用到时再解析，或者在这里通过 chatMessageDAO 补充
+            val messages = chatMessageDAO.getMessagesByNodeId(nodeEntity.id)
+                .filter { !it.isDeleted }
+                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+
+            MessageNode(
+                id = Uuid.parse(nodeEntity.id),
+                messages = messages,
+                selectIndex = nodeEntity.selectIndex
+            )
+        }
     }
 
     suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10): List<Conversation> {
@@ -170,16 +195,23 @@ class ConversationRepository(
             val convIds = entities.map { it.id }
 
             val allNodes = chatMessageDAO.getNodesByConversationIds(convIds).groupBy { it.conversationId }
-            val allMessages = chatMessageDAO.getMessagesByConversationIds(convIds).groupBy { it.nodeId }
+            val nodeIdsToLoad = allNodes.values.flatMap { nodes ->
+                nodes.sortedBy { it.orderIndex }.takeLast(30).map { it.id }
+            }
+            val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
+                chatMessageDAO.getMessagesByNodeIds(nodeIdsToLoad).groupBy { it.nodeId }
+            } else emptyMap()
 
             entities.map { entity ->
                 // 1. 获取新表中的消息
                 val nodesFromDb = allNodes[entity.id] ?: emptyList()
                 val messageNodes = nodesFromDb.map { nodeEntity ->
+                    // 如果该节点在本次分页加载范围内，解析其内容；否则暂留空列表
                     val messages = allMessages[nodeEntity.id]
                         ?.filter { !it.isDeleted }
                         ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
                         ?: emptyList()
+
                     MessageNode(
                         id = Uuid.parse(nodeEntity.id),
                         messages = messages,
@@ -210,6 +242,39 @@ class ConversationRepository(
                 conversationEntityToConversation(entity, finalNodes)
             }
         }
+
+    /**
+     * 加载更多历史消息
+     * @param conversationId 会话 ID
+     * @param alreadyLoadedNodeIds 已经加载过消息内容的节点 ID 集合
+     */
+    suspend fun loadMoreMessages(conversationId: Uuid, alreadyLoadedNodeIds: Set<Uuid>): List<MessageNode> = withContext(Dispatchers.IO) {
+        // 1. 获取该会话的所有节点
+        val allNodes = chatMessageDAO.getNodesByConversationId(conversationId.toString())
+
+        // 2. 找到还没加载内容的节点，并取其中最近的 50 个
+        val pendingNodes = allNodes.filter { Uuid.parse(it.id) !in alreadyLoadedNodeIds }
+            .sortedByDescending { it.orderIndex }
+            .take(50)
+
+        if (pendingNodes.isEmpty()) return@withContext emptyList()
+
+        // 3. 加载这些节点的消息内容
+        val messagesMap = chatMessageDAO.getMessagesByNodeIds(pendingNodes.map { it.id }).groupBy { it.nodeId }
+
+        pendingNodes.map { nodeEntity ->
+            val messages = messagesMap[nodeEntity.id]
+                ?.filter { !it.isDeleted }
+                ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+                ?: emptyList()
+
+            MessageNode(
+                id = Uuid.parse(nodeEntity.id),
+                messages = messages,
+                selectIndex = nodeEntity.selectIndex
+            )
+        }
+    }
 
     /**
      * 强制迁移所有尚未拆表的会话数据。

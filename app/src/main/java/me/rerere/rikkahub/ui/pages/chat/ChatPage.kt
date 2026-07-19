@@ -64,6 +64,7 @@ import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.CallStatus
+import androidx.paging.compose.collectAsLazyPagingItems
 
 @Composable
 fun ChatPage(
@@ -210,6 +211,23 @@ private fun ChatPageContent(
 ) {
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
 
+    // 自动分页加载历史记录逻辑
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val layoutInfo = chatListState.layoutInfo
+            val totalItemsCount = layoutInfo.totalItemsCount
+            val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            // 在反向布局中，索引 0 在底部，最大的索引在顶部（历史端）
+            totalItemsCount > 0 && lastVisibleItemIndex >= totalItemsCount - 5
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) {
+            vm.loadMore()
+        }
+    }
+
     // Track messages that are visually animating (bubbles popping up in WeChat mode)
     val animatingMessages = remember(conversation.id) { mutableStateMapOf<Uuid, Boolean>() }
     val isAnyMessageAnimating = animatingMessages.values.any { it }
@@ -260,7 +278,10 @@ private fun ChatPageContent(
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
 
-    val uiMessages by vm.uiMessages.collectAsStateWithLifecycle()
+    val uiPagingMessages = vm.uiMessagesPaging.collectAsLazyPagingItems()
+    // ✨ 新增：收集活跃消息列表
+    val activeMessages by vm.activeMessages.collectAsStateWithLifecycle()
+
     val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
     val isConsolidating by vm.isConsolidating.collectAsStateWithLifecycle()
 
@@ -390,7 +411,8 @@ private fun ChatPageContent(
                     ChatList(
                         innerPadding = PaddingValues(top = topMessagePadding, bottom = 100.dp),
                         conversation = conversation,
-                        uiItems = uiMessages,
+                        activeMessages = activeMessages, // ✨ 传递活跃消息
+                        uiItems = uiPagingMessages,
                         state = chatListState,
                         loading = loadingJob != null,
                         previewMode = previewMode,

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.core.data.db.dao
 
+import androidx.paging.PagingSource
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.core.data.db.entity.ChatMessageEntity
@@ -33,6 +34,9 @@ interface ChatMessageDAO {
 
     @Query("SELECT * FROM chat_messages WHERE node_id = :nodeId ORDER BY order_index ASC")
     suspend fun getMessagesByNodeId(nodeId: String): List<ChatMessageEntity>
+
+    @Query("SELECT * FROM chat_messages WHERE node_id IN (:nodeIds)")
+    suspend fun getMessagesByNodeIds(nodeIds: List<String>): List<ChatMessageEntity>
 
     @Query("SELECT * FROM chat_messages WHERE conversation_id = :conversationId")
     suspend fun getAllMessagesByConversationId(conversationId: String): List<ChatMessageEntity>
@@ -92,4 +96,12 @@ interface ChatMessageDAO {
         ORDER BY created_at DESC
     """)
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
+
+    // ✨ 新增：支持分页加载某个助手下所有会话的消息节点
+    @Query("""
+        SELECT * FROM chat_message_nodes
+        WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId)
+        ORDER BY (SELECT update_at FROM conversationentity WHERE id = conversation_id) DESC, order_index DESC
+    """)
+    fun getNodesOfAssistantPaging(assistantId: String): PagingSource<Int, ChatMessageNodeEntity>
 }
