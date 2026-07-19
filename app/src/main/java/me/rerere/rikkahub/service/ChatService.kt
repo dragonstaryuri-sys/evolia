@@ -523,8 +523,11 @@ class ChatService(
             if (!assistant.enableMemoryConsolidation && !force) return
 
             val baseSummary = existingEpisode?.content
-            val newMessagesEntities =
-                conversationRepo.getMessagesForSummary(conversationId.toString(), existingEpisode?.endTime ?: 0L)
+            val newMessagesEntities = conversationRepo.getMessagesForSummary(
+                conversationId.toString(),
+                existingEpisode?.endTime ?: 0L,
+                limit = 300
+            )
             val newMessages = newMessagesEntities.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
 
             if (newMessages.isEmpty() && baseSummary != null && !force) {
@@ -1313,92 +1316,94 @@ class ChatService(
             Log.d(TAG, "summarizeAndRefresh: Archiving for $id already in progress, skipping.")
             return@withContext ContextRefreshResult(false, errorMessage = "正在总结中...请勿重复操作")
         }
+        var totalSummarized = 0
         try {
-            val settings = settingsStore.settingsFlow.first()
-            val conv = conversationRepo.getConversationById(id) ?: return@withContext ContextRefreshResult(
-                false,
-                errorMessage = "会话不存在"
-            )
-            val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
-            val toSummarizeEntities =
-                conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime)
+            while (true) {
+                val settings = settingsStore.settingsFlow.first()
+                    val conv = conversationRepo.getConversationById(id) ?: break
+                val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
+                val toSummarizeEntities =
+                    conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime,100)
 
-            if (toSummarizeEntities.size < 2) {
-                return@withContext ContextRefreshResult(false, errorMessage = "当前没有足够的新消息需要压缩")
-            }
-            val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
-            val model = settings.findModelById(modelId)
-                ?: assistant.chatModelId?.let { settings.findModelById(it) }
-                ?: settings.getCurrentChatModel()
-                ?: return@withContext ContextRefreshResult(false, errorMessage = "没有找到可用模型")
-            val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
-            val handler = providerManager.getProviderByType(provider)
-            val text = StringBuilder().apply {
-                toSummarizeEntities.forEach { entity ->// 解析出 UIMessage 对象
-                    val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
-                    append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
-                }
-            }.toString()
-            val locale = Locale.getDefault().displayName
-            val tempPrompt = fillPrompt(
-                DEFAULT_TEMP_SUMMARY_PROMPT, mapOf(
-                    "new_messages" to text,
-                    "locale" to locale,
-                    "char" to assistant.name
+                    if (toSummarizeEntities.size < 2) break
+                val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
+                val model = settings.findModelById(modelId)
+                    ?: assistant.chatModelId?.let { settings.findModelById(it) }
+                    ?: settings.getCurrentChatModel()
+                    ?: return@withContext ContextRefreshResult(false, errorMessage = "没有找到可用模型")
+                val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
+                val handler = providerManager.getProviderByType(provider)
+                val text = StringBuilder().apply {
+                    toSummarizeEntities.forEach { entity ->// 解析出 UIMessage 对象
+                        val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
+                        append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
+                    }
+                }.toString()
+                val locale = Locale.getDefault().displayName
+                val tempPrompt = fillPrompt(
+                    DEFAULT_TEMP_SUMMARY_PROMPT, mapOf(
+                        "new_messages" to text,
+                        "locale" to locale,
+                        "char" to assistant.name
+                    )
                 )
-            )
-            val providerHandler = handler as Provider<ProviderSetting>
-            val tempResp = providerHandler.generateText(
-                provider,
-                listOf(UIMessage.user(tempPrompt)),
-                TextGenerationParams(model, 0.3f, 1.0f, thinkingBudget = 0)
-            )
-            tempResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
-            val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
-            if (aiResponse.isNotBlank()) {
-                val backgroundRegex = Regex("""\[(?:Background|背景)][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-                val keywordsRegex = Regex("""\[(?:Keywords|关键词)][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-                val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-                val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-                val finalBackground =
-                    backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
-                    ?: aiResponse
-                val aiKeywords = keywordsMatch ?: ""
-                val fullContextualContent = """
-                    [Background]: $finalBackground
-                    [Original Text]:
-                    $text
-                """.trimIndent()
-                val localKeywords = KeywordExtractor.extract(finalBackground)
-                val keywords = mergeKeywords(aiKeywords, localKeywords)
-                val embeddingResult = try {
-                    embeddingService.embedWithModelId(fullContextualContent, assistant.id.toString())
-                } catch (e: Exception) {
-                    null
-                }
-                val segment = ChatSegmentEntity(
-                    assistantId = assistant.id.toString(),
-                    conversationId = id.toString(),
-                    content = finalBackground,
-                    keywords = keywords,
-                    startMessageIndex = -1,
-                    endMessageIndex = -1,
-                    startTime = toSummarizeEntities.first().createdAt,
-                    endTime = toSummarizeEntities.last().createdAt,
-                    embedding = embeddingResult?.embeddings?.firstOrNull()?.let { VectorUtils.fromList(it) },
-                    embeddingModelId = embeddingResult?.modelId
+                val providerHandler = handler as Provider<ProviderSetting>
+                val tempResp = providerHandler.generateText(
+                    provider,
+                    listOf(UIMessage.user(tempPrompt)),
+                    TextGenerationParams(model, 0.3f, 1.0f, thinkingBudget = 0)
                 )
-                memoryRepository.saveSegment(segment)
+                tempResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
+                val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
+                if (aiResponse.isNotBlank()) {
+                    val backgroundRegex = Regex("""\[(?:Background|背景)][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                    val keywordsRegex = Regex("""\[(?:Keywords|关键词)][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                    val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                    val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                    val finalBackground =
+                        backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
+                        ?: aiResponse
+                    val aiKeywords = keywordsMatch ?: ""
+                    val fullContextualContent = """
+                        [Background]: $finalBackground
+                        [Original Text]:
+                        $text
+                    """.trimIndent()
+                    val localKeywords = KeywordExtractor.extract(finalBackground)
+                    val keywords = mergeKeywords(aiKeywords, localKeywords)
+                    val embeddingResult = try {
+                        embeddingService.embedWithModelId(fullContextualContent, assistant.id.toString())
+                    } catch (e: Exception) {
+                        null
+                    }
+                    val segment = ChatSegmentEntity(
+                        assistantId = assistant.id.toString(),
+                        conversationId = id.toString(),
+                        content = finalBackground,
+                        keywords = keywords,
+                        startMessageIndex = -1,
+                        endMessageIndex = -1,
+                        startTime = toSummarizeEntities.first().createdAt,
+                        endTime = toSummarizeEntities.last().createdAt,
+                        embedding = embeddingResult?.embeddings?.firstOrNull()?.let { VectorUtils.fromList(it) },
+                        embeddingModelId = embeddingResult?.modelId
+                    )
+                    memoryRepository.saveSegment(segment)
+                }
+                val lastMsgTime = toSummarizeEntities.last().createdAt
+                val updated = conv.copy(
+                    lastSummarizedMessageTime = lastMsgTime,
+                    lastRefreshTime = System.currentTimeMillis()
+                )
+                conversationRepo.updateConversation(updated)
+                    updateConversation(id) { updated }
+                    totalSummarized += toSummarizeEntities.size
+                    if (toSummarizeEntities.size < 100) break
             }
-            val lastMsgTime = toSummarizeEntities.last().createdAt
-            val updated = conv.copy(
-                lastSummarizedMessageTime = lastMsgTime,
-                lastRefreshTime = System.currentTimeMillis()
-            )
-            conversationRepo.updateConversation(updated)
-            updateConversation(id) { updated }
-            if (!skipArchive) archiveConversation(id, force = true, skipEmbedding = true)
-            ContextRefreshResult(true, "Segments updated", toSummarizeEntities.size)
+            if (!skipArchive) {
+                archiveConversation(id, force = true, skipEmbedding = true)
+            }
+            ContextRefreshResult(true, "Segments updated", totalSummarized)
         } catch (e: Exception) {
             Log.e(TAG, "summarizeAndRefresh failed for $id", e)
             ContextRefreshResult(false, errorMessage = e.message)

@@ -17,7 +17,7 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index ASC")
     suspend fun getNodesByConversationId(conversationId: String): List<ChatMessageNodeEntity>
 
-    // 补齐这个方法：批量获取多个会话的所有节点
+    // 批量获取多个会话的所有节点
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id IN (:conversationIds) ORDER BY order_index ASC")
     suspend fun getNodesByConversationIds(conversationIds: List<String>): List<ChatMessageNodeEntity>
 
@@ -68,8 +68,8 @@ interface ChatMessageDAO {
     @Query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0")
     suspend fun countNewMessages(convId: String, lastTime: Long): Int
 
-    @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC")
-    suspend fun getMessagesForSummary(convId: String, lastTime: Long): List<ChatMessageEntity>
+    @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC LIMIT :limit")
+    suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
 
     @Query("UPDATE chat_messages SET is_deleted = 1 WHERE id = :messageId")
     suspend fun markMessageAsDeleted(messageId: String)

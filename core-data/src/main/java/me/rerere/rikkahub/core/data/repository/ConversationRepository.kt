@@ -546,7 +546,7 @@ class ConversationRepository(
     /**
      * 获取指定时间戳之后的消息列表用于总结
      */
-    suspend fun getMessagesForSummary(convId: String, lastTime: Long): List<ChatMessageEntity> {
-        return chatMessageDAO.getMessagesForSummary(convId, lastTime)
+    suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int = 100): List<ChatMessageEntity> {
+        return chatMessageDAO.getMessagesForSummary(convId, lastTime, limit)
     }
 }
