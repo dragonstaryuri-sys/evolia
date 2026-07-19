@@ -169,27 +169,35 @@ class ChatService(
     private val _generatingNodeIds = MutableStateFlow<Set<Uuid>>(emptySet())
     val generatingNodeIds: StateFlow<Set<Uuid>> = _generatingNodeIds.asStateFlow()
     suspend fun loadMoreHistory(conversationId: Uuid) {
-        // 1. 先从 ConcurrentHashMap 中获取对应的 MutableStateFlow，然后再取其 .value
         val currentConv = conversations[conversationId]?.value ?: return
 
-        // 2. 找出已经有具体消息内容的节点 ID
-        val loadedIds = currentConv.messageNodes
+        // 1. 获取已解析内容的 ID 集合
+        val loadedContentIds = currentConv.messageNodes
             .filter { it.messages.isNotEmpty() }
-            .map { it.id }
-            .toSet()
+            .map { it.id }.toSet()
 
-        // 3. 从 Repository 加载更多历史消息内容
-        val moreNodes = conversationRepo.loadMoreMessages(conversationId, loadedIds)
+        // 2. 获取内存中已存在的节点 ID 集合 (含占位符)
+        val existingNodeIds = currentConv.messageNodes.map { it.id }.toSet()
+
+        // 3. 触发数据库加载
+        val moreNodes = conversationRepo.loadMoreMessages(conversationId, loadedContentIds)
 
         if (moreNodes.isNotEmpty()) {
             updateConversation(conversationId) { old ->
-                // 将新加载的消息内容合并回现有的节点列表中
                 val newMap = moreNodes.associateBy { it.id }
-                val mergedNodes = old.messageNodes.map { existingNode ->
-                    // 如果这个节点在“新加载”的列表里，就用带内容的节点替换掉原来空的节点
-                    newMap[existingNode.id] ?: existingNode
+
+                // A. 更新内存中已有的占位节点内容（将空节点替换为有内容的节点）
+                val updatedNodes = old.messageNodes.map { node ->
+                    newMap[node.id] ?: node
                 }
-                old.copy(messageNodes = mergedNodes)
+
+                // B. 找出那些完全不在内存里的历史节点（更早之前的消息）
+                val nodesToPrepend = moreNodes.filter { it.id !in existingNodeIds }
+
+                // C. 合并：[新的历史节点] + [更新后的现有节点]
+                // 注意：这里需要保持 orderIndex 升序，所以直接 Prepend
+                val finalNodes = (nodesToPrepend + updatedNodes).distinctBy { it.id }
+                old.copy(messageNodes = finalNodes)
             }
         }
     }

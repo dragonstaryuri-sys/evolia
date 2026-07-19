@@ -232,12 +232,16 @@ class ConversationRepository(
             if (entities.isEmpty()) return@withContext emptyList()
             val convIds = entities.map { it.id }
 
-            val allNodes = chatMessageDAO.getNodesByConversationIds(convIds).groupBy { it.conversationId }
+            val allNodesRaw = chatMessageDAO.getNodesByConversationIds(convIds).groupBy { it.conversationId }
 
-            // 【关键修改】：不再限制 30 条。
-            // 既然我们要完整显示会话内容，就应该加载该会话下的所有节点消息。
+            // 【内存优化】：初次仅从数据库加载最后 200 个节点，避免内存堆积
+            val allNodes = allNodesRaw.mapValues { (_, nodes) ->
+                nodes.sortedBy { it.orderIndex }.takeLast(200)
+            }
+
+            // 【性能优化】：初次仅加载最后 100 条消息具体内容，加快解析速度
             val nodeIdsToLoad = allNodes.values.flatMap { nodes ->
-                nodes.sortedBy { it.orderIndex }.takeLast(500).map { it.id }
+                nodes.takeLast(100).map { it.id }
             }
 
             val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
@@ -263,7 +267,7 @@ class ConversationRepository(
                 // 2. 获取旧字段中的消息
                 val oldNodes = try {
                     if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
-                        JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes)
+                        JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes).takeLast(200)
                     } else emptyList()
                 } catch (e: Exception) {
                     Log.e(TAG, "解析旧节点失败: ${entity.id}", e)
@@ -296,7 +300,7 @@ class ConversationRepository(
         // 2. 找到还没加载内容的节点，并取其中最近的 50 个
         val pendingNodes = allNodes.filter { Uuid.parse(it.id) !in alreadyLoadedNodeIds }
             .sortedByDescending { it.orderIndex }
-            .take(50)
+            .takeLast(50)
 
         if (pendingNodes.isEmpty()) return@withContext emptyList()
 

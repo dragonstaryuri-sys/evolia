@@ -50,9 +50,8 @@ data class Conversation(
         }
 
     val currentMessages
-        get(): List<UIMessage> = messageNodes.map { node ->
+        get(): List<UIMessage> = messageNodes.mapNotNull { node ->
             node.messages.getOrNull(node.selectIndex) ?: node.messages.lastOrNull()
-            ?: UIMessage.system("Error: Message missing")
         }
 
     /**
@@ -87,7 +86,11 @@ data class Conversation(
                 val node = newNodes[existingNodeIndex]
                 val updatedMessages = node.messages.toMutableList()
                 val msgIndex = updatedMessages.indexOfFirst { it.id == messageWithTag.id }
-                updatedMessages[msgIndex] = messageWithTag
+                if (msgIndex != -1) {
+                    updatedMessages[msgIndex] = messageWithTag
+                } else {
+                    updatedMessages.add(messageWithTag)
+                }
                 newNodes[existingNodeIndex] = node.copy(messages = updatedMessages)
             } else {
                 // 3. 只要是新 ID，就添加为新节点

@@ -67,21 +67,26 @@ class ChatVM(
     private val memoryRepo: MemoryRepository,
     private val favoriteRepo: FavoriteRepository,
 ) : ViewModel() {
-    private val _activeMessageLimit = MutableStateFlow(200)
+    // ✨ 初始限制改为 100，与数据库初次加载量对齐
+    private val _activeMessageLimit = MutableStateFlow(100)
 
     // 标记是否正在增加限制（加载中动画）
     private val _isInternalLoadingMore = MutableStateFlow(false)
     val isInternalLoadingMore = _isInternalLoadingMore.asStateFlow()
     fun loadMoreActiveMessages() {
         val currentConv = conversation.value
-        if (_activeMessageLimit.value < currentConv.messageNodes.size) {
-            viewModelScope.launch {
-                _isInternalLoadingMore.value = true
-                // 模拟或等待微小延迟让体验更平滑
-                delay(300)
-                _activeMessageLimit.value += 100 // 每次向上加载 100 条
-                _isInternalLoadingMore.value = false
+        viewModelScope.launch {
+            _isInternalLoadingMore.value = true
+
+            // ✨ 核心逻辑：如果 UI 想要显示的更多，但内存中没有加载内容（只有空节点），则触发真正的历史内容加载
+            val loadedContentCount = currentConv.messageNodes.count { it.messages.isNotEmpty() }
+            if (_activeMessageLimit.value + 50 > loadedContentCount) {
+                chatService.loadMoreHistory(_currentActiveId.value)
             }
+
+            delay(300)
+            _activeMessageLimit.value += 100 // 每次向上加载 100 条
+            _isInternalLoadingMore.value = false
         }
     }
     suspend fun getFullMemoryContent(memoryId: Int, memoryType: Int): String? {
@@ -155,17 +160,27 @@ class ChatVM(
         _activeMessageLimit // 使用你定义的限制状态
     ) { activeConv, generatingIds, limit ->
         val items = mutableListOf<ChatUIItem>()
-        // 过滤逻辑（排除空消息或跳过上下文的消息）
+        // ✨ 改进过滤逻辑：仅包含有内容的节点或正在生成的节点
         val filteredNodes = activeConv.messageNodes.filter { node ->
-            val msg = node.currentMessage
             val isGenerating = generatingIds.contains(node.id)
+            val hasMessages = node.messages.isNotEmpty()
+
+            // 如果既没内容也没在生成，说明是还没加载的历史占位符，不直接显示在消息流中
+            if (!hasMessages && !isGenerating) return@filter false
+
+            val msg = node.currentMessage
             val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
-            val isPlaceholder = node.messages.isEmpty()
-            (hasContent || isGenerating || isPlaceholder) && !msg.skipContext
+
+            (hasContent || isGenerating) && !msg.skipContext
         }
 
-        val hasMore = filteredNodes.size > limit
-        // 🌟 关键：取最后 limit 条，然后反转（因为 UI 是 reverseLayout，最新的排在 Index 0）
+        // ✨ hasMore 逻辑：
+        // 1. 内存中已经加载的（有内容的）节点数超过了 UI 限制
+        // 2. 或者 Conversation 对象中还有完全没加载内容的占位节点
+        val hasMoreInMem = filteredNodes.size > limit
+        val hasUnloadedNodes = activeConv.messageNodes.any { it.messages.isEmpty() && !generatingIds.contains(it.id) }
+        val hasMore = hasMoreInMem || hasUnloadedNodes
+
         val nodesToShow = filteredNodes.takeLast(limit).reversed()
 
         items.addAll(nodesToShow.map { ChatUIItem.Message(it) })
