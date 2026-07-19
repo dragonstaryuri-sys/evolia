@@ -210,6 +210,8 @@ private fun ChatPageContent(
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
+    // ✨ 新增：收集历史加载状态
+    val isHistoryLoading by vm.isHistoryLoading.collectAsStateWithLifecycle()
 
     // 自动分页加载历史记录逻辑
     val shouldLoadMore by remember {
@@ -279,7 +281,7 @@ private fun ChatPageContent(
     val topMessagePadding = 72.dp
 
     val uiPagingMessages = vm.uiMessagesPaging.collectAsLazyPagingItems()
-    // ✨ 新增：收集活跃消息列表
+    // ✨ 收集活跃消息列表
     val activeMessages by vm.activeMessages.collectAsStateWithLifecycle()
 
     val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
@@ -411,8 +413,9 @@ private fun ChatPageContent(
                     ChatList(
                         innerPadding = PaddingValues(top = topMessagePadding, bottom = 100.dp),
                         conversation = conversation,
-                        activeMessages = activeMessages, // ✨ 传递活跃消息
+                        activeMessages = activeMessages,
                         uiItems = uiPagingMessages,
+                        isHistoryLoading = isHistoryLoading, // ✨ 传递给 ChatList
                         state = chatListState,
                         loading = loadingJob != null,
                         previewMode = previewMode,

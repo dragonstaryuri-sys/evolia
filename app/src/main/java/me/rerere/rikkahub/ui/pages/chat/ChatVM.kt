@@ -72,12 +72,16 @@ class ChatVM(
     }
     private val anchorConversationId: Uuid = Uuid.parse(id)
 
-    // 内存中的“当前活跃 ID”，它是发送消息的唯一目标
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
 
     val isAiTyping: StateFlow<Boolean> = _currentActiveId
         .flatMapLatest { id -> chatService.getAiTypingFlow(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    // 🌟 修改：手动维护历史加载状态，避免 Paging loadState 的延迟
+    private val _isHistoryLoading = MutableStateFlow(false)
+    val isHistoryLoading: StateFlow<Boolean> = _isHistoryLoading.asStateFlow()
+
     private val activeConversationIds = ConcurrentHashMap.newKeySet<Uuid>()
 
     private val _isConversationLoaded = MutableStateFlow(false)
@@ -97,8 +101,6 @@ class ChatVM(
         .flatMapLatest { chatService.getConversationFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
 
-    // 🌟 核心修改 1: 分页流。
-    // 分页流仅负责从数据库加载数据。由于 Paging 响应慢，不适合处理当前对话。
     val uiMessagesPaging: Flow<PagingData<ChatUIItem>> = conversation
         .map { it.assistantId }
         .distinctUntilChanged()
@@ -115,8 +117,6 @@ class ChatVM(
         data class Separator(val text: String) : ChatUIItem()
     }
 
-    // 🌟 核心修改 2: 活跃消息列表 (直接从内存 Conversation 获取)
-    // 这样当用户点击发送，或者 AI 开始吐字（更新内存对象）时，UI 会立即重绘。
     val activeMessages: StateFlow<List<ChatUIItem.Message>> = conversation
         .map { conv ->
             conv.messageNodes.reversed().map { ChatUIItem.Message(it) }
@@ -141,7 +141,6 @@ class ChatVM(
             val isGenerating = generatingIds.contains(node.id)
             val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
             val isPlaceholder = node.messages.isEmpty()
-
             hasContent || isGenerating || isPlaceholder
         }
         items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
@@ -743,7 +742,13 @@ class ChatVM(
 
     fun loadMore() {
         viewModelScope.launch {
-            chatService.loadMoreHistory(_currentActiveId.value)
+            if (_isHistoryLoading.value) return@launch
+            _isHistoryLoading.value = true
+            try {
+                chatService.loadMoreHistory(_currentActiveId.value)
+            } finally {
+                _isHistoryLoading.value = false
+            }
         }
     }
 }
