@@ -101,11 +101,9 @@ class ChatVM(
         .flatMapLatest { chatService.getConversationFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
 
-    val uiMessagesPaging: Flow<PagingData<ChatUIItem>> = conversation
-        .map { it.assistantId }
-        .distinctUntilChanged()
-        .flatMapLatest { assistantId ->
-            conversationRepo.getMessagesOfAssistantPaging(assistantId)
+    val uiMessagesPaging: Flow<PagingData<ChatUIItem>> = _currentActiveId
+        .flatMapLatest { conversationId ->
+            conversationRepo.getMessagesOfConversationPaging(conversationId)
         }
         .map { pagingData ->
             pagingData.map { ChatUIItem.Message(it) as ChatUIItem }

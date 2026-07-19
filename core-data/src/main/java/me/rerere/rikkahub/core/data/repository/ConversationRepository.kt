@@ -189,15 +189,37 @@ class ConversationRepository(
         return fetchFullConversations(listOf(entity)).first()
     }
 
+    fun getMessagesOfConversationPaging(conversationId: Uuid): Flow<PagingData<MessageNode>> = Pager(
+        config = PagingConfig(pageSize = 30, prefetchDistance = 10),
+        pagingSourceFactory = { chatMessageDAO.getNodesWithMessagesPaging(conversationId.toString()) }
+    ).flow.map { pagingData ->
+        pagingData.map { wrapper ->
+            val uiMessages = wrapper.messages
+                .filter { !it.isDeleted }
+                .sortedBy { it.orderIndex }
+                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+
+            MessageNode(
+                id = Uuid.parse(wrapper.node.id),
+                messages = uiMessages,
+                selectIndex = wrapper.node.selectIndex
+            )
+        }
+    }
+
     private suspend fun fetchFullConversations(entities: List<ConversationEntity>): List<Conversation> =
         withContext(Dispatchers.IO) {
             if (entities.isEmpty()) return@withContext emptyList()
             val convIds = entities.map { it.id }
 
             val allNodes = chatMessageDAO.getNodesByConversationIds(convIds).groupBy { it.conversationId }
+
+            // 【关键修改】：不再限制 30 条。
+            // 既然我们要完整显示会话内容，就应该加载该会话下的所有节点消息。
             val nodeIdsToLoad = allNodes.values.flatMap { nodes ->
-                nodes.sortedBy { it.orderIndex }.takeLast(30).map { it.id }
+                nodes.sortedBy { it.orderIndex }.takeLast(500).map { it.id }
             }
+
             val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
                 chatMessageDAO.getMessagesByNodeIds(nodeIdsToLoad).groupBy { it.nodeId }
             } else emptyMap()
@@ -206,7 +228,6 @@ class ConversationRepository(
                 // 1. 获取新表中的消息
                 val nodesFromDb = allNodes[entity.id] ?: emptyList()
                 val messageNodes = nodesFromDb.map { nodeEntity ->
-                    // 如果该节点在本次分页加载范围内，解析其内容；否则暂留空列表
                     val messages = allMessages[nodeEntity.id]
                         ?.filter { !it.isDeleted }
                         ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }

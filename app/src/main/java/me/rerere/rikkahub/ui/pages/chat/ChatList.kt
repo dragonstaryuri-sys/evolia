@@ -248,9 +248,9 @@ private fun SharedTransitionScope.ChatListNormal(
     ImeLazyListAutoScroller(lazyListState = state)
 
     val needsPhantomLoadingTurn = loading && (
-        (activeMessages.isEmpty() && uiItems.itemCount == 0) ||
+        (activeMessages.isEmpty() && uiItems.itemCount == 0 && uiItems.loadState.refresh !is LoadState.Loading) ||
             activeMessages.firstOrNull()?.node?.currentMessage?.role == MessageRole.USER
-    )
+        )
 
     LaunchedEffect(scrollToNodeId, activeMessages, uiItems.itemCount){
         val targetId = scrollToNodeId ?: return@LaunchedEffect

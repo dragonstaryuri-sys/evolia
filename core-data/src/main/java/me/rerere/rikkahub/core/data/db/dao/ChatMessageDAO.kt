@@ -104,4 +104,20 @@ interface ChatMessageDAO {
         ORDER BY (SELECT update_at FROM conversationentity WHERE id = conversation_id) DESC, order_index DESC
     """)
     fun getNodesOfAssistantPaging(assistantId: String): PagingSource<Int, ChatMessageNodeEntity>
+
+    @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index DESC")
+    fun getNodesOfConversationPaging(conversationId: String): PagingSource<Int, ChatMessageNodeEntity>
+
+    @Transaction // 关系查询必须加事务
+    @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index DESC")
+    fun getNodesWithMessagesPaging(conversationId: String): PagingSource<Int, MessageNodeWithMessages>
 }
+
+data class MessageNodeWithMessages(
+    @Embedded val node: ChatMessageNodeEntity,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "node_id"
+    )
+    val messages: List<ChatMessageEntity>
+)
