@@ -106,25 +106,6 @@ fun AssistantUISubPage(
             )
         }
 
-        // Message Jumper Settings
-        SettingsGroup(title = stringResource(R.string.assistant_ui_message_jumper_group)) {
-            TriStateSettingItem(
-                title = stringResource(R.string.setting_display_page_show_message_jumper_title),
-                subtitle = stringResource(R.string.setting_display_page_show_message_jumper_desc),
-                value = uiSettings.showMessageJumper,
-                globalValue = settings.displaySetting.showMessageJumper,
-                onValueChange = { updateUI(uiSettings.copy(showMessageJumper = it)) }
-            )
-
-            TriStateSettingItem(
-                title = stringResource(R.string.setting_display_page_message_jumper_position_title),
-                subtitle = stringResource(R.string.setting_display_page_message_jumper_position_desc),
-                value = uiSettings.messageJumperOnLeft,
-                globalValue = settings.displaySetting.messageJumperOnLeft,
-                onValueChange = { updateUI(uiSettings.copy(messageJumperOnLeft = it)) }
-            )
-        }
-
         // Code Blocks Settings
         SettingsGroup(title = stringResource(R.string.assistant_ui_code_blocks_group)) {
             TriStateSettingItem(

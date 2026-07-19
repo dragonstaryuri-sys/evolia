@@ -209,9 +209,9 @@ private fun ChatPageContent(
     targetMessageId: String? = null,
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
+    val isInternalLoadingMore by vm.isInternalLoadingMore.collectAsStateWithLifecycle()
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
     val isHistoryLoading by vm.isHistoryLoading.collectAsStateWithLifecycle()
-
     // 自动分页加载历史记录逻辑
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -421,6 +421,10 @@ private fun ChatPageContent(
                         ),
                         conversation = conversation,
                         activeMessages = activeMessages,
+                        isInternalLoadingMore = isInternalLoadingMore,
+                        onLoadMoreActiveMessages = {
+                            vm.loadMoreActiveMessages()
+                        },
                         uiItems = uiPagingMessages,
                         isHistoryLoading = isHistoryLoading,
                         state = chatListState,
@@ -880,7 +884,7 @@ private fun ChatPageContent(
                     }
 
                     // Voice Call Overlay
-                    androidx.compose.animation.AnimatedVisibility(
+                    AnimatedVisibility(
                         visible = isCallActive,
                         enter = fadeIn() + expandIn(expandFrom = Alignment.BottomCenter),
                         exit = fadeOut() + shrinkOut(shrinkTowards = Alignment.BottomCenter)

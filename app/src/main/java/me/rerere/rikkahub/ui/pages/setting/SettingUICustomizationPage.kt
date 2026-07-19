@@ -156,40 +156,6 @@ fun SettingUICustomizationPage(vm: SettingVM = koinViewModel()) {
                 }
             }
 
-            // Message Jumper Settings
-            item {
-                SettingsGroup(
-                    title = stringResource(R.string.ui_customization_message_jumper_title)
-                ) {
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_display_page_show_message_jumper_title),
-                        subtitle = stringResource(R.string.setting_display_page_show_message_jumper_desc),
-                        trailing = {
-                            HapticSwitch(
-                                checked = displaySetting.showMessageJumper,
-                                onCheckedChange = {
-                                    updateDisplaySetting(displaySetting.copy(showMessageJumper = it))
-                                }
-                            )
-                        }
-                    )
-                    if (displaySetting.showMessageJumper) {
-                        SettingGroupItem(
-                            title = stringResource(R.string.setting_display_page_message_jumper_position_title),
-                            subtitle = stringResource(R.string.setting_display_page_message_jumper_position_desc),
-                            trailing = {
-                                HapticSwitch(
-                                    checked = displaySetting.messageJumperOnLeft,
-                                    onCheckedChange = {
-                                        updateDisplaySetting(displaySetting.copy(messageJumperOnLeft = it))
-                                    }
-                                )
-                            }
-                        )
-                    }
-                }
-            }
-
             // Haptics Settings
             item {
                 SettingsGroup(

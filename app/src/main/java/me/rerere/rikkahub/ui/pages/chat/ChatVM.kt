@@ -14,6 +14,7 @@ import androidx.paging.insertSeparators
 import androidx.paging.map
 import androidx.paging.filter
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
@@ -50,7 +51,6 @@ import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-import kotlin.time.Duration.Companion.minutes
 
 
 private const val TAG = "ChatVM"
@@ -67,6 +67,23 @@ class ChatVM(
     private val memoryRepo: MemoryRepository,
     private val favoriteRepo: FavoriteRepository,
 ) : ViewModel() {
+    private val _activeMessageLimit = MutableStateFlow(200)
+
+    // 标记是否正在增加限制（加载中动画）
+    private val _isInternalLoadingMore = MutableStateFlow(false)
+    val isInternalLoadingMore = _isInternalLoadingMore.asStateFlow()
+    fun loadMoreActiveMessages() {
+        val currentConv = conversation.value
+        if (_activeMessageLimit.value < currentConv.messageNodes.size) {
+            viewModelScope.launch {
+                _isInternalLoadingMore.value = true
+                // 模拟或等待微小延迟让体验更平滑
+                delay(300)
+                _activeMessageLimit.value += 100 // 每次向上加载 100 条
+                _isInternalLoadingMore.value = false
+            }
+        }
+    }
     suspend fun getFullMemoryContent(memoryId: Int, memoryType: Int): String? {
         return memoryRepo.getFullMemoryContent(memoryId, memoryType)
     }
@@ -132,11 +149,35 @@ class ChatVM(
         data class Separator(val text: String) : ChatUIItem()
     }
 
-    val activeMessages: StateFlow<List<ChatUIItem.Message>> = conversation
-        .map { conv ->
-            conv.messageNodes.reversed().map { ChatUIItem.Message(it) }
+    val activeMessages: StateFlow<List<ChatUIItem>> = combine(
+        conversation,
+        chatService.generatingNodeIds,
+        _activeMessageLimit // 使用你定义的限制状态
+    ) { activeConv, generatingIds, limit ->
+        val items = mutableListOf<ChatUIItem>()
+        // 过滤逻辑（排除空消息或跳过上下文的消息）
+        val filteredNodes = activeConv.messageNodes.filter { node ->
+            val msg = node.currentMessage
+            val isGenerating = generatingIds.contains(node.id)
+            val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
+            val isPlaceholder = node.messages.isEmpty()
+            (hasContent || isGenerating || isPlaceholder) && !msg.skipContext
         }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+        val hasMore = filteredNodes.size > limit
+        // 🌟 关键：取最后 limit 条，然后反转（因为 UI 是 reverseLayout，最新的排在 Index 0）
+        val nodesToShow = filteredNodes.takeLast(limit).reversed()
+
+        items.addAll(nodesToShow.map { ChatUIItem.Message(it) })
+
+        // 如果还没加载完，在末尾添加“加载更多”分隔符
+        if (hasMore) {
+            items.add(ChatUIItem.Separator("查看更早的消息..."))
+        }else {
+            items.add(ChatUIItem.Separator(context.getString(R.string.chat_topic_started)))
+        }
+        items
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val assistantConvsFlow = conversation
         .map { it.assistantId }
@@ -145,22 +186,6 @@ class ChatVM(
             conversationRepo.getConversationsOfAssistant(assistantId)
         }
 
-    val uiMessages: StateFlow<List<ChatUIItem>> = combine(
-        _currentActiveId,
-        conversation,
-        chatService.generatingNodeIds
-    ) { activeId, activeConv, generatingIds ->
-        val items = mutableListOf<ChatUIItem>()
-        val filteredNodes = activeConv.messageNodes.filter { node ->
-            val msg = node.currentMessage
-            val isGenerating = generatingIds.contains(node.id)
-            val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
-            val isPlaceholder = node.messages.isEmpty()
-            hasContent || isGenerating || isPlaceholder
-        }
-        items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
-        items
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     var chatListInitialized by mutableStateOf(false)
 
@@ -186,7 +211,7 @@ class ChatVM(
     fun markNodesAsRestored(nodeIds: Set<Uuid>) {
         _recentlyRestoredNodeIds.value = _recentlyRestoredNodeIds.value + nodeIds
         viewModelScope.launch {
-            kotlinx.coroutines.delay(1000)
+            delay(1000)
             _recentlyRestoredNodeIds.value = _recentlyRestoredNodeIds.value - nodeIds
         }
     }

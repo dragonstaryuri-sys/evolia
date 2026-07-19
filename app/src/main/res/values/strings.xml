@@ -1784,5 +1784,6 @@
   <string name="setting_mcp_page_custom_server_desc">Manually enter name and URL</string>
   <string name="chat_page_search_result_title">Search Result</string>
   <string name="chat_page_return_to_chat">Return to Chat</string>
+  <string name="chat_topic_started">New topic started</string>
 
 </resources>

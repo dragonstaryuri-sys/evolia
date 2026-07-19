@@ -1747,4 +1747,5 @@
   <string name="setting_mcp_page_custom_server_desc">手动输入名称和 URL</string>
   <string name="chat_page_search_result_title">搜索结果</string>
   <string name="chat_page_return_to_chat">返回对话</string>
+  <string name="chat_topic_started">已开启新话题</string>
 </resources>

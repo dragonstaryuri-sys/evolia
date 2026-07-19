@@ -69,7 +69,9 @@ private const val ScrollBottomKey = "ScrollBottomKey"
 fun ChatList(
     innerPadding: PaddingValues,
     conversation: Conversation,
-    activeMessages: List<ChatVM.ChatUIItem.Message>,
+    activeMessages: List<ChatVM.ChatUIItem>, // 🌟 类型从 .Message 改为 .ChatUIItem
+    isInternalLoadingMore: Boolean = false, // 🌟 新增：内部加载状态
+    onLoadMoreActiveMessages: () -> Unit = {}, // 🌟 新增：加载回调
     uiItems: LazyPagingItems<ChatVM.ChatUIItem>,
     isHistoryLoading: Boolean,
     state: LazyListState,
@@ -98,7 +100,8 @@ fun ChatList(
 
     LaunchedEffect(initialSearchQuery, targetMessageId, uiItems.itemSnapshotList, activeMessages) {
         if (!targetMessageId.isNullOrBlank()) {
-            val activeNode = activeMessages.find { it.node.messages.any { msg -> msg.id.toString() == targetMessageId } }?.node
+            val activeNode = activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>()
+                .find { it.node.messages.any { msg -> msg.id.toString() == targetMessageId } }?.node
             if (activeNode != null) {
                 instantScroll = true
                 scrollToNodeId = activeNode.id
@@ -141,7 +144,6 @@ fun ChatList(
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize().alpha(if (isWaitingForJump) 0f else 1f)) {
-                    // ✨ 优化：如果正在全局同步，或者分页已经有数据了，就不显示这个大圆圈
                     val isInitialLoading = uiItems.loadState.refresh is LoadState.Loading && uiItems.itemCount == 0 && activeMessages.isEmpty() && !isSyncing
 
                     if (isInitialLoading) {
@@ -153,6 +155,8 @@ fun ChatList(
                             innerPadding = innerPadding,
                             conversation = conversation,
                             activeMessages = activeMessages,
+                            isInternalLoadingMore = isInternalLoadingMore,
+                            onLoadMoreActiveMessages = onLoadMoreActiveMessages,
                             uiItems = uiItems,
                             isHistoryLoading = isHistoryLoading,
                             state = state,
@@ -187,7 +191,9 @@ fun ChatList(
 private fun SharedTransitionScope.ChatListNormal(
     innerPadding: PaddingValues,
     conversation: Conversation,
-    activeMessages: List<ChatVM.ChatUIItem.Message>,
+    activeMessages: List<ChatVM.ChatUIItem>,
+    isInternalLoadingMore: Boolean,
+    onLoadMoreActiveMessages: () -> Unit,
     uiItems: LazyPagingItems<ChatVM.ChatUIItem>,
     isHistoryLoading: Boolean,
     state: LazyListState,
@@ -243,12 +249,12 @@ private fun SharedTransitionScope.ChatListNormal(
 
     val needsPhantomLoadingTurn = loading && (
         (activeMessages.isEmpty() && uiItems.itemCount == 0 && uiItems.loadState.refresh !is LoadState.Loading) ||
-            activeMessages.firstOrNull()?.node?.currentMessage?.role == MessageRole.USER
-    )
+            (activeMessages.firstOrNull() as? ChatVM.ChatUIItem.Message)?.node?.currentMessage?.role == MessageRole.USER
+        )
 
     LaunchedEffect(scrollToNodeId, activeMessages, uiItems.itemCount){
         val targetId = scrollToNodeId ?: return@LaunchedEffect
-        val activeIndex = activeMessages.indexOfFirst { it.node.id == targetId }
+        val activeIndex = activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>().indexOfFirst { it.node.id == targetId }
         if (activeIndex >= 0) {
             state.scrollToItem(activeIndex + 1)
             onScrolledToNode()
@@ -287,31 +293,53 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // 🌟 第一流：实时活跃消息
+            // 🌟 第一流：实时活跃消息（支持分页加载分隔符）
             itemsIndexed(
-                items = activeMessages.filter { !it.node.currentMessage.skipContext },
-                key = { _, item -> "active_${item.node.id}" }
-            ) { index, item ->
-                val node = item.node
-                val isLastTurn = index == 0
-                val nextItem = activeMessages.getOrNull(index + 1)
-                val shouldShowTime = nextItem == null || run {
-                    (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
-                        nextItem.node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
+                items = activeMessages,
+                key = { _, item ->
+                    when(item) {
+                        is ChatVM.ChatUIItem.Message -> "active_${item.node.id}"
+                        is ChatVM.ChatUIItem.Separator -> "active_separator"
+                    }
                 }
+            ) { index, item ->
+                when (item) {
+                    is ChatVM.ChatUIItem.Message -> {
+                        val node = item.node
+                        val isLastTurn = index == 0
+                        val nextItem = activeMessages.getOrNull(index + 1)
+                        val shouldShowTime = nextItem == null || (nextItem is ChatVM.ChatUIItem.Message && run {
+                            (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
+                                nextItem.node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
+                        })
 
-                MessageItemBox(
-                    node = node, isLastTurn = isLastTurn, shouldShowTime = shouldShowTime, loading = loading && isLastTurn,
-                    settings = settings, conversation = conversation, selecting = selecting, selectedItems = selectedItems,
-                    onCitationClick = onCitationClick, onRegenerate = onRegenerate, onEdit = onEdit, onDelete = onDelete,
-                    onUpdateMessage = onUpdateMessage, onGetFullMemoryContent = onGetFullMemoryContent, onAddFavorite = onAddFavorite,
-                    onTypingStateChange = onTypingStateChange, navController = navController, scope = scope,
-                    onMemoryLoading = { isMemoryLoading = it }, onPreviewMemory = { previewingMemory = it },
-                    onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) }
-                )
+                        MessageItemBox(
+                            node = node, isLastTurn = isLastTurn, shouldShowTime = shouldShowTime, loading = loading && isLastTurn,
+                            settings = settings, conversation = conversation, selecting = selecting, selectedItems = selectedItems,
+                            onCitationClick = onCitationClick, onRegenerate = onRegenerate, onEdit = onEdit, onDelete = onDelete,
+                            onUpdateMessage = onUpdateMessage, onGetFullMemoryContent = onGetFullMemoryContent, onAddFavorite = onAddFavorite,
+                            onTypingStateChange = onTypingStateChange, navController = navController, scope = scope,
+                            onMemoryLoading = { isMemoryLoading = it }, onPreviewMemory = { previewingMemory = it },
+                            onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) }
+                        )
+                    }
+                    is ChatVM.ChatUIItem.Separator -> {
+                        // ✨ 重点：当此项进入屏幕，自动触发加载更多
+                        LaunchedEffect(Unit) {
+                            onLoadMoreActiveMessages()
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                            if (isInternalLoadingMore) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text(text = item.text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                    }
+                }
             }
 
-            // 🌟 第二流：分页历史消息
+            // 🌟 第二流：分页历史消息（不同话题的分页）
             items(
                 count = uiItems.itemCount,
                 key = { index ->
@@ -324,10 +352,8 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             ) { index ->
                 val item = uiItems[index] ?: return@items
-                if (item is ChatVM.ChatUIItem.Message && item.node.currentMessage.skipContext) {
-                    return@items
-                }
-                if (item is ChatVM.ChatUIItem.Message && activeMessages.any { it.node.id == item.node.id }) return@items
+                if (item is ChatVM.ChatUIItem.Message && item.node.currentMessage.skipContext) return@items
+                if (item is ChatVM.ChatUIItem.Message && activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>().any { it.node.id == item.node.id }) return@items
 
                 when (item) {
                     is ChatVM.ChatUIItem.Message -> {
@@ -357,7 +383,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // ✨ 优化：如果已经在显示初始加载的大圆圈，这里就不再显示分页加载指示器
             if ((isHistoryLoading || uiItems.loadState.append is LoadState.Loading) && uiItems.itemCount > 0) {
                 item("paging_loading_indicator") {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
@@ -382,7 +407,7 @@ private fun SharedTransitionScope.ChatListNormal(
                         IconButton(
                             enabled = selectedItems.isNotEmpty(),
                             onClick = {
-                                val allMsgNodes = activeMessages.map { it.node } + uiItems.itemSnapshotList.items.filterIsInstance<ChatVM.ChatUIItem.Message>().map { it.node }
+                                val allMsgNodes = activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>().map { it.node } + uiItems.itemSnapshotList.items.filterIsInstance<ChatVM.ChatUIItem.Message>().map { it.node }
                                 val toDelete = allMsgNodes.filter { it.id in selectedItems }.map { it.currentMessage }.distinctBy { it.id }
                                 onDeleteMessages(toDelete); selecting = false; selectedItems.clear()
                             }
