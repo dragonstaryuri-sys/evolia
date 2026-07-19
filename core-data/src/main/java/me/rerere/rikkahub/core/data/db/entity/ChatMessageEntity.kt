@@ -11,7 +11,11 @@ import androidx.room.PrimaryKey
  */
 @Entity(
     tableName = "chat_message_nodes",
-    indices = [Index("conversation_id")],
+    indices = [
+        Index("conversation_id"),
+        // ⚡ 性能优化：为会话内排序建立复合索引，极大加快 order_index 排序速度
+        Index(value = ["conversation_id", "order_index"])
+    ],
     foreignKeys = [
         ForeignKey(
             entity = ConversationEntity::class,

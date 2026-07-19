@@ -70,7 +70,7 @@ class ConversationRepository(
             .flowOn(Dispatchers.IO)
     }
 
-    // ✨ 优化：分页获取某个助手下的所有消息节点 (支持跨会话加载最新的 100 条)
+    // ✨ 极致优化：分页获取助手下的消息，使用 Room 的 Relation 机制消除 N+1 查询
     fun getMessagesOfAssistantPaging(assistantId: Uuid): Flow<PagingData<MessageNode>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
@@ -78,17 +78,20 @@ class ConversationRepository(
             enablePlaceholders = false, // 禁用占位符，防止聊天列表跳动
             prefetchDistance = 15
         ),
-        pagingSourceFactory = { chatMessageDAO.getNodesOfAssistantPaging(assistantId.toString()) }
+        // 使用带 Relation 的 DAO 方法
+        pagingSourceFactory = { chatMessageDAO.getNodesWithMessagesOfAssistantPaging(assistantId.toString()) }
     ).flow.map { pagingData ->
-        pagingData.map { nodeEntity ->
-            val messages = chatMessageDAO.getMessagesByNodeId(nodeEntity.id)
+        pagingData.map { wrapper ->
+            // 从 wrapper 中直接获取消息，无需额外查询数据库
+            val uiMessages = wrapper.messages
                 .filter { !it.isDeleted }
+                .sortedBy { it.orderIndex }
                 .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
 
             MessageNode(
-                id = Uuid.parse(nodeEntity.id),
-                messages = messages,
-                selectIndex = nodeEntity.selectIndex
+                id = Uuid.parse(wrapper.node.id),
+                messages = uiMessages,
+                selectIndex = wrapper.node.selectIndex
             )
         }
     }

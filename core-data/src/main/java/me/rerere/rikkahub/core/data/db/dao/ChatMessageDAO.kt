@@ -97,8 +97,7 @@ interface ChatMessageDAO {
     """)
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
 
-    // ✨ 优化：分页加载某个助手下所有会话的消息节点
-    // 逻辑：优先按会话更新时间倒序（最新的对话在最前），会话内部按节点顺序倒序
+    // 分页加载某个助手下所有会话的消息节点
     @Query("""
         SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
@@ -106,6 +105,24 @@ interface ChatMessageDAO {
         ORDER BY c.update_at DESC, n.order_index DESC
     """)
     fun getNodesOfAssistantPaging(assistantId: String): PagingSource<Int, ChatMessageNodeEntity>
+
+    // ✨ 极致性能优化版：
+    // 1. 使用 IN 子句配合 LIMIT 缩小扫描范围，极大加快 Paging 的 Count(*) 速度。
+    // 2. 避免大表 JOIN 后的全局排序，让 SQLite 引擎只需处理最近 50 个对话的节点。
+    @Transaction
+    @Query("""
+        SELECT * FROM chat_message_nodes
+        WHERE conversation_id IN (
+            SELECT id FROM conversationentity
+            WHERE assistant_id = :assistantId
+            ORDER BY update_at DESC
+            LIMIT 10
+        )
+        ORDER BY (
+            SELECT update_at FROM conversationentity WHERE id = chat_message_nodes.conversation_id
+        ) DESC, order_index DESC
+    """)
+    fun getNodesWithMessagesOfAssistantPaging(assistantId: String): PagingSource<Int, MessageNodeWithMessages>
 
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index DESC")
     fun getNodesOfConversationPaging(conversationId: String): PagingSource<Int, ChatMessageNodeEntity>

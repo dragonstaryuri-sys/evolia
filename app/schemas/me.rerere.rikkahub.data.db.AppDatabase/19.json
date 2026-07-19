@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 19,
-    "identityHash": "8d32d6e197fa60292d664e21a810fc23",
+    "identityHash": "fc49e9b82953fda30d5b26728546a567",
     "entities": [
       {
         "tableName": "ConversationEntity",
@@ -147,6 +147,16 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_ConversationEntity_assistant_id_is_pinned_update_at` ON `${TABLE_NAME}` (`assistant_id`, `is_pinned`, `update_at`)"
+          },
+          {
+            "name": "index_ConversationEntity_assistant_id_update_at",
+            "unique": false,
+            "columnNames": [
+              "assistant_id",
+              "update_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ConversationEntity_assistant_id_update_at` ON `${TABLE_NAME}` (`assistant_id`, `update_at`)"
           }
         ]
       },
@@ -1301,6 +1311,16 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_chat_message_nodes_conversation_id` ON `${TABLE_NAME}` (`conversation_id`)"
+          },
+          {
+            "name": "index_chat_message_nodes_conversation_id_order_index",
+            "unique": false,
+            "columnNames": [
+              "conversation_id",
+              "order_index"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_chat_message_nodes_conversation_id_order_index` ON `${TABLE_NAME}` (`conversation_id`, `order_index`)"
           }
         ],
         "foreignKeys": [
@@ -1408,7 +1428,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8d32d6e197fa60292d664e21a810fc23')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'fc49e9b82953fda30d5b26728546a567')"
     ]
   }
 }

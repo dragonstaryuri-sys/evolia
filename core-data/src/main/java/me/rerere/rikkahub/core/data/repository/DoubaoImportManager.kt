@@ -169,12 +169,16 @@ class DoubaoImportManager(
                     ).toMessageNode()
                 }
 
+                val firstMessageTime = chunk.first().first.createTime.toLongOrNull() ?: 0L
+                val lastMessageTime = chunk.last().first.createTime.toLongOrNull() ?: firstMessageTime
+
                 val conversation = Conversation(
                     id = conversationId,
                     assistantId = assistantId,
                     title = "${data.botInfo.name} 历史导入 (${index + 1})",
                     messageNodes = messageNodes,
-                    createAt = java.time.Instant.ofEpochSecond(chunk.first().first.createTime.toLongOrNull() ?: 0L)
+                    createAt = java.time.Instant.ofEpochSecond(firstMessageTime),
+                    updateAt = java.time.Instant.ofEpochSecond(lastMessageTime)
                 )
 
                 if (index == 0) {

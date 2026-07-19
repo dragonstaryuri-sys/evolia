@@ -38,7 +38,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 19,
+    version = 20, // ✨ 升级版本号以应用索引改动
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -64,6 +64,15 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        // ✨ 19 -> 20: 添加性能优化索引
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 19->20 迁移：增加性能优化索引")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chat_message_nodes_conversation_id_order_index` ON `chat_message_nodes` (`conversation_id`, `order_index`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_ConversationEntity_assistant_id_update_at` ON `ConversationEntity` (`assistant_id`, `update_at`)")
+            }
+        }
 
         val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {

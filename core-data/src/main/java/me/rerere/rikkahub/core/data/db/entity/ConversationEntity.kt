@@ -7,7 +7,9 @@ import androidx.room.PrimaryKey
 
 @Entity(
     indices = [
-        Index(value = ["assistant_id", "is_pinned", "update_at"])
+        Index(value = ["assistant_id", "is_pinned", "update_at"]),
+        // ⚡ 性能优化：专门为按助手查最新会话设计的索引，避免 Filesort，让获取最新 10 个会话变为 O(log N)
+        Index(value = ["assistant_id", "update_at"])
     ]
 )
 data class ConversationEntity(
