@@ -46,7 +46,7 @@ class ConversationRepository(
 ) {
     companion object {
         private const val PAGE_SIZE = 30
-        private const val INITIAL_LOAD_SIZE = 60
+        private const val INITIAL_LOAD_SIZE = 100 // ✨ 调整为 100，满足首屏加载需求
         private const val TAG = "ConversationRepo"
     }
 
@@ -70,19 +70,17 @@ class ConversationRepository(
             .flowOn(Dispatchers.IO)
     }
 
-    // ✨ 新增：分页获取某个助手下的所有消息节点
+    // ✨ 优化：分页获取某个助手下的所有消息节点 (支持跨会话加载最新的 100 条)
     fun getMessagesOfAssistantPaging(assistantId: Uuid): Flow<PagingData<MessageNode>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
-            enablePlaceholders = true, // 允许占位符，解决卡顿
-            prefetchDistance = 10
+            enablePlaceholders = false, // 禁用占位符，防止聊天列表跳动
+            prefetchDistance = 15
         ),
         pagingSourceFactory = { chatMessageDAO.getNodesOfAssistantPaging(assistantId.toString()) }
     ).flow.map { pagingData ->
         pagingData.map { nodeEntity ->
-            // 这里我们只加载节点信息，内容由二级缓存或延迟解析处理
-            // 注意：为了极致性能，内容解析可以在 UI 层用到时再解析，或者在这里通过 chatMessageDAO 补充
             val messages = chatMessageDAO.getMessagesByNodeId(nodeEntity.id)
                 .filter { !it.isDeleted }
                 .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
@@ -232,20 +230,29 @@ class ConversationRepository(
             if (entities.isEmpty()) return@withContext emptyList()
             val convIds = entities.map { it.id }
 
-            val allNodesRaw = chatMessageDAO.getNodesByConversationIds(convIds).groupBy { it.conversationId }
+            // 【修复】：分批获取节点，防止 IN 子句超过 999 限制
+            val allNodesRaw = convIds.chunked(900).flatMap { batch ->
+                chatMessageDAO.getNodesByConversationIds(batch)
+            }.groupBy { it.conversationId }
 
-            // 【内存优化】：初次仅从数据库加载最后 200 个节点，避免内存堆积
-            val allNodes = allNodesRaw.mapValues { (_, nodes) ->
-                nodes.sortedBy { it.orderIndex }.takeLast(200)
+            // 【性能优化】：差异化加载。仅为列表第一个（最新/当前）会话拉取较多节点记录，其余仅拉取 1 个用于预览展示。
+            val latestConvId = entities.firstOrNull()?.id
+            val allNodes = allNodesRaw.mapValues { (convId, nodes) ->
+                val limit = if (convId == latestConvId) 200 else 1
+                nodes.sortedBy { it.orderIndex }.takeLast(limit)
             }
 
-            // 【性能优化】：初次仅加载最后 100 条消息具体内容，加快解析速度
-            val nodeIdsToLoad = allNodes.values.flatMap { nodes ->
-                nodes.takeLast(100).map { it.id }
+            // 【性能优化】：差异化加载内容。仅为最新会话拉取较多消息内容。
+            val nodeIdsToLoad = allNodes.entries.flatMap { (convId, nodes) ->
+                val limit = if (convId == latestConvId) 100 else 1
+                nodes.takeLast(limit).map { it.id }
             }
 
             val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
-                chatMessageDAO.getMessagesByNodeIds(nodeIdsToLoad).groupBy { it.nodeId }
+                // 【修复】：分批获取消息，防止 IN 子句超过 999 限制
+                nodeIdsToLoad.chunked(900).flatMap { batch ->
+                    chatMessageDAO.getMessagesByNodeIds(batch)
+                }.groupBy { it.nodeId }
             } else emptyMap()
 
             entities.map { entity ->
@@ -264,7 +271,7 @@ class ConversationRepository(
                     )
                 }
 
-                // 2. 获取旧字段中的消息
+                // 2. 获取旧字段中的消息 (兜底兼容)
                 val oldNodes = try {
                     if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
                         JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes).takeLast(200)
@@ -305,7 +312,9 @@ class ConversationRepository(
         if (pendingNodes.isEmpty()) return@withContext emptyList()
 
         // 3. 加载这些节点的消息内容
-        val messagesMap = chatMessageDAO.getMessagesByNodeIds(pendingNodes.map { it.id }).groupBy { it.nodeId }
+        val messagesMap = pendingNodes.map { it.id }.chunked(900).flatMap { batch ->
+            chatMessageDAO.getMessagesByNodeIds(batch)
+        }.groupBy { it.nodeId }
 
         pendingNodes.map { nodeEntity ->
             val messages = messagesMap[nodeEntity.id]

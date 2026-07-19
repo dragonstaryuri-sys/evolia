@@ -97,11 +97,13 @@ interface ChatMessageDAO {
     """)
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
 
-    // ✨ 新增：支持分页加载某个助手下所有会话的消息节点
+    // ✨ 优化：分页加载某个助手下所有会话的消息节点
+    // 逻辑：优先按会话更新时间倒序（最新的对话在最前），会话内部按节点顺序倒序
     @Query("""
-        SELECT * FROM chat_message_nodes
-        WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId)
-        ORDER BY (SELECT update_at FROM conversationentity WHERE id = conversation_id) DESC, order_index DESC
+        SELECT n.* FROM chat_message_nodes n
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        WHERE c.assistant_id = :assistantId
+        ORDER BY c.update_at DESC, n.order_index DESC
     """)
     fun getNodesOfAssistantPaging(assistantId: String): PagingSource<Int, ChatMessageNodeEntity>
 
