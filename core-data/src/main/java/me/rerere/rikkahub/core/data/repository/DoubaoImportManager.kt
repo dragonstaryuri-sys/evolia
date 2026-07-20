@@ -166,7 +166,7 @@ class DoubaoImportManager(
                         role = role,
                         parts = listOf(UIMessagePart.Text(content)),
                         createdAt = createdAt
-                    ).toMessageNode()
+                    ).toMessageNode(conversationId)
                 }
 
                 val firstMessageTime = chunk.first().first.createTime.toLongOrNull() ?: 0L

@@ -94,7 +94,7 @@ data class Conversation(
                 newNodes[existingNodeIndex] = node.copy(messages = updatedMessages)
             } else {
                 // 3. 只要是新 ID，就添加为新节点
-                newNodes.add(messageWithTag.toMessageNode())
+                newNodes.add(messageWithTag.toMessageNode(this.id))
             }
         }
         return this.copy(messageNodes = newNodes)
@@ -113,6 +113,7 @@ data class MessageNode(
     val id: Uuid = Uuid.random(),
     val messages: List<UIMessage>,
     val selectIndex: Int = 0,
+    val conversationId: Uuid,
 ) {
     val currentMessage
         get() = messages.getOrElse(selectIndex) {
@@ -122,8 +123,8 @@ data class MessageNode(
     val role get() = messages.firstOrNull()?.role ?: MessageRole.USER
 
     companion object {
-        fun of(message: UIMessage) = MessageNode(messages = listOf(message), selectIndex = 0)
+        fun of(message: UIMessage, conversationId: Uuid) = MessageNode(messages = listOf(message), conversationId = conversationId)
     }
 }
 
-fun UIMessage.toMessageNode(): MessageNode = MessageNode(messages = listOf(this), selectIndex = 0)
+fun UIMessage.toMessageNode(conversationId: Uuid): MessageNode = MessageNode(messages = listOf(this), conversationId = conversationId)

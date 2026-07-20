@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.net.toUri
 import android.net.Uri
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
@@ -75,18 +76,10 @@ class ChatVM(
     private val _isInternalLoadingMore = MutableStateFlow(false)
     val isInternalLoadingMore = _isInternalLoadingMore.asStateFlow()
     fun loadMoreActiveMessages() {
-        val currentConv = conversation.value
         viewModelScope.launch {
             _isInternalLoadingMore.value = true
-
-            // ✨ 核心逻辑：如果 UI 想要显示的更多，但内存中没有加载内容（只有空节点），则触发真正的历史内容加载
-            val loadedContentCount = currentConv.messageNodes.count { it.messages.isNotEmpty() }
-            if (_activeMessageLimit.value + 50 > loadedContentCount) {
-                chatService.loadMoreHistory(_currentActiveId.value)
-            }
-
             delay(300)
-            _activeMessageLimit.value += 100 // 每次向上加载 100 条
+            _activeMessageLimit.value += 100
             _isInternalLoadingMore.value = false
         }
     }
@@ -154,43 +147,52 @@ class ChatVM(
         data class Message(val node: MessageNode) : ChatUIItem()
         data class Separator(val text: String) : ChatUIItem()
     }
+    private val currentAssistantIdFlow = conversation.map { it.assistantId }.distinctUntilChanged()
+    private val dbHistoryNodes = combine(
+        _currentActiveId,
+        _activeMessageLimit
+    ) { _, limit ->
+        val assistantId = conversation.value.assistantId
+        // 只有在切换会话或手动加载更多时才查数据库
+        conversationRepo.getLatestNodesByAssistant(assistantId, limit)
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeMessages: StateFlow<List<ChatUIItem>> = combine(
         conversation,
+        dbHistoryNodes,
         chatService.generatingNodeIds,
-        _activeMessageLimit // 使用你定义的限制状态
-    ) { activeConv, generatingIds, limit ->
+        _activeMessageLimit
+    ) { conv,  dbNodes,generatingIds, limit ->
+        val currentNodesMap = conv.messageNodes.associateBy { it.id }
+        val mergedNodes = dbNodes.map { node ->
+            currentNodesMap[node.id] ?: node
+        }.toMutableList()
+        val existingIds = mergedNodes.map { it.id }.toSet()
+        val unsavedNodes = conv.messageNodes.filter { it.id !in existingIds }
+        if (unsavedNodes.isNotEmpty()) {
+            // 数据库历史是倒序的（最新在前），所以我们也反转后插在最前面
+            mergedNodes.addAll(0, unsavedNodes.reversed())
+        }
         val items = mutableListOf<ChatUIItem>()
         // ✨ 改进过滤逻辑：仅包含有内容的节点或正在生成的节点
-        val filteredNodes = activeConv.messageNodes.filter { node ->
+        val filteredNodes = mergedNodes.take(limit).filter { node ->
             val isGenerating = generatingIds.contains(node.id)
+            val msg = node.currentMessage
             val hasMessages = node.messages.isNotEmpty()
-
             // 如果既没内容也没在生成，说明是还没加载的历史占位符，不直接显示在消息流中
             if (!hasMessages && !isGenerating) return@filter false
-
-            val msg = node.currentMessage
             val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
-
             (hasContent || isGenerating) && !msg.skipContext
         }
-
-        // ✨ hasMore 逻辑：
-        // 1. 内存中已经加载的（有内容的）节点数超过了 UI 限制
-        // 2. 或者 Conversation 对象中还有完全没加载内容的占位节点
-        val hasMoreInMem = filteredNodes.size > limit
-        val hasUnloadedNodes = activeConv.messageNodes.any { it.messages.isEmpty() && !generatingIds.contains(it.id) }
-        val hasMore = hasMoreInMem || hasUnloadedNodes
-
-        val nodesToShow = filteredNodes.takeLast(limit).reversed()
-
-        items.addAll(nodesToShow.map { ChatUIItem.Message(it) })
-
-        // 如果还没加载完，在末尾添加“加载更多”分隔符
+        items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
+        val assistantId = conv.assistantId
+        val totalCount = conversationRepo.getTotalNodeCountByAssistant(assistantId)
+        val hasMore = totalCount > limit
         if (hasMore) {
             items.add(ChatUIItem.Separator("查看更早的消息..."))
-        }else {
-            items.add(ChatUIItem.Separator(context.getString(R.string.chat_topic_started)))
+        }
+        else{
+            items.add(ChatUIItem.Separator("已开启新话题"))
         }
         items
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -247,20 +249,13 @@ class ChatVM(
 
             // ✨ 定位跳转优化逻辑
             if (!targetMessageId.isNullOrBlank()) {
-                val orderIndex = conversationRepo.chatMessageDAO.getNodeOrderIndexByMessageId(targetMessageId)
-                if (orderIndex != null) {
-                    val totalNodes = conversationRepo.chatMessageDAO.getNodesByConversationId(targetId.toString()).size
-                    // 核心算法：目标 index 为 568，总数为 1000，则从末尾倒数需要加载约 450+ 条
-                    val neededLimit = (totalNodes - orderIndex).coerceAtLeast(100) + 50
-                    _activeMessageLimit.value = neededLimit
-
-                    // 确保目标位置的消息内容已被加载
-                    chatService.loadMoreHistory(targetId)
-                }
+                // 🌟 使用全局深度定位
+                val depth = conversationRepo.chatMessageDAO.getMessageGlobalDepth(currentAssistantId.toString(), targetMessageId)
+                _activeMessageLimit.value = (depth + 20).coerceAtLeast(100)
+            } else {
+                _activeMessageLimit.value = 100
             }
-
             _isConversationLoaded.value = true
-            context.writeStringPreference("lastConversationId", targetId.toString())
         }
     }
 
@@ -371,7 +366,7 @@ class ChatVM(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
 
-    private val currentAssistantIdFlow = conversation.map { it.assistantId }.distinctUntilChanged()
+
 
     val conversations: Flow<PagingData<ConversationListItem>> =
         combine(

@@ -125,6 +125,36 @@ interface ChatMessageDAO {
 
     @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC LIMIT :limit")
     suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
+
+    // 1. 获取智能体全局最新的 N 个节点（包含消息），按时间倒序
+    @Transaction
+    @Query("""
+    SELECT n.* FROM chat_message_nodes n
+    INNER JOIN conversationentity c ON n.conversation_id = c.id
+    WHERE c.assistant_id = :assistantId
+    ORDER BY c.update_at DESC, n.order_index DESC
+    LIMIT :limit
+""")
+    suspend fun getLatestNodesWithMessagesOfAssistant(assistantId: String, limit: Int): List<MessageNodeWithMessages>
+
+    // 2. 获取智能体全局节点总数
+    @Query("""
+    SELECT COUNT(*) FROM chat_message_nodes n
+    INNER JOIN conversationentity c ON n.conversation_id = c.id
+    WHERE c.assistant_id = :assistantId
+""")
+    suspend fun getTotalNodeCountByAssistant(assistantId: String): Int
+
+
+    // 4. 消息内容搜索分页
+    @Query("""
+    SELECT * FROM chat_messages
+    WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId)
+    AND content_json LIKE '%' || :query || '%'
+    AND is_deleted = 0
+    ORDER BY created_at DESC
+""")
+    fun searchMessagesOfAssistantPaging(assistantId: String, query: String): PagingSource<Int, ChatMessageEntity>
 }
 
 data class MessageNodeWithMessages(

@@ -962,11 +962,12 @@ class AssistantDetailVM(
 
     fun importConversation(title: String, messages: List<UIMessage>) {
         viewModelScope.launch {
-            // 使用项目中已导入的 me.rerere.rikkahub.core.data.model.Conversation
+            val convId = Uuid.random()
             val conversation = Conversation(
+                id = convId,
                 assistantId = assistantId,
                 title = title,
-                messageNodes = messages.map { it.toMessageNode() },
+                messageNodes = messages.map { it.toMessageNode(convId) },
                 createAt = Instant.now(),
                 updateAt = Instant.now()
             )

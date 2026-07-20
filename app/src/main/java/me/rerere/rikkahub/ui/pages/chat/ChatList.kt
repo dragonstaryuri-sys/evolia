@@ -283,7 +283,7 @@ private fun SharedTransitionScope.ChatListNormal(
             if (needsPhantomLoadingTurn) {
                 item("phantom_loading") {
                     ChatMessageTurn(
-                        group = MessageTurnGroup(listOf(MessageNode.of(UIMessage.assistant(""))), MessageRole.ASSISTANT),
+                        group = MessageTurnGroup(listOf(MessageNode.of(UIMessage.assistant(""), conversation.id)), MessageRole.ASSISTANT),
                         isLastTurn = true,
                         assistant = settings.getAssistantById(conversation.assistantId),
                         loading = true,

@@ -377,7 +377,7 @@ class ChatService(
                         role = MessageRole.USER,
                         parts = listOf(UIMessagePart.Text(monitorMsg)),
                         skipContext = true
-                    ).toMessageNode()
+                    ).toMessageNode(conversationId)
 
                     old.copy(
                         messageNodes = old.messageNodes + newNode,
@@ -657,7 +657,7 @@ class ChatService(
             _isAiTypingMap.update { it - conversationId }
         }
         wechatDebounceJobs[conversationId]?.cancel()
-        val newNode = predefinedUserNode ?: UIMessage(role = MessageRole.USER, parts = content).toMessageNode()
+        val newNode = predefinedUserNode ?: UIMessage(role = MessageRole.USER, parts = content).toMessageNode(conversationId)
         updateConversation(conversationId) { old ->
             old.copy(
                 messageNodes = old.messageNodes + newNode,
@@ -757,13 +757,13 @@ class ChatService(
                                 val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
                                 nodes.add(
                                     MessageNode(
-                                        id = Uuid.random(),
                                         messages = listOf(
                                             UIMessage(
                                                 role = MessageRole.ASSISTANT,
-                                                parts = emptyList()
+                                                parts = emptyList(),
                                             )
-                                        )
+                                        ),
+                                        conversationId = conversation.id
                                     )
                                 )
                                 if (turnEndIndex < conversation.messageNodes.size) {

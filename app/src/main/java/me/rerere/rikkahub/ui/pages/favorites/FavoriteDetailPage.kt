@@ -66,9 +66,8 @@ fun FavoriteDetailPage(id: Long) {
                 }
             }
 
-            // 将消息序列转换回 UI 渲染所需的 Turn 组
             val groups = remember(messages) {
-                messages.map { MessageNode.of(it) }.groupIntoTurns()
+                messages.map { MessageNode.of(it, kotlin.uuid.Uuid.NIL) }.groupIntoTurns()
             }
 
             LazyColumn(

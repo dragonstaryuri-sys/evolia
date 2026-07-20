@@ -28,7 +28,6 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
 import me.rerere.rikkahub.core.data.model.Assistant
 import kotlin.uuid.Uuid
 import kotlin.time.ExperimentalTime
@@ -89,7 +88,8 @@ class ConversationRepository(
             MessageNode(
                 id = Uuid.parse(wrapper.node.id),
                 messages = uiMessages,
-                selectIndex = wrapper.node.selectIndex
+                selectIndex = wrapper.node.selectIndex,
+                conversationId = Uuid.parse(wrapper.node.conversationId) // ✨ 映射 ID
             )
         }
     }
@@ -208,6 +208,32 @@ class ConversationRepository(
     private suspend fun fetchFullConversation(entity: ConversationEntity, targetMessageId: String? = null): Conversation {
         return fetchFullConversations(listOf(entity), targetMessageId).first()
     }
+    // 在 ConversationRepository 类中添加：
+
+    suspend fun getLatestNodesByAssistant(assistantId: Uuid, limit: Int): List<MessageNode> = withContext(Dispatchers.IO) {
+        chatMessageDAO.getLatestNodesWithMessagesOfAssistant(assistantId.toString(), limit).map { wrapper ->
+            val uiMessages = wrapper.messages
+                .filter { !it.isDeleted }
+                .sortedBy { it.orderIndex }
+                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+
+            MessageNode(
+                id = Uuid.parse(wrapper.node.id),
+                messages = uiMessages,
+                selectIndex = wrapper.node.selectIndex,
+                conversationId = Uuid.parse(wrapper.node.conversationId) // ✨ 映射 ID
+            )
+        }
+    }
+
+    suspend fun getTotalNodeCountByAssistant(assistantId: Uuid): Int = withContext(Dispatchers.IO) {
+        chatMessageDAO.getTotalNodeCountByAssistant(assistantId.toString())
+    }
+
+    fun searchMessagesPaging(assistantId: Uuid, query: String): Flow<PagingData<ChatMessageEntity>> = Pager(
+        config = PagingConfig(pageSize = 30),
+        pagingSourceFactory = { chatMessageDAO.searchMessagesOfAssistantPaging(assistantId.toString(), query) }
+    ).flow
 
     private suspend fun fetchFullConversations(
         entities: List<ConversationEntity>,
@@ -253,7 +279,8 @@ class ConversationRepository(
                     MessageNode(
                         id = Uuid.parse(nodeEntity.id),
                         messages = messages,
-                        selectIndex = nodeEntity.selectIndex
+                        selectIndex = nodeEntity.selectIndex,
+                        conversationId = Uuid.parse(nodeEntity.conversationId)
                     )
                 }
 
@@ -301,7 +328,8 @@ class ConversationRepository(
             MessageNode(
                 id = Uuid.parse(nodeEntity.id),
                 messages = messages,
-                selectIndex = nodeEntity.selectIndex
+                selectIndex = nodeEntity.selectIndex,
+                conversationId = Uuid.parse(nodeEntity.conversationId)
             )
         }
     }
