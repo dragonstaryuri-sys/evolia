@@ -76,7 +76,7 @@ fun ChatPage(
 ) {
     val vm: ChatVM = koinViewModel(
         parameters = {
-            parametersOf(id.toString())
+            parametersOf(id.toString(), targetMessageId) // ✨ 修复：传入 targetMessageId 供定位使用
         }
     )
     val navController = LocalNavController.current

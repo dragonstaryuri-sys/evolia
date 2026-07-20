@@ -46,7 +46,7 @@ class ConversationRepository(
 ) {
     companion object {
         private const val PAGE_SIZE = 30
-        private const val INITIAL_LOAD_SIZE = 100 // ✨ 调整为 100，满足首屏加载需求
+        private const val INITIAL_LOAD_SIZE = 100
         private const val TAG = "ConversationRepo"
     }
 
@@ -70,19 +70,17 @@ class ConversationRepository(
             .flowOn(Dispatchers.IO)
     }
 
-    // ✨ 极致优化：分页获取助手下的消息，使用 Room 的 Relation 机制消除 N+1 查询
+    // 分页获取助手下的消息
     fun getMessagesOfAssistantPaging(assistantId: Uuid): Flow<PagingData<MessageNode>> = Pager(
         config = PagingConfig(
             pageSize = PAGE_SIZE,
             initialLoadSize = INITIAL_LOAD_SIZE,
-            enablePlaceholders = false, // 禁用占位符，防止聊天列表跳动
+            enablePlaceholders = false,
             prefetchDistance = 15
         ),
-        // 使用带 Relation 的 DAO 方法
         pagingSourceFactory = { chatMessageDAO.getNodesWithMessagesOfAssistantPaging(assistantId.toString()) }
     ).flow.map { pagingData ->
         pagingData.map { wrapper ->
-            // 从 wrapper 中直接获取消息，无需额外查询数据库
             val uiMessages = wrapper.messages
                 .filter { !it.isDeleted }
                 .sortedBy { it.orderIndex }
@@ -197,75 +195,60 @@ class ConversationRepository(
         }
     }
 
-    suspend fun getConversationById(uuid: Uuid): Conversation? {
+    suspend fun getConversationById(uuid: Uuid, targetMessageId: String? = null): Conversation? {
         val entity = conversationDAO.getConversationById(uuid.toString())
-        return entity?.let { fetchFullConversation(it) }
+        return entity?.let { fetchFullConversation(it, targetMessageId) }
     }
 
-    suspend fun getConversationById(id: String): Conversation? {
-        return runCatching { getConversationById(Uuid.parse(id)) }.getOrNull()
+
+    suspend fun getConversationById(id: String, targetMessageId: String? = null): Conversation? {
+        return runCatching { getConversationById(Uuid.parse(id), targetMessageId) }.getOrNull()
     }
 
-    private suspend fun fetchFullConversation(entity: ConversationEntity): Conversation {
-        return fetchFullConversations(listOf(entity)).first()
+    private suspend fun fetchFullConversation(entity: ConversationEntity, targetMessageId: String? = null): Conversation {
+        return fetchFullConversations(listOf(entity), targetMessageId).first()
     }
 
-    fun getMessagesOfConversationPaging(conversationId: Uuid): Flow<PagingData<MessageNode>> = Pager(
-        config = PagingConfig(pageSize = 30, prefetchDistance = 10),
-        pagingSourceFactory = { chatMessageDAO.getNodesWithMessagesPaging(conversationId.toString()) }
-    ).flow.map { pagingData ->
-        pagingData.map { wrapper ->
-            val uiMessages = wrapper.messages
-                .filter { !it.isDeleted }
-                .sortedBy { it.orderIndex }
-                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-
-            MessageNode(
-                id = Uuid.parse(wrapper.node.id),
-                messages = uiMessages,
-                selectIndex = wrapper.node.selectIndex
-            )
-        }
-    }
-
-    private suspend fun fetchFullConversations(entities: List<ConversationEntity>): List<Conversation> =
-        withContext(Dispatchers.IO) {
+    private suspend fun fetchFullConversations(
+        entities: List<ConversationEntity>,
+        targetMessageId: String? = null // ✨ 新增参数
+    ): List<Conversation> = withContext(Dispatchers.IO) {
             if (entities.isEmpty()) return@withContext emptyList()
-            val convIds = entities.map { it.id }
-
-            // 【修复】：分批获取节点，防止 IN 子句超过 999 限制
-            val allNodesRaw = convIds.chunked(900).flatMap { batch ->
-                chatMessageDAO.getNodesByConversationIds(batch)
-            }.groupBy { it.conversationId }
-
-            // 【性能优化】：差异化加载。仅为列表第一个（最新/当前）会话拉取较多节点记录，其余仅拉取 1 个用于预览展示。
-            val latestConvId = entities.firstOrNull()?.id
-            val allNodes = allNodesRaw.mapValues { (convId, nodes) ->
-                val limit = if (convId == latestConvId) 200 else 1
-                nodes.sortedBy { it.orderIndex }.takeLast(limit)
-            }
-
-            // 【性能优化】：差异化加载内容。仅为最新会话拉取较多消息内容。
-            val nodeIdsToLoad = allNodes.entries.flatMap { (convId, nodes) ->
-                val limit = if (convId == latestConvId) 100 else 1
-                nodes.takeLast(limit).map { it.id }
-            }
-
+            // 1. 确定我们要加载哪个智能体
+            val firstAssistantId = entities.first().assistantId
+            // 2. ✨ 核心变更：计算出“全局最新 100 条”或“包含目标消息”的消息 ID 集合
+            val nodeIdsToLoad = if (!targetMessageId.isNullOrBlank()) {
+                // 如果是搜索跳转，查出该消息的深度，确保加载范围能覆盖到它
+                val depth = chatMessageDAO.getMessageGlobalDepth(firstAssistantId, targetMessageId)
+                chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, (depth + 20).coerceAtLeast(100))
+            } else {
+                // ✨ 默认只加载该智能体全局最新的 100 条消息内容
+                chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, 100)
+            }.toSet()
+            // 3. 批量获取这些节点的实际消息内容 (contentJson)
             val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
-                // 【修复】：分批获取消息，防止 IN 子句超过 999 限制
                 nodeIdsToLoad.chunked(900).flatMap { batch ->
                     chatMessageDAO.getMessagesByNodeIds(batch)
                 }.groupBy { it.nodeId }
             } else emptyMap()
-
+            // 4. 获取所有涉及的节点占位符（用于 UI 排序和分页定位）
+            val convIds = entities.map { it.id }
+            val allNodesRaw = convIds.chunked(900).flatMap { batch ->
+                chatMessageDAO.getNodesByConversationIds(batch)
+            }.groupBy { it.conversationId }
+            // 5. 组装数据
             entities.map { entity ->
-                // 1. 获取新表中的消息
-                val nodesFromDb = allNodes[entity.id] ?: emptyList()
-                val messageNodes = nodesFromDb.map { nodeEntity ->
-                    val messages = allMessages[nodeEntity.id]
-                        ?.filter { !it.isDeleted }
-                        ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-                        ?: emptyList()
+                val nodesFromDb = allNodesRaw[entity.id] ?: emptyList()
+                val messageNodes = nodesFromDb.sortedBy { it.orderIndex }.map { nodeEntity ->
+                    // ✨ 关键点：只有在这个节点属于“最新100条”时，才解析它的内容
+                    val messages = if (nodeEntity.id in nodeIdsToLoad) {
+                        allMessages[nodeEntity.id]
+                            ?.filter { !it.isDeleted }
+                            ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+                            ?: emptyList()
+                    } else {
+                        emptyList() // 否则保持为空消息列表，作为占位符
+                    }
 
                     MessageNode(
                         id = Uuid.parse(nodeEntity.id),
@@ -274,22 +257,16 @@ class ConversationRepository(
                     )
                 }
 
-                // 2. 获取旧字段中的消息 (兜底兼容)
+                // 兼容旧版本字段
                 val oldNodes = try {
                     if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
                         JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes).takeLast(200)
                     } else emptyList()
-                } catch (e: Exception) {
-                    Log.e(TAG, "解析旧节点失败: ${entity.id}", e)
-                    emptyList()
-                }
+                } catch (e: Exception) { emptyList() }
 
-                // 3. 合并策略
-                val finalNodes = if (oldNodes.isEmpty()) {
-                    messageNodes
-                } else if (messageNodes.isEmpty()) {
-                    oldNodes
-                } else {
+                val finalNodes = if (oldNodes.isEmpty()) messageNodes
+                else if (messageNodes.isEmpty()) oldNodes
+                else {
                     val newIds = messageNodes.map { it.id }.toSet()
                     oldNodes.filter { it.id !in newIds } + messageNodes
                 }
@@ -304,17 +281,13 @@ class ConversationRepository(
      * @param alreadyLoadedNodeIds 已经加载过消息内容的节点 ID 集合
      */
     suspend fun loadMoreMessages(conversationId: Uuid, alreadyLoadedNodeIds: Set<Uuid>): List<MessageNode> = withContext(Dispatchers.IO) {
-        // 1. 获取该会话的所有节点
         val allNodes = chatMessageDAO.getNodesByConversationId(conversationId.toString())
-
-        // 2. 找到还没加载内容的节点，并取其中最近的 50 个
         val pendingNodes = allNodes.filter { Uuid.parse(it.id) !in alreadyLoadedNodeIds }
             .sortedByDescending { it.orderIndex }
             .takeLast(50)
 
         if (pendingNodes.isEmpty()) return@withContext emptyList()
 
-        // 3. 加载这些节点的消息内容
         val messagesMap = pendingNodes.map { it.id }.chunked(900).flatMap { batch ->
             chatMessageDAO.getMessagesByNodeIds(batch)
         }.groupBy { it.nodeId }
@@ -494,7 +467,7 @@ class ConversationRepository(
             lastPruneTime = conversation.lastPruneTime,
             lastPruneMessageCount = conversation.lastPruneMessageCount,
             lastRefreshTime = conversation.lastRefreshTime,
-            isVirtual = false // 写入数据库时固定为 false，维持列兼容
+            isVirtual = false
         )
     }
 

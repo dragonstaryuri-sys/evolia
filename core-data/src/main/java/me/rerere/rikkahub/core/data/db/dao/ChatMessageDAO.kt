@@ -18,7 +18,6 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index ASC")
     suspend fun getNodesByConversationId(conversationId: String): List<ChatMessageNodeEntity>
 
-    // 批量获取多个会话的所有节点
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id IN (:conversationIds) ORDER BY order_index ASC")
     suspend fun getNodesByConversationIds(conversationIds: List<String>): List<ChatMessageNodeEntity>
 
@@ -38,28 +37,15 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_messages WHERE node_id IN (:nodeIds)")
     suspend fun getMessagesByNodeIds(nodeIds: List<String>): List<ChatMessageEntity>
 
-    @Query("SELECT * FROM chat_messages WHERE conversation_id = :conversationId")
-    suspend fun getAllMessagesByConversationId(conversationId: String): List<ChatMessageEntity>
-
-    // 批量获取指定会话列表的所有消息
-    @Query("SELECT * FROM chat_messages WHERE conversation_id IN (:conversationIds)")
-    suspend fun getMessagesByConversationIds(conversationIds: List<String>): List<ChatMessageEntity>
-
-    // 流式获取某个助手的全部消息内容 (用于统计)
-    @Query(
-        """
-        SELECT content_json FROM chat_messages
-        WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = 0)
-    """
-    )
+    @Query("SELECT content_json FROM chat_messages WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = 0)")
     fun getAllMessagesContentByAssistant(assistantId: String): Flow<List<String>>
-
-    @Update
-    suspend fun updateMessage(message: ChatMessageEntity)
-
-    @Query("DELETE FROM chat_messages WHERE id = :messageId")
-    suspend fun deleteMessageById(messageId: String)
-
+    @Query("""
+    SELECT id FROM chat_message_nodes
+    WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId)
+    ORDER BY (SELECT update_at FROM conversationentity WHERE id = conversation_id) DESC, order_index DESC
+    LIMIT :limit
+""")
+    suspend fun getLatestNodeIdsOfAssistant(assistantId: String, limit: Int): List<String>
     @Transaction
     suspend fun syncConversationMessages(
         conversationId: String, nodes: List<ChatMessageNodeEntity>, messages: List<ChatMessageEntity>
@@ -68,16 +54,6 @@ interface ChatMessageDAO {
         insertNodes(nodes)
         insertMessages(messages)
     }
-
-    @Query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0")
-    suspend fun countNewMessages(convId: String, lastTime: Long): Int
-
-    @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC LIMIT :limit")
-    suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
-
-    @Query("UPDATE chat_messages SET is_deleted = 1 WHERE id = :messageId")
-    suspend fun markMessageAsDeleted(messageId: String)
-
     @Query("""
     SELECT * FROM chat_messages
     WHERE conversation_id = :conversationId
@@ -88,6 +64,11 @@ interface ChatMessageDAO {
 """)
     suspend fun getMessagesByTimeRange(conversationId: String, startTime: Long, endTime: Long): List<ChatMessageEntity>
 
+    @Query("SELECT n.order_index FROM chat_message_nodes n JOIN chat_messages m ON n.id = m.node_id WHERE m.id = :messageId")
+    suspend fun getNodeOrderIndexByMessageId(messageId: String): Int?
+    @Query("UPDATE chat_messages SET is_deleted = 1 WHERE id = :messageId")
+    suspend fun markMessageAsDeleted(messageId: String)
+
     @Query("""
         SELECT * FROM chat_messages
         WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId)
@@ -97,39 +78,53 @@ interface ChatMessageDAO {
     """)
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
 
-    // 分页加载某个助手下所有会话的消息节点
+    // ✨ 全局时间轴分页
+    @Transaction
     @Query("""
         SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
         WHERE c.assistant_id = :assistantId
         ORDER BY c.update_at DESC, n.order_index DESC
     """)
-    fun getNodesOfAssistantPaging(assistantId: String): PagingSource<Int, ChatMessageNodeEntity>
-
-    // ✨ 极致性能优化版：
-    // 1. 使用 IN 子句配合 LIMIT 缩小扫描范围，极大加快 Paging 的 Count(*) 速度。
-    // 2. 避免大表 JOIN 后的全局排序，让 SQLite 引擎只需处理最近 50 个对话的节点。
-    @Transaction
-    @Query("""
-        SELECT * FROM chat_message_nodes
-        WHERE conversation_id IN (
-            SELECT id FROM conversationentity
-            WHERE assistant_id = :assistantId
-            ORDER BY update_at DESC
-            LIMIT 10
-        )
-        ORDER BY (
-            SELECT update_at FROM conversationentity WHERE id = chat_message_nodes.conversation_id
-        ) DESC, order_index DESC
-    """)
     fun getNodesWithMessagesOfAssistantPaging(assistantId: String): PagingSource<Int, MessageNodeWithMessages>
 
-    @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index DESC")
-    fun getNodesOfConversationPaging(conversationId: String): PagingSource<Int, ChatMessageNodeEntity>
+    // ✨ 获取除当前活跃话题外的全局历史消息 (用于填充 100 条 Limit)
+    @Transaction
+    @Query("""
+        SELECT n.* FROM chat_message_nodes n
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        WHERE c.assistant_id = :assistantId AND n.conversation_id != :excludeConvId
+        ORDER BY c.update_at DESC, n.order_index DESC
+        LIMIT :limit
+    """)
+    fun getLatestNodesOfAssistantExcludingFlow(assistantId: String, excludeConvId: String, limit: Int): Flow<List<MessageNodeWithMessages>>
 
-    @Transaction // 关系查询必须加事务
-    @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index DESC")
-    fun getNodesWithMessagesPaging(conversationId: String): PagingSource<Int, MessageNodeWithMessages>
+    @Query("SELECT node_id FROM chat_messages WHERE id = :messageId")
+    suspend fun getNodeIdByMessageId(messageId: String): String?
+
+    @Query("SELECT conversation_id FROM chat_messages WHERE id = :messageId")
+    suspend fun getConversationIdByMessageId(messageId: String): String?
+
+    // ✨ 获取消息在全局时间轴中的“深度”（倒数第几个）
+    @Query("""
+        SELECT COUNT(*) FROM chat_message_nodes n
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        WHERE c.assistant_id = :assistantId
+        AND (
+            c.update_at > (SELECT update_at FROM conversationentity WHERE id = (SELECT conversation_id FROM chat_messages WHERE id = :messageId))
+            OR (
+                c.update_at = (SELECT update_at FROM conversationentity WHERE id = (SELECT conversation_id FROM chat_messages WHERE id = :messageId))
+                AND n.order_index >= (SELECT order_index FROM chat_message_nodes WHERE id = (SELECT node_id FROM chat_messages WHERE id = :messageId))
+            )
+        )
+    """)
+    suspend fun getMessageGlobalDepth(assistantId: String, messageId: String): Int
+
+    @Query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0")
+    suspend fun countNewMessages(convId: String, lastTime: Long): Int
+
+    @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC LIMIT :limit")
+    suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
 }
 
 data class MessageNodeWithMessages(

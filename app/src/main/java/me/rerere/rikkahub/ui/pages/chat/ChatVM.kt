@@ -58,6 +58,7 @@ private const val TAG = "ChatVM"
 
 class ChatVM(
     id: String,
+    private val targetMessageId: String? = null, // ✨ 接收搜索定位消息 ID
     private val context: Application,
     private val settingsStore: SettingsStore,
     private val conversationRepo: ConversationRepository,
@@ -235,17 +236,29 @@ class ChatVM(
         viewModelScope.launch {
             val settings = settingsStore.settingsFlowRaw.first()
             val currentAssistantId = settings.assistantId
-            val latestInDb = conversationRepo.getLatestConversation(currentAssistantId)
+            val latestInDb = conversationRepo.getConversationById(anchorConversationId)
+                ?: conversationRepo.getLatestConversation(currentAssistantId)
 
-            val targetId = if (conversationRepo.getConversationById(anchorConversationId) == null && latestInDb != null) {
-                latestInDb.id
-            } else {
-                anchorConversationId
-            }
+            val targetId = latestInDb?.id ?: anchorConversationId
 
             _currentActiveId.value = targetId
             trackConversation(targetId)
             chatService.initializeConversation(targetId)
+
+            // ✨ 定位跳转优化逻辑
+            if (!targetMessageId.isNullOrBlank()) {
+                val orderIndex = conversationRepo.chatMessageDAO.getNodeOrderIndexByMessageId(targetMessageId)
+                if (orderIndex != null) {
+                    val totalNodes = conversationRepo.chatMessageDAO.getNodesByConversationId(targetId.toString()).size
+                    // 核心算法：目标 index 为 568，总数为 1000，则从末尾倒数需要加载约 450+ 条
+                    val neededLimit = (totalNodes - orderIndex).coerceAtLeast(100) + 50
+                    _activeMessageLimit.value = neededLimit
+
+                    // 确保目标位置的消息内容已被加载
+                    chatService.loadMoreHistory(targetId)
+                }
+            }
+
             _isConversationLoaded.value = true
             context.writeStringPreference("lastConversationId", targetId.toString())
         }

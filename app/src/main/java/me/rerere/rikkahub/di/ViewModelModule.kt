@@ -25,9 +25,13 @@ import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
 val viewModelModule = module {
-    viewModel<ChatVM> { params ->
+    viewModel<ChatVM> { params ->    // ✨ 使用解构声明：按顺序取出传入的 id (String) 和 targetMessageId (String?)
+        val id: String = params.get()
+        val targetMessageId: String? = params.getOrNull()
+
         ChatVM(
-            id = params.get(),
+            id = id,
+            targetMessageId = targetMessageId,
             context = get(),
             settingsStore = get(),
             conversationRepo = get(),
