@@ -147,3 +147,23 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 8.3 Relationship & Dynamic Profile
 - **Profile Updater (`update_profile`)**: Allows AI to dynamically update User/Assistant Profile fields.
 - **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Commitment, Identity, etc.).
+
+## 9. 会话加载与 UI 同步逻辑 (Chat Loading & UI Sync)
+
+### 9.1 混合消息流 (Hybrid Message Flow)
+- **数据来源**：`ChatVM.activeMessages` 是一个复合流，它实时合并了两个来源：
+    1. **内存状态** (`Conversation.messageNodes`)：当前活跃会话中尚未保存或正在生成的即时节点。
+    2. **数据库历史** (`dbHistoryNodes`)：通过 `conversationRepo` 获取的该智能体下所有会话的持久化历史。
+- **合并策略**：以数据库历史为基底，使用内存中的最新节点替换掉旧节点（基于 ID），并确保未持久化的新消息能即时插入流中。
+
+### 9.2 安全同步机制 (Safe Persistence)
+- **防止级联删除**：`ChatMessageDAO` 放弃了“先全删再插入”的危险策略，改用 `@Upsert` 策略。
+- **精确清理**：通过 `deleteRedundantNodes` 仅删除当前会话列表中明确移除的节点，确保未被 UI 加载进入内存的深层历史数据在数据库中保持安全，不会因 `CASCADE DELETE` 而丢失。
+
+### 9.3 动态边界探测 (Boundary Detection)
+- **自动分隔符**：UI 在渲染消息列表时，会自动对比相邻节点的 `conversationId`。一旦 ID 发生变化，立即插入 `ChatUIItem.Separator`（已开启新话题）。
+- **空会话保底**：当用户点击“新建会话”且尚未发送消息时，逻辑会强制在历史记录最下方追加分隔符，确保用户能明确感知会话已切换。
+
+### 9.4 分页与性能限制
+- **滑动窗口**：`_activeMessageLimit` 控制 UI 显示的消息上限（默认 100/500 条），防止超长对话导致 Compose 渲染性能下降。
+- **手动加载**：当 `totalCount > limit` 时，列表顶部显示“查看更早的消息”，点击后触发限制增加并从 DB 加载更多深层历史。

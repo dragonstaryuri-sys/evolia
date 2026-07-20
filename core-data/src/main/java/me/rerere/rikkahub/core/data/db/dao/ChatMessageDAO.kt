@@ -9,11 +9,15 @@ import me.rerere.rikkahub.core.data.db.entity.ChatMessageNodeEntity
 @Dao
 interface ChatMessageDAO {
     // --- 节点操作 ---
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertNode(node: ChatMessageNodeEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun insertNodes(nodes: List<ChatMessageNodeEntity>)
+
+    @Query("DELETE FROM chat_message_nodes WHERE conversation_id = :conversationId AND id NOT IN (:nodeIds)")
+    suspend fun deleteRedundantNodes(conversationId: String, nodeIds: List<String>)
+
 
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index ASC")
     suspend fun getNodesByConversationId(conversationId: String): List<ChatMessageNodeEntity>
@@ -50,7 +54,7 @@ interface ChatMessageDAO {
     suspend fun syncConversationMessages(
         conversationId: String, nodes: List<ChatMessageNodeEntity>, messages: List<ChatMessageEntity>
     ) {
-        deleteNodesByConversationId(conversationId)
+        deleteRedundantNodes(conversationId, nodes.map { it.id })
         insertNodes(nodes)
         insertMessages(messages)
     }

@@ -184,6 +184,16 @@ class ChatVM(
             val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
             (hasContent || isGenerating) && !msg.skipContext
         }
+        var lastConvId: Uuid? = null
+        val topicStartedText = context.getString(me.rerere.rikkahub.R.string.chat_topic_started)
+        filteredNodes.forEach { node ->
+            // 当检测到会话 ID 变化时，插入“开启新话题”分隔符
+            if (lastConvId != null && node.conversationId != lastConvId) {
+                items.add(ChatUIItem.Separator(topicStartedText))
+            }
+            items.add(ChatUIItem.Message(node))
+            lastConvId = node.conversationId
+        }
         items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
         val assistantId = conv.assistantId
         val totalCount = conversationRepo.getTotalNodeCountByAssistant(assistantId)
@@ -191,18 +201,11 @@ class ChatVM(
         if (hasMore) {
             items.add(ChatUIItem.Separator("查看更早的消息..."))
         }
-        else{
+        else if (totalCount > 0){
             items.add(ChatUIItem.Separator("已开启新话题"))
         }
         items
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
-
-    private val assistantConvsFlow = conversation
-        .map { it.assistantId }
-        .distinctUntilChanged()
-        .flatMapLatest { assistantId ->
-            conversationRepo.getConversationsOfAssistant(assistantId)
-        }
 
 
     var chatListInitialized by mutableStateOf(false)

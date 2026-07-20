@@ -527,10 +527,6 @@ class ConversationRepository(
         )
     }
 
-    fun getPinnedConversations(): Flow<List<Conversation>> {
-        return conversationDAO.getPinnedConversations()
-            .map { list -> fetchFullConversations(list) }
-    }
 
     suspend fun togglePinStatus(conversationId: Uuid) {
         conversationDAO.updatePinStatus(
