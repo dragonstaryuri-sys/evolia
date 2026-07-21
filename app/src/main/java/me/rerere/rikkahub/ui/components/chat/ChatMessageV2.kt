@@ -163,7 +163,7 @@ data class MessageTurnGroup(
  */
 fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     if (isEmpty()) return emptyList()
-
+    val chronologicalNodes = this.reversed()
     val groups = mutableListOf<MessageTurnGroup>()
     var currentGroup = mutableListOf<MessageNode>()
     var currentGroupRole: MessageRole? = null
@@ -173,13 +173,12 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         else -> role
     }
 
-    forEach { node ->
+    chronologicalNodes.forEach { node -> // ✨ 使用正序列表循环
         val nodeRole = node.currentMessage.role
         val logicalRole = getGroupingRole(nodeRole)
         val isTimeBreak = if (currentGroup.isNotEmpty()) {
             val lastNodeTime = currentGroup.last().currentMessage.createdAt
             val currentNodeTime = node.currentMessage.createdAt
-            // 如果间隔超过 10 分钟，则强制断开，作为一个新的 Turn 处理
             (currentNodeTime.toInstant(TimeZone.currentSystemDefault()) -
                 lastNodeTime.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
         } else false
@@ -196,7 +195,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
     }
 
-    return groups
+    return groups.asReversed()
 }
 
 /**

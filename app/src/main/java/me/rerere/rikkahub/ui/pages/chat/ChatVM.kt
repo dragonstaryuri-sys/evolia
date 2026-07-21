@@ -6,7 +6,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.net.toUri
 import android.net.Uri
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
@@ -37,7 +36,6 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.FavoriteRepository
 import me.rerere.rikkahub.service.ChatService
-import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.utils.UpdateInfo
@@ -52,6 +50,7 @@ import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import me.rerere.rikkahub.common.JsonInstant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 
 
 private const val TAG = "ChatVM"
@@ -144,7 +143,8 @@ class ChatVM(
         .cachedIn(viewModelScope)
 
     sealed class ChatUIItem {
-        data class Message(val node: MessageNode) : ChatUIItem()
+        data class Turn(val group: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup) : ChatUIItem()
+        data class Message(val node: MessageNode) : ChatUIItem() // 保留这个用于历史兼容
         data class Separator(val text: String) : ChatUIItem()
     }
     private val currentAssistantIdFlow = conversation.map { it.assistantId }.distinctUntilChanged()
@@ -173,7 +173,6 @@ class ChatVM(
             // 数据库历史是倒序的（最新在前），所以我们也反转后插在最前面
             mergedNodes.addAll(0, unsavedNodes.reversed())
         }
-        val items = mutableListOf<ChatUIItem>()
         // ✨ 改进过滤逻辑：仅包含有内容的节点或正在生成的节点
         val filteredNodes = mergedNodes.take(limit).filter { node ->
             val isGenerating = generatingIds.contains(node.id)
@@ -185,15 +184,18 @@ class ChatVM(
                 msg.parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }
             (hasContent || isGenerating) && !msg.skipContext
         }
+        val items = mutableListOf<ChatUIItem>()
+        val turns = filteredNodes.groupIntoTurns()
         var lastConvId: Uuid? = null
         val topicStartedText = context.getString(me.rerere.rikkahub.R.string.chat_topic_started)
-        filteredNodes.forEach { node ->
-            // 当检测到会话 ID 变化时，插入“开启新话题”分隔符
-            if (lastConvId != null && node.conversationId != lastConvId) {
+        turns.forEach { turn ->
+            val firstNode = turn.firstNode
+            // 插入话题分隔符
+            if (lastConvId != null && firstNode.conversationId != lastConvId) {
                 items.add(ChatUIItem.Separator(topicStartedText))
             }
-            items.add(ChatUIItem.Message(node))
-            lastConvId = node.conversationId
+            items.add(ChatUIItem.Turn(turn))
+            lastConvId = firstNode.conversationId
         }
         val assistantId = conv.assistantId
         val totalCount = conversationRepo.getTotalNodeCountByAssistant(assistantId)

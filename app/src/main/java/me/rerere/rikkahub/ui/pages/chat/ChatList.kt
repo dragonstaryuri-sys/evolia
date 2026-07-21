@@ -61,6 +61,7 @@ import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UsedMemory
+import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import kotlin.time.Instant
 
 private const val ScrollBottomKey = "ScrollBottomKey"
@@ -298,12 +299,32 @@ private fun SharedTransitionScope.ChatListNormal(
                 items = activeMessages,
                 key = { _, item ->
                     when(item) {
+                        is ChatVM.ChatUIItem.Turn -> "active_turn_${item.group.firstNode.id}" // ✨ 处理 Turn
                         is ChatVM.ChatUIItem.Message -> "active_${item.node.id}"
-                        is ChatVM.ChatUIItem.Separator -> "active_separator"
+                        is ChatVM.ChatUIItem.Separator -> "active_separator_${item.text.hashCode()}"
                     }
                 }
             ) { index, item ->
                 when (item) {
+                    is ChatVM.ChatUIItem.Turn -> {
+                        ChatMessageTurn(
+                            group = item.group,
+                            isLastTurn = false,
+                            assistant = settings.getAssistantById(conversation.assistantId),
+                            loading = false,
+                            model = settings.getCurrentChatModel(),
+                            showRegenerate = item.group.role == MessageRole.ASSISTANT,
+                            onCitationClick = onCitationClick,
+                            onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                            onEdit = { node -> onEdit(node.currentMessage) },
+                            onDelete = { node -> onDelete(node.currentMessage) },
+                            onUpdate = onUpdateMessage,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                    }
+
                     is ChatVM.ChatUIItem.Message -> {
                         val node = item.node
                         val isLastTurn = index == 0
@@ -343,8 +364,7 @@ private fun SharedTransitionScope.ChatListNormal(
             items(
                 count = uiItems.itemCount,
                 key = { index ->
-                    val item = uiItems.peek(index)
-                    when (item) {
+                    when (val item = uiItems.peek(index)) {
                         is ChatVM.ChatUIItem.Message -> "paging_${item.node.id}"
                         is ChatVM.ChatUIItem.Separator -> "sep_${item.text}"
                         else -> "placeholder_$index"
@@ -356,6 +376,25 @@ private fun SharedTransitionScope.ChatListNormal(
                 if (item is ChatVM.ChatUIItem.Message && activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>().any { it.node.id == item.node.id }) return@items
 
                 when (item) {
+                    is ChatVM.ChatUIItem.Turn -> {
+                        ChatMessageTurn(
+                            group = item.group,
+                            isLastTurn = false,
+                            assistant = settings.getAssistantById(conversation.assistantId),
+                            loading = false,
+                            model = settings.getCurrentChatModel(),
+                            showRegenerate = item.group.role == MessageRole.ASSISTANT,
+                            onCitationClick = onCitationClick,
+                            onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                            onEdit = { node -> onEdit(node.currentMessage) },
+                            onDelete = { node -> onDelete(node.currentMessage) },
+                            onUpdate = onUpdateMessage,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                    }
+
                     is ChatVM.ChatUIItem.Message -> {
                         val node = item.node
                         val nextItem = if (index + 1 < uiItems.itemCount) uiItems.peek(index + 1) else null
