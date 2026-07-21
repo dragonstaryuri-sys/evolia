@@ -168,7 +168,10 @@ class ChatVM(
     ) { conv,  dbNodes,generatingIds, limit ->
         val currentNodesMap = conv.messageNodes.associateBy { it.id }
         val mergedNodes = dbNodes.map { node ->
-            currentNodesMap[node.id] ?: node
+            // ✨ 修复点：只有当内存节点包含实际消息内容时，才覆盖数据库节点
+            // 否则保留数据库中的完整消息内容，解决上滑加载时历史消息变空消失的问题
+            val memNode = currentNodesMap[node.id]
+            if (memNode != null && memNode.messages.isNotEmpty()) memNode else node
         }.toMutableList()
         val existingIds = mergedNodes.map { it.id }.toSet()
         val unsavedNodes = conv.messageNodes.filter { it.id !in existingIds }
@@ -727,6 +730,7 @@ class ChatVM(
                 if (workInfo != null) {
                     when (workInfo.state) {
                         androidx.work.WorkInfo.State.SUCCEEDED -> {
+                            // ✨ 修复点：直接在当前协程等待同步完成，避免状态延迟
                             val updated = conversationRepo.getConversationById(conversation.id)
                             if (updated != null) {
                                 chatService.saveConversation(conversation.id, updated)

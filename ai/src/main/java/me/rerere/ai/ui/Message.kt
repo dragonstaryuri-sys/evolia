@@ -240,6 +240,13 @@ data class UIMessage(
             parts = listOf(UIMessagePart.Text(prompt)),
             skipContext = skipContext
         )
+
+        fun placeholder(id: Uuid) = UIMessage(
+            id = id,
+            role = MessageRole.SYSTEM,
+            parts = emptyList(),
+            skipContext = true // 占位符必须被跳过，不能发送给 AI
+        )
     }
 }
 
@@ -347,8 +354,8 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
 }
 
 fun List<UIMessage>.truncate(index: Int): List<UIMessage> {
-    if (index < 0 || index > this.lastIndex) return this
-
+    if (index <= 0) return this
+    if (index >= this.size) return emptyList()
     return this.subList(index, this.size)
 }
 

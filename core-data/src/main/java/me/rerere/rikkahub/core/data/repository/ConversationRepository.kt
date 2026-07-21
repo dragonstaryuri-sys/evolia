@@ -242,14 +242,16 @@ class ConversationRepository(
             if (entities.isEmpty()) return@withContext emptyList()
             // 1. 确定我们要加载哪个智能体
             val firstAssistantId = entities.first().assistantId
-            // 2. ✨ 核心变更：计算出“全局最新 100 条”或“包含目标消息”的消息 ID 集合
+            // 2. ✨ 核心变更：计算出“全局最新 N 条”或“包含目标消息”的消息 ID 集合
             val nodeIdsToLoad = if (!targetMessageId.isNullOrBlank()) {
                 // 如果是搜索跳转，查出该消息的深度，确保加载范围能覆盖到它
                 val depth = chatMessageDAO.getMessageGlobalDepth(firstAssistantId, targetMessageId)
                 chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, (depth + 20).coerceAtLeast(100))
             } else {
-                // ✨ 默认只加载该智能体全局最新的 100 条消息内容
-                chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, 100)
+                // ✨ 动态加载：根据 truncateIndex 调整加载深度，确保 AI 截断逻辑有足够上下文
+                val maxTruncate = entities.maxOfOrNull { it.truncateIndex } ?: 0
+                val loadLimit = (maxTruncate + 100).coerceAtLeast(200)
+                chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, loadLimit)
             }.toSet()
             // 3. 批量获取这些节点的实际消息内容 (contentJson)
             val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
@@ -266,7 +268,7 @@ class ConversationRepository(
             entities.map { entity ->
                 val nodesFromDb = allNodesRaw[entity.id] ?: emptyList()
                 val messageNodes = nodesFromDb.sortedBy { it.orderIndex }.map { nodeEntity ->
-                    // ✨ 关键点：只有在这个节点属于“最新100条”时，才解析它的内容
+                    // ✨ 关键点：只有在这个节点属于“待加载范围”时，才解析它的内容
                     val messages = if (nodeEntity.id in nodeIdsToLoad) {
                         allMessages[nodeEntity.id]
                             ?.filter { !it.isDeleted }
