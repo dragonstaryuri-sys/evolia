@@ -176,8 +176,14 @@ class ChatVM(
         val existingIds = mergedNodes.map { it.id }.toSet()
         val unsavedNodes = conv.messageNodes.filter { it.id !in existingIds }
         if (unsavedNodes.isNotEmpty()) {
-            // 数据库历史是倒序的（最新在前），所以我们也反转后插在最前面
-            mergedNodes.addAll(0, unsavedNodes.reversed())
+            val dbNodeIds = existingIds
+            val maxDbIdx = conv.messageNodes.indexOfLast { it.id in dbNodeIds }
+            val (newer, older) = unsavedNodes.partition { node ->
+                val nodeIdx = conv.messageNodes.indexOfFirst { it.id == node.id }
+                nodeIdx > maxDbIdx
+            }
+            if (newer.isNotEmpty()) mergedNodes.addAll(0, newer.reversed())
+            if (older.isNotEmpty()) mergedNodes.addAll(older.reversed())
         }
         // ✨ 改进过滤逻辑：仅包含有内容的节点或正在生成的节点
         val filteredNodes = mergedNodes.take(limit).filter { node ->
