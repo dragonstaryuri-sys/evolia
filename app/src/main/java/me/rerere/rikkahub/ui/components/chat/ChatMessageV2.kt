@@ -14,6 +14,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -318,7 +320,8 @@ private fun getToolDisplayName(toolName: String): String {
 @Composable
 private fun deriveActivityState(
     parts: List<UIMessagePart>,
-    loading: Boolean
+    loading: Boolean,
+    autoCollapseReasoning: Boolean // ✨ Added parameter to handle auto-collapse setting
 ): ActivityState {
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
         .associateBy { it.toolCallId }
@@ -340,7 +343,9 @@ private fun deriveActivityState(
 
         val toolCategories = toolCalls.map { categorizeToolName(it.toolName) }.distinct()
 
-        val hasReasoning = totalReasoningMs > 0
+        // ✨ Reasoning only contributes to activity pill if auto-collapse is enabled
+        // If auto-collapse is OFF, we hide the finished pill because it's shown in message flow
+        val hasReasoning = totalReasoningMs > 0 && autoCollapseReasoning
         val hasTools = toolCategories.isNotEmpty()
 
         val activityCount = (if (hasReasoning) 1 else 0) + toolCategories.size
@@ -432,7 +437,12 @@ fun ChatMessageTurn(
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }
 
-    val activityState = deriveActivityState(group.allParts, loading && isLastTurn)
+    // ✨ Pass autoCloseThinking to activity state derivation
+    val activityState = deriveActivityState(
+        group.allParts,
+        loading && isLastTurn,
+        effectiveDisplay.autoCloseThinking
+    )
     val timelineEntries = buildTimelineEntries(group.allParts)
 
     // Current focused/clicked node for actions
@@ -814,11 +824,12 @@ private fun AssistantMessageTurn(
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     val hasInterestingActivity = activityState !is ActivityState.Hidden && !wechatMode
 
-    val allTextBubbles = remember(group.filteredNodes, wechatMode) {
-        mutableListOf<Pair<MessageNode, UIMessagePart.Text>>().apply {
+    // ✨ Modified to include Reasoning parts when auto-collapse is OFF
+    val allTextBubbles = remember(group.filteredNodes, wechatMode, effectiveDisplay.autoCloseThinking) {
+        mutableListOf<Pair<MessageNode, UIMessagePart>>().apply {
             group.filteredNodes.forEach { node ->
-                node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().forEach { part ->
-                    if (part.text.isNotBlank()) {
+                node.currentMessage.parts.forEach { part ->
+                    if (part is UIMessagePart.Text && part.text.isNotBlank()) {
                         if (wechatMode) {
                             // 微信模式：使用正则动态切分
                             val regex = Regex("[，。！？~\\n]|[,!?~\\n]")
@@ -844,6 +855,11 @@ private fun AssistantMessageTurn(
                             // 普通模式：直接添加
                             add(node to part)
                         }
+                    } else if (part is UIMessagePart.Reasoning && !effectiveDisplay.autoCloseThinking) {
+                        // ✨ If auto-collapse is OFF, add reasoning to the message flow
+                        if (part.reasoning.isNotBlank()) {
+                            add(node to part)
+                        }
                     }
                 }
             }
@@ -867,8 +883,6 @@ private fun AssistantMessageTurn(
             if (displayedCount == 0) {
                 // 等待条件：直到 AI 真正开始产生内容，或者 activityState 进入了非空闲状态
                 while (currentBubbles.isEmpty() && isAiLoading) {
-                    // 如果你的 activityState 有 "正在请求" 之类的状态，也可以加入判断
-                    // 例如: if (activityState !is ActivityState.Hidden) break
                     delay(100)
                 }
 
@@ -888,10 +902,15 @@ private fun AssistantMessageTurn(
                 onTypingStateChange(displayedCount < totalAvailable || isAiLoading)
 
                 if (displayedCount < totalAvailable) {
-                    // If AI already cut the next bubble, or generation stopped, delay the current one
-                    val prevSentence = latest.getOrNull(displayedCount - 1)?.second?.text ?: ""
+                    // ✨ Extract text correctly based on part type
+                    val prevPart = latest.getOrNull(displayedCount - 1)?.second
+                    val prevText = when (prevPart) {
+                        is UIMessagePart.Text -> prevPart.text
+                        is UIMessagePart.Reasoning -> prevPart.reasoning
+                        else -> ""
+                    }
                     // 打字速度建议：每个字 100ms 基础延迟
-                    val delayTime = (prevSentence.length * 200L + 100L).coerceIn(500L, 3000L)
+                    val delayTime = (prevText.length * 200L + 100L).coerceIn(500L, 3000L)
                     delay(delayTime)
                     displayedCount++
                 } else {
@@ -1003,25 +1022,37 @@ private fun AssistantMessageTurn(
                         Spacer(Modifier.width(8.dp))
                     }
 
-                    GroupedMessageBubble(
-                        position = position,
-                        role = BubbleRole.ASSISTANT,
-                        modifier = Modifier.widthIn(max = maxWidth),
-                        containerColor = if (wechatMode) WeChatAiWhite else null,
-                        contentColor = if (wechatMode) WeChatTextBlack else null,
-                        onClick = {
-                            haptics.perform(HapticPattern.Pop)
-                            onBubbleClick(node)
-                        }
-                    ) {
-                        MarkdownBlock(
-                            content = part.text.replaceRegexes(
-                                assistant = assistant,
-                                scope = AssistantAffectScope.ASSISTANT,
-                                visual = true
-                            ),
-                            onClickCitation = { onCitationClick(it) }
+                    if (part is UIMessagePart.Reasoning) {
+                        // ✨ Render reasoning as a flow box when not collapsed
+                        ReasoningFlowBlock(
+                            content = part.reasoning,
+                            modifier = Modifier
+                                .widthIn(max = maxWidth)
+                                .padding(vertical = 4.dp),
+                            onClick = { onBubbleClick(node) }
                         )
+                    } else {
+                        GroupedMessageBubble(
+                            position = position,
+                            role = BubbleRole.ASSISTANT,
+                            modifier = Modifier.widthIn(max = maxWidth),
+                            containerColor = if (wechatMode) WeChatAiWhite else null,
+                            contentColor = if (wechatMode) WeChatTextBlack else null,
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                onBubbleClick(node)
+                            }
+                        ) {
+                            val contentText = if (part is UIMessagePart.Text) part.text else ""
+                            MarkdownBlock(
+                                content = contentText.replaceRegexes(
+                                    assistant = assistant,
+                                    scope = AssistantAffectScope.ASSISTANT,
+                                    visual = true
+                                ),
+                                onClickCitation = { onCitationClick(it) }
+                            )
+                        }
                     }
 
                     if (wechatMode && isLastTurn && isLastBubble && showRegenerate && !loading) {
@@ -1075,6 +1106,8 @@ private fun AssistantMessageTurn(
             val bubblesToShow = if (wechatMode) allTextBubbles.take(displayedCount) else allTextBubbles
             bubblesToShow.forEachIndexed { index, (node, part) ->
                 val isLastBubble = index == allTextBubbles.lastIndex
+
+                // ✨ Determine what to render based on part type
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (wechatMode) {
                         UIAvatar(
@@ -1085,18 +1118,29 @@ private fun AssistantMessageTurn(
                         )
                         Spacer(Modifier.width(8.dp))
                     }
-                    MarkdownBlock(
-                        content = part.text.replaceRegexes(
-                            assistant = assistant,
-                            scope = AssistantAffectScope.ASSISTANT,
-                            visual = true
-                        ),
-                        onClickCitation = { id -> onCitationClick(id) },
-                        modifier = Modifier.clickable {
-                            haptics.perform(HapticPattern.Pop)
-                            onBubbleClick(node)
-                        }
-                    )
+
+                    if (part is UIMessagePart.Reasoning) {
+                        ReasoningFlowBlock(
+                            content = part.reasoning,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            onClick = { onBubbleClick(node) }
+                        )
+                    } else {
+                        val contentText = if (part is UIMessagePart.Text) part.text else ""
+                        MarkdownBlock(
+                            content = contentText.replaceRegexes(
+                                assistant = assistant,
+                                scope = AssistantAffectScope.ASSISTANT,
+                                visual = true
+                            ),
+                            onClickCitation = { id -> onCitationClick(id) },
+                            modifier = Modifier.clickable {
+                                haptics.perform(HapticPattern.Pop)
+                                onBubbleClick(node)
+                            }
+                        )
+                    }
+
                     if (wechatMode && isLastTurn && isLastBubble && showRegenerate && !loading) {
                         WeChatRegenerateButton(onClick = onRegenerate)
                     }
@@ -1123,8 +1167,7 @@ private fun AssistantMessageTurn(
             ) { -it } + fadeIn(spring(dampingRatio = 0.8f, stiffness = 400f)),
             exit = shrinkVertically(spring(dampingRatio = 0.8f, stiffness = 400f)) + slideOutVertically(
                 spring(
-                    dampingRatio = 0.8f,
-                    stiffness = 500f
+                    dampingRatio = 0.8f, stiffness = 500f
                 )
             ) { -it } + fadeOut()) {
             ChatMessageActionButtons(
@@ -1139,6 +1182,50 @@ private fun AssistantMessageTurn(
                 onMemoryClick = if (wechatMode && !BuildConfig.DEBUG) null else onMemoryClick
             )
         }
+    }
+}
+
+/**
+ * ✨ A styled block to show reasoning inline when auto-collapse is disabled.
+ */
+@Composable
+private fun ReasoningFlowBlock(
+    content: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit = {}
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Lightbulb,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.secondary
+            )
+            Text(
+                text = "Thinking",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        MarkdownBlock(
+            content = content,
+            style = LocalTextStyle.current.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                fontSize = MaterialTheme.typography.bodyMedium.fontSize
+            )
+        )
     }
 }
 
