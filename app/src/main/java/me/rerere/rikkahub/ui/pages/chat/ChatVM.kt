@@ -181,7 +181,8 @@ class ChatVM(
             val hasMessages = node.messages.isNotEmpty()
             // 如果既没内容也没在生成，说明是还没加载的历史占位符，不直接显示在消息流中
             if (!hasMessages && !isGenerating) return@filter false
-            val hasContent = !msg.parts.isEmptyUIMessage() || msg.parts.any { it is UIMessagePart.ToolCall }
+            val hasContent = !msg.parts.isEmptyUIMessage() ||
+                msg.parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }
             (hasContent || isGenerating) && !msg.skipContext
         }
         var lastConvId: Uuid? = null
@@ -194,7 +195,6 @@ class ChatVM(
             items.add(ChatUIItem.Message(node))
             lastConvId = node.conversationId
         }
-        items.addAll(filteredNodes.map { ChatUIItem.Message(it) })
         val assistantId = conv.assistantId
         val totalCount = conversationRepo.getTotalNodeCountByAssistant(assistantId)
         val hasMore = totalCount > limit
