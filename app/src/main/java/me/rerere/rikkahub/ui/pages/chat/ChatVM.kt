@@ -143,7 +143,10 @@ class ChatVM(
         .cachedIn(viewModelScope)
 
     sealed class ChatUIItem {
-        data class Turn(val group: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup) : ChatUIItem()
+        data class Turn(
+            val group: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup,
+            val isGenerating: Boolean = false
+        ) : ChatUIItem()
         data class Message(val node: MessageNode) : ChatUIItem() // 保留这个用于历史兼容
         data class Separator(val text: String) : ChatUIItem()
     }
@@ -177,24 +180,25 @@ class ChatVM(
         val filteredNodes = mergedNodes.take(limit).filter { node ->
             val isGenerating = generatingIds.contains(node.id)
             val msg = node.currentMessage
+            if (isGenerating) return@filter true
             val hasMessages = node.messages.isNotEmpty()
-            // 如果既没内容也没在生成，说明是还没加载的历史占位符，不直接显示在消息流中
-            if (!hasMessages && !isGenerating) return@filter false
+            if (!hasMessages) return@filter false
             val hasContent = !msg.parts.isEmptyUIMessage() ||
                 msg.parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }
-            (hasContent || isGenerating) && !msg.skipContext
+            hasContent && !msg.skipContext
         }
         val items = mutableListOf<ChatUIItem>()
         val turns = filteredNodes.groupIntoTurns()
         var lastConvId: Uuid? = null
         val topicStartedText = context.getString(me.rerere.rikkahub.R.string.chat_topic_started)
-        turns.forEach { turn ->
+        turns.forEachIndexed { index, turn ->
             val firstNode = turn.firstNode
             // 插入话题分隔符
             if (lastConvId != null && firstNode.conversationId != lastConvId) {
                 items.add(ChatUIItem.Separator(topicStartedText))
             }
-            items.add(ChatUIItem.Turn(turn))
+            val isTurnGenerating = turn.nodes.any { generatingIds.contains(it.id) }
+            items.add(ChatUIItem.Turn(group = turn, isGenerating = isTurnGenerating))
             lastConvId = firstNode.conversationId
         }
         val assistantId = conv.assistantId

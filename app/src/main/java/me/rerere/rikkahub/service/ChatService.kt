@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Application
 import android.app.PendingIntent
 import android.content.Context
@@ -1352,6 +1353,7 @@ class ChatService(
         val count = conversationRepo.countNewMessages(id.toString(), conv.lastSummarizedMessageTime)
         if (count >= max) summarizeAndRefresh(id, skipArchive = true)
     }
+    @SuppressLint("SuspiciousIndentation")
     suspend fun summarizeAndRefresh(
         id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {

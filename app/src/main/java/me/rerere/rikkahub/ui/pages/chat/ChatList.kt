@@ -307,11 +307,16 @@ private fun SharedTransitionScope.ChatListNormal(
             ) { index, item ->
                 when (item) {
                     is ChatVM.ChatUIItem.Turn -> {
+                        val isGenerating = item.group.nodes.any { node ->
+                            // 这里的 node.id 是否在生成列表中？我们需要从 VM 获取这个状态
+                            // 或者简单点：只要它是活跃列表的第一项（最新项）且全局 loading 为 true
+                            index == 0 && loading
+                        }
                         ChatMessageTurn(
                             group = item.group,
-                            isLastTurn = false,
+                            isLastTurn = index == 0,
                             assistant = settings.getAssistantById(conversation.assistantId),
-                            loading = false,
+                            loading = loading && item.isGenerating,
                             model = settings.getCurrentChatModel(),
                             showRegenerate = item.group.role == MessageRole.ASSISTANT,
                             onCitationClick = onCitationClick,
