@@ -348,6 +348,7 @@ fun List<UIMessagePart>.isEmptyUIMessage(): Boolean {
 
 fun List<UIMessage>.truncate(index: Int): List<UIMessage> {
     if (index < 0 || index > this.lastIndex) return this
+
     return this.subList(index, this.size)
 }
 

@@ -727,15 +727,11 @@ class ChatVM(
                 if (workInfo != null) {
                     when (workInfo.state) {
                         androidx.work.WorkInfo.State.SUCCEEDED -> {
-                            _toastFlow.emit(context.getString(R.string.consolidate_success))
-
-                            // ✨ 新增：归档成功后，立即从数据库同步最新的会话状态（包含新的 truncateIndex）到内存
-                            viewModelScope.launch {
-                                val updated = conversationRepo.getConversationById(conversation.id)
-                                if (updated != null) {
-                                    chatService.saveConversation(conversation.id, updated)
-                                }
+                            val updated = conversationRepo.getConversationById(conversation.id)
+                            if (updated != null) {
+                                chatService.saveConversation(conversation.id, updated)
                             }
+                            _toastFlow.emit(context.getString(R.string.consolidate_success))
                         }
                         androidx.work.WorkInfo.State.FAILED -> {
                             val errorTag = workInfo.outputData.getString("error_tag") ?: ""

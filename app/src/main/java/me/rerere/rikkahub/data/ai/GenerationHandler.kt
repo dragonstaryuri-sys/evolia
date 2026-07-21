@@ -891,6 +891,10 @@ class GenerationHandler(
         } else {
             messages.filter { !it.skipContext }
         }
+        Log.d("ContextDebug", "--- Context Build Start ---")
+        Log.d("ContextDebug", "Incoming truncateIndex: $truncateIndex")
+        Log.d("ContextDebug", "Original candidates size: ${contextCandidates.size}")
+        Log.d("ContextDebug", "first messages: ${messages.firstOrNull()?.id}.take(50)")
 
         val chatHistoryCandidates = contextCandidates
             .truncate(truncateIndex)
@@ -900,6 +904,12 @@ class GenerationHandler(
                 } ?: truncated
             }
             .reversed()
+
+        Log.d("ContextDebug", "After truncate, candidates size: ${chatHistoryCandidates.size}")
+        if (chatHistoryCandidates.isNotEmpty()) {
+            Log.d("ContextDebug", "First message in context: ${chatHistoryCandidates.last().toContentText().take(50)}")
+        }
+        Log.d("ContextDebug", "--- Context Build End ---")
 
         val searchPrunedMessages = assistant.maxSearchResultsRetained?.let { maxSearches ->
             if (maxSearches > 0) {
