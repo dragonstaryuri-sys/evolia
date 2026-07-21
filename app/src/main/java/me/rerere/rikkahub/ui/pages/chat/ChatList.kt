@@ -250,7 +250,13 @@ private fun SharedTransitionScope.ChatListNormal(
 
     val needsPhantomLoadingTurn = loading && (
         (activeMessages.isEmpty() && uiItems.itemCount == 0 && uiItems.loadState.refresh !is LoadState.Loading) ||
-            (activeMessages.firstOrNull() as? ChatVM.ChatUIItem.Message)?.node?.currentMessage?.role == MessageRole.USER
+            run {
+                when (val firstItem = activeMessages.firstOrNull()) {
+                    is ChatVM.ChatUIItem.Message -> firstItem.node.currentMessage.role == MessageRole.USER
+                    is ChatVM.ChatUIItem.Turn -> firstItem.group.role == MessageRole.USER // ✨ 新增：支持 Turn 模式判定
+                    else -> false
+                }
+            }
         )
 
     LaunchedEffect(scrollToNodeId, activeMessages, uiItems.itemCount){

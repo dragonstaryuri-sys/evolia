@@ -1785,5 +1785,45 @@
   <string name="chat_page_search_result_title">Search Result</string>
   <string name="chat_page_return_to_chat">Return to Chat</string>
   <string name="chat_topic_started">New topic started</string>
+  <string name="chat_activity_reasoning">Reasoning</string>
+  <string name="chat_activity_thinking">Thinking</string>
+  <string name="chat_activity_reasoned">Reasoned</string>
+  <string name="chat_activity_reasoned_duration">Reasoned for %s</string>
+  <string name="chat_activity_replying">Replying</string>
+  <string name="chat_activity_searched_web">Searched the Web</string>
+  <string name="chat_activity_ran_python">Ran Python</string>
+  <string name="chat_activity_used_tool">Used tool</string>
+  <string name="chat_activity_searched_count">Searched ×%d</string>
+  <string name="chat_activity_ran_python_count">Ran Python ×%d</string>
+  <string name="chat_activity_mcp_count">MCP calls ×%d</string>
+  <string name="chat_activity_used_tools_count">Used tools ×%d</string>
+  <!-- Activity & Timeline -->
+  <string name="chat_timeline_title">Activity Timeline</string>
+  <string name="chat_timeline_no_activity">No activity recorded</string>
+  <string name="chat_timeline_memory_created">Memory created</string>
+  <string name="chat_timeline_memory_edited">Memory edited</string>
+  <string name="chat_timeline_memory_deleted">Memory deleted</string>
+  <string name="chat_timeline_reply">Reply</string>
+  <string name="chat_timeline_query">Query</string>
+  <string name="chat_timeline_sources">Sources (%d)</string>
+  <string name="chat_timeline_url">URL</string>
+  <string name="chat_timeline_arguments">Arguments</string>
+  <string name="chat_timeline_result">Result</string>
+  <string name="chat_timeline_memory_core">Core memory</string>
+  <string name="chat_timeline_memory_episodic">Episodic memory</string>
+  <string name="chat_timeline_memory_deleted_badge">Deleted</string>
+  <string name="chat_timeline_memory_before">Before</string>
+  <string name="chat_timeline_memory_after">After</string>
+  <string name="chat_timeline_action_edit">Edit</string>
+  <string name="chat_timeline_action_delete">Delete</string>
+  <string name="chat_timeline_action_refresh">Refresh</string>
+  <string name="chat_timeline_action_restore">Restore</string>
+  <string name="chat_timeline_edit_title">Edit memory</string>
+  <string name="chat_timeline_delete_title">Delete memory?</string>
+  <string name="chat_timeline_save">Save</string>
+  <string name="chat_timeline_cancel">Cancel</string>
+  <string name="chat_timeline_collapse">Collapse</string>
+  <string name="chat_timeline_expand">Expand</string>
+  <string name="chat_timeline_memory_content">Content</string>
 
 </resources>

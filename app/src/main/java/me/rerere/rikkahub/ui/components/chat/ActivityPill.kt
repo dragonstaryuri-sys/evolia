@@ -3,7 +3,6 @@ package me.rerere.rikkahub.ui.components.chat
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -13,11 +12,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
@@ -48,13 +45,11 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Memory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.modifier.shimmer
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.DurationUnit
 
 /**
  * State representing what the assistant is currently doing.
@@ -62,23 +57,23 @@ import kotlin.time.DurationUnit
 sealed interface ActivityState {
     /** Waiting for first token - shows typing dots */
     data object Waiting : ActivityState
-    
+
     /** Model is reasoning/thinking - shows timer */
     data class Reasoning(val startTimeMs: Long = System.currentTimeMillis()) : ActivityState
-    
+
     /** Model is using a tool */
     data class ToolUse(
         val toolName: String,
         val displayName: String,
         val startTimeMs: Long = System.currentTimeMillis()
     ) : ActivityState
-    
+
     /** Model is generating text reply */
     data object Replying : ActivityState
-    
+
     /** No activities happened - hide the pill */
     data object Hidden : ActivityState
-    
+
     /** Single activity completed - show expanded pill */
     data class CompletedSingle(
         val type: ActivityType,
@@ -87,7 +82,7 @@ sealed interface ActivityState {
         val displayName: String? = null,
         val count: Int = 1  // Number of times this activity occurred
     ) : ActivityState
-    
+
     /** Multiple activities completed - show compact pills */
     data class CompletedMultiple(
         val reasoningDurationMs: Long? = null,
@@ -98,7 +93,7 @@ sealed interface ActivityState {
 /**
  * Convert ActivityState to a key for AnimatedContent.
  * Same key = no transition animation.
- * 
+ *
  * For ToolUse, we group by tool category (e.g., all web searches share the same key)
  * so consecutive searches don't trigger transitions.
  */
@@ -157,7 +152,7 @@ private fun ActivityType.getDisplayText(): String = when (this) {
  */
 internal fun categorizeToolName(toolName: String): ActivityType = when (toolName) {
     "search_web", "scrape_web" -> ActivityType.SEARCH
-    "eval_python", "pip_install", "write_sandbox_file", 
+    "eval_python", "pip_install", "write_sandbox_file",
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
 }
@@ -168,7 +163,7 @@ internal fun categorizeToolName(toolName: String): ActivityType = when (toolName
  */
 fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List<ActivityItem> {
     val items = mutableListOf<ActivityItem>()
-    
+
     // Add reasoning if present
     if (state.reasoningDurationMs != null) {
         items.add(ActivityItem(
@@ -176,7 +171,7 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
             durationMs = state.reasoningDurationMs
         ))
     }
-    
+
     // Group tools by type and count
     if (state.toolsUsed.isNotEmpty()) {
         state.toolsUsed
@@ -187,7 +182,7 @@ fun buildActivityItemsFromMultiple(state: ActivityState.CompletedMultiple): List
                 items.add(ActivityItem(type = type, count = count))
             }
     }
-    
+
     return items
 }
 
@@ -208,7 +203,7 @@ enum class PillPosition {
 
 /**
  * A row of activity pills with Apple-like smooth animations.
- * 
+ *
  * During loading: Shows a single morphing pill (Waiting → Reasoning → Tool → etc.)
  * After completion: If multiple activities, reveals them with staggered fly-out animation
  */
@@ -221,18 +216,18 @@ fun ActivityPillRow(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.95f else 1f,
         animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
         label = "pill_scale"
     )
-    
+
     // Build activity items for multi-pill state
     val activityItems = remember(state) {
         if (state is ActivityState.CompletedMultiple) buildActivityItemsFromMultiple(state) else emptyList()
     }
-    
+
     // Animated visibility for the entire pill row
     AnimatedVisibility(
         visible = state !is ActivityState.Hidden,
@@ -252,7 +247,7 @@ fun ActivityPillRow(
                 is ActivityState.CompletedMultiple -> {
                     // Multiple activities - first pill morphs, others fly in
                     var othersCanAppear by remember { mutableStateOf(false) }
-                    
+
                     activityItems.forEachIndexed { index, item ->
                         val position = when {
                             activityItems.size == 1 -> PillPosition.SINGLE
@@ -260,14 +255,14 @@ fun ActivityPillRow(
                             index == activityItems.lastIndex -> PillPosition.LAST
                             else -> PillPosition.MIDDLE
                         }
-                        
+
                         if (index == 0) {
                             // First pill - always visible, triggers others
                             LaunchedEffect(Unit) {
                                 delay(100L)
                                 othersCanAppear = true
                             }
-                            
+
                             // Use expanded pill when there's only one activity, compact otherwise
                             if (activityItems.size == 1) {
                                 ExpandedActivityPill(
@@ -293,7 +288,7 @@ fun ActivityPillRow(
                                     visible = true
                                 }
                             }
-                            
+
                             AnimatedVisibility(
                                 visible = visible,
                                 enter = fadeIn(tween(150)) + slideInHorizontally(
@@ -312,7 +307,7 @@ fun ActivityPillRow(
                         }
                     }
                 }
-                
+
                 else -> {
                     // Single pill for all other states (Waiting, Reasoning, ToolUse, Replying, CompletedSingle)
                     val clickType = when (state) {
@@ -334,7 +329,6 @@ fun ActivityPillRow(
 
 /**
  * Animated single pill that smoothly morphs between states.
- * Uses AnimatedContent for crossfade and smooth size transitions.
  */
 @Composable
 private fun AnimatedSinglePill(
@@ -363,7 +357,7 @@ private fun AnimatedSinglePill(
         animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
         label = "corner_bottom_end"
     )
-    
+
     Surface(
         modifier = Modifier.height(PILL_HEIGHT),
         shape = RoundedCornerShape(
@@ -376,16 +370,14 @@ private fun AnimatedSinglePill(
         contentColor = MaterialTheme.colorScheme.onSurface,
         onClick = onClick
     ) {
-        // AnimatedContent for smooth crossfade between DIFFERENT activity types
-        // Use contentKey based on activity TYPE, not instance, so same-type activities don't transition
         AnimatedContent(
             targetState = state,
             transitionSpec = {
                 // Crossfade with slight scale for Apple-like feel
-                (fadeIn(animationSpec = tween(200)) + 
+                (fadeIn(animationSpec = tween(200)) +
                  scaleIn(initialScale = 0.92f, animationSpec = tween(200)))
                     .togetherWith(
-                        fadeOut(animationSpec = tween(150)) + 
+                        fadeOut(animationSpec = tween(150)) +
                         scaleOut(targetScale = 0.92f, animationSpec = tween(150))
                     )
             },
@@ -407,11 +399,11 @@ private fun AnimatedSinglePill(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    
+
                     is ActivityState.Reasoning -> {
                         ReasoningContent(startTimeMs = targetState.startTimeMs, isLive = true)
                     }
-                    
+
                     is ActivityState.ToolUse -> {
                         ToolUseContent(
                             toolName = targetState.toolName,
@@ -419,18 +411,17 @@ private fun AnimatedSinglePill(
                             isLive = true
                         )
                     }
-                    
+
                     is ActivityState.Replying -> {
                         Text(
-                            text = "Replying",
+                            text = stringResource(R.string.chat_activity_replying), // ✨ Internationalized
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.shimmer(isLoading = true)
                         )
                     }
-                    
+
                     is ActivityState.CompletedSingle -> {
-                        // Show expanded content for the single activity
                         val item = ActivityItem(
                             type = targetState.type,
                             durationMs = targetState.durationMs,
@@ -439,8 +430,7 @@ private fun AnimatedSinglePill(
                         )
                         ExpandedActivityContent(item = item)
                     }
-                    
-                    // Hidden and CompletedMultiple are handled by parent - shouldn't reach here
+
                     else -> {}
                 }
             }
@@ -454,7 +444,7 @@ private fun AnimatedSinglePill(
 @Composable
 private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
-    
+
     if (isLive) {
         LaunchedEffect(startTimeMs) {
             while (isActive) {
@@ -463,7 +453,7 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
             }
         }
     }
-    
+
     Icon(
         imageVector = Icons.Rounded.Lightbulb,
         contentDescription = null,
@@ -471,7 +461,7 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
         tint = MaterialTheme.colorScheme.secondary
     )
     Text(
-        text = "Reasoning",
+        text = stringResource(R.string.chat_activity_reasoning), // ✨ Internationalized
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.secondary,
         modifier = if (isLive) Modifier.shimmer(true) else Modifier
@@ -490,7 +480,7 @@ private fun ReasoningContent(startTimeMs: Long, isLive: Boolean) {
 @Composable
 private fun ToolUseContent(toolName: String, displayName: String, isLive: Boolean) {
     val type = categorizeToolName(toolName)
-    
+
     Icon(
         imageVector = type.getIcon(),
         contentDescription = null,
@@ -516,21 +506,21 @@ private fun ExpandedActivityContent(item: ActivityItem) {
         modifier = Modifier.size(18.dp),
         tint = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    
+
     val text = when (item.type) {
         ActivityType.REASONING -> {
             if (item.durationMs != null) {
-                "Reasoned for ${formatDuration(item.durationMs)}"
+                stringResource(R.string.chat_activity_reasoned_duration, formatDuration(item.durationMs))
             } else {
-                "Reasoned"
+                stringResource(R.string.chat_activity_reasoned)
             }
         }
-        ActivityType.SEARCH -> "Searched the Web"
-        ActivityType.PYTHON -> "Ran Python"
+        ActivityType.SEARCH -> stringResource(R.string.chat_activity_searched_web)
+        ActivityType.PYTHON -> stringResource(R.string.chat_activity_ran_python)
         ActivityType.MCP -> "MCP"
-        ActivityType.TOOL_OTHER -> "Used tool"
+        ActivityType.TOOL_OTHER -> stringResource(R.string.chat_activity_used_tool)
     }
-    
+
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
@@ -547,7 +537,7 @@ private fun getCornerRadii(
 ): RoundedCornerShape {
     val bottomLeft = if (connectsToBubbleBelow) SMALL_RADIUS else LARGE_RADIUS
     val bottomRight = if (connectsToBubbleBelow) SMALL_RADIUS else LARGE_RADIUS
-    
+
     return when (position) {
         PillPosition.SINGLE -> RoundedCornerShape(
             topStart = LARGE_RADIUS,
@@ -558,7 +548,7 @@ private fun getCornerRadii(
         PillPosition.FIRST -> RoundedCornerShape(
             topStart = LARGE_RADIUS,
             topEnd = SMALL_RADIUS,
-            bottomStart = bottomLeft,  // Flat to connect to bubble
+            bottomStart = bottomLeft,
             bottomEnd = SMALL_RADIUS
         )
         PillPosition.MIDDLE -> RoundedCornerShape(
@@ -571,7 +561,7 @@ private fun getCornerRadii(
             topStart = SMALL_RADIUS,
             topEnd = LARGE_RADIUS,
             bottomStart = SMALL_RADIUS,
-            bottomEnd = bottomRight  // Flat to connect to bubble
+            bottomEnd = bottomRight
         )
     }
 }
@@ -619,7 +609,7 @@ private fun ReasoningPill(
     isLive: Boolean = false
 ) {
     var elapsedMs by remember { mutableLongStateOf(0L) }
-    
+
     if (isLive) {
         LaunchedEffect(startTimeMs) {
             while (isActive) {
@@ -627,67 +617,6 @@ private fun ReasoningPill(
                 delay(50)
             }
         }
-    }
-    
-    SinglePill(
-        onClick = onClick,
-        position = position,
-        connectsToBubbleBelow = connectsToBubbleBelow,
-        isLoading = isLive
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.Lightbulb,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.secondary
-        )
-        Text(
-            text = "Reasoning",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = if (isLive) Modifier.shimmer(true) else Modifier
-        )
-        Text(
-            text = formatDuration(elapsedMs),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = if (isLive) Modifier.shimmer(true) else Modifier
-        )
-    }
-}
-
-/**
- * Tool use pill - expanded with tool name.
- */
-@Composable
-private fun ToolUsePill(
-    toolName: String,
-    displayName: String,
-    onClick: () -> Unit,
-    position: PillPosition,
-    connectsToBubbleBelow: Boolean,
-    isLive: Boolean = false
-) {
-    val type = categorizeToolName(toolName)
-    
-    SinglePill(
-        onClick = onClick,
-        position = position,
-        connectsToBubbleBelow = connectsToBubbleBelow,
-        isLoading = isLive
-    ) {
-        Icon(
-            imageVector = type.getIcon(),
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.secondary
-        )
-        Text(
-            text = displayName,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = if (isLive) Modifier.shimmer(true) else Modifier
-        )
     }
 }
 
@@ -713,29 +642,29 @@ private fun ExpandedActivityPill(
             modifier = Modifier.size(18.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
+
         val text = when (item.type) {
             ActivityType.REASONING -> {
                 if (item.durationMs != null) {
-                    "Reasoned for ${formatDuration(item.durationMs)}"
+                    stringResource(R.string.chat_activity_reasoned_duration, formatDuration(item.durationMs))
                 } else {
-                    "Reasoned"
+                    stringResource(R.string.chat_activity_reasoned)
                 }
             }
             ActivityType.SEARCH -> {
-                if (item.count > 1) "Searched ×${item.count}" else "Searched the Web"
+                if (item.count > 1) stringResource(R.string.chat_activity_searched_count, item.count) else stringResource(R.string.chat_activity_searched_web)
             }
             ActivityType.PYTHON -> {
-                if (item.count > 1) "Ran Python ×${item.count}" else "Ran Python"
+                if (item.count > 1) stringResource(R.string.chat_activity_ran_python_count, item.count) else stringResource(R.string.chat_activity_ran_python)
             }
             ActivityType.MCP -> {
-                if (item.count > 1) "MCP calls ×${item.count}" else "MCP"
+                if (item.count > 1) stringResource(R.string.chat_activity_mcp_count, item.count) else "MCP"
             }
             ActivityType.TOOL_OTHER -> {
-                if (item.count > 1) "Used tools ×${item.count}" else "Used tool"
+                if (item.count > 1) stringResource(R.string.chat_activity_used_tools_count, item.count) else stringResource(R.string.chat_activity_used_tool)
             }
         }
-        
+
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
@@ -746,7 +675,6 @@ private fun ExpandedActivityPill(
 
 /**
  * Compact activity pill for multiple activities.
- * Shows just icon + optional count.
  */
 @Composable
 private fun CompactActivityPill(
@@ -768,15 +696,14 @@ private fun CompactActivityPill(
             modifier = Modifier.size(18.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        
-        // Show duration for reasoning only (no counts for tools)
+
         val text = when (item.type) {
             ActivityType.REASONING -> {
                 item.durationMs?.let { formatDuration(it) }
             }
             else -> null
         }
-        
+
         if (text != null) {
             Text(
                 text = text,
@@ -799,7 +726,7 @@ private fun formatDuration(ms: Long): String {
     }
 }
 
-// Keep old ActivityPill for compatibility, but redirect to new implementation
+// Keep old ActivityPill for compatibility
 @Composable
 fun ActivityPill(
     state: ActivityState,
@@ -817,7 +744,6 @@ fun ActivityPill(
 
 /**
  * Corner radii for grouped bubbles/pills.
- * Allows different radii on each corner for the "grouped message" look.
  */
 data class GroupedCornerRadii(
     val topStart: Dp,
@@ -832,32 +758,28 @@ data class GroupedCornerRadii(
             bottomStart = 20.dp,
             bottomEnd = 20.dp
         )
-        
-        /** For first item in a group (small bottom-left corner) */
+
         fun first(largeRadius: Dp = 20.dp, smallRadius: Dp = 6.dp) = GroupedCornerRadii(
             topStart = largeRadius,
             topEnd = largeRadius,
             bottomStart = smallRadius,
             bottomEnd = largeRadius
         )
-        
-        /** For middle item in a group (small top-left and bottom-left corners) */
+
         fun middle(largeRadius: Dp = 20.dp, smallRadius: Dp = 6.dp) = GroupedCornerRadii(
             topStart = smallRadius,
             topEnd = largeRadius,
             bottomStart = smallRadius,
             bottomEnd = largeRadius
         )
-        
-        /** For last item in a group (small top-left corner) */
+
         fun last(largeRadius: Dp = 20.dp, smallRadius: Dp = 6.dp) = GroupedCornerRadii(
             topStart = smallRadius,
             topEnd = largeRadius,
             bottomStart = largeRadius,
             bottomEnd = largeRadius
         )
-        
-        /** For single item (not grouped) */
+
         fun single(radius: Dp = 20.dp) = GroupedCornerRadii(
             topStart = radius,
             topEnd = radius,

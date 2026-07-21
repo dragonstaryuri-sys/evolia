@@ -64,7 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +74,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.common.JsonInstantPretty
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
@@ -169,16 +170,17 @@ private fun getTimelineIcon(entry: TimelineEntry): ImageVector {
 /**
  * Get display label for a timeline entry.
  */
+@Composable
 private fun getTimelineLabel(entry: TimelineEntry): String {
     return when (entry) {
-        is TimelineEntry.Reasoning -> entry.title ?: "Reasoning"
+        is TimelineEntry.Reasoning -> entry.title ?: stringResource(R.string.chat_activity_reasoning)
         is TimelineEntry.ToolCall -> entry.displayName
         is TimelineEntry.MemoryAction -> when (entry.operation) {
-            MemoryOperation.CREATE -> "Memory created"
-            MemoryOperation.EDIT -> "Memory edited"
-            MemoryOperation.DELETE -> "Memory deleted"
+            MemoryOperation.CREATE -> stringResource(R.string.chat_timeline_memory_created)
+            MemoryOperation.EDIT -> stringResource(R.string.chat_timeline_memory_edited)
+            MemoryOperation.DELETE -> stringResource(R.string.chat_timeline_memory_deleted)
         }
-        is TimelineEntry.Reply -> "Reply"
+        is TimelineEntry.Reply -> stringResource(R.string.chat_timeline_reply)
     }
 }
 
@@ -216,9 +218,6 @@ private fun entryMatchesType(entry: TimelineEntry, type: ActivityType): Boolean 
 
 /**
  * Activity timeline bottom sheet.
- *
- * Shows a chronological list of all activities during the generation.
- * Each item can be expanded to show full content.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -290,7 +289,7 @@ fun ActivityTimelineSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Activity Timeline",
+                    text = stringResource(R.string.chat_timeline_title),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
@@ -305,7 +304,7 @@ fun ActivityTimelineSheet(
 
             if (entries.isEmpty()) {
                 Text(
-                    text = "No activity recorded",
+                    text = stringResource(R.string.chat_timeline_no_activity),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -370,7 +369,7 @@ fun ActivityTimelineSheet(
         var text by remember(target) { mutableStateOf(target.content) }
         AlertDialog(
             onDismissRequest = { editTarget = null },
-            title = { Text("Edit memory") },
+            title = { Text(stringResource(R.string.chat_timeline_edit_title)) },
             text = {
                 OutlinedTextField(
                     value = text,
@@ -394,12 +393,12 @@ fun ActivityTimelineSheet(
                         }
                     }
                 ) {
-                    Text("Save")
+                    Text(stringResource(R.string.chat_timeline_save))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { editTarget = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.chat_timeline_cancel))
                 }
             }
         )
@@ -408,11 +407,11 @@ fun ActivityTimelineSheet(
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("Delete memory?") },
+            title = { Text(stringResource(R.string.chat_timeline_delete_title)) },
             text = {
                 Text(
                     text = target.content?.take(140)
-                        ?: "This memory will be removed from the assistant."
+                        ?: stringResource(R.string.chat_timeline_memory_deleted)
                 )
             },
             confirmButton = {
@@ -427,12 +426,12 @@ fun ActivityTimelineSheet(
                         }
                     }
                 ) {
-                    Text("Delete")
+                    Text(stringResource(R.string.chat_timeline_action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.chat_timeline_cancel))
                 }
             }
         )
@@ -568,7 +567,7 @@ private fun TimelineEntryItem(
                     if (hasExpandableContent) {
                         Icon(
                             imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                            contentDescription = if (expanded) "Collapse" else "Expand",
+                            contentDescription = if (expanded) stringResource(R.string.chat_timeline_collapse) else stringResource(R.string.chat_timeline_expand),
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -712,7 +711,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
 
     if (!query.isNullOrBlank()) {
         Text(
-            text = "Query",
+            text = stringResource(R.string.chat_timeline_query),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary
         )
@@ -739,7 +738,7 @@ private fun SearchTimelineDetails(entry: TimelineEntry.ToolCall) {
 
     if (items.isNotEmpty()) {
         Text(
-            text = "Sources (${items.size})",
+            text = stringResource(R.string.chat_timeline_sources, items.size),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary
         )
@@ -808,7 +807,7 @@ private fun ScrapeTimelineDetails(entry: TimelineEntry.ToolCall) {
 
     if (!url.isNullOrBlank()) {
         Text(
-            text = "URL",
+            text = stringResource(R.string.chat_timeline_url),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary
         )
@@ -847,7 +846,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
 
     if (argumentsPretty.isNotBlank() && argumentsPretty != "{}") {
         Text(
-            text = "Arguments",
+            text = stringResource(R.string.chat_timeline_arguments),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary
         )
@@ -866,7 +865,7 @@ private fun GenericToolDetails(entry: TimelineEntry.ToolCall) {
 
     if (!resultPretty.isNullOrBlank() && resultPretty != "null") {
         Text(
-            text = "Result",
+            text = stringResource(R.string.chat_timeline_result),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary
         )
@@ -895,8 +894,8 @@ private fun MemoryDetails(
     canRestore: Boolean
 ) {
     val memoryTypeLabel = when (entry.memoryType) {
-        0 -> "Core memory"
-        1 -> "Episodic memory"
+        0 -> stringResource(R.string.chat_timeline_memory_core)
+        1 -> stringResource(R.string.chat_timeline_memory_episodic)
         else -> null
     }
 
@@ -906,7 +905,7 @@ private fun MemoryDetails(
             color = MaterialTheme.colorScheme.errorContainer
         ) {
             Text(
-                text = "Deleted",
+                text = stringResource(R.string.chat_timeline_memory_deleted_badge),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -931,20 +930,20 @@ private fun MemoryDetails(
     when (entry.operation) {
         MemoryOperation.CREATE -> {
             entry.content?.let { content ->
-                MemoryContentBlock(label = "Content", content = content)
+                MemoryContentBlock(label = stringResource(R.string.chat_timeline_memory_content), content = content)
             }
         }
         MemoryOperation.EDIT -> {
             entry.previousContent?.let { previous ->
-                MemoryContentBlock(label = "Before", content = previous)
+                MemoryContentBlock(label = stringResource(R.string.chat_timeline_memory_before), content = previous)
             }
             entry.content?.let { content ->
-                MemoryContentBlock(label = "After", content = content)
+                MemoryContentBlock(label = stringResource(R.string.chat_timeline_memory_after), content = content)
             }
         }
         MemoryOperation.DELETE -> {
             entry.content?.let { content ->
-                MemoryContentBlock(label = "Deleted", content = content)
+                MemoryContentBlock(label = stringResource(R.string.chat_timeline_memory_deleted_badge), content = content)
             }
         }
     }
@@ -962,12 +961,12 @@ private fun MemoryDetails(
             MemoryOperation.CREATE -> {
                 if (entry.memoryId != null && entry.content != null) {
                     TimelineActionButton(
-                        label = "Edit",
+                        label = stringResource(R.string.chat_timeline_action_edit),
                         icon = Icons.Rounded.Edit,
                         onClick = { onEditMemory(entry.memoryId, entry.content) }
                     )
                     TimelineActionButton(
-                        label = "Delete",
+                        label = stringResource(R.string.chat_timeline_action_delete),
                         icon = Icons.Rounded.Delete,
                         onClick = { onDeleteMemory(entry.memoryId, entry.content) }
                     )
@@ -976,14 +975,14 @@ private fun MemoryDetails(
             MemoryOperation.EDIT -> {
                 if (entry.memoryId != null && entry.content != null) {
                     TimelineActionButton(
-                        label = "Edit",
+                        label = stringResource(R.string.chat_timeline_action_edit),
                         icon = Icons.Rounded.Edit,
                         onClick = { onEditMemory(entry.memoryId, entry.content) }
                     )
                 }
                 if (entry.memoryId != null && entry.previousContent != null) {
                     TimelineActionButton(
-                        label = "Refresh",
+                        label = stringResource(R.string.chat_timeline_action_refresh),
                         icon = Icons.Rounded.Refresh,
                         onClick = { onRevertMemory(entry.memoryId, entry.previousContent) }
                     )
@@ -992,7 +991,7 @@ private fun MemoryDetails(
             MemoryOperation.DELETE -> {
                 if (entry.content != null) {
                     TimelineActionButton(
-                        label = "Restore",
+                        label = stringResource(R.string.chat_timeline_action_restore),
                         icon = Icons.Rounded.Refresh,
                         onClick = { onRestoreMemory(entry.content) },
                         enabled = canRestore

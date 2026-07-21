@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import kotlinx.coroutines.delay
@@ -68,6 +69,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantAffectScope
@@ -321,7 +323,7 @@ private fun getToolDisplayName(toolName: String): String {
 private fun deriveActivityState(
     parts: List<UIMessagePart>,
     loading: Boolean,
-    autoCollapseReasoning: Boolean // ✨ Added parameter to handle auto-collapse setting
+    autoCollapseReasoning: Boolean
 ): ActivityState {
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
         .associateBy { it.toolCallId }
@@ -824,7 +826,7 @@ private fun AssistantMessageTurn(
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     val hasInterestingActivity = activityState !is ActivityState.Hidden && !wechatMode
 
-    // ✨ Modified to include Reasoning parts when auto-collapse is OFF
+    // ✨ Modified: Never include Reasoning parts in WeChat mode
     val allTextBubbles = remember(group.filteredNodes, wechatMode, effectiveDisplay.autoCloseThinking) {
         mutableListOf<Pair<MessageNode, UIMessagePart>>().apply {
             group.filteredNodes.forEach { node ->
@@ -855,8 +857,8 @@ private fun AssistantMessageTurn(
                             // 普通模式：直接添加
                             add(node to part)
                         }
-                    } else if (part is UIMessagePart.Reasoning && !effectiveDisplay.autoCloseThinking) {
-                        // ✨ If auto-collapse is OFF, add reasoning to the message flow
+                    } else if (part is UIMessagePart.Reasoning && !effectiveDisplay.autoCloseThinking && !wechatMode) {
+                        // ✨ Reasoning is only added if auto-collapse is OFF AND NOT in WeChat mode
                         if (part.reasoning.isNotBlank()) {
                             add(node to part)
                         }
@@ -1023,7 +1025,7 @@ private fun AssistantMessageTurn(
                     }
 
                     if (part is UIMessagePart.Reasoning) {
-                        // ✨ Render reasoning as a flow box when not collapsed
+                        // ✨ Render reasoning as a flow box when not collapsed (already excluded in WeChat mode)
                         ReasoningFlowBlock(
                             content = part.reasoning,
                             modifier = Modifier
@@ -1213,7 +1215,7 @@ private fun ReasoningFlowBlock(
                 tint = MaterialTheme.colorScheme.secondary
             )
             Text(
-                text = "Thinking",
+                text = stringResource(R.string.chat_activity_thinking), // ✨ Internationalized
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.secondary
             )

@@ -869,10 +869,11 @@ class ChatService(
             if (placeholderId != null) {
                 // 强制让 AI 生成的第一条消息复用这个占位符的 ID
                 processMessageIds[0] = placeholderId
+                _generatingNodeIds.update { it + placeholderId }
             }
 
             // 修复：每次生成全新重置句子计数器
-            var lastDisplayedSentenceCount = 0
+
             var lastTotalFullText = ""
             var lastAiId: Uuid? = null
 
@@ -1162,7 +1163,7 @@ class ChatService(
                             // 3. 如果 AI 消息 ID 变了（比如从工具调用切换到了最终回答），重置微信模式的分句计数器
                             if (lastAI != null && lastAI.id != lastAiId) {
                                 lastAiId = lastAI.id
-                                lastDisplayedSentenceCount = 0
+
                             }
 
                             // 4. 执行同步 (注意这里恢复使用 baseMessages 而不是 modifiedMessages，确保 DB 中没有临时要求)
