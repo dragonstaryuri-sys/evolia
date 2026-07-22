@@ -282,7 +282,12 @@ class ChatVM(
 
             _currentActiveId.value = targetId
             trackConversation(targetId)
-            chatService.initializeConversation(targetId)
+
+            // ✨ 优化点：如果是搜索跳转，告诉 Service 跳过繁重的离场归档
+            chatService.initializeConversation(
+                conversationId = targetId,
+                skipAutoArchive = !targetMessageId.isNullOrBlank()
+            )
 
             // ✨ 定位跳转优化逻辑
             if (!targetMessageId.isNullOrBlank()) {
