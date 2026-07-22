@@ -166,7 +166,7 @@ class ChatVM(
         val assistantId = conversation.value.assistantId
         // 只有在切换会话、手动加载更多或触发刷新时才查数据库
         conversationRepo.getLatestNodesByAssistant(assistantId, limit).also {
-            // 当数据库重读完成后，可以尝试清理一下那些已经从数据库消失的 ID
+            // 当数据库重读完成后，从黑名单中清理掉那些已经真正从 DB 消失的 ID
             val currentIds = it.map { n -> n.id }.toSet()
             deletedNodeIds.update { old -> old.filter { id -> id in currentIds }.toSet() }
         }
@@ -181,12 +181,12 @@ class ChatVM(
         val currentNodesMap = conv.messageNodes.associateBy { it.id }
 
         // ✨ 改进过滤逻辑：
-        // 1. 过滤掉在 deletedNodeIds 中的 ID（这些是明确被删除的，不管内存在不在）
-        // 2. 依然保留内存覆盖 DB 的逻辑
+        // 1. 过滤掉在 deletedNodeIds 中的 ID（这些是明确被删除的节点）
         val filteredDbNodes = dbNodes.filterNot { it.id in deletedIds }
 
         val mergedNodes = filteredDbNodes.map { node ->
             val memNode = currentNodesMap[node.id]
+            // 如果内存节点存在且有消息，优先用内存的（可能已经删掉了某一版）
             if (memNode != null && memNode.messages.isNotEmpty()) memNode else node
         }.toMutableList()
 
@@ -587,12 +587,19 @@ class ChatVM(
         viewModelScope.launch {
             val relatedMessages = collectRelatedMessages(message)
 
-            // 记录待删除的节点 ID
+            // ✨ 改进点：检查节点是否会变为空
             val node = conversation.value.getMessageNodeByMessageId(message.id)
-            node?.let { deletedNodeIds.update { set -> set + it.id } }
-            relatedMessages.forEach { msg ->
-                conversation.value.getMessageNodeByMessageId(msg.id)?.let { n ->
-                    deletedNodeIds.update { set -> set + n.id }
+            if (node != null) {
+                val deleteVersionTag = message.versionTag
+                // 只有当该节点只剩下一条消息，或者按版本删除后节点会变空时，才加入黑名单遮盖整个节点
+                val willBeEmpty = if (deleteVersionTag != null) {
+                    node.messages.all { it.versionTag == deleteVersionTag }
+                } else {
+                    node.messages.size == 1
+                }
+
+                if (willBeEmpty) {
+                    deletedNodeIds.update { set -> set + node.id }
                 }
             }
 
@@ -609,15 +616,23 @@ class ChatVM(
             val assistantId = conversation.value.assistantId
             val allConvs = conversationRepo.getConversationsOfAssistant(assistantId).first()
 
-            // 预记录所有要删除的 ID 以便 UI 立即响应
-            val allIdsToDelete = mutableSetOf<Uuid>()
+            // 预记录所有要彻底消失的节点 ID
+            val allIdsToHide = mutableSetOf<Uuid>()
             messages.forEach { msg ->
                 val targetConv = allConvs.find { conv ->
                     conv.messageNodes.any { node -> node.messages.any { it.id == msg.id } }
                 }
-                targetConv?.getMessageNodeByMessageId(msg.id)?.let { allIdsToDelete.add(it.id) }
+                val node = targetConv?.getMessageNodeByMessageId(msg.id)
+                if (node != null) {
+                    val willBeEmpty = if (msg.versionTag != null) {
+                        node.messages.all { it.versionTag == msg.versionTag }
+                    } else {
+                        node.messages.size == 1
+                    }
+                    if (willBeEmpty) allIdsToHide.add(node.id)
+                }
             }
-            deletedNodeIds.update { it + allIdsToDelete }
+            deletedNodeIds.update { it + allIdsToHide }
 
             val messagesByConv = messages.mapNotNull { msg ->
                 val targetConv = allConvs.find { conv ->
@@ -729,7 +744,7 @@ class ChatVM(
             _currentActiveId.value = targetConv.id
             trackConversation(targetConv.id)
 
-            // 记录要删除的 ID
+            // 记录要彻底删除的 ID（如果是 User 消息，后面全删）
             val node = targetConv.getMessageNodeByMessage(message)
             val indexAt = targetConv.messageNodes.indexOf(node)
             if (indexAt != -1 && message.role == me.rerere.ai.core.MessageRole.USER) {
@@ -844,9 +859,7 @@ class ChatVM(
                 val favorite = FavoriteEntity(
                     type = if (messages.size > 1) 1 else 0,
                     content = JsonInstant.encodeToString(messages),
-                    senderName = if (messages.size == 1) {
-                        if (messages.first().role == me.rerere.ai.core.MessageRole.USER) userNickname else assistant.name
-                    } else "",
+                    senderName = if (messages.first().role == me.rerere.ai.core.MessageRole.USER) userNickname else assistant.name,
                     agentName = assistant.name,
                     userNickname = userNickname,
                     messageTime = messages.first().createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()

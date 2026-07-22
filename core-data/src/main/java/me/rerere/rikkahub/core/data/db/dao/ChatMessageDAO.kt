@@ -29,6 +29,10 @@ interface ChatMessageDAO {
     @Query("DELETE FROM chat_message_nodes WHERE conversation_id = :conversationId AND id NOT IN (:nodeIds)")
     suspend fun deleteRedundantNodes(conversationId: String, nodeIds: List<String>)
 
+    // ✨ 新增：删除指定会话中不再需要的冗余消息版本
+    @Query("DELETE FROM chat_messages WHERE conversation_id = :conversationId AND id NOT IN (:messageIds)")
+    suspend fun deleteRedundantMessages(conversationId: String, messageIds: List<String>)
+
 
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index ASC")
     suspend fun getNodesByConversationId(conversationId: String): List<ChatMessageNodeEntity>
@@ -61,14 +65,18 @@ interface ChatMessageDAO {
     LIMIT :limit
 """)
     suspend fun getLatestNodeIdsOfAssistant(assistantId: String, limit: Int): List<String>
+
     @Transaction
     suspend fun syncConversationMessages(
         conversationId: String, nodes: List<ChatMessageNodeEntity>, messages: List<ChatMessageEntity>
     ) {
+        // ✨ 同时清理冗余的节点和消息版本
         deleteRedundantNodes(conversationId, nodes.map { it.id })
+        deleteRedundantMessages(conversationId, messages.map { it.id })
         insertNodes(nodes)
         insertMessages(messages)
     }
+
     @Query("""
     SELECT * FROM chat_messages
     WHERE conversation_id = :conversationId
