@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +71,12 @@ class ChatVM(
 ) : ViewModel() {
     // ✨ 初始限制改为 100，与数据库初次加载量对齐
     private val _activeMessageLimit = MutableStateFlow(100)
+
+    // ✨ 数据库重读触发器
+    private val _dbRefreshTrigger = MutableStateFlow(0)
+
+    // ✨ 记录本次运行期间“已删除但数据库快照可能还没更新”的节点 ID
+    private val deletedNodeIds = MutableStateFlow<Set<Uuid>>(emptySet())
 
     // 标记是否正在增加限制（加载中动画）
     private val _isInternalLoadingMore = MutableStateFlow(false)
@@ -153,28 +160,38 @@ class ChatVM(
     private val currentAssistantIdFlow = conversation.map { it.assistantId }.distinctUntilChanged()
     private val dbHistoryNodes = combine(
         _currentActiveId,
-        _activeMessageLimit
-    ) { _, limit ->
+        _activeMessageLimit,
+        _dbRefreshTrigger
+    ) { _, limit, _ ->
         val assistantId = conversation.value.assistantId
-        // 只有在切换会话或手动加载更多时才查数据库
-        conversationRepo.getLatestNodesByAssistant(assistantId, limit)
+        // 只有在切换会话、手动加载更多或触发刷新时才查数据库
+        conversationRepo.getLatestNodesByAssistant(assistantId, limit).also {
+            // 当数据库重读完成后，可以尝试清理一下那些已经从数据库消失的 ID
+            val currentIds = it.map { n -> n.id }.toSet()
+            deletedNodeIds.update { old -> old.filter { id -> id in currentIds }.toSet() }
+        }
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeMessages: StateFlow<List<ChatUIItem>> = combine(
         conversation,
         dbHistoryNodes,
         chatService.generatingNodeIds,
-        _activeMessageLimit
-    ) { conv,  dbNodes,generatingIds, limit ->
+        deletedNodeIds // ✨ 引入临时删除集
+    ) { conv, dbNodes, generatingIds, deletedIds ->
         val currentNodesMap = conv.messageNodes.associateBy { it.id }
-        val mergedNodes = dbNodes.map { node ->
-            // ✨ 修复点：只有当内存节点包含实际消息内容时，才覆盖数据库节点
-            // 否则保留数据库中的完整消息内容，解决上滑加载时历史消息变空消失的问题
+
+        // ✨ 改进过滤逻辑：
+        // 1. 过滤掉在 deletedNodeIds 中的 ID（这些是明确被删除的，不管内存在不在）
+        // 2. 依然保留内存覆盖 DB 的逻辑
+        val filteredDbNodes = dbNodes.filterNot { it.id in deletedIds }
+
+        val mergedNodes = filteredDbNodes.map { node ->
             val memNode = currentNodesMap[node.id]
             if (memNode != null && memNode.messages.isNotEmpty()) memNode else node
         }.toMutableList()
+
         val existingIds = mergedNodes.map { it.id }.toSet()
-        val unsavedNodes = conv.messageNodes.filter { it.id !in existingIds }
+        val unsavedNodes = conv.messageNodes.filter { it.id !in existingIds && it.id !in deletedIds }
         if (unsavedNodes.isNotEmpty()) {
             val dbNodeIds = existingIds
             val maxDbIdx = conv.messageNodes.indexOfLast { it.id in dbNodeIds }
@@ -185,7 +202,9 @@ class ChatVM(
             if (newer.isNotEmpty()) mergedNodes.addAll(0, newer.reversed())
             if (older.isNotEmpty()) mergedNodes.addAll(older.reversed())
         }
-        // ✨ 改进过滤逻辑：仅包含有内容的节点或正在生成的节点
+
+        // 分页逻辑限制应用
+        val limit = _activeMessageLimit.value
         val filteredNodes = mergedNodes.take(limit).filter { node ->
             val isGenerating = generatingIds.contains(node.id)
             val msg = node.currentMessage
@@ -567,18 +586,39 @@ class ChatVM(
     fun deleteMessage(message: UIMessage) {
         viewModelScope.launch {
             val relatedMessages = collectRelatedMessages(message)
+
+            // 记录待删除的节点 ID
+            val node = conversation.value.getMessageNodeByMessageId(message.id)
+            node?.let { deletedNodeIds.update { set -> set + it.id } }
+            relatedMessages.forEach { msg ->
+                conversation.value.getMessageNodeByMessageId(msg.id)?.let { n ->
+                    deletedNodeIds.update { set -> set + n.id }
+                }
+            }
+
             deleteMessageInternal(message)
             relatedMessages.forEach { deleteMessageInternal(it) }
+
+            // 触发刷新
+            _dbRefreshTrigger.value++
         }
     }
 
     fun deleteMessages(messages: List<UIMessage>) {
         viewModelScope.launch {
             val assistantId = conversation.value.assistantId
-            // 获取该助手的所有对话，因为选中的消息可能跨越了“新话题”分隔线
             val allConvs = conversationRepo.getConversationsOfAssistant(assistantId).first()
 
-            // 将选中的消息按所属对话分组，提高处理效率
+            // 预记录所有要删除的 ID 以便 UI 立即响应
+            val allIdsToDelete = mutableSetOf<Uuid>()
+            messages.forEach { msg ->
+                val targetConv = allConvs.find { conv ->
+                    conv.messageNodes.any { node -> node.messages.any { it.id == msg.id } }
+                }
+                targetConv?.getMessageNodeByMessageId(msg.id)?.let { allIdsToDelete.add(it.id) }
+            }
+            deletedNodeIds.update { it + allIdsToDelete }
+
             val messagesByConv = messages.mapNotNull { msg ->
                 val targetConv = allConvs.find { conv ->
                     conv.messageNodes.any { node -> node.messages.any { it.id == msg.id } }
@@ -589,7 +629,6 @@ class ChatVM(
             messagesByConv.forEach { (targetConv, msgs) ->
                 var currentConv = targetConv
                 msgs.forEach { msg ->
-                    // 复用内部删除逻辑并更新当前对话状态
                     val relatedMessages = collectRelatedMessagesForConv(msg, currentConv)
                     currentConv = deleteMessageFromConv(msg, currentConv) ?: currentConv
                     relatedMessages.forEach { related ->
@@ -598,6 +637,8 @@ class ChatVM(
                 }
                 chatService.saveConversation(targetConv.id, currentConv)
             }
+
+            _dbRefreshTrigger.value++
         }
     }
 
@@ -687,7 +728,17 @@ class ChatVM(
 
             _currentActiveId.value = targetConv.id
             trackConversation(targetConv.id)
+
+            // 记录要删除的 ID
+            val node = targetConv.getMessageNodeByMessage(message)
+            val indexAt = targetConv.messageNodes.indexOf(node)
+            if (indexAt != -1 && message.role == me.rerere.ai.core.MessageRole.USER) {
+                val nodesToDelete = targetConv.messageNodes.subList(indexAt + 1, targetConv.messageNodes.size)
+                deletedNodeIds.update { it + nodesToDelete.map { n -> n.id } }
+            }
+
             chatService.regenerateAtMessage(targetConv.id, message, regenerateAssistantMsg, forceWipe, requirement = requirement)
+            _dbRefreshTrigger.value++
         }
     }
 
