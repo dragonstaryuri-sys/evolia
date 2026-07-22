@@ -342,7 +342,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 assistant = settings.getAssistantById(conversation.assistantId),
                                 loading = loading && item.isGenerating,
                                 model = settings.getCurrentChatModel(),
-                                showRegenerate = item.group.role == MessageRole.ASSISTANT,
+                                showRegenerate = true,
                                 onCitationClick = onCitationClick,
                                 onRegenerate = { node -> onRegenerate(node.currentMessage) },
                                 onEdit = { node -> onEdit(node.currentMessage) },
