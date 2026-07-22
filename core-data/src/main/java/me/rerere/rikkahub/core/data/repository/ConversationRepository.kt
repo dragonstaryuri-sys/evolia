@@ -549,9 +549,9 @@ class ConversationRepository(
         conversationDAO.updateTruncateIndex(id = conversationId.toString(), truncateIndex = truncateIndex)
     }
 
-    suspend fun getEpisodeCount(): Int = chatEpisodeDAO.getCount()
-
-    fun getEpisodeCountFlow(): Flow<Int> = chatEpisodeDAO.getCountFlow()
+    suspend fun deleteNodes(nodeIds: List<Uuid>) = withContext(Dispatchers.IO) {
+        chatMessageDAO.deleteNodesAndMessages(nodeIds.map { it.toString() })
+    }
 
     fun getAllConversations(): Flow<List<Conversation>> {
         return conversationDAO.getAll().map { list -> fetchFullConversations(list) }

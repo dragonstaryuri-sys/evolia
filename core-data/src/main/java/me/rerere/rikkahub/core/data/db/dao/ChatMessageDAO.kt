@@ -9,6 +9,17 @@ import me.rerere.rikkahub.core.data.db.entity.ChatMessageNodeEntity
 @Dao
 interface ChatMessageDAO {
     // --- 节点操作 ---
+    @Query("DELETE FROM chat_message_nodes WHERE id IN (:nodeIds)")
+    suspend fun deleteNodesByIds(nodeIds: List<String>)
+
+    @Query("DELETE FROM chat_messages WHERE node_id IN (:nodeIds)")
+    suspend fun deleteMessagesByNodeIds(nodeIds: List<String>)
+
+    @Transaction
+    suspend fun deleteNodesAndMessages(nodeIds: List<String>) {
+        deleteMessagesByNodeIds(nodeIds)
+        deleteNodesByIds(nodeIds)
+    }
     @Upsert
     suspend fun insertNode(node: ChatMessageNodeEntity)
 

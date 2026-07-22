@@ -737,9 +737,20 @@ class ChatService(
                         val node = conversation.getMessageNodeByMessage(message)
                         val indexAt = conversation.messageNodes.indexOf(node)
                         if (indexAt != -1) {
+                            // 1. 获取需要删除的节点 ID（即该 User 消息之后的所有节点）
+                            val nodesToDelete = conversation.messageNodes.subList(indexAt + 1, conversation.messageNodes.size)
+                            val idsToDelete = nodesToDelete.map { it.id }
+
+                            // 2. 截断内存中的会话
                             updatedConv = conversation.copy(
                                 messageNodes = conversation.messageNodes.subList(0, indexAt + 1)
                             )
+
+                            // 3. ✨ 关键：从数据库中物理删除这些节点
+                            if (idsToDelete.isNotEmpty()) {
+                                // 这里建议调用 repository 层级的方法，确保数据库同步
+                                conversationRepo.deleteNodes(idsToDelete)
+                            }
                         }
                     } else if (regenerateAssistantMsg) {
                         val clickedNode = conversation.getMessageNodeByMessage(message)
