@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -106,6 +107,22 @@ fun ListSelectableItem(
                 modifier = Modifier.weight(1f)
             ) {
                 content()
+
+                // ✨ 修复：多选模式下的透明遮罩，防止点击内容触发原有的交互（如菜单、预览等）
+                if (enabled) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable(
+                                interactionSource = interactionSource,
+                                indication = null,
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onSelectChange(!isSelected)
+                                }
+                            )
+                    )
+                }
             }
         }
     }

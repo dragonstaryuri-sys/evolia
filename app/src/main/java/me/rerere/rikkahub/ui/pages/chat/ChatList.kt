@@ -330,28 +330,53 @@ private fun SharedTransitionScope.ChatListNormal(
                                 olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
                         }
 
-                        Column {
-                            if (shouldShowTime) {
-                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                    Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                        // ✨ 修复：为 Turn 添加多选包裹逻辑
+                        val isTurnSelected = remember(selectedItems.size) {
+                            item.group.nodes.any { it.id in selectedItems }
+                        }
+
+                        ListSelectableItem(
+                            isSelected = isTurnSelected,
+                            onSelectChange = { selected ->
+                                item.group.nodes.forEach { node ->
+                                    if (selected) {
+                                        if (node.id !in selectedItems) selectedItems.add(node.id)
+                                    } else {
+                                        selectedItems.remove(node.id)
+                                    }
                                 }
+                            },
+                            enabled = selecting
+                        ) {
+                            Column {
+                                if (shouldShowTime) {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                        Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                                    }
+                                }
+                                ChatMessageTurn(
+                                    group = item.group,
+                                    isLastTurn = index == 0,
+                                    assistant = settings.getAssistantById(conversation.assistantId),
+                                    loading = loading && item.isGenerating,
+                                    model = settings.getCurrentChatModel(),
+                                    showRegenerate = true,
+                                    onCitationClick = onCitationClick,
+                                    onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                                    onEdit = { node -> onEdit(node.currentMessage) },
+                                    onDelete = { node -> onDelete(node.currentMessage) },
+                                    // ✨ 修复点：传递 onShare 回调以开启多选模式
+                                    onShare = { node ->
+                                        selecting = true
+                                        selectedItems.clear()
+                                        selectedItems.add(node.id)
+                                    },
+                                    onUpdate = onUpdateMessage,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                                )
                             }
-                            ChatMessageTurn(
-                                group = item.group,
-                                isLastTurn = index == 0,
-                                assistant = settings.getAssistantById(conversation.assistantId),
-                                loading = loading && item.isGenerating,
-                                model = settings.getCurrentChatModel(),
-                                showRegenerate = true,
-                                onCitationClick = onCitationClick,
-                                onRegenerate = { node -> onRegenerate(node.currentMessage) },
-                                onEdit = { node -> onEdit(node.currentMessage) },
-                                onDelete = { node -> onDelete(node.currentMessage) },
-                                onUpdate = onUpdateMessage,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
                         }
                     }
 
@@ -423,28 +448,52 @@ private fun SharedTransitionScope.ChatListNormal(
                                 olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
                         }
 
-                        Column {
-                            if (shouldShowTime) {
-                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                    Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                        // ✨ 历史消息中的 Turn 同样需要多选支持
+                        val isTurnSelected = remember(selectedItems.size) {
+                            item.group.nodes.any { it.id in selectedItems }
+                        }
+
+                        ListSelectableItem(
+                            isSelected = isTurnSelected,
+                            onSelectChange = { selected ->
+                                item.group.nodes.forEach { node ->
+                                    if (selected) {
+                                        if (node.id !in selectedItems) selectedItems.add(node.id)
+                                    } else {
+                                        selectedItems.remove(node.id)
+                                    }
                                 }
+                            },
+                            enabled = selecting
+                        ) {
+                            Column {
+                                if (shouldShowTime) {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                        Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                                    }
+                                }
+                                ChatMessageTurn(
+                                    group = item.group,
+                                    isLastTurn = false,
+                                    assistant = settings.getAssistantById(conversation.assistantId),
+                                    loading = false,
+                                    model = settings.getCurrentChatModel(),
+                                    showRegenerate = item.group.role == MessageRole.ASSISTANT,
+                                    onCitationClick = onCitationClick,
+                                    onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                                    onEdit = { node -> onEdit(node.currentMessage) },
+                                    onDelete = { node -> onDelete(node.currentMessage) },
+                                    onShare = { node ->
+                                        selecting = true
+                                        selectedItems.clear()
+                                        selectedItems.add(node.id)
+                                    },
+                                    onUpdate = onUpdateMessage,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                                )
                             }
-                            ChatMessageTurn(
-                                group = item.group,
-                                isLastTurn = false,
-                                assistant = settings.getAssistantById(conversation.assistantId),
-                                loading = false,
-                                model = settings.getCurrentChatModel(),
-                                showRegenerate = item.group.role == MessageRole.ASSISTANT,
-                                onCitationClick = onCitationClick,
-                                onRegenerate = { node -> onRegenerate(node.currentMessage) },
-                                onEdit = { node -> onEdit(node.currentMessage) },
-                                onDelete = { node -> onDelete(node.currentMessage) },
-                                onUpdate = onUpdateMessage,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp)
-                            )
                         }
                     }
 
@@ -503,7 +552,23 @@ private fun SharedTransitionScope.ChatListNormal(
                         IconButton(
                             enabled = selectedItems.isNotEmpty(),
                             onClick = {
-                                val allMsgNodes = activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>().map { it.node } + uiItems.itemSnapshotList.items.filterIsInstance<ChatVM.ChatUIItem.Message>().map { it.node }
+                                // ✨ 修复点：多选删除时，需要同时收集 Turn 和 Message 中的节点
+                                val allMsgNodes = mutableListOf<MessageNode>()
+                                activeMessages.forEach {
+                                    when(it) {
+                                        is ChatVM.ChatUIItem.Message -> allMsgNodes.add(it.node)
+                                        is ChatVM.ChatUIItem.Turn -> allMsgNodes.addAll(it.group.nodes)
+                                        else -> {}
+                                    }
+                                }
+                                for (i in 0 until uiItems.itemCount) {
+                                    when(val it = uiItems.peek(i)) {
+                                        is ChatVM.ChatUIItem.Message -> allMsgNodes.add(it.node)
+                                        is ChatVM.ChatUIItem.Turn -> allMsgNodes.addAll(it.group.nodes)
+                                        else -> {}
+                                    }
+                                }
+
                                 val toDelete = allMsgNodes.filter { it.id in selectedItems }.map { it.currentMessage }.distinctBy { it.id }
                                 onDeleteMessages(toDelete); selecting = false; selectedItems.clear()
                             }
