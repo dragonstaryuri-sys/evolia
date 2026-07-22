@@ -184,7 +184,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
             val lastNodeTime = currentGroup.last().currentMessage.createdAt
             val currentNodeTime = node.currentMessage.createdAt
             (currentNodeTime.toInstant(TimeZone.currentSystemDefault()) -
-                lastNodeTime.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
+                lastNodeTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
         } else false
 
         if ((logicalRole != currentGroupRole || isTimeBreak) && currentGroup.isNotEmpty()) {

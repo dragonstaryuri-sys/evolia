@@ -318,32 +318,56 @@ private fun SharedTransitionScope.ChatListNormal(
                             // 或者简单点：只要它是活跃列表的第一项（最新项）且全局 loading 为 true
                             index == 0 && loading
                         }
-                        ChatMessageTurn(
-                            group = item.group,
-                            isLastTurn = index == 0,
-                            assistant = settings.getAssistantById(conversation.assistantId),
-                            loading = loading && item.isGenerating,
-                            model = settings.getCurrentChatModel(),
-                            showRegenerate = item.group.role == MessageRole.ASSISTANT,
-                            onCitationClick = onCitationClick,
-                            onRegenerate = { node -> onRegenerate(node.currentMessage) },
-                            onEdit = { node -> onEdit(node.currentMessage) },
-                            onDelete = { node -> onDelete(node.currentMessage) },
-                            onUpdate = onUpdateMessage,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 4.dp)
-                        )
+
+                        val nextItem = activeMessages.getOrNull(index + 1)
+                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
+                            val olderTime = when (nextItem) {
+                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
+                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
+                                else -> null
+                            }
+                            olderTime == null || (item.group.nodes.first().currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
+                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+                        }
+
+                        Column {
+                            if (shouldShowTime) {
+                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                    Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                                }
+                            }
+                            ChatMessageTurn(
+                                group = item.group,
+                                isLastTurn = index == 0,
+                                assistant = settings.getAssistantById(conversation.assistantId),
+                                loading = loading && item.isGenerating,
+                                model = settings.getCurrentChatModel(),
+                                showRegenerate = item.group.role == MessageRole.ASSISTANT,
+                                onCitationClick = onCitationClick,
+                                onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                                onEdit = { node -> onEdit(node.currentMessage) },
+                                onDelete = { node -> onDelete(node.currentMessage) },
+                                onUpdate = onUpdateMessage,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
                     }
 
                     is ChatVM.ChatUIItem.Message -> {
                         val node = item.node
                         val isLastTurn = index == 0
                         val nextItem = activeMessages.getOrNull(index + 1)
-                        val shouldShowTime = nextItem == null || (nextItem is ChatVM.ChatUIItem.Message && run {
-                            (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
-                                nextItem.node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
-                        })
+                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
+                            val olderTime = when (nextItem) {
+                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
+                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
+                                else -> null
+                            }
+                            olderTime == null || (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
+                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+                        }
 
                         MessageItemBox(
                             node = node, isLastTurn = isLastTurn, shouldShowTime = shouldShowTime, loading = loading && isLastTurn,
@@ -388,31 +412,53 @@ private fun SharedTransitionScope.ChatListNormal(
 
                 when (item) {
                     is ChatVM.ChatUIItem.Turn -> {
-                        ChatMessageTurn(
-                            group = item.group,
-                            isLastTurn = false,
-                            assistant = settings.getAssistantById(conversation.assistantId),
-                            loading = false,
-                            model = settings.getCurrentChatModel(),
-                            showRegenerate = item.group.role == MessageRole.ASSISTANT,
-                            onCitationClick = onCitationClick,
-                            onRegenerate = { node -> onRegenerate(node.currentMessage) },
-                            onEdit = { node -> onEdit(node.currentMessage) },
-                            onDelete = { node -> onDelete(node.currentMessage) },
-                            onUpdate = onUpdateMessage,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 4.dp)
-                        )
+                        val nextItem = if (index + 1 < uiItems.itemCount) uiItems.peek(index + 1) else null
+                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
+                            val olderTime = when (nextItem) {
+                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
+                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
+                                else -> null
+                            }
+                            olderTime == null || (item.group.nodes.first().currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
+                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+                        }
+
+                        Column {
+                            if (shouldShowTime) {
+                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                    Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                                }
+                            }
+                            ChatMessageTurn(
+                                group = item.group,
+                                isLastTurn = false,
+                                assistant = settings.getAssistantById(conversation.assistantId),
+                                loading = false,
+                                model = settings.getCurrentChatModel(),
+                                showRegenerate = item.group.role == MessageRole.ASSISTANT,
+                                onCitationClick = onCitationClick,
+                                onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                                onEdit = { node -> onEdit(node.currentMessage) },
+                                onDelete = { node -> onDelete(node.currentMessage) },
+                                onUpdate = onUpdateMessage,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
                     }
 
                     is ChatVM.ChatUIItem.Message -> {
                         val node = item.node
                         val nextItem = if (index + 1 < uiItems.itemCount) uiItems.peek(index + 1) else null
-                        val shouldShowTime = nextItem == null || run {
-                            val prevMsg = (nextItem as? ChatVM.ChatUIItem.Message)?.node?.currentMessage
-                            prevMsg == null || (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
-                                prevMsg.createdAt.toInstant(TimeZone.currentSystemDefault())) > 10.minutes
+                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
+                            val olderTime = when (nextItem) {
+                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
+                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
+                                else -> null
+                            }
+                            olderTime == null || (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
+                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
                         }
 
                         MessageItemBox(
