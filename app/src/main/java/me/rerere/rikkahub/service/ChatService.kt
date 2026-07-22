@@ -456,7 +456,11 @@ class ChatService(
         _generationJobs.update { it - conversationId }
     }
 
-    suspend fun initializeConversation(conversationId: Uuid, targetAssistantId: Uuid? = null) {
+    suspend fun initializeConversation(
+        conversationId: Uuid,
+        targetAssistantId: Uuid? = null,
+        skipAutoArchive: Boolean = false // ✨ 新增：支持跳过离场归档逻辑
+    ) {
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
         val currentJob = coroutineContext.job
         val registeredJob = _generationJobs.value[conversationId]
@@ -468,7 +472,7 @@ class ChatService(
             ?: settingsStore.settingsFlow.value.getCurrentAssistant().id
 
         lastConversationId?.let { oldId ->
-            if (oldId != conversationId) {
+            if (oldId != conversationId && !skipAutoArchive) { // ✨ 在跳转搜索消息时不执行重归档逻辑
                 val isNewConversation = currentConvInDb == null ||
                     currentConvInDb.currentMessages.none { it.role == MessageRole.USER }
 
