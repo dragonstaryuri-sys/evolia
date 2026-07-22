@@ -91,15 +91,25 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 - **L2: Episodic Memory**: Long-term conversation archive. Each Conversation maps to exactly one Episode. **Exclusively for all-day continuity and L3 updates, NOT included in RAG.**
 - **L3: Master Memory (终极档案)**: The ultimate "Master Archive" of relationship dynamics and long-term commitments.
 
-### 6.1 Context Refresh (L1 - Auto-Summarization)
-- **Mechanism**: Compresses older L0 messages within the active session into segments.
-- **Segment Strategy**: `ChatSegmentEntity` only persists the AI-generated **background summary**. L1 segments are embedded and searchable via vector/keyword hybrid retrieval.
-- **Temporal Grouping**: In the prompt, L1 segments are grouped by "Today", "Yesterday", "This Week", and "Older".
+# 6.1 Context Refresh (L1 – Detail Chunk)
+- **Purpose**: For short-term memory enhancement within conversations and RAG retrieval. Splits long dialogues into segments attached with background summaries.
+- **Trigger Mechanism**: **Real-time incremental count triggering**. Executed by `ChatService.checkAndAutoSummarize` after each AI response.
+- **Trigger Conditions**:
+  - **Count Anchor**: Based on `Conversation.lastSummarizedMessageTime` (timestamp of the last summarization).
+  - **Threshold Check**: Number of new messages generated after the anchor ≥ `detailMemoryThreshold` (detail memory threshold).
+  - **Special Coefficient**: This threshold is automatically multiplied by **1.3** under WeChat mode to accommodate fragmented short messages.
+- **Persistence**: Messages are fetched in batches (100 messages per batch). After the AI generates summaries, records are persisted into the `chat_segments` table, and `lastSummarizedMessageTime` of the conversation is updated. L1 chunks are embedded into the vector database and support hybrid retrieval.
 
-### 6.2 Episodic Memory (L2 - Consolidation)
-- **Relationship**: Maintains a **STRICT 1:1 relationship** with a Conversation.
-- **Cross-Window Continuity**: System automatically fetches **all L2 summaries produced today** (excluding the current session) and injects them into every turn.
-- **NON-RAG RESOURCE**: L2 is **NOT** part of the vector memory library. It is never "searched"; it is either "injected" (if from today) or "archived" into L3.
+# 6.2 Episodic Memory (L2 – Archived Summary)
+- **Purpose**: Long-running conversation archiving, designed to compress context and enable memory transfer across sessions (within the same day).
+- **Relationship**: Maintains a **strict 1:1 binding** with `Conversation`.
+- **Trigger Mechanism**:
+  - **Background Asynchronous**: Periodic scanning by `MemoryConsolidationWorker`.
+  - **Automatic Trigger**: Triggered upon session switching logic (e.g., leaving the current conversation), or via `ChatService.checkAndAutoSummarize` when the L2 threshold is met.
+- **Trigger Conditions**:
+  - **Automatic / Asynchronous**: Incremental messages ≥ 4, and the time elapsed since the last dialogue exceeds `consolidationDelayMinutes` (archiving delay, default: 30 minutes).
+  - **Manual Execution**: Must satisfy `(total unarchived messages − 10) ≥ 10`, meaning at least 10 messages will be archived while retaining the latest 10 messages.
+- **Injection Logic**: The system automatically queries **all other L2 summaries generated on the current day** and injects them as cross-window context for the day. L2 memory does **not** participate in RAG retrieval.
 
 ### 6.3 Master Memory (L3 - Master Archive)
 - **Mechanism**: A structured relationship record that transcends individual conversations, injected into the Stable System Prompt.
