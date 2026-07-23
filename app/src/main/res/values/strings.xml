@@ -1825,5 +1825,6 @@
   <string name="chat_timeline_collapse">Collapse</string>
   <string name="chat_timeline_expand">Expand</string>
   <string name="chat_timeline_memory_content">Content</string>
-
+  <string name="chat_load_more">查看更早的消息...</string>
+  <string name="chat_topic_started_all">已开启新话题</string>
 </resources>

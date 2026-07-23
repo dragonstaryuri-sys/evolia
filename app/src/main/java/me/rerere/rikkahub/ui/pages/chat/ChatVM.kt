@@ -253,11 +253,13 @@ class ChatVM(
             lastConvId = firstNode.conversationId
         }
         val assistantId = conv.assistantId
-        val totalCount = conversationRepo.getTotalNodeCountByAssistant(assistantId)
-        if (totalCount > limit) {
-            items.add(ChatUIItem.Separator("查看更早的消息..."))
-        } else if (totalCount > 0){
-            items.add(ChatUIItem.Separator("已开启新话题"))
+        val hasMoreHistory = dbNodes.size >= limit
+
+        if (hasMoreHistory) {
+            items.add(ChatUIItem.Separator(context.getString(R.string.chat_load_more)))
+        } else {
+            // 只有当确定没有更多历史记录时，才显示“已开启新话题”
+            items.add(ChatUIItem.Separator(context.getString(R.string.chat_topic_started_all)))
         }
         items
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
