@@ -177,7 +177,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         else -> role
     }
 
-    chronologicalNodes.forEach { node -> // ✨ 使用正序列表循环
+    chronologicalNodes.forEach { node ->
         val nodeRole = node.currentMessage.role
         val logicalRole = getGroupingRole(nodeRole)
         val isTimeBreak = if (currentGroup.isNotEmpty()) {
@@ -194,6 +194,7 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
         currentGroup.add(node)
         currentGroupRole = logicalRole
     }
+
 
     if (currentGroup.isNotEmpty() && currentGroupRole != null) {
         groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
