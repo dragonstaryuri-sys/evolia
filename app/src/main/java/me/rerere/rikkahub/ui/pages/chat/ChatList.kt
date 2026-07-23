@@ -409,6 +409,16 @@ private fun SharedTransitionScope.ChatListNormal(
                                         selectedItems.add(node.id)
                                     },
                                     onUpdate = onUpdateMessage,
+                                    onEditLorebookEntry = { entry -> navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId)) },
+                                    onMemoryClick = { memory ->
+                                        scope.launch {
+                                            isMemoryLoading = true // 修改这里，直接赋值
+                                            previewingMemory = memory // 修改这里
+                                            val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
+                                            previewingMemory = memory.copy(memoryContent = full ?: "未找到内容")
+                                            isMemoryLoading = false
+                                        }
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -531,6 +541,15 @@ private fun SharedTransitionScope.ChatListNormal(
                                         selectedItems.add(node.id)
                                     },
                                     onUpdate = onUpdateMessage,
+                                    onMemoryClick = { memory ->
+                                        scope.launch {
+                                            isMemoryLoading = true // 修改这里
+                                            previewingMemory = memory // 修改这里
+                                            val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
+                                            previewingMemory = memory.copy(memoryContent = full ?: "未找到内容")
+                                            isMemoryLoading = false
+                                        }
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp, vertical = 4.dp)

@@ -236,7 +236,7 @@ class ChatVM(
         val items = mutableListOf<ChatUIItem>()
         val turns = filteredNodes.groupIntoTurns()
         var lastConvId: Uuid? = null
-        val topicStartedText = context.getString(me.rerere.rikkahub.R.string.chat_topic_started)
+        val topicStartedText = context.getString(R.string.chat_topic_started)
         turns.forEachIndexed { index, turn ->
             val firstNode = turn.firstNode
             if (lastConvId != null && firstNode.conversationId != lastConvId) {
@@ -246,8 +246,6 @@ class ChatVM(
             items.add(ChatUIItem.Turn(group = turn, isGenerating = isTurnGenerating))
             lastConvId = firstNode.conversationId
         }
-
-        val assistantId = conv.assistantId
         val hasMoreHistory = dbNodes.size >= limit
 
         if (hasMoreHistory) {
@@ -265,12 +263,6 @@ class ChatVM(
     val conversationJob: StateFlow<Job?> = _currentActiveId
         .flatMapLatest { chatService.getGenerationJobStateFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
-
-    val conversationJobs = chatService
-        .getConversationJobs()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
-
-    val recentlyRestoredIds: StateFlow<Set<Uuid>> = chatService.recentlyRestoredIds
 
     private val _recentlyRestoredNodeIds = MutableStateFlow<Set<Uuid>>(emptySet())
     val recentlyRestoredNodeIds: StateFlow<Set<Uuid>> = _recentlyRestoredNodeIds
@@ -487,9 +479,6 @@ class ChatVM(
                 e.printStackTrace(); emit(PagingData.empty())
             }
             .cachedIn(viewModelScope)
-
-    fun updateSearchQuery(query: String) { _searchQuery.value = query }
-
     val currentChatModel = settings.map { settings -> settings.getCurrentChatModel() }.stateIn(viewModelScope, SharingStarted.Lazily, null)
     val errorFlow: SharedFlow<Throwable> = chatService.errorFlow
     val generationDoneFlow: SharedFlow<Uuid> = chatService.generationDoneFlow
