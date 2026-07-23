@@ -164,12 +164,13 @@ class ChatVM(
         _dbRefreshTrigger
     ) { activeId, limit, _ ->
         val assistantId = conversation.value.assistantId
-        // 根据是否是从搜索进入
-        val nodes = if (!targetMessageId.isNullOrBlank() && limit > 300) {
-            // 跳转模式：锁定会话加载
+
+        // ✨ 修复：如果是从搜索进入，必须锁定加载当前会话的内容，否则会被全局最新消息冲掉
+        val nodes = if (!targetMessageId.isNullOrBlank()) {
+            // 跳转模式：严格锁定会话加载
             conversationRepo.getNodesOfConversation(activeId, limit)
         } else {
-            // 普通模式：加载智能体全局最新
+            // 普通模式：加载智能体全局最新 (Global History)
             conversationRepo.getLatestNodesByAssistant(assistantId, limit)
         }
 
