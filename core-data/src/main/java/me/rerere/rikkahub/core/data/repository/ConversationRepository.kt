@@ -226,6 +226,23 @@ class ConversationRepository(
         }
     }
 
+    // ✨ 修复：添加获取指定会话节点的方法
+    suspend fun getNodesOfConversation(conversationId: Uuid, limit: Int): List<MessageNode> = withContext(Dispatchers.IO) {
+        chatMessageDAO.getNodesWithMessagesOfConversation(conversationId.toString(), limit).map { wrapper ->
+            val uiMessages = wrapper.messages
+                .filter { !it.isDeleted }
+                .sortedBy { it.orderIndex }
+                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+
+            MessageNode(
+                id = Uuid.parse(wrapper.node.id),
+                messages = uiMessages,
+                selectIndex = wrapper.node.selectIndex,
+                conversationId = Uuid.parse(wrapper.node.conversationId)
+            )
+        }
+    }
+
     suspend fun getTotalNodeCountByAssistant(assistantId: Uuid): Int = withContext(Dispatchers.IO) {
         chatMessageDAO.getTotalNodeCountByAssistant(assistantId.toString())
     }

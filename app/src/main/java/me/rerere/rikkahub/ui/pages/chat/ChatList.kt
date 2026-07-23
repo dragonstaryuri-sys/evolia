@@ -70,16 +70,16 @@ private const val ScrollBottomKey = "ScrollBottomKey"
 fun ChatList(
     innerPadding: PaddingValues,
     conversation: Conversation,
-    activeMessages: List<ChatVM.ChatUIItem>, // 🌟 类型从 .Message 改为 .ChatUIItem
-    isInternalLoadingMore: Boolean = false, // 🌟 新增：内部加载状态
-    onLoadMoreActiveMessages: () -> Unit = {}, // 🌟 新增：加载回调
+    activeMessages: List<ChatVM.ChatUIItem>,
+    isInternalLoadingMore: Boolean = false,
+    onLoadMoreActiveMessages: () -> Unit = {},
     uiItems: LazyPagingItems<ChatVM.ChatUIItem>,
     isHistoryLoading: Boolean,
     state: LazyListState,
     loading: Boolean,
     previewMode: Boolean,
     settings: Settings,
-    isSyncing: Boolean = false, // ✨ 新增：是否正在同步上下文
+    isSyncing: Boolean = false,
     recentlyRestoredNodeIds: Set<Uuid> = emptySet(),
     initialSearchQuery: String? = null,
     targetMessageId: String? = null,
@@ -101,20 +101,36 @@ fun ChatList(
 
     LaunchedEffect(initialSearchQuery, targetMessageId, uiItems.itemSnapshotList, activeMessages) {
         if (!targetMessageId.isNullOrBlank()) {
-            val activeNode = activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>()
-                .find { it.node.messages.any { msg -> msg.id.toString() == targetMessageId } }?.node
+            // ✨ 关键修复：支持在 Turn 类型中查找节点
+            val activeNode = activeMessages.asSequence()
+                .mapNotNull {
+                    when(it) {
+                        is ChatVM.ChatUIItem.Message -> it.node
+                        is ChatVM.ChatUIItem.Turn -> it.group.nodes.find { n -> n.messages.any { m -> m.id.toString() == targetMessageId } }
+                        else -> null
+                    }
+                }
+                .find { node -> node.messages.any { msg -> msg.id.toString() == targetMessageId } }
+
             if (activeNode != null) {
                 instantScroll = true
                 scrollToNodeId = activeNode.id
                 return@LaunchedEffect
             }
 
-            val node = uiItems.itemSnapshotList.items.filterIsInstance<ChatVM.ChatUIItem.Message>()
-                .find { it.node.messages.any { msg -> msg.id.toString() == targetMessageId } }
-                ?.node
-            if (node != null) {
+            val pagingNode = uiItems.itemSnapshotList.items.asSequence()
+                .mapNotNull {
+                    when(it) {
+                        is ChatVM.ChatUIItem.Message -> it.node
+                        is ChatVM.ChatUIItem.Turn -> it.group.nodes.find { n -> n.messages.any { m -> m.id.toString() == targetMessageId } }
+                        else -> null
+                    }
+                }
+                .find { node -> node.messages.any { msg -> msg.id.toString() == targetMessageId } }
+
+            if (pagingNode != null) {
                 instantScroll = true
-                scrollToNodeId = node.id
+                scrollToNodeId = pagingNode.id
             }
         } else {
             isWaitingForJump = false
@@ -253,7 +269,7 @@ private fun SharedTransitionScope.ChatListNormal(
             run {
                 when (val firstItem = activeMessages.firstOrNull()) {
                     is ChatVM.ChatUIItem.Message -> firstItem.node.currentMessage.role == MessageRole.USER
-                    is ChatVM.ChatUIItem.Turn -> firstItem.group.role == MessageRole.USER // ✨ 新增：支持 Turn 模式判定
+                    is ChatVM.ChatUIItem.Turn -> firstItem.group.role == MessageRole.USER
                     else -> false
                 }
             }
@@ -261,13 +277,30 @@ private fun SharedTransitionScope.ChatListNormal(
 
     LaunchedEffect(scrollToNodeId, activeMessages, uiItems.itemCount){
         val targetId = scrollToNodeId ?: return@LaunchedEffect
-        val activeIndex = activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>().indexOfFirst { it.node.id == targetId }
+
+        // ✨ 关键修复：支持查找 Turn 类型中的索引
+        val activeIndex = activeMessages.indexOfFirst { item ->
+            when(item) {
+                is ChatVM.ChatUIItem.Message -> item.node.id == targetId
+                is ChatVM.ChatUIItem.Turn -> item.group.nodes.any { it.id == targetId }
+                else -> false
+            }
+        }
+
         if (activeIndex >= 0) {
             state.scrollToItem(activeIndex + 1)
             onScrolledToNode()
             return@LaunchedEffect
         }
-        val pagingIndex = uiItems.itemSnapshotList.indexOfFirst { it is ChatVM.ChatUIItem.Message && it.node.id == targetId }
+
+        val pagingIndex = uiItems.itemSnapshotList.indexOfFirst { item ->
+            when(item) {
+                is ChatVM.ChatUIItem.Message -> item.node.id == targetId
+                is ChatVM.ChatUIItem.Turn -> item.group.nodes.any { it.id == targetId }
+                else -> false
+            }
+        }
+
         if (pagingIndex >= 0) {
             val totalIndex = activeMessages.size + pagingIndex + 1
             if (instantScroll) state.scrollToItem(totalIndex) else state.animateScrollToItem(totalIndex)
@@ -300,12 +333,11 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // 🌟 第一流：实时活跃消息（支持分页加载分隔符）
             itemsIndexed(
                 items = activeMessages,
                 key = { _, item ->
                     when(item) {
-                        is ChatVM.ChatUIItem.Turn -> "active_turn_${item.group.firstNode.id}" // ✨ 处理 Turn
+                        is ChatVM.ChatUIItem.Turn -> "active_turn_${item.group.firstNode.id}"
                         is ChatVM.ChatUIItem.Message -> "active_${item.node.id}"
                         is ChatVM.ChatUIItem.Separator -> "active_separator_${item.text.hashCode()}"
                     }
@@ -313,11 +345,7 @@ private fun SharedTransitionScope.ChatListNormal(
             ) { index, item ->
                 when (item) {
                     is ChatVM.ChatUIItem.Turn -> {
-                        val isGenerating = item.group.nodes.any { node ->
-                            // 这里的 node.id 是否在生成列表中？我们需要从 VM 获取这个状态
-                            // 或者简单点：只要它是活跃列表的第一项（最新项）且全局 loading 为 true
-                            index == 0 && loading
-                        }
+                        val isGenerating = index == 0 && loading
 
                         val nextItem = activeMessages.getOrNull(index + 1)
                         val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
@@ -330,7 +358,6 @@ private fun SharedTransitionScope.ChatListNormal(
                                 olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
                         }
 
-                        // ✨ 修复：为 Turn 添加多选包裹逻辑
                         val isTurnSelected = remember(selectedItems.size) {
                             item.group.nodes.any { it.id in selectedItems }
                         }
@@ -365,7 +392,6 @@ private fun SharedTransitionScope.ChatListNormal(
                                     onRegenerate = { node -> onRegenerate(node.currentMessage) },
                                     onEdit = { node -> onEdit(node.currentMessage) },
                                     onDelete = { node -> onDelete(node.currentMessage) },
-                                    // ✨ 修复点：传递 onShare 回调以开启多选模式
                                     onShare = { node ->
                                         selecting = true
                                         selectedItems.clear()
@@ -405,7 +431,6 @@ private fun SharedTransitionScope.ChatListNormal(
                         )
                     }
                     is ChatVM.ChatUIItem.Separator -> {
-                        // ✨ 重点：当此项进入屏幕，自动触发加载更多
                         LaunchedEffect(Unit) {
                             onLoadMoreActiveMessages()
                         }
@@ -420,7 +445,6 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
 
-            // 🌟 第二流：分页历史消息（不同话题的分页）
             items(
                 count = uiItems.itemCount,
                 key = { index ->
@@ -448,7 +472,6 @@ private fun SharedTransitionScope.ChatListNormal(
                                 olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
                         }
 
-                        // ✨ 历史消息中的 Turn 同样需要多选支持
                         val isTurnSelected = remember(selectedItems.size) {
                             item.group.nodes.any { it.id in selectedItems }
                         }
@@ -552,7 +575,6 @@ private fun SharedTransitionScope.ChatListNormal(
                         IconButton(
                             enabled = selectedItems.isNotEmpty(),
                             onClick = {
-                                // ✨ 修复点：多选删除时，需要同时收集 Turn 和 Message 中的节点
                                 val allMsgNodes = mutableListOf<MessageNode>()
                                 activeMessages.forEach {
                                     when(it) {

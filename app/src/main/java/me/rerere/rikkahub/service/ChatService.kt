@@ -184,6 +184,7 @@ class ChatService(
         val moreNodes = conversationRepo.loadMoreMessages(conversationId, loadedContentIds)
 
         if (moreNodes.isNotEmpty()) {
+            Log.d(TAG, "loadMoreHistory: Loaded ${moreNodes.size} more nodes for $conversationId") // 🐞 DEBUG LOG
             updateConversation(conversationId) { old ->
                 val newMap = moreNodes.associateBy { it.id }
 
@@ -289,12 +290,14 @@ class ChatService(
 
     fun addConversationReference(conversationId: Uuid) {
         conversationReferences[conversationId] = conversationReferences.getOrDefault(conversationId, 0) + 1
+        Log.d(TAG, "addConversationReference: $conversationId, count=${conversationReferences[conversationId]}") // 🐞 DEBUG LOG
     }
 
     fun removeConversationReference(conversationId: Uuid) {
         val currentCount = conversationReferences[conversationId] ?: 0
         if (currentCount <= 1) {
             conversationReferences.remove(conversationId)
+            Log.d(TAG, "removeConversationReference: $conversationId, removed from references") // 🐞 DEBUG LOG
             appScope.launch {
                 delay(100)
                 if (!hasReference(conversationId)) {
@@ -303,6 +306,7 @@ class ChatService(
             }
         } else {
             conversationReferences[conversationId] = currentCount - 1
+            Log.d(TAG, "removeConversationReference: $conversationId, count=${conversationReferences[conversationId]}") // 🐞 DEBUG LOG
         }
     }
 
@@ -431,6 +435,7 @@ class ChatService(
         }
 
         return conversations.computeIfAbsent(conversationId) {
+            Log.d(TAG, "getConversationFlow: Creating new MutableStateFlow for $conversationId") // 🐞 DEBUG LOG
             MutableStateFlow(
                 Conversation.ofId(
                     id = conversationId,
@@ -461,7 +466,14 @@ class ChatService(
         targetAssistantId: Uuid? = null,
         skipAutoArchive: Boolean = false // ✨ 新增：支持跳过离场归档逻辑
     ) {
+        Log.d(TAG, "initializeConversation: $conversationId, targetAssistantId=$targetAssistantId") // 🐞 DEBUG LOG
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
+        if (currentConvInDb != null) {
+            Log.d(TAG, "initializeConversation: Found conversation in DB with ${currentConvInDb.messageNodes.size} nodes") // 🐞 DEBUG LOG
+        } else {
+            Log.d(TAG, "initializeConversation: Conversation $conversationId NOT found in DB") // 🐞 DEBUG LOG
+        }
+
         val currentJob = coroutineContext.job
         val registeredJob = _generationJobs.value[conversationId]
         val isGenerating = registeredJob != null && registeredJob.isActive && registeredJob != currentJob
@@ -535,6 +547,7 @@ class ChatService(
             val newConversation = Conversation.ofId(
                 id = conversationId, assistantId = assistant.id
             ).updateCurrentMessages(assistant.presetMessages)
+            Log.d(TAG, "initializeConversation: Initializing NEW conversation for assistant ${assistant.id}") // 🐞 DEBUG LOG
             updateConversation(conversationId) { newConversation }
         }
     }
@@ -1635,6 +1648,7 @@ class ChatService(
         flow.update { old ->
             val new = block(old)
             if (new.id != id) return@update old
+            Log.d(TAG, "updateConversation: $id, nodes=${new.messageNodes.size}") // 🐞 DEBUG LOG
             filesToDelete = old.files.filter { f -> new.files.none { it == f } }
             new
         }

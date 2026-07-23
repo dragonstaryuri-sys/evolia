@@ -162,11 +162,22 @@ class ChatVM(
         _currentActiveId,
         _activeMessageLimit,
         _dbRefreshTrigger
-    ) { _, limit, _ ->
+    ) { activeId, limit, _ ->
         val assistantId = conversation.value.assistantId
-        // 只有在切换会话、手动加载更多或触发刷新时才查数据库
-        conversationRepo.getLatestNodesByAssistant(assistantId, limit).also {
-            // 当数据库重读完成后，从黑名单中清理掉那些已经真正从 DB 消失的 ID
+
+        // ✨ 改进：如果 limit 较大（跳转模式），说明我们需要大量历史
+        // 我们应该优先从“当前活跃会话”中捞取，而不是从“全智能体”中捞取最新的，
+        // 否则会被其他零散对话挤掉
+        val nodes = if (limit > 300) {
+            // 跳转模式：锁定会话加载
+            conversationRepo.getNodesOfConversation(activeId, limit)
+        } else {
+            // 普通模式：加载智能体全局最新
+            conversationRepo.getLatestNodesByAssistant(assistantId, limit)
+        }
+
+        nodes.also {
+            Log.d(TAG, "dbHistoryNodes: Fetched ${it.size} nodes from DB for conv $activeId (limit=$limit)")
             val currentIds = it.map { n -> n.id }.toSet()
             deletedNodeIds.update { old -> old.filter { id -> id in currentIds }.toSet() }
         }
@@ -178,16 +189,22 @@ class ChatVM(
         chatService.generatingNodeIds,
         deletedNodeIds // ✨ 引入临时删除集
     ) { conv, dbNodes, generatingIds, deletedIds ->
-        val currentNodesMap = conv.messageNodes.associateBy { it.id }
+        val startTime = System.currentTimeMillis()
+        Log.d(TAG, "activeMessages: Syncing... convNodes=${conv.messageNodes.size}, dbNodes=${dbNodes.size}")
 
-        // ✨ 改进过滤逻辑：
-        // 1. 过滤掉在 deletedNodeIds 中的 ID（这些是明确被删除的节点）
+        val currentNodesMap = conv.messageNodes.associateBy { it.id }
         val filteredDbNodes = dbNodes.filterNot { it.id in deletedIds }
 
         val mergedNodes = filteredDbNodes.map { node ->
             val memNode = currentNodesMap[node.id]
-            // 如果内存节点存在且有消息，优先用内存的（可能已经删掉了某一版）
-            if (memNode != null && memNode.messages.isNotEmpty()) memNode else node
+            // ✨ 改进：优先信任 dbNodes 的消息内容，除非内存中有更新的生成状态
+            if (memNode != null && generatingIds.contains(node.id)) {
+                memNode
+            } else if (node.messages.isNotEmpty()) {
+                node
+            } else {
+                memNode ?: node
+            }
         }.toMutableList()
 
         val existingIds = mergedNodes.map { it.id }.toSet()
@@ -205,23 +222,31 @@ class ChatVM(
 
         // 分页逻辑限制应用
         val limit = _activeMessageLimit.value
-        val filteredNodes = mergedNodes.take(limit).filter { node ->
-            val isGenerating = generatingIds.contains(node.id)
-            val msg = node.currentMessage
-            if (isGenerating) return@filter true
+        val filteredNodes = mergedNodes.filter { node ->
+            if (generatingIds.contains(node.id)) return@filter true
+
             val hasMessages = node.messages.isNotEmpty()
+            // 如果是正在寻找的目标，绝对不能过滤
+            if (!targetMessageId.isNullOrBlank() && node.messages.any { it.id.toString() == targetMessageId }) {
+                return@filter true
+            }
+
             if (!hasMessages) return@filter false
+
+            val msg = node.currentMessage
             val hasContent = !msg.parts.isEmptyUIMessage() ||
                 msg.parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }
             hasContent && !msg.skipContext
-        }
+        }.take(limit)
+
+        Log.d(TAG, "activeMessages: Filtered to ${filteredNodes.size} visible items. Processed in ${System.currentTimeMillis() - startTime}ms")
+
         val items = mutableListOf<ChatUIItem>()
         val turns = filteredNodes.groupIntoTurns()
         var lastConvId: Uuid? = null
         val topicStartedText = context.getString(me.rerere.rikkahub.R.string.chat_topic_started)
         turns.forEachIndexed { index, turn ->
             val firstNode = turn.firstNode
-            // 插入话题分隔符
             if (lastConvId != null && firstNode.conversationId != lastConvId) {
                 items.add(ChatUIItem.Separator(topicStartedText))
             }
@@ -231,11 +256,9 @@ class ChatVM(
         }
         val assistantId = conv.assistantId
         val totalCount = conversationRepo.getTotalNodeCountByAssistant(assistantId)
-        val hasMore = totalCount > limit
-        if (hasMore) {
+        if (totalCount > limit) {
             items.add(ChatUIItem.Separator("查看更早的消息..."))
-        }
-        else if (totalCount > 0){
+        } else if (totalCount > 0){
             items.add(ChatUIItem.Separator("已开启新话题"))
         }
         items
@@ -275,11 +298,19 @@ class ChatVM(
         viewModelScope.launch {
             val settings = settingsStore.settingsFlowRaw.first()
             val currentAssistantId = settings.assistantId
-            val latestInDb = conversationRepo.getConversationById(anchorConversationId)
+
+            // ✨ 优化：先尝试获取目标消息所属的会话 ID
+            val jumpConvId = if (!targetMessageId.isNullOrBlank()) {
+                conversationRepo.chatMessageDAO.getConversationIdByMessageId(targetMessageId)?.let { Uuid.parse(it) }
+            } else null
+
+            val latestInDb = jumpConvId?.let { conversationRepo.getConversationById(it) }
+                ?: conversationRepo.getConversationById(anchorConversationId)
                 ?: conversationRepo.getLatestConversation(currentAssistantId)
 
             val targetId = latestInDb?.id ?: anchorConversationId
 
+            Log.d(TAG, "Init ChatVM: targetId=$targetId, anchorId=$anchorConversationId, hasTargetMessage=${!targetMessageId.isNullOrBlank()}") // 🐞 DEBUG LOG
             _currentActiveId.value = targetId
             trackConversation(targetId)
 
@@ -291,9 +322,15 @@ class ChatVM(
 
             // ✨ 定位跳转优化逻辑
             if (!targetMessageId.isNullOrBlank()) {
-                // 🌟 使用全局深度定位
-                val depth = conversationRepo.chatMessageDAO.getMessageGlobalDepth(currentAssistantId.toString(), targetMessageId)
-                _activeMessageLimit.value = (depth + 20).coerceAtLeast(100)
+                // 🌟 改为查询“会话内”相对深度，而不是“全局”深度
+                val orderIndex = conversationRepo.chatMessageDAO.getNodeOrderIndexByMessageId(targetMessageId) ?: 0
+                val totalNodesInConv = conversationRepo.chatMessageDAO.getNodesByConversationId(targetId.toString()).size
+                val internalDepth = (totalNodesInConv - orderIndex).coerceAtLeast(0)
+
+                Log.d(TAG, "Search Jump: targetMessageId=$targetMessageId, internalDepth=$internalDepth") // 🐞 DEBUG LOG
+
+                // 为了保险，加上 100 条 Buffer 并应用一个合理的硬上限（防止计算错误导致 OOM）
+                _activeMessageLimit.value = (internalDepth + 100).coerceIn(100, 3000)
             } else {
                 _activeMessageLimit.value = 100
             }
@@ -416,6 +453,7 @@ class ChatVM(
             _searchQuery
         ) { assistantId, query -> assistantId to query }
             .flatMapLatest { (assistantId, query) ->
+                Log.d(TAG, "conversations flow: Loading conversations for assistantId=$assistantId, query=$query") // 🐞 DEBUG LOG
                 if (query.isBlank()) {
                     conversationRepo.getConversationsOfAssistantPaging(assistantId)
                 } else {
@@ -449,7 +487,10 @@ class ChatVM(
                         }
                     }
             }
-            .catch { e -> e.printStackTrace(); emit(PagingData.empty()) }
+            .catch { e ->
+                Log.e(TAG, "conversations flow error", e) // 🐞 DEBUG LOG
+                e.printStackTrace(); emit(PagingData.empty())
+            }
             .cachedIn(viewModelScope)
 
     fun updateSearchQuery(query: String) { _searchQuery.value = query }
