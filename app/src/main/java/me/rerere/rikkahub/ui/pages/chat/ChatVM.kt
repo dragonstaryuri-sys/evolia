@@ -164,7 +164,6 @@ class ChatVM(
         _dbRefreshTrigger
     ) { activeId, limit, _ ->
         val assistantId = conversation.value.assistantId
-
         // 根据是否是从搜索进入
         val nodes = if (!targetMessageId.isNullOrBlank() && limit > 300) {
             // 跳转模式：锁定会话加载
