@@ -165,10 +165,8 @@ class ChatVM(
     ) { activeId, limit, _ ->
         val assistantId = conversation.value.assistantId
 
-        // ✨ 改进：如果 limit 较大（跳转模式），说明我们需要大量历史
-        // 我们应该优先从“当前活跃会话”中捞取，而不是从“全智能体”中捞取最新的，
-        // 否则会被其他零散对话挤掉
-        val nodes = if (limit > 300) {
+        // 根据是否是从搜索进入
+        val nodes = if (!targetMessageId.isNullOrBlank() && limit > 300) {
             // 跳转模式：锁定会话加载
             conversationRepo.getNodesOfConversation(activeId, limit)
         } else {

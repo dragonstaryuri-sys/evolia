@@ -76,7 +76,7 @@ interface ChatMessageDAO {
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
 
     @Transaction
-    @Query("SELECT n.* FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId ORDER BY c.update_at DESC, n.order_index DESC")
+    @Query("SELECT n.* FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId ORDER BY c.create_at DESC, n.order_index DESC")
     fun getNodesWithMessagesOfAssistantPaging(assistantId: String): PagingSource<Int, MessageNodeWithMessages>
 
     @Transaction
