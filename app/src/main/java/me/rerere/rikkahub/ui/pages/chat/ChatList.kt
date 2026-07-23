@@ -308,6 +308,17 @@ private fun SharedTransitionScope.ChatListNormal(
         }
     }
 
+    // ✨ 核心修复：收集 activeMessages 中已经包含的所有节点 ID，用于分页去重
+    val activeNodeIds = remember(activeMessages) {
+        activeMessages.flatMap { item ->
+            when (item) {
+                is ChatVM.ChatUIItem.Message -> listOf(item.node.id)
+                is ChatVM.ChatUIItem.Turn -> item.group.nodes.map { it.id }
+                else -> emptyList()
+            }
+        }.toSet()
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = state,
@@ -450,6 +461,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 key = { index ->
                     when (val item = uiItems.peek(index)) {
                         is ChatVM.ChatUIItem.Message -> "paging_${item.node.id}"
+                        is ChatVM.ChatUIItem.Turn -> "paging_turn_${item.group.firstNode.id}"
                         is ChatVM.ChatUIItem.Separator -> "sep_${item.text}"
                         else -> "placeholder_$index"
                     }
@@ -457,7 +469,14 @@ private fun SharedTransitionScope.ChatListNormal(
             ) { index ->
                 val item = uiItems[index] ?: return@items
                 if (item is ChatVM.ChatUIItem.Message && item.node.currentMessage.skipContext) return@items
-                if (item is ChatVM.ChatUIItem.Message && activeMessages.filterIsInstance<ChatVM.ChatUIItem.Message>().any { it.node.id == item.node.id }) return@items
+
+                // ✨ 核心修复：更彻底的分页去重检查
+                val isDuplicate = when (item) {
+                    is ChatVM.ChatUIItem.Message -> activeNodeIds.contains(item.node.id)
+                    is ChatVM.ChatUIItem.Turn -> item.group.nodes.any { activeNodeIds.contains(it.id) }
+                    else -> false
+                }
+                if (isDuplicate) return@items
 
                 when (item) {
                     is ChatVM.ChatUIItem.Turn -> {

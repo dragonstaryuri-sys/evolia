@@ -131,12 +131,6 @@ class ChatVM(
             conversationRepo.getMessagesOfAssistantPaging(assistantId)
                 .map { pagingData ->
                     pagingData
-                        // 🌟 重点：过滤掉已经在 activeMessages 中显示的当前会话节点，避免重复
-                        .filter { node ->
-                            // 如果 MessageNode 里带了 conversationId，就过滤掉当前的
-                            // 这样 uiMessagesPaging 就变成了纯粹的“历史流”
-                            true // 这里的过滤逻辑根据你 MessageNode 是否持有 convId 来定
-                        }
                         .map { ChatUIItem.Message(it) as ChatUIItem }
                         .insertSeparators { before, after ->
                             // 🌟 重点：在不同会话之间插入“历史话题”分隔线
@@ -252,6 +246,7 @@ class ChatVM(
             items.add(ChatUIItem.Turn(group = turn, isGenerating = isTurnGenerating))
             lastConvId = firstNode.conversationId
         }
+
         val assistantId = conv.assistantId
         val hasMoreHistory = dbNodes.size >= limit
 
