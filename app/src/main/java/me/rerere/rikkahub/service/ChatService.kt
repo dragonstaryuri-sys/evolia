@@ -107,6 +107,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
 import android.net.Uri
+import kotlinx.coroutines.currentCoroutineContext
 import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
@@ -474,7 +475,7 @@ class ChatService(
             Log.d(TAG, "initializeConversation: Conversation $conversationId NOT found in DB") // 🐞 DEBUG LOG
         }
 
-        val currentJob = coroutineContext.job
+        val currentJob = currentCoroutineContext().job
         val registeredJob = _generationJobs.value[conversationId]
         val isGenerating = registeredJob != null && registeredJob.isActive && registeredJob != currentJob
         val currentConv = conversations[conversationId]?.value ?: currentConvInDb
@@ -666,7 +667,13 @@ class ChatService(
         isTemporaryChat: Boolean = false,
         predefinedUserNode: MessageNode? = null
     ) {
-        if (isTemporaryChat) temporaryConversations.add(conversationId)
+        if (isTemporaryChat) {
+            temporaryConversations.add(conversationId)
+        } else {
+            // ✨ 如果用户显式切换回正常模式，从临时集合中移除
+            temporaryConversations.remove(conversationId)
+        }
+
         val oldJob = _generationJobs.value[conversationId]
         if (oldJob != null) {
             Log.d(TAG, "User sent new message, cancelling previous AI response.")
@@ -1239,11 +1246,13 @@ class ChatService(
                 val finalConv = currentConversation
                 appScope.launch {
                     saveConversation(conversationId, finalConv)
-                    val currentSettings = settingsStore.settingsFlow.value
-                    val updatedAssistants = currentSettings.assistants.map {
-                        if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                    if (!temporaryConversations.contains(conversationId)) {
+                        val currentSettings = settingsStore.settingsFlow.value
+                        val updatedAssistants = currentSettings.assistants.map {
+                            if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                        }
+                        settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                     }
-                    settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                 }
                 if (e !is kotlinx.coroutines.CancellationException) {
                     val friendlyError = translateError(e)
@@ -1259,11 +1268,13 @@ class ChatService(
                     appScope.launch { conversationRepo.recordTokenUsage(finalConv.assistantId.toString(), usage) }
                 }
                 appScope.launch {
-                    val currentSettings = settingsStore.settingsFlow.value
-                    val updatedAssistants = currentSettings.assistants.map {
-                        if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                    if (!temporaryConversations.contains(conversationId)) {
+                        val currentSettings = settingsStore.settingsFlow.value
+                        val updatedAssistants = currentSettings.assistants.map {
+                            if (it.id == finalConv.assistantId) it.copy(lastConversationId = conversationId.toString()) else it
+                        }
+                        settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                     }
-                    settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                 }
                 addConversationReference(conversationId)
                 appScope.launch {
