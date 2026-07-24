@@ -26,7 +26,6 @@ interface ChatMessageDAO {
     @Upsert
     suspend fun insertNodes(nodes: List<ChatMessageNodeEntity>)
 
-    // ✨ 核心修复：仅在同步时保留现有节点，不再根据内存快照盲目删除
     @Transaction
     suspend fun syncConversationMessages(
         conversationId: String, nodes: List<ChatMessageNodeEntity>, messages: List<ChatMessageEntity>
@@ -76,7 +75,7 @@ interface ChatMessageDAO {
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
 
     @Transaction
-    @Query("SELECT n.* FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId ORDER BY c.create_at DESC, n.order_index DESC")
+    @Query("SELECT n.* FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId ORDER BY c.update_at DESC, n.order_index DESC")
     fun getNodesWithMessagesOfAssistantPaging(assistantId: String): PagingSource<Int, MessageNodeWithMessages>
 
     @Transaction
@@ -89,6 +88,9 @@ interface ChatMessageDAO {
     @Query("SELECT conversation_id FROM chat_messages WHERE id = :messageId")
     suspend fun getConversationIdByMessageId(messageId: String): String?
 
+    @Query("SELECT conversation_id FROM chat_message_nodes WHERE id = :nodeId")
+    suspend fun getConversationIdByNodeId(nodeId: String): String?
+
     @Query("SELECT COUNT(*) FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId AND (c.update_at > (SELECT update_at FROM conversationentity WHERE id = (SELECT conversation_id FROM chat_messages WHERE id = :messageId)) OR (c.update_at = (SELECT update_at FROM conversationentity WHERE id = (SELECT conversation_id FROM chat_messages WHERE id = :messageId)) AND n.order_index >= (SELECT order_index FROM chat_message_nodes WHERE id = (SELECT node_id FROM chat_messages WHERE id = :messageId))))")
     suspend fun getMessageGlobalDepth(assistantId: String, messageId: String): Int
 
@@ -98,9 +100,64 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC LIMIT :limit")
     suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
 
+    // --- 滑动窗口分页查询 ---
+
+    /**
+     * 获取最新 N 个节点，包含会话更新时间
+     */
     @Transaction
-    @Query("SELECT n.* FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId ORDER BY c.update_at DESC, n.order_index DESC LIMIT :limit")
-    suspend fun getLatestNodesWithMessagesOfAssistant(assistantId: String, limit: Int): List<MessageNodeWithMessages>
+    @Query("""
+        SELECT n.*, c.update_at as conv_update_at FROM chat_message_nodes n
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        WHERE c.assistant_id = :assistantId
+        ORDER BY c.update_at DESC, n.order_index DESC
+        LIMIT :limit
+    """)
+    suspend fun getLatestNodesWithMetadata(assistantId: String, limit: Int): List<MessageNodeWithMetadata>
+
+    /**
+     * 加载比当前锚点更旧的节点（向上滚动历史）
+     */
+    @Transaction
+    @Query("""
+        SELECT n.*, c.update_at as conv_update_at FROM chat_message_nodes n
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        WHERE c.assistant_id = :assistantId
+        AND (
+            c.update_at < :anchorUpdateAt
+            OR (c.update_at = :anchorUpdateAt AND n.order_index < :anchorOrderIndex)
+        )
+        ORDER BY c.update_at DESC, n.order_index DESC
+        LIMIT :limit
+    """)
+    suspend fun getNodesOlderThan(
+        assistantId: String,
+        anchorUpdateAt: Long,
+        anchorOrderIndex: Int,
+        limit: Int
+    ): List<MessageNodeWithMetadata>
+
+    /**
+     * 加载比当前锚点更新的节点（向下滚动回最新区域）
+     */
+    @Transaction
+    @Query("""
+        SELECT n.*, c.update_at as conv_update_at FROM chat_message_nodes n
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        WHERE c.assistant_id = :assistantId
+        AND (
+            c.update_at > :anchorUpdateAt
+            OR (c.update_at = :anchorUpdateAt AND n.order_index > :anchorOrderIndex)
+        )
+        ORDER BY c.update_at ASC, n.order_index ASC
+        LIMIT :limit
+    """)
+    suspend fun getNodesNewerThan(
+        assistantId: String,
+        anchorUpdateAt: Long,
+        anchorOrderIndex: Int,
+        limit: Int
+    ): List<MessageNodeWithMetadata>
 
     // ✨ 新增：获取指定会话最新的 N 个节点
     @Transaction
@@ -121,4 +178,17 @@ data class MessageNodeWithMessages(
         entityColumn = "node_id"
     )
     val messages: List<ChatMessageEntity>
+)
+
+/**
+ * 带有定位元数据的节点包装
+ */
+data class MessageNodeWithMetadata(
+    @Embedded val node: ChatMessageNodeEntity,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "node_id"
+    )
+    val messages: List<ChatMessageEntity>,
+    @ColumnInfo(name = "conv_update_at") val convUpdateAt: Long
 )

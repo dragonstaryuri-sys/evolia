@@ -31,6 +31,8 @@ import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.core.data.model.Assistant
 import kotlin.uuid.Uuid
 import kotlin.time.ExperimentalTime
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class ConversationRepository(
     private val context: Context,
@@ -208,21 +210,11 @@ class ConversationRepository(
     private suspend fun fetchFullConversation(entity: ConversationEntity, targetMessageId: String? = null): Conversation {
         return fetchFullConversations(listOf(entity), targetMessageId).first()
     }
-    // 在 ConversationRepository 类中添加：
 
     suspend fun getLatestNodesByAssistant(assistantId: Uuid, limit: Int): List<MessageNode> = withContext(Dispatchers.IO) {
-        chatMessageDAO.getLatestNodesWithMessagesOfAssistant(assistantId.toString(), limit).map { wrapper ->
-            val uiMessages = wrapper.messages
-                .filter { !it.isDeleted }
-                .sortedBy { it.orderIndex }
-                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-
-            MessageNode(
-                id = Uuid.parse(wrapper.node.id),
-                messages = uiMessages,
-                selectIndex = wrapper.node.selectIndex,
-                conversationId = Uuid.parse(wrapper.node.conversationId) // ✨ 映射 ID
-            )
+        // 将 getLatestNodesWithMessagesOfAssistant 修正为 getLatestNodesWithMetadata
+        chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), limit).map { wrapper ->
+            mapMetadataToNode(wrapper)
         }
     }
 
@@ -256,70 +248,70 @@ class ConversationRepository(
         entities: List<ConversationEntity>,
         targetMessageId: String? = null // ✨ 新增参数
     ): List<Conversation> = withContext(Dispatchers.IO) {
-            if (entities.isEmpty()) return@withContext emptyList()
-            // 1. 确定我们要加载哪个智能体
-            val firstAssistantId = entities.first().assistantId
-            // 2. ✨ 核心变更：计算出“全局最新 N 条”或“包含目标消息”的消息 ID 集合
-            val nodeIdsToLoad = if (!targetMessageId.isNullOrBlank()) {
-                // 如果是搜索跳转，查出该消息的深度，确保加载范围能覆盖到它
-                val depth = chatMessageDAO.getMessageGlobalDepth(firstAssistantId, targetMessageId)
-                chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, (depth + 20).coerceAtLeast(100))
-            } else {
-                // ✨ 动态加载：根据 truncateIndex 调整加载深度，确保 AI 截断逻辑有足够上下文
-                val maxTruncate = entities.maxOfOrNull { it.truncateIndex } ?: 0
-                val loadLimit = (maxTruncate + 100).coerceAtLeast(200)
-                chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, loadLimit)
-            }.toSet()
-            // 3. 批量获取这些节点的实际消息内容 (contentJson)
-            val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
-                nodeIdsToLoad.chunked(900).flatMap { batch ->
-                    chatMessageDAO.getMessagesByNodeIds(batch)
-                }.groupBy { it.nodeId }
-            } else emptyMap()
-            // 4. 获取所有涉及的节点占位符（用于 UI 排序和分页定位）
-            val convIds = entities.map { it.id }
-            val allNodesRaw = convIds.chunked(900).flatMap { batch ->
-                chatMessageDAO.getNodesByConversationIds(batch)
-            }.groupBy { it.conversationId }
-            // 5. 组装数据
-            entities.map { entity ->
-                val nodesFromDb = allNodesRaw[entity.id] ?: emptyList()
-                val messageNodes = nodesFromDb.sortedBy { it.orderIndex }.map { nodeEntity ->
-                    // ✨ 关键点：只有在这个节点属于“待加载范围”时，才解析它的内容
-                    val messages = if (nodeEntity.id in nodeIdsToLoad) {
-                        allMessages[nodeEntity.id]
-                            ?.filter { !it.isDeleted }
-                            ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-                            ?: emptyList()
-                    } else {
-                        emptyList() // 否则保持为空消息列表，作为占位符
-                    }
-
-                    MessageNode(
-                        id = Uuid.parse(nodeEntity.id),
-                        messages = messages,
-                        selectIndex = nodeEntity.selectIndex,
-                        conversationId = Uuid.parse(nodeEntity.conversationId)
-                    )
+        if (entities.isEmpty()) return@withContext emptyList()
+        // 1. 确定我们要加载哪个智能体
+        val firstAssistantId = entities.first().assistantId
+        // 2. ✨ 核心变更：计算出“全局最新 N 条”或“包含目标消息”的消息 ID 集合
+        val nodeIdsToLoad = if (!targetMessageId.isNullOrBlank()) {
+            // 如果是搜索跳转，查出该消息的深度，确保加载范围能覆盖到它
+            val depth = chatMessageDAO.getMessageGlobalDepth(firstAssistantId, targetMessageId)
+            chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, (depth + 20).coerceAtLeast(100))
+        } else {
+            // ✨ 动态加载：根据 truncateIndex 调整加载深度，确保 AI 截断逻辑有足够上下文
+            val maxTruncate = entities.maxOfOrNull { it.truncateIndex } ?: 0
+            val loadLimit = (maxTruncate + 100).coerceAtLeast(200)
+            chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, loadLimit)
+        }.toSet()
+        // 3. 批量获取这些节点的实际消息内容 (contentJson)
+        val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
+            nodeIdsToLoad.chunked(900).flatMap { batch ->
+                chatMessageDAO.getMessagesByNodeIds(batch)
+            }.groupBy { it.nodeId }
+        } else emptyMap()
+        // 4. 获取所有涉及的节点占位符（用于 UI 排序和分页定位）
+        val convIds = entities.map { it.id }
+        val allNodesRaw = convIds.chunked(900).flatMap { batch ->
+            chatMessageDAO.getNodesByConversationIds(batch)
+        }.groupBy { it.conversationId }
+        // 5. 组装数据
+        entities.map { entity ->
+            val nodesFromDb = allNodesRaw[entity.id] ?: emptyList()
+            val messageNodes = nodesFromDb.sortedBy { it.orderIndex }.map { nodeEntity ->
+                // ✨ 关键点：只有在这个节点属于“待加载范围”时，才解析它的内容
+                val messages = if (nodeEntity.id in nodeIdsToLoad) {
+                    allMessages[nodeEntity.id]
+                        ?.filter { !it.isDeleted }
+                        ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+                        ?: emptyList()
+                } else {
+                    emptyList() // 否则保持为空消息列表，作为占位符
                 }
 
-                // 兼容旧版本字段
-                val oldNodes = try {
-                    if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
-                        JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes).takeLast(200)
-                    } else emptyList()
-                } catch (e: Exception) { emptyList() }
-
-                val finalNodes = if (oldNodes.isEmpty()) messageNodes
-                else if (messageNodes.isEmpty()) oldNodes
-                else {
-                    val newIds = messageNodes.map { it.id }.toSet()
-                    oldNodes.filter { it.id !in newIds } + messageNodes
-                }
-
-                conversationEntityToConversation(entity, finalNodes)
+                MessageNode(
+                    id = Uuid.parse(nodeEntity.id),
+                    messages = messages,
+                    selectIndex = nodeEntity.selectIndex,
+                    conversationId = Uuid.parse(nodeEntity.conversationId)
+                )
             }
+
+            // 兼容旧版本字段
+            val oldNodes = try {
+                if (entity.nodes.isNotBlank() && entity.nodes != "[]") {
+                    JsonInstant.decodeFromString<List<MessageNode>>(entity.nodes).takeLast(200)
+                } else emptyList()
+            } catch (e: Exception) { emptyList() }
+
+            val finalNodes = if (oldNodes.isEmpty()) messageNodes
+            else if (messageNodes.isEmpty()) oldNodes
+            else {
+                val newIds = messageNodes.map { it.id }.toSet()
+                oldNodes.filter { it.id !in newIds } + messageNodes
+            }
+
+            conversationEntityToConversation(entity, finalNodes)
         }
+    }
 
     /**
      * 加载更多历史消息
@@ -621,12 +613,209 @@ class ConversationRepository(
             .map { jsonList ->
                 if (jsonList.isEmpty()) return@map 100
                 val totalLength = jsonList.sumOf {
-                    JsonInstant.decodeFromString<UIMessage>(it).toText().length.toLong()
+                    JsonInstant.decodeFromString<UIMessage>(it).toContentText().length.toLong()
                 }
                 (totalLength / jsonList.size).toInt()
             }
             .flowOn(Dispatchers.IO)
     }
+
+    // ==================================================================================
+    // ✨ 新增：游标双向滑动窗口分页 (Cursor-based Bidirectional Pagination)
+    // ==================================================================================
+
+    /**
+     * 游标锚点
+     */
+    data class AnchorCursor(val updateAt: Long, val orderIndex: Int)
+
+    /**
+     * 分页状态机
+     */
+    sealed class ChatPaginationState {
+        data object Idle : ChatPaginationState()
+        data object Loading : ChatPaginationState()
+        data class Success(
+            val nodes: List<MessageNode>,
+            val hasOlder: Boolean,
+            val hasNewer: Boolean
+        ) : ChatPaginationState()
+        data class Error(val cause: Throwable) : ChatPaginationState()
+    }
+
+    /**
+     * 创建消息分页管理器工厂方法
+     */
+    fun createPaginationManager(assistantId: Uuid): MessagePaginationManager {
+        return MessagePaginationManager(assistantId)
+    }
+
+    /**
+     * 双向滑动窗口管理器
+     *
+     * ⚠️ 游标断裂风险说明：
+     * 由于基于 (updateAt, orderIndex) 复合游标定位，若会话发生“物理硬删除”会导致锚点失效。
+     * 建议业务层对会话使用软删除（isDeleted标记），或者在 UI 层提供“重置/回到最新”按钮以应对潜在的锚点失效。
+     */
+    inner class MessagePaginationManager(private val assistantId: Uuid) {
+        private val WINDOW_LIMIT = 300
+        private val BATCH_SIZE = 100
+
+        private val mutex = Mutex()
+        private val _currentNodes = mutableListOf<MessageNode>()
+
+        // 内部标记：hasNewer 仅代表窗口曾经裁剪过头部消息，不代表数据库绝对存在新消息
+        private var hasOlder = false
+        private var hasNewer = false
+
+        /**
+         * 加载初始窗口（最新的 BATCH_SIZE 条）
+         */
+        suspend fun loadInitial(): ChatPaginationState = mutex.withLock {
+            return@withLock try {
+                val results = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), BATCH_SIZE + 1)
+                }
+
+                // 使用 BATCH_SIZE + 1 探测边界
+                hasOlder = results.size > BATCH_SIZE
+                hasNewer = false // 初始加载默认位于“最新”端
+
+                _currentNodes.clear()
+                val nodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }
+                _currentNodes.addAll(nodes)
+
+                ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+            } catch (e: Exception) {
+                ChatPaginationState.Error(e)
+            }
+        }
+
+        /**
+         * 加载更旧的消息（向下滚动历史）
+         */
+        suspend fun loadOlder(): ChatPaginationState = mutex.withLock {
+            if (!hasOlder) return@withLock ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+
+            return@withLock try {
+                val lastNode = _currentNodes.lastOrNull() ?: return@withLock ChatPaginationState.Idle
+
+                val results = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getNodesOlderThan(
+                        assistantId.toString(),
+                        lastNode.parentUpdateAt,
+                        lastNode.orderIndex,
+                        BATCH_SIZE + 1
+                    )
+                }
+
+                val newOldNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }
+                hasOlder = results.size > BATCH_SIZE
+                _currentNodes.addAll(newOldNodes)
+
+                // 窗口滚动逻辑：若总数超过 WINDOW_LIMIT，则裁剪窗口头部（最新消息端）
+                if (_currentNodes.size > WINDOW_LIMIT) {
+                    val excessCount = _currentNodes.size - WINDOW_LIMIT
+                    repeat(excessCount) { _currentNodes.removeAt(0) }
+                    hasNewer = true // 标记头部已被裁剪
+                }
+
+                ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+            } catch (e: Exception) {
+                ChatPaginationState.Error(e)
+            }
+        }
+
+        /**
+         * 加载更新的消息（向上滚动回最新）
+         */
+        suspend fun loadNewer(): ChatPaginationState = mutex.withLock {
+            // 如果 hasNewer 为 false，说明当前窗口已经包含了最新的消息
+            if (!hasNewer && _currentNodes.isNotEmpty()) {
+                return@withLock ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+            }
+
+            return@withLock try {
+                val firstNode = _currentNodes.firstOrNull() ?: return@withLock ChatPaginationState.Idle
+
+                val results = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getNodesNewerThan(
+                        assistantId.toString(),
+                        firstNode.parentUpdateAt,
+                        firstNode.orderIndex,
+                        BATCH_SIZE + 1
+                    )
+                }
+
+                // DAO 返回的是 ASC 排序 [旧 -> 新]，注入时需 reverse 为 [新 -> 旧] 适配 UI
+                val newNewerNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }.reversed()
+
+                // 如果返回数量 <= BATCH_SIZE，说明已经追到了数据库的最顶端
+                if (results.size <= BATCH_SIZE) {
+                    hasNewer = false
+                }
+
+                _currentNodes.addAll(0, newNewerNodes)
+
+                // 窗口滚动逻辑：若总数超过 WINDOW_LIMIT，则裁剪窗口尾部（最旧消息端）
+                if (_currentNodes.size > WINDOW_LIMIT) {
+                    val excessCount = _currentNodes.size - WINDOW_LIMIT
+                    repeat(excessCount) { _currentNodes.removeAt(_currentNodes.size - 1) }
+                    hasOlder = true
+                }
+
+                ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+            } catch (e: Exception) {
+                ChatPaginationState.Error(e)
+            }
+        }
+
+        /**
+         * 实时注入新产生的节点（通常由 AI 响应触发）
+         */
+        suspend fun injectNewNode(node: MessageNode) = mutex.withLock {
+            // 只有当窗口未被裁剪（即处于“最新消息”视图）时才注入
+            if (!hasNewer) {
+                _currentNodes.add(0, node)
+                if (_currentNodes.size > WINDOW_LIMIT) {
+                    _currentNodes.removeAt(_currentNodes.size - 1)
+                    hasOlder = true
+                }
+            }
+        }
+
+        /**
+         * 清空分页缓存
+         */
+        suspend fun clear() = mutex.withLock {
+            _currentNodes.clear()
+            hasOlder = false
+            hasNewer = false
+        }
+    }
+
+    /**
+     * 辅助方法：将 DAO 返回的带元数据节点转换为 UI 节点模型
+     */
+    private fun mapMetadataToNode(wrapper: MessageNodeWithMetadata): MessageNode {
+        val uiMessages = wrapper.messages
+            .filter { !it.isDeleted }
+            .sortedBy { it.orderIndex }
+            .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+
+        return MessageNode(
+            id = Uuid.parse(wrapper.node.id),
+            messages = uiMessages,
+            selectIndex = wrapper.node.selectIndex,
+            conversationId = Uuid.parse(wrapper.node.conversationId),
+            orderIndex = wrapper.node.orderIndex,
+            parentUpdateAt = wrapper.convUpdateAt
+        )
+    }
+
+    // ==================================================================================
+    // 保留原有业务函数
+    // ==================================================================================
 
     suspend fun recordDailyActivity() {
         val date = LocalDate.now().toString()

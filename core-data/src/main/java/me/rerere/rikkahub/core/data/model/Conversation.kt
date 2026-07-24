@@ -91,7 +91,7 @@ data class Conversation(
                 } else {
                     updatedMessages.add(messageWithTag)
                 }
-                newNodes[existingNodeIndex] = node.copy(messages = updatedMessages)
+                newNodes[existingNodeIndex] = node.copy(messages = updatedMessages, orderIndex = node.orderIndex)
             } else {
                 // 3. 只要是新 ID，就添加为新节点
                 newNodes.add(messageWithTag.toMessageNode(this.id))
@@ -114,6 +114,9 @@ data class MessageNode(
     val messages: List<UIMessage>,
     val selectIndex: Int = 0,
     val conversationId: Uuid,
+    // ✨ 新增：用于滑动窗口分页定位
+    val orderIndex: Int = 0,
+    val parentUpdateAt: Long = 0L
 ) {
     val currentMessage
         get() = messages.getOrElse(selectIndex) {
