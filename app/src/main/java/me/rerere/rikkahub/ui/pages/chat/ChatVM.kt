@@ -585,9 +585,6 @@ class ChatVM(
             val currentConv = conversation.value
             val assistantId = currentConv.assistantId
             val newId = Uuid.random()
-
-            // ✨ 优化：不再立即 saveConversation 到数据库
-            // 仅仅是通过 initializeConversation 在内存中准备好这个新 ID
             trackConversation(newId)
             chatService.initializeConversation(newId, targetAssistantId = assistantId)
             _currentActiveId.value = newId
