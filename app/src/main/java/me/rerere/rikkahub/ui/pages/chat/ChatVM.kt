@@ -591,26 +591,6 @@ class ChatVM(
         }
     }
 
-    suspend fun forkMessage(message: UIMessage): Conversation {
-        val node = conversation.value.getMessageNodeByMessage(message)
-        val nodes = conversation.value.messageNodes.subList(0, conversation.value.messageNodes.indexOf(node) + 1).map { messageNode ->
-            messageNode.copy(messages = messageNode.messages.map { msg ->
-                msg.copy(parts = msg.parts.map { part ->
-                    when (part) {
-                        is UIMessagePart.Image -> if (part.url.startsWith("file:")) context.createChatFilesByContents(listOf(part.url.toUri())).firstOrNull()?.let { part.copy(url = it.toString()) } ?: part else part
-                        is UIMessagePart.Document -> if (part.url.startsWith("file:")) context.createChatFilesByContents(listOf(part.url.toUri())).firstOrNull()?.let { part.copy(url = it.toString()) } ?: part else part
-                        is UIMessagePart.Video -> if (part.url.startsWith("file:")) context.createChatFilesByContents(listOf(part.url.toUri())).firstOrNull()?.let { part.copy(url = it.toString()) } ?: part else part
-                        is UIMessagePart.Audio -> if (part.url.startsWith("file:")) context.createChatFilesByContents(listOf(part.url.toUri())).firstOrNull()?.let { part.copy(url = it.toString()) } ?: part else part
-                        else -> part
-                    }
-                })
-            })
-        }
-        val newConversation = Conversation(id = Uuid.random(), assistantId = conversation.value.assistantId, messageNodes = nodes)
-        chatService.saveConversation(newConversation.id, newConversation)
-        return newConversation
-    }
-
     fun deleteMessage(message: UIMessage) {
         viewModelScope.launch {
             val relatedMessages = collectRelatedMessages(message)
