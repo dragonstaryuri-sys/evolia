@@ -177,30 +177,6 @@ data class AssistantRegex(
     val visualOnly: Boolean = false,
 )
 
-fun String.replaceRegexes(
-    assistant: Assistant?,
-    scope: AssistantAffectScope,
-    visual: Boolean = false
-): String {
-    if (assistant == null) return this
-    if (assistant.regexes.isEmpty()) return this
-    return assistant.regexes.fold(this) { acc, regex ->
-        if (regex.enabled && regex.visualOnly == visual && regex.affectingScope.contains(scope)) {
-            try {
-                acc.replace(
-                    regex = Regex(regex.findRegex),
-                    replacement = regex.replaceString,
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-                acc
-            }
-        } else {
-            acc
-        }
-    }
-}
-
 @Serializable
 sealed class PromptInjection {
     @Serializable

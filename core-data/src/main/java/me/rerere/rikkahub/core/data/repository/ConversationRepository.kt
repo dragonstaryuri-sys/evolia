@@ -33,6 +33,9 @@ import kotlin.uuid.Uuid
 import kotlin.time.ExperimentalTime
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class ConversationRepository(
     private val context: Context,
@@ -658,7 +661,7 @@ class ConversationRepository(
      * 建议业务层对会话使用软删除（isDeleted标记），或者在 UI 层提供“重置/回到最新”按钮以应对潜在的锚点失效。
      */
     inner class MessagePaginationManager(private val assistantId: Uuid) {
-        private val WINDOW_LIMIT = 300
+        private val WINDOW_LIMIT = 1000
         private val BATCH_SIZE = 100
 
         private val mutex = Mutex()
@@ -667,119 +670,131 @@ class ConversationRepository(
         // 内部标记：hasNewer 仅代表窗口曾经裁剪过头部消息，不代表数据库绝对存在新消息
         private var hasOlder = false
         private var hasNewer = false
+        private val _state = MutableStateFlow<ChatPaginationState>(ChatPaginationState.Idle)
+        // ✨ 新增：对外暴露的只读流
+        val state: StateFlow<ChatPaginationState> = _state.asStateFlow()
 
         /**
          * 加载初始窗口（最新的 BATCH_SIZE 条）
          */
         suspend fun loadInitial(): ChatPaginationState = mutex.withLock {
+            _state.value = ChatPaginationState.Loading
             return@withLock try {
                 val results = withContext(Dispatchers.IO) {
                     chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), BATCH_SIZE + 1)
                 }
+                // ✨ 添加日志：检查数据库原始返回
+                Log.d("PAGINATION_DEBUG", "Manager.loadInitial: DB returned ${results.size} nodes. " +
+                    "First(id=${results.firstOrNull()?.node?.id}, time=${results.firstOrNull()?.convUpdateAt}), " +
+                    "Last(id=${results.lastOrNull()?.node?.id}, time=${results.lastOrNull()?.convUpdateAt})")
 
-                // 使用 BATCH_SIZE + 1 探测边界
+
                 hasOlder = results.size > BATCH_SIZE
-                hasNewer = false // 初始加载默认位于“最新”端
+                hasNewer = false
 
+                val nodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }.reversed()
                 _currentNodes.clear()
-                val nodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }
                 _currentNodes.addAll(nodes)
 
-                ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                // ✨ 3. 更新状态流并返回
+                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                _state.value = successState
+                successState // 这里就是返回值，删掉下面那行重复的
             } catch (e: Exception) {
-                ChatPaginationState.Error(e)
+                val errorState = ChatPaginationState.Error(e)
+                _state.value = errorState
+                errorState
             }
         }
 
-        /**
-         * 加载更旧的消息（向下滚动历史）
-         */
+// 找到 MessagePaginationManager 内部的方法并替换：
+
         suspend fun loadOlder(): ChatPaginationState = mutex.withLock {
-            if (!hasOlder) return@withLock ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+            // ✨ 增加加载中保护
+            if (!hasOlder || _state.value is ChatPaginationState.Loading) return@withLock _state.value
 
             return@withLock try {
-                val lastNode = _currentNodes.lastOrNull() ?: return@withLock ChatPaginationState.Idle
+                _state.value = ChatPaginationState.Loading
+                // ✨ 修正锚点：使用当前最旧的节点 (列表第一个)
+                val anchorNode = _currentNodes.firstOrNull() ?: return@withLock ChatPaginationState.Idle
 
                 val results = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesOlderThan(
                         assistantId.toString(),
-                        lastNode.parentUpdateAt,
-                        lastNode.orderIndex,
+                        anchorNode.parentUpdateAt,
+                        anchorNode.orderIndex,
                         BATCH_SIZE + 1
                     )
                 }
 
-                val newOldNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }
+                val newOldNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }.reversed()
+                _currentNodes.addAll(0, newOldNodes)
                 hasOlder = results.size > BATCH_SIZE
-                _currentNodes.addAll(newOldNodes)
 
-                // 窗口滚动逻辑：若总数超过 WINDOW_LIMIT，则裁剪窗口头部（最新消息端）
                 if (_currentNodes.size > WINDOW_LIMIT) {
                     val excessCount = _currentNodes.size - WINDOW_LIMIT
-                    repeat(excessCount) { _currentNodes.removeAt(0) }
-                    hasNewer = true // 标记头部已被裁剪
+                    // ✨ 修正：加载历史时，删掉最底端最新的消息
+                    repeat(excessCount) { _currentNodes.removeAt(_currentNodes.size - 1) }
+                    hasNewer = true
                 }
 
-                ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                _state.value = successState
+                successState
             } catch (e: Exception) {
-                ChatPaginationState.Error(e)
+                _state.value = ChatPaginationState.Error(e)
+                _state.value
             }
         }
 
-        /**
-         * 加载更新的消息（向上滚动回最新）
-         */
         suspend fun loadNewer(): ChatPaginationState = mutex.withLock {
-            // 如果 hasNewer 为 false，说明当前窗口已经包含了最新的消息
-            if (!hasNewer && _currentNodes.isNotEmpty()) {
-                return@withLock ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
-            }
+            if (!hasNewer && _currentNodes.isNotEmpty()) return@withLock _state.value
+            if (_state.value is ChatPaginationState.Loading) return@withLock _state.value
 
             return@withLock try {
-                val firstNode = _currentNodes.firstOrNull() ?: return@withLock ChatPaginationState.Idle
+                _state.value = ChatPaginationState.Loading
+                // ✨ 修正锚点：使用当前最新的节点 (列表最后一个)
+                val anchorNode = _currentNodes.lastOrNull() ?: return@withLock ChatPaginationState.Idle
 
                 val results = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesNewerThan(
                         assistantId.toString(),
-                        firstNode.parentUpdateAt,
-                        firstNode.orderIndex,
+                        anchorNode.parentUpdateAt,
+                        anchorNode.orderIndex,
                         BATCH_SIZE + 1
                     )
                 }
 
-                // DAO 返回的是 ASC 排序 [旧 -> 新]，注入时需 reverse 为 [新 -> 旧] 适配 UI
-                val newNewerNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }.reversed()
+                val newNewerNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }
+                _currentNodes.addAll(newNewerNodes)
+                hasNewer = results.size > BATCH_SIZE
 
-                // 如果返回数量 <= BATCH_SIZE，说明已经追到了数据库的最顶端
-                if (results.size <= BATCH_SIZE) {
-                    hasNewer = false
-                }
-
-                _currentNodes.addAll(0, newNewerNodes)
-
-                // 窗口滚动逻辑：若总数超过 WINDOW_LIMIT，则裁剪窗口尾部（最旧消息端）
                 if (_currentNodes.size > WINDOW_LIMIT) {
                     val excessCount = _currentNodes.size - WINDOW_LIMIT
-                    repeat(excessCount) { _currentNodes.removeAt(_currentNodes.size - 1) }
+                    // ✨ 修正：加载最新时，删掉最顶端最旧的消息
+                    repeat(excessCount) { _currentNodes.removeAt(0) }
                     hasOlder = true
                 }
 
-                ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                _state.value = successState
+                successState
             } catch (e: Exception) {
-                ChatPaginationState.Error(e)
+                _state.value = ChatPaginationState.Error(e)
+                _state.value
             }
         }
 
-        /**
-         * 实时注入新产生的节点（通常由 AI 响应触发）
-         */
         suspend fun injectNewNode(node: MessageNode) = mutex.withLock {
-            // 只有当窗口未被裁剪（即处于“最新消息”视图）时才注入
             if (!hasNewer) {
-                _currentNodes.add(0, node)
-                if (_currentNodes.size > WINDOW_LIMIT) {
-                    _currentNodes.removeAt(_currentNodes.size - 1)
-                    hasOlder = true
+                if (_currentNodes.none { it.id == node.id }) {
+                    _currentNodes.add(node)
+                    if (_currentNodes.size > WINDOW_LIMIT) {
+                        // ✨ 修正：注入新消息时，删掉最顶端最旧的消息
+                        _currentNodes.removeAt(0)
+                        hasOlder = true
+                    }
+                    _state.value = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
                 }
             }
         }
@@ -791,6 +806,7 @@ class ConversationRepository(
             _currentNodes.clear()
             hasOlder = false
             hasNewer = false
+            _state.value = ChatPaginationState.Idle // ✨ 重置状态
         }
     }
 

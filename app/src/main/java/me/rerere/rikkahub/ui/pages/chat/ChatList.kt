@@ -61,19 +61,24 @@ import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UsedMemory
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import kotlin.time.Instant
 
 private const val ScrollBottomKey = "ScrollBottomKey"
-
+sealed class ChatUIItem {
+    data class Turn(
+        val group: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup,
+        val isGenerating: Boolean = false
+    ) : ChatUIItem()
+    data class Separator(val text: String, val uid: String) : ChatUIItem()
+}
 @Composable
 fun ChatList(
     innerPadding: PaddingValues,
     conversation: Conversation,
-    activeMessages: List<ChatVM.ChatUIItem>,
-    isInternalLoadingMore: Boolean = false,
-    onLoadMoreActiveMessages: () -> Unit = {},
-    uiItems: LazyPagingItems<ChatVM.ChatUIItem>,
+    items: List<ChatUIItem>,
+    paginationState: ConversationRepository.ChatPaginationState?,
     isHistoryLoading: Boolean,
     state: LazyListState,
     loading: Boolean,
@@ -99,41 +104,24 @@ fun ChatList(
 
     var isWaitingForJump by remember(targetMessageId) { mutableStateOf(!targetMessageId.isNullOrBlank()) }
 
-    LaunchedEffect(initialSearchQuery, targetMessageId, uiItems.itemSnapshotList, activeMessages) {
+    LaunchedEffect(targetMessageId, items) {
         if (!targetMessageId.isNullOrBlank()) {
-            // ✨ 关键修复：支持在 Turn 类型中查找节点
-            val activeNode = activeMessages.asSequence()
-                .mapNotNull {
-                    when(it) {
-                        is ChatVM.ChatUIItem.Message -> it.node
-                        is ChatVM.ChatUIItem.Turn -> it.group.nodes.find { n -> n.messages.any { m -> m.id.toString() == targetMessageId } }
+            val targetNode = items.asSequence()
+                .mapNotNull { item ->
+                    when (item) {
+                        is ChatUIItem.Turn -> item.group.nodes.find { n ->
+                            n.messages.any { m -> m.id.toString() == targetMessageId }
+                        }
                         else -> null
                     }
                 }
-                .find { node -> node.messages.any { msg -> msg.id.toString() == targetMessageId } }
+                .firstOrNull()
 
-            if (activeNode != null) {
+            if (targetNode != null) {
                 instantScroll = true
-                scrollToNodeId = activeNode.id
-                return@LaunchedEffect
+                scrollToNodeId = targetNode.id
+                isWaitingForJump = false
             }
-
-            val pagingNode = uiItems.itemSnapshotList.items.asSequence()
-                .mapNotNull {
-                    when(it) {
-                        is ChatVM.ChatUIItem.Message -> it.node
-                        is ChatVM.ChatUIItem.Turn -> it.group.nodes.find { n -> n.messages.any { m -> m.id.toString() == targetMessageId } }
-                        else -> null
-                    }
-                }
-                .find { node -> node.messages.any { msg -> msg.id.toString() == targetMessageId } }
-
-            if (pagingNode != null) {
-                instantScroll = true
-                scrollToNodeId = pagingNode.id
-            }
-        } else {
-            isWaitingForJump = false
         }
     }
 
@@ -161,20 +149,19 @@ fun ChatList(
                 )
             } else {
                 Box(modifier = Modifier.fillMaxSize().alpha(if (isWaitingForJump) 0f else 1f)) {
-                    val isInitialLoading = uiItems.loadState.refresh is LoadState.Loading && uiItems.itemCount == 0 && activeMessages.isEmpty() && !isSyncing
+                    // ✨ 更新：使用 paginationState 判断初始加载
+                    val isInitialLoading = paginationState is ConversationRepository.ChatPaginationState.Loading && items.isEmpty()
 
                     if (isInitialLoading) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         }
                     } else {
-                        ChatListNormal(
+                        this@SharedTransitionLayout.ChatListNormal(
                             innerPadding = innerPadding,
                             conversation = conversation,
-                            activeMessages = activeMessages,
-                            isInternalLoadingMore = isInternalLoadingMore,
-                            onLoadMoreActiveMessages = onLoadMoreActiveMessages,
-                            uiItems = uiItems,
+                            items = items, // 传递新列表
+                            paginationState = paginationState, // 传递状态
                             isHistoryLoading = isHistoryLoading,
                             state = state,
                             scrollToNodeId = scrollToNodeId,
@@ -182,7 +169,6 @@ fun ChatList(
                             onScrolledToNode = {
                                 scrollToNodeId = null
                                 instantScroll = false
-                                isWaitingForJump = false
                             },
                             loading = loading,
                             settings = settings,
@@ -208,10 +194,8 @@ fun ChatList(
 private fun SharedTransitionScope.ChatListNormal(
     innerPadding: PaddingValues,
     conversation: Conversation,
-    activeMessages: List<ChatVM.ChatUIItem>,
-    isInternalLoadingMore: Boolean,
-    onLoadMoreActiveMessages: () -> Unit,
-    uiItems: LazyPagingItems<ChatVM.ChatUIItem>,
+    items: List<ChatUIItem>,
+    paginationState: ConversationRepository.ChatPaginationState?,
     isHistoryLoading: Boolean,
     state: LazyListState,
     loading: Boolean,
@@ -265,58 +249,22 @@ private fun SharedTransitionScope.ChatListNormal(
     ImeLazyListAutoScroller(lazyListState = state)
 
     val needsPhantomLoadingTurn = loading && (
-        (activeMessages.isEmpty() && uiItems.itemCount == 0 && uiItems.loadState.refresh !is LoadState.Loading) ||
-            run {
-                when (val firstItem = activeMessages.firstOrNull()) {
-                    is ChatVM.ChatUIItem.Message -> firstItem.node.currentMessage.role == MessageRole.USER
-                    is ChatVM.ChatUIItem.Turn -> firstItem.group.role == MessageRole.USER
-                    else -> false
-                }
-            }
-        )
-
-    LaunchedEffect(scrollToNodeId, activeMessages, uiItems.itemCount){
+        items.isEmpty() || run {
+            val firstItem = items.firstOrNull()
+            firstItem is ChatUIItem.Turn && firstItem.group.role == MessageRole.USER
+        }
+    )
+    // ✨ 更新：跳转滚动逻辑
+    LaunchedEffect(scrollToNodeId, items) {
         val targetId = scrollToNodeId ?: return@LaunchedEffect
-
-        // ✨ 关键修复：支持查找 Turn 类型中的索引
-        val activeIndex = activeMessages.indexOfFirst { item ->
-            when(item) {
-                is ChatVM.ChatUIItem.Message -> item.node.id == targetId
-                is ChatVM.ChatUIItem.Turn -> item.group.nodes.any { it.id == targetId }
-                else -> false
-            }
+        val index = items.indexOfFirst { item ->
+            item is ChatUIItem.Turn && item.group.nodes.any { it.id == targetId }
         }
-
-        if (activeIndex >= 0) {
-            state.scrollToItem(activeIndex + 1)
-            onScrolledToNode()
-            return@LaunchedEffect
-        }
-
-        val pagingIndex = uiItems.itemSnapshotList.indexOfFirst { item ->
-            when(item) {
-                is ChatVM.ChatUIItem.Message -> item.node.id == targetId
-                is ChatVM.ChatUIItem.Turn -> item.group.nodes.any { it.id == targetId }
-                else -> false
-            }
-        }
-
-        if (pagingIndex >= 0) {
-            val totalIndex = activeMessages.size + pagingIndex + 1
-            if (instantScroll) state.scrollToItem(totalIndex) else state.animateScrollToItem(totalIndex)
+        if (index >= 0) {
+            if (instantScroll) state.scrollToItem(index + 1)
+            else state.animateScrollToItem(index + 1)
             onScrolledToNode()
         }
-    }
-
-    // ✨ 核心修复：收集 activeMessages 中已经包含的所有节点 ID，用于分页去重
-    val activeNodeIds = remember(activeMessages) {
-        activeMessages.flatMap { item ->
-            when (item) {
-                is ChatVM.ChatUIItem.Message -> listOf(item.node.id)
-                is ChatVM.ChatUIItem.Turn -> item.group.nodes.map { it.id }
-                else -> emptyList()
-            }
-        }.toSet()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -345,26 +293,24 @@ private fun SharedTransitionScope.ChatListNormal(
             }
 
             itemsIndexed(
-                items = activeMessages,
+                items = items,
                 key = { _, item ->
-                    when(item) {
-                        is ChatVM.ChatUIItem.Turn -> "active_turn_${item.group.firstNode.id}"
-                        is ChatVM.ChatUIItem.Message -> "active_${item.node.id}"
-                        is ChatVM.ChatUIItem.Separator -> "active_separator_${item.text.hashCode()}"
+                    when (item) {
+                        is ChatUIItem.Turn -> "turn_${item.group.firstNode.id}"
+                        is ChatUIItem.Separator -> "sep_${item.uid}"
                     }
                 }
-            ) { index, item ->
+            )  { index, item ->
                 when (item) {
-                    is ChatVM.ChatUIItem.Turn -> {
-                        val isGenerating = index == 0 && loading
+                    is ChatUIItem.Turn -> {
+                        // ✨ 直接从 item 中读取组装好的状态
+                        val isGenerating = item.isGenerating
 
-                        val nextItem = activeMessages.getOrNull(index + 1)
-                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
-                            val olderTime = when (nextItem) {
-                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
-                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
-                                else -> null
-                            }
+                        // 话题间的时间显示逻辑
+                        val nextItem = items.getOrNull(index + 1)
+                        val shouldShowTime = nextItem == null || nextItem is ChatUIItem.Separator || run {
+                            // 由于现在只有 Turn，提取时间逻辑变简单了
+                            val olderTime = (nextItem as? ChatUIItem.Turn)?.group?.nodes?.last()?.currentMessage?.createdAt
                             olderTime == null || (item.group.nodes.first().currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
                                 olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
                         }
@@ -389,7 +335,11 @@ private fun SharedTransitionScope.ChatListNormal(
                             Column {
                                 if (shouldShowTime) {
                                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                        Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                                        Text(
+                                            text = formatTime(item.group.nodes.first().currentMessage.createdAt),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                        )
                                     }
                                 }
                                 ChatMessageTurn(
@@ -412,8 +362,8 @@ private fun SharedTransitionScope.ChatListNormal(
                                     onEditLorebookEntry = { entry -> navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId)) },
                                     onMemoryClick = { memory ->
                                         scope.launch {
-                                            isMemoryLoading = true // 修改这里，直接赋值
-                                            previewingMemory = memory // 修改这里
+                                            isMemoryLoading = true
+                                            previewingMemory = memory
                                             val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
                                             previewingMemory = memory.copy(memoryContent = full ?: "未找到内容")
                                             isMemoryLoading = false
@@ -426,173 +376,24 @@ private fun SharedTransitionScope.ChatListNormal(
                             }
                         }
                     }
-
-                    is ChatVM.ChatUIItem.Message -> {
-                        val node = item.node
-                        val isLastTurn = index == 0
-                        val nextItem = activeMessages.getOrNull(index + 1)
-                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
-                            val olderTime = when (nextItem) {
-                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
-                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
-                                else -> null
-                            }
-                            olderTime == null || (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
-                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
-                        }
-
-                        MessageItemBox(
-                            node = node, isLastTurn = isLastTurn, shouldShowTime = shouldShowTime, loading = loading && isLastTurn,
-                            settings = settings, conversation = conversation, selecting = selecting, selectedItems = selectedItems,
-                            onCitationClick = onCitationClick, onRegenerate = onRegenerate, onEdit = onEdit, onDelete = onDelete,
-                            onUpdateMessage = onUpdateMessage, onGetFullMemoryContent = onGetFullMemoryContent, onAddFavorite = onAddFavorite,
-                            onTypingStateChange = onTypingStateChange, navController = navController, scope = scope,
-                            onMemoryLoading = { isMemoryLoading = it }, onPreviewMemory = { previewingMemory = it },
-                            onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) }
-                        )
-                    }
-                    is ChatVM.ChatUIItem.Separator -> {
-                        LaunchedEffect(Unit) {
-                            onLoadMoreActiveMessages()
-                        }
+                    is ChatUIItem.Separator -> {
+                        // ✨ 这里的逻辑变简单了，不需要主动调用 onLoadMore，由 ChatPage 的滚动监听负责
                         Box(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                            if (isInternalLoadingMore) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                            } else {
-                                Text(text = item.text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
-                            }
+                            Text(
+                                text = item.text,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
                         }
                     }
                 }
             }
 
-            items(
-                count = uiItems.itemCount,
-                key = { index ->
-                    when (val item = uiItems.peek(index)) {
-                        is ChatVM.ChatUIItem.Message -> "paging_${item.node.id}"
-                        is ChatVM.ChatUIItem.Turn -> "paging_turn_${item.group.firstNode.id}"
-                        is ChatVM.ChatUIItem.Separator -> "sep_${item.text}"
-                        else -> "placeholder_$index"
-                    }
-                }
-            ) { index ->
-                val item = uiItems[index] ?: return@items
-                if (item is ChatVM.ChatUIItem.Message && item.node.currentMessage.skipContext) return@items
-
-                // ✨ 核心修复：更彻底的分页去重检查
-                val isDuplicate = when (item) {
-                    is ChatVM.ChatUIItem.Message -> activeNodeIds.contains(item.node.id)
-                    is ChatVM.ChatUIItem.Turn -> item.group.nodes.any { activeNodeIds.contains(it.id) }
-                    else -> false
-                }
-                if (isDuplicate) return@items
-
-                when (item) {
-                    is ChatVM.ChatUIItem.Turn -> {
-                        val nextItem = if (index + 1 < uiItems.itemCount) uiItems.peek(index + 1) else null
-                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
-                            val olderTime = when (nextItem) {
-                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
-                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
-                                else -> null
-                            }
-                            olderTime == null || (item.group.nodes.first().currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
-                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
-                        }
-
-                        val isTurnSelected = remember(selectedItems.size) {
-                            item.group.nodes.any { it.id in selectedItems }
-                        }
-
-                        ListSelectableItem(
-                            isSelected = isTurnSelected,
-                            onSelectChange = { selected ->
-                                item.group.nodes.forEach { node ->
-                                    if (selected) {
-                                        if (node.id !in selectedItems) selectedItems.add(node.id)
-                                    } else {
-                                        selectedItems.remove(node.id)
-                                    }
-                                }
-                            },
-                            enabled = selecting
-                        ) {
-                            Column {
-                                if (shouldShowTime) {
-                                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                        Text(text = formatTime(item.group.nodes.first().currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
-                                    }
-                                }
-                                ChatMessageTurn(
-                                    group = item.group,
-                                    isLastTurn = false,
-                                    assistant = settings.getAssistantById(conversation.assistantId),
-                                    loading = false,
-                                    model = settings.getCurrentChatModel(),
-                                    showRegenerate = item.group.role == MessageRole.ASSISTANT,
-                                    onCitationClick = onCitationClick,
-                                    onRegenerate = { node -> onRegenerate(node.currentMessage) },
-                                    onEdit = { node -> onEdit(node.currentMessage) },
-                                    onDelete = { node -> onDelete(node.currentMessage) },
-                                    onShare = { node ->
-                                        selecting = true
-                                        selectedItems.clear()
-                                        selectedItems.add(node.id)
-                                    },
-                                    onUpdate = onUpdateMessage,
-                                    onMemoryClick = { memory ->
-                                        scope.launch {
-                                            isMemoryLoading = true // 修改这里
-                                            previewingMemory = memory // 修改这里
-                                            val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
-                                            previewingMemory = memory.copy(memoryContent = full ?: "未找到内容")
-                                            isMemoryLoading = false
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    is ChatVM.ChatUIItem.Message -> {
-                        val node = item.node
-                        val nextItem = if (index + 1 < uiItems.itemCount) uiItems.peek(index + 1) else null
-                        val shouldShowTime = nextItem == null || nextItem is ChatVM.ChatUIItem.Separator || run {
-                            val olderTime = when (nextItem) {
-                                is ChatVM.ChatUIItem.Turn -> nextItem.group.nodes.last().currentMessage.createdAt
-                                is ChatVM.ChatUIItem.Message -> nextItem.node.currentMessage.createdAt
-                                else -> null
-                            }
-                            olderTime == null || (node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
-                                olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
-                        }
-
-                        MessageItemBox(
-                            node = node, isLastTurn = false, shouldShowTime = shouldShowTime, loading = false,
-                            settings = settings, conversation = conversation, selecting = selecting, selectedItems = selectedItems,
-                            onCitationClick = onCitationClick, onRegenerate = onRegenerate, onEdit = onEdit, onDelete = onDelete,
-                            onUpdateMessage = onUpdateMessage, onGetFullMemoryContent = onGetFullMemoryContent, onAddFavorite = onAddFavorite,
-                            onTypingStateChange = onTypingStateChange, navController = navController, scope = scope,
-                            onMemoryLoading = { isMemoryLoading = it }, onPreviewMemory = { previewingMemory = it },
-                            onStartSelecting = { id -> selecting = true; selectedItems.clear(); selectedItems.add(id) }
-                        )
-                    }
-                    is ChatVM.ChatUIItem.Separator -> {
-                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
-                            Text(text = item.text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
-                        }
-                    }
-                }
-            }
-
-            if ((isHistoryLoading || uiItems.loadState.append is LoadState.Loading) && uiItems.itemCount > 0) {
-                item("paging_loading_indicator") {
+            // ✨ 在列表最顶部（历史端）显示加载圈
+            if (isHistoryLoading || paginationState is ConversationRepository.ChatPaginationState.Loading) {
+                item("loading_indicator") {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
+                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
                     }
                 }
             }
@@ -613,39 +414,61 @@ private fun SharedTransitionScope.ChatListNormal(
                         IconButton(
                             enabled = selectedItems.isNotEmpty(),
                             onClick = {
-                                val allMsgNodes = mutableListOf<MessageNode>()
-                                activeMessages.forEach {
-                                    when(it) {
-                                        is ChatVM.ChatUIItem.Message -> allMsgNodes.add(it.node)
-                                        is ChatVM.ChatUIItem.Turn -> allMsgNodes.addAll(it.group.nodes)
-                                        else -> {}
-                                    }
-                                }
-                                for (i in 0 until uiItems.itemCount) {
-                                    when(val it = uiItems.peek(i)) {
-                                        is ChatVM.ChatUIItem.Message -> allMsgNodes.add(it.node)
-                                        is ChatVM.ChatUIItem.Turn -> allMsgNodes.addAll(it.group.nodes)
-                                        else -> {}
-                                    }
-                                }
+                                // ✨ 核心修改：直接从现在的 items 列表中提取所有 Node
+                                val allMsgNodes = items.filterIsInstance<ChatUIItem.Turn>()
+                                    .flatMap { it.group.nodes }
 
-                                val toDelete = allMsgNodes.filter { it.id in selectedItems }.map { it.currentMessage }.distinctBy { it.id }
-                                onDeleteMessages(toDelete); selecting = false; selectedItems.clear()
+                                val toDelete = allMsgNodes
+                                    .filter { it.id in selectedItems }
+                                    .map { it.currentMessage }
+                                    .distinctBy { it.id }
+
+                                onDeleteMessages(toDelete)
+                                selecting = false
+                                selectedItems.clear()
                             }
                         ) { Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error) }
                     }
+                    // 下面的 Favorite 和 Share 建议也同步修改，保持数据源一致
                     Tooltip(tooltip = { Text(stringResource(R.string.action_favorite)) }) {
                         IconButton(enabled = selectedItems.isNotEmpty(), onClick = {
-                            val messages = conversation.messageNodes.filter { it.id in selectedItems }.map { it.currentMessage }
-                            onAddFavorite(messages); selecting = false; selectedItems.clear()
+                            val allMsgNodes = items.filterIsInstance<ChatUIItem.Turn>()
+                                .flatMap { it.group.nodes }
+
+                            val messages = allMsgNodes
+                                .filter { it.id in selectedItems }
+                                .map { it.currentMessage }
+
+                            onAddFavorite(messages)
+                            selecting = false
+                            selectedItems.clear()
                         }) { Icon(Icons.Rounded.Favorite, null) }
                     }
                     Tooltip(tooltip = { Text(stringResource(R.string.action_share)) }) {
-                        FilledIconButton(enabled = selectedItems.isNotEmpty(), onClick = { selecting = false; showExportSheet = true }) { Icon(Icons.Rounded.Share, null) }
+                        FilledIconButton(enabled = selectedItems.isNotEmpty(), onClick = {
+                            // 注意：ExportSheet 内部也需要 List<UIMessage>，逻辑同上
+                            selecting = false
+                            showExportSheet = true
+                        }) { Icon(Icons.Rounded.Share, null) }
                     }
                 }
             }
-            ChatExportSheet(visible = showExportSheet, onDismissRequest = { showExportSheet = false; selectedItems.clear() }, conversation = conversation, selectedMessages = conversation.messageNodes.filter { it.id in selectedItems }.map { it.currentMessage })
+
+            // ExportSheet 的 selectedMessages 也建议从 items 中提取
+            val selectedMessagesForExport = remember(selectedItems.size, items) {
+                items.filterIsInstance<ChatUIItem.Turn>()
+                    .flatMap { it.group.nodes }
+                    .filter { it.id in selectedItems }
+                    .map { it.currentMessage }
+            }
+
+            ChatExportSheet(
+                visible = showExportSheet,
+                onDismissRequest = { showExportSheet = false; selectedItems.clear() },
+                conversation = conversation,
+                selectedMessages = selectedMessagesForExport
+            )
+
             previewingMemory?.let { MemoryPreviewDialog(memory = it, isLoading = isMemoryLoading, onDismissRequest = { previewingMemory = null; isMemoryLoading = false }) }
         }
     }
