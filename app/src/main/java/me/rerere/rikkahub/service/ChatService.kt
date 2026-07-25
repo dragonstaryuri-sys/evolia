@@ -704,7 +704,7 @@ class ChatService(
                     delay(8000)
                     _isAiTypingMap.update { it + (conversationId to true) }
                 } else {
-                    _isAiTypingMap.update { it - conversationId }
+                    _isAiTypingMap.update { it + (conversationId to true) }
                 }
 
                 val timeoutJob = launch {
@@ -1220,18 +1220,11 @@ class ChatService(
                                 conversationSnapshot = nextState
                             }
 
-
-                            val lastAiInNew = newMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
-                            val isEffectivelyEmpty = lastAiInNew != null &&
-                                lastAiInNew.toContentText().trim().isEmpty() &&
-                                lastAiInNew.parts.none { it is UIMessagePart.ToolCall }
-                            if (lastAiInNew == null || !isEffectivelyEmpty) {
-                                val toUpdate = baseMessages + newMessages
-                                val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
-                                    .copy(chatSuggestions = emptyList())
-                                currentConversation = nextState
-                                updateConversation(conversationId) { nextState }
-                            }
+                            val toUpdate = baseMessages + newMessages
+                            val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
+                                .copy(chatSuggestions = emptyList())
+                            currentConversation = nextState
+                            updateConversation(conversationId) { nextState }
 
                         }
                     }

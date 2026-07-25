@@ -193,7 +193,9 @@ class ChatVM(
         viewModelScope.launch {
             conversation.map { it.messageNodes }
                 .distinctUntilChanged { old, new ->
-                    old.size == new.size && old.lastOrNull()?.id == new.lastOrNull()?.id
+                    old.size == new.size &&
+                        old.lastOrNull()?.id == new.lastOrNull()?.id &&
+                        old.lastOrNull() == new.lastOrNull()
                 }
                 .collect { nodes ->
                     nodes.lastOrNull()?.let { node ->

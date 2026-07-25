@@ -904,10 +904,15 @@ class ConversationRepository(
                         ?: System.currentTimeMillis()
                     node.copy(timelineCreatedAt = createdAt)
                 }
-                if (_currentNodes.none { it.id == normalizedNode.id }) {
+                val index = _currentNodes.indexOfFirst { it.id == normalizedNode.id }
+                if (index != -1) {
+                    if (_currentNodes[index] != normalizedNode) {
+                        _currentNodes[index] = normalizedNode
+                        publish()
+                    }
+                } else {
                     _currentNodes.add(normalizedNode)
                     if (_currentNodes.size > WINDOW_LIMIT) {
-                        // ✨ 修正：注入新消息时，删掉最顶端最旧的消息
                         _currentNodes.removeAt(0)
                         hasOlder = true
                     }
