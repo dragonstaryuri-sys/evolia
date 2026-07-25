@@ -963,15 +963,16 @@ class ChatService(
 
                 val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
-                val baseMessages = currentConversation.currentMessages.let {
-                    val raw =
-                        if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
-                    raw.filter { msg ->
-                        msg.role != MessageRole.ASSISTANT ||
-                            msg.toContentText().isNotBlank() ||
-                            msg.parts.any { it is UIMessagePart.ToolCall }
+                val baseMessages = currentConversation.currentMessages
+                    .truncate(currentConversation.truncateIndex) // ✨ 关键新增：只取 truncateIndex 之后的消息作为上下文
+                    .let {
+                        val raw = if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
+                        raw.filter { msg ->
+                            msg.role != MessageRole.ASSISTANT ||
+                                msg.toContentText().isNotBlank() ||
+                                msg.parts.any { it is UIMessagePart.ToolCall }
+                        }
                     }
-                }
 
                 // 临时处理优化要求：仅针对发送给 AI 的上下文做拼接，不修改 baseMessages (用于 UI 同步)
                 val messagesForModel = if (!requirement.isNullOrBlank()) {

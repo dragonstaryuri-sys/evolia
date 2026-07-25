@@ -235,7 +235,7 @@ private fun ChatPageContent(
             val turns = pageNodes.groupIntoTurns()
             val reversedTurns = turns.reversed()
 
-            var lastConvId: kotlin.uuid.Uuid? = null
+            var lastConvId: Uuid? = null
             reversedTurns.forEachIndexed { index, turn ->
                 val firstNode = turn.firstNode
                 // 话题线逻辑：如果会话 ID 变了，插一根分隔线
@@ -245,8 +245,14 @@ private fun ChatPageContent(
                         uid = "topic_${firstNode.conversationId}"
                     ))
                 }
+                val reversedTurn = turn.copy(
+                    nodes = turn.nodes.reversed()
+                )
                 // 组装成 UI 条目，index == 0 是最新的消息
-                items.add(ChatUIItem.Turn(turn, isGenerating = index == 0 && isAiTyping))
+                items.add(ChatUIItem.Turn(
+                    reversedTurn,
+                    isGenerating = index == 0 && isAiTyping
+                ))
                 lastConvId = firstNode.conversationId
             }
 
