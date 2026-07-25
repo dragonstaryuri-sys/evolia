@@ -129,8 +129,20 @@ data class MessageNode(
     val role get() = messages.firstOrNull()?.role ?: MessageRole.USER
 
     companion object {
-        fun of(message: UIMessage, conversationId: Uuid) = MessageNode(messages = listOf(message), conversationId = conversationId)
+        fun of(message: UIMessage, conversationId: Uuid) = MessageNode(
+            messages = listOf(message),
+            conversationId = conversationId,
+            timelineCreatedAt = message.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        )
     }
 }
 
-fun UIMessage.toMessageNode(conversationId: Uuid): MessageNode = MessageNode(messages = listOf(this), conversationId = conversationId)
+/**
+ * 将单条 UIMessage 转换为 MessageNode。
+ * 自动从消息的 createdAt 提取时间戳作为节点的 timelineCreatedAt 游标。
+ */
+fun UIMessage.toMessageNode(conversationId: Uuid): MessageNode = MessageNode(
+    messages = listOf(this),
+    conversationId = conversationId,
+    timelineCreatedAt = this.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+)
