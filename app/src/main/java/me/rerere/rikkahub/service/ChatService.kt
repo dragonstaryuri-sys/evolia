@@ -789,26 +789,37 @@ class ChatService(
                         .indexOfFirst { it.role == MessageRole.USER }
                         .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
 
-                    // ✨ 核心修复：限定 AI 的上下文范围，防止它看到“未来的自己”
-                    messageRange = 0..lastUserIndex
+                    val hasToolInteraction = conversation.messageNodes.subList(firstAssistantIndex, turnEndIndex)
+                        .any { n -> n.messages.any { m -> m.parts.any { p -> p is UIMessagePart.ToolCall || p is UIMessagePart.ToolResult } } }
 
-                    val versionTag = Uuid.random().toString()
-                    val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList(), versionTag = versionTag)
-                    targetMsgId = newMsg.id // 锁定目标 ID
+                    if (forceWipe || hasToolInteraction) {
+                        // 情况 A：包含工具调用 -> 物理删除本回合所有 AI/工具节点，直接覆盖
+                        val nodesToDelete = conversation.messageNodes.subList(firstAssistantIndex, turnEndIndex)
+                        if (nodesToDelete.isNotEmpty()) {
+                            conversationRepo.deleteNodes(nodesToDelete.map { it.id })
+                        }
 
-                    val nodes = conversation.messageNodes.toMutableList()
-                    val firstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
-                    if (firstAssistant != null) {
-                        val newMessages = firstAssistant.messages + newMsg
-                        nodes[firstAssistantIndex] = firstAssistant.copy(
-                            messages = newMessages,
-                            selectIndex = newMessages.lastIndex
-                        )
+                        val placeholderMsg = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
+                        targetMsgId = placeholderMsg.id
+                        val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
+                        nodes.add(placeholderMsg.toMessageNode(conversation.id))
+
+                        if (turnEndIndex < conversation.messageNodes.size) {
+                            nodes.addAll(conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size))
+                        }
+                        updatedConv = conversation.copy(messageNodes = nodes)
+                        messageRange = 0..lastUserIndex // 限制上下文到上一个用户消息
+                    } else {
+                        // 情况 B：纯文本回复 -> 使用版本历史（分页器）
+                        val versionTag = Uuid.random().toString()
+                        val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList(), versionTag = versionTag)
+                        targetMsgId = newMsg.id
+                        val nodes = conversation.messageNodes.toMutableList()
+                        val nodeToUpdate = nodes[clickedIndex]
+                        val newMessages = nodeToUpdate.messages + newMsg
+                        nodes[clickedIndex] = nodeToUpdate.copy(messages = newMessages, selectIndex = newMessages.lastIndex)
                         updatedConv = conversation.copy(messageNodes = nodes)
                     }
-                } else {
-                    // 兜底：若无前置用户消息，则按原有范围生成
-                    messageRange = 0..<clickedIndex
                 }
             }
             true
