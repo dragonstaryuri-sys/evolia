@@ -9,6 +9,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.InstantSerializer
 import java.time.Instant
 import kotlin.uuid.Uuid
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 
 @Serializable
 data class Conversation(

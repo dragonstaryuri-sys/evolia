@@ -159,6 +159,19 @@ object DatabaseSanitizer {
                 finalSettings = s.copy(assistants = newAssistants)
             }
 
+            // 【关键修复】：修复 chat_message_nodes 的 created_at (适配旧备份导入)
+            // 逻辑同 AppDatabase.MIGRATION_20_21，从关联消息中找最早时间
+            LogUtil.i(TAG, "正在修复消息节点时间线...")
+            targetDbInfo.execSQL("""
+                UPDATE `chat_message_nodes`
+                SET `created_at` = COALESCE(
+                    (SELECT MIN(`created_at`) FROM `chat_messages`
+                     WHERE `chat_messages`.`node_id` = `chat_message_nodes`.`id`),
+                    0
+                )
+                WHERE `created_at` = 0
+            """.trimIndent())
+
             // 同步进度水位线
             targetDbInfo.execSQL("""
                 UPDATE `ConversationEntity`
@@ -271,6 +284,7 @@ object DatabaseSanitizer {
                                             put("conversation_id", convId)
                                             put("select_index", node.selectIndex)
                                             put("order_index", nodeIdx)
+                                            put("created_at", node.timelineCreatedAt) // 尝试从字段中取
                                         }
                                         target.insert("chat_message_nodes", SQLiteDatabase.CONFLICT_REPLACE, nodeValues)
 

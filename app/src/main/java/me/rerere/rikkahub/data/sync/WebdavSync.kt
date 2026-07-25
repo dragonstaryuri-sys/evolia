@@ -77,10 +77,13 @@ class WebdavSync(
         try {
             LogUtil.i(TAG, "开始执行数据迁移...")
 
-            // 1. 迁移旧会话节点数据
+            // 1. 迁移旧会话节点数据 (将 ConversationEntity.nodes JSON 拆分到表)
             conversationRepo.migrateAllOldConversations()
 
-            // 2. 提取主智能体 L3 记忆中的约定到 schedules 表 (适配 18->19 升级)
+            // 2. 修复时间轴乱序 & 补齐缺失的 created_at (适配旧版导入或迁移后的数据)
+            conversationRepo.recomputeNodeTimestamps()
+
+            // 3. 提取主智能体 L3 记忆中的约定到 schedules 表 (适配 18->19 升级)
             // 修改：获取处理后（已清理 masterMemoryContent）的智能体列表并写回 DataStore
             val currentSettings = settingsStore.settingsFlow.first()
             val updatedAssistants = conversationRepo.extractSchedulesFromAssistants(currentSettings.assistants)

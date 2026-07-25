@@ -356,6 +356,8 @@ class ConversationRepository(
             val allEntities = conversationDAO.getAll().first()
             val entitiesToMigrate = allEntities.filter { it.nodes.isNotBlank() && it.nodes != "[]" }
 
+            Log.i(TAG, "检测到 ${entitiesToMigrate.size} 个待拆表迁移的会话")
+
             if (entitiesToMigrate.isEmpty()) return@withContext
 
             db.withTransaction {
@@ -369,6 +371,7 @@ class ConversationRepository(
                     }
                 }
             }
+            Log.i(TAG, "所有旧会话数据拆表迁移完成")
         } catch (e: Exception) {
             Log.e(TAG, "执行迁移任务全局失败", e)
         }
@@ -1013,4 +1016,30 @@ class ConversationRepository(
     suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int = 100): List<ChatMessageEntity> {
         return chatMessageDAO.getMessagesForSummary(convId, lastTime, limit)
     }
+
+    /**
+     * 重新计算所有消息节点的创建时间（基于其包含的消息中最早的一条）。
+     * 用于修复还原备份后可能存在的时间戳缺失，或修复因旧版本 Bug 导致的创建时间乱序。
+     */
+    suspend fun recomputeNodeTimestamps() = withContext(Dispatchers.IO) {
+        try {
+            // 使用原生 SQL 更新，因为 Room 本身不支持跨表 Update 的简单映射
+            db.openHelper.writableDatabase.execSQL(
+                """
+            UPDATE `chat_message_nodes`
+            SET `created_at` = COALESCE(
+                (SELECT MIN(`created_at`) FROM `chat_messages`
+                 WHERE `chat_messages`.`node_id` = `chat_message_nodes`.`id`),
+                `created_at`
+            )
+            WHERE `created_at` <= 0
+               OR `created_at` > ${System.currentTimeMillis() - 5000}
+            """.trimIndent()
+            )
+            Log.i(TAG, "已完成消息节点时间戳重新校准")
+        } catch (e: Exception) {
+            Log.e(TAG, "校准消息节点时间戳失败", e)
+        }
+    }
+
 }
