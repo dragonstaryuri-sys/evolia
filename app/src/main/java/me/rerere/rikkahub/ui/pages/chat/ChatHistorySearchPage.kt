@@ -132,8 +132,6 @@ fun ChatHistorySearchPage(assistantId: String) {
                     entity = entity,
                     assistantName = assistant?.name ?: stringResource(R.string.assistant_page_default_assistant),
                     onClick = {
-                        android.util.Log.d("SEARCH_CLICK", "ConversationID: ${entity.conversationId}, MessageID: ${entity.id}")
-
                         // 2. 传递 targetMessageId 以实现秒开精准定位
                         navController.navigate(
                             Screen.Chat(

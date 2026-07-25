@@ -11,8 +11,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.chaquopy)
 }
 
@@ -34,8 +32,8 @@ android {
         applicationId = "ailand.lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 19
-        versionName = "4.3.0"
+        versionCode = 20
+        versionName = "4.3.1"
 
         buildConfigField("String", "GITHUB_REPO", "\"dragonstaryuri-sys/evolia\"")
 
@@ -244,11 +242,6 @@ dependencies {
     implementation(libs.androidx.material3.adaptive.layout)
 
     implementation(libs.androidx.navigation2)
-
-    // Firebase (Analytics removed for privacy - only crash reporting and remote config)
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.config)
 
     // Bugly
     implementation(libs.bugly.crashreport)
