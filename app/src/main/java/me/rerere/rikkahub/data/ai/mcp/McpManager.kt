@@ -20,6 +20,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.serializer
 import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -167,7 +170,7 @@ class McpManager(
         }
         val serverTools = client.listTools().tools
         val currentSettings = settingsStore.settingsFlow.value
-        Log.i(TAG, "sync: tools: $serverTools")
+        Log.i(TAG, "sync: tools count: ${serverTools.size}")
         settingsStore.update(
             currentSettings.copy(
                 mcpServers = currentSettings.mcpServers.map { serverConfig ->
@@ -177,6 +180,7 @@ class McpManager(
 
                     // 基于server对比
                     serverTools.forEach { serverTool ->
+                        Log.d(TAG, "sync: Tool found: ${serverTool.name}, Raw Schema: ${serverTool.inputSchema}")
                         val tool = tools.find { it.name == serverTool.name }
                         if (tool == null) {
                             tools.add(
@@ -268,9 +272,65 @@ internal val McpJson: Json by lazy {
 }
 
 private fun Any?.toSchema(): InputSchema? {
-    val jsonObject = this as? JsonObject ?: return null
-    return InputSchema.Obj(
-        properties = jsonObject["properties"]?.jsonObject ?: JsonObject(emptyMap()),
-        required = jsonObject["required"]?.jsonArray?.map { (it as JsonPrimitive).content } ?: emptyList()
-    )
+    if (this == null) return null
+    val TAG = "McpManager"
+
+    // 1. 尝试常规序列化方式
+    val jsonObject = runCatching {
+        val serializer = McpJson.serializersModule.serializer(this::class.java)
+        McpJson.encodeToJsonElement(serializer, this).jsonObject
+    }.getOrNull() ?: runCatching {
+        McpJson.encodeToJsonElement(this).jsonObject
+    }.getOrNull() ?: (this as? JsonObject)
+
+    if (jsonObject != null) {
+        val props = jsonObject["properties"]?.jsonObject ?: JsonObject(emptyMap())
+        val reqs = jsonObject["required"]?.jsonArray?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+        return InputSchema.Obj(props, reqs)
+    }
+
+    // 2. 反射保底方案 (专门对付 SDK 的 ToolSchema 对象)
+    try {
+        val cls = this::class.java
+        val propsObj = cls.methods.find { it.name == "getProperties" }?.invoke(this)
+            ?: cls.declaredFields.find { it.name == "properties" }?.apply { isAccessible = true }?.get(this)
+
+        val reqsObj = cls.methods.find { it.name == "getRequired" }?.invoke(this)
+            ?: cls.declaredFields.find { it.name == "required" }?.apply { isAccessible = true }?.get(this)
+
+        if (propsObj != null) {
+            val propsJson = when (propsObj) {
+                is JsonObject -> propsObj
+                is Map<*, *> -> buildJsonObject {
+                    propsObj.forEach { (k, v) ->
+                        if (k is String) {
+                            val value = v // 锁死局部变量
+                            if (value != null) {
+                                try {
+                                    // 修正报错：明确指定非空 Any 类型
+                                    val s = McpJson.serializersModule.serializer(value::class.java)
+                                    @Suppress("UNCHECKED_CAST")
+                                    put(k, McpJson.encodeToJsonElement(s as kotlinx.serialization.SerializationStrategy<Any>, value))
+                                } catch (e: Exception) {
+                                    put(k, JsonPrimitive(value.toString()))
+                                }
+                            } else {
+                                put(k, JsonPrimitive("null"))
+                            }
+                        }
+                    }
+                }
+                else -> runCatching { McpJson.encodeToJsonElement(propsObj).jsonObject }.getOrDefault(JsonObject(emptyMap()))
+            }
+
+            val reqsList = (reqsObj as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+
+            Log.d(TAG, "toSchema: Successfully extracted via reflection for ${cls.simpleName}")
+            return InputSchema.Obj(propsJson, reqsList)
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "toSchema: All conversion strategies failed for ${this::class.java.name}", e)
+    }
+
+    return null
 }
