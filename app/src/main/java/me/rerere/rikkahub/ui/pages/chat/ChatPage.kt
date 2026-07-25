@@ -219,9 +219,23 @@ private fun ChatPageContent(
     val pagingState by vm.chatPaginationState.collectAsStateWithLifecycle()
     val isHistoryLoading = pagingState is ConversationRepository.ChatPaginationState.Loading
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
+
+    // 记住最后一次成功的状态，避免加载时列表由于状态切换到 Loading 而闪烁
+    val lastSuccessState = remember(conversation.id) {
+        mutableStateOf<ConversationRepository.ChatPaginationState.Success?>(null)
+    }
+
+    // 监听 pagingState，如果是 Success 就同步更新缓存
+    LaunchedEffect(pagingState) {
+        val state = pagingState
+        if (state is ConversationRepository.ChatPaginationState.Success) {
+            lastSuccessState.value = state
+        }
+    }
     val assembledItems by remember(pagingState, isAiTyping) {
         derivedStateOf {
-            val state = pagingState as? ConversationRepository.ChatPaginationState.Success
+            val state = (pagingState as? ConversationRepository.ChatPaginationState.Success)
+                ?: lastSuccessState.value
                 ?: return@derivedStateOf emptyList<ChatUIItem>()
 
             val items = mutableListOf<ChatUIItem>()
