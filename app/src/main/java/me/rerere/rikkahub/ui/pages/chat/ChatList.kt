@@ -13,9 +13,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -25,9 +26,14 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
@@ -41,7 +47,6 @@ import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
 import me.rerere.rikkahub.ui.components.ui.Tooltip
-import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
 import me.rerere.rikkahub.utils.plus
 import kotlin.uuid.Uuid
 import kotlinx.datetime.LocalDateTime
@@ -68,9 +73,8 @@ import kotlin.time.Instant
 private const val ScrollBottomKey = "ScrollBottomKey"
 sealed class ChatUIItem {
     data class Turn(
-        val group:MessageTurnGroup,
-        val isGenerating: Boolean = false,
-        val stableId: String = "turn_${group.firstNode.id}"
+        val group: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup,
+        val isGenerating: Boolean = false
     ) : ChatUIItem()
     data class Separator(val text: String, val uid: String) : ChatUIItem()
 }
@@ -98,12 +102,12 @@ fun ChatList(
     onAddFavorite: (List<UIMessage>) -> Unit = {},
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
     onTypingStateChange: (Uuid, Boolean) -> Unit = { _, _ -> },
+    onUserScroll: () -> Boolean = { false },
+    onRetryPagination: () -> Unit = {},
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
     var instantScroll by remember { mutableStateOf(false) }
-
-    var isWaitingForJump by remember(targetMessageId) { mutableStateOf(!targetMessageId.isNullOrBlank()) }
 
     LaunchedEffect(targetMessageId, items) {
         if (!targetMessageId.isNullOrBlank()) {
@@ -121,7 +125,6 @@ fun ChatList(
             if (targetNode != null) {
                 instantScroll = true
                 scrollToNodeId = targetNode.id
-                isWaitingForJump = false
             }
         }
     }
@@ -149,13 +152,25 @@ fun ChatList(
                     },
                 )
             } else {
-                Box(modifier = Modifier.fillMaxSize().alpha(if (isWaitingForJump) 0f else 1f)) {
+                // 搜索跳转期间仍保持当前窗口可见。目标消息加载完成后再执行定位，
+                // 避免目标不存在/分页失败时整个详情页永久透明而显示为空白。
+                Box(modifier = Modifier.fillMaxSize()) {
                     // ✨ 更新：使用 paginationState 判断初始加载
                     val isInitialLoading = paginationState is ConversationRepository.ChatPaginationState.Loading && items.isEmpty()
 
+                    val initialError = paginationState as? ConversationRepository.ChatPaginationState.Error
                     if (isInitialLoading) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        }
+                    } else if (initialError != null && items.isEmpty()) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(text = initialError.cause.message ?: "加载消息失败")
+                            TextButton(onClick = onRetryPagination) { Text("重试") }
                         }
                     } else {
                         this@SharedTransitionLayout.ChatListNormal(
@@ -182,6 +197,8 @@ fun ChatList(
                             onAddFavorite = onAddFavorite,
                             onDeleteMessages = onDeleteMessages,
                             onTypingStateChange = onTypingStateChange,
+                            onUserScroll = onUserScroll,
+                            onRetryPagination = onRetryPagination,
                             animatedVisibilityScope = this@AnimatedContent,
                         )
                     }
@@ -212,11 +229,48 @@ private fun SharedTransitionScope.ChatListNormal(
     onGetFullMemoryContent: suspend (Int, Int) -> String?,
     onAddFavorite: (List<UIMessage>) -> Unit,
     onTypingStateChange: (Uuid, Boolean) -> Unit,
+    onUserScroll: () -> Boolean,
+    onRetryPagination: () -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
+    val latestOnUserScroll = rememberUpdatedState(onUserScroll)
+    val userScrollConnection = remember(scope) {
+        object : NestedScrollConnection {
+            var paginationRequestedForGesture = false
+            var gestureResetJob: Job? = null
+            var boundaryCheckJob: Job? = null
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput &&
+                    (consumed.y != 0f || available.y != 0f)
+                ) {
+                    gestureResetJob?.cancel()
+                    gestureResetJob = scope.launch {
+                        delay(300)
+                        paginationRequestedForGesture = false
+                    }
+                    if (!paginationRequestedForGesture) {
+                        boundaryCheckJob?.cancel()
+                        boundaryCheckJob = scope.launch {
+                            withFrameNanos { }
+                            val paginationStarted = latestOnUserScroll.value()
+                            if (paginationStarted) {
+                                paginationRequestedForGesture = true
+                            }
+                        }
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     val currentConversationState = rememberUpdatedState(conversation)
     val onCitationClick = remember {
@@ -247,8 +301,6 @@ private fun SharedTransitionScope.ChatListNormal(
     var selecting by remember { mutableStateOf(false) }
     var showExportSheet by remember { mutableStateOf(false) }
 
-    ImeLazyListAutoScroller(lazyListState = state)
-
     val needsPhantomLoadingTurn = loading && (
         items.isEmpty() || run {
             val firstItem = items.firstOrNull()
@@ -276,9 +328,20 @@ private fun SharedTransitionScope.ChatListNormal(
                 PaddingValues(top = 32.dp) + innerPadding + WindowInsets.ime.asPaddingValues(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(userScrollConnection),
         ) {
             item(ScrollBottomKey) { Spacer(Modifier.fillMaxWidth().height(5.dp)) }
+
+            val pageState = paginationState as? ConversationRepository.ChatPaginationState.Success
+            if (pageState?.loadingDirection == ConversationRepository.PageLoadDirection.NEWER) {
+                item("newer_loading_indicator") {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
 
             if (needsPhantomLoadingTurn) {
                 item("phantom_loading") {
@@ -297,8 +360,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 items = items,
                 key = { _, item ->
                     when (item) {
-                        // ✨ 使用我们定义的 stableId
-                        is ChatUIItem.Turn -> item.stableId
+                        is ChatUIItem.Turn -> "turn_${item.group.firstNode.id}"
                         is ChatUIItem.Separator -> "sep_${item.uid}"
                     }
                 }
@@ -396,6 +458,23 @@ private fun SharedTransitionScope.ChatListNormal(
                 item("loading_indicator") {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                    }
+                }
+            }
+
+            pageState?.error?.let { error ->
+                item("pagination_error_${pageState.errorDirection}") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = error.message ?: "加载消息失败",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        TextButton(onClick = onRetryPagination) { Text("重试") }
                     }
                 }
             }
