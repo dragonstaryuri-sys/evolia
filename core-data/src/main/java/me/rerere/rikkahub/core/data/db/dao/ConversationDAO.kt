@@ -39,6 +39,7 @@ interface ConversationDAO {
             FROM chat_messages m
             INNER JOIN ConversationEntity conv ON m.conversation_id = conv.id
             WHERE conv.assistant_id = c.assistant_id AND m.is_deleted = 0
+            AND m.content_json NOT LIKE '%"skipContext":true%'
             ORDER BY conv.is_pinned DESC, conv.update_at DESC, m.created_at DESC, m.order_index DESC
             LIMIT 1
         ) as content
