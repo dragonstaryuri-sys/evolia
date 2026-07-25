@@ -159,6 +159,18 @@ interface ChatMessageDAO {
         limit: Int
     ): List<MessageNodeWithMetadata>
 
+    /**
+     * 获取指定消息所属节点的元数据
+     */
+    @Transaction
+    @Query("""
+        SELECT n.*, c.update_at as conv_update_at FROM chat_message_nodes n
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        INNER JOIN chat_messages m ON n.id = m.node_id
+        WHERE m.id = :messageId
+    """)
+    suspend fun getNodeWithMetadataByMessageId(messageId: String): MessageNodeWithMetadata?
+
     // ✨ 新增：获取指定会话最新的 N 个节点
     @Transaction
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index DESC LIMIT :limit")

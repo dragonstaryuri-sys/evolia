@@ -232,8 +232,10 @@ private fun ChatPageContent(
             lastSuccessState.value = state
         }
     }
-    val assembledItems by remember(pagingState, isAiTyping) {
+    val nodes = (pagingState as? ConversationRepository.ChatPaginationState.Success)?.nodes ?: emptyList()
+    val assembledItems by remember(conversation.id){
         derivedStateOf {
+            // 只有当 nodes 真正变化时，这里才会重新计算
             val state = (pagingState as? ConversationRepository.ChatPaginationState.Success)
                 ?: lastSuccessState.value
                 ?: return@derivedStateOf emptyList<ChatUIItem>()
@@ -241,8 +243,6 @@ private fun ChatPageContent(
             val items = mutableListOf<ChatUIItem>()
             val turns = state.nodes.groupIntoTurns()
             val reversedTurns = turns.reversed()
-
-            Log.d("PAGINATION_DEBUG", "UI.Assembling: Nodes(0)=${state.nodes.firstOrNull()?.id}, Turns(0)=${turns.firstOrNull()?.firstNode?.id}")
 
 
             var lastConvId: kotlin.uuid.Uuid? = null
@@ -256,7 +256,13 @@ private fun ChatPageContent(
                     ))
                 }
                 // 组装成 UI 条目，index == 0 是最新的消息
-                items.add(ChatUIItem.Turn(turn, isGenerating = index == 0 && isAiTyping))
+                items.add(
+                    ChatUIItem.Turn(
+                        group = turn,
+                        isGenerating = (index == 0 && isAiTyping),
+                        stableId = "turn_${firstNode.id}"
+                    )
+                )
                 lastConvId = firstNode.conversationId
             }
 
@@ -272,7 +278,6 @@ private fun ChatPageContent(
                     uid = "history_start"
                 ))
             }
-            Log.d("PAGINATION_DEBUG", "UI.AssembledItems: Total=${items.size}, item(0)=${items.firstOrNull()}, last=${items.lastOrNull()}")
             items
         }
     }

@@ -68,8 +68,9 @@ import kotlin.time.Instant
 private const val ScrollBottomKey = "ScrollBottomKey"
 sealed class ChatUIItem {
     data class Turn(
-        val group: me.rerere.rikkahub.ui.components.chat.MessageTurnGroup,
-        val isGenerating: Boolean = false
+        val group:MessageTurnGroup,
+        val isGenerating: Boolean = false,
+        val stableId: String = "turn_${group.firstNode.id}"
     ) : ChatUIItem()
     data class Separator(val text: String, val uid: String) : ChatUIItem()
 }
@@ -296,7 +297,8 @@ private fun SharedTransitionScope.ChatListNormal(
                 items = items,
                 key = { _, item ->
                     when (item) {
-                        is ChatUIItem.Turn -> "turn_${item.group.firstNode.id}"
+                        // ✨ 使用我们定义的 stableId
+                        is ChatUIItem.Turn -> item.stableId
                         is ChatUIItem.Separator -> "sep_${item.uid}"
                     }
                 }

@@ -67,7 +67,13 @@ class ChatVM(
         .flatMapLatest { manager ->
             manager?.state ?: flowOf(null)
         }
+        .onEach { state ->
+            if (state is ConversationRepository.ChatPaginationState.Success) {
+                Log.d(TAG, "Pagination: ⚡ 发射了新的成功状态, 包含 ${state.nodes.size} 个节点, 对话ID范围: ${state.nodes.map { it.conversationId }.distinct()}")
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     fun triggerLoadOlder() {
         viewModelScope.launch { paginationManager?.loadOlder() }
     }
@@ -76,14 +82,19 @@ class ChatVM(
         viewModelScope.launch { paginationManager?.loadNewer() }
     }
 
-    private fun initPaginationManager(assistantId: Uuid) {
-        Log.d("PAGINATION_DEBUG", "VM.init: Manager initialized for assistant=$assistantId")
+    private fun initPaginationManager(assistantId: Uuid, initialMessageId: String? = null) {
+        Log.d(TAG, "Init: 🛠️ 初始化分页管理器 assistant=$assistantId, initialMessageId=$initialMessageId")
         destroyPaginationManager()
         val manager = conversationRepo.createPaginationManager(assistantId)
         paginationManager = manager
         _managerFlow.value = manager
         viewModelScope.launch {
-            manager.loadInitial()
+            if (initialMessageId != null) {
+                // 如果指定了消息 ID，则加载该消息附近的窗口
+                manager.loadAroundMessage(initialMessageId)
+            } else {
+                manager.loadInitial()
+            }
         }
     }
 
@@ -152,15 +163,21 @@ class ChatVM(
     }
 
     init {
-        viewModelScope.launch {
+    viewModelScope.launch {
+            Log.d(TAG, "Init: 🟢 开始进入初始化逻辑, anchorId=$anchorConversationId, targetMessageId=$targetMessageId")
             val settings = settingsStore.settingsFlowRaw.first()
             val currentAssistantId = settings.assistantId
 
-            val jumpConvId = if (!targetMessageId.isNullOrBlank()) {
-                conversationRepo.chatMessageDAO.getConversationIdByMessageId(targetMessageId)?.let { Uuid.parse(it) }
+            val finalTargetMessageId = if (targetMessageId == anchorConversationId.toString()) {
+                Log.w(TAG, "Init: ⚠️ 检测到 targetMessageId 与对话 ID 相同，已忽略跳转逻辑以防止死循环")
+                null
+            } else targetMessageId
+
+            val jumpConvId = if (!finalTargetMessageId.isNullOrBlank()) {
+                conversationRepo.chatMessageDAO.getConversationIdByMessageId(finalTargetMessageId)?.let { Uuid.parse(it) }
             } else null
 
-            val latestInDb = jumpConvId?.let { conversationRepo.getConversationById(it) }
+            val latestInDb = jumpConvId?.let { conversationRepo.getConversationById(it, finalTargetMessageId) }
                 ?: conversationRepo.getConversationById(anchorConversationId)
                 ?: conversationRepo.getLatestConversation(currentAssistantId)
 
@@ -170,36 +187,16 @@ class ChatVM(
             _currentActiveId.value = targetId
             trackConversation(targetId)
 
-            initPaginationManager(assistantId)
+            // ✨ 使用增强的分页初始化，支持直接跳转到消息
+            initPaginationManager(assistantId, finalTargetMessageId)
 
             chatService.initializeConversation(
                 conversationId = targetId,
-                skipAutoArchive = !targetMessageId.isNullOrBlank()
+                skipAutoArchive = !finalTargetMessageId.isNullOrBlank()
             )
 
-            // targetMessageId 跳转：初始化后循环 loadOlder 寻找目标消息
-            if (!targetMessageId.isNullOrBlank()) {
-                viewModelScope.launch {
-                    val manager = paginationManager ?: return@launch
-                    manager.state
-                        .filterIsInstance<ConversationRepository.ChatPaginationState.Success>()
-                        .collect { state ->
-                            val found = state.nodes.any { node ->
-                                node.messages.any { m -> m.id.toString() == targetMessageId }
-                            }
-                            if (found) {
-                                this.coroutineContext[Job]?.cancel()
-                            } else if (state.hasOlder) {
-                                delay(100) // ✨ 增加 100ms 延迟，给数据库喘息的时间
-                                manager.loadOlder()
-                            } else {
-                                this.coroutineContext[Job]?.cancel()
-                            }
-                        }
-                }
-            }
-            _isConversationLoaded.value = true
-        }
+        _isConversationLoaded.value = true
+    }
 
         // 监听 AI 生成新节点或新消息并注入
         viewModelScope.launch {
@@ -209,7 +206,7 @@ class ChatVM(
                 }
                 .collect { nodes ->
                     nodes.lastOrNull()?.let { node ->
-                        // 只有当最新节点不在当前分页管理器中时才注入
+                        Log.d(TAG, "Pagination: 💉 尝试注入新节点 ID=${node.id}, 归属对话=${node.conversationId}")
                         paginationManager?.injectNewNode(node)
                     }
                 }

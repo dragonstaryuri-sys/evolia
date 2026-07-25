@@ -707,7 +707,53 @@ class ConversationRepository(
             }
         }
 
-// 找到 MessagePaginationManager 内部的方法并替换：
+        /**
+         * 加载指定消息附近的窗口
+         */
+        suspend fun loadAroundMessage(messageId: String): ChatPaginationState = mutex.withLock {
+            _state.value = ChatPaginationState.Loading
+            return@withLock try {
+                val centerNode = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getNodeWithMetadataByMessageId(messageId)
+                } ?: return@withLock loadInitial()
+
+                val older = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getNodesOlderThan(
+                        assistantId.toString(),
+                        centerNode.convUpdateAt,
+                        centerNode.node.orderIndex,
+                        BATCH_SIZE / 2
+                    )
+                }
+
+                val newer = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getNodesNewerThan(
+                        assistantId.toString(),
+                        centerNode.convUpdateAt,
+                        centerNode.node.orderIndex,
+                        BATCH_SIZE / 2
+                    )
+                }
+
+                val nodes = mutableListOf<MessageNode>()
+                nodes.addAll(older.map { mapMetadataToNode(it) }.reversed())
+                nodes.add(mapMetadataToNode(centerNode))
+                nodes.addAll(newer.map { mapMetadataToNode(it) })
+
+                hasOlder = older.size >= BATCH_SIZE / 2
+                hasNewer = newer.size >= BATCH_SIZE / 2
+
+                _currentNodes.clear()
+                _currentNodes.addAll(nodes)
+
+                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                _state.value = successState
+                successState
+            } catch (e: Exception) {
+                _state.value = ChatPaginationState.Error(e)
+                _state.value
+            }
+        }
 
         suspend fun loadOlder(): ChatPaginationState = mutex.withLock {
             // ✨ 增加加载中保护
