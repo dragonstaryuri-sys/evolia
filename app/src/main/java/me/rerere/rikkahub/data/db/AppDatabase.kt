@@ -38,7 +38,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 20, // ✨ 升级版本号以应用索引改动
+    version = 21,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -64,6 +64,27 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 20->21 迁移：为消息节点建立稳定时间线游标")
+                db.execSQL("ALTER TABLE `chat_message_nodes` ADD COLUMN `created_at` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    """
+                    UPDATE `chat_message_nodes`
+                    SET `created_at` = COALESCE(
+                        (SELECT MIN(`created_at`) FROM `chat_messages`
+                         WHERE `chat_messages`.`node_id` = `chat_message_nodes`.`id`),
+                        0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_chat_message_nodes_conversation_id_created_at_id` " +
+                        "ON `chat_message_nodes` (`conversation_id`, `created_at`, `id`)"
+                )
+            }
+        }
 
         // ✨ 19 -> 20: 添加性能优化索引
         val MIGRATION_19_20 = object : Migration(19, 20) {
