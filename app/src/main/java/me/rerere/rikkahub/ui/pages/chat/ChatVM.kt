@@ -433,7 +433,8 @@ class ChatVM(
         viewModelScope.launch {
             deleteMessageInternal(message)
             collectRelatedMessages(message).forEach { deleteMessageInternal(it) }
-            paginationManager?.loadInitial() // 删除后重置窗口
+            delay(50)
+            paginationManager?.loadInitial()
         }
     }
 
@@ -493,6 +494,12 @@ class ChatVM(
         val targetConv = allConvs.find { conv -> conv.messageNodes.any { node -> node.messages.any { it.id == message.id } } } ?: return
         val node = targetConv.getMessageNodeByMessageId(message.id) ?: return
         val nodeIndex = targetConv.messageNodes.indexOf(node)
+        if (node.messages.size == 1 && message.versionTag == null) {
+            // 如果节点只有一条消息，直接删除整个节点
+            conversationRepo.deleteNodes(listOf(node.id))
+        } else {
+            conversationRepo.markMessageAsDeleted(message.id)
+        }
         val deleteVersionTag = message.versionTag
         val start = targetConv.messageNodes.subList(0, nodeIndex + 1).indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER } + 1
         val end = targetConv.messageNodes.subList(nodeIndex, targetConv.messageNodes.size).indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }.let { if (it == -1) targetConv.messageNodes.size else nodeIndex + it }
