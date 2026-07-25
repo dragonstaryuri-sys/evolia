@@ -453,11 +453,15 @@ class ConversationRepository(
     private suspend fun syncMessages(conversation: Conversation) {
         val convId = conversation.id.toString()
         val nodeEntities = conversation.messageNodes.mapIndexed { index, node ->
+            val nodeCreatedAt = node.messages
+                .minOfOrNull { it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() }
+                ?: System.currentTimeMillis()
             ChatMessageNodeEntity(
                 id = node.id.toString(),
                 conversationId = convId,
                 selectIndex = node.selectIndex,
-                orderIndex = index
+                orderIndex = index,
+                createdAt = nodeCreatedAt
             )
         }
         val messageEntities = conversation.messageNodes.flatMap { node ->
@@ -630,7 +634,12 @@ class ConversationRepository(
     /**
      * 游标锚点
      */
-    data class AnchorCursor(val updateAt: Long, val orderIndex: Int)
+    data class NodeCursor(val createdAt: Long, val nodeId: String)
+
+    enum class PageLoadDirection {
+        OLDER,
+        NEWER
+    }
 
     /**
      * 分页状态机
@@ -641,7 +650,10 @@ class ConversationRepository(
         data class Success(
             val nodes: List<MessageNode>,
             val hasOlder: Boolean,
-            val hasNewer: Boolean
+            val hasNewer: Boolean,
+            val loadingDirection: PageLoadDirection? = null,
+            val errorDirection: PageLoadDirection? = null,
+            val error: Throwable? = null
         ) : ChatPaginationState()
         data class Error(val cause: Throwable) : ChatPaginationState()
     }
@@ -656,9 +668,8 @@ class ConversationRepository(
     /**
      * 双向滑动窗口管理器
      *
-     * ⚠️ 游标断裂风险说明：
-     * 由于基于 (updateAt, orderIndex) 复合游标定位，若会话发生“物理硬删除”会导致锚点失效。
-     * 建议业务层对会话使用软删除（isDeleted标记），或者在 UI 层提供“重置/回到最新”按钮以应对潜在的锚点失效。
+     * 节点按不可变的 (createdAt, nodeId) 排序。会话更新、输入法布局变化和窗口
+     * 裁剪都不会改变游标的相对顺序。
      */
     inner class MessagePaginationManager(private val assistantId: Uuid) {
         private val WINDOW_LIMIT = 1000
@@ -674,6 +685,21 @@ class ConversationRepository(
         // ✨ 新增：对外暴露的只读流
         val state: StateFlow<ChatPaginationState> = _state.asStateFlow()
 
+        private fun publish(
+            loadingDirection: PageLoadDirection? = null,
+            errorDirection: PageLoadDirection? = null,
+            error: Throwable? = null
+        ): ChatPaginationState.Success {
+            return ChatPaginationState.Success(
+                nodes = _currentNodes.toList(),
+                hasOlder = hasOlder,
+                hasNewer = hasNewer,
+                loadingDirection = loadingDirection,
+                errorDirection = errorDirection,
+                error = error
+            ).also { _state.value = it }
+        }
+
         /**
          * 加载初始窗口（最新的 BATCH_SIZE 条）
          */
@@ -683,12 +709,6 @@ class ConversationRepository(
                 val results = withContext(Dispatchers.IO) {
                     chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), BATCH_SIZE + 1)
                 }
-                // ✨ 添加日志：检查数据库原始返回
-                Log.d("PAGINATION_DEBUG", "Manager.loadInitial: DB returned ${results.size} nodes. " +
-                    "First(id=${results.firstOrNull()?.node?.id}, time=${results.firstOrNull()?.convUpdateAt}), " +
-                    "Last(id=${results.lastOrNull()?.node?.id}, time=${results.lastOrNull()?.convUpdateAt})")
-
-
                 hasOlder = results.size > BATCH_SIZE
                 hasNewer = false
 
@@ -696,10 +716,10 @@ class ConversationRepository(
                 _currentNodes.clear()
                 _currentNodes.addAll(nodes)
 
+                Log.d(TAG, "pagination initial: nodes=${nodes.size}, hasOlder=$hasOlder")
+
                 // ✨ 3. 更新状态流并返回
-                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
-                _state.value = successState
-                successState // 这里就是返回值，删掉下面那行重复的
+                publish()
             } catch (e: Exception) {
                 val errorState = ChatPaginationState.Error(e)
                 _state.value = errorState
@@ -708,67 +728,96 @@ class ConversationRepository(
         }
 
         /**
-         * 加载指定消息附近的窗口
+         * 以搜索命中的消息节点为中心建立窗口，避免从最新消息逐页扫描到目标。
          */
         suspend fun loadAroundMessage(messageId: String): ChatPaginationState = mutex.withLock {
             _state.value = ChatPaginationState.Loading
             return@withLock try {
-                val centerNode = withContext(Dispatchers.IO) {
-                    chatMessageDAO.getNodeWithMetadataByMessageId(messageId)
-                } ?: return@withLock loadInitial()
+                val assistantIdValue = assistantId.toString()
+                val sideSize = BATCH_SIZE / 2
+                val target = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getNodeContainingMessage(assistantIdValue, messageId)
+                } ?: return@withLock loadInitialLocked()
 
-                val older = withContext(Dispatchers.IO) {
+                val olderResults = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesOlderThan(
-                        assistantId.toString(),
-                        centerNode.convUpdateAt,
-                        centerNode.node.orderIndex,
-                        BATCH_SIZE / 2
+                        assistantIdValue,
+                        target.node.createdAt,
+                        target.node.id,
+                        sideSize + 1
                     )
                 }
-
-                val newer = withContext(Dispatchers.IO) {
+                val newerResults = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesNewerThan(
-                        assistantId.toString(),
-                        centerNode.convUpdateAt,
-                        centerNode.node.orderIndex,
-                        BATCH_SIZE / 2
+                        assistantIdValue,
+                        target.node.createdAt,
+                        target.node.id,
+                        sideSize + 1
                     )
                 }
 
-                val nodes = mutableListOf<MessageNode>()
-                nodes.addAll(older.map { mapMetadataToNode(it) }.reversed())
-                nodes.add(mapMetadataToNode(centerNode))
-                nodes.addAll(newer.map { mapMetadataToNode(it) })
-
-                hasOlder = older.size >= BATCH_SIZE / 2
-                hasNewer = newer.size >= BATCH_SIZE / 2
+                val olderNodes = olderResults.take(sideSize).map(::mapMetadataToNode).reversed()
+                val targetNode = mapMetadataToNode(
+                    wrapper = target,
+                    selectedMessageId = messageId
+                )
+                val newerNodes = newerResults.take(sideSize).map(::mapMetadataToNode)
 
                 _currentNodes.clear()
-                _currentNodes.addAll(nodes)
+                _currentNodes.addAll(olderNodes)
+                _currentNodes.add(targetNode)
+                _currentNodes.addAll(newerNodes)
+                hasOlder = olderResults.size > sideSize
+                hasNewer = newerResults.size > sideSize
 
-                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
-                _state.value = successState
-                successState
+                Log.d(
+                    TAG,
+                    "pagination target: message=$messageId, node=${target.node.id}, " +
+                        "window=${_currentNodes.size}, hasOlder=$hasOlder, hasNewer=$hasNewer"
+                )
+                publish()
             } catch (e: Exception) {
-                _state.value = ChatPaginationState.Error(e)
-                _state.value
+                Log.w(TAG, "pagination target failed: message=$messageId", e)
+                val errorState = ChatPaginationState.Error(e)
+                _state.value = errorState
+                errorState
+            }
+        }
+
+        /**
+         * mutex 已持有时使用，避免目标不存在时递归获取同一把锁。
+         */
+        private suspend fun loadInitialLocked(): ChatPaginationState {
+            return try {
+                val results = withContext(Dispatchers.IO) {
+                    chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), BATCH_SIZE + 1)
+                }
+                hasOlder = results.size > BATCH_SIZE
+                hasNewer = false
+                val nodes = results.take(BATCH_SIZE).map(::mapMetadataToNode).reversed()
+                _currentNodes.clear()
+                _currentNodes.addAll(nodes)
+                Log.w(TAG, "pagination target missing; fallback to latest window")
+                publish()
+            } catch (e: Exception) {
+                val errorState = ChatPaginationState.Error(e)
+                _state.value = errorState
+                errorState
             }
         }
 
         suspend fun loadOlder(): ChatPaginationState = mutex.withLock {
-            // ✨ 增加加载中保护
-            if (!hasOlder || _state.value is ChatPaginationState.Loading) return@withLock _state.value
+            if (!hasOlder) return@withLock _state.value
 
             return@withLock try {
-                _state.value = ChatPaginationState.Loading
-                // ✨ 修正锚点：使用当前最旧的节点 (列表第一个)
+                publish(loadingDirection = PageLoadDirection.OLDER)
                 val anchorNode = _currentNodes.firstOrNull() ?: return@withLock ChatPaginationState.Idle
 
                 val results = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesOlderThan(
                         assistantId.toString(),
-                        anchorNode.parentUpdateAt,
-                        anchorNode.orderIndex,
+                        anchorNode.timelineCreatedAt,
+                        anchorNode.id.toString(),
                         BATCH_SIZE + 1
                     )
                 }
@@ -784,29 +833,27 @@ class ConversationRepository(
                     hasNewer = true
                 }
 
-                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
-                _state.value = successState
-                successState
+                Log.d(TAG, "pagination older: cursor=${anchorNode.timelineCreatedAt}/${anchorNode.id}, added=${newOldNodes.size}, window=${_currentNodes.size}, hasOlder=$hasOlder")
+
+                publish()
             } catch (e: Exception) {
-                _state.value = ChatPaginationState.Error(e)
-                _state.value
+                Log.w(TAG, "pagination older failed: window=${_currentNodes.size}", e)
+                publish(errorDirection = PageLoadDirection.OLDER, error = e)
             }
         }
 
         suspend fun loadNewer(): ChatPaginationState = mutex.withLock {
             if (!hasNewer && _currentNodes.isNotEmpty()) return@withLock _state.value
-            if (_state.value is ChatPaginationState.Loading) return@withLock _state.value
 
             return@withLock try {
-                _state.value = ChatPaginationState.Loading
-                // ✨ 修正锚点：使用当前最新的节点 (列表最后一个)
+                publish(loadingDirection = PageLoadDirection.NEWER)
                 val anchorNode = _currentNodes.lastOrNull() ?: return@withLock ChatPaginationState.Idle
 
                 val results = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesNewerThan(
                         assistantId.toString(),
-                        anchorNode.parentUpdateAt,
-                        anchorNode.orderIndex,
+                        anchorNode.timelineCreatedAt,
+                        anchorNode.id.toString(),
                         BATCH_SIZE + 1
                     )
                 }
@@ -822,25 +869,46 @@ class ConversationRepository(
                     hasOlder = true
                 }
 
-                val successState = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
-                _state.value = successState
-                successState
+                Log.d(TAG, "pagination newer: cursor=${anchorNode.timelineCreatedAt}/${anchorNode.id}, added=${newNewerNodes.size}, window=${_currentNodes.size}, hasNewer=$hasNewer")
+
+                publish()
             } catch (e: Exception) {
-                _state.value = ChatPaginationState.Error(e)
-                _state.value
+                Log.w(TAG, "pagination newer failed: window=${_currentNodes.size}", e)
+                publish(errorDirection = PageLoadDirection.NEWER, error = e)
+            }
+        }
+
+        suspend fun retry(): ChatPaginationState {
+            val currentState = _state.value
+            return when (currentState) {
+                is ChatPaginationState.Error -> loadInitial()
+                is ChatPaginationState.Success -> when (currentState.errorDirection) {
+                    PageLoadDirection.OLDER -> loadOlder()
+                    PageLoadDirection.NEWER -> loadNewer()
+                    null -> currentState
+                }
+                else -> currentState
             }
         }
 
         suspend fun injectNewNode(node: MessageNode) = mutex.withLock {
             if (!hasNewer) {
-                if (_currentNodes.none { it.id == node.id }) {
-                    _currentNodes.add(node)
+                val normalizedNode = if (node.timelineCreatedAt > 0L) {
+                    node
+                } else {
+                    val createdAt = node.messages
+                        .minOfOrNull { it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() }
+                        ?: System.currentTimeMillis()
+                    node.copy(timelineCreatedAt = createdAt)
+                }
+                if (_currentNodes.none { it.id == normalizedNode.id }) {
+                    _currentNodes.add(normalizedNode)
                     if (_currentNodes.size > WINDOW_LIMIT) {
                         // ✨ 修正：注入新消息时，删掉最顶端最旧的消息
                         _currentNodes.removeAt(0)
                         hasOlder = true
                     }
-                    _state.value = ChatPaginationState.Success(_currentNodes.toList(), hasOlder, hasNewer)
+                    publish()
                 }
             }
         }
@@ -852,26 +920,33 @@ class ConversationRepository(
             _currentNodes.clear()
             hasOlder = false
             hasNewer = false
-            _state.value = ChatPaginationState.Idle // ✨ 重置状态
+            _state.value = ChatPaginationState.Idle
         }
     }
 
     /**
      * 辅助方法：将 DAO 返回的带元数据节点转换为 UI 节点模型
      */
-    private fun mapMetadataToNode(wrapper: MessageNodeWithMetadata): MessageNode {
+    private fun mapMetadataToNode(
+        wrapper: MessageNodeWithMetadata,
+        selectedMessageId: String? = null
+    ): MessageNode {
         val uiMessages = wrapper.messages
             .filter { !it.isDeleted }
             .sortedBy { it.orderIndex }
             .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+        val targetMessageIndex = selectedMessageId?.let { targetId ->
+            uiMessages.indexOfFirst { message -> message.id.toString() == targetId }
+                .takeIf { it >= 0 }
+        }
 
         return MessageNode(
             id = Uuid.parse(wrapper.node.id),
             messages = uiMessages,
-            selectIndex = wrapper.node.selectIndex,
+            selectIndex = targetMessageIndex ?: wrapper.node.selectIndex,
             conversationId = Uuid.parse(wrapper.node.conversationId),
             orderIndex = wrapper.node.orderIndex,
-            parentUpdateAt = wrapper.convUpdateAt
+            timelineCreatedAt = wrapper.node.createdAt
         )
     }
 

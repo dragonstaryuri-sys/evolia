@@ -1,7 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
@@ -69,6 +68,11 @@ import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.ui.pages.chat.ChatUIItem
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
+
+private enum class PaginationBoundary {
+    Older,
+    Newer
+}
 
 @Composable
 fun ChatPage(
@@ -217,33 +221,19 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     val pagingState by vm.chatPaginationState.collectAsStateWithLifecycle()
-    val isHistoryLoading = pagingState is ConversationRepository.ChatPaginationState.Loading
+    val successState = pagingState as? ConversationRepository.ChatPaginationState.Success
+    val isHistoryLoading = successState?.loadingDirection == ConversationRepository.PageLoadDirection.OLDER
+    val isNewerLoading = successState?.loadingDirection == ConversationRepository.PageLoadDirection.NEWER
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
-
-    // 记住最后一次成功的状态，避免加载时列表由于状态切换到 Loading 而闪烁
-    val lastSuccessState = remember(conversation.id) {
-        mutableStateOf<ConversationRepository.ChatPaginationState.Success?>(null)
-    }
-
-    // 监听 pagingState，如果是 Success 就同步更新缓存
-    LaunchedEffect(pagingState) {
-        val state = pagingState
-        if (state is ConversationRepository.ChatPaginationState.Success) {
-            lastSuccessState.value = state
-        }
-    }
-    val nodes = (pagingState as? ConversationRepository.ChatPaginationState.Success)?.nodes ?: emptyList()
-    val assembledItems by remember(conversation.id){
+    val pageNodes = successState?.nodes.orEmpty()
+    val hasOlder = successState?.hasOlder == true
+    val assembledItems by remember(pageNodes, hasOlder, isAiTyping) {
         derivedStateOf {
-            // 只有当 nodes 真正变化时，这里才会重新计算
-            val state = (pagingState as? ConversationRepository.ChatPaginationState.Success)
-                ?: lastSuccessState.value
-                ?: return@derivedStateOf emptyList<ChatUIItem>()
+            if (pageNodes.isEmpty()) return@derivedStateOf emptyList<ChatUIItem>()
 
             val items = mutableListOf<ChatUIItem>()
-            val turns = state.nodes.groupIntoTurns()
+            val turns = pageNodes.groupIntoTurns()
             val reversedTurns = turns.reversed()
-
 
             var lastConvId: kotlin.uuid.Uuid? = null
             reversedTurns.forEachIndexed { index, turn ->
@@ -256,18 +246,12 @@ private fun ChatPageContent(
                     ))
                 }
                 // 组装成 UI 条目，index == 0 是最新的消息
-                items.add(
-                    ChatUIItem.Turn(
-                        group = turn,
-                        isGenerating = (index == 0 && isAiTyping),
-                        stableId = "turn_${firstNode.id}"
-                    )
-                )
+                items.add(ChatUIItem.Turn(turn, isGenerating = index == 0 && isAiTyping))
                 lastConvId = firstNode.conversationId
             }
 
             // 顶部加载提示
-            if (state.hasOlder) {
+            if (hasOlder) {
                 items.add(ChatUIItem.Separator(
                     text = context.getString(R.string.chat_load_more),
                     uid = "load_more"
@@ -282,41 +266,30 @@ private fun ChatPageContent(
         }
     }
 
-    val successState = pagingState as? ConversationRepository.ChatPaginationState.Success
+    val requestPaginationForUserScroll: () -> Boolean = {
+        var paginationStarted = false
+        val state = pagingState as? ConversationRepository.ChatPaginationState.Success
+        val visibleItems = chatListState.layoutInfo.visibleItemsInfo
+        if (state != null && visibleItems.isNotEmpty()) {
+            val totalItems = chatListState.layoutInfo.totalItemsCount
+            val firstVisibleIndex = visibleItems.minOf { it.index }
+            val lastVisibleIndex = visibleItems.maxOf { it.index }
+            val boundary = when {
+                totalItems > 5 && lastVisibleIndex >= totalItems - 5 && state.hasOlder -> PaginationBoundary.Older
+                firstVisibleIndex <= 1 && state.hasNewer -> PaginationBoundary.Newer
+                else -> null
+            }
 
-
-    val shouldLoadOlder by remember(pagingState) { // ✨ 绑定 pagingState
-        derivedStateOf {
-            // 如果正在加载中，不触发
-            if (pagingState is ConversationRepository.ChatPaginationState.Loading) return@derivedStateOf false
-
-            val layoutInfo = chatListState.layoutInfo
-            val visibleItems = layoutInfo.visibleItemsInfo
-            if (visibleItems.isEmpty()) return@derivedStateOf false
-
-            val total = layoutInfo.totalItemsCount
-            val lastVisible = visibleItems.last().index
-
-            // 仅在接近顶部（索引接近总数）且确实有更多历史时触发
-            total > 5 && lastVisible >= total - 5 && successState?.hasOlder == true
+            if (boundary != null && state.loadingDirection == null) {
+                when (boundary) {
+                    PaginationBoundary.Older -> vm.triggerLoadOlder()
+                    PaginationBoundary.Newer -> vm.triggerLoadNewer()
+                }
+                paginationStarted = true
+            }
         }
+        paginationStarted
     }
-
-    val shouldLoadNewer by remember(pagingState) { // ✨ 绑定 pagingState
-        derivedStateOf {
-            if (pagingState is ConversationRepository.ChatPaginationState.Loading) return@derivedStateOf false
-
-            val layoutInfo = chatListState.layoutInfo
-            val firstVisible = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
-
-            // 仅在接近底部（索引接近0）且有更新内容时触发
-            firstVisible <= 1 && successState?.hasNewer == true
-        }
-    }
-
-    // 触发 VM 里的加载动作
-    LaunchedEffect(shouldLoadOlder) { if (shouldLoadOlder) vm.triggerLoadOlder() }
-    LaunchedEffect(shouldLoadNewer) { if (shouldLoadNewer) vm.triggerLoadNewer() }
 
     // Track messages that are visually animating (bubbles popping up in WeChat mode)
     val animatingMessages = remember(conversation.id) { mutableStateMapOf<Uuid, Boolean>() }
@@ -565,7 +538,9 @@ private fun ChatPageContent(
                         onTypingStateChange = { nodeId, isTyping ->
                             if (isTyping) animatingMessages[nodeId] = true
                             else animatingMessages.remove(nodeId)
-                        }
+                        },
+                        onUserScroll = requestPaginationForUserScroll,
+                        onRetryPagination = vm::retryPagination
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {

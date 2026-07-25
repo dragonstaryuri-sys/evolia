@@ -114,9 +114,10 @@ data class MessageNode(
     val messages: List<UIMessage>,
     val selectIndex: Int = 0,
     val conversationId: Uuid,
-    // ✨ 新增：用于滑动窗口分页定位
+    // 会话内排序保留给持久化同步。
     val orderIndex: Int = 0,
-    val parentUpdateAt: Long = 0L
+    // 全局时间线分页游标。它取节点最早消息时间，创建后不再随会话更新而改变。
+    val timelineCreatedAt: Long = 0L
 ) {
     val currentMessage
         get() = messages.getOrElse(selectIndex) {
