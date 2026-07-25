@@ -449,13 +449,41 @@ class ChatVM(
 
             messagesByConv.forEach { (targetConv, msgs) ->
                 var currentConv = targetConv
+                // ✨ 记录已经处理过的消息 ID，避免重复处理（防止 A 关联 B，处理了 A 又处理 B）
+                val processedIds = mutableSetOf<Uuid>()
+
                 msgs.forEach { msg ->
+                    if (msg.id in processedIds) return@forEach
+
+                    // 找出当前消息及其关联消息（如工具调用）
                     val related = collectRelatedMessagesForConv(msg, currentConv)
-                    currentConv = deleteMessageFromConv(msg, currentConv) ?: currentConv
-                    related.forEach { r -> currentConv = deleteMessageFromConv(r, currentConv) ?: currentConv }
+                    val toDeleteList = (listOf(msg) + related).distinctBy { it.id }
+
+                    toDeleteList.forEach { m ->
+                        processedIds.add(m.id)
+
+                        // 1. ✨ 执行物理删除 (核心修复)
+                        val node = currentConv.getMessageNodeByMessageId(m.id)
+                        if (node != null) {
+                            // 如果节点内只剩这一条消息，直接删除整个节点
+                            if (node.messages.size <= 1) {
+                                conversationRepo.deleteNodes(listOf(node.id))
+                            } else {
+                                // 否则只标记该消息已删除
+                                conversationRepo.markMessageAsDeleted(m.id)
+                            }
+                        }
+
+                        // 2. 更新当前对话的内存快照，确保后续判断 node.messages.size 时是准的
+                        currentConv = deleteMessageFromConv(m, currentConv) ?: currentConv
+                    }
                 }
+                // 保存最终更新后的对话状态
                 chatService.saveConversation(targetConv.id, currentConv)
             }
+
+            // 给数据库一点写入时间并刷新 UI
+            delay(50)
             paginationManager?.loadInitial()
         }
     }
