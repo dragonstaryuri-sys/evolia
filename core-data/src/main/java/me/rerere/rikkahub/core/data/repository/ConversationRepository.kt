@@ -74,46 +74,6 @@ class ConversationRepository(
             .flowOn(Dispatchers.IO)
     }
 
-    // 分页获取助手下的消息
-    fun getMessagesOfAssistantPaging(assistantId: Uuid): Flow<PagingData<MessageNode>> = Pager(
-        config = PagingConfig(
-            pageSize = PAGE_SIZE,
-            initialLoadSize = INITIAL_LOAD_SIZE,
-            enablePlaceholders = false,
-            prefetchDistance = 15
-        ),
-        pagingSourceFactory = { chatMessageDAO.getNodesWithMessagesOfAssistantPaging(assistantId.toString()) }
-    ).flow.map { pagingData ->
-        pagingData.map { wrapper ->
-            val uiMessages = wrapper.messages
-                .filter { !it.isDeleted }
-                .sortedBy { it.orderIndex }
-                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-
-            MessageNode(
-                id = Uuid.parse(wrapper.node.id),
-                messages = uiMessages,
-                selectIndex = wrapper.node.selectIndex,
-                conversationId = Uuid.parse(wrapper.node.conversationId) // ✨ 映射 ID
-            )
-        }
-    }
-
-    suspend fun getRecentConversations(assistantId: Uuid, limit: Int = 10): List<Conversation> {
-        val entities = conversationDAO.getRecentConversationsOfAssistant(
-            assistantId = assistantId.toString(),
-            limit = limit
-        )
-        return fetchFullConversations(entities)
-    }
-
-    suspend fun getLatestConversations(assistantId: Uuid, limit: Int = 1): List<Conversation> {
-        val entities = conversationDAO.getLatestConversationsOfAssistant(
-            assistantId = assistantId.toString(),
-            limit = limit
-        )
-        return fetchFullConversations(entities)
-    }
 
     suspend fun getLatestConversation(assistantId: Uuid): Conversation? {
         return conversationDAO.getRecentConversationsOfAssistantAnyMode(
@@ -122,13 +82,6 @@ class ConversationRepository(
         ).firstOrNull()?.let { fetchFullConversation(it) }
     }
 
-    suspend fun getPreviousConversation(assistantId: Uuid, currentConversationId: Uuid): Conversation? {
-        return conversationDAO.getRecentConversationsOfAssistantExclude(
-            assistantId = assistantId.toString(),
-            excludeId = currentConversationId.toString(),
-            limit = 1
-        ).firstOrNull()?.let { fetchFullConversation(it) }
-    }
 
     fun getConversationsOfAssistant(assistantId: Uuid): Flow<List<Conversation>> {
         return conversationDAO
@@ -142,12 +95,6 @@ class ConversationRepository(
             .map { list -> fetchFullConversations(list) }
     }
 
-    fun getAllLightConversations(): Flow<List<Conversation>> {
-        return conversationDAO.getAllLight()
-            .map { list ->
-                list.map { conversationSummaryToConversation(it) }
-            }
-    }
 
     fun getConversationsOfAssistantPaging(assistantId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
@@ -168,24 +115,6 @@ class ConversationRepository(
             .map { list -> fetchFullConversations(list) }
     }
 
-    fun searchConversationsPaging(titleKeyword: String): Flow<PagingData<Conversation>> = Pager(
-        config = PagingConfig(
-            pageSize = PAGE_SIZE,
-            initialLoadSize = INITIAL_LOAD_SIZE,
-            enablePlaceholders = false
-        ),
-        pagingSourceFactory = { conversationDAO.searchConversationsPaging(titleKeyword) }
-    ).flow.map { pagingData ->
-        pagingData.map { entity ->
-            conversationSummaryToConversation(entity)
-        }
-    }
-
-    fun searchConversationsOfAssistant(assistantId: Uuid, titleKeyword: String): Flow<List<Conversation>> {
-        return conversationDAO
-            .searchConversationsOfAssistant(assistantId.toString(), titleKeyword)
-            .map { list -> fetchFullConversations(list) }
-    }
 
     fun searchConversationsOfAssistantPaging(assistantId: Uuid, titleKeyword: String): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(
@@ -237,15 +166,6 @@ class ConversationRepository(
             )
         }
     }
-
-    suspend fun getTotalNodeCountByAssistant(assistantId: Uuid): Int = withContext(Dispatchers.IO) {
-        chatMessageDAO.getTotalNodeCountByAssistant(assistantId.toString())
-    }
-
-    fun searchMessagesPaging(assistantId: Uuid, query: String): Flow<PagingData<ChatMessageEntity>> = Pager(
-        config = PagingConfig(pageSize = 30),
-        pagingSourceFactory = { chatMessageDAO.searchMessagesOfAssistantPaging(assistantId.toString(), query) }
-    ).flow
 
     private suspend fun fetchFullConversations(
         entities: List<ConversationEntity>,
