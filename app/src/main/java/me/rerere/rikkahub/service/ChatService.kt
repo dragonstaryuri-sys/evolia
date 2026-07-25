@@ -1362,8 +1362,15 @@ class ChatService(
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) (assistant.detailMemoryThreshold * 1.3).toInt() else assistant.detailMemoryThreshold
-        val count = conversationRepo.countNewMessages(id.toString(), conv.lastSummarizedMessageTime)
-        if (count >= max) summarizeAndRefresh(id, skipArchive = true)
+
+        // 获取最近的消息（取 200 条以防 tool 消息过多），然后在内存中统计 user 和 assistant 角色
+        val newMessages = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime, 200)
+        val coreMessageCount = newMessages.count {
+            val role = JsonInstant.decodeFromString<UIMessage>(it.contentJson).role
+            role == MessageRole.USER || role == MessageRole.ASSISTANT
+        }
+
+        if (coreMessageCount >= max) summarizeAndRefresh(id, skipArchive = true)
     }
     @SuppressLint("SuspiciousIndentation")
     suspend fun summarizeAndRefresh(
@@ -1390,11 +1397,23 @@ class ChatService(
                 val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
                 val handler = providerManager.getProviderByType(provider)
                 val text = StringBuilder().apply {
-                    toSummarizeEntities.forEach { entity ->// 解析出 UIMessage 对象
+                    toSummarizeEntities.forEach { entity ->
                         val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
-                        append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
+                        // ✨ 仅将 user 和 assistant 的内容拼接给总结模型
+                        if (uiMsg.role == MessageRole.USER || uiMsg.role == MessageRole.ASSISTANT) {
+                            append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
+                        }
                     }
                 }.toString()
+                if (text.isBlank()) {
+                    // 如果这一批 100 条全是 tool 消息，虽然没有核心内容可总结，
+                    // 但我们仍然需要更新 lastSummarizedMessageTime，否则会卡在这里死循环
+                    val lastMsgTime = toSummarizeEntities.last().createdAt
+                    val updated = conv.copy(lastSummarizedMessageTime = lastMsgTime)
+                    conversationRepo.updateConversation(updated)
+                    updateConversation(id) { updated }
+                    continue // 跳过 AI 调用，处理下一批
+                }
                 val locale = Locale.getDefault().displayName
                 val tempPrompt = fillPrompt(
                     DEFAULT_TEMP_SUMMARY_PROMPT, mapOf(
