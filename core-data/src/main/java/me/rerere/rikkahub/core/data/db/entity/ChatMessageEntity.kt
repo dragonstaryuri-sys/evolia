@@ -14,7 +14,9 @@ import androidx.room.PrimaryKey
     indices = [
         Index("conversation_id"),
         // ⚡ 性能优化：为会话内排序建立复合索引，极大加快 order_index 排序速度
-        Index(value = ["conversation_id", "order_index"])
+        Index(value = ["conversation_id", "order_index"]),
+        // 对话详情页的全局时间线 keyset 分页索引
+        Index(value = ["conversation_id", "created_at", "id"])
     ],
     foreignKeys = [
         ForeignKey(
@@ -33,7 +35,9 @@ data class ChatMessageNodeEntity(
     @ColumnInfo("select_index")
     val selectIndex: Int,
     @ColumnInfo("order_index")
-    val orderIndex: Int // 在会话中的排列顺序
+    val orderIndex: Int, // 在会话中的排列顺序
+    @ColumnInfo("created_at")
+    val createdAt: Long // 节点首次创建时间，用于稳定全局时间线
 )
 
 /**

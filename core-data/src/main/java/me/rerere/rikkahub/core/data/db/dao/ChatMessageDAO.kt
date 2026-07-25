@@ -59,7 +59,7 @@ interface ChatMessageDAO {
     @Query("SELECT content_json FROM chat_messages WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = 0)")
     fun getAllMessagesContentByAssistant(assistantId: String): Flow<List<String>>
 
-    @Query("SELECT id FROM chat_message_nodes WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId) ORDER BY (SELECT update_at FROM conversationentity WHERE id = conversation_id) DESC, order_index DESC LIMIT :limit")
+    @Query("SELECT id FROM chat_message_nodes WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId) ORDER BY created_at DESC, id DESC LIMIT :limit")
     suspend fun getLatestNodeIdsOfAssistant(assistantId: String, limit: Int): List<String>
 
     @Query("SELECT * FROM chat_messages WHERE conversation_id = :conversationId AND created_at >= :startTime AND created_at <= :endTime AND is_deleted = 0 ORDER BY created_at ASC")
@@ -91,7 +91,7 @@ interface ChatMessageDAO {
     @Query("SELECT conversation_id FROM chat_message_nodes WHERE id = :nodeId")
     suspend fun getConversationIdByNodeId(nodeId: String): String?
 
-    @Query("SELECT COUNT(*) FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId AND (c.update_at > (SELECT update_at FROM conversationentity WHERE id = (SELECT conversation_id FROM chat_messages WHERE id = :messageId)) OR (c.update_at = (SELECT update_at FROM conversationentity WHERE id = (SELECT conversation_id FROM chat_messages WHERE id = :messageId)) AND n.order_index >= (SELECT order_index FROM chat_message_nodes WHERE id = (SELECT node_id FROM chat_messages WHERE id = :messageId))))")
+    @Query("SELECT COUNT(*) FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId AND (n.created_at > (SELECT n2.created_at FROM chat_message_nodes n2 WHERE n2.id = (SELECT node_id FROM chat_messages WHERE id = :messageId)) OR (n.created_at = (SELECT n2.created_at FROM chat_message_nodes n2 WHERE n2.id = (SELECT node_id FROM chat_messages WHERE id = :messageId)) AND n.id >= (SELECT node_id FROM chat_messages WHERE id = :messageId)))")
     suspend fun getMessageGlobalDepth(assistantId: String, messageId: String): Int
 
     @Query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0")
@@ -103,37 +103,55 @@ interface ChatMessageDAO {
     // --- 滑动窗口分页查询 ---
 
     /**
-     * 获取最新 N 个节点，包含会话更新时间
+     * 获取最新 N 个节点。排序键为节点创建时间与节点 ID，二者均不可变。
      */
     @Transaction
     @Query("""
-        SELECT n.*, c.update_at as conv_update_at FROM chat_message_nodes n
+        SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
         WHERE c.assistant_id = :assistantId
-        ORDER BY c.update_at DESC, n.order_index DESC
+        ORDER BY n.created_at DESC, n.id DESC
         LIMIT :limit
     """)
     suspend fun getLatestNodesWithMetadata(assistantId: String, limit: Int): List<MessageNodeWithMetadata>
+
+    /**
+     * 直接解析搜索结果所属节点。搜索结果传入的是 message id，而分页游标使用 node id。
+     */
+    @Transaction
+    @Query("""
+        SELECT n.* FROM chat_message_nodes n
+        INNER JOIN chat_messages m ON m.node_id = n.id
+        INNER JOIN conversationentity c ON n.conversation_id = c.id
+        WHERE c.assistant_id = :assistantId
+          AND m.id = :messageId
+          AND m.is_deleted = 0
+        LIMIT 1
+    """)
+    suspend fun getNodeContainingMessage(
+        assistantId: String,
+        messageId: String
+    ): MessageNodeWithMetadata?
 
     /**
      * 加载比当前锚点更旧的节点（向上滚动历史）
      */
     @Transaction
     @Query("""
-        SELECT n.*, c.update_at as conv_update_at FROM chat_message_nodes n
+        SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
         WHERE c.assistant_id = :assistantId
         AND (
-            c.update_at < :anchorUpdateAt
-            OR (c.update_at = :anchorUpdateAt AND n.order_index < :anchorOrderIndex)
+            n.created_at < :anchorCreatedAt
+            OR (n.created_at = :anchorCreatedAt AND n.id < :anchorNodeId)
         )
-        ORDER BY c.update_at DESC, n.order_index DESC
+        ORDER BY n.created_at DESC, n.id DESC
         LIMIT :limit
     """)
     suspend fun getNodesOlderThan(
         assistantId: String,
-        anchorUpdateAt: Long,
-        anchorOrderIndex: Int,
+        anchorCreatedAt: Long,
+        anchorNodeId: String,
         limit: Int
     ): List<MessageNodeWithMetadata>
 
@@ -142,20 +160,20 @@ interface ChatMessageDAO {
      */
     @Transaction
     @Query("""
-        SELECT n.*, c.update_at as conv_update_at FROM chat_message_nodes n
+        SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
         WHERE c.assistant_id = :assistantId
         AND (
-            c.update_at > :anchorUpdateAt
-            OR (c.update_at = :anchorUpdateAt AND n.order_index > :anchorOrderIndex)
+            n.created_at > :anchorCreatedAt
+            OR (n.created_at = :anchorCreatedAt AND n.id > :anchorNodeId)
         )
-        ORDER BY c.update_at ASC, n.order_index ASC
+        ORDER BY n.created_at ASC, n.id ASC
         LIMIT :limit
     """)
     suspend fun getNodesNewerThan(
         assistantId: String,
-        anchorUpdateAt: Long,
-        anchorOrderIndex: Int,
+        anchorCreatedAt: Long,
+        anchorNodeId: String,
         limit: Int
     ): List<MessageNodeWithMetadata>
 
@@ -181,7 +199,7 @@ data class MessageNodeWithMessages(
 )
 
 /**
- * 带有定位元数据的节点包装
+ * 节点与其消息。节点自身携带稳定的 createdAt 游标字段。
  */
 data class MessageNodeWithMetadata(
     @Embedded val node: ChatMessageNodeEntity,
@@ -189,6 +207,5 @@ data class MessageNodeWithMetadata(
         parentColumn = "id",
         entityColumn = "node_id"
     )
-    val messages: List<ChatMessageEntity>,
-    @ColumnInfo(name = "conv_update_at") val convUpdateAt: Long
+    val messages: List<ChatMessageEntity>
 )

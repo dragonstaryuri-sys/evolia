@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.Instant as KxInstant
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -16,7 +17,6 @@ import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.model.*
 import java.time.format.DateTimeFormatter
 import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
 class DoubaoImportManager(
@@ -158,7 +158,7 @@ class DoubaoImportManager(
                     val role = if (item.userType == "assistant") MessageRole.ASSISTANT else MessageRole.USER
                     val timestamp = item.createTime.toLongOrNull() ?: (System.currentTimeMillis() / 1000)
 
-                    val createdAt = Instant.fromEpochSeconds(timestamp)
+                    val createdAt = KxInstant.fromEpochSeconds(timestamp)
                         .toLocalDateTime(TimeZone.currentSystemDefault())
 
                     UIMessage(
@@ -166,16 +166,16 @@ class DoubaoImportManager(
                         role = role,
                         parts = listOf(UIMessagePart.Text(content)),
                         createdAt = createdAt
-                    ).toMessageNode(conversationId)
+                    ).toMessageNode(conversationId) // 这里会自动填充 timelineCreatedAt
                 }
 
-                val firstMessageTime = chunk.first().first.createTime.toLongOrNull() ?: 0L
+                val firstMessageTime = chunk.first().first.createTime.toLongOrNull() ?: (System.currentTimeMillis() / 1000)
                 val lastMessageTime = chunk.last().first.createTime.toLongOrNull() ?: firstMessageTime
 
                 val conversation = Conversation(
                     id = conversationId,
                     assistantId = assistantId,
-                    title = "${data.botInfo.name} 历史导入 (${index + 1})",
+                    title = "${data.botInfo.name}历史导入 (${index + 1})",
                     messageNodes = messageNodes,
                     createAt = java.time.Instant.ofEpochSecond(firstMessageTime),
                     updateAt = java.time.Instant.ofEpochSecond(lastMessageTime)

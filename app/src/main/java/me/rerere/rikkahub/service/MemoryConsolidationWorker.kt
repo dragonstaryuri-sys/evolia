@@ -41,7 +41,7 @@ import me.rerere.rikkahub.common.JsonInstant
 import java.io.IOException
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-
+import me.rerere.ai.ui.limitContext
 private val TAG = "MemoryConsolidation"
 
 class MemoryConsolidationWorker(
@@ -192,15 +192,15 @@ class MemoryConsolidationWorker(
         // 归档数量 = 未归档总数 - 保留数量(10)
         // 校验：归档数量 >= 10
         val totalUnconsolidated = visibleMessages.size
-        val consolidateCount = totalUnconsolidated - 10
+        val consolidateCount = if (isManual) {
+            val messagesToKeep = visibleMessages.limitContext(10)
+            totalUnconsolidated - messagesToKeep.size
+        } else {
+            totalUnconsolidated // 自动任务默认处理全部可见消息
+        }
 
         if (isManual && consolidateCount < 10) {
             return "ERROR_INSUFFICIENT_MESSAGES"
-        }
-
-        // 如果是自动任务，则按原有阈值或逻辑
-        if (!isManual && totalUnconsolidated < 4) {
-             return "ERROR_NO_MESSAGES"
         }
 
         // 修改：情节记忆使用 summarizerModelId

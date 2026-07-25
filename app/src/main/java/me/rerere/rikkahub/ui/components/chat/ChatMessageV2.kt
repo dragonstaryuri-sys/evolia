@@ -167,7 +167,9 @@ data class MessageTurnGroup(
  */
 fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     if (isEmpty()) return emptyList()
-    val chronologicalNodes = this.reversed()
+    val visibleNodes = this.filter { !it.currentMessage.skipContext }
+    if (visibleNodes.isEmpty()) return emptyList()
+    val chronologicalNodes = visibleNodes.reversed()
     val groups = mutableListOf<MessageTurnGroup>()
     var currentGroup = mutableListOf<MessageNode>()
     var currentGroupRole: MessageRole? = null

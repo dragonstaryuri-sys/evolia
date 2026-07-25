@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.StrokeCap
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
@@ -46,6 +47,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.core.data.model.Conversation
+import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.datastore.ChatInputStyle
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
@@ -64,7 +66,13 @@ import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.CallStatus
-import androidx.paging.compose.collectAsLazyPagingItems
+import me.rerere.rikkahub.ui.pages.chat.ChatUIItem
+import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
+
+private enum class PaginationBoundary {
+    Older,
+    Newer
+}
 
 @Composable
 fun ChatPage(
@@ -76,7 +84,7 @@ fun ChatPage(
 ) {
     val vm: ChatVM = koinViewModel(
         parameters = {
-            parametersOf(id.toString(), targetMessageId) // ✨ 修复：传入 targetMessageId 供定位使用
+            parametersOf(id.toString(), targetMessageId)
         }
     )
     val navController = LocalNavController.current
@@ -209,24 +217,84 @@ private fun ChatPageContent(
     targetMessageId: String? = null,
     newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
-    val isInternalLoadingMore by vm.isInternalLoadingMore.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
+    val context = LocalContext.current
+    val pagingState by vm.chatPaginationState.collectAsStateWithLifecycle()
+    val successState = pagingState as? ConversationRepository.ChatPaginationState.Success
+    val isHistoryLoading = successState?.loadingDirection == ConversationRepository.PageLoadDirection.OLDER
+    val isNewerLoading = successState?.loadingDirection == ConversationRepository.PageLoadDirection.NEWER
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
-    val isHistoryLoading by vm.isHistoryLoading.collectAsStateWithLifecycle()
-    // 自动分页加载历史记录逻辑
-    val shouldLoadMore by remember {
+    val pageNodes = successState?.nodes.orEmpty()
+    val hasOlder = successState?.hasOlder == true
+    val assembledItems by remember(pageNodes, hasOlder, isAiTyping) {
         derivedStateOf {
-            val layoutInfo = chatListState.layoutInfo
-            val totalItemsCount = layoutInfo.totalItemsCount
-            val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            // 在反向布局中，索引 0 在底部，最大的索引在顶部（历史端）
-            totalItemsCount > 0 && lastVisibleItemIndex >= totalItemsCount - 5
+            if (pageNodes.isEmpty()) return@derivedStateOf emptyList<ChatUIItem>()
+
+            val items = mutableListOf<ChatUIItem>()
+            val turns = pageNodes.groupIntoTurns()
+            val reversedTurns = turns.reversed()
+
+            var lastConvId: Uuid? = null
+            reversedTurns.forEachIndexed { index, turn ->
+                val firstNode = turn.firstNode
+                // 话题线逻辑：如果会话 ID 变了，插一根分隔线
+                if (lastConvId != null && firstNode.conversationId != lastConvId) {
+                    items.add(ChatUIItem.Separator(
+                        text = context.getString(R.string.chat_topic_started),
+                        uid = "topic_${firstNode.conversationId}"
+                    ))
+                }
+                val reversedTurn = turn.copy(
+                    nodes = turn.nodes.reversed()
+                )
+                // 组装成 UI 条目，index == 0 是最新的消息
+                items.add(ChatUIItem.Turn(
+                    reversedTurn,
+                    isGenerating = index == 0 && isAiTyping
+                ))
+                lastConvId = firstNode.conversationId
+            }
+
+            // 顶部加载提示
+            if (hasOlder) {
+                items.add(ChatUIItem.Separator(
+                    text = context.getString(R.string.chat_load_more),
+                    uid = "load_more"
+                ))
+            } else {
+                items.add(ChatUIItem.Separator(
+                    text = context.getString(R.string.chat_topic_started_all),
+                    uid = "history_start"
+                ))
+            }
+            items
         }
     }
 
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore) {
-            vm.loadMore()
+    val requestPaginationForUserScroll: () -> Boolean = {
+        var paginationStarted = false
+        val state = pagingState as? ConversationRepository.ChatPaginationState.Success
+        val visibleItems = chatListState.layoutInfo.visibleItemsInfo
+        if (state != null && visibleItems.isNotEmpty()) {
+            val totalItems = chatListState.layoutInfo.totalItemsCount
+            val firstVisibleIndex = visibleItems.minOf { it.index }
+            val lastVisibleIndex = visibleItems.maxOf { it.index }
+            val boundary = when {
+                totalItems > 5 && lastVisibleIndex >= totalItems - 5 && state.hasOlder -> PaginationBoundary.Older
+                firstVisibleIndex <= 1 && state.hasNewer -> PaginationBoundary.Newer
+                else -> null
+            }
+
+            if (boundary != null && state.loadingDirection == null) {
+                when (boundary) {
+                    PaginationBoundary.Older -> vm.triggerLoadOlder()
+                    PaginationBoundary.Newer -> vm.triggerLoadNewer()
+                }
+                paginationStarted = true
+            }
         }
+        paginationStarted
     }
 
     // Track messages that are visually animating (bubbles popping up in WeChat mode)
@@ -235,10 +303,6 @@ private fun ChatPageContent(
 
     // Combined typing status
     val effectiveTypingIndicator = isAiTyping || isAnyMessageAnimating
-
-    val scope = rememberCoroutineScope()
-    val toaster = LocalToaster.current
-    val context = LocalContext.current
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
 
@@ -283,9 +347,6 @@ private fun ChatPageContent(
 
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
-
-    val uiPagingMessages = vm.uiMessagesPaging.collectAsLazyPagingItems()
-    val activeMessages by vm.activeMessages.collectAsStateWithLifecycle()
 
     val isSyncingContext by vm.isSyncingContext.collectAsStateWithLifecycle()
     val isConsolidating by vm.isConsolidating.collectAsStateWithLifecycle()
@@ -403,7 +464,7 @@ private fun ChatPageContent(
                             isTemporaryChat = !isTemporaryChat
                         },
                         isLoading = effectiveTypingIndicator,
-                        isReadOnly = !targetMessageId.isNullOrBlank() // ✨ 传递只读状态
+                        isReadOnly = !targetMessageId.isNullOrBlank()
                     )
                 },
                 containerColor = Color.Transparent,
@@ -417,21 +478,17 @@ private fun ChatPageContent(
                     ChatList(
                         innerPadding = PaddingValues(
                             top = topMessagePadding,
-                            bottom = if (targetMessageId.isNullOrBlank()) 100.dp else 16.dp // ✨ 动态调整底部边距
+                            bottom = if (targetMessageId.isNullOrBlank()) 100.dp else 16.dp
                         ),
                         conversation = conversation,
-                        activeMessages = activeMessages,
-                        isInternalLoadingMore = isInternalLoadingMore,
-                        onLoadMoreActiveMessages = {
-                            vm.loadMoreActiveMessages()
-                        },
-                        uiItems = uiPagingMessages,
+                        items = assembledItems,
+                        paginationState = pagingState,
                         isHistoryLoading = isHistoryLoading,
                         state = chatListState,
                         loading = loadingJob != null,
                         previewMode = previewMode,
                         settings = setting,
-                        isSyncing = isSyncingContext || isConsolidating, // ✨ 同步状态传递，修复双动画
+                        isSyncing = isSyncingContext || isConsolidating,
                         recentlyRestoredNodeIds = vm.recentlyRestoredNodeIds.collectAsStateWithLifecycle().value,
                         initialSearchQuery = initialSearchQuery,
                         targetMessageId = targetMessageId,
@@ -471,7 +528,7 @@ private fun ChatPageContent(
                             vm.addFavorite(messages, currentAssistant, setting.displaySetting.userNickname)
                         },
                         onDeleteMessages = { messages ->
-                            val backup = conversation // 用于撤销
+                            val backup = conversation
                             vm.deleteMessages(messages)
 
                             toaster.show(
@@ -487,7 +544,9 @@ private fun ChatPageContent(
                         onTypingStateChange = { nodeId, isTyping ->
                             if (isTyping) animatingMessages[nodeId] = true
                             else animatingMessages.remove(nodeId)
-                        }
+                        },
+                        onUserScroll = requestPaginationForUserScroll,
+                        onRetryPagination = vm::retryPagination
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {
@@ -638,7 +697,7 @@ private fun ChatPageContent(
                         )
                     }
 
-                    if (targetMessageId.isNullOrBlank()) { // ✨ 搜索跳转模式下隐藏输入框
+                    if (targetMessageId.isNullOrBlank()) {
                         when (effectiveDisplaySetting.chatInputStyle) {
                             ChatInputStyle.MINIMAL -> {
                                 MinimalChatInput(
@@ -931,7 +990,7 @@ private data class TopBarActionState(
     val shouldUseCompactTemporaryToggle: Boolean,
     val assistantId: Uuid,
     val conversationId: Uuid,
-    val isReadOnly: Boolean = false // ✨ 只读状态
+    val isReadOnly: Boolean = false
 )
 
 @Composable
@@ -948,7 +1007,7 @@ private fun TopBar(
     onUpdateSettings: (Settings) -> Unit,
     onToggleTemporaryChat: () -> Unit,
     isLoading: Boolean,
-    isReadOnly: Boolean = false // ✨ 新增：是否为只读模式
+    isReadOnly: Boolean = false
 ) {
     val navController = LocalNavController.current
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
@@ -1017,7 +1076,7 @@ private fun TopBar(
 
             val wechatMode = settings.getEffectiveDisplaySetting(currentAssistant).wechatMode
             val titleText = when {
-                isReadOnly -> stringResource(R.string.chat_page_search_result_title) // ✨ 只读模式标题
+                isReadOnly -> stringResource(R.string.chat_page_search_result_title)
                 isLoading && wechatMode -> stringResource(R.string.chat_status_typing)
                 else -> currentAssistant.name
             }
@@ -1096,7 +1155,7 @@ private fun TopBar(
                     val isTempChat = actionState.isTemporaryChat
                     val hideTopRightAvatar = actionState.shouldUseCompactTemporaryToggle
 
-                    if (actionState.isReadOnly) { // ✨ 只读模式显示“进入对话”
+                    if (actionState.isReadOnly) {
                         Box(modifier = Modifier.height(topPillSize).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
                             TextButton(onClick = onBack) {
                                 Text(stringResource(R.string.chat_page_return_to_chat))

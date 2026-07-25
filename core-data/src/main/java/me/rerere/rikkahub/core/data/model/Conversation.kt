@@ -9,6 +9,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.InstantSerializer
 import java.time.Instant
 import kotlin.uuid.Uuid
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 
 @Serializable
 data class Conversation(
@@ -114,9 +116,10 @@ data class MessageNode(
     val messages: List<UIMessage>,
     val selectIndex: Int = 0,
     val conversationId: Uuid,
-    // ✨ 新增：用于滑动窗口分页定位
+    // 会话内排序保留给持久化同步。
     val orderIndex: Int = 0,
-    val parentUpdateAt: Long = 0L
+    // 全局时间线分页游标。它取节点最早消息时间，创建后不再随会话更新而改变。
+    val timelineCreatedAt: Long = 0L
 ) {
     val currentMessage
         get() = messages.getOrElse(selectIndex) {
@@ -126,8 +129,20 @@ data class MessageNode(
     val role get() = messages.firstOrNull()?.role ?: MessageRole.USER
 
     companion object {
-        fun of(message: UIMessage, conversationId: Uuid) = MessageNode(messages = listOf(message), conversationId = conversationId)
+        fun of(message: UIMessage, conversationId: Uuid) = MessageNode(
+            messages = listOf(message),
+            conversationId = conversationId,
+            timelineCreatedAt = message.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+        )
     }
 }
 
-fun UIMessage.toMessageNode(conversationId: Uuid): MessageNode = MessageNode(messages = listOf(this), conversationId = conversationId)
+/**
+ * 将单条 UIMessage 转换为 MessageNode。
+ * 自动从消息的 createdAt 提取时间戳作为节点的 timelineCreatedAt 游标。
+ */
+fun UIMessage.toMessageNode(conversationId: Uuid): MessageNode = MessageNode(
+    messages = listOf(this),
+    conversationId = conversationId,
+    timelineCreatedAt = this.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+)

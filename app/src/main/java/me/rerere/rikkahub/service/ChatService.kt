@@ -704,7 +704,7 @@ class ChatService(
                     delay(8000)
                     _isAiTypingMap.update { it + (conversationId to true) }
                 } else {
-                    _isAiTypingMap.update { it - conversationId }
+                    _isAiTypingMap.update { it + (conversationId to true) }
                 }
 
                 val timeoutJob = launch {
@@ -739,142 +739,119 @@ class ChatService(
         }
     }
 
-    fun regenerateAtMessage(
+    suspend fun regenerateAtMessage(
         conversationId: Uuid,
         message: UIMessage,
         regenerateAssistantMsg: Boolean = true,
         forceWipe: Boolean = false,
         requirement: String? = null
     ) {
+        // 取消旧任务
         val oldJob = _generationJobs.value[conversationId]
         oldJob?.cancel()
         removeGenerationJob(conversationId)
-        val job = appScope.launch {
-            try {
-                var pendingAction: (suspend () -> Unit)? = null
-                val lockAcquired = withTimeoutOrNull(2000) {
-                    initializeConversation(conversationId)
-                    val conversation = getConversationFlow(conversationId).value
-                    var updatedConv: Conversation? = null
 
-                    if (message.role == MessageRole.USER) {
-                        val node = conversation.getMessageNodeByMessage(message)
-                        val indexAt = conversation.messageNodes.indexOf(node)
-                        if (indexAt != -1) {
-                            // 1. 获取需要删除的节点 ID（即该 User 消息之后的所有节点）
-                            val nodesToDelete = conversation.messageNodes.subList(indexAt + 1, conversation.messageNodes.size)
-                            val idsToDelete = nodesToDelete.map { it.id }
+        var targetMsgId: Uuid? = null
+        var messageRange: IntRange? = null
+        var updatedConv: Conversation? = null
 
-                            // 2. 截断内存中的会话
-                            updatedConv = conversation.copy(
-                                messageNodes = conversation.messageNodes.subList(0, indexAt + 1)
-                            )
+        // --- 第一阶段：准备数据（阻塞式执行，确保数据库同步完成） ---
+        val lockAcquired = withTimeoutOrNull(5000) {
+            initializeConversation(conversationId)
+            val conversation = getConversationFlow(conversationId).value
 
-                            // 3. ✨ 关键：从数据库中物理删除这些节点
-                            if (idsToDelete.isNotEmpty()) {
-                                // 这里建议调用 repository 层级的方法，确保数据库同步
-                                conversationRepo.deleteNodes(idsToDelete)
-                            }
-                        }
-                    } else if (regenerateAssistantMsg) {
-                        val clickedNode = conversation.getMessageNodeByMessage(message)
-                        val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
-                        val lastUserIndex = conversation.messageNodes.subList(0, clickedIndex + 1)
-                            .indexOfLast { it.role == MessageRole.USER }
-
-                        if (lastUserIndex >= 0) {
-                            val firstAssistantIndex = lastUserIndex + 1
-                            val turnEndIndex = conversation.messageNodes
-                                .subList(firstAssistantIndex, conversation.messageNodes.size)
-                                .indexOfFirst { it.role == MessageRole.USER }
-                                .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
-
-                            updatedConv = if (forceWipe) {
-                                val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-                                nodes.add(
-                                    MessageNode(
-                                        messages = listOf(
-                                            UIMessage(
-                                                role = MessageRole.ASSISTANT,
-                                                parts = emptyList(),
-                                            )
-                                        ),
-                                        conversationId = conversation.id
-                                    )
-                                )
-                                if (turnEndIndex < conversation.messageNodes.size) {
-                                    nodes.addAll(
-                                        conversation.messageNodes.subList(
-                                            turnEndIndex,
-                                            conversation.messageNodes.size
-                                        )
-                                    )
-                                }
-                                conversation.copy(messageNodes = nodes)
-                            } else {
-                                val versionTag = Uuid.random().toString()
-                                val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
-                                val firstAssistant = conversation.messageNodes.getOrNull(firstAssistantIndex)
-                                if (firstAssistant != null) {
-                                    val newMessages = firstAssistant.messages + UIMessage(
-                                        role = MessageRole.ASSISTANT, parts = emptyList(), versionTag = versionTag
-                                    )
-                                    nodes.add(
-                                        firstAssistant.copy(
-                                            messages = newMessages,
-                                            selectIndex = newMessages.lastIndex
-                                        )
-                                    )
-                                    if (turnEndIndex < conversation.messageNodes.size) {
-                                        nodes.addAll(
-                                            conversation.messageNodes.subList(
-                                                turnEndIndex,
-                                                conversation.messageNodes.size
-                                            )
-                                        )
-                                    }
-                                }
-                                conversation.copy(messageNodes = nodes)
-                            }
-                        }
+            if (message.role == MessageRole.USER) {
+                // 用户消息刷新逻辑：截断后续并重新生成
+                val node = conversation.getMessageNodeByMessage(message)
+                val indexAt = conversation.messageNodes.indexOf(node)
+                if (indexAt != -1) {
+                    val nodesToDelete = conversation.messageNodes.subList(indexAt + 1, conversation.messageNodes.size)
+                    val idsToDelete = nodesToDelete.map { it.id }
+                    updatedConv = conversation.copy(
+                        messageNodes = conversation.messageNodes.subList(0, indexAt + 1)
+                    )
+                    if (idsToDelete.isNotEmpty()) {
+                        conversationRepo.deleteNodes(idsToDelete)
                     }
+                }
+            } else if (regenerateAssistantMsg) {
+                // 助手消息刷新逻辑：在同节点创建新版本
+                val clickedNode = conversation.getMessageNodeByMessage(message)
+                val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
+                val lastUserIndex = conversation.messageNodes.subList(0, clickedIndex + 1)
+                    .indexOfLast { it.role == MessageRole.USER }
 
-                    if (updatedConv != null) {
-                        updateConversation(conversationId) { updatedConv!! }
-                        saveConversation(conversationId, updatedConv!!)
-                        pendingAction = { handleMessageComplete(conversationId, requirement = requirement) }
-                    } else if (regenerateAssistantMsg && message.role != MessageRole.USER) {
-                        val clickedNode = conversation.getMessageNodeByMessage(message)
-                        val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
-                        pendingAction = {
-                            handleMessageComplete(
-                                conversationId,
-                                messageRange = 0..<clickedIndex,
-                                requirement = requirement
-                            )
+                if (lastUserIndex >= 0) {
+                    // 找到该回复对应的用户提示词
+                    val firstAssistantIndex = lastUserIndex + 1
+                    val turnEndIndex = conversation.messageNodes
+                        .subList(firstAssistantIndex, conversation.messageNodes.size)
+                        .indexOfFirst { it.role == MessageRole.USER }
+                        .let { if (it == -1) conversation.messageNodes.size else firstAssistantIndex + it }
+
+                    val hasToolInteraction = conversation.messageNodes.subList(firstAssistantIndex, turnEndIndex)
+                        .any { n -> n.messages.any { m -> m.parts.any { p -> p is UIMessagePart.ToolCall || p is UIMessagePart.ToolResult } } }
+
+                    if (forceWipe || hasToolInteraction) {
+                        // 情况 A：包含工具调用 -> 物理删除本回合所有 AI/工具节点，直接覆盖
+                        val nodesToDelete = conversation.messageNodes.subList(firstAssistantIndex, turnEndIndex)
+                        if (nodesToDelete.isNotEmpty()) {
+                            conversationRepo.deleteNodes(nodesToDelete.map { it.id })
                         }
-                    }
-                    true
-                } ?: false
 
-                if (lockAcquired) {
-                    setGenerationJob(conversationId, coroutineContext.job)
-                    pendingAction?.invoke()
+                        val placeholderMsg = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList())
+                        targetMsgId = placeholderMsg.id
+                        val nodes = conversation.messageNodes.subList(0, lastUserIndex + 1).toMutableList()
+                        nodes.add(placeholderMsg.toMessageNode(conversation.id))
+
+                        if (turnEndIndex < conversation.messageNodes.size) {
+                            nodes.addAll(conversation.messageNodes.subList(turnEndIndex, conversation.messageNodes.size))
+                        }
+                        updatedConv = conversation.copy(messageNodes = nodes)
+                        messageRange = 0..lastUserIndex // 限制上下文到上一个用户消息
+                    } else {
+                        // 情况 B：纯文本回复 -> 使用版本历史（分页器）
+                        val versionTag = Uuid.random().toString()
+                        val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = emptyList(), versionTag = versionTag)
+                        targetMsgId = newMsg.id
+                        val nodes = conversation.messageNodes.toMutableList()
+                        val nodeToUpdate = nodes[clickedIndex]
+                        val newMessages = nodeToUpdate.messages + newMsg
+                        nodes[clickedIndex] = nodeToUpdate.copy(messages = newMessages, selectIndex = newMessages.lastIndex)
+                        updatedConv = conversation.copy(messageNodes = nodes)
+                    }
+                }
+            }
+            true
+        } ?: false
+
+        // --- 第二阶段：保存状态并启动后台生成任务 ---
+        if (lockAcquired && updatedConv != null) {
+            updateConversation(conversationId) { updatedConv!! }
+            saveConversation(conversationId, updatedConv!!)
+
+            val job = appScope.launch {
+                try {
+                    handleMessageComplete(
+                        conversationId = conversationId,
+                        messageRange = messageRange,
+                        requirement = requirement,
+                        targetMessageId = targetMsgId // ✨ 传入锁定 ID
+                    )
                     _generationDoneFlow.emit(conversationId)
-                } else {
-                    Log.w(TAG, "获取会话锁超时，重生操作已取消: $conversationId")
-                }
-            } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException) {
-                    _errorFlow.emit(translateError(e))
+                } catch (e: Exception) {
+                    if (e !is kotlinx.coroutines.CancellationException) {
+                        _errorFlow.emit(translateError(e))
+                    }
                 }
             }
-        }
-        job.invokeOnCompletion {
-            _generationJobs.update { current ->
-                if (current[conversationId] == job) current - conversationId else current
+            setGenerationJob(conversationId, job)
+            job.invokeOnCompletion {
+                _generationJobs.update { current ->
+                    if (current[conversationId] == job) current - conversationId else current
+                }
+                appScope.launch { delay(500); checkAllConversationsReferences() }
             }
-            appScope.launch { delay(500); checkAllConversationsReferences() }
         }
     }
 
@@ -884,7 +861,8 @@ class ChatService(
         assistantOverride: Assistant? = null,
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = false,
-        requirement: String? = null
+        requirement: String? = null,
+        targetMessageId: Uuid? = null
     ) {
         val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
         mutex.withLock {
@@ -896,7 +874,7 @@ class ChatService(
                 ?: conversationRepo.getConversationById(conversationId)
                 ?: return@withLock
             val processMessageIds = mutableMapOf<Int, Uuid>()
-            val placeholderId = currentConversation.currentMessages.lastOrNull()?.let {
+            val placeholderId = targetMessageId ?: currentConversation.currentMessages.lastOrNull()?.let {
                 if (it.role == MessageRole.ASSISTANT && it.toContentText()
                         .isBlank() && it.parts.isEmpty()
                 ) it.id else null
@@ -985,15 +963,16 @@ class ChatService(
 
                 val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
-                val baseMessages = currentConversation.currentMessages.let {
-                    val raw =
-                        if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
-                    raw.filter { msg ->
-                        msg.role != MessageRole.ASSISTANT ||
-                            msg.toContentText().isNotBlank() ||
-                            msg.parts.any { it is UIMessagePart.ToolCall }
+                val baseMessages = currentConversation.currentMessages
+                    .truncate(currentConversation.truncateIndex) // ✨ 关键新增：只取 truncateIndex 之后的消息作为上下文
+                    .let {
+                        val raw = if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
+                        raw.filter { msg ->
+                            msg.role != MessageRole.ASSISTANT ||
+                                msg.toContentText().isNotBlank() ||
+                                msg.parts.any { it is UIMessagePart.ToolCall }
+                        }
                     }
-                }
 
                 // 临时处理优化要求：仅针对发送给 AI 的上下文做拼接，不修改 baseMessages (用于 UI 同步)
                 val messagesForModel = if (!requirement.isNullOrBlank()) {
@@ -1220,18 +1199,11 @@ class ChatService(
                                 conversationSnapshot = nextState
                             }
 
-
-                            val lastAiInNew = newMessages.lastOrNull { it.role == MessageRole.ASSISTANT }
-                            val isEffectivelyEmpty = lastAiInNew != null &&
-                                lastAiInNew.toContentText().trim().isEmpty() &&
-                                lastAiInNew.parts.none { it is UIMessagePart.ToolCall }
-                            if (lastAiInNew == null || !isEffectivelyEmpty) {
-                                val toUpdate = baseMessages + newMessages
-                                val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
-                                    .copy(chatSuggestions = emptyList())
-                                currentConversation = nextState
-                                updateConversation(conversationId) { nextState }
-                            }
+                            val toUpdate = baseMessages + newMessages
+                            val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
+                                .copy(chatSuggestions = emptyList())
+                            currentConversation = nextState
+                            updateConversation(conversationId) { nextState }
 
                         }
                     }
@@ -1390,8 +1362,15 @@ class ChatService(
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) (assistant.detailMemoryThreshold * 1.3).toInt() else assistant.detailMemoryThreshold
-        val count = conversationRepo.countNewMessages(id.toString(), conv.lastSummarizedMessageTime)
-        if (count >= max) summarizeAndRefresh(id, skipArchive = true)
+
+        // 获取最近的消息（取 200 条以防 tool 消息过多），然后在内存中统计 user 和 assistant 角色
+        val newMessages = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime, 200)
+        val coreMessageCount = newMessages.count {
+            val role = JsonInstant.decodeFromString<UIMessage>(it.contentJson).role
+            role == MessageRole.USER || role == MessageRole.ASSISTANT
+        }
+
+        if (coreMessageCount >= max) summarizeAndRefresh(id, skipArchive = true)
     }
     @SuppressLint("SuspiciousIndentation")
     suspend fun summarizeAndRefresh(
@@ -1418,11 +1397,23 @@ class ChatService(
                 val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
                 val handler = providerManager.getProviderByType(provider)
                 val text = StringBuilder().apply {
-                    toSummarizeEntities.forEach { entity ->// 解析出 UIMessage 对象
+                    toSummarizeEntities.forEach { entity ->
                         val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
-                        append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
+                        // ✨ 仅将 user 和 assistant 的内容拼接给总结模型
+                        if (uiMsg.role == MessageRole.USER || uiMsg.role == MessageRole.ASSISTANT) {
+                            append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
+                        }
                     }
                 }.toString()
+                if (text.isBlank()) {
+                    // 如果这一批 100 条全是 tool 消息，虽然没有核心内容可总结，
+                    // 但我们仍然需要更新 lastSummarizedMessageTime，否则会卡在这里死循环
+                    val lastMsgTime = toSummarizeEntities.last().createdAt
+                    val updated = conv.copy(lastSummarizedMessageTime = lastMsgTime)
+                    conversationRepo.updateConversation(updated)
+                    updateConversation(id) { updated }
+                    continue // 跳过 AI 调用，处理下一批
+                }
                 val locale = Locale.getDefault().displayName
                 val tempPrompt = fillPrompt(
                     DEFAULT_TEMP_SUMMARY_PROMPT, mapOf(
