@@ -1237,6 +1237,12 @@ private fun ManageMemoriesSection(
     var sortOrder by remember { mutableStateOf(MemorySortOrder.NEWEST_FIRST) }
     var showSortMenu by remember { mutableStateOf(false) }
 
+    // ✨ 核心优化 1：新增分页限制状态
+    // 当切换 Tab 或搜索内容改变时，重置显示条数为 50
+    var displayLimit by remember(selectedTab, memorySearchQuery, sortOrder) {
+        mutableIntStateOf(50)
+    }
+
     LaunchedEffect(initialMemoryTab) {
         if (initialMemoryTab != null) {
             selectedTab = initialMemoryTab
@@ -1253,9 +1259,10 @@ private fun ManageMemoriesSection(
     }
 
     val coreMemories = memories.filter { it.type == 0 }
-    val episodicMemories = memories.filter { it.type == 3 } // 改为显示 L1 (type=3)
+    val episodicMemories = memories.filter { it.type == 3 }
 
-    val displayMemories = remember(memories, selectedTab, memorySearchQuery, sortOrder, showMemoryTypes) {
+    // ✨ 核心优化 2：先计算出所有过滤后的记忆
+    val allFilteredMemories = remember(memories, selectedTab, memorySearchQuery, sortOrder, showMemoryTypes) {
         val baseList = if (showMemoryTypes) {
             when (selectedTab) {
                 0 -> coreMemories
@@ -1275,7 +1282,13 @@ private fun ManageMemoriesSection(
         }
     }
 
+    // ✨ 核心优化 3：只截取当前限制的数量进行显示
+    val displayMemories = remember(allFilteredMemories, displayLimit) {
+        allFilteredMemories.take(displayLimit)
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // --- 头部工具栏（保持不变）---
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1336,6 +1349,7 @@ private fun ManageMemoriesSection(
             }
         }
 
+        // --- Tab 栏（保持不变）---
         AnimatedVisibility(
             visible = showMemoryTypes,
             enter = fadeIn() + expandVertically(),
@@ -1361,6 +1375,7 @@ private fun ManageMemoriesSection(
             }
         }
 
+        // --- 搜索框（保持不变）---
         TextField(
             value = memorySearchQuery,
             onValueChange = onSearchQueryChange,
@@ -1375,6 +1390,7 @@ private fun ManageMemoriesSection(
             )
         )
 
+        // --- 列表部分 ---
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(24.dp))
@@ -1383,10 +1399,13 @@ private fun ManageMemoriesSection(
         ) {
             displayMemories.forEachIndexed { index, memory ->
                 key(memory.id) {
+                    // ✨ 核心优化 4：动态计算圆角位置
+                    val hasMore = allFilteredMemories.size > displayMemories.size
                     val position = when {
-                        displayMemories.size == 1 -> "ONLY"
+                        allFilteredMemories.size == 1 -> "ONLY"
                         index == 0 -> "FIRST"
-                        index == displayMemories.size - 1 -> "LAST"
+                        // 如果后面还有“加载更多”按钮，当前这一项就不应该是 LAST 圆角
+                        index == displayMemories.size - 1 && !hasMore -> "LAST"
                         else -> "MIDDLE"
                     }
                     MemoryItem(
@@ -1415,6 +1434,33 @@ private fun ManageMemoriesSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(24.dp)
                     )
+                }
+            }
+
+            // ✨ 核心优化 5：新增“加载更多”按钮
+            if (allFilteredMemories.size > displayMemories.size) {
+                Surface(
+                    onClick = { displayLimit += 100 }, // 每次加载 100 条
+                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(
+                        bottomStart = 24.dp,
+                        bottomEnd = 24.dp,
+                        topStart = 10.dp,
+                        topEnd = 10.dp
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier.padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "查看更多 (${allFilteredMemories.size - displayMemories.size})",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
