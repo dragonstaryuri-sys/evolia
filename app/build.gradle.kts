@@ -32,8 +32,8 @@ android {
         applicationId = "ailand.lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 20
-        versionName = "4.3.1"
+        versionCode = 21
+        versionName = "4.4.0"
 
         buildConfigField("String", "GITHUB_REPO", "\"dragonstaryuri-sys/evolia\"")
 
@@ -87,16 +87,18 @@ android {
             enableV2Signing = true
             enableV3Signing = true
             enableV4Signing = true
-            if (localProperties.getProperty("storeFile") != null) {
-                val storeFilePath = localProperties.getProperty("storeFile")
-                val storePasswordValue = localProperties.getProperty("storePassword")
-                val keyAliasValue = localProperties.getProperty("keyAlias")
-                val keyPasswordValue = localProperties.getProperty("keyPassword")
 
-                if (storeFilePath != null && storePasswordValue != null &&
-                    keyAliasValue != null && keyPasswordValue != null
-                ) {
-                    storeFile = file(storeFilePath)
+            val storeFilePath = localProperties.getProperty("storeFile")
+            val storePasswordValue = localProperties.getProperty("storePassword")
+            val keyAliasValue = localProperties.getProperty("keyAlias")
+            val keyPasswordValue = localProperties.getProperty("keyPassword")
+
+            if (storeFilePath != null && storePasswordValue != null &&
+                keyAliasValue != null && keyPasswordValue != null
+            ) {
+                val keystoreFile = rootProject.file(storeFilePath)
+                if (keystoreFile.exists()) {
+                    storeFile = keystoreFile
                     storePassword = storePasswordValue
                     keyAlias = keyAliasValue
                     keyPassword = keyPasswordValue
@@ -105,13 +107,30 @@ android {
         }
     }
 
+    // 自动修复无效的外部签名注入（如 IDE 注入的 externalOverride）
+    // 防止因为配置文件里残留的错误路径导致整个构建流程报错
+    signingConfigs.all {
+        val config = this
+        if (config.storeFile != null && !config.storeFile!!.exists()) {
+            println("警告: 签名配置 '${config.name}' 指向的路径不存在: ${config.storeFile}。已跳过该配置。")
+            config.storeFile = null
+        }
+    }
+
     buildTypes {
         release {
             val releaseSigningConfig = signingConfigs.findByName("release")
+            // 正式发布版校验：只有当密钥库文件确实存在时才应用签名
             if (releaseSigningConfig?.storeFile != null && releaseSigningConfig.storeFile?.exists() == true) {
                 signingConfig = releaseSigningConfig
             } else {
-                signingConfig = signingConfigs.getByName("debug")
+                // 如果是正式版构建但找不到 Key，我们显式设为 null 并打印错误
+                // 这样构建任务 validateSigningRelease 会失败并提醒你，而不是误打出 debug 包
+                signingConfig = null
+                println("****************************************************************")
+                println("错误: 未找到有效的正式版签名文件 (my-key.jks)！")
+                println("如果这是正式发布构建，请检查 local.properties 中的签名配置。")
+                println("****************************************************************")
             }
 
             isMinifyEnabled = true
