@@ -1233,10 +1233,9 @@ class LocalTools(
                                         buildJsonObject {
                                             put("id", t.id)
                                             put("task_name", data["task_name"] ?: JsonPrimitive(t.taskType))
-                                            put("type", t.taskType)
                                             put("scheduled_time", df.format(java.util.Date(t.scheduledTime)))
                                             put("repeat_interval", t.repeatInterval)
-                                            put("is_executed", t.isExecuted)
+                                            put("instruction", data["instruction"] ?: JsonPrimitive(""))
                                         }
                                     }))
                                 }
