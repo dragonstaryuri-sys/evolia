@@ -163,6 +163,11 @@ class ChatVM(
             val settings = settingsStore.settingsFlowRaw.first()
             val currentAssistantId = settings.assistantId
 
+            // ✨ 强力校准：进入页面时自动执行一次全量溯源校准
+            // 解决因旧版本 Bug 或 placeholder 同步导致的 created_at 乱序问题
+            // 这里执行一次全局校准，确保所有乱序的消息都能归位。
+            conversationRepo.recomputeNodeTimestamps()
+
             val jumpConvId = if (!targetMessageId.isNullOrBlank()) {
                 conversationRepo.chatMessageDAO.getConversationIdByMessageId(targetMessageId)?.let { Uuid.parse(it) }
             } else null

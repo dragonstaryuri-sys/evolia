@@ -140,7 +140,6 @@ object DatabaseSanitizer {
                             targetDbInfo.insert("schedules", SQLiteDatabase.CONFLICT_IGNORE, values)
                         }
 
-                        // 【清理逻辑】：删除已提取的内容和标题
                         val textToFind = "约定与待办"
                         val textIndex = masterContent.indexOf(textToFind)
                         val beforeText = masterContent.substring(0, textIndex)
@@ -159,17 +158,21 @@ object DatabaseSanitizer {
                 finalSettings = s.copy(assistants = newAssistants)
             }
 
-            // 【关键修复】：修复 chat_message_nodes 的 created_at (适配旧备份导入)
-            // 逻辑同 AppDatabase.MIGRATION_20_21，从关联消息中找最早时间
-            LogUtil.i(TAG, "正在修复消息节点时间线...")
+            // 【宝宝老师的强力修复】：全量溯源校准备份数据
+            // 不再只修 0，而是对比节点时间与消息真实时间，只要对不上就修！
+            LogUtil.i(TAG, "正在深度校准备份数据中的消息节点时间线...")
             targetDbInfo.execSQL("""
                 UPDATE `chat_message_nodes`
-                SET `created_at` = COALESCE(
-                    (SELECT MIN(`created_at`) FROM `chat_messages`
-                     WHERE `chat_messages`.`node_id` = `chat_message_nodes`.`id`),
-                    0
+                SET `created_at` = (
+                    SELECT MIN(`created_at`) FROM `chat_messages`
+                    WHERE `chat_messages`.`node_id` = `chat_message_nodes`.`id`
                 )
-                WHERE `created_at` = 0
+                WHERE `id` IN (
+                    SELECT n.id FROM `chat_message_nodes` n
+                    INNER JOIN `chat_messages` m ON n.id = m.node_id
+                    GROUP BY n.id
+                    HAVING ABS(MIN(m.created_at) - n.created_at) > 1000
+                )
             """.trimIndent())
 
             // 同步进度水位线
@@ -241,12 +244,10 @@ object DatabaseSanitizer {
                                         Cursor.FIELD_TYPE_FLOAT -> values.put(colName, cursor.getDouble(idx))
                                         Cursor.FIELD_TYPE_STRING -> {
                                             var strValue = cursor.getString(idx)
-                                            // 【数据迁移 1】：schedules 表 category 字段 General -> user
                                             if (targetTableName.equals("schedules", ignoreCase = true) && colName == "category") {
                                                 if (strValue == "General") strValue = "user"
                                             }
 
-                                            // 【数据迁移 2】：处理旧版本 String 类型 embedding
                                             if (colName == "embedding" && info.type == "BLOB" && strValue.startsWith("[")) {
                                                 try {
                                                     val floats = JsonInstant.decodeFromString<List<Float>>(strValue)
@@ -271,7 +272,6 @@ object DatabaseSanitizer {
                             }
                         }
 
-                        // 【逻辑同步 1】：JSON 消息炸开
                         if (targetTableName.equals("ConversationEntity", ignoreCase = true)) {
                             val nodesJson = values.getAsString("nodes")
                             if (!nodesJson.isNullOrBlank() && nodesJson != "[]") {
@@ -284,7 +284,7 @@ object DatabaseSanitizer {
                                             put("conversation_id", convId)
                                             put("select_index", node.selectIndex)
                                             put("order_index", nodeIdx)
-                                            put("created_at", node.timelineCreatedAt) // 尝试从字段中取
+                                            put("created_at", node.timelineCreatedAt)
                                         }
                                         target.insert("chat_message_nodes", SQLiteDatabase.CONFLICT_REPLACE, nodeValues)
 
@@ -309,7 +309,6 @@ object DatabaseSanitizer {
                             }
                         }
 
-                        // 【逻辑同步 2】：片段时间修复
                         if (targetTableName.equals("chat_segments", ignoreCase = true)) {
                             val originalTimestamp = if (timestampIdx != -1) cursor.getLong(timestampIdx) else 0L
                             val finalTimestamp = if (originalTimestamp > 1000000L) originalTimestamp else System.currentTimeMillis()

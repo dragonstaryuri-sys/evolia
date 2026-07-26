@@ -150,7 +150,7 @@ class ConversationRepository(
         }
     }
 
-    // ✨ 修复：添加获取指定会话节点的方法
+    // ✨ 修复：添加获取指定会话节点的方法，增加对 timelineCreatedAt 和 orderIndex 的支持
     suspend fun getNodesOfConversation(conversationId: Uuid, limit: Int): List<MessageNode> = withContext(Dispatchers.IO) {
         chatMessageDAO.getNodesWithMessagesOfConversation(conversationId.toString(), limit).map { wrapper ->
             val uiMessages = wrapper.messages
@@ -162,7 +162,9 @@ class ConversationRepository(
                 id = Uuid.parse(wrapper.node.id),
                 messages = uiMessages,
                 selectIndex = wrapper.node.selectIndex,
-                conversationId = Uuid.parse(wrapper.node.conversationId)
+                conversationId = Uuid.parse(wrapper.node.conversationId),
+                timelineCreatedAt = wrapper.node.createdAt,
+                orderIndex = wrapper.node.orderIndex
             )
         }
     }
@@ -214,7 +216,9 @@ class ConversationRepository(
                     id = Uuid.parse(nodeEntity.id),
                     messages = messages,
                     selectIndex = nodeEntity.selectIndex,
-                    conversationId = Uuid.parse(nodeEntity.conversationId)
+                    conversationId = Uuid.parse(nodeEntity.conversationId),
+                    timelineCreatedAt = nodeEntity.createdAt,
+                    orderIndex = nodeEntity.orderIndex
                 )
             }
 
@@ -263,7 +267,9 @@ class ConversationRepository(
                 id = Uuid.parse(nodeEntity.id),
                 messages = messages,
                 selectIndex = nodeEntity.selectIndex,
-                conversationId = Uuid.parse(nodeEntity.conversationId)
+                conversationId = Uuid.parse(nodeEntity.conversationId),
+                timelineCreatedAt = nodeEntity.createdAt,
+                orderIndex = nodeEntity.orderIndex
             )
         }
     }
@@ -376,14 +382,21 @@ class ConversationRepository(
     private suspend fun syncMessages(conversation: Conversation) {
         val convId = conversation.id.toString()
         val nodeEntities = conversation.messageNodes.mapIndexed { index, node ->
-            val nodeCreatedAt = node.messages
-                .minOfOrNull { it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() }
-                ?: System.currentTimeMillis()
+            // ✨ 修复：优先使用节点自带的 timelineCreatedAt 游标。
+            // 只有当节点是新创建的 (createdAt <= 0) 时，才尝试从消息中提取或取当前时间。
+            // 这防止了 Placeholder 节点在同步时因没有消息而导致时间戳被强制更新为当前时间。
+            val nodeCreatedAt = if (node.timelineCreatedAt > 0L) {
+                node.timelineCreatedAt
+            } else {
+                node.messages
+                    .minOfOrNull { it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() }
+                    ?: System.currentTimeMillis()
+            }
             ChatMessageNodeEntity(
                 id = node.id.toString(),
                 conversationId = convId,
                 selectIndex = node.selectIndex,
-                orderIndex = index,
+                orderIndex = if (node.orderIndex > 0 || index == 0) node.orderIndex else index, // 尽量保持原序
                 createdAt = nodeCreatedAt
             )
         }
@@ -943,28 +956,42 @@ class ConversationRepository(
     }
 
     /**
-     * 重新计算所有消息节点的创建时间（基于其包含的消息中最早的一条）。
-     * 用于修复还原备份后可能存在的时间戳缺失，或修复因旧版本 Bug 导致的创建时间乱序。
+     * ✨ 强力校准：重新计算消息节点的创建时间。
+     * 自动修正那些被误更新为当前时间的节点，并输出详细受影响信息。
+     * @param conversationId 如果传入，则仅校准指定会话；否则跑全局校准。
      */
-    suspend fun recomputeNodeTimestamps() = withContext(Dispatchers.IO) {
+    suspend fun recomputeNodeTimestamps(conversationId: Uuid? = null) = withContext(Dispatchers.IO) {
         try {
-            // 使用原生 SQL 更新，因为 Room 本身不支持跨表 Update 的简单映射
-            db.openHelper.writableDatabase.execSQL(
+            val scopeInfo = conversationId?.let { "会话 $it" } ?: "全局"
+            Log.i(TAG, "🔍 开始执行 $scopeInfo 消息节点时间线校准...")
+            val startTime = System.currentTimeMillis()
+
+            val whereClause = conversationId?.let {
+                "WHERE `chat_message_nodes`.`conversation_id` = '${it}'"
+            } ?: ""
+
+            // 执行关联更新
+            val affectedRows = db.openHelper.writableDatabase.compileStatement(
                 """
-            UPDATE `chat_message_nodes`
-            SET `created_at` = COALESCE(
-                (SELECT MIN(`created_at`) FROM `chat_messages`
-                 WHERE `chat_messages`.`node_id` = `chat_message_nodes`.`id`),
-                `created_at`
-            )
-            WHERE `created_at` <= 0
-               OR `created_at` > ${System.currentTimeMillis() - 5000}
-            """.trimIndent()
-            )
-            Log.i(TAG, "已完成消息节点时间戳重新校准")
+                UPDATE `chat_message_nodes`
+                SET `created_at` = (
+                    SELECT MIN(`created_at`) FROM `chat_messages`
+                    WHERE `chat_messages`.`node_id` = `chat_message_nodes`.`id`
+                )
+                WHERE `id` IN (
+                    SELECT n.id FROM `chat_message_nodes` n
+                    INNER JOIN `chat_messages` m ON n.id = m.node_id
+                    ${if (conversationId != null) "WHERE n.conversation_id = '${conversationId}'" else ""}
+                    GROUP BY n.id
+                    HAVING ABS(MIN(m.created_at) - n.created_at) > 1000
+                )
+                """.trimIndent()
+            ).executeUpdateDelete()
+
+            val duration = System.currentTimeMillis() - startTime
+            Log.i(TAG, "✅ $scopeInfo 校准完成！修复了 $affectedRows 个乱序节点，耗时 ${duration}ms")
         } catch (e: Exception) {
-            Log.e(TAG, "校准消息节点时间戳失败", e)
+            Log.e(TAG, "❌ 校准消息节点时间戳失败: ${e.message}", e)
         }
     }
-
 }
