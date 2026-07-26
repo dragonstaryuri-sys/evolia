@@ -720,13 +720,13 @@ class LocalTools(
                                     )
                                 )
 
-                                // 自动同步到系统日历 (如果包含结束时间或提醒时间)
-                                if (category == "user" && endTime != null || reminderTime != null) {
+                                // 自动同步到系统日历 (如果包含结束时间或提醒时间，且分类为 user)
+                                if (category == "user" && (endTime != null || reminderTime != null)) {
                                     openSystemCalendar(
                                         title = title,
                                         startTime = reminderTime ?: System.currentTimeMillis(),
                                         endTime = endTime,
-                                        description = "由你的机创建"
+                                        description = "由你的小机创建"
                                     )
                                 }
 
@@ -810,8 +810,8 @@ class LocalTools(
                                         )
                                     )
 
-                                    // 自动同步到系统日历
-                                    if (newCategory == "user" && newEndTime != null || newReminderTime != null) {
+                                    // 自动同步到系统日历 (仅限 user 分类)
+                                    if (newCategory == "user" && (newEndTime != null || newReminderTime != null)) {
                                         openSystemCalendar(
                                             title = newTitle,
                                             startTime = newReminderTime ?: System.currentTimeMillis(),
