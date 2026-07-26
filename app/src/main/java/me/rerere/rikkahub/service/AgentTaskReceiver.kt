@@ -14,12 +14,24 @@ class AgentTaskReceiver : BroadcastReceiver(), KoinComponent {
         val action = intent.action
         Logging.log("AgentTaskReceiver", "Received action: $action")
 
-        if (action == "me.rerere.rikkahub.ACTION_CHECK_TASKS" || action == Intent.ACTION_BOOT_COMPLETED) {
-            // 1. 立即执行一次过期任务检查
-            agentTaskScheduler.checkAndRescheduleOverdueTasks()
+        when (action) {
+            // 处理精确任务触发闹钟
+            ACTION_TRIGGER_TASK -> {
+                val taskId = intent.getLongExtra("taskId", -1L)
+                if (taskId != -1L) {
+                    Logging.log("AgentTaskReceiver", "Triggering task $taskId immediately via AlarmManager wakeup")
+                    agentTaskScheduler.executeTaskImmediately(taskId)
+                }
+            }
 
-            // 2. 无论如何，设定下一个周期的闹钟，维持心跳循环
-            agentTaskScheduler.setupHeartbeatAlarm()
+            // 处理心跳检查和开机启动
+            "me.rerere.rikkahub.ACTION_CHECK_TASKS", Intent.ACTION_BOOT_COMPLETED -> {
+                // 1. 立即执行一次过期任务检查
+                agentTaskScheduler.checkAndRescheduleOverdueTasks()
+
+                // 2. 无论如何，设定下一个周期的闹钟，维持心跳循环
+                agentTaskScheduler.setupHeartbeatAlarm()
+            }
         }
     }
 }
