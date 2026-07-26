@@ -964,7 +964,7 @@ class ChatService(
                 val currentEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
 
                 val baseMessages = currentConversation.currentMessages
-                    .truncate(currentConversation.truncateIndex) // ✨ 关键新增：只取 truncateIndex 之后的消息作为上下文
+                    .truncate(currentConversation.truncateIndex)
                     .let {
                         val raw = if (messageRange != null) it.subList(messageRange.start, messageRange.endInclusive + 1) else it
                         raw.filter { msg ->
@@ -1112,7 +1112,7 @@ class ChatService(
                             }
 
                         },
-                        truncateIndex = currentConversation.truncateIndex,
+                        truncateIndex = 0,
                         enabledModeIds = currentConversation.enabledModeIds,
                         contextSummary = currentEpisode?.content?.removePrefix("虚拟世界："),
                         temporarySummaries = emptyList(),
@@ -1388,7 +1388,7 @@ class ChatService(
                 val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
                 val toSummarizeEntities =
                     conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime,100)
-                    if (toSummarizeEntities.size < 2) break
+                if (toSummarizeEntities.size < 2) break
                 val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
                 val model = settings.findModelById(modelId)
                     ?: assistant.chatModelId?.let { settings.findModelById(it) }
