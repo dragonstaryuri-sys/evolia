@@ -1510,22 +1510,6 @@ class GenerationHandler(
             Log.i(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             Log.i(TAG, "🚀 [FINAL LLM REQUEST STRUCTURE]")
 
-            if (tools.isNotEmpty()) {
-                Log.i(TAG, "📦 [FIELD: tools] (Count: ${tools.size})")
-
-                // ✨ 请把这段代码加在这里 ✨
-                tools.forEach { tool ->
-                    val params = tool.parameters()
-                    Log.d(TAG, "    Tool: ${tool.name}")
-                    if (params != null) {
-                        // 打印出完整的参数 JSON，包含所有的 description
-                        Log.d(TAG, "    Parameters: ${json.encodeToString(me.rerere.ai.core.InputSchema.serializer(), params)}")
-                    } else {
-                        Log.d(TAG, "    Parameters: null")
-                    }
-                }
-            }
-
             Log.i(TAG, "💬 [FIELD: messages] (Sequence for Context Caching)")
             internalMessages.forEachIndexed { index, msg ->
                 val layerTag = when {
