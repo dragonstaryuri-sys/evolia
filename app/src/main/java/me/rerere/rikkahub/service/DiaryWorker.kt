@@ -248,7 +248,14 @@ class DiaryWorker(
                 settings = settings,
                 model = model,
                 messages = listOf(UIMessage.user(prompt)),
-                assistant = assistant.copy(temperature = 0.8f)
+                assistant = assistant.copy(
+                    temperature = 0.8f,
+                    enableMemory = false,        // 生成日记时不需要通过工具读写内存
+                    enabledLorebookIds = emptySet(), // 禁用世界书，防止注入其中的附件
+                    includeDiariesInContext = false, // 生成日记时不需要包含旧日记，避免上下文过长
+                    localTools = emptyList()     // 禁用本地工具
+                ),
+                enabledModeIds = emptySet()
             ).collect { chunk ->
                 if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
                     val lastMessage = chunk.messages.lastOrNull()
