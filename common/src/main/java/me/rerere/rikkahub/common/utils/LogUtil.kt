@@ -1,15 +1,15 @@
-package me.rerere.rikkahub.utils
+package me.rerere.rikkahub.common.utils
 
 import android.util.Log
-import me.rerere.rikkahub.BuildConfig
+import me.rerere.rikkahub.common.BuildConfig
 
 /**
  * Logging utility that gates debug logs behind BuildConfig.DEBUG.
- * 
+ *
  * In release builds:
  * - d() and i() are no-ops (no debug/info logs)
  * - w() and e() still log (warnings and errors are important)
- * 
+ *
  * Usage: Replace Log.d(TAG, msg) with LogUtil.d(TAG, msg)
  */
 object LogUtil {

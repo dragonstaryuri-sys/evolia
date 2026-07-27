@@ -3,7 +3,7 @@ package me.rerere.rikkahub.widget
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
-import me.rerere.rikkahub.utils.LogUtil
+import me.rerere.rikkahub.common.utils.LogUtil
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge

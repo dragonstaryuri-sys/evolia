@@ -7,7 +7,7 @@ import android.database.sqlite.SQLiteDatabase
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.data.db.AppDatabase
-import me.rerere.rikkahub.utils.LogUtil
+import me.rerere.rikkahub.common.utils.LogUtil
 import androidx.room.Room
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant

@@ -110,7 +110,7 @@ import kotlin.uuid.Uuid
 import android.content.Context
 import androidx.core.app.NotificationManagerCompat
 import me.rerere.rikkahub.data.sync.WebdavSync
-import me.rerere.rikkahub.utils.LogUtil
+import me.rerere.rikkahub.common.utils.LogUtil
 import androidx.core.content.edit
 
 private const val TAG = "RouteActivity"

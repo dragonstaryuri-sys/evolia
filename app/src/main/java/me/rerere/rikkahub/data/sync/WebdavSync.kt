@@ -2,7 +2,7 @@ package me.rerere.rikkahub.data.sync
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
-import me.rerere.rikkahub.utils.LogUtil
+import me.rerere.rikkahub.common.utils.LogUtil
 import at.bitfire.dav4jvm.BasicDigestAuthHandler
 import at.bitfire.dav4jvm.DavCollection
 import at.bitfire.dav4jvm.Response as DavResponse
