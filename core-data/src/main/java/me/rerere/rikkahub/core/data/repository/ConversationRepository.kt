@@ -844,13 +844,13 @@ class ConversationRepository(
                         publish()
                     }
                 }  else {
-                _currentNodes.add(normalizedNode)
+                    _currentNodes.add(normalizedNode)
                     if (_currentNodes.size > WINDOW_LIMIT) {
-                    _currentNodes.removeAt(0)
-                    hasOlder = true
+                        _currentNodes.removeAt(0)
+                        hasOlder = true
+                    }
+                    publish()
                 }
-                publish()
-            }
             }
         }
 
