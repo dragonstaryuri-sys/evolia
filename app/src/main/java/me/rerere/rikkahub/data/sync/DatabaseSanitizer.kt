@@ -158,8 +158,7 @@ object DatabaseSanitizer {
                 finalSettings = s.copy(assistants = newAssistants)
             }
 
-            // 【宝宝老师的强力修复】：全量溯源校准备份数据
-            // 不再只修 0，而是对比节点时间与消息真实时间，只要对不上就修！
+            // 第一步：纠正时间偏差 (全量对比，误差超过1秒就修)
             LogUtil.i(TAG, "正在深度校准备份数据中的消息节点时间线...")
             targetDbInfo.execSQL("""
                 UPDATE `chat_message_nodes`
@@ -171,8 +170,15 @@ object DatabaseSanitizer {
                     SELECT n.id FROM `chat_message_nodes` n
                     INNER JOIN `chat_messages` m ON n.id = m.node_id
                     GROUP BY n.id
-                    HAVING ABS(MIN(m.created_at) - n.created_at) > 1000
+                    HAVING MIN(m.created_at) IS NOT NULL
+                       AND ABS(MIN(m.created_at) - n.created_at) > 1000
                 )
+            """.trimIndent())
+
+            // 第二步：清理幽灵节点 (完全没有消息关联的节点)
+            targetDbInfo.execSQL("""
+                DELETE FROM `chat_message_nodes`
+                WHERE `id` NOT IN (SELECT DISTINCT `node_id` FROM `chat_messages`)
             """.trimIndent())
 
             // 同步进度水位线

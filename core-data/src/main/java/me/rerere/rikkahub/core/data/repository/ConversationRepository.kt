@@ -960,19 +960,19 @@ class ConversationRepository(
      * 自动修正那些被误更新为当前时间的节点，并输出详细受影响信息。
      * @param conversationId 如果传入，则仅校准指定会话；否则跑全局校准。
      */
-    suspend fun recomputeNodeTimestamps(conversationId: Uuid? = null) = withContext(Dispatchers.IO) {
+    /**
+     * ✨ 强力校准：重新计算所有消息节点的创建时间，并清理幽灵节点。
+     * 1. 自动修正那些被误更新为当前时间的节点时间戳。
+     * 2. 物理删除完全没有消息关联的孤立节点。
+     */
+    suspend fun recomputeNodeTimestamps() = withContext(Dispatchers.IO) {
         try {
-            val scopeInfo = conversationId?.let { "会话 $it" } ?: "全局"
-            Log.i(TAG, "🔍 开始执行 $scopeInfo 消息节点时间线校准...")
+            Log.i(TAG, "🔍 开始执行消息节点大体检 (校准+清理)...")
             val startTime = System.currentTimeMillis()
+            val writableDb = db.openHelper.writableDatabase
 
-            val whereClause = conversationId?.let {
-                "WHERE `chat_message_nodes`.`conversation_id` = '${it}'"
-            } ?: ""
-
-            // 执行关联更新
-            val affectedRows = db.openHelper.writableDatabase.compileStatement(
-                """
+            // 第一步：纠正时间偏差 (全量溯源)
+            val updatedRows = writableDb.compileStatement("""
                 UPDATE `chat_message_nodes`
                 SET `created_at` = (
                     SELECT MIN(`created_at`) FROM `chat_messages`
@@ -981,17 +981,21 @@ class ConversationRepository(
                 WHERE `id` IN (
                     SELECT n.id FROM `chat_message_nodes` n
                     INNER JOIN `chat_messages` m ON n.id = m.node_id
-                    ${if (conversationId != null) "WHERE n.conversation_id = '${conversationId}'" else ""}
                     GROUP BY n.id
                     HAVING ABS(MIN(m.created_at) - n.created_at) > 1000
                 )
-                """.trimIndent()
-            ).executeUpdateDelete()
+            """.trimIndent()).executeUpdateDelete()
+
+            // 第二步：清理幽灵节点 (完全没有消息关联的节点)
+            val deletedRows = writableDb.compileStatement("""
+                DELETE FROM `chat_message_nodes`
+                WHERE `id` NOT IN (SELECT DISTINCT `node_id` FROM `chat_messages`)
+            """.trimIndent()).executeUpdateDelete()
 
             val duration = System.currentTimeMillis() - startTime
-            Log.i(TAG, "✅ $scopeInfo 校准完成！修复了 $affectedRows 个乱序节点，耗时 ${duration}ms")
+            Log.i(TAG, "✅ 体检完成！修复了 $updatedRows 个乱序节点，清理了 $deletedRows 个幽灵节点，总耗时 ${duration}ms")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ 校准消息节点时间戳失败: ${e.message}", e)
+            Log.e(TAG, "❌ 消息节点体检失败: ${e.message}", e)
         }
     }
 }
