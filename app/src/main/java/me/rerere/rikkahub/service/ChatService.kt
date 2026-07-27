@@ -185,7 +185,6 @@ class ChatService(
         val moreNodes = conversationRepo.loadMoreMessages(conversationId, loadedContentIds)
 
         if (moreNodes.isNotEmpty()) {
-            Log.d(TAG, "loadMoreHistory: Loaded ${moreNodes.size} more nodes for $conversationId") // 🐞 DEBUG LOG
             updateConversation(conversationId) { old ->
                 val newMap = moreNodes.associateBy { it.id }
 
@@ -241,8 +240,6 @@ class ChatService(
                 if (hasJobs) {
                     if (isForeground) {
                         ChatForegroundService.start(context)
-                    } else {
-                        Log.d(TAG, "Jobs running in background, service will continue if already started.")
                     }
                 } else {
                     delay(2000)
@@ -291,14 +288,12 @@ class ChatService(
 
     fun addConversationReference(conversationId: Uuid) {
         conversationReferences[conversationId] = conversationReferences.getOrDefault(conversationId, 0) + 1
-        Log.d(TAG, "addConversationReference: $conversationId, count=${conversationReferences[conversationId]}") // 🐞 DEBUG LOG
     }
 
     fun removeConversationReference(conversationId: Uuid) {
         val currentCount = conversationReferences[conversationId] ?: 0
         if (currentCount <= 1) {
             conversationReferences.remove(conversationId)
-            Log.d(TAG, "removeConversationReference: $conversationId, removed from references") // 🐞 DEBUG LOG
             appScope.launch {
                 delay(100)
                 if (!hasReference(conversationId)) {
@@ -307,7 +302,6 @@ class ChatService(
             }
         } else {
             conversationReferences[conversationId] = currentCount - 1
-            Log.d(TAG, "removeConversationReference: $conversationId, count=${conversationReferences[conversationId]}") // 🐞 DEBUG LOG
         }
     }
 
@@ -326,14 +320,12 @@ class ChatService(
             ?.id
 
         val conversationId = if (activeConvId != null) {
-            Log.d(TAG, "Task Trigger: Found active session $activeConvId for assistant")
             activeConvId
         } else {
             val lastDbId =
                 conversationRepo.getAllConversations().first().filter { it.assistantId == originalAssistantId }
                     .maxByOrNull { it.updateAt }?.id
 
-            Log.d(TAG, "Task Trigger: No active session, using DB last session: $lastDbId")
             lastDbId ?: Uuid.random()
         }
 
@@ -436,7 +428,6 @@ class ChatService(
         }
 
         return conversations.computeIfAbsent(conversationId) {
-            Log.d(TAG, "getConversationFlow: Creating new MutableStateFlow for $conversationId") // 🐞 DEBUG LOG
             MutableStateFlow(
                 Conversation.ofId(
                     id = conversationId,
@@ -467,13 +458,7 @@ class ChatService(
         targetAssistantId: Uuid? = null,
         skipAutoArchive: Boolean = false // ✨ 新增：支持跳过离场归档逻辑
     ) {
-        Log.d(TAG, "initializeConversation: $conversationId, targetAssistantId=$targetAssistantId") // 🐞 DEBUG LOG
         val currentConvInDb = conversationRepo.getConversationById(conversationId)
-        if (currentConvInDb != null) {
-            Log.d(TAG, "initializeConversation: Found conversation in DB with ${currentConvInDb.messageNodes.size} nodes") // 🐞 DEBUG LOG
-        } else {
-            Log.d(TAG, "initializeConversation: Conversation $conversationId NOT found in DB") // 🐞 DEBUG LOG
-        }
 
         val currentJob = currentCoroutineContext().job
         val registeredJob = _generationJobs.value[conversationId]
@@ -548,7 +533,6 @@ class ChatService(
             val newConversation = Conversation.ofId(
                 id = conversationId, assistantId = assistant.id
             ).updateCurrentMessages(assistant.presetMessages)
-            Log.d(TAG, "initializeConversation: Initializing NEW conversation for assistant ${assistant.id}") // 🐞 DEBUG LOG
             updateConversation(conversationId) { newConversation }
         }
     }
@@ -676,7 +660,6 @@ class ChatService(
 
         val oldJob = _generationJobs.value[conversationId]
         if (oldJob != null) {
-            Log.d(TAG, "User sent new message, cancelling previous AI response.")
             oldJob.cancel()
             removeGenerationJob(conversationId)
             _isAiTypingMap.update { it - conversationId }
@@ -831,6 +814,7 @@ class ChatService(
             saveConversation(conversationId, updatedConv!!)
 
             val job = appScope.launch {
+                _isAiTypingMap.update { it + (conversationId to true) }
                 try {
                     handleMessageComplete(
                         conversationId = conversationId,
@@ -843,6 +827,9 @@ class ChatService(
                     if (e !is kotlinx.coroutines.CancellationException) {
                         _errorFlow.emit(translateError(e))
                     }
+                }finally {
+                    // ✨ 新增：任务结束（无论成功失败）务必关闭状态
+                    _isAiTypingMap.update { it - conversationId }
                 }
             }
             setGenerationJob(conversationId, job)
@@ -943,13 +930,6 @@ class ChatService(
                                     val memories = results.map { it.first }
                                     if (settings.enableRagLogging) {
                                         results.forEach { (mem, score) ->
-                                            Log.d(
-                                                "RAG", " - [${mem.type}] (Score: ${
-                                                    String.format(
-                                                        "%.4f", score
-                                                    )
-                                                }) ${mem.content.take(50)}..."
-                                            )
                                         }
                                     }
                                     memories
@@ -992,8 +972,6 @@ class ChatService(
                     }
                     list
                 } else baseMessages
-
-                Log.d(TAG, "发送给 AI 的上下文消息总数: ${messagesForModel.size}")
 
                 val finalContextMessages = if (wechatMode) {
                     val messages = messagesForModel.toMutableList()
@@ -1211,10 +1189,8 @@ class ChatService(
                 }
             }.onFailure { e ->
                 if (e is kotlinx.coroutines.CancellationException) {
-                    Log.d(TAG, "任务被用户中断，跳过最终状态保存")
                     return@onFailure
                 }
-                Log.d(TAG, "Generation failed/cancelled for $conversationId, saving current state. Error: ${e.message}")
                 val finalConv = currentConversation
                 appScope.launch {
                     saveConversation(conversationId, finalConv)
@@ -1318,7 +1294,6 @@ class ChatService(
                 val commonOptions = settings.searchCommonOptions.copy(resultSize = resultSize)
                 val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
                 val searchResult = SearchService.getService(opt).search(input, commonOptions, opt).getOrThrow()
-                Log.d(TAG, "Web Search Raw Results (Fixed Request: $resultSize, Got: ${searchResult.items.size})")
                 searchResult.items.forEachIndexed { i, item ->
                     Log.v(
                         TAG,
@@ -1377,14 +1352,13 @@ class ChatService(
         id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
         if (!summarizingConversations.add(id)) {
-            Log.d(TAG, "summarizeAndRefresh: Archiving for $id already in progress, skipping.")
             return@withContext ContextRefreshResult(false, errorMessage = "正在总结中...请勿重复操作")
         }
         var totalSummarized = 0
         try {
             while (true) {
                 val settings = settingsStore.settingsFlow.first()
-                    val conv = conversationRepo.getConversationById(id) ?: break
+                val conv = conversationRepo.getConversationById(id) ?: break
                 val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
                 val toSummarizeEntities =
                     conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime,100)
@@ -1471,9 +1445,9 @@ class ChatService(
                     lastRefreshTime = System.currentTimeMillis()
                 )
                 conversationRepo.updateConversation(updated)
-                    updateConversation(id) { updated }
-                    totalSummarized += toSummarizeEntities.size
-                    if (toSummarizeEntities.size < 100) break
+                updateConversation(id) { updated }
+                totalSummarized += toSummarizeEntities.size
+                if (toSummarizeEntities.size < 100) break
             }
             if (!skipArchive) {
                 archiveConversation(id, force = true, skipEmbedding = true)
@@ -1513,7 +1487,6 @@ class ChatService(
         removeGenerationJob(id)
         conversations.remove(id)
         conversationMutexes.remove(id)
-        Log.d(TAG, "Unloaded conversation $id from RAM cache.")
     }
 
     private fun checkInvalidMessages(conversationId: Uuid) {
@@ -1543,13 +1516,9 @@ class ChatService(
                             )
                         )
                     }
-
-                    isBlankAssistantAtEnd -> Log.d(TAG, "已移除结尾的无效 AI 占位消息")
                     isDuplicateAssistant -> {
                         if (!(msg.toContentText().isBlank() && msg.parts.none { it is UIMessagePart.ToolCall })) {
                             finalNodes.add(node)
-                        } else {
-                            Log.d(TAG, "检测到连续助手消息，已清理空的 AI 节点以满足 API 规范")
                         }
                     }
 
@@ -1650,7 +1619,6 @@ class ChatService(
         flow.update { old ->
             val new = block(old)
             if (new.id != id) return@update old
-            Log.d(TAG, "updateConversation: $id, nodes=${new.messageNodes.size}") // 🐞 DEBUG LOG
             filesToDelete = old.files.filter { f -> new.files.none { it == f } }
             new
         }
