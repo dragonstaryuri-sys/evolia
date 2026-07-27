@@ -875,26 +875,29 @@ private fun AssistantMessageTurn(
     val currentBubbles by rememberUpdatedState(allTextBubbles)
     val isAiLoading by rememberUpdatedState(loading)
     // ✨ Fix: Add loading to the remember keys to reset displayedCount when regeneration starts
-    var displayedCount by remember(group.firstNode.id, wechatMode, loading) {
+    var displayedCount by remember(group.firstNode.currentMessage.id) {
         // 修改为：如果是最后一轮或者正在加载，我们倾向于从 0 开始跑一遍动画
         val shouldAnimate = wechatMode && (isLastTurn || loading)
         mutableIntStateOf(if (shouldAnimate) 0 else allTextBubbles.size)
     }
 
     // ✨ Fix: Add loading to the LaunchedEffect keys to ensure it restarts on regeneration
-    LaunchedEffect(group.firstNode.id, wechatMode, loading) {
+    LaunchedEffect(group.firstNode.currentMessage.id, wechatMode) {
         if (!wechatMode) {
             onTypingStateChange(false)
             return@LaunchedEffect
         }
-
+        if (!loading && displayedCount < allTextBubbles.size) {
+            displayedCount = allTextBubbles.size
+            onTypingStateChange(false)
+            return@LaunchedEffect
+        }
         try {
             if (displayedCount == 0) {
                 // 等待条件：直到 AI 真正开始产生内容，或者 activityState 进入了非空闲状态
                 while (currentBubbles.isEmpty() && isAiLoading) {
                     delay(100)
                 }
-
                 // 当跳出上面的循环，说明 AI 已经开始响应了
                 if (currentBubbles.isNotEmpty()) {
                     displayedCount = 1
