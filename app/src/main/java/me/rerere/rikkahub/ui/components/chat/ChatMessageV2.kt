@@ -874,11 +874,15 @@ private fun AssistantMessageTurn(
     // --- WeChat Mode Dynamics ---
     val currentBubbles by rememberUpdatedState(allTextBubbles)
     val isAiLoading by rememberUpdatedState(loading)
-    var displayedCount by remember(group.firstNode.id, wechatMode) {
-        mutableIntStateOf(if (loading) 0 else allTextBubbles.size)
+    // ✨ Fix: Add loading to the remember keys to reset displayedCount when regeneration starts
+    var displayedCount by remember(group.firstNode.id, wechatMode, loading) {
+        // 修改为：如果是最后一轮或者正在加载，我们倾向于从 0 开始跑一遍动画
+        val shouldAnimate = wechatMode && (isLastTurn || loading)
+        mutableIntStateOf(if (shouldAnimate) 0 else allTextBubbles.size)
     }
 
-    LaunchedEffect(group.firstNode.id, wechatMode) {
+    // ✨ Fix: Add loading to the LaunchedEffect keys to ensure it restarts on regeneration
+    LaunchedEffect(group.firstNode.id, wechatMode, loading) {
         if (!wechatMode) {
             onTypingStateChange(false)
             return@LaunchedEffect
@@ -903,7 +907,6 @@ private fun AssistantMessageTurn(
                 val latest = currentBubbles
                 val totalAvailable = latest.size
 
-                // Report whether we are still visually animating OR physically generating
                 onTypingStateChange(displayedCount < totalAvailable || isAiLoading)
 
                 if (displayedCount < totalAvailable) {
@@ -919,7 +922,8 @@ private fun AssistantMessageTurn(
                     delay(delayTime)
                     displayedCount++
                 } else {
-                    // All available bubbles shown, check if AI finished
+                    // ✨ 核心修复：只有当“不再加载”且“所有气泡都显示完了”才退出
+                    // 这样即使 loading 信号短暂断开，动画也会把剩下的气泡跑完
                     if (!isAiLoading) break
                     delay(200)
                 }

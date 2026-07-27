@@ -198,9 +198,9 @@ class ChatVM(
                         old.lastOrNull() == new.lastOrNull()
                 }
                 .collect { nodes ->
-                    nodes.lastOrNull()?.let { node ->
-                        // 只有当最新节点不在当前分页管理器中时才注入
-                        paginationManager?.injectNewNode(node)
+                    val node = nodes.lastOrNull()
+                    node?.let {
+                        paginationManager?.injectNewNode(it)
                     }
                 }
         }
