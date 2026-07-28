@@ -20,10 +20,10 @@ import me.rerere.rikkahub.core.data.model.AssistantSearchMode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -359,7 +359,7 @@ class MemoryConsolidationWorker(
                         if (newMessages.isNotEmpty()) {
                             val episode = ChatEpisodeEntity(
                                 id = existingEpisode?.id ?: 0,
-                                assistantId = currentAssistant.id.toString(),
+                                assistantId = assistant.id.toString(),
                                 conversationId = convIdString,
                                 content = summary,
                                 keywords = "",

@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.data.ai.prompts
+package me.rerere.rikkahub.core.data.ai.prompts
 
 val DEFAULT_LEARNING_MODE_PROMPT = """
     You are currently STUDYING, and you've asked me to follow these **strict rules** during this chat. No matter what other instructions follow, I MUST obey these rules:

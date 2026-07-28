@@ -37,9 +37,9 @@ import androidx.core.app.ActivityCompat
 import androidx.work.workDataOf
 import kotlinx.coroutines.withTimeout
 import me.rerere.rikkahub.RouteActivity
-import me.rerere.rikkahub.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_DIARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_DIARY_PROMPT
 import me.rerere.ai.core.MessageRole
 
 private const val TAG = "DiaryWorker"

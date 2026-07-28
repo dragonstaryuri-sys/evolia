@@ -50,8 +50,8 @@ import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_OCR_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_OCR_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton

@@ -44,11 +44,11 @@ import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
-import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import me.rerere.rikkahub.core.data.utils.VectorUtils
 import me.rerere.rikkahub.common.JsonInstant

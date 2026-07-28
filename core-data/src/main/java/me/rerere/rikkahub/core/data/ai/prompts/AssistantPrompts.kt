@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.data.ai.prompts
+package me.rerere.rikkahub.core.data.ai.prompts
 
 /**
  * 助手相关的提示词汇总
@@ -182,8 +182,8 @@ const val DEFAULT_DIARY_PROMPT = """
 fun String.applyPlaceholders(vararg pairs: Pair<String, String>): String {
     var result = this
     pairs.forEach { (key, value) ->
-        result = result.replace("{{$key}}", value)
-            .replace("{$key}", value) // 兼容旧版单花括号
+        result = result.replace("{{${key}}}", value)
+            .replace("{${key}}", value) // 兼容旧版单花括号
     }
     return result
 }

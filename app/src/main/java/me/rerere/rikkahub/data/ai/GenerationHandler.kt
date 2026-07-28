@@ -40,7 +40,7 @@ import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
-import me.rerere.rikkahub.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.data.ai.transformers.InputMessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.MessageTransformer
 import me.rerere.rikkahub.data.ai.transformers.OutputMessageTransformer
@@ -67,7 +67,7 @@ import me.rerere.rikkahub.core.data.repository.MilestoneRepository
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
-import me.rerere.rikkahub.data.ai.prompts.applyPlaceholders
+import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import java.util.Locale
 import kotlin.uuid.Uuid
 import java.time.LocalDateTime
