@@ -208,7 +208,7 @@ class ChatService(
 
     private var lastConversationId: Uuid? = null
 
-    // 协作模式：消息合并发送的计时器
+    // 微信模式：消息合并发送的计时器
     private val wechatDebounceJobs = ConcurrentHashMap<Uuid, Job>()
 
     private val promptPlaceholderRegex = Regex("\\{\\{(\\w+)\\}\\}")
@@ -729,7 +729,6 @@ class ChatService(
         forceWipe: Boolean = false,
         requirement: String? = null
     ) {
-        Log.d(TAG, "regenerateAtMessage starting Stage 1: id=$conversationId, msgId=${message.id}")
         // 取消旧任务
         val oldJob = _generationJobs.value[conversationId]
         oldJob?.cancel()
@@ -745,7 +744,7 @@ class ChatService(
             val conversation = getConversationFlow(conversationId).value
 
             if (message.role == MessageRole.USER) {
-                // 用户消息刷新逻辑：截断后续并重新生成
+                // 用户消息刷新逻辑：截断后续并重新生成 (✨ 修复：改用 ID 查找 Node)
                 val node = conversation.getMessageNodeByMessageId(message.id)
                 val indexAt = conversation.messageNodes.indexOf(node)
                 if (indexAt != -1) {
@@ -759,7 +758,7 @@ class ChatService(
                     }
                 }
             } else if (regenerateAssistantMsg) {
-                // 助手消息刷新逻辑：在同节点创建新版本
+                // 助手消息刷新逻辑：在同节点创建新版本 (✨ 修复：改用 ID 查找 Node)
                 val clickedNode = conversation.getMessageNodeByMessageId(message.id)
                 val clickedIndex = conversation.messageNodes.indexOf(clickedNode)
                 val lastUserIndex = conversation.messageNodes.subList(0, clickedIndex + 1)
@@ -809,15 +808,12 @@ class ChatService(
             true
         } ?: false
 
-        Log.d(TAG, "Stage 1 finished: lockAcquired=$lockAcquired, hasUpdatedConv=${updatedConv != null}")
-
         // --- 第二阶段：保存状态并启动后台生成任务 ---
         if (lockAcquired && updatedConv != null) {
             updateConversation(conversationId) { updatedConv!! }
             saveConversation(conversationId, updatedConv!!)
 
             val job = appScope.launch {
-                Log.d(TAG, "Starting regeneration job for $conversationId")
                 _isAiTypingMap.update { it + (conversationId to true) }
                 try {
                     handleMessageComplete(
@@ -832,7 +828,6 @@ class ChatService(
                         _errorFlow.emit(translateError(e))
                     }
                 }finally {
-                    // ✨ 新增：任务结束（无论成功失败）务必关闭状态
                     _isAiTypingMap.update { it - conversationId }
                 }
             }
@@ -843,10 +838,6 @@ class ChatService(
                 }
                 appScope.launch { delay(500); checkAllConversationsReferences() }
             }
-        } else if (!lockAcquired) {
-            Log.e(TAG, "Regeneration Stage 1 failed: lockAcquired timeout or false")
-        } else {
-            Log.w(TAG, "Regeneration Stage 1 finished but updatedConv is null (logic not hit)")
         }
     }
 
@@ -861,7 +852,6 @@ class ChatService(
     ) {
         val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
         mutex.withLock {
-            Log.d(TAG, "handleMessageComplete started within mutex for $conversationId")
             checkInvalidMessages(conversationId)
             val currentJob = coroutineContext.job
             var currentSearchCount = 0
