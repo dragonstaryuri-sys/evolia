@@ -433,6 +433,9 @@ private fun SharedTransitionScope.ChatListNormal(
                                             isMemoryLoading = false
                                         }
                                     },
+                                    onTypingStateChange = { isTyping ->
+                                        onTypingStateChange(item.group.firstNode.id, isTyping)
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 12.dp, vertical = 4.dp)
