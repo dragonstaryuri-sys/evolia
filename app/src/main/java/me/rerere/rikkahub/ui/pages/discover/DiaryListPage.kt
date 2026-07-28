@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
@@ -18,10 +20,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
@@ -37,6 +42,8 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,11 +65,16 @@ fun DiaryListPage(
     val diariesAtSelectedDate by vm.diariesAtSelectedDate.collectAsStateWithLifecycle()
     val selectedDate by vm.selectedDate.collectAsStateWithLifecycle()
 
+    // 用于跟踪当前显示的月份，以便显示年份标题
+    var currentMonthByPager by remember { mutableStateOf(YearMonth.from(selectedDate)) }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     val defaultUserStr = stringResource(R.string.diary_filter_user)
-    val listTitle = stringResource(R.string.discover_page_diary_title)
     val userNickname = if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
+
+    // 动态显示年份标题：日历模式显示当前滑动的月份年份，列表模式显示最新日记年份（或当前年）
+    val topTitle = if (isCalendarMode) currentMonthByPager.year.toString() else LocalDate.now().year.toString()
 
     LaunchedEffect(assistantId) {
         if (assistantId != null) {
@@ -79,7 +91,7 @@ fun DiaryListPage(
             Surface(tonalElevation = 1.dp) {
                 Column {
                     OneUITopAppBar(
-                        title = listTitle,
+                        title = topTitle,
                         scrollBehavior = scrollBehavior,
                         navigationIcon = { BackButton() },
                         actions = {
@@ -134,18 +146,21 @@ fun DiaryListPage(
             if (!isCalendarMode) {
                 DiaryListView(
                     diaries = filteredDiaries,
-                    onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) }
+                    onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
+                    onDelete = { vm.deleteDiary(it) }
                 )
             } else {
                 DiaryCalendarView(
                     selectedDate = selectedDate,
+                    onMonthChange = { currentMonthByPager = it },
                     datesWithDiaries = datesWithDiaries,
                     diariesAtSelectedDate = diariesAtSelectedDate,
                     onDateSelect = {
                         haptics.perform(HapticPattern.Pop)
                         vm.selectedDate.value = it
                     },
-                    onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) }
+                    onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
+                    onDelete = { vm.deleteDiary(it) }
                 )
             }
         }
@@ -187,18 +202,80 @@ private fun PersonnelFilterBar(
 @Composable
 private fun DiaryListView(
     diaries: List<AgentDiaryEntity>,
-    onDiaryClick: (String) -> Unit
+    onDiaryClick: (String) -> Unit,
+    onDelete: (String) -> Unit
 ) {
-    if (diaries.isEmpty()) {
+    val settings = LocalSettings.current
+    // 分组和排序逻辑：我 > 主智能体 > 其他。同一级别按创建时间倒序。
+    val groupedDiaries = remember(diaries, settings.assistants) {
+        diaries.groupBy { it.date }
+            .toList()
+            .sortedByDescending { it.first } // 日期倒序
+            .map { (date, items) ->
+                date to items.sortedWith(
+                    compareBy<AgentDiaryEntity> {
+                        when {
+                            it.assistantId == "USER" -> 0
+                            settings.assistants.find { a -> a.id.toString() == it.assistantId }?.isMain == true -> 1
+                            else -> 2
+                        }
+                    }.thenByDescending { it.createdAt }
+                )
+            }
+    }
+
+    if (groupedDiaries.isEmpty()) {
         EmptyState(stringResource(R.string.discover_page_diary_empty))
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp), // 减小整体左边距
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            items(diaries, key = { it.id }) { diary ->
-                DiarySummaryCard(diary = diary, onClick = { onDiaryClick(diary.id) })
+            groupedDiaries.forEach { (date, items) ->
+                item(key = date) {
+                    DiaryTimelineGroup(date, items, onDiaryClick, onDelete)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiaryTimelineGroup(
+    date: String,
+    items: List<AgentDiaryEntity>,
+    onDiaryClick: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    val parsedDate = remember(date) { LocalDate.parse(date) }
+    Row(modifier = Modifier.fillMaxWidth()) {
+        // 左侧时间轴日期 - 宽度减小
+        Column(
+            modifier = Modifier.width(44.dp).padding(top = 4.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            Text(
+                text = parsedDate.dayOfMonth.toString().padStart(2, '0'),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "${parsedDate.monthValue}月",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(Modifier.width(12.dp)) // 间距调小
+
+        // 右侧卡片列表
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items.forEach { diary ->
+                DiarySummaryCard(diary = diary, onClick = { onDiaryClick(diary.id) }, onDelete = { onDelete(diary.id) })
             }
         }
     }
@@ -207,17 +284,32 @@ private fun DiaryListView(
 @Composable
 private fun DiaryCalendarView(
     selectedDate: LocalDate,
+    onMonthChange: (YearMonth) -> Unit,
     datesWithDiaries: List<String>,
     diariesAtSelectedDate: List<AgentDiaryEntity>,
     onDateSelect: (LocalDate) -> Unit,
-    onDiaryClick: (String) -> Unit
+    onDiaryClick: (String) -> Unit,
+    onDelete: (String) -> Unit
 ) {
+    val settings = LocalSettings.current
+    val sortedDiaries = remember(diariesAtSelectedDate, settings.assistants) {
+        diariesAtSelectedDate.sortedWith(
+            compareBy<AgentDiaryEntity> {
+                when {
+                    it.assistantId == "USER" -> 0
+                    settings.assistants.find { a -> a.id.toString() == it.assistantId }?.isMain == true -> 1
+                    else -> 2
+                }
+            }.thenByDescending { it.createdAt }
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            WeekGridCalendar(selectedDate, datesWithDiaries, onDateSelect)
+            SwipeableCalendar(selectedDate, datesWithDiaries, onDateSelect, onMonthChange)
         }
         item {
             HorizontalDivider(
@@ -225,14 +317,14 @@ private fun DiaryCalendarView(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
             )
         }
-        if (diariesAtSelectedDate.isEmpty()) {
+        if (sortedDiaries.isEmpty()) {
             item {
                 EmptyState(stringResource(R.string.diary_empty_at_date))
             }
         } else {
-            items(diariesAtSelectedDate, key = { it.id }) { diary ->
+            items(sortedDiaries, key = { it.id }) { diary ->
                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    DiarySummaryCard(diary = diary, onClick = { onDiaryClick(diary.id) })
+                    DiarySummaryCard(diary = diary, onClick = { onDiaryClick(diary.id) }, onDelete = { onDelete(diary.id) })
                 }
             }
             item {
@@ -243,18 +335,61 @@ private fun DiaryCalendarView(
 }
 
 @Composable
-private fun WeekGridCalendar(
+private fun SwipeableCalendar(
+    selectedDate: LocalDate,
+    datesWithDiaries: List<String>,
+    onDateSelect: (LocalDate) -> Unit,
+    onMonthChange: (YearMonth) -> Unit
+) {
+    val pagerState = rememberPagerState(initialPage = 500, pageCount = { 1000 })
+
+    // 监听页码变化，同步标题栏的年份
+    LaunchedEffect(pagerState.currentPage) {
+        val diff = pagerState.currentPage - 500
+        val month = YearMonth.from(selectedDate).plusMonths(diff.toLong())
+        onMonthChange(month)
+    }
+
+    Column {
+        // 月份显示
+        val currentMonth = remember(pagerState.currentPage) {
+            YearMonth.from(selectedDate).plusMonths((pagerState.currentPage - 500).toLong())
+        }
+        Text(
+            text = currentMonth.format(DateTimeFormatter.ofPattern("MMMM")),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) { page ->
+            val month = remember(page) {
+                YearMonth.from(selectedDate).plusMonths((page - 500).toLong())
+            }
+            MonthGrid(month, selectedDate, datesWithDiaries, onDateSelect)
+        }
+    }
+}
+
+@Composable
+private fun MonthGrid(
+    month: YearMonth,
     selectedDate: LocalDate,
     datesWithDiaries: List<String>,
     onDateSelect: (LocalDate) -> Unit
 ) {
-    val monthStart = selectedDate.withDayOfMonth(1)
+    val monthStart = month.atDay(1)
     val firstDayOfWeek = monthStart.dayOfWeek.value % 7
-    val days = remember(selectedDate.month, selectedDate.year) {
+    val days = remember(month) {
         val list = mutableListOf<LocalDate?>()
         repeat(firstDayOfWeek) { list.add(null) }
-        for (i in 1..selectedDate.lengthOfMonth()) {
-            list.add(selectedDate.withDayOfMonth(i))
+        for (i in 1..month.lengthOfMonth()) {
+            list.add(month.atDay(i))
         }
         list
     }
@@ -303,6 +438,12 @@ private fun WeekGridCalendar(
                         }
                     }
                 }
+                // 确保不满 7 天的行也是左对齐
+                if (week.size < 7) {
+                    repeat(7 - week.size) {
+                        Box(modifier = Modifier.weight(1f).aspectRatio(1f))
+                    }
+                }
             }
         }
     }
@@ -311,21 +452,40 @@ private fun WeekGridCalendar(
 @Composable
 private fun DiarySummaryCard(
     diary: AgentDiaryEntity,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val settings = LocalSettings.current
-    val defaultUserStr = stringResource(R.string.diary_filter_user)
-
-    val authorAssistant = remember(diary.assistantId, settings.assistants) {
-        settings.assistants.find { it.id.toString() == diary.assistantId }
-    }
+    val haptics = rememberPremiumHaptics()
+    val clipboard = LocalClipboardManager.current
+    val toaster = LocalToaster.current
+    val copiedMessage = stringResource(R.string.diary_copied)
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val authorName = if (diary.assistantId == "USER") {
+        val defaultUserStr = stringResource(R.string.diary_filter_user)
         if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
-    } else authorAssistant?.name ?: "Agent"
+    } else settings.assistants.find { it.id.toString() == diary.assistantId }?.name ?: "Agent"
 
     val authorAvatar = if (diary.assistantId == "USER") settings.displaySetting.userAvatar
-                      else authorAssistant?.avatar ?: me.rerere.rikkahub.core.data.model.Avatar.Dummy
+                      else settings.assistants.find { it.id.toString() == diary.assistantId }?.avatar ?: me.rerere.rikkahub.core.data.model.Avatar.Dummy
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.diary_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.diary_delete_confirm_msg)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete()
+                    showDeleteConfirm = false
+                }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
 
     Card(
         onClick = onClick,
@@ -333,19 +493,46 @@ private fun DiarySummaryCard(
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        // 底部增加内边距
+        Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                UIAvatar(name = authorName, value = authorAvatar, modifier = Modifier.size(28.dp))
+                UIAvatar(name = authorName, value = authorAvatar, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(authorName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text(authorName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.weight(1f))
-                Text(diary.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                // 复制按钮
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        clipboard.setText(AnnotatedString(diary.content))
+                        toaster.show(copiedMessage)
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                // 删除按钮
+                IconButton(
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showDeleteConfirm = true
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             val summary = remember(diary.content) {
-                if (diary.content.length > 200) diary.content.take(200) + "..." else diary.content
+                if (diary.content.length > 150) diary.content.take(150) + "..." else diary.content
             }
-            MarkdownBlock(content = summary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.heightIn(max = 140.dp))
+            MarkdownBlock(
+                content = summary,
+                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                modifier = Modifier.heightIn(max = 120.dp)
+            )
         }
     }
 }

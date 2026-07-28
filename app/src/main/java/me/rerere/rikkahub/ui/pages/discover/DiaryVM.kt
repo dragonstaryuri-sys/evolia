@@ -40,10 +40,9 @@ class DiaryVM(
 
     val settings = settingsStore.settingsFlow
 
-    private val _selectedAssistantIds = MutableStateFlow<Set<String>>(setOf("ALL"))
+    private val _selectedAssistantIds = MutableStateFlow(setOf("ALL"))
     val selectedAssistantIds = _selectedAssistantIds.asStateFlow()
 
-    // ✨ 优化 1：默认改为日历模式
     val isCalendarMode = MutableStateFlow(true)
     val selectedDate = MutableStateFlow(LocalDate.now())
 
@@ -154,13 +153,24 @@ class DiaryVM(
         emitAll(scheduleDao.getSchedulesForDay(start, end))
     }
 
-    fun saveDiary(assistantId: String, content: String, date: String) {
+    // ✨ 修正：支持传入 ID 以便更新现有日记
+    fun saveDiary(id: String? = null, assistantId: String, content: String, date: String) {
         viewModelScope.launch {
-            diaryRepo.insertDiary(AgentDiaryEntity(
-                assistantId = assistantId,
-                content = content,
-                date = date
-            ))
+            val entity = if (id != null && id != "new") {
+                AgentDiaryEntity(
+                    id = id,
+                    assistantId = assistantId,
+                    content = content,
+                    date = date
+                )
+            } else {
+                AgentDiaryEntity(
+                    assistantId = assistantId,
+                    content = content,
+                    date = date
+                )
+            }
+            diaryRepo.insertDiary(entity)
         }
     }
 
@@ -201,13 +211,11 @@ class DiaryVM(
     private var isTaskObservationInitialized = false
 
     fun observeTaskResults(toaster: AppToasterState) {
-        // 如果已经有一个监听任务在运行，则无需重复启动
         if (observationJob?.isActive == true) return
 
         observationJob = viewModelScope.launch {
             val workManager = WorkManager.getInstance(app)
 
-            // 首次启动时，先获取当前所有已完成的任务 ID，避免旧任务触发提示
             if (!isTaskObservationInitialized) {
                 workManager.getWorkInfosByTagFlow("diary_gen")
                     .firstOrNull()?.forEach {
@@ -218,14 +226,12 @@ class DiaryVM(
                 isTaskObservationInitialized = true
             }
 
-            // 开始实时监听
             workManager.getWorkInfosByTagFlow("diary_gen").collect { infos ->
                 infos.forEach { info ->
                     if (info.state == WorkInfo.State.SUCCEEDED && !notifiedTaskIds.contains(info.id)) {
                         toaster.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
                         notifiedTaskIds.add(info.id)
                     } else if (info.state.isFinished) {
-                        // 即使是失败或取消的任务，也记录一下，防止以后重复处理
                         notifiedTaskIds.add(info.id)
                     }
                 }

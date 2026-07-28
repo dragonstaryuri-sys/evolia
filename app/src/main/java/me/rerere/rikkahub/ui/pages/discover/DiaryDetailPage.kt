@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.db.entity.DiaryCommentEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -25,6 +26,8 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,6 +38,7 @@ fun DiaryDetailPage(
 ) {
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics()
     val diaryState by remember(diaryId) { vm.getDiaryById(diaryId) }.collectAsStateWithLifecycle(null)
     val comments by vm.getComments(diaryId).collectAsStateWithLifecycle(emptyList())
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -45,8 +49,16 @@ fun DiaryDetailPage(
         topBar = {
             OneUITopAppBar(
                 title = stringResource(R.string.diary_detail_title),
-                scrollBehavior = scrollBehavior, // ✨ 修复：传入必填的 scrollBehavior
-                navigationIcon = { BackButton() }
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton() },
+                actions = {
+                    IconButton(onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        navController.navigate(Screen.DiaryEditor(diaryId))
+                    }) {
+                        Icon(Icons.Rounded.Edit, null)
+                    }
+                }
             )
         },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)

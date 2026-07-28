@@ -1847,5 +1847,8 @@
   <string name="diary_comment_success">Comment posted successfully</string>
   <string name="diary_detail_title">Diary Details</string>
   <string name="diary_expand_hint">Tap to view full text and comments</string>
+  <string name="diary_delete_confirm_title">Confirm Deletion</string>
+  <string name="diary_delete_confirm_msg">Are you sure you want to delete this diary entry? This action cannot be undone.</string>
+  <string name="diary_copied">Copied to clipboard</string>
 
 </resources>

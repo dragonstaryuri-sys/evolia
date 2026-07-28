@@ -1808,4 +1808,7 @@
   <string name="diary_comment_success">评论发表成功</string>
   <string name="diary_detail_title">日记详情</string>
   <string name="diary_expand_hint">点击查看全文及评论</string>
+  <string name="diary_delete_confirm_title">确认删除</string>
+  <string name="diary_delete_confirm_msg">确定要删除这条日记吗？此操作无法撤销。</string>
+  <string name="diary_copied">已复制到剪贴板</string>
 </resources>
