@@ -649,7 +649,8 @@ class ChatService(
         content: List<UIMessagePart>,
         answer: Boolean = true,
         isTemporaryChat: Boolean = false,
-        predefinedUserNode: MessageNode? = null
+        predefinedUserNode: MessageNode? = null,
+        skipContextForResponse: Boolean = false // ✨ 新增：支持回复消息隐身
     ) {
         if (isTemporaryChat) {
             temporaryConversations.add(conversationId)
@@ -695,7 +696,10 @@ class ChatService(
                     if (_isAiTypingMap.value.containsKey(conversationId)) _isAiTypingMap.update { it - conversationId }
                 }
                 try {
-                    handleMessageComplete(conversationId)
+                    handleMessageComplete(
+                        conversationId = conversationId,
+                        skipContextForResponse = skipContextForResponse // ✨ 传入隐身标记
+                    )
                     _generationDoneFlow.emit(conversationId)
                 } catch (e: Exception) {
                     if (e !is kotlinx.coroutines.CancellationException) {

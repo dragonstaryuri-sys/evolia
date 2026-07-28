@@ -1825,6 +1825,27 @@
   <string name="chat_timeline_collapse">Collapse</string>
   <string name="chat_timeline_expand">Expand</string>
   <string name="chat_timeline_memory_content">Content</string>
-  <string name="chat_load_more">查看更早的消息...</string>
-  <string name="chat_topic_started_all">已开启新话题</string>
+  <string name="chat_load_more">load more...</string>
+  <string name="chat_topic_started_all">new topic</string>
+  <!-- Diary feature upgrade -->
+  <string name="diary_view_list">List</string>
+  <string name="diary_view_calendar">Calendar</string>
+  <string name="diary_filter_all">Everyone</string>
+  <string name="diary_filter_user">Me</string>
+  <string name="diary_generating_comment">Requesting agent to post a comment…</string>
+  <string name="assistant_no_conversation">The agent has no conversation records and cannot post comments</string>
+  <string name="diary_add_title">Write Diary</string>
+  <string name="diary_select_personnel">Select Author</string>
+  <string name="diary_select_date">Select Date</string>
+  <string name="diary_schedule_link">Link Today\'s Schedule</string>
+  <string name="diary_comment_hint">Add a comment…</string>
+  <string name="diary_comment_send_as">Comment as this identity</string>
+  <string name="diary_personnel_user">Me (User)</string>
+  <string name="diary_empty_at_date">There are no diary entries for this day</string>
+  <string name="diary_write_hint">Anything interesting happened today? Markdown format is supported~</string>
+  <string name="diary_add_success">Diary saved successfully</string>
+  <string name="diary_comment_success">Comment posted successfully</string>
+  <string name="diary_detail_title">Diary Details</string>
+  <string name="diary_expand_hint">Tap to view full text and comments</string>
+
 </resources>

@@ -1,16 +1,29 @@
 package me.rerere.rikkahub.service
 
+import android.Manifest
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.toInstant
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.AGENT_TASK_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.RouteActivity
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_DIARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
@@ -19,7 +32,6 @@ import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
-import me.rerere.rikkahub.utils.applyPlaceholders
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.Instant
@@ -29,25 +41,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.uuid.Uuid
-import android.Manifest
-import android.app.PendingIntent
-import android.content.Intent
-import android.content.pm.PackageManager
-import androidx.core.app.ActivityCompat
-import androidx.work.workDataOf
-import kotlinx.coroutines.withTimeout
-import me.rerere.rikkahub.RouteActivity
-import me.rerere.rikkahub.core.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
-import me.rerere.rikkahub.core.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
-import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_DIARY_PROMPT
-import me.rerere.ai.core.MessageRole
 
 private const val TAG = "DiaryWorker"
-private const val CHUNK_SIZE = 40_000 // 每一段处理的文字长度
+private const val CHUNK_SIZE = 40_000
 
-/**
- * Markdown formatting instruction for the AI.
- */
 private const val DIARY_MARKDOWN_INSTRUCTION = """
 
 ---
@@ -86,7 +83,6 @@ class DiaryWorker(
             }
 
             val todayStr = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-            // 检查今天是否已有日记
             val todayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
             if (todayDiary != null) {
                 return if (isManual) {
@@ -96,11 +92,11 @@ class DiaryWorker(
                 }
             }
 
+            // 【重点修复】：确保调用 Repository 中新增的获取最后日记方法
             val lastDiary = diaryRepo.getLastDiaryOfAssistant(assistant.id.toString())
             val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-            // 1. 获取新消息
             val conversations = conversationRepo.getConversationsOfAssistantAnyMode(assistant.id).first()
             val allMessages = conversations.flatMap { conv ->
                 conv.messageNodes.mapNotNull { node ->
@@ -117,7 +113,6 @@ class DiaryWorker(
             val triggerTime = LocalDateTime.now().format(timeFormatter)
             val locale = Locale.getDefault().toLanguageTag()
 
-            // 2. 准备模型
             val diaryModelId = assistant.diaryModelId ?: currentSettings.diaryModelId
             val model = currentSettings.findModelById(diaryModelId)
                 ?: currentSettings.findModelById(currentSettings.chatModelId)
@@ -125,7 +120,6 @@ class DiaryWorker(
 
             var generatedContent = ""
 
-            // 3. 开始生成逻辑
             if (newMessages.isEmpty()) {
                 val memories = memoryRepo.getCombinedMemoriesFlow(assistant.id.toString()).first()
                 val selectedMemories = if (memories.isNotEmpty()) {
@@ -142,7 +136,6 @@ class DiaryWorker(
 
                 generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt, isManual)
             } else {
-                // 将消息分段
                 val messageGroups = mutableListOf<List<UIMessage>>()
                 var currentGroup = mutableListOf<UIMessage>()
                 var currentLen = 0
@@ -158,7 +151,6 @@ class DiaryWorker(
                 }
                 if (currentGroup.isNotEmpty()) messageGroups.add(currentGroup)
 
-                // 迭代更新日记内容
                 messageGroups.forEachIndexed { index, group ->
                     val isFirst = index == 0
                     val chatContent = group.joinToString("\n") { message ->
@@ -206,7 +198,6 @@ class DiaryWorker(
                 }
             }
 
-            // 4. 保存结果
             if (generatedContent.isNotBlank()) {
                 val diary = AgentDiaryEntity(
                     id = Uuid.random().toString(),
@@ -247,13 +238,13 @@ class DiaryWorker(
             generationHandler.generateText(
                 settings = settings,
                 model = model,
-                messages = listOf(UIMessage.user(prompt)),
+                messages = listOf(me.rerere.ai.ui.UIMessage.user(prompt)),
                 assistant = assistant.copy(
                     temperature = 0.8f,
-                    enableMemory = false,        // 生成日记时不需要通过工具读写内存
-                    enabledLorebookIds = emptySet(), // 禁用世界书，防止注入其中的附件
-                    includeDiariesInContext = false, // 生成日记时不需要包含旧日记，避免上下文过长
-                    localTools = emptyList()     // 禁用本地工具
+                    enableMemory = false,
+                    enabledLorebookIds = emptySet(),
+                    includeDiariesInContext = false,
+                    localTools = emptyList()
                 ),
                 enabledModeIds = emptySet()
             ).collect { chunk ->
@@ -290,7 +281,7 @@ class DiaryWorker(
         )
 
         val notification = NotificationCompat.Builder(applicationContext, AGENT_TASK_NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(R.drawable.about_logo)
             .setContentTitle(applicationContext.getString(R.string.discover_page_diary_title))
             .setContentText(text)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

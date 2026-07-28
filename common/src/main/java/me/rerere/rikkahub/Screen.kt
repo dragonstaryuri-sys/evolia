@@ -130,6 +130,10 @@ sealed interface Screen {
     @Serializable
     data class DiaryEditor(val diaryId: String) : Screen
 
+    // ✨ 新增：日记详情页
+    @Serializable
+    data class DiaryDetail(val diaryId: String) : Screen
+
     @Serializable
     data object Favorites : Screen
 

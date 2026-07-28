@@ -1788,4 +1788,24 @@
   <string name="chat_timeline_collapse">收起</string>
   <string name="chat_timeline_expand">展开</string>
   <string name="chat_timeline_memory_content">内容</string>
+  <!-- 日记功能升级 -->
+  <string name="diary_view_list">列表</string>
+  <string name="diary_view_calendar">日历</string>
+  <string name="diary_filter_all">全员</string>
+  <string name="diary_filter_user">我</string>
+  <string name="diary_generating_comment">正在请求智能体发表评论…</string>
+  <string name="assistant_no_conversation">该智能体暂无会话记录，无法发表评论</string>
+  <string name="diary_add_title">写日记</string>
+  <string name="diary_select_personnel">选择作者</string>
+  <string name="diary_select_date">选择日期</string>
+  <string name="diary_schedule_link">关联今日日程</string>
+  <string name="diary_comment_hint">添加评论…</string>
+  <string name="diary_comment_send_as">以该身份评论</string>
+  <string name="diary_personnel_user">我 (User)</string>
+  <string name="diary_empty_at_date">这一天没有日记记录</string>
+  <string name="diary_write_hint">今天发生了什么有趣的事吗？支持 Markdown 格式哦~</string>
+  <string name="diary_add_success">日记保存成功</string>
+  <string name="diary_comment_success">评论发表成功</string>
+  <string name="diary_detail_title">日记详情</string>
+  <string name="diary_expand_hint">点击查看全文及评论</string>
 </resources>

@@ -1,18 +1,23 @@
 package me.rerere.rikkahub.ui.pages.discover
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,7 +25,13 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.hooks.HapticPattern
 import org.koin.androidx.compose.koinViewModel
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.Instant
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,96 +40,173 @@ fun DiaryEditorPage(
     vm: DiaryVM = koinViewModel()
 ) {
     val navController = LocalNavController.current
-    val diary by vm.getDiaryById(diaryId).collectAsStateWithLifecycle()
+    val toaster = LocalToaster.current
+    val haptics = rememberPremiumHaptics()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val isNew = diaryId == "new"
 
-    // OneUI 风格标题栏必须配套使用 scrollBehavior
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-
-    // 局部编辑状态
+    var selectedAssistantId by remember { mutableStateOf("USER") }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var content by remember { mutableStateOf("") }
-    var initialContent by remember { mutableStateOf<String?>(null) }
+    var isAuthorExpanded by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
-    // 当当日记内容加载完成后初始化
-    LaunchedEffect(diary) {
-        diary?.let {
-            if (initialContent == null) {
+    val filteredDiaries by vm.filteredDiaries.collectAsStateWithLifecycle()
+    val schedules by vm.getSchedulesForDate(selectedDate).collectAsStateWithLifecycle(emptyList())
+
+    LaunchedEffect(diaryId, filteredDiaries) {
+        if (!isNew) {
+            filteredDiaries.find { it.id == diaryId }?.let {
+                selectedAssistantId = it.assistantId
                 content = it.content
-                initialContent = it.content
+                selectedDate = runCatching { LocalDate.parse(it.date) }.getOrDefault(LocalDate.now())
             }
         }
     }
 
-    // 保存并返回逻辑
-    val saveAndBack = {
-        if (content != initialContent && initialContent != null) {
-            vm.updateDiaryContent(diaryId, content)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    val onSave = {
+        if (selectedAssistantId == "USER") {
+            if (content.isNotBlank()) {
+                vm.saveDiary(selectedAssistantId, content, selectedDate.toString())
+                toaster.show(vm.app.getString(R.string.diary_add_success))
+                navController.popBackStack()
+            }
+        } else {
+            vm.generateTodayDiary(selectedAssistantId, toaster)
+            navController.popBackStack()
         }
-        navController.popBackStack()
     }
 
-    // 拦截物理返回键或手势返回（左滑返回）实现自动保存
-    BackHandler {
-        saveAndBack()
-    }
+    BackHandler { navController.popBackStack() }
 
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = stringResource(R.string.diary_edit),
-                scrollBehavior = scrollBehavior, // 修复：传入必填的 scrollBehavior
-                navigationIcon = {
-                    // BackButton 已经支持自定义 onClick 了
-                    BackButton(onClick = { saveAndBack() })
-                },
+                title = stringResource(if (isNew) R.string.diary_add_title else R.string.diary_edit),
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton() },
                 actions = {
-                    IconButton(onClick = { saveAndBack() }) {
+                    IconButton(onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        onSave()
+                    }) {
                         Icon(Icons.Rounded.Check, null)
                     }
                 }
             )
         },
-        // 连接嵌套滚动，使标题栏能随滑动折叠
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime)
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .consumeWindowInsets(padding)
-                .imePadding() // 核心：弹出键盘时自动调整布局高度
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .padding(24.dp)
         ) {
-            Text(
-                text = stringResource(R.string.diary_edit_save_hint),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            Text(stringResource(R.string.diary_select_personnel), style = MaterialTheme.typography.labelMedium)
+            Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                val authorName = if (selectedAssistantId == "USER") stringResource(R.string.diary_personnel_user)
+                                else settings.assistants.find { it.id.toString() == selectedAssistantId }?.name ?: ""
 
-            BasicTextField(
-                value = content,
-                onValueChange = { content = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 400.dp), // 在滚动容器中移除 weight，改为最小高度让内容自然增长
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    lineHeight = 24.sp
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                decorationBox = { innerTextField ->
-                    if (content.isEmpty()) {
-                        Text(
-                            text = "...",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                InputChip(
+                    selected = true,
+                    onClick = { isAuthorExpanded = true },
+                    label = { Text(authorName) },
+                    trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, null) }
+                )
+                DropdownMenu(expanded = isAuthorExpanded, onDismissRequest = { isAuthorExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.diary_personnel_user)) },
+                        onClick = { selectedAssistantId = "USER"; isAuthorExpanded = false }
+                    )
+                    settings.assistants.forEach { assistant ->
+                        DropdownMenuItem(
+                            text = { Text(assistant.name) },
+                            onClick = { selectedAssistantId = assistant.id.toString(); isAuthorExpanded = false }
                         )
                     }
-                    innerTextField()
                 }
-            )
+            }
+
+            Text(stringResource(R.string.diary_select_date), style = MaterialTheme.typography.labelMedium)
+            Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                AssistChip(
+                    onClick = { showDatePicker = true },
+                    label = { Text(selectedDate.toString()) },
+                    leadingIcon = { Icon(Icons.Rounded.CalendarToday, null, modifier = Modifier.size(16.dp)) }
+                )
+            }
+
+            if (showDatePicker) {
+                val datePickerState = rememberDatePickerState(
+                    initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                )
+                DatePickerDialog(
+                    onDismissRequest = { showDatePicker = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            datePickerState.selectedDateMillis?.let {
+                                selectedDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
+                            }
+                            showDatePicker = false
+                        }) { Text(stringResource(R.string.confirm)) }
+                    }
+                ) { DatePicker(state = datePickerState) }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            if (selectedAssistantId == "USER") {
+                Text(stringResource(R.string.diary_write_hint), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                BasicTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface, lineHeight = 24.sp),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { innerTextField ->
+                        if (content.isEmpty()) Text("...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                        innerTextField()
+                    }
+                )
+
+                if (schedules.isNotEmpty()) {
+                    Spacer(Modifier.height(24.dp))
+                    Text(stringResource(R.string.diary_schedule_link), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    schedules.forEach { schedule ->
+                        Card(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                val item = "\n- [${if (schedule.isCompleted) "x" else " "}] ${schedule.title}"
+                                content += item
+                            },
+                            modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = schedule.isCompleted, onCheckedChange = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(schedule.title, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
+            } else {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        stringResource(R.string.discover_page_diary_generate),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { onSave() }
+                    )
+                }
+            }
         }
     }
 }
