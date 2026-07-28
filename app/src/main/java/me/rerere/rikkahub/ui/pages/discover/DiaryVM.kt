@@ -28,6 +28,12 @@ import me.rerere.rikkahub.service.ChatService
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.uuid.Uuid
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.contentOrNull
+import java.time.Instant
 
 class DiaryVM(
     val app: Application,
@@ -45,6 +51,10 @@ class DiaryVM(
 
     val isCalendarMode = MutableStateFlow(true)
     val selectedDate = MutableStateFlow(LocalDate.now())
+
+    // 评论发送状态 (控制 UI 上的发送按钮显示 Loading 图标)
+    private val _isCommenting = MutableStateFlow(false)
+    val isCommenting = _isCommenting.asStateFlow()
 
     val personnelList: StateFlow<List<String>> = settings.map { s ->
         val user = "USER"
@@ -87,65 +97,202 @@ class DiaryVM(
         }
     }
 
+    /**
+     * 添加评论：处理 UI 交互后的核心逻辑
+     */
     fun addComment(diary: AgentDiaryEntity, senderId: String, content: String, toaster: AppToasterState? = null) {
+        if (_isCommenting.value) return
         viewModelScope.launch {
-            if (senderId == "USER") {
-                diaryRepo.insertComment(DiaryCommentEntity(diaryId = diary.id, senderId = "USER", content = content))
-                toaster?.show(app.getString(R.string.diary_comment_success))
-            } else {
-                val s = settingsStore.settingsFlow.value
-                val assistant = s.assistants.find { it.id.toString() == senderId } ?: return@launch
+            _isCommenting.value = true
+            try {
+                if (senderId == "USER") {
+                    // 1. 用户评论：直接入库并反馈 UI
+                    diaryRepo.insertComment(DiaryCommentEntity(diaryId = diary.id, senderId = "USER", content = content))
+                    toaster?.show(app.getString(R.string.diary_comment_success))
 
-                val prompt = DIARY_COMMENT_PROMPT.applyPlaceholders(
-                    "char" to assistant.name,
-                    "user" to (s.displaySetting.userNickname.ifBlank { "User" }),
-                    "diary_content" to diary.content,
-                    "locale" to Locale.getDefault().displayName
-                )
-
-                val lastConvIdStr = assistant.lastConversationId
-                val convId: Uuid? = lastConvIdStr?.let { runCatching { Uuid.parse(it) }.getOrNull() }
-
-                if (convId == null) {
-                    toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
-                    return@launch
+                    // 2. 联动逻辑：如果日记不是用户写的，通知“日记主人”查看并决定是否回复
+                    if (diary.assistantId != "USER") {
+                        triggerAgentReplyFlow(diary, content, toaster)
+                    }
+                } else {
+                    // 3. 智能体评价：发送指令到“日记主人”的会话，请求评价
+                    triggerAgentEvaluationFlow(diary, senderId, toaster)
                 }
-
-                val userNode = UIMessage(
-                    role = MessageRole.USER,
-                    parts = listOf(UIMessagePart.Text("[System Instruction]\n$prompt\nUser's context: $content")),
-                    skipContext = true
-                ).toMessageNode(convId)
-
-                launch {
-                    chatService.getConversationFlow(convId)
-                        .mapNotNull { conv ->
-                            conv.currentMessages.lastOrNull()?.takeIf {
-                                it.role == MessageRole.ASSISTANT && it.skipContext && it.toContentText().isNotBlank()
-                            }
-                        }
-                        .first()
-                        .let { lastMsg ->
-                            diaryRepo.insertComment(DiaryCommentEntity(
-                                diaryId = diary.id,
-                                senderId = senderId,
-                                content = lastMsg.toContentText()
-                            ))
-                            toaster?.show(app.getString(R.string.diary_comment_success))
-                        }
-                }
-
-                chatService.sendMessage(
-                    conversationId = convId,
-                    content = emptyList(),
-                    answer = true,
-                    predefinedUserNode = userNode,
-                    skipContextForResponse = true
-                )
-                toaster?.show(app.getString(R.string.diary_generating_comment))
+            } catch (e: Exception) {
+                e.printStackTrace()
+                toaster?.show(app.getString(R.string.diary_comment_failed), type = ToastType.Error)
+            } finally {
+                _isCommenting.value = false
             }
         }
     }
+
+    /**
+     * 场景：用户评论后，通知日记主人（AI）决定是否回复
+     */
+    private suspend fun triggerAgentReplyFlow(diary: AgentDiaryEntity, userComment: String, toaster: AppToasterState?) {
+        val s = settingsStore.settingsFlow.value
+        // 目标：找到“日记主人”的会话
+        val diaryOwner = s.assistants.find { it.id.toString() == diary.assistantId } ?: return
+        val convId = diaryOwner.lastConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+
+        if (convId == null) {
+            toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
+            return
+        }
+
+        val nickname = s.displaySetting.userNickname.ifBlank { "User" }
+        val prompt = """
+            【系统指令】
+            角色设定：你是 ${diaryOwner.name}。
+            背景：用户 $nickname 刚刚阅读了你在 ${diary.date} 写的日记，并留下了评论：“$userComment”。
+            日记内容如下：
+            ${diary.content}
+
+            任务：请决定是否回复该评论。
+            要求：
+            1. 以 JSON 格式返回结果，包含 "reply" (整数，1表示回复，0表示不回复) 和 "content" (字符串，回复的具体内容)。
+            2. 如果觉得没必要回复，请将 "reply" 设为 0。
+            3. 你的回复应当符合你的性格设定。
+            4. 仅输出 JSON 字符串，不要有其他解释。
+
+            语言：${Locale.getDefault().displayName}
+        """.trimIndent()
+
+        // 执行隐身对话逻辑
+        sendHiddenCommandAndListen(convId, prompt, diaryOwner.id.toString(), diary.id, isJsonDecision = true, toaster)
+    }
+
+    /**
+     * 场景：指定智能体对某篇日记进行评价
+     */
+    private suspend fun triggerAgentEvaluationFlow(diary: AgentDiaryEntity, selectedSenderId: String, toaster: AppToasterState?) {
+        val s = settingsStore.settingsFlow.value
+
+        // 目标会话逻辑修正：
+        // 如果是智能体的日记，发给该智能体本人；如果是用户的日记，发给当前选中的评价人。
+        val targetId = if (diary.assistantId != "USER") diary.assistantId else selectedSenderId
+        val targetAssistant = s.assistants.find { it.id.toString() == targetId } ?: return
+        val convId = targetAssistant.lastConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+
+        if (convId == null) {
+            toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
+            return
+        }
+
+        // 构造评价 Prompt
+        val senderAssistant = s.assistants.find { it.id.toString() == selectedSenderId }
+        val prompt = DIARY_COMMENT_PROMPT.applyPlaceholders(
+            "char" to (senderAssistant?.name ?: "Someone"),
+            "user" to (s.displaySetting.userNickname.ifBlank { "User" }),
+            "diary_content" to diary.content,
+            "locale" to Locale.getDefault().displayName
+        )
+
+        val systemPrompt = "【系统指令】\n$prompt"
+
+        toaster?.show(app.getString(R.string.diary_generating_comment))
+        sendHiddenCommandAndListen(convId, systemPrompt, selectedSenderId, diary.id, isJsonDecision = false, toaster)
+    }
+
+    /**
+     * 核心隐形通讯逻辑
+     */
+    private suspend fun sendHiddenCommandAndListen(
+        convId: Uuid,
+        prompt: String,
+        senderIdToSave: String,
+        diaryId: String,
+        isJsonDecision: Boolean,
+        toaster: AppToasterState?
+    ) {
+        val userNode = UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text(prompt)),
+            skipContext = true // 标记指令消息不在列表显示
+        ).toMessageNode(convId)
+
+        // 1. 预热会话缓存：确保 getConversationFlow 拿到的是 DB 真实数据，
+        //    避免 fallback 用 currentAssistant.id 创建错误占位会话导致归属被改写。
+        //    若 DB 中已无该会话（lastConversationId 失效），直接报错返回，不进入 sendMessage 流程，
+        //    防止 saveConversation 走 insert 分支把错误归属的新会话写入 DB。
+        if (!chatService.ensureConversationLoaded(convId)) {
+            toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
+            return
+        }
+
+        // 2. 开启回复监听
+        val responseJob = viewModelScope.launch {
+            chatService.getConversationFlow(convId)
+                .mapNotNull { conv ->
+                    conv.currentMessages.lastOrNull()?.takeIf {
+                        it.role == MessageRole.ASSISTANT && it.skipContext && it.toContentText().isNotBlank()
+                    }
+                }
+                .first() // 捕捉到第一条有效隐形回复即结束
+                .let { lastMsg ->
+                    val rawText = lastMsg.toContentText()
+
+                    if (isJsonDecision) {
+                        // 逻辑：解析 JSON 并执行条件入库
+                        handleJsonReplyAndInsert(rawText, senderIdToSave, diaryId, toaster)
+                    } else {
+                        // 逻辑：直接评价，全文入库
+                        diaryRepo.insertComment(DiaryCommentEntity(
+                            diaryId = diaryId,
+                            senderId = senderIdToSave,
+                            content = rawText
+                        ))
+                        toaster?.show(app.getString(R.string.diary_comment_success))
+                    }
+                }
+        }
+
+        // 3. 发送指令
+        chatService.sendMessage(
+            conversationId = convId,
+            content = emptyList(),
+            answer = true,
+            predefinedUserNode = userNode,
+            skipContextForResponse = true,   // 标记 AI 的回复也不显示在列表
+            includeSkipContextMessages = true // ✨ 让构造 AI 输入上下文时包含 skipContext=true 的消息（即这条评论指令），否则会被 GenerationHandler 过滤掉
+        )
+
+        responseJob.join()
+    }
+
+    /**
+     * 解析 AI 的决策回复并存入数据库
+     */
+    private suspend fun handleJsonReplyAndInsert(rawText: String, senderId: String, diaryId: String, toaster: AppToasterState?) {
+        try {
+            // 提取 JSON，增强对 Markdown 回复的容错
+            val jsonStr = if (rawText.contains("{")) {
+                rawText.substringAfter("{").substringBeforeLast("}") .let { "{$it}" }
+            } else rawText
+
+            val json = Json.parseToJsonElement(jsonStr).jsonObject
+            val shouldReply = json["reply"]?.jsonPrimitive?.intOrNull == 1
+            val replyContent = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
+
+            if (shouldReply && replyContent.isNotBlank()) {
+                // 核心插入逻辑
+                diaryRepo.insertComment(DiaryCommentEntity(
+                    diaryId = diaryId,
+                    senderId = senderId,
+                    content = replyContent
+                ))
+                toaster?.show(app.getString(R.string.diary_comment_success))
+            } else {
+                toaster?.show(app.getString(R.string.diary_agent_no_reply))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            toaster?.show(app.getString(R.string.diary_agent_no_reply))
+        }
+    }
+
+    // --- 日记基础维护逻辑 ---
 
     fun getSchedulesForDate(date: LocalDate) = flow {
         val start = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
@@ -153,22 +300,12 @@ class DiaryVM(
         emitAll(scheduleDao.getSchedulesForDay(start, end))
     }
 
-    // ✨ 修正：支持传入 ID 以便更新现有日记
     fun saveDiary(id: String? = null, assistantId: String, content: String, date: String) {
         viewModelScope.launch {
             val entity = if (id != null && id != "new") {
-                AgentDiaryEntity(
-                    id = id,
-                    assistantId = assistantId,
-                    content = content,
-                    date = date
-                )
+                AgentDiaryEntity(id = id, assistantId = assistantId, content = content, date = date)
             } else {
-                AgentDiaryEntity(
-                    assistantId = assistantId,
-                    content = content,
-                    date = date
-                )
+                AgentDiaryEntity(assistantId = assistantId, content = content, date = date)
             }
             diaryRepo.insertDiary(entity)
         }
@@ -176,9 +313,7 @@ class DiaryVM(
 
     fun getComments(diaryId: String) = diaryRepo.getCommentsForDiary(diaryId)
 
-    fun getDiaryById(id: String) = flow {
-        emit(diaryRepo.getDiaryById(id))
-    }
+    fun getDiaryById(id: String) = flow { emit(diaryRepo.getDiaryById(id)) }
 
     val isGenerating = WorkManager.getInstance(app)
         .getWorkInfosByTagFlow("diary_gen")
@@ -212,20 +347,14 @@ class DiaryVM(
 
     fun observeTaskResults(toaster: AppToasterState) {
         if (observationJob?.isActive == true) return
-
         observationJob = viewModelScope.launch {
             val workManager = WorkManager.getInstance(app)
-
             if (!isTaskObservationInitialized) {
-                workManager.getWorkInfosByTagFlow("diary_gen")
-                    .firstOrNull()?.forEach {
-                        if (it.state.isFinished) {
-                            notifiedTaskIds.add(it.id)
-                        }
-                    }
+                workManager.getWorkInfosByTagFlow("diary_gen").firstOrNull()?.forEach {
+                    if (it.state.isFinished) notifiedTaskIds.add(it.id)
+                }
                 isTaskObservationInitialized = true
             }
-
             workManager.getWorkInfosByTagFlow("diary_gen").collect { infos ->
                 infos.forEach { info ->
                     if (info.state == WorkInfo.State.SUCCEEDED && !notifiedTaskIds.contains(info.id)) {

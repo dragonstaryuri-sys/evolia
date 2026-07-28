@@ -437,6 +437,20 @@ class ChatService(
         }
     }
 
+    /**
+     * 无副作用地从 DB 预热会话到内存缓存。
+     * 仅当缓存未命中且 DB 中存在该会话时写入缓存，不触发归档、不改变 lastConversationId、不切换 currentAssistant。
+     * 用于后台流程（如 DiaryVM）在调用 sendMessage 前确保缓存中是 DB 真实数据，
+     * 防止 getConversationFlow fallback 用 currentAssistant.id 创建错误占位会话。
+     * @return true 表示缓存已就绪（命中缓存或 DB 加载成功）；false 表示 DB 中不存在该会话，调用方应中止后续操作。
+     */
+    suspend fun ensureConversationLoaded(conversationId: Uuid): Boolean {
+        if (conversations.containsKey(conversationId)) return true
+        val fromDb = conversationRepo.getConversationById(conversationId) ?: return false
+        conversations.computeIfAbsent(conversationId) { MutableStateFlow(fromDb) }
+        return true
+    }
+
     fun getGenerationJobStateFlow(conversationId: Uuid): Flow<Job?> = generationJobs.map { it[conversationId] }
 
     fun getConversationJobs(): Flow<Map<Uuid, Job?>> = generationJobs
@@ -650,7 +664,8 @@ class ChatService(
         answer: Boolean = true,
         isTemporaryChat: Boolean = false,
         predefinedUserNode: MessageNode? = null,
-        skipContextForResponse: Boolean = false // ✨ 新增：支持回复消息隐身
+        skipContextForResponse: Boolean = false,
+        includeSkipContextMessages: Boolean = false // ✨ 新增：支持回复消息包含隐藏上下文
     ) {
         if (isTemporaryChat) {
             temporaryConversations.add(conversationId)
@@ -698,7 +713,8 @@ class ChatService(
                 try {
                     handleMessageComplete(
                         conversationId = conversationId,
-                        skipContextForResponse = skipContextForResponse // ✨ 传入隐身标记
+                        skipContextForResponse = skipContextForResponse,
+                        includeSkipContextMessages = includeSkipContextMessages // ✨ 传递标记
                     )
                     _generationDoneFlow.emit(conversationId)
                 } catch (e: Exception) {
@@ -1478,9 +1494,18 @@ class ChatService(
             updateConversation(id) { conversation }; return
         }
         updateConversation(id) { conversation }
-        if (conversationRepo.getConversationById(id) == null) conversationRepo.insertConversation(conversation) else conversationRepo.updateConversation(
-            conversation
-        )
+        val existing = conversationRepo.getConversationById(id)
+        if (existing == null) {
+            conversationRepo.insertConversation(conversation)
+        } else {
+            // 防御：禁止通过 saveConversation 改写会话归属智能体。
+            // 历史 bug：getConversationFlow 缓存未命中时用 currentAssistant.id 创建占位 Conversation，
+            // 后续 saveConversation 会用错误 assistantId 覆盖 DB。这里以 DB 既有归属为准，避免被错误数据污染。
+            val safe = if (existing.assistantId != conversation.assistantId) {
+                conversation.copy(assistantId = existing.assistantId)
+            } else conversation
+            conversationRepo.updateConversation(safe)
+        }
     }
 
     fun getAiTypingFlow(id: Uuid): Flow<Boolean> = _isAiTypingMap.map { it[id] ?: false }

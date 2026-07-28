@@ -1850,5 +1850,7 @@
   <string name="diary_delete_confirm_title">Confirm Deletion</string>
   <string name="diary_delete_confirm_msg">Are you sure you want to delete this diary entry? This action cannot be undone.</string>
   <string name="diary_copied">Copied to clipboard</string>
+  <string name="diary_comment_failed">Failed to generate comment</string>
+  <string name="diary_agent_no_reply">He/She doesn\'t want to comment…</string>
 
 </resources>
