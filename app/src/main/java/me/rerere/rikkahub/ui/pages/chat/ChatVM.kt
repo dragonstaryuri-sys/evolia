@@ -379,7 +379,13 @@ class ChatVM(
                 }
             } else content
 
-            chatService.sendMessage(targetId, processedContent, answer, isTemporaryChat)
+            chatService.sendMessage(
+                conversationId = targetId,
+                content = processedContent,
+                answer = answer,
+                isTemporaryChat = isTemporaryChat,
+                includeSkipContextMessages = true
+            )
             // 注入新发送的节点到窗口
             conversation.value.messageNodes.lastOrNull()?.let {
                 paginationManager?.injectNewNode(it)
@@ -577,7 +583,14 @@ class ChatVM(
                 initPaginationManager(targetConv.assistantId)
             }
 
-            chatService.regenerateAtMessage(targetConv.id, message, regenerateAssistantMsg, forceWipe, requirement = requirement)
+            chatService.regenerateAtMessage(
+                conversationId = targetConv.id,
+                message = message,
+                regenerateAssistantMsg = regenerateAssistantMsg,
+                forceWipe = forceWipe,
+                requirement = requirement,
+                includeSkipContextMessages = true // ✨ 设置为 true
+            )
             paginationManager?.loadInitial() // 重置窗口
         }
     }

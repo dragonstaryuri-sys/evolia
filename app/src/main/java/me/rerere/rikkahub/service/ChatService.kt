@@ -747,7 +747,8 @@ class ChatService(
         message: UIMessage,
         regenerateAssistantMsg: Boolean = true,
         forceWipe: Boolean = false,
-        requirement: String? = null
+        requirement: String? = null,
+        includeSkipContextMessages: Boolean = false
     ) {
         // 取消旧任务
         val oldJob = _generationJobs.value[conversationId]
@@ -840,7 +841,8 @@ class ChatService(
                         conversationId = conversationId,
                         messageRange = messageRange,
                         requirement = requirement,
-                        targetMessageId = targetMsgId // ✨ 传入锁定 ID
+                        targetMessageId = targetMsgId,
+                        includeSkipContextMessages = includeSkipContextMessages
                     )
                     _generationDoneFlow.emit(conversationId)
                 } catch (e: Exception) {
