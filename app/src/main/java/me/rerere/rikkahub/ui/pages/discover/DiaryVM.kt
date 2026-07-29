@@ -420,7 +420,13 @@ class DiaryVM(
             workManager.getWorkInfosByTagFlow("diary_gen").collect { infos ->
                 infos.forEach { info ->
                     if (info.state == WorkInfo.State.SUCCEEDED && !notifiedTaskIds.contains(info.id)) {
-                        toaster.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
+                        val isSkipped = info.outputData.getBoolean("skipped", false)
+                        val reason = info.outputData.getString("reason")
+                        if (isSkipped && reason == "already_exists") {
+                            toaster.show(app.getString(R.string.diary_no_new_messages), type = ToastType.Info)
+                        } else {
+                            toaster.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
+                        }
                         notifiedTaskIds.add(info.id)
                     } else if (info.state.isFinished) {
                         notifiedTaskIds.add(info.id)

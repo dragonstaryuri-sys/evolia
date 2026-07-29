@@ -92,7 +92,6 @@ class DiaryWorker(
                 }
             }
 
-            // 【重点修复】：确保调用 Repository 中新增的获取最后日记方法
             val lastDiary = diaryRepo.getLastDiaryOfAssistant(assistant.id.toString())
             val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
                 .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
@@ -211,8 +210,11 @@ class DiaryWorker(
                 if (!isManual) {
                     showSuccessNotification(assistant.name, assistant.id.toString())
                 }
+                Result.success()
+            } else {
+                // 如果没有生成任何内容，也标记为跳过
+                Result.success(workDataOf("skipped" to true, "reason" to "no_content"))
             }
-            Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Diary generation failed", e)
             if (isManual) {
