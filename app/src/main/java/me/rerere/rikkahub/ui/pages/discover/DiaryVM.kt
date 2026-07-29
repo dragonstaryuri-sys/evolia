@@ -162,12 +162,13 @@ class DiaryVM(
         }
 
         val nickname = s.displaySetting.userNickname.ifBlank { "User" }
+        val truncatedContent = diary.content.take(150).let { if (diary.content.length > 150) "$it..." else it }
         val prompt = """
             【系统指令】
             角色设定：你是 ${diaryOwner.name}。
             背景：用户 $nickname 刚刚阅读了你在 ${diary.date} 写的日记，并留下了评论：“$userComment”。
             日记内容如下：
-            ${diary.content}
+            $truncatedContent
 
             任务：请决定是否回复该评论。
             要求：
@@ -219,7 +220,7 @@ class DiaryVM(
         val prompt = DIARY_COMMENT_PROMPT.applyPlaceholders(
             "char" to (senderAssistant?.name ?: "Someone"),
             "user" to (s.displaySetting.userNickname.ifBlank { "User" }),
-            "diary_content" to diary.content,
+            "diary_content" to diary.content.take(150).let { if (diary.content.length > 150) "$it..." else it },
             "locale" to Locale.getDefault().displayName
         )
 
