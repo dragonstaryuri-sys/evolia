@@ -56,6 +56,11 @@ class DiaryRepository(
         return agentDiaryDao.getDiariesByDateAndAssistants(date, assistantIds)
     }
 
+    // --- Search ---
+    fun searchDiaries(query: String): Flow<List<AgentDiaryEntity>> {
+        return agentDiaryDao.searchDiaries(query)
+    }
+
     // --- Comment Operations ---
     suspend fun insertComment(comment: DiaryCommentEntity) {
         agentDiaryDao.insertComment(comment)

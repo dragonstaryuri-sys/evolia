@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -51,6 +52,17 @@ class DiaryVM(
 
     val isCalendarMode = MutableStateFlow(true)
     val selectedDate = MutableStateFlow(LocalDate.now())
+
+    // 搜索逻辑
+    val searchQuery = MutableStateFlow("")
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
+    val searchResults: StateFlow<List<AgentDiaryEntity>> = searchQuery
+        .debounce(300)
+        .flatMapLatest { query ->
+            if (query.isBlank()) flowOf(emptyList())
+            else diaryRepo.searchDiaries(query)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // 评论发送状态 (控制 UI 上的发送按钮显示 Loading 图标)
     private val _isCommenting = MutableStateFlow(false)

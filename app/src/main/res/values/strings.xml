@@ -1853,5 +1853,9 @@
   <string name="diary_comment_failed">Failed to generate comment</string>
   <string name="diary_agent_no_reply">He/She doesn\'t want to comment…</string>
   <string name="diary_comment_reply_prefix">Replying to</string>
+  <string name="search">Search</string>
+  <string name="diary_search_hint">Enter content to search diaries...</string>
+  <string name="diary_search_no_result">No relevant diaries found</string>
+
 
 </resources>

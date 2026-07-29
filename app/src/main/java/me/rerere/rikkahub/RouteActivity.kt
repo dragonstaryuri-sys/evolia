@@ -95,6 +95,7 @@ import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryEditorPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryDetailPage
+import me.rerere.rikkahub.ui.pages.discover.DiarySearchPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoritesPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoriteDetailPage
 import me.rerere.rikkahub.discover.ui.ScheduleScreen
@@ -425,6 +426,9 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.DiaryDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.DiaryDetail>()
                         DiaryDetailPage(diaryId = route.diaryId)
+                    }
+                    composable<Screen.DiarySearch> {
+                        DiarySearchPage()
                     }
                     composable<Screen.Favorites> {
                         FavoritesPage()

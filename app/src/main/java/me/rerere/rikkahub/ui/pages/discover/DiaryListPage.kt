@@ -95,6 +95,14 @@ fun DiaryListPage(
                         scrollBehavior = scrollBehavior,
                         navigationIcon = { BackButton() },
                         actions = {
+                            // 搜索按钮
+                            IconButton(onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                navController.navigate(Screen.DiarySearch)
+                            }) {
+                                Icon(Icons.Rounded.Search, null)
+                            }
+                            // 添加按钮
                             IconButton(onClick = {
                                 haptics.perform(HapticPattern.Pop)
                                 navController.navigate(Screen.DiaryEditor(diaryId = "new"))
@@ -450,7 +458,7 @@ private fun MonthGrid(
 }
 
 @Composable
-private fun DiarySummaryCard(
+fun DiarySummaryCard(
     diary: AgentDiaryEntity,
     onClick: () -> Unit,
     onDelete: () -> Unit
@@ -538,7 +546,7 @@ private fun DiarySummaryCard(
 }
 
 @Composable
-private fun EmptyState(msg: String) {
+fun EmptyState(msg: String) {
     Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(msg, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }

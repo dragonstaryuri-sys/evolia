@@ -44,6 +44,10 @@ interface AgentDiaryDAO {
     @Query("SELECT * FROM AgentDiaryEntity WHERE date = :date AND assistant_id IN (:assistantIds) ORDER BY created_at DESC")
     fun getDiariesByDateAndAssistants(date: String, assistantIds: List<String>): Flow<List<AgentDiaryEntity>>
 
+    // --- 搜索需求 ---
+    @Query("SELECT * FROM AgentDiaryEntity WHERE content LIKE '%' || :query || '%' ORDER BY date DESC")
+    fun searchDiaries(query: String): Flow<List<AgentDiaryEntity>>
+
     // --- 升级需求：评论功能 ---
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertComment(comment: DiaryCommentEntity)
