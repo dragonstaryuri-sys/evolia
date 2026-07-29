@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -533,13 +534,12 @@ fun DiarySummaryCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            val summary = remember(diary.content) {
-                if (diary.content.length > 150) diary.content.take(150) + "..." else diary.content
-            }
             MarkdownBlock(
-                content = summary,
+                content = diary.content,
                 style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                modifier = Modifier.heightIn(max = 120.dp)
+                modifier = Modifier
+                    .heightIn(max = 120.dp)
+                    .clipToBounds()
             )
         }
     }

@@ -364,7 +364,7 @@ fun MarkdownBlock(
     ) {
         ProvideTextStyle(style) {
             Column(
-                modifier = modifier.padding(start = 4.dp)
+                modifier = modifier.padding(start = 4.dp, bottom = 8.dp)
             ) {
                 astTree.children.fastForEach { child ->
                     MarkdownNode(
@@ -895,8 +895,8 @@ private fun Paragraph(
     val rpStyleRules = LocalSettings.current.displaySetting.rpStyleRules
     FlowRow(
         modifier = modifier.then(
-            if (node.nextSibling() != null) Modifier.padding(bottom = 4.dp)
-            else Modifier
+            if (node.nextSibling() != null) Modifier.padding(bottom = 6.dp)
+            else Modifier.padding(bottom = 2.dp)
         )
     ) {
         val annotatedString = remember(content, rpStyleRules) {
