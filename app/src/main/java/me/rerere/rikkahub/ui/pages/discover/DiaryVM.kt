@@ -106,17 +106,20 @@ class DiaryVM(
             _isCommenting.value = true
             try {
                 if (senderId == "USER") {
-                    // 1. 用户评论：直接入库并反馈 UI
-                    diaryRepo.insertComment(DiaryCommentEntity(diaryId = diary.id, senderId = "USER", content = content))
+                    // 1. 用户评论：先创建 Entity（拿到稳定 ID），再入库
+                    val userComment = DiaryCommentEntity(diaryId = diary.id, senderId = "USER", content = content)
+                    diaryRepo.insertComment(userComment)
                     toaster?.show(app.getString(R.string.diary_comment_success))
 
-                    // 2. 联动逻辑：如果日记不是用户写的，通知“日记主人”查看并决定是否回复
+                    // 2. 联动逻辑：如果日记不是用户写的，通知"日记主人"查看并决定是否回复。
+                    //    将 userComment.id 作为 replyToCommentId 传入，让 AI 回复带上"回复给谁"的关联。
                     if (diary.assistantId != "USER") {
-                        triggerAgentReplyFlow(diary, content, toaster)
+                        triggerAgentReplyFlow(diary, content, replyToCommentId = userComment.id, toaster)
                     }
                 } else {
-                    // 3. 智能体评价：发送指令到“日记主人”的会话，请求评价
-                    triggerAgentEvaluationFlow(diary, senderId, toaster)
+                    // 3. 智能体评价：发送指令到"日记主人"的会话，请求评价。
+                    //    评价针对的是日记本身，不回复具体评论，replyToCommentId = null。
+                    triggerAgentEvaluationFlow(diary, senderId, replyToCommentId = null, toaster)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -130,7 +133,12 @@ class DiaryVM(
     /**
      * 场景：用户评论后，通知日记主人（AI）决定是否回复
      */
-    private suspend fun triggerAgentReplyFlow(diary: AgentDiaryEntity, userComment: String, toaster: AppToasterState?) {
+    private suspend fun triggerAgentReplyFlow(
+        diary: AgentDiaryEntity,
+        userComment: String,
+        replyToCommentId: String,
+        toaster: AppToasterState?
+    ) {
         val s = settingsStore.settingsFlow.value
         // 目标：找到“日记主人”的会话
         val diaryOwner = s.assistants.find { it.id.toString() == diary.assistantId } ?: return
@@ -160,13 +168,27 @@ class DiaryVM(
         """.trimIndent()
 
         // 执行隐身对话逻辑
-        sendHiddenCommandAndListen(convId, prompt, diaryOwner.id.toString(), diary.id, isJsonDecision = true, toaster)
+        sendHiddenCommandAndListen(
+            convId = convId,
+            prompt = prompt,
+            senderIdToSave = diaryOwner.id.toString(),
+            diaryId = diary.id,
+            isJsonDecision = true,
+            replyToCommentId = replyToCommentId,
+            toaster = toaster
+        )
     }
 
     /**
      * 场景：指定智能体对某篇日记进行评价
+     * @param replyToCommentId 针对具体评论的回复 ID；评价针对日记本身时传 null
      */
-    private suspend fun triggerAgentEvaluationFlow(diary: AgentDiaryEntity, selectedSenderId: String, toaster: AppToasterState?) {
+    private suspend fun triggerAgentEvaluationFlow(
+        diary: AgentDiaryEntity,
+        selectedSenderId: String,
+        replyToCommentId: String?,
+        toaster: AppToasterState?
+    ) {
         val s = settingsStore.settingsFlow.value
 
         // 目标会话逻辑修正：
@@ -192,11 +214,20 @@ class DiaryVM(
         val systemPrompt = "【系统指令】\n$prompt"
 
         toaster?.show(app.getString(R.string.diary_generating_comment))
-        sendHiddenCommandAndListen(convId, systemPrompt, selectedSenderId, diary.id, isJsonDecision = false, toaster)
+        sendHiddenCommandAndListen(
+            convId = convId,
+            prompt = systemPrompt,
+            senderIdToSave = selectedSenderId,
+            diaryId = diary.id,
+            isJsonDecision = false,
+            replyToCommentId = replyToCommentId,
+            toaster = toaster
+        )
     }
 
     /**
      * 核心隐形通讯逻辑
+     * @param replyToCommentId 关联的目标评论 ID；非回复评论时传 null
      */
     private suspend fun sendHiddenCommandAndListen(
         convId: Uuid,
@@ -204,6 +235,7 @@ class DiaryVM(
         senderIdToSave: String,
         diaryId: String,
         isJsonDecision: Boolean,
+        replyToCommentId: String?,
         toaster: AppToasterState?
     ) {
         val userNode = UIMessage(
@@ -221,31 +253,34 @@ class DiaryVM(
             return
         }
 
-        // 2. 开启回复监听
+        // 2. 开启回复监听：先等到生成完成信号 generationDoneFlow，再取最终完整消息。
+        //    之前用 .first() 会在流式生成的第一个非空 token 到达就截走，得到半截 JSON 解析失败显示"不想评论"。
+        //    现在必须等 generationDoneFlow 确认当次生成 fully finished，此时会话中的 skipContext AI 回复是完整稳定的。
         val responseJob = viewModelScope.launch {
-            chatService.getConversationFlow(convId)
-                .mapNotNull { conv ->
-                    conv.currentMessages.lastOrNull()?.takeIf {
-                        it.role == MessageRole.ASSISTANT && it.skipContext && it.toContentText().isNotBlank()
-                    }
-                }
-                .first() // 捕捉到第一条有效隐形回复即结束
-                .let { lastMsg ->
-                    val rawText = lastMsg.toContentText()
+            // 2a. 等待生成完成（generationDoneFlow 会在 handleMessageComplete onSuccess/onFailure 后 emit）
+            chatService.generationDoneFlow.first { it == convId }
 
-                    if (isJsonDecision) {
-                        // 逻辑：解析 JSON 并执行条件入库
-                        handleJsonReplyAndInsert(rawText, senderIdToSave, diaryId, toaster)
-                    } else {
-                        // 逻辑：直接评价，全文入库
-                        diaryRepo.insertComment(DiaryCommentEntity(
-                            diaryId = diaryId,
-                            senderId = senderIdToSave,
-                            content = rawText
-                        ))
-                        toaster?.show(app.getString(R.string.diary_comment_success))
-                    }
-                }
+            // 2b. 生成完成后再从最新会话中找到当次回复（最后一条 skipContext ASSISTANT 消息）
+            val finalConv = chatService.getConversationFlow(convId).value
+            val lastMsg = finalConv.currentMessages.lastOrNull {
+                it.role == MessageRole.ASSISTANT && it.skipContext && it.toContentText().isNotBlank()
+            } ?: return@launch
+
+            val rawText = lastMsg.toContentText()
+
+            if (isJsonDecision) {
+                // 逻辑：解析 JSON 并执行条件入库（带 replyToCommentId 关联）
+                handleJsonReplyAndInsert(rawText, senderIdToSave, diaryId, replyToCommentId, toaster)
+            } else {
+                // 逻辑：直接评价，全文入库
+                diaryRepo.insertComment(DiaryCommentEntity(
+                    diaryId = diaryId,
+                    senderId = senderIdToSave,
+                    replyToId = replyToCommentId,
+                    content = rawText
+                ))
+                toaster?.show(app.getString(R.string.diary_comment_success))
+            }
         }
 
         // 3. 发送指令
@@ -263,8 +298,15 @@ class DiaryVM(
 
     /**
      * 解析 AI 的决策回复并存入数据库
+     * @param replyToCommentId 回复目标的评论 ID；非回复时传 null
      */
-    private suspend fun handleJsonReplyAndInsert(rawText: String, senderId: String, diaryId: String, toaster: AppToasterState?) {
+    private suspend fun handleJsonReplyAndInsert(
+        rawText: String,
+        senderId: String,
+        diaryId: String,
+        replyToCommentId: String?,
+        toaster: AppToasterState?
+    ) {
         try {
             // 提取 JSON，增强对 Markdown 回复的容错
             val jsonStr = if (rawText.contains("{")) {
@@ -276,10 +318,11 @@ class DiaryVM(
             val replyContent = json["content"]?.jsonPrimitive?.contentOrNull ?: ""
 
             if (shouldReply && replyContent.isNotBlank()) {
-                // 核心插入逻辑
+                // 核心插入逻辑：带上 replyToId 关联目标评论，UI 可据此显示"回复 @XXX"
                 diaryRepo.insertComment(DiaryCommentEntity(
                     diaryId = diaryId,
                     senderId = senderId,
+                    replyToId = replyToCommentId,
                     content = replyContent
                 ))
                 toaster?.show(app.getString(R.string.diary_comment_success))

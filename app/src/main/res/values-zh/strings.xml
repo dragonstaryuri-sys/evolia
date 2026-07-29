@@ -1813,4 +1813,5 @@
   <string name="diary_copied">已复制到剪贴板</string>
   <string name="diary_comment_failed">评论生成失败</string>
   <string name="diary_agent_no_reply">TA不想评论...</string>
+  <string name="diary_comment_reply_prefix">回复</string>
 </resources>

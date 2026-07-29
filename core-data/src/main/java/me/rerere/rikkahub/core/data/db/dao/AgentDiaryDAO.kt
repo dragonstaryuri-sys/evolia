@@ -51,6 +51,9 @@ interface AgentDiaryDAO {
     @Query("SELECT * FROM DiaryCommentEntity WHERE diary_id = :diaryId ORDER BY created_at ASC")
     fun getCommentsForDiary(diaryId: String): Flow<List<DiaryCommentEntity>>
 
+    @Query("SELECT * FROM DiaryCommentEntity WHERE id = :commentId LIMIT 1")
+    suspend fun getCommentById(commentId: String): DiaryCommentEntity?
+
     @Query("DELETE FROM DiaryCommentEntity WHERE id = :commentId")
     suspend fun deleteComment(commentId: String)
 }

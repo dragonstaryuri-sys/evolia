@@ -65,6 +65,10 @@ class DiaryRepository(
         return agentDiaryDao.getCommentsForDiary(diaryId)
     }
 
+    suspend fun getCommentById(commentId: String): DiaryCommentEntity? {
+        return agentDiaryDao.getCommentById(commentId)
+    }
+
     suspend fun deleteComment(commentId: String) {
         agentDiaryDao.deleteComment(commentId)
     }

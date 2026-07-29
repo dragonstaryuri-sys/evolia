@@ -99,7 +99,7 @@ fun DiaryDetailPage(
                                 )
                             }
                             items(comments) { comment ->
-                                CommentItemDetailed(comment, settings)
+                                CommentItemDetailed(comment, comments, settings)
                             }
                         }
                     }
@@ -140,7 +140,11 @@ private fun DetailAuthorHeader(diary: AgentDiaryEntity, settings: me.rerere.rikk
 }
 
 @Composable
-private fun CommentItemDetailed(comment: DiaryCommentEntity, settings: me.rerere.rikkahub.data.datastore.Settings) {
+private fun CommentItemDetailed(
+    comment: DiaryCommentEntity,
+    allComments: List<DiaryCommentEntity>,
+    settings: me.rerere.rikkahub.data.datastore.Settings
+) {
     val defaultUserStr = stringResource(R.string.diary_filter_user)
     val name = if (comment.senderId == "USER") {
         if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
@@ -149,11 +153,44 @@ private fun CommentItemDetailed(comment: DiaryCommentEntity, settings: me.rerere
     val avatar = if (comment.senderId == "USER") settings.displaySetting.userAvatar
                  else settings.assistants.find { it.id.toString() == comment.senderId }?.avatar ?: me.rerere.rikkahub.core.data.model.Avatar.Dummy
 
+    // 解析回复目标：通过 replyToId 找到被回复人的 senderId，再解析成显示名
+    val replyToName = comment.replyToId?.let { targetId ->
+        val targetComment = allComments.firstOrNull { it.id == targetId }
+        val targetSenderId = targetComment?.senderId ?: return@let null
+        if (targetSenderId == "USER") {
+            if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
+        } else {
+            settings.assistants.find { it.id.toString() == targetSenderId }?.name ?: "Unknown"
+        }
+    }
+
     Row(modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
         UIAvatar(name = name, value = avatar, modifier = Modifier.size(32.dp))
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    name,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (replyToName != null) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.diary_comment_reply_prefix),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text(
+                        text = "@$replyToName",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
             Text(comment.content, style = MaterialTheme.typography.bodyMedium)
         }
     }

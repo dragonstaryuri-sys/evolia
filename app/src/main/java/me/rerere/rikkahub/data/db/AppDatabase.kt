@@ -39,7 +39,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = true
 )
 @TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
@@ -65,6 +65,36 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 22->23 迁移：为日记评论表添加回复目标字段（重建表以包含自引用外键）")
+                // SQLite 的 ALTER TABLE ADD COLUMN 无法添加外键约束，
+                // 而 Room 启动时会校验 schema 与 entity 定义一致（含外键），
+                // 因此必须重建表才能带上 DiaryCommentEntity 自引用外键。
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `DiaryCommentEntity_new` (
+                        `id` TEXT NOT NULL,
+                        `diary_id` TEXT NOT NULL,
+                        `sender_id` TEXT NOT NULL,
+                        `reply_to_id` TEXT,
+                        `content` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`diary_id`) REFERENCES `AgentDiaryEntity`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`reply_to_id`) REFERENCES `DiaryCommentEntity`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO `DiaryCommentEntity_new` (`id`, `diary_id`, `sender_id`, `content`, `created_at`)
+                    SELECT `id`, `diary_id`, `sender_id`, `content`, `created_at` FROM `DiaryCommentEntity`
+                """.trimIndent())
+                db.execSQL("DROP TABLE `DiaryCommentEntity`")
+                db.execSQL("ALTER TABLE `DiaryCommentEntity_new` RENAME TO `DiaryCommentEntity`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_DiaryCommentEntity_diary_id` ON `DiaryCommentEntity` (`diary_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_DiaryCommentEntity_reply_to_id` ON `DiaryCommentEntity` (`reply_to_id`)")
+            }
+        }
 
         val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {

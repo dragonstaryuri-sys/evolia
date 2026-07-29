@@ -15,9 +15,15 @@ import kotlin.uuid.Uuid
             parentColumns = ["id"],
             childColumns = ["diary_id"],
             onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = DiaryCommentEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["reply_to_id"],
+            onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index(value = ["diary_id"])]
+    indices = [Index(value = ["diary_id"]), Index(value = ["reply_to_id"])]
 )
 data class DiaryCommentEntity(
     @PrimaryKey
@@ -26,6 +32,8 @@ data class DiaryCommentEntity(
     val diaryId: String,
     @ColumnInfo(name = "sender_id")
     val senderId: String, // "USER" or Assistant ID
+    @ColumnInfo(name = "reply_to_id")
+    val replyToId: String? = null, // 回复的目标评论 ID，null 表示直接评论日记而非回复他人
     @ColumnInfo(name = "content")
     val content: String,
     @ColumnInfo(name = "created_at")
