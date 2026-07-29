@@ -368,6 +368,12 @@ class DiaryVM(
 
     fun getComments(diaryId: String) = diaryRepo.getCommentsForDiary(diaryId)
 
+    fun deleteComment(commentId: String) {
+        viewModelScope.launch {
+            diaryRepo.deleteComment(commentId)
+        }
+    }
+
     fun getDiaryById(id: String) = flow { emit(diaryRepo.getDiaryById(id)) }
 
     val isGenerating = WorkManager.getInstance(app)

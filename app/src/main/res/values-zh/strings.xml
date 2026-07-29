@@ -1817,5 +1817,6 @@
   <string name="search">搜索</string>
   <string name="diary_search_hint">输入内容搜索日记...</string>
   <string name="diary_search_no_result">没有找到相关的日记</string>
+  <string name="diary_comment_delete_confirm">确定删除该条评论吗？</string>
 
 </resources>

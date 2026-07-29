@@ -98,8 +98,13 @@ fun DiaryDetailPage(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            items(comments) { comment ->
-                                CommentItemDetailed(comment, comments, settings)
+                            items(comments, key = { it.id }) { comment ->
+                                CommentItemDetailed(
+                                    comment = comment,
+                                    allComments = comments,
+                                    settings = settings,
+                                    onDelete = { vm.deleteComment(comment.id) }
+                                )
                             }
                         }
                     }
@@ -143,9 +148,13 @@ private fun DetailAuthorHeader(diary: AgentDiaryEntity, settings: me.rerere.rikk
 private fun CommentItemDetailed(
     comment: DiaryCommentEntity,
     allComments: List<DiaryCommentEntity>,
-    settings: me.rerere.rikkahub.data.datastore.Settings
+    settings: me.rerere.rikkahub.data.datastore.Settings,
+    onDelete: () -> Unit
 ) {
+    val haptics = rememberPremiumHaptics()
     val defaultUserStr = stringResource(R.string.diary_filter_user)
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     val name = if (comment.senderId == "USER") {
         if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
     } else settings.assistants.find { it.id.toString() == comment.senderId }?.name ?: "Unknown"
@@ -164,10 +173,27 @@ private fun CommentItemDetailed(
         }
     }
 
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.confirm_delete)) },
+            text = { Text(stringResource(R.string.diary_comment_delete_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete()
+                    showDeleteConfirm = false
+                }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
     Row(modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
         UIAvatar(name = name, value = avatar, modifier = Modifier.size(32.dp))
         Spacer(Modifier.width(12.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     name,
@@ -192,6 +218,24 @@ private fun CommentItemDetailed(
                 }
             }
             Text(comment.content, style = MaterialTheme.typography.bodyMedium)
+        }
+
+        // 仅允许用户删除自己的评论
+        if (comment.senderId == "USER") {
+            IconButton(
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    showDeleteConfirm = true
+                },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                )
+            }
         }
     }
 }
