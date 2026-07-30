@@ -102,7 +102,9 @@ fun DiaryEditorPage(
                 }
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+        modifier = Modifier
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .imePadding()
     ) { padding ->
         Column(
             modifier = Modifier

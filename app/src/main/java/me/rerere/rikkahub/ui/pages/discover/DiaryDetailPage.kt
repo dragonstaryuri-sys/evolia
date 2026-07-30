@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.discover
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
@@ -59,7 +60,9 @@ fun DiaryDetailPage(
                 }
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+        modifier = Modifier
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .imePadding()
     ) { padding ->
         if (diaryState == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -68,14 +71,25 @@ fun DiaryDetailPage(
         } else {
             val diary = diaryState!!
             var replyingTo by remember { mutableStateOf<DiaryCommentEntity?>(null) }
+            val listState = rememberLazyListState()
+
+            // 回复模式或评论列表变化时，自动滚到底部，确保输入区域与目标评论可见
+            LaunchedEffect(replyingTo, comments.size) {
+                if (replyingTo != null || comments.isNotEmpty()) {
+                    // LazyColumn 目前只有 2 个 item（日记正文 + 评论区），0=正文 1=评论
+                    // 滚动到评论区 item，然后 animate 到末尾
+                    runCatching { listState.animateScrollToItem(1) }
+                }
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .imePadding()
             ) {
                 Box(modifier = Modifier.weight(1f)) {
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(24.dp),
                         verticalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
