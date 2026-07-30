@@ -47,6 +47,10 @@ class DiaryRepository(
         return agentDiaryDao.getDiariesByAssistants(assistantIds)
     }
 
+    suspend fun getDiariesByAssistantsPaged(assistantIds: List<String>, limit: Int, offset: Int): List<AgentDiaryEntity> {
+        return agentDiaryDao.getDiariesByAssistantsPaged(assistantIds, limit, offset)
+    }
+
     // --- Calendar Support ---
     fun getDatesWithDiaries(assistantIds: List<String>): Flow<List<String>> {
         return agentDiaryDao.getDatesWithDiaries(assistantIds)

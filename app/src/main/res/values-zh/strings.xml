@@ -1794,6 +1794,7 @@
   <!-- 日记功能升级 -->
   <string name="diary_view_list">列表</string>
   <string name="diary_view_calendar">日历</string>
+  <string name="diary_load_more">上滑加载更多</string>
   <string name="diary_filter_all">全员</string>
   <string name="diary_filter_user">我</string>
   <string name="diary_generating_comment">正在请求智能体发表评论…</string>

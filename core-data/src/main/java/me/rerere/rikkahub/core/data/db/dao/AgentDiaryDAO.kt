@@ -37,6 +37,9 @@ interface AgentDiaryDAO {
     @Query("SELECT * FROM AgentDiaryEntity WHERE assistant_id IN (:assistantIds) ORDER BY date DESC")
     fun getDiariesByAssistants(assistantIds: List<String>): Flow<List<AgentDiaryEntity>>
 
+    @Query("SELECT * FROM AgentDiaryEntity WHERE assistant_id IN (:assistantIds) ORDER BY date DESC LIMIT :limit OFFSET :offset")
+    suspend fun getDiariesByAssistantsPaged(assistantIds: List<String>, limit: Int, offset: Int): List<AgentDiaryEntity>
+
     // --- 升级需求：日历红点 (获取有日记的所有日期) ---
     @Query("SELECT DISTINCT date FROM AgentDiaryEntity WHERE assistant_id IN (:assistantIds)")
     fun getDatesWithDiaries(assistantIds: List<String>): Flow<List<String>>

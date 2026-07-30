@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
@@ -85,6 +86,60 @@ class DiaryVM(
     val filteredDiaries: StateFlow<List<AgentDiaryEntity>> = effectiveFilterIds.flatMapLatest { ids ->
         diaryRepo.getDiariesByAssistants(ids)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- 分页状态 ---
+    private val _pageSize = 10
+    private val _currentPage = MutableStateFlow(0)
+    private val _hasMore = MutableStateFlow(true)
+    private val _isLoadingMore = MutableStateFlow(false)
+    private val _diaryList = MutableStateFlow<List<AgentDiaryEntity>>(emptyList())
+    val diaryList: StateFlow<List<AgentDiaryEntity>> = _diaryList.asStateFlow()
+    val hasMore: StateFlow<Boolean> = _hasMore.asStateFlow()
+    val isLoadingMore: StateFlow<Boolean> = _isLoadingMore.asStateFlow()
+
+    private var paginationJob: kotlinx.coroutines.Job? = null
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            effectiveFilterIds.collect { ids ->
+                // 取消任何进行中的加载任务，避免过滤切换时的竞态
+                paginationJob?.cancel()
+                _currentPage.value = 0
+                _hasMore.value = true
+                _isLoadingMore.value = false
+                _diaryList.value = emptyList()
+                loadFirstPage(ids)
+            }
+        }
+    }
+
+    private suspend fun loadFirstPage(ids: List<String>) {
+        val page = diaryRepo.getDiariesByAssistantsPaged(ids, _pageSize, 0)
+        _diaryList.value = page
+        _hasMore.value = page.size >= _pageSize
+    }
+
+    fun loadMore() {
+        if (_isLoadingMore.value || !_hasMore.value) return
+        paginationJob?.cancel()
+        paginationJob = viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingMore.value = true
+            try {
+                val ids = effectiveFilterIds.first()
+                val nextPage = _currentPage.value + 1
+                val offset = nextPage * _pageSize
+                val newItems = diaryRepo.getDiariesByAssistantsPaged(ids, _pageSize, offset)
+                _currentPage.value = nextPage
+                _diaryList.value = _diaryList.value + newItems
+                _hasMore.value = newItems.size >= _pageSize
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 过滤切换等导致的取消，静默处理
+                throw e
+            } finally {
+                _isLoadingMore.value = false
+            }
+        }
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val datesWithDiaries: StateFlow<List<String>> = effectiveFilterIds.flatMapLatest { ids ->

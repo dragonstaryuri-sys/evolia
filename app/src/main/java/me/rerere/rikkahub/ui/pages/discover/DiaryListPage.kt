@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -62,6 +63,9 @@ fun DiaryListPage(
     val settings by vm.settings.collectAsStateWithLifecycle()
 
     val filteredDiaries by vm.filteredDiaries.collectAsStateWithLifecycle()
+    val diaryList by vm.diaryList.collectAsStateWithLifecycle()
+    val hasMore by vm.hasMore.collectAsStateWithLifecycle()
+    val isLoadingMore by vm.isLoadingMore.collectAsStateWithLifecycle()
     val datesWithDiaries by vm.datesWithDiaries.collectAsStateWithLifecycle()
     val diariesAtSelectedDate by vm.diariesAtSelectedDate.collectAsStateWithLifecycle()
     val selectedDate by vm.selectedDate.collectAsStateWithLifecycle()
@@ -186,9 +190,12 @@ fun DiaryListPage(
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (!isCalendarMode) {
                 DiaryListView(
-                    diaries = filteredDiaries,
+                    diaries = diaryList,
                     onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
-                    onDelete = { vm.deleteDiary(it) }
+                    onDelete = { vm.deleteDiary(it) },
+                    hasMore = hasMore,
+                    isLoadingMore = isLoadingMore,
+                    onLoadMore = { vm.loadMore() }
                 )
             } else {
                 DiaryCalendarView(
@@ -244,9 +251,22 @@ private fun PersonnelFilterBar(
 private fun DiaryListView(
     diaries: List<AgentDiaryEntity>,
     onDiaryClick: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    hasMore: Boolean,
+    isLoadingMore: Boolean,
+    onLoadMore: () -> Unit
 ) {
     val settings = LocalSettings.current
+    val listState = rememberLazyListState()
+
+    // 监听滚动到底部触发加载更多
+    // 当列表为空时（首次加载），跳过自动 loadMore，避免与首次分页加载竞争
+    LaunchedEffect(listState.canScrollForward, hasMore, isLoadingMore, diaries.size) {
+        if (diaries.isNotEmpty() && !listState.canScrollForward && hasMore && !isLoadingMore) {
+            onLoadMore()
+        }
+    }
+
     // 分组和排序逻辑：我 > 主智能体 > 其他。同一级别按创建时间倒序。
     val groupedDiaries = remember(diaries, settings.assistants) {
         diaries.groupBy { it.date }
@@ -269,13 +289,39 @@ private fun DiaryListView(
         EmptyState(stringResource(R.string.discover_page_diary_empty))
     } else {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp), // 减小整体左边距
+            contentPadding = PaddingValues(start = 12.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             groupedDiaries.forEach { (date, items) ->
                 item(key = date) {
                     DiaryTimelineGroup(date, items, onDiaryClick, onDelete)
+                }
+            }
+
+            // 加载更多指示器
+            if (hasMore || isLoadingMore) {
+                item(key = "pagination_footer") {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isLoadingMore) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(R.string.diary_load_more),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }

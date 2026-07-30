@@ -1834,6 +1834,7 @@
   <!-- Diary feature upgrade -->
   <string name="diary_view_list">List</string>
   <string name="diary_view_calendar">Calendar</string>
+  <string name="diary_load_more">Load more</string>
   <string name="diary_filter_all">Everyone</string>
   <string name="diary_filter_user">Me</string>
   <string name="diary_generating_comment">Requesting agent to post a comment…</string>
