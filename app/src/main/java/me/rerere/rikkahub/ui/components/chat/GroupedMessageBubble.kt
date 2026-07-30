@@ -141,7 +141,7 @@ fun GroupedMessageBubble(
             onClick = onClick,
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 content = content
             )
         }
@@ -153,7 +153,7 @@ fun GroupedMessageBubble(
             contentColor = contentColor ?: defaultContentColor,
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 content = content
             )
         }

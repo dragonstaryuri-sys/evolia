@@ -63,18 +63,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **Shapes:** Adhere strictly to `me.rerere.rikkahub.ui.theme.AppShapes`:
     -   **Cards:** `AppShapes.CardLarge` (28.dp), `AppShapes.CardMedium` (24.dp).
     -   **Buttons:** `AppShapes.ButtonPill` (50%).
-
-### Haptics (Critical)
--   **Library:** Use the custom `PremiumHaptics` wrapper.
-    -   `import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics`
-    -   `import me.rerere.rikkahub.ui.hooks.HapticPattern`
--   **Usage:**
-    -   **Do not** use `LocalHapticFeedback`.
-    -   **Interactive Elements:** Buttons (like `BackButton`) must scale down to `0.85f` on press and trigger `HapticPattern.Pop`.
-    -   **Patterns:**
-        -   Click/Toggle: `HapticPattern.Pop`
-        -   Heavy Action/Drop: `HapticPattern.Thud`
-        -   Success: `HapticPattern.Success`
+-   **Interactive Elements:** To maintain the "Fidget Toy" feel, interactive components (like `BackButton`) should scale down to `0.85f` on press.
 
 ### Animation
 -   **Default Specs:**
@@ -176,4 +165,4 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 
 ### 9.4 分页与性能限制
 - **滑动窗口**：`_activeMessageLimit` 控制 UI 显示的消息上限（默认 100/500 条），防止超长对话导致 Compose 渲染性能下降。
-- **手动加载**：当 `totalCount > limit` 时，列表顶部显示“查看更早的消息”，点击后触发限制增加并从 DB 加载更多深层历史。
+- **手动加载**：当 `totalCount > limit` 时，列表顶部显示“查看更早的消息”，点击后触发限制增加并从 DB 加载更多深层历史.
