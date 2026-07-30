@@ -96,6 +96,7 @@ import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryEditorPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryDetailPage
 import me.rerere.rikkahub.ui.pages.discover.DiarySearchPage
+import me.rerere.rikkahub.ui.pages.discover.HourLightPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoritesPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoriteDetailPage
 import me.rerere.rikkahub.discover.ui.ScheduleScreen
@@ -429,6 +430,9 @@ class RouteActivity : AppCompatActivity() {
                     }
                     composable<Screen.DiarySearch> {
                         DiarySearchPage()
+                    }
+                    composable<Screen.HourLight> {
+                        HourLightPage()
                     }
                     composable<Screen.Favorites> {
                         FavoritesPage()

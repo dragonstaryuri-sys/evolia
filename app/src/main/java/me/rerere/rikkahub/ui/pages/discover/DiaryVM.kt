@@ -111,27 +111,28 @@ class DiaryVM(
 
     /**
      * 添加评论：处理 UI 交互后的核心逻辑
+     *
+     * 两种场景：
+     * 1. 日记主人是 USER：用户选择智能体来评论 → 触发 triggerAgentCommentFlow
+     * 2. 日记主人不是 USER：用户直接评论 → 保存评论后通知日记主人
      */
     fun addComment(diary: AgentDiaryEntity, senderId: String, content: String, toaster: AppToasterState? = null) {
         if (_isCommenting.value) return
         viewModelScope.launch {
             _isCommenting.value = true
             try {
-                if (senderId == "USER") {
-                    // 1. 用户评论：先创建 Entity（拿到稳定 ID），再入库
+                if (diary.assistantId == "USER") {
+                    // 场景1：日记主人是 USER，用户选择智能体来评论
+                    // senderId 为选中的智能体 ID，content 为用户可选的附加说明
+                    triggerAgentCommentFlow(diary, senderId, content, toaster)
+                } else {
+                    // 场景2：日记主人不是 USER，用户直接评论（senderId 固定为 "USER"）
                     val userComment = DiaryCommentEntity(diaryId = diary.id, senderId = "USER", content = content)
                     diaryRepo.insertComment(userComment)
                     toaster?.show(app.getString(R.string.diary_comment_success))
 
-                    // 2. 联动逻辑：如果日记不是用户写的，通知"日记主人"查看并决定是否回复。
-                    //    将 userComment.id 作为 replyToCommentId 传入，让 AI 回复带上"回复给谁"的关联。
-                    if (diary.assistantId != "USER") {
-                        triggerAgentReplyFlow(diary, content, replyToCommentId = userComment.id, toaster)
-                    }
-                } else {
-                    // 3. 智能体评价：发送指令到"日记主人"的会话，请求评价。
-                    //    评价针对的是日记本身，不回复具体评论，replyToCommentId = null。
-                    triggerAgentEvaluationFlow(diary, senderId, replyToCommentId = null, toaster)
+                    // 通知日记主人（AI）查看并决定是否回复
+                    triggerAgentReplyFlow(diary, content, replyToCommentId = userComment.id, toaster)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -140,6 +141,71 @@ class DiaryVM(
                 _isCommenting.value = false
             }
         }
+    }
+
+    /**
+     * 场景：日记主人是 USER，用户选择一个智能体来对日记发表评论
+     * 流程：将完整日记内容 + 用户可选附加说明 + 评论指令发送到选中智能体的最新会话，
+     *       要求 AI 返回 reply(0/1) 和 content，决定是否入库。
+     */
+    private suspend fun triggerAgentCommentFlow(
+        diary: AgentDiaryEntity,
+        selectedAssistantId: String,
+        userNote: String,
+        toaster: AppToasterState?
+    ) {
+        val s = settingsStore.settingsFlow.value
+        val targetAssistant = s.assistants.find { it.id.toString() == selectedAssistantId } ?: run {
+            toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
+            return
+        }
+        val convId = targetAssistant.lastConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+
+        if (convId == null) {
+            toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
+            return
+        }
+
+        val userNickname = s.displaySetting.userNickname.ifBlank { "User" }
+        val diaryContentForPrompt = if (diary.content.length > 1500) {
+            diary.content.take(1500) + "..."
+        } else {
+            diary.content
+        }
+
+        // 用户可选附加说明
+        val userNoteSection = if (userNote.isNotBlank()) {
+            "\n\n用户 $userNickname 补充说明：\n\"$userNote\"\n"
+        } else ""
+
+        val prompt = """
+            【系统指令】
+            角色设定：你是 ${targetAssistant.name}。
+            背景：用户 $userNickname 邀请你对他/她的一篇日记发表评论。
+            日记内容如下：
+            $diaryContentForPrompt$userNoteSection
+
+            任务：请决定是否要发表评论。
+            要求：
+            1. 以 JSON 格式返回结果，包含 "reply" (整数，1表示回复，0表示不回复) 和 "content" (字符串，评论的具体内容)。
+            2. 如果觉得没必要评论，请将 "reply" 设为 0。
+            3. 你的评论应当符合你的性格设定。
+            4. 仅输出 JSON 字符串，不要有其他解释。
+
+            语言：${Locale.getDefault().displayName}
+        """.trimIndent()
+
+        toaster?.show(app.getString(R.string.diary_agent_commenting_to, targetAssistant.name))
+
+        sendHiddenCommandAndListen(
+            convId = convId,
+            prompt = prompt,
+            senderIdToSave = selectedAssistantId,
+            diaryId = diary.id,
+            isJsonDecision = true,
+            replyToCommentId = null,
+            toaster = toaster
+        )
     }
 
     /**

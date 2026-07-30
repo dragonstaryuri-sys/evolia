@@ -114,6 +114,7 @@ fun DiaryDetailPage(
 
                 // 底部评论输入区
                 CommentInputAreaDetailed(
+                    diary = diary,
                     replyingTo = replyingTo,
                     settings = settings,
                     onCancelReply = { replyingTo = null },
@@ -268,6 +269,7 @@ private fun CommentItemDetailed(
 
 @Composable
 private fun CommentInputAreaDetailed(
+    diary: AgentDiaryEntity,
     replyingTo: DiaryCommentEntity?,
     settings: me.rerere.rikkahub.data.datastore.Settings,
     onCancelReply: () -> Unit,
@@ -277,6 +279,7 @@ private fun CommentInputAreaDetailed(
     var selectedSenderId by remember { mutableStateOf("USER") }
     var expanded by remember { mutableStateOf(false) }
 
+    val isUserDiary = diary.assistantId == "USER"
     val defaultUserStr = stringResource(R.string.diary_filter_user)
 
     // 解析回复目标的显示名
@@ -285,6 +288,13 @@ private fun CommentInputAreaDetailed(
             if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
         } else {
             settings.assistants.find { it.id.toString() == target.senderId }?.name ?: "Unknown"
+        }
+    }
+
+    // 当日记主人是 USER 时，默认选中第一个智能体
+    LaunchedEffect(isUserDiary) {
+        if (isUserDiary && selectedSenderId == "USER") {
+            selectedSenderId = settings.assistants.firstOrNull()?.id?.toString() ?: "USER"
         }
     }
 
@@ -316,46 +326,98 @@ private fun CommentInputAreaDetailed(
                 }
             }
 
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text(stringResource(R.string.diary_comment_hint)) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                trailingIcon = {
-                    IconButton(onClick = {
-                        if (text.isNotBlank()) {
-                            onSend(selectedSenderId, text)
-                            text = ""
-                        }
-                    }) {
-                        Icon(Icons.AutoMirrored.Rounded.Send, null)
-                    }
-                }
-            )
+            // 日记主人是 USER 时：显示智能体选择 + 可选的附加说明
+            if (isUserDiary && replyingTo == null) {
+                if (settings.assistants.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.diary_no_assistants),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.diary_select_agent_to_comment),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                Text(stringResource(R.string.diary_comment_send_as), style = MaterialTheme.typography.labelSmall)
-                Spacer(Modifier.width(8.dp))
-                Box {
-                    val currentName = if (selectedSenderId == "USER") stringResource(R.string.diary_personnel_user)
-                                    else settings.assistants.find { it.id.toString() == selectedSenderId }?.name ?: ""
                     AssistChip(
                         onClick = { expanded = true },
-                        label = { Text(currentName, style = MaterialTheme.typography.labelSmall) },
+                        label = {
+                            Text(
+                                settings.assistants.find { it.id.toString() == selectedSenderId }?.name
+                                    ?: stringResource(R.string.diary_select_agent_to_comment),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        },
                         trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, null, modifier = Modifier.size(16.dp)) }
                     )
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.diary_personnel_user)) },
-                            onClick = { selectedSenderId = "USER"; expanded = false }
-                        )
                         settings.assistants.forEach { assistant ->
                             DropdownMenuItem(
                                 text = { Text(assistant.name) },
                                 onClick = { selectedSenderId = assistant.id.toString(); expanded = false }
                             )
                         }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        placeholder = { Text(stringResource(R.string.diary_comment_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.large,
+                        trailingIcon = {
+                            IconButton(onClick = {
+                                if (selectedSenderId != "USER") {
+                                    onSend(selectedSenderId, text)
+                                    text = ""
+                                }
+                            }) {
+                                Icon(Icons.AutoMirrored.Rounded.Send, null)
+                            }
+                        }
+                    )
+
+                    // 提示文字
+                    Text(
+                        text = stringResource(R.string.diary_comment_send_as),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            } else {
+                // 日记主人不是 USER 或回复模式：显示普通评论输入
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    placeholder = { Text(stringResource(R.string.diary_comment_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            if (text.isNotBlank()) {
+                                onSend("USER", text)
+                                text = ""
+                            }
+                        }) {
+                            Icon(Icons.AutoMirrored.Rounded.Send, null)
+                        }
+                    }
+                )
+
+                // 回复模式下隐藏发送身份选择（固定为 USER）
+                if (replyingTo == null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                        Text(stringResource(R.string.diary_comment_send_as), style = MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.width(8.dp))
+                        AssistChip(
+                            onClick = {},
+                            label = { Text(stringResource(R.string.diary_personnel_user), style = MaterialTheme.typography.labelSmall) }
+                        )
                     }
                 }
             }

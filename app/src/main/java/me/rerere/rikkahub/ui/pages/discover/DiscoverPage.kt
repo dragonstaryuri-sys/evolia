@@ -141,7 +141,19 @@ fun DiscoverPage() {
                 )
             }
 
-            // 6. 现有功能：社区（开发中）
+            // 6. 新增：小时光（朋友圈）
+            item {
+                DiscoverItem(
+                    title = stringResource(R.string.discover_page_hour_light),
+                    description = stringResource(R.string.discover_page_hour_light_desc),
+                    icon = { Icon(Icons.Rounded.WbSunny, null, tint = MaterialTheme.colorScheme.tertiary) },
+                    onClick = {
+                        navController.navigate(Screen.HourLight)
+                    }
+                )
+            }
+
+            // 7. 现有功能：社区（开发中）
             item {
                 val developingText = stringResource(R.string.discover_page_developing)
                 DiscoverItem(

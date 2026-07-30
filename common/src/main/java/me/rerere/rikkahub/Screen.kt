@@ -138,6 +138,10 @@ sealed interface Screen {
     @Serializable
     data object DiarySearch : Screen
 
+    // ✨ 新增：小时光（朋友圈）
+    @Serializable
+    data object HourLight : Screen
+
     @Serializable
     data object Favorites : Screen
 
