@@ -77,6 +77,10 @@ fun DiaryListPage(
     // 动态显示年份标题：日历模式显示当前滑动的月份年份，列表模式显示最新日记年份（或当前年）
     val topTitle = if (isCalendarMode) currentMonthByPager.year.toString() else LocalDate.now().year.toString()
 
+    // 智能体自动日记设置弹窗
+    var showAutoDiarySheet by remember { mutableStateOf(false) }
+    val autoDiarySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     LaunchedEffect(assistantId) {
         if (assistantId != null) {
             vm.togglePersonnelFilter(assistantId)
@@ -85,6 +89,27 @@ fun DiaryListPage(
 
     LaunchedEffect(vm, toaster) {
         vm.observeTaskResults(toaster)
+    }
+
+    LaunchedEffect(showAutoDiarySheet) {
+        if (showAutoDiarySheet) autoDiarySheetState.show() else autoDiarySheetState.hide()
+    }
+
+    if (showAutoDiarySheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAutoDiarySheet = false },
+            sheetState = autoDiarySheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            AutoDiarySettingsContent(
+                assistants = settings.assistants,
+                onToggle = { assistantId, enabled ->
+                    haptics.perform(HapticPattern.Pop)
+                    vm.toggleAutoDiary(assistantId, enabled)
+                }
+            )
+            Spacer(modifier = Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
+        }
     }
 
     Scaffold(
@@ -109,6 +134,13 @@ fun DiaryListPage(
                                 navController.navigate(Screen.DiaryEditor(diaryId = "new"))
                             }) {
                                 Icon(Icons.Rounded.Add, null)
+                            }
+                            // 设置按钮（自动日记管理）
+                            IconButton(onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                showAutoDiarySheet = true
+                            }) {
+                                Icon(Icons.Rounded.Settings, null)
                             }
                         }
                     )
@@ -549,5 +581,86 @@ fun DiarySummaryCard(
 fun EmptyState(msg: String) {
     Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(msg, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AutoDiarySettingsContent(
+    assistants: List<me.rerere.rikkahub.core.data.model.Assistant>,
+    onToggle: (String, Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.diary_auto_generate),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+        Text(
+            text = stringResource(R.string.diary_auto_diary_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        if (assistants.isEmpty()) {
+            EmptyState(stringResource(R.string.diary_no_assistants))
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(assistants, key = { it.id.toString() }) { assistant ->
+                    val assistantId = assistant.id.toString()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            UIAvatar(
+                                name = assistant.name,
+                                value = assistant.avatar,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = assistant.name,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            if (assistant.isMain) {
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.diary_main_agent),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = assistant.enableAutoDiary,
+                            onCheckedChange = { enabled ->
+                                onToggle(assistantId, enabled)
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
     }
 }

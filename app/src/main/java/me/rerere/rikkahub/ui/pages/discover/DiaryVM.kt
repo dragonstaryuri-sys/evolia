@@ -515,6 +515,20 @@ class DiaryVM(
 
     fun deleteDiary(id: String) { viewModelScope.launch { diaryRepo.deleteDiaryById(id) } }
 
+    fun toggleAutoDiary(assistantId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            val currentSettings = settingsStore.settingsFlow.value
+            val updatedAssistant = currentSettings.assistants.find { it.id.toString() == assistantId } ?: return@launch
+            settingsStore.update(
+                currentSettings.copy(
+                    assistants = currentSettings.assistants.map {
+                        if (it.id == updatedAssistant.id) it.copy(enableAutoDiary = enabled) else it
+                    }
+                )
+            )
+        }
+    }
+
     private val notifiedTaskIds = mutableSetOf<java.util.UUID>()
     private var observationJob: kotlinx.coroutines.Job? = null
     private var isTaskObservationInitialized = false

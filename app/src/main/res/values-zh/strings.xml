@@ -1241,6 +1241,9 @@
   <string name="diary_auto_generate">自主更新日记</string>
   <string name="diary_auto_generate_time_label">自动生成时间</string>
   <string name="diary_no_new_messages">TA现在不想写日记...</string>
+  <string name="diary_auto_diary_desc">为下方每个智能体开启自动日记功能，开启后智能体将每天自动编写日记。</string>
+  <string name="diary_no_assistants">还没有智能体，请先创建一个。</string>
+  <string name="diary_main_agent">主智能体</string>
   <!-- 数据备份页面新增 -->
   <string name="backup_page_auto_backup_on_start">启动时自动备份</string>
   <string name="backup_page_auto_backup_on_start_desc">每日首次启动app时，自动进行webdav备份</string>

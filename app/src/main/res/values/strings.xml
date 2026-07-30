@@ -1281,6 +1281,9 @@
   <string name="diary_auto_generate">Self-update Diary</string>
   <string name="diary_auto_generate_time_label">Auto-generate Time</string>
   <string name="diary_no_new_messages">He/She don\'t feel like writing a diary right now.</string>
+  <string name="diary_auto_diary_desc">Enable auto-diary for each agent below. Agents with this enabled will automatically write daily diaries.</string>
+  <string name="diary_no_assistants">No agents yet. Create an agent first.</string>
+  <string name="diary_main_agent">Main</string>
   <!-- Back Up -->
   <string name="backup_page_auto_backup_on_start">Auto Backup on Launch</string>
   <string name="backup_page_auto_backup_on_start_desc">Automatically back up via WebDAV when the app is launched for the first time each day.</string>
