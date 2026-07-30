@@ -285,7 +285,7 @@ private fun CommentItemDetailed(
                     toaster.show(copiedStr)
                 }
             )
-            val canDelete = comment.senderId == "USER" || comment.senderId != diaryOwnerId
+            val canDelete = true // user 可以删除任何人的评论
             if (canDelete) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
