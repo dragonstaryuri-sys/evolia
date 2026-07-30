@@ -69,6 +69,7 @@ fun DiaryDetailPage(
             }
         } else {
             val diary = diaryState!!
+            var replyingTo by remember { mutableStateOf<DiaryCommentEntity?>(null) }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -103,7 +104,8 @@ fun DiaryDetailPage(
                                     comment = comment,
                                     allComments = comments,
                                     settings = settings,
-                                    onDelete = { vm.deleteComment(comment.id) }
+                                    onDelete = { vm.deleteComment(comment.id) },
+                                    onReply = { replyingTo = comment }
                                 )
                             }
                         }
@@ -112,10 +114,18 @@ fun DiaryDetailPage(
 
                 // 底部评论输入区
                 CommentInputAreaDetailed(
+                    replyingTo = replyingTo,
+                    settings = settings,
+                    onCancelReply = { replyingTo = null },
                     onSend = { senderId, text ->
-                        vm.addComment(diary, senderId, text, toaster)
-                    },
-                    settings = settings
+                        val capturedReplyingTo = replyingTo
+                        if (capturedReplyingTo != null) {
+                            vm.replyToComment(diary, capturedReplyingTo, text, toaster)
+                            replyingTo = null
+                        } else {
+                            vm.addComment(diary, senderId, text, toaster)
+                        }
+                    }
                 )
             }
         }
@@ -149,7 +159,8 @@ private fun CommentItemDetailed(
     comment: DiaryCommentEntity,
     allComments: List<DiaryCommentEntity>,
     settings: me.rerere.rikkahub.data.datastore.Settings,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onReply: () -> Unit
 ) {
     val haptics = rememberPremiumHaptics()
     val defaultUserStr = stringResource(R.string.diary_filter_user)
@@ -218,6 +229,21 @@ private fun CommentItemDetailed(
                 }
             }
             Text(comment.content, style = MaterialTheme.typography.bodyMedium)
+            // 回复按钮
+            TextButton(
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onReply()
+                },
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                modifier = Modifier.offset(y = 2.dp)
+            ) {
+                Text(
+                    stringResource(R.string.diary_comment_reply),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         // 仅允许用户删除自己的评论
@@ -242,15 +268,54 @@ private fun CommentItemDetailed(
 
 @Composable
 private fun CommentInputAreaDetailed(
-    onSend: (String, String) -> Unit,
-    settings: me.rerere.rikkahub.data.datastore.Settings
+    replyingTo: DiaryCommentEntity?,
+    settings: me.rerere.rikkahub.data.datastore.Settings,
+    onCancelReply: () -> Unit,
+    onSend: (String, String) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
     var selectedSenderId by remember { mutableStateOf("USER") }
     var expanded by remember { mutableStateOf(false) }
 
+    val defaultUserStr = stringResource(R.string.diary_filter_user)
+
+    // 解析回复目标的显示名
+    val replyToName = replyingTo?.let { target ->
+        if (target.senderId == "USER") {
+            if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
+        } else {
+            settings.assistants.find { it.id.toString() == target.senderId }?.name ?: "Unknown"
+        }
+    }
+
     Surface(tonalElevation = 8.dp, shadowElevation = 8.dp) {
         Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
+            // 回复模式提示条
+            if (replyingTo != null && replyToName != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.diary_comment_reply_prefix) + " @$replyToName",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    Spacer(Modifier.weight(1f))
+                    IconButton(
+                        onClick = onCancelReply,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },

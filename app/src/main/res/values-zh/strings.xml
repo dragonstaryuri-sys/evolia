@@ -1814,6 +1814,7 @@
   <string name="diary_comment_failed">评论生成失败</string>
   <string name="diary_agent_no_reply">TA不想评论...</string>
   <string name="diary_comment_reply_prefix">回复</string>
+  <string name="diary_comment_reply">回复</string>
   <string name="search">搜索</string>
   <string name="diary_search_hint">输入内容搜索日记...</string>
   <string name="diary_search_no_result">没有找到相关的日记</string>

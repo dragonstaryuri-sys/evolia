@@ -143,6 +143,47 @@ class DiaryVM(
     }
 
     /**
+     * 回复评论：用户点击某条评论的"回复"后调用。
+     * - 用户回复先入库（replyToId 指向被回复的评论）
+     * - 如果被回复的是智能体，通知该智能体决定是否回复用户
+     * - 如果被回复的是 USER，不触发 AI（用户自行查看决定是否回复）
+     * @param targetComment 被回复的评论
+     * @param content 用户的回复内容
+     */
+    fun replyToComment(
+        diary: AgentDiaryEntity,
+        targetComment: DiaryCommentEntity,
+        content: String,
+        toaster: AppToasterState? = null
+    ) {
+        if (_isCommenting.value) return
+        viewModelScope.launch {
+            _isCommenting.value = true
+            try {
+                // 1. 先保存用户的回复评论（replyToId 指向被回复的评论）
+                val userReply = DiaryCommentEntity(
+                    diaryId = diary.id,
+                    senderId = "USER",
+                    replyToId = targetComment.id,
+                    content = content
+                )
+                diaryRepo.insertComment(userReply)
+                toaster?.show(app.getString(R.string.diary_comment_success))
+
+                // 2. 如果被回复的是智能体，通知该智能体决定是否回复
+                if (targetComment.senderId != "USER") {
+                    triggerAgentReplyToCommentFlow(diary, targetComment, userReply, content, toaster)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                toaster?.show(app.getString(R.string.diary_comment_failed), type = ToastType.Error)
+            } finally {
+                _isCommenting.value = false
+            }
+        }
+    }
+
+    /**
      * 场景：用户评论后，通知日记主人（AI）决定是否回复
      */
     private suspend fun triggerAgentReplyFlow(
@@ -188,6 +229,77 @@ class DiaryVM(
             diaryId = diary.id,
             isJsonDecision = true,
             replyToCommentId = replyToCommentId,
+            toaster = toaster
+        )
+    }
+
+    /**
+     * 场景：用户回复了某条智能体评论，通知该智能体决定是否回复用户。
+     * 消息发给被回复评论的 senderId 对应的智能体（而非日记主人）。
+     * @param targetComment 被回复的评论（senderId 是智能体）
+     * @param userReply 用户刚发的回复评论 Entity（AI 回复的 replyToId 指向它）
+     * @param userReplyContent 用户回复的内容文本
+     */
+    private suspend fun triggerAgentReplyToCommentFlow(
+        diary: AgentDiaryEntity,
+        targetComment: DiaryCommentEntity,
+        userReply: DiaryCommentEntity,
+        userReplyContent: String,
+        toaster: AppToasterState?
+    ) {
+        val s = settingsStore.settingsFlow.value
+        val targetAssistant = s.assistants.find { it.id.toString() == targetComment.senderId } ?: return
+        val convId = targetAssistant.lastConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+
+        if (convId == null) {
+            toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
+            return
+        }
+
+        // 获取最新 6 条评论作为上下文（此时用户刚发的回复已入库，会包含在内）
+        val recentComments = diaryRepo.getCommentsForDiary(diary.id).first().takeLast(6)
+        val nickname = s.displaySetting.userNickname.ifBlank { "User" }
+        val commentsContext = recentComments.joinToString("\n") { comment ->
+            val senderName = if (comment.senderId == "USER") {
+                nickname
+            } else {
+                s.assistants.find { it.id.toString() == comment.senderId }?.name ?: "Unknown"
+            }
+            "$senderName: ${comment.content}"
+        }
+
+        val truncatedContent = diary.content.take(150).let { if (diary.content.length > 150) "$it..." else it }
+        val prompt = """
+            【系统指令】
+            角色设定：你是 ${targetAssistant.name}。
+            背景：用户 $nickname 在一篇日记下回复了你的评论。
+            日记内容如下：
+            $truncatedContent
+
+            最近的评论记录：
+            $commentsContext
+
+            用户 $nickname 回复你的评论内容："$userReplyContent"
+
+            任务：请决定是否回复用户的这条回复。
+            要求：
+            1. 以 JSON 格式返回结果，包含 "reply" (整数，1表示回复，0表示不回复) 和 "content" (字符串，回复的具体内容)。
+            2. 如果觉得没必要回复，请将 "reply" 设为 0。
+            3. 你的回复应当符合你的性格设定。
+            4. 仅输出 JSON 字符串，不要有其他解释。
+
+            语言：${Locale.getDefault().displayName}
+        """.trimIndent()
+
+        toaster?.show(app.getString(R.string.diary_generating_comment))
+        // AI 回复的 replyToId 指向用户刚发的回复评论
+        sendHiddenCommandAndListen(
+            convId = convId,
+            prompt = prompt,
+            senderIdToSave = targetComment.senderId,
+            diaryId = diary.id,
+            isJsonDecision = true,
+            replyToCommentId = userReply.id,
             toaster = toaster
         )
     }
