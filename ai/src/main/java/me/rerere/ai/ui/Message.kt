@@ -15,6 +15,19 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.uuid.Uuid
 
+/**
+ * 消息来源标识：用于区分不同来源的 skipContext 消息在上下文中的处理策略。
+ * - NORMAL: 普通对话消息
+ * - DIARY_COMMENT: 日记评论指令（历史消息截断到前100字，当前消息完整）
+ * - AGENT_TASK: 自动化任务触发指令（完整带入，不截断）
+ */
+@Serializable
+enum class MessageSource {
+    NORMAL,
+    DIARY_COMMENT,
+    AGENT_TASK
+}
+
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO
 @Serializable
 data class UIMessage(
@@ -32,7 +45,8 @@ data class UIMessage(
     val usedModes: List<UsedMode>? = null, // Modes used in this message
     val usedMemories: List<UsedMemory>? = null, // Memories used in this message
     val versionTag: String? = null, // Links messages from same generation for multi-node turn versioning
-    val skipContext: Boolean = false // 如果为 true，这条消息在后续对话中不会被作为上下文发送给 AI
+    val skipContext: Boolean = false, // 如果为 true，这条消息在后续对话中不会被作为上下文发送给 AI
+    val messageSource: MessageSource = MessageSource.NORMAL // 消息来源标识，控制 skipContext 消息在上下文中的截断策略
 ) {
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)

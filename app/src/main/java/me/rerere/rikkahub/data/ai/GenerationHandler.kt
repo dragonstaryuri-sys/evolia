@@ -30,6 +30,7 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.MessageSource
 import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.ai.ui.UsedMemory
 import me.rerere.ai.ui.UsedMode
@@ -131,6 +132,7 @@ class GenerationHandler(
         temporarySummaries: List<String> = emptyList(),
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = false,
+        responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -332,7 +334,7 @@ class GenerationHandler(
                     val processedMessages = if (skipContextForResponse) {
                         updatedFromChunk.mapIndexed { index, uiMessage ->
                             if (index == updatedFromChunk.lastIndex && uiMessage.role == CoreMessageRole.ASSISTANT) {
-                                uiMessage.copy(skipContext = true)
+                                uiMessage.copy(skipContext = true, messageSource = responseMessageSource)
                             } else uiMessage
                         }
                     } else updatedFromChunk
@@ -367,6 +369,7 @@ class GenerationHandler(
                 contextSummary = contextSummary,
                 temporarySummaries = temporarySummaries,
                 includeSkipContextMessages = includeSkipContextMessages,
+                responseMessageSource = responseMessageSource,
                 conversationId = conversationId
             )
 
@@ -887,7 +890,23 @@ class GenerationHandler(
         currentTokens += estimateTokens(summarySystemPrompt)
 
         val contextCandidates = if (includeSkipContextMessages) {
-            messages
+            // 包含 skipContext 消息，根据消息来源决定截断策略：
+            // - AGENT_TASK: 完整带入，不截断
+            // - DIARY_COMMENT / NORMAL: 历史消息截断到前 100 字，保留最后一条 user 消息完整
+            val lastUserMsgIndex = messages.indexOfLast { it.role == CoreMessageRole.USER }
+            messages.mapIndexed { index, msg ->
+                val shouldTruncate = msg.skipContext
+                    && msg.messageSource != MessageSource.AGENT_TASK
+                    && index != lastUserMsgIndex
+                if (shouldTruncate) {
+                    msg.copy(parts = msg.parts.map { part ->
+                        if (part is UIMessagePart.Text) {
+                            val truncated = part.text.take(100)
+                            UIMessagePart.Text(if (part.text.length > 100) "$truncated..." else truncated)
+                        } else part
+                    })
+                } else msg
+            }
         } else {
             messages.filter { !it.skipContext }
         }
@@ -1487,6 +1506,7 @@ class GenerationHandler(
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList(),
         includeSkipContextMessages: Boolean = false,
+        responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null
     ) {
         val buildResult = buildMessages(

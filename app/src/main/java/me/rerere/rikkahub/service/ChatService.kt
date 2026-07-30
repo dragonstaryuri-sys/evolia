@@ -49,6 +49,7 @@ import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.ai.ui.MessageSource
 import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.truncate
 import me.rerere.common.android.Logging
@@ -374,7 +375,8 @@ class ChatService(
                     val newNode = UIMessage(
                         role = MessageRole.USER,
                         parts = listOf(UIMessagePart.Text(monitorMsg)),
-                        skipContext = true
+                        skipContext = true,
+                        messageSource = MessageSource.AGENT_TASK // 自动化任务来源：完整带入不截断
                     ).toMessageNode(conversationId)
 
                     old.copy(
@@ -665,7 +667,8 @@ class ChatService(
         isTemporaryChat: Boolean = false,
         predefinedUserNode: MessageNode? = null,
         skipContextForResponse: Boolean = false,
-        includeSkipContextMessages: Boolean = false // ✨ 新增：支持回复消息包含隐藏上下文
+        includeSkipContextMessages: Boolean = true, // 普通对话也包含 skipContext 消息，由 messageSource 控制截断策略
+        responseMessageSource: MessageSource = MessageSource.NORMAL // AI 回复的消息来源标识
     ) {
         if (isTemporaryChat) {
             temporaryConversations.add(conversationId)
@@ -714,7 +717,8 @@ class ChatService(
                     handleMessageComplete(
                         conversationId = conversationId,
                         skipContextForResponse = skipContextForResponse,
-                        includeSkipContextMessages = includeSkipContextMessages // ✨ 传递标记
+                        includeSkipContextMessages = includeSkipContextMessages, // ✨ 传递标记
+                        responseMessageSource = responseMessageSource
                     )
                     _generationDoneFlow.emit(conversationId)
                 } catch (e: Exception) {
@@ -748,7 +752,7 @@ class ChatService(
         regenerateAssistantMsg: Boolean = true,
         forceWipe: Boolean = false,
         requirement: String? = null,
-        includeSkipContextMessages: Boolean = false
+        includeSkipContextMessages: Boolean = true
     ) {
         // 取消旧任务
         val oldJob = _generationJobs.value[conversationId]
@@ -868,7 +872,8 @@ class ChatService(
         messageRange: IntRange? = null,
         assistantOverride: Assistant? = null,
         skipContextForResponse: Boolean = false,
-        includeSkipContextMessages: Boolean = false,
+        includeSkipContextMessages: Boolean = true,
+        responseMessageSource: MessageSource = MessageSource.NORMAL,
         requirement: String? = null,
         targetMessageId: Uuid? = null
     ) {
@@ -1117,6 +1122,7 @@ class ChatService(
                         temporarySummaries = emptyList(),
                         skipContextForResponse = skipContextForResponse,
                         includeSkipContextMessages = includeSkipContextMessages,
+                        responseMessageSource = responseMessageSource,
                         conversationId = conversationId
                     ).onCompletion {
                         _generatingNodeIds.update { old ->

@@ -18,7 +18,10 @@ import java.time.LocalDate
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
-import me.rerere.rikkahub.core.data.ai.prompts.DIARY_COMMENT_PROMPT
+import me.rerere.ai.ui.MessageSource
+import me.rerere.rikkahub.core.data.ai.prompts.DIARY_AGENT_COMMENT_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DIARY_AGENT_REPLY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DIARY_AGENT_REPLY_TO_COMMENT_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
@@ -167,33 +170,21 @@ class DiaryVM(
         }
 
         val userNickname = s.displaySetting.userNickname.ifBlank { "User" }
-        val diaryContentForPrompt = if (diary.content.length > 1500) {
-            diary.content.take(1500) + "..."
-        } else {
-            diary.content
-        }
+        // 日记主人是 USER：带入完整日记内容
+        val diaryContentForPrompt = diary.content
 
         // 用户可选附加说明
         val userNoteSection = if (userNote.isNotBlank()) {
             "\n\n用户 $userNickname 补充说明：\n\"$userNote\"\n"
         } else ""
 
-        val prompt = """
-            【系统指令】
-            角色设定：你是 ${targetAssistant.name}。
-            背景：用户 $userNickname 邀请你对他/她的一篇日记发表评论。
-            日记内容如下：
-            $diaryContentForPrompt$userNoteSection
-
-            任务：请决定是否要发表评论。
-            要求：
-            1. 以 JSON 格式返回结果，包含 "reply" (整数，1表示回复，0表示不回复) 和 "content" (字符串，评论的具体内容)。
-            2. 如果觉得没必要评论，请将 "reply" 设为 0。
-            3. 你的评论应当符合你的性格设定。
-            4. 仅输出 JSON 字符串，不要有其他解释。
-
-            语言：${Locale.getDefault().displayName}
-        """.trimIndent()
+        val prompt = DIARY_AGENT_COMMENT_PROMPT.applyPlaceholders(
+            "char" to targetAssistant.name,
+            "user" to userNickname,
+            "diary_content" to diaryContentForPrompt,
+            "user_note" to userNoteSection,
+            "locale" to Locale.getDefault().displayName
+        )
 
         toaster?.show(app.getString(R.string.diary_agent_commenting_to, targetAssistant.name))
 
@@ -269,23 +260,16 @@ class DiaryVM(
         }
 
         val nickname = s.displaySetting.userNickname.ifBlank { "User" }
-        val truncatedContent = diary.content.take(150).let { if (diary.content.length > 150) "$it..." else it }
-        val prompt = """
-            【系统指令】
-            角色设定：你是 ${diaryOwner.name}。
-            背景：用户 $nickname 刚刚阅读了你在 ${diary.date} 写的日记，并留下了评论：“$userComment”。
-            日记内容如下：
-            $truncatedContent
-
-            任务：请决定是否回复该评论。
-            要求：
-            1. 以 JSON 格式返回结果，包含 "reply" (整数，1表示回复，0表示不回复) 和 "content" (字符串，回复的具体内容)。
-            2. 如果觉得没必要回复，请将 "reply" 设为 0。
-            3. 你的回复应当符合你的性格设定。
-            4. 仅输出 JSON 字符串，不要有其他解释。
-
-            语言：${Locale.getDefault().displayName}
-        """.trimIndent()
+        // 日记主人是智能体：带入前 200 字
+        val truncatedContent = diary.content.take(200).let { if (diary.content.length > 200) "$it..." else it }
+        val prompt = DIARY_AGENT_REPLY_PROMPT.applyPlaceholders(
+            "char" to diaryOwner.name,
+            "user" to nickname,
+            "diary_date" to diary.date,
+            "user_comment" to userComment,
+            "diary_content" to truncatedContent,
+            "locale" to Locale.getDefault().displayName
+        )
 
         // 执行隐身对话逻辑
         sendHiddenCommandAndListen(
@@ -322,8 +306,14 @@ class DiaryVM(
             return
         }
 
-        // 获取最新 6 条评论作为上下文（此时用户刚发的回复已入库，会包含在内）
-        val recentComments = diaryRepo.getCommentsForDiary(diary.id).first().takeLast(6)
+        // 获取评论上下文：
+        // 1. 排除用户刚发的那条回复（prompt 中已单独引用 userReplyContent）
+        // 2. 只保留 USER 和被回复智能体的评论（智能体之间看不到彼此评论）
+        // 3. 取最近 5 条
+        val recentComments = diaryRepo.getCommentsForDiary(diary.id).first()
+            .filter { it.id != userReply.id }
+            .filter { it.senderId == "USER" || it.senderId == targetComment.senderId }
+            .takeLast(5)
         val nickname = s.displaySetting.userNickname.ifBlank { "User" }
         val commentsContext = recentComments.joinToString("\n") { comment ->
             val senderName = if (comment.senderId == "USER") {
@@ -334,28 +324,20 @@ class DiaryVM(
             "$senderName: ${comment.content}"
         }
 
-        val truncatedContent = diary.content.take(150).let { if (diary.content.length > 150) "$it..." else it }
-        val prompt = """
-            【系统指令】
-            角色设定：你是 ${targetAssistant.name}。
-            背景：用户 $nickname 在一篇日记下回复了你的评论。
-            日记内容如下：
-            $truncatedContent
-
-            最近的评论记录：
-            $commentsContext
-
-            用户 $nickname 回复你的评论内容："$userReplyContent"
-
-            任务：请决定是否回复用户的这条回复。
-            要求：
-            1. 以 JSON 格式返回结果，包含 "reply" (整数，1表示回复，0表示不回复) 和 "content" (字符串，回复的具体内容)。
-            2. 如果觉得没必要回复，请将 "reply" 设为 0。
-            3. 你的回复应当符合你的性格设定。
-            4. 仅输出 JSON 字符串，不要有其他解释。
-
-            语言：${Locale.getDefault().displayName}
-        """.trimIndent()
+        // 日记内容截断：日记主人是 USER 带完整内容，智能体日记带前 200 字
+        val diaryContentForPrompt = if (diary.assistantId == "USER") {
+            diary.content
+        } else {
+            diary.content.take(200).let { if (diary.content.length > 200) "$it..." else it }
+        }
+        val prompt = DIARY_AGENT_REPLY_TO_COMMENT_PROMPT.applyPlaceholders(
+            "char" to targetAssistant.name,
+            "user" to nickname,
+            "diary_content" to diaryContentForPrompt,
+            "comments_context" to commentsContext,
+            "user_reply" to userReplyContent,
+            "locale" to Locale.getDefault().displayName
+        )
 
         toaster?.show(app.getString(R.string.diary_generating_comment))
         // AI 回复的 replyToId 指向用户刚发的回复评论
@@ -366,52 +348,6 @@ class DiaryVM(
             diaryId = diary.id,
             isJsonDecision = true,
             replyToCommentId = userReply.id,
-            toaster = toaster
-        )
-    }
-
-    /**
-     * 场景：指定智能体对某篇日记进行评价
-     * @param replyToCommentId 针对具体评论的回复 ID；评价针对日记本身时传 null
-     */
-    private suspend fun triggerAgentEvaluationFlow(
-        diary: AgentDiaryEntity,
-        selectedSenderId: String,
-        replyToCommentId: String?,
-        toaster: AppToasterState?
-    ) {
-        val s = settingsStore.settingsFlow.value
-
-        // 目标会话逻辑修正：
-        // 如果是智能体的日记，发给该智能体本人；如果是用户的日记，发给当前选中的评价人。
-        val targetId = if (diary.assistantId != "USER") diary.assistantId else selectedSenderId
-        val targetAssistant = s.assistants.find { it.id.toString() == targetId } ?: return
-        val convId = targetAssistant.lastConversationId?.let { runCatching { Uuid.parse(it) }.getOrNull() }
-
-        if (convId == null) {
-            toaster?.show(app.getString(R.string.assistant_no_conversation), type = ToastType.Error)
-            return
-        }
-
-        // 构造评价 Prompt
-        val senderAssistant = s.assistants.find { it.id.toString() == selectedSenderId }
-        val prompt = DIARY_COMMENT_PROMPT.applyPlaceholders(
-            "char" to (senderAssistant?.name ?: "Someone"),
-            "user" to (s.displaySetting.userNickname.ifBlank { "User" }),
-            "diary_content" to diary.content.take(150).let { if (diary.content.length > 150) "$it..." else it },
-            "locale" to Locale.getDefault().displayName
-        )
-
-        val systemPrompt = "【系统指令】\n$prompt"
-
-        toaster?.show(app.getString(R.string.diary_generating_comment))
-        sendHiddenCommandAndListen(
-            convId = convId,
-            prompt = systemPrompt,
-            senderIdToSave = selectedSenderId,
-            diaryId = diary.id,
-            isJsonDecision = false,
-            replyToCommentId = replyToCommentId,
             toaster = toaster
         )
     }
@@ -432,7 +368,8 @@ class DiaryVM(
         val userNode = UIMessage(
             role = MessageRole.USER,
             parts = listOf(UIMessagePart.Text(prompt)),
-            skipContext = true // 标记指令消息不在列表显示
+            skipContext = true, // 标记指令消息不在列表显示
+            messageSource = MessageSource.DIARY_COMMENT // 日记评论来源：历史消息截断到100字
         ).toMessageNode(convId)
 
         // 1. 预热会话缓存：确保 getConversationFlow 拿到的是 DB 真实数据，
@@ -481,7 +418,8 @@ class DiaryVM(
             answer = true,
             predefinedUserNode = userNode,
             skipContextForResponse = true,   // 标记 AI 的回复也不显示在列表
-            includeSkipContextMessages = true // ✨ 让构造 AI 输入上下文时包含 skipContext=true 的消息（即这条评论指令），否则会被 GenerationHandler 过滤掉
+            includeSkipContextMessages = true, // ✨ 让构造 AI 输入上下文时包含 skipContext=true 的消息（即这条评论指令），否则会被 GenerationHandler 过滤掉
+            responseMessageSource = MessageSource.DIARY_COMMENT // AI 回复也标记为日记评论来源
         )
 
         responseJob.join()
