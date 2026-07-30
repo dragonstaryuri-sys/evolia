@@ -1,9 +1,8 @@
 package me.rerere.rikkahub.ui.pages.discover
 
-import androidx.compose.animation.*
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
@@ -12,8 +11,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
@@ -26,8 +28,6 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
-import me.rerere.rikkahub.ui.hooks.HapticPattern
-import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,7 +38,6 @@ fun DiaryDetailPage(
 ) {
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
-    val haptics = rememberPremiumHaptics()
     val diaryState by remember(diaryId) { vm.getDiaryById(diaryId) }.collectAsStateWithLifecycle(null)
     val comments by vm.getComments(diaryId).collectAsStateWithLifecycle(emptyList())
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -53,7 +52,6 @@ fun DiaryDetailPage(
                 navigationIcon = { BackButton() },
                 actions = {
                     IconButton(onClick = {
-                        haptics.perform(HapticPattern.Pop)
                         navController.navigate(Screen.DiaryEditor(diaryId))
                     }) {
                         Icon(Icons.Rounded.Edit, null)
@@ -98,15 +96,18 @@ fun DiaryDetailPage(
                                     modifier = Modifier.padding(top = 16.dp),
                                     color = MaterialTheme.colorScheme.primary
                                 )
-                            }
-                            items(comments, key = { it.id }) { comment ->
-                                CommentItemDetailed(
-                                    comment = comment,
-                                    allComments = comments,
-                                    settings = settings,
-                                    onDelete = { vm.deleteComment(comment.id) },
-                                    onReply = { replyingTo = comment }
-                                )
+                                Column {
+                                    comments.forEach { comment ->
+                                        CommentItemDetailed(
+                                            comment = comment,
+                                            allComments = comments,
+                                            settings = settings,
+                                            diaryOwnerId = diary.assistantId,
+                                            onDelete = { vm.deleteComment(comment.id) },
+                                            onReply = { replyingTo = comment }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -160,12 +161,16 @@ private fun CommentItemDetailed(
     comment: DiaryCommentEntity,
     allComments: List<DiaryCommentEntity>,
     settings: me.rerere.rikkahub.data.datastore.Settings,
+    diaryOwnerId: String,
     onDelete: () -> Unit,
     onReply: () -> Unit
 ) {
-    val haptics = rememberPremiumHaptics()
     val defaultUserStr = stringResource(R.string.diary_filter_user)
+    val copiedStr = stringResource(R.string.copied)
+    val clipboardManager = LocalClipboardManager.current
+    val toaster = LocalToaster.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showMenu by remember { mutableStateOf(false) }
 
     val name = if (comment.senderId == "USER") {
         if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
@@ -174,7 +179,7 @@ private fun CommentItemDetailed(
     val avatar = if (comment.senderId == "USER") settings.displaySetting.userAvatar
                  else settings.assistants.find { it.id.toString() == comment.senderId }?.avatar ?: me.rerere.rikkahub.core.data.model.Avatar.Dummy
 
-    // 解析回复目标：通过 replyToId 找到被回复人的 senderId，再解析成显示名
+    // 解析回复目标
     val replyToName = comment.replyToId?.let { targetId ->
         val targetComment = allComments.firstOrNull { it.id == targetId }
         val targetSenderId = targetComment?.senderId ?: return@let null
@@ -202,65 +207,84 @@ private fun CommentItemDetailed(
         )
     }
 
-    Row(modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
-        UIAvatar(name = name, value = avatar, modifier = Modifier.size(32.dp))
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    name,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                if (replyToName != null) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.diary_comment_reply_prefix),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+    Box {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onLongPress = {
+                            showMenu = true
+                        },
+                        onTap = {
+                            onReply()
+                        }
                     )
-                    Spacer(Modifier.width(2.dp))
+                },
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            ),
+            shape = MaterialTheme.shapes.medium
+        ) {
+            Row(modifier = Modifier.padding(12.dp)) {
+                UIAvatar(name = name, value = avatar, modifier = Modifier.size(32.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            name,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (replyToName != null) {
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "回复 @$replyToName",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "@$replyToName",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.tertiary
+                        text = comment.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = Int.MAX_VALUE,
+                        overflow = TextOverflow.Visible
                     )
                 }
             }
-            Text(comment.content, style = MaterialTheme.typography.bodyMedium)
-            // 回复按钮
-            TextButton(
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    onReply()
-                },
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                modifier = Modifier.offset(y = 2.dp)
-            ) {
-                Text(
-                    stringResource(R.string.diary_comment_reply),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
 
-        // 仅允许用户删除自己的评论
-        if (comment.senderId == "USER") {
-            IconButton(
+        // 长按弹出菜单
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.copy)) },
+                leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
                 onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    showDeleteConfirm = true
-                },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.Delete,
-                    null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(comment.content))
+                    showMenu = false
+                    toaster.show(copiedStr)
+                }
+            )
+            val canDelete = comment.senderId == "USER" || comment.senderId != diaryOwnerId
+            if (canDelete) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    },
+                    onClick = {
+                        showMenu = false
+                        showDeleteConfirm = true
+                    }
                 )
             }
         }
@@ -382,12 +406,6 @@ private fun CommentInputAreaDetailed(
                         }
                     )
 
-                    // 提示文字
-                    Text(
-                        text = stringResource(R.string.diary_comment_send_as),
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
                 }
             } else {
                 // 日记主人不是 USER 或回复模式：显示普通评论输入
@@ -408,18 +426,6 @@ private fun CommentInputAreaDetailed(
                         }
                     }
                 )
-
-                // 回复模式下隐藏发送身份选择（固定为 USER）
-                if (replyingTo == null) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                        Text(stringResource(R.string.diary_comment_send_as), style = MaterialTheme.typography.labelSmall)
-                        Spacer(Modifier.width(8.dp))
-                        AssistChip(
-                            onClick = {},
-                            label = { Text(stringResource(R.string.diary_personnel_user), style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
-                }
             }
         }
     }

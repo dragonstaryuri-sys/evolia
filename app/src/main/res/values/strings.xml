@@ -252,6 +252,7 @@
   <string name="confirm">Confirm</string>
   <string name="confirm_delete">Confirm Delete</string>
   <string name="copy">Copy</string>
+  <string name="copied">Copied to clipboard</string>
   <string name="copy_all">Copy All</string>
   <string name="create_fork">Create Fork</string>
   <string name="deep_thinking">Deep Thinking</string>

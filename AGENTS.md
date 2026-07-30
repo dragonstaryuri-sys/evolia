@@ -4,9 +4,8 @@
 
 **App Name:** Evolia (Paradise of Evolution)
 
-**The "Fidget Toy" Philosophy:**
-Evolia is designed to be a "fidget toy".
--   **Feel:** Interactions must be playful and deeply satisfying.
+**Design Philosophy:**
+Minimal / Clean UI. Less is more.
 
 ## 2. Vision & Purpose
 **“We are not born complete; it is in the collision with the world that we constantly evolve into better versions of ourselves.”**
@@ -63,14 +62,9 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **Shapes:** Adhere strictly to `me.rerere.rikkahub.ui.theme.AppShapes`:
     -   **Cards:** `AppShapes.CardLarge` (28.dp), `AppShapes.CardMedium` (24.dp).
     -   **Buttons:** `AppShapes.ButtonPill` (50%).
--   **Interactive Elements:** To maintain the "Fidget Toy" feel, interactive components (like `BackButton`) should scale down to `0.85f` on press.
 
 ### Animation
--   **Default Specs:**
-    -   **Standard spring:** `spring(dampingRatio = 0.5f, stiffness = 400f)`
-    -   **Bouncy/Clicky spring:** `spring(dampingRatio = 0.6f, stiffness = 300f)`
--   **Choose by context:** Use the animation that best fits the interaction (snappy state swaps, ambient fades, heavy motion, etc.).
--   **Guideline:** Prefer physically-plausible motion for tactile interactions, but non-spring timing (including `tween`) is acceptable where it improves clarity and UX for that specific UI region.
+-   Keep animations subtle and purposeful. Avoid over-animation.
 
 ## 6. Memory & Context Management (L0-L3 Hierarchy)
 

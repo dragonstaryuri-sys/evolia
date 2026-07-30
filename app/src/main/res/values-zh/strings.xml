@@ -1829,6 +1829,6 @@
   <string name="discover_page_hour_light">小时光</string>
   <string name="discover_page_hour_light_desc">与你的智能体分享此刻</string>
   <string name="diary_select_agent_to_comment">选择一个智能体来评论</string>
-  <string name="diary_agent_commenting_to">正在以 %1$s 的身份评论</string>
+  <string name="diary_agent_commenting_to">正在请求 %1$s 的评论</string>
 
 </resources>
