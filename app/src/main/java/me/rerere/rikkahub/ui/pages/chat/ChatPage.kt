@@ -478,7 +478,7 @@ private fun ChatPageContent(
                     ChatList(
                         innerPadding = PaddingValues(
                             top = topMessagePadding,
-                            bottom = if (targetMessageId.isNullOrBlank()) 100.dp else 16.dp
+                            bottom = if (targetMessageId.isNullOrBlank()) 84.dp else 16.dp
                         ),
                         conversation = conversation,
                         items = assembledItems,
@@ -685,7 +685,7 @@ private fun ChatPageContent(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(200.dp)
+                                .height(140.dp)
                                 .background(
                                     brush = androidx.compose.ui.graphics.Brush.verticalGradient(
                                         colors = listOf(

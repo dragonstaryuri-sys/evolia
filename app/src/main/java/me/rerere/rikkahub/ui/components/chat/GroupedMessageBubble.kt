@@ -38,10 +38,10 @@ enum class BubbleRole {
 
 /**
  * A message bubble with grouped corner radii support.
- * 
+ *
  * When bubbles are stacked in a group, the inner corners (where they meet)
  * are smaller to create a visual "stack" effect like in iMessage.
- * 
+ *
  * For assistant messages, the small corners are on the LEFT side.
  * For user messages, the small corners are on the RIGHT side.
  */
@@ -62,21 +62,21 @@ fun GroupedMessageBubble(
         BubbleRole.ASSISTANT -> MaterialTheme.colorScheme.surfaceContainerHigh
         BubbleRole.ACTIVITY -> MaterialTheme.colorScheme.surfaceContainerHighest
     }
-    
+
     val defaultContentColor = when (role) {
         BubbleRole.USER -> MaterialTheme.colorScheme.onPrimaryContainer
         BubbleRole.ASSISTANT -> MaterialTheme.colorScheme.onSurface
         BubbleRole.ACTIVITY -> MaterialTheme.colorScheme.onSurface
     }
-    
+
     // Calculate corner radii based on position and role
     // For assistant (left-aligned): small corners on the left side where bubbles stack
     // For user (right-aligned): small corners on the right side where bubbles stack
     val isLeftAligned = role != BubbleRole.USER
-    
+
     val shape = when (position) {
         BubblePosition.SINGLE -> RoundedCornerShape(largeRadius)
-        
+
         BubblePosition.FIRST -> if (isLeftAligned) {
             // Left aligned: small bottom-left corner
             RoundedCornerShape(
@@ -94,7 +94,7 @@ fun GroupedMessageBubble(
                 bottomStart = largeRadius
             )
         }
-        
+
         BubblePosition.MIDDLE -> if (isLeftAligned) {
             // Left aligned: small top-left and bottom-left corners
             RoundedCornerShape(
@@ -112,7 +112,7 @@ fun GroupedMessageBubble(
                 bottomStart = largeRadius
             )
         }
-        
+
         BubblePosition.LAST -> if (isLeftAligned) {
             // Left aligned: small top-left corner
             RoundedCornerShape(
@@ -131,7 +131,7 @@ fun GroupedMessageBubble(
             )
         }
     }
-    
+
     if (onClick != null) {
         Surface(
             modifier = modifier,
@@ -141,7 +141,7 @@ fun GroupedMessageBubble(
             onClick = onClick,
         ) {
             Column(
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                 content = content
             )
         }
@@ -153,7 +153,7 @@ fun GroupedMessageBubble(
             contentColor = contentColor ?: defaultContentColor,
         ) {
             Column(
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                 content = content
             )
         }

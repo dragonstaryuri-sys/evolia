@@ -364,7 +364,7 @@ fun MarkdownBlock(
     ) {
         ProvideTextStyle(style) {
             Column(
-                modifier = modifier.padding(start = 4.dp, bottom = 8.dp)
+                modifier = modifier.padding(start = 4.dp)
             ) {
                 astTree.children.fastForEach { child ->
                     MarkdownNode(
