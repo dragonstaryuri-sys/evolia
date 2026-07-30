@@ -320,6 +320,15 @@ private fun SharedTransitionScope.ChatListNormal(
         }
     }
 
+    // 计算最新一组 user 和 assistant 消息的索引（reverseLayout，index 0 为最新）
+    // 只有这两组消息才显示刷新按钮，避免用户刷新历史消息导致上下文错乱
+    val latestUserTurnIndex = remember(items) {
+        items.indexOfFirst { it is ChatUIItem.Turn && it.group.role == MessageRole.USER }
+    }
+    val latestAssistantTurnIndex = remember(items) {
+        items.indexOfFirst { it is ChatUIItem.Turn && it.group.role == MessageRole.ASSISTANT }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = state,
@@ -412,7 +421,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                     assistant = settings.getAssistantById(conversation.assistantId),
                                     loading = loading && item.isGenerating,
                                     model = settings.getCurrentChatModel(),
-                                    showRegenerate = true,
+                                    showRegenerate = index == latestUserTurnIndex || index == latestAssistantTurnIndex,
                                     onCitationClick = onCitationClick,
                                     onRegenerate = { node -> onRegenerate(node.currentMessage) },
                                     onEdit = { node -> onEdit(node.currentMessage) },
