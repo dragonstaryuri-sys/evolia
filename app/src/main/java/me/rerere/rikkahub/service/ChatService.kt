@@ -1623,7 +1623,9 @@ class ChatService(
         val settings = settingsStore.settingsFlow.value
         val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
         val lastMsg = conversation.currentMessages.lastOrNull()
-        val msg = lastMsg?.toContentText()?.take(50) ?: ""
+        // skipContext=true 的消息是隐形对话（日记评论、agent_task 等），不推送系统通知避免泄露内容
+        if (lastMsg == null || lastMsg.skipContext) return
+        val msg = lastMsg.toContentText()?.take(50) ?: ""
         val notification = NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
             .setContentTitle(assistant.name)
             .setContentText(msg)
