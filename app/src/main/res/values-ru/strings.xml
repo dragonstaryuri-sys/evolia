@@ -332,7 +332,6 @@
   <string name="reasoning_off_desc">Отключить функцию обоснования, модель будет отвечать на вопросы напрямую.</string>
   <string name="reasoning_set_budget">Установить лимит рассуждений (%1$d токенов)</string>
   <string name="regenerate">Сгенерировать заново</string>
-  <string name="render_with_webview">Отображать в WebView</string>
   <string name="search_ability_scrape">Собрать</string>
   <string name="search_ability_search">Поиск</string>
   <string name="search_picker_title">Поиск настроек</string>

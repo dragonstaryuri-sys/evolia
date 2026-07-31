@@ -575,7 +575,6 @@ fun ChatMessageTurn(
             onShare = { onShare(actionTargetNode) },
             model = model,
             onSelectAndCopy = { showSelectCopySheet = true },
-            onWebViewPreview = { },
             onDismissRequest = { showActionsSheet = false }
         )
     }

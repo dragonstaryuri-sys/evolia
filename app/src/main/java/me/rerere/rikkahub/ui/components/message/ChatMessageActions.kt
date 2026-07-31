@@ -41,7 +41,6 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.OpenInBrowser
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Checklist
@@ -52,7 +51,6 @@ import kotlinx.datetime.toJavaLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessage
-import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
@@ -217,7 +215,6 @@ fun ChatMessageActionsSheet(
     onEdit: () -> Unit,
     onShare: () -> Unit,
     onSelectAndCopy: () -> Unit,
-    onWebViewPreview: () -> Unit,
     onDismissRequest: () -> Unit
 ) {
     val settings = LocalSettings.current
@@ -271,42 +268,6 @@ fun ChatMessageActionsSheet(
             }
 
             if (!wechatMode) {
-                // WebView Preview (only show if message has text content)
-                val hasTextContent = message.parts.filterIsInstance<UIMessagePart.Text>()
-                    .any { it.text.isNotBlank() }
-
-                if (hasTextContent) {
-                    Card(
-                        onClick = {
-                            onDismissRequest()
-                            onWebViewPreview()
-                        },
-
-                        shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
-                        colors = CardDefaults.cardColors(
-                            containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.OpenInBrowser,
-                                contentDescription = null,
-                                modifier = Modifier.padding(4.dp)
-                            )
-                            Text(
-                                text = stringResource(R.string.render_with_webview),
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        }
-                    }
-                }
-
                 // Edit
                 Card(
                     onClick = {
