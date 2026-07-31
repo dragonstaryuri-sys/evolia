@@ -45,10 +45,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,7 +57,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -683,7 +680,7 @@ private fun UserMessageTurn(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
                     ) {
-                        if (wechatMode && isLastTurn && isLastPart && showRegenerate) {
+                        if (wechatMode && isLastPart && showRegenerate) {
                             WeChatRegenerateButton(onClick = onRegenerate)
                         }
 
@@ -834,31 +831,8 @@ private fun AssistantMessageTurn(
             group.filteredNodes.forEach { node ->
                 node.currentMessage.parts.forEach { part ->
                     if (part is UIMessagePart.Text && part.text.isNotBlank()) {
-                        if (wechatMode) {
-                            // 微信模式：使用正则动态切分
-                            val regex = Regex("[，。！？~\\n]|[,!?~\\n]")
-                            var lastIndex = 0
-                            // 查找所有的分隔符位置
-                            val matches = regex.findAll(part.text).toList()
-
-                            matches.forEach { match ->
-                                // 截取分隔符之前的文本
-                                val sentence = part.text.substring(lastIndex, match.range.first).trim()
-                                if (sentence.isNotBlank()) {
-                                    add(node to UIMessagePart.Text(sentence))
-                                }
-                                lastIndex = match.range.last + 1
-                            }
-
-                            // 处理最后剩下的尾巴
-                            val remainder = part.text.substring(lastIndex).trim()
-                            if (remainder.isNotBlank()) {
-                                add(node to UIMessagePart.Text(remainder))
-                            }
-                        } else {
-                            // 普通模式：直接添加
-                            add(node to part)
-                        }
+                        // 微信模式下节点本身就是分句结果（Service 层按标点分句存储），UI 无需再切分
+                        add(node to part)
                     } else if (part is UIMessagePart.Reasoning && !effectiveDisplay.autoCloseThinking && !wechatMode) {
                         // ✨ Reasoning is only added if auto-collapse is OFF AND NOT in WeChat mode
                         if (part.reasoning.isNotBlank()) {
@@ -871,66 +845,12 @@ private fun AssistantMessageTurn(
     }
 
     // --- WeChat Mode Dynamics ---
-    val currentBubbles by rememberUpdatedState(allTextBubbles)
-    val isAiLoading by rememberUpdatedState(loading)
-    // ✨ Fix: Add loading to the remember keys to reset displayedCount when regeneration starts
-    var displayedCount by remember(group.firstNode.currentMessage.id) {
-        // 修改为：如果是最后一轮或者正在加载，我们倾向于从 0 开始跑一遍动画
-        val shouldAnimate = wechatMode && (isLastTurn || loading)
-        mutableIntStateOf(if (shouldAnimate) 0 else allTextBubbles.size)
-    }
-
-    // ✨ Fix: Add loading to the LaunchedEffect keys to ensure it restarts on regeneration
-    LaunchedEffect(group.firstNode.currentMessage.id, wechatMode) {
-        if (!wechatMode) {
-            onTypingStateChange(false)
-            return@LaunchedEffect
-        }
-        if (!loading && displayedCount < allTextBubbles.size) {
-            displayedCount = allTextBubbles.size
-            onTypingStateChange(false)
-            return@LaunchedEffect
-        }
-        try {
-            if (displayedCount == 0) {
-                // 等待条件：直到 AI 真正开始产生内容，或者 activityState 进入了非空闲状态
-                while (currentBubbles.isEmpty() && isAiLoading) {
-                    delay(100)
-                }
-                // 当跳出上面的循环，说明 AI 已经开始响应了
-                if (currentBubbles.isNotEmpty()) {
-                    displayedCount = 1
-                }
-            }
-            // Initial typing notification
-            onTypingStateChange(isAiLoading || displayedCount < currentBubbles.size)
-
-            while (true) {
-                val latest = currentBubbles
-                val totalAvailable = latest.size
-
-                onTypingStateChange(displayedCount < totalAvailable || isAiLoading)
-
-                if (displayedCount < totalAvailable) {
-                    // ✨ Extract text correctly based on part type
-                    val prevPart = latest.getOrNull(displayedCount - 1)?.second
-                    val prevText = when (prevPart) {
-                        is UIMessagePart.Text -> prevPart.text
-                        is UIMessagePart.Reasoning -> prevPart.reasoning
-                        else -> ""
-                    }
-                    // 打字速度建议：每个字 100ms 基础延迟
-                    val delayTime = (prevText.length * 200L + 100L).coerceIn(500L, 3000L)
-                    delay(delayTime)
-                    displayedCount++
-                } else {
-                    // ✨ 核心修复：只有当“不再加载”且“所有气泡都显示完了”才退出
-                    // 这样即使 loading 信号短暂断开，动画也会把剩下的气泡跑完
-                    if (!isAiLoading) break
-                    delay(200)
-                }
-            }
-        } finally {
+    // 微信模式下，节点由 Service 层按标点分句逐句存入（含 delay 节奏），UI 无需延迟动画，直接按节点渲染。
+    // onTypingStateChange 用于通知父组件"正在生成"状态（由 loading 驱动）。
+    LaunchedEffect(loading, wechatMode) {
+        if (wechatMode) {
+            onTypingStateChange(loading)
+        } else {
             onTypingStateChange(false)
         }
     }
@@ -1009,7 +929,7 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            val bubblesToShow = if (wechatMode) allTextBubbles.take(displayedCount) else allTextBubbles
+            val bubblesToShow = allTextBubbles
             bubblesToShow.forEachIndexed { index, (node, part) ->
                 val isLastBubble = index == allTextBubbles.lastIndex
                 val position = if (wechatMode) BubblePosition.SINGLE else when {
@@ -1065,10 +985,6 @@ private fun AssistantMessageTurn(
                             )
                         }
                     }
-
-                    if (wechatMode && isLastTurn && isLastBubble && showRegenerate && !loading) {
-                        WeChatRegenerateButton(onClick = onRegenerate)
-                    }
                 }
             }
         } else {
@@ -1114,7 +1030,7 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            val bubblesToShow = if (wechatMode) allTextBubbles.take(displayedCount) else allTextBubbles
+            val bubblesToShow = allTextBubbles
             bubblesToShow.forEachIndexed { index, (node, part) ->
                 val isLastBubble = index == allTextBubbles.lastIndex
 
@@ -1151,10 +1067,6 @@ private fun AssistantMessageTurn(
                             }
                         )
                     }
-
-                    if (wechatMode && isLastTurn && isLastBubble && showRegenerate && !loading) {
-                        WeChatRegenerateButton(onClick = onRegenerate)
-                    }
                 }
             }
         }
@@ -1166,8 +1078,7 @@ private fun AssistantMessageTurn(
             )
         }
 
-        val allBubblesShown = !wechatMode || (displayedCount >= allTextBubbles.size)
-        val showActions = !loading && allBubblesShown && (isLastTurn || actionsExpanded || (wechatMode && BuildConfig.DEBUG))
+        val showActions = !loading && (isLastTurn || actionsExpanded || (wechatMode && BuildConfig.DEBUG))
         AnimatedVisibility(
             visible = showActions,
             enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) + slideInVertically(

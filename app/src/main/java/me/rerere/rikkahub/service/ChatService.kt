@@ -703,7 +703,7 @@ class ChatService(
 
             val debounceJob = appScope.launch {
                 if (wechatMode) {
-                    delay(8000)
+                    delay(5000)
                     _isAiTypingMap.update { it + (conversationId to true) }
                 } else {
                     _isAiTypingMap.update { it + (conversationId to true) }
@@ -902,6 +902,13 @@ class ChatService(
 
             var lastTotalFullText = ""
             var lastAiId: Uuid? = null
+
+            // 微信模式分句状态：流式过程中累积文本，按标点切句，逐句存为独立节点
+            val wechatSentenceBuffer = StringBuilder()
+            var wechatProcessedTextLen = 0
+            var wechatStoredSentenceCount = 0
+            var wechatFirstNodeNonTextParts: List<UIMessagePart>? = null
+            var wechatLastSentenceLength = 0 // 上一句的长度，用于计算下一句的 delay 节奏（与原 UI 打字动画一致）
 
             runCatching {
                 currentConversation = currentConversation.copy(chatSuggestions = emptyList())
@@ -1179,38 +1186,133 @@ class ChatService(
                                 }
                             }
 
-                            // 3. 如果 AI 消息 ID 变了（比如从工具调用切换到了最终回答），重置微信模式的分句计数器
+                            // 3. 如果 AI 消息 ID 变了（比如从工具调用切换到了最终回答），重置微信模式的分句状态
                             if (lastAI != null && lastAI.id != lastAiId) {
                                 lastAiId = lastAI.id
-
+                                wechatSentenceBuffer.clear()
+                                wechatProcessedTextLen = 0
+                                wechatStoredSentenceCount = 0
+                                wechatFirstNodeNonTextParts = null
+                                wechatLastSentenceLength = 0
                             }
 
-                            // 4. 执行同步 (注意这里恢复使用 baseMessages 而不是 modifiedMessages，确保 DB 中没有临时要求)
-                            if (anyNewMessages) {
-                                // 微信模式下，同步时先过滤掉正在回答的消息的文本部分，防止动画还没开始就“闪现”出完整文本
-                                val syncMessages = if (wechatMode && lastAI != null && fullText.isNotBlank()) {
-                                    newMessages.map { msg ->
-                                        if (msg.id == lastAI.id) {
-                                            // 仅保留非文本部分（如思考过程、工具调用图标），文本部分交给下方的逐句动画逻辑
-                                            msg.copy(parts = msg.parts.filter { it !is UIMessagePart.Text })
-                                        } else msg
-                                    }
-                                } else newMessages
+                            // 4. 微信模式 + 有最终文本：按标点分句，逐句存为独立节点（含标点，非文本 parts 放第一个节点）
+                            if (wechatMode && lastAI != null && fullText.isNotBlank()) {
+                                // 4a. 同步非最终 AI 的消息（工具调用、工具结果等）
+                                val otherMessages = newMessages.filter { it.id != lastAI.id }
+                                if (otherMessages.isNotEmpty()) {
+                                    val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + otherMessages)
+                                        .copy(chatSuggestions = emptyList())
+                                    currentConversation = nextState
+                                    updateConversation(conversationId) { nextState }
+                                    conversationSnapshot = nextState
+                                }
 
-                                val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + syncMessages)
+                                // 4b. 记录第一句节点的非文本 parts（思考过程、工具调用图标等）
+                                val nonTextParts = lastAI.parts.filter { it !is UIMessagePart.Text }
+                                if (nonTextParts.isNotEmpty()) {
+                                    wechatFirstNodeNonTextParts = nonTextParts
+                                }
+
+                                // 4c. 文本增量累积 + 按标点切分完整句子（保留标点在句末）
+                                if (fullText.length > wechatProcessedTextLen) {
+                                    val increment = fullText.substring(wechatProcessedTextLen)
+                                    wechatSentenceBuffer.append(increment)
+                                    wechatProcessedTextLen = fullText.length
+
+                                    // 排除 ![ 和 ！[ 开头的图片 markdown 语法，避免图片链接被切断
+                                    val sentenceRegex = Regex("[，。？~\\n]|[,?~\\n]|！(?!\\[)|!(?!\\[)")
+                                    while (true) {
+                                        val match = sentenceRegex.find(wechatSentenceBuffer) ?: break
+                                        // 如果匹配到 !/！ 且在缓冲区末尾，可能后续还有 [（图片语法），等更多文本到达
+                                        if ((match.value == "!" || match.value == "！") &&
+                                            match.range.last == wechatSentenceBuffer.lastIndex
+                                        ) {
+                                            break
+                                        }
+                                        val sentenceEnd = match.range.last + 1
+                                        val rawSentence = wechatSentenceBuffer.substring(0, sentenceEnd).trim()
+                                        wechatSentenceBuffer.delete(0, sentenceEnd)
+
+                                        // 去掉中英文逗号和中文句号（微信聊天更口语化，保留感叹号/问号等有情感的标点）
+                                        val sentence = rawSentence
+                                            .replace("，", "")
+                                            .replace(",", "")
+                                            .replace("。", "")
+                                            .trim()
+                                        if (sentence.isBlank()) continue
+
+                                        // delay 节奏控制：基于上一句长度（与原 UI 延迟打字公式一致，第一句默认 500ms）
+                                        val delayTime = (wechatLastSentenceLength * 200L + 100L).coerceIn(500L, 3000L)
+                                        delay(delayTime)
+
+                                        // 创建新节点：第一句带非文本 parts
+                                        val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                            wechatFirstNodeNonTextParts!! + UIMessagePart.Text(sentence)
+                                        } else {
+                                            listOf(UIMessagePart.Text(sentence))
+                                        }
+                                        val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                        val newNode = newMsg.toMessageNode(conversationId)
+
+                                        currentConversation = currentConversation.copy(
+                                            messageNodes = currentConversation.messageNodes + newNode
+                                        )
+                                        updateConversation(conversationId) { currentConversation }
+                                        saveConversation(conversationId, currentConversation)
+                                        wechatStoredSentenceCount++
+                                        wechatLastSentenceLength = sentence.length
+                                    }
+                                }
+                            } else {
+                                // 非微信模式 或 无最终文本：原同步逻辑
+                                if (anyNewMessages) {
+                                    val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + newMessages)
+                                        .copy(chatSuggestions = emptyList())
+                                    currentConversation = nextState
+                                    updateConversation(conversationId) { nextState }
+                                    conversationSnapshot = nextState
+                                }
+
+                                val toUpdate = baseMessages + newMessages
+                                val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
                                     .copy(chatSuggestions = emptyList())
                                 currentConversation = nextState
                                 updateConversation(conversationId) { nextState }
-                                conversationSnapshot = nextState
                             }
 
-                            val toUpdate = baseMessages + newMessages
-                            val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
-                                .copy(chatSuggestions = emptyList())
-                            currentConversation = nextState
-                            updateConversation(conversationId) { nextState }
-
                         }
+                    }
+
+                    // 微信模式：流式结束后处理缓冲区中剩余的未成句文本（作为最后一句存入）
+                    // 注意：用户打断时 collect 抛 CancellationException，不会执行到这里，符合"未存的不继续"
+                    if (wechatMode && wechatSentenceBuffer.isNotEmpty()) {
+                        // 去掉中英文逗号和中文句号
+                        val lastSentence = wechatSentenceBuffer.toString()
+                            .replace("，", "")
+                            .replace(",", "")
+                            .replace("。", "")
+                            .trim()
+                        if (lastSentence.isNotBlank()) {
+                            val delayTime = (wechatLastSentenceLength * 200L + 100L).coerceIn(500L, 3000L)
+                            delay(delayTime)
+
+                            val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                wechatFirstNodeNonTextParts!! + UIMessagePart.Text(lastSentence)
+                            } else {
+                                listOf(UIMessagePart.Text(lastSentence))
+                            }
+                            val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                            val newNode = newMsg.toMessageNode(conversationId)
+
+                            currentConversation = currentConversation.copy(
+                                messageNodes = currentConversation.messageNodes + newNode
+                            )
+                            updateConversation(conversationId) { currentConversation }
+                            saveConversation(conversationId, currentConversation)
+                            wechatStoredSentenceCount++
+                        }
+                        wechatSentenceBuffer.clear()
                     }
 
                 }
@@ -1363,7 +1465,7 @@ class ChatService(
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
-        val max = if (wechatMode) (assistant.detailMemoryThreshold * 1.3).toInt() else assistant.detailMemoryThreshold
+        val max = if (wechatMode) (assistant.detailMemoryThreshold * 2).toInt() else assistant.detailMemoryThreshold
 
         // 获取最近的消息（取 200 条以防 tool 消息过多），然后在内存中统计 user 和 assistant 角色
         val newMessages = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime, 200)
