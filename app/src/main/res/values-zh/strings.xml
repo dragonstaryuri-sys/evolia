@@ -601,6 +601,17 @@
   <string name="setting_tts_page_speed_description">语音合成速度 (0.25 - 4.0)</string>
   <string name="setting_tts_page_test_text">你好，这是文字转语音测试。</string>
   <string name="setting_tts_page_title">语音合成</string>
+  <string name="setting_voice_page_title">语音服务</string>
+  <string name="setting_voice_tab_tts">语音合成</string>
+  <string name="setting_voice_tab_asr">语音识别</string>
+  <string name="setting_asr_page_title">ASR 设置</string>
+  <string name="setting_asr_page_name">名称</string>
+  <string name="setting_asr_page_name_description">此 ASR 提供商的自定义名称</string>
+  <string name="setting_asr_page_name_placeholder">输入提供商名称</string>
+  <string name="setting_asr_page_language">识别语言</string>
+  <string name="setting_asr_page_language_description">用于语音识别的语言</string>
+  <string name="setting_asr_page_offline">偏好离线识别</string>
+  <string name="setting_asr_page_offline_description">在可用时优先使用设备端离线识别（取决于系统已下载的语言包）</string>
   <string name="setting_tts_page_voice">语音</string>
   <string name="setting_tts_page_voice_description">用于语音合成的声音</string>
   <string name="setting_tts_page_voice_id">语音 ID</string>

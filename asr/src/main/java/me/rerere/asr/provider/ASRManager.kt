@@ -1,0 +1,19 @@
+package me.rerere.asr.provider
+
+import android.content.Context
+import kotlinx.coroutines.flow.Flow
+import me.rerere.asr.model.ASRResult
+import me.rerere.asr.provider.providers.SystemASRProvider
+
+class ASRManager {
+    private val systemProvider = SystemASRProvider()
+
+    fun startRecognition(
+        providerSetting: ASRProviderSetting,
+        context: Context
+    ): Flow<ASRResult> {
+        return when (providerSetting) {
+            is ASRProviderSetting.SystemASR -> systemProvider.startRecognition(context, providerSetting)
+        }
+    }
+}

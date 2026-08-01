@@ -642,6 +642,17 @@
   <string name="setting_tts_page_speed_description">Synthesis Speed (0.25 - 4.0)</string>
   <string name="setting_tts_page_test_text">Hello, this is a text-to-speech test.</string>
   <string name="setting_tts_page_title">TTS Providers</string>
+  <string name="setting_voice_page_title">Voice Service</string>
+  <string name="setting_voice_tab_tts">TTS</string>
+  <string name="setting_voice_tab_asr">ASR</string>
+  <string name="setting_asr_page_title">ASR Settings</string>
+  <string name="setting_asr_page_name">Name</string>
+  <string name="setting_asr_page_name_description">Custom name for this ASR provider</string>
+  <string name="setting_asr_page_name_placeholder">Enter provider name</string>
+  <string name="setting_asr_page_language">Recognition Language</string>
+  <string name="setting_asr_page_language_description">Language used for speech recognition</string>
+  <string name="setting_asr_page_offline">Prefer Offline</string>
+  <string name="setting_asr_page_offline_description">Prefer on-device offline recognition when available (depends on downloaded system language packs)</string>
   <string name="setting_tts_page_voice">Voice</string>
   <string name="setting_tts_page_voice_description">Voice to use for synthesis</string>
   <string name="setting_tts_page_voice_id">Voice ID</string>

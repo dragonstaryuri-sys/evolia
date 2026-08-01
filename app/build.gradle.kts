@@ -355,6 +355,7 @@ dependencies {
     implementation(project(":highlight"))
     implementation(project(":search"))
     implementation(project(":tts"))
+    implementation(project(":asr"))
     implementation(project(":common"))
     implementation(project(":core-data"))
     implementation(project(":discover"))

@@ -1,0 +1,51 @@
+package me.rerere.asr.provider
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlin.uuid.Uuid
+
+@Serializable
+sealed class ASRProviderSetting {
+    abstract val id: Uuid
+    abstract val name: String
+    abstract val builtIn: Boolean
+
+    abstract fun copyProvider(
+        id: Uuid = this.id,
+        name: String = this.name,
+        builtIn: Boolean = this.builtIn
+    ): ASRProviderSetting
+
+    /**
+     * 系统 ASR：基于 Android SpeechRecognizer。
+     * 实时监听式识别，音频不上传网络，支持离线（取决于设备是否已下载离线语音包）。
+     * 适合作为通话场景的默认 ASR，无需额外配置即可使用。
+     */
+    @Serializable
+    @SerialName("system")
+    data class SystemASR(
+        override var id: Uuid = Uuid.random(),
+        override var name: String = "System ASR",
+        override val builtIn: Boolean = true,
+        val language: String = "zh-CN",
+        val enableOffline: Boolean = false
+    ) : ASRProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+            builtIn: Boolean
+        ): ASRProviderSetting = copy(
+            id = id,
+            name = name,
+            builtIn = builtIn
+        )
+    }
+
+    companion object {
+        val Types by lazy {
+            listOf(
+                SystemASR::class,
+            )
+        }
+    }
+}

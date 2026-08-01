@@ -35,6 +35,7 @@ import me.rerere.rikkahub.utils.toMutableStateFlow
 import me.rerere.search.SearchCommonOptions
 import me.rerere.search.SearchServiceOptions
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.asr.provider.ASRProviderSetting
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import kotlin.uuid.Uuid
@@ -101,6 +102,8 @@ class SettingsStore(
         val TTS_PROVIDERS = stringPreferencesKey("tts_providers")
         val SELECTED_TTS_PROVIDER = stringPreferencesKey("selected_tts_provider")
         val AUTO_PLAY_TTS = booleanPreferencesKey("auto_play_tts")
+        val ASR_PROVIDERS = stringPreferencesKey("asr_providers")
+        val SELECTED_ASR_PROVIDER = stringPreferencesKey("selected_asr_provider")
         val CONSOLIDATION_WORKER_INTERVAL = intPreferencesKey("consolidation_worker_interval")
         val CONSOLIDATION_REQUIRES_DEVICE_IDLE = booleanPreferencesKey("consolidation_requires_device_idle")
         val MODES = stringPreferencesKey("modes")
@@ -188,6 +191,11 @@ class SettingsStore(
                 } ?: emptyList(),
                 selectedTTSProviderId = preferences[SELECTED_TTS_PROVIDER].toUuidOrNull()
                     ?: DEFAULT_SYSTEM_TTS_ID,
+                asrProviders = preferences[ASR_PROVIDERS]?.let {
+                    JsonInstant.decodeFromString(it)
+                } ?: emptyList(),
+                selectedASRProviderId = preferences[SELECTED_ASR_PROVIDER].toUuidOrNull()
+                    ?: DEFAULT_SYSTEM_ASR_ID,
                 autoPlayTts = preferences[AUTO_PLAY_TTS] ?: false,
                 consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 300,
                 consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
@@ -246,10 +254,17 @@ class SettingsStore(
                     ttsProviders.add(defaultTTSProvider.copyProvider())
                 }
             }
+            val asrProviders = it.asrProviders.ifEmpty { DEFAULT_ASR_PROVIDERS }.toMutableList()
+            DEFAULT_ASR_PROVIDERS.forEach { defaultASRProvider ->
+                if (asrProviders.none { provider -> provider.id == defaultASRProvider.id }) {
+                    asrProviders.add(defaultASRProvider.copyProvider())
+                }
+            }
             it.copy(
                 providers = providers,
                 assistants = assistants,
-                ttsProviders = ttsProviders
+                ttsProviders = ttsProviders,
+                asrProviders = asrProviders
             )
         }
         .map { settings ->
@@ -266,6 +281,7 @@ class SettingsStore(
                     assistant.copy(mcpServers = assistant.mcpServers.filter { it in validMcpServerIds }.toSet())
                 },
                 ttsProviders = settings.ttsProviders.distinctBy { it.id },
+                asrProviders = settings.asrProviders.distinctBy { it.id },
                 favoriteModels = settings.favoriteModels.filter { uuid ->
                     settings.providers.flatMap { it.models }.any { it.id == uuid }
                 }
@@ -297,6 +313,7 @@ class SettingsStore(
             preferences[PROVIDERS] = JsonInstant.encodeToString(settings.providers)
             preferences[WEBDAV_CONFIG] = JsonInstant.encodeToString(settings.webDavConfig)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(settings.ttsProviders)
+            preferences[ASR_PROVIDERS] = JsonInstant.encodeToString(settings.asrProviders)
         }
     }
 
@@ -351,6 +368,8 @@ class SettingsStore(
             preferences[USER_PROFILE] = JsonInstant.encodeToString(settingsToSave.userProfile)
             preferences[TTS_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.ttsProviders)
             settingsToSave.selectedTTSProviderId.let { preferences[SELECTED_TTS_PROVIDER] = it.toString() }
+            preferences[ASR_PROVIDERS] = JsonInstant.encodeToString(migratedSettings.asrProviders)
+            settingsToSave.selectedASRProviderId.let { preferences[SELECTED_ASR_PROVIDER] = it.toString() }
             preferences[AUTO_PLAY_TTS] = settingsToSave.autoPlayTts
             preferences[CONSOLIDATION_WORKER_INTERVAL] = settingsToSave.consolidationWorkerIntervalMinutes
             preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] = settingsToSave.consolidationRequiresDeviceIdle
@@ -437,6 +456,8 @@ data class Settings(
     val userProfile: UserProfile = UserProfile(),
     val ttsProviders: List<TTSProviderSetting> = emptyList(),
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
+    val asrProviders: List<ASRProviderSetting> = emptyList(),
+    val selectedASRProviderId: Uuid = DEFAULT_SYSTEM_ASR_ID,
     val autoPlayTts: Boolean = false,
     val consolidationWorkerIntervalMinutes: Int = 300,
     val consolidationRequiresDeviceIdle: Boolean = false,
@@ -606,6 +627,9 @@ fun Settings.getEffectiveDisplaySetting(assistant: Assistant? = null): DisplaySe
 fun Settings.getSelectedTTSProvider(): TTSProviderSetting? =
     ttsProviders.find { it.id == selectedTTSProviderId } ?: ttsProviders.firstOrNull()
 
+fun Settings.getSelectedASRProvider(): ASRProviderSetting? =
+    asrProviders.find { it.id == selectedASRProviderId } ?: asrProviders.firstOrNull()
+
 fun Model.findProvider(providers: List<ProviderSetting>, checkOverwrite: Boolean = true): ProviderSetting? {
     val provider = providers.find { p -> p.models.any { it.id == this.id } } ?: return null
     if (checkOverwrite && this.providerOverwrite != null) return this.providerOverwrite!!.copyProvider(
@@ -630,3 +654,6 @@ internal val DEFAULT_ASSISTANTS = listOf(
 )
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")
 private val DEFAULT_TTS_PROVIDERS = listOf(TTSProviderSetting.SystemTTS(id = DEFAULT_SYSTEM_TTS_ID, name = ""))
+
+val DEFAULT_SYSTEM_ASR_ID = Uuid.parse("7a8b9c0d-1e2f-3a4b-8c9d-0e1f2a3b4c5d")
+private val DEFAULT_ASR_PROVIDERS = listOf(ASRProviderSetting.SystemASR(id = DEFAULT_SYSTEM_ASR_ID, name = ""))

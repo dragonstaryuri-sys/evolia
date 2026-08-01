@@ -95,6 +95,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var editingProvider by remember { mutableStateOf<TTSProviderSetting?>(null) }
+    var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     val lazyListState = rememberLazyListState()
@@ -110,21 +111,23 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
     Scaffold(
         topBar = {
             OneUITopAppBar(
-                title = stringResource(R.string.setting_tts_page_title),
+                title = stringResource(R.string.setting_voice_page_title),
                 scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
                 },
                 actions = {
-                    IconButton(onClick = { showFilterSettingsDialog = true }) {
-                        Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.settings))
-                    }
-                    AddTTSProviderButton {
-                        vm.updateSettings(
-                            settings.copy(
-                                ttsProviders = listOf(it) + settings.ttsProviders
+                    if (selectedTab == 0) {
+                        IconButton(onClick = { showFilterSettingsDialog = true }) {
+                            Icon(Icons.Rounded.Settings, contentDescription = stringResource(R.string.settings))
+                        }
+                        AddTTSProviderButton {
+                            vm.updateSettings(
+                                settings.copy(
+                                    ttsProviders = listOf(it) + settings.ttsProviders
+                                )
                             )
-                        )
+                        }
                     }
                 }
             )
@@ -132,7 +135,25 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
 
-        val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            androidx.compose.material3.PrimaryTabRow(selectedTabIndex = selectedTab) {
+                androidx.compose.material3.Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text(stringResource(R.string.setting_voice_tab_tts)) }
+                )
+                androidx.compose.material3.Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text(stringResource(R.string.setting_voice_tab_asr)) }
+                )
+            }
+            if (selectedTab == 0) {
+                val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
         var draggingIndex by remember { mutableIntStateOf(-1) }
         var dragOffset by remember { mutableFloatStateOf(0f) }
@@ -166,7 +187,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
-            contentPadding = innerPadding + PaddingValues(16.dp),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
@@ -303,6 +324,10 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                     }
                 }
             )
+        }
+            } else {
+                AsrTab(vm = vm, contentPadding = PaddingValues(16.dp))
+            }
         }
     }
 
