@@ -19,7 +19,6 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.common.FeatureConfig
 import me.rerere.rikkahub.data.datastore.isNotConfigured
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.discover.ui.components.ScheduleCard
 import me.rerere.rikkahub.discover.ui.ScheduleViewModel
 import me.rerere.rikkahub.ui.pages.assistant.AssistantVM
@@ -33,7 +32,6 @@ import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
 @Composable
 fun DiscoverPage() {
     val navController = LocalNavController.current
-    val toaster = LocalToaster.current
 
     // 获取日程 ViewModel
     val scheduleViewModel: ScheduleViewModel = koinViewModel()
@@ -149,19 +147,6 @@ fun DiscoverPage() {
                     icon = { Icon(Icons.Rounded.WbSunny, null, tint = MaterialTheme.colorScheme.tertiary) },
                     onClick = {
                         navController.navigate(Screen.HourLight)
-                    }
-                )
-            }
-
-            // 7. 现有功能：社区（开发中）
-            item {
-                val developingText = stringResource(R.string.discover_page_developing)
-                DiscoverItem(
-                    title = stringResource(R.string.discover_page_forum),
-                    description = stringResource(R.string.discover_page_forum_desc),
-                    icon = { Icon(Icons.Rounded.Forum, null, tint = MaterialTheme.colorScheme.outline) },
-                    onClick = {
-                        toaster.show(developingText)
                     }
                 )
             }

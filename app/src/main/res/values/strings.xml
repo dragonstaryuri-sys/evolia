@@ -902,8 +902,6 @@
 
   <!-- Discover -->
   <string name="discover_page_title">Discover</string>
-  <string name="discover_page_forum">Forum</string>
-  <string name="discover_page_forum_desc">Community and extensions (WIP)</string>
   <string name="discover_page_diary">Diary</string>
   <string name="assistant_context_include_diary_title">带入日记到上下文</string>
   <string name="assistant_context_include_diary_desc">启用后，智能体在对话时将参考最近生成的日记内容</string>
@@ -911,7 +909,6 @@
   <string name="assistant_context_diaries_limit_value">%d 篇日记</string>
   <string name="assistant_context_diaries_limit_desc">设置带入对话背景的最近日记条数</string>
   <string name="discover_page_diary_desc">Manage agent diaries</string>
-  <string name="discover_page_developing">This feature is currently under development</string>
   <string name="discover_page_diary_title">Agent Diaries</string>
   <string name="discover_page_diary_generate">Generate Today\'s Diary</string>
   <string name="discover_page_diary_empty">No diaries yet. Start chatting and generate one!</string>
