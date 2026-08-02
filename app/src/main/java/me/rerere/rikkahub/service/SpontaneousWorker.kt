@@ -20,6 +20,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.toMessageNode
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.time.Instant
@@ -185,11 +186,12 @@ class SpontaneousWorker(
 
                     if (content.isNotBlank()) {
                         val newMessage = UIMessage.assistant(content).copy(modelId = model.id)
-                        val updatedConversation = conversation.updateCurrentMessages(
-                            conversation.currentMessages + newMessage
-                        ).copy(updateAt = Instant.now())
-
-                        chatService.saveConversation(conversation.id, updatedConversation)
+                        chatService.mutateConversationAndSave(conversation.id) { current ->
+                            current.copy(
+                                messageNodes = current.messageNodes + newMessage.toMessageNode(current.id),
+                                updateAt = Instant.now()
+                            )
+                        }
                         sendNotification(title, content, conversation.id)
                         updateAssistantState(assistant, content, false)
                     }
