@@ -96,10 +96,12 @@ data class Conversation(
                 newNodes[existingNodeIndex] = node.copy(messages = updatedMessages, orderIndex = node.orderIndex)
             } else {
                 // 3. 只要是新 ID，就添加为新节点
-                newNodes.add(messageWithTag.toMessageNode(this.id))
+                newNodes.add(
+                    messageWithTag.toMessageNode(this.id).copy(orderIndex = newNodes.size)
+                )
             }
         }
-        return this.copy(messageNodes = newNodes)
+        return this.copy(messageNodes = newNodes).normalizeMessageNodes()
     }
 
     companion object {
@@ -108,6 +110,225 @@ data class Conversation(
 
         fun dummy() = Conversation(assistantId = Uuid.random(), messageNodes = emptyList())
     }
+}
+
+/**
+ * Keep the in-memory representation identical to the persisted ordering contract.
+ * New nodes used to retain the data-class default (0), so a tool-enabled response
+ * could contain several nodes with the same order index until the screen was reloaded.
+ */
+fun Conversation.normalizeMessageNodes(): Conversation {
+    val normalizedNodes = messageNodes.mapIndexed { index, node ->
+        val normalizedSelectIndex = when {
+            node.messages.isEmpty() -> 0
+            node.selectIndex in node.messages.indices -> node.selectIndex
+            else -> node.messages.lastIndex
+        }
+        if (
+            node.conversationId == id &&
+            node.orderIndex == index &&
+            node.selectIndex == normalizedSelectIndex
+        ) {
+            node
+        } else {
+            node.copy(
+                conversationId = id,
+                orderIndex = index,
+                selectIndex = normalizedSelectIndex
+            )
+        }
+    }
+    return if (normalizedNodes == messageNodes) this else copy(messageNodes = normalizedNodes)
+}
+
+data class ConversationMessageDeletion(
+    val conversation: Conversation,
+    val deletedNodeIds: Set<Uuid>,
+    val deletedMessageIds: Set<Uuid>
+)
+
+/**
+ * Delete a set of selected messages in one immutable operation.
+ *
+ * A generated tool turn can span multiple nodes linked by [UIMessage.versionTag].
+ * Removing only one of those nodes leaves an invalid branch, so linked messages from
+ * the same assistant turn are removed together. Adjacent tool-call/result messages are
+ * also included to preserve the behavior of the single-message delete action.
+ */
+fun Conversation.deleteMessages(messageIds: Set<Uuid>): ConversationMessageDeletion {
+    if (messageIds.isEmpty()) {
+        return ConversationMessageDeletion(this, emptySet(), emptySet())
+    }
+
+    val idsToDelete = messageIds.toMutableSet()
+    val currentNodes = messageNodes.filter { it.messages.isNotEmpty() }
+    val currentMessages = currentNodes.map { it.currentMessage }
+
+    messageIds.forEach { selectedId ->
+        val selectedNodeIndex = currentNodes.indexOfFirst { node ->
+            node.messages.any { it.id == selectedId }
+        }
+        if (selectedNodeIndex < 0) return@forEach
+
+        val selectedMessage = currentNodes[selectedNodeIndex].messages
+            .firstOrNull { it.id == selectedId } ?: return@forEach
+        val lastUserIndex = currentNodes
+            .take(selectedNodeIndex + 1)
+            .indexOfLast { it.role == MessageRole.USER }
+        val nextUserOffset = currentNodes
+            .drop(selectedNodeIndex + 1)
+            .indexOfFirst { it.role == MessageRole.USER }
+        val turnEndExclusive = if (nextUserOffset < 0) {
+            currentNodes.size
+        } else {
+            selectedNodeIndex + 1 + nextUserOffset
+        }
+        val turnStart = (lastUserIndex + 1).coerceAtMost(selectedNodeIndex)
+
+        selectedMessage.versionTag?.let { tag ->
+            currentNodes.subList(turnStart, turnEndExclusive).forEach { node ->
+                node.messages
+                    .filter { it.versionTag == tag }
+                    .forEach { idsToDelete += it.id }
+            }
+        }
+
+        fun hasToolInteraction(message: UIMessage): Boolean = message.parts.any { part ->
+            part is UIMessagePart.ToolCall || part is UIMessagePart.ToolResult
+        }
+
+        for (index in selectedNodeIndex - 1 downTo 0) {
+            val related = currentMessages[index]
+            if (!hasToolInteraction(related)) break
+            idsToDelete += related.id
+        }
+        for (index in selectedNodeIndex + 1 until currentMessages.size) {
+            val related = currentMessages[index]
+            if (!hasToolInteraction(related)) break
+            idsToDelete += related.id
+        }
+    }
+
+    val deletedNodeIds = mutableSetOf<Uuid>()
+    val actuallyDeletedMessageIds = mutableSetOf<Uuid>()
+    val remainingNodes = messageNodes.mapNotNull { node ->
+        // Empty nodes are intentionally retained as placeholders for history that has
+        // not been loaded into memory yet. Their absence from idsToDelete is not proof
+        // that the persisted node should disappear.
+        if (node.messages.isEmpty()) return@mapNotNull node
+
+        val remainingMessages = node.messages.filterNot { message ->
+            (message.id in idsToDelete).also { deleted ->
+                if (deleted) actuallyDeletedMessageIds += message.id
+            }
+        }
+        if (remainingMessages.isEmpty()) {
+            deletedNodeIds += node.id
+            null
+        } else {
+            node.copy(
+                messages = remainingMessages,
+                selectIndex = node.selectIndex.coerceIn(0, remainingMessages.lastIndex)
+            )
+        }
+    }
+
+    val updated = copy(messageNodes = remainingNodes).normalizeMessageNodes()
+    return ConversationMessageDeletion(updated, deletedNodeIds, actuallyDeletedMessageIds)
+}
+
+/**
+ * Removes only invalid loaded messages while retaining empty nodes used as unloaded
+ * history placeholders.
+ */
+fun Conversation.removeInvalidMessages(): Conversation {
+    val loadedNodes = messageNodes
+        .filter { node -> node.messages.isNotEmpty() }
+        .map { node ->
+            if (node.selectIndex in node.messages.indices) node else node.copy(selectIndex = 0)
+        }
+    val validLoadedNodes = mutableListOf<MessageNode>()
+
+    loadedNodes.forEachIndexed { index, node ->
+        val message = node.currentMessage
+        val nextNode = loadedNodes.getOrNull(index + 1)
+        val hasToolCall = message.parts.any { part -> part is UIMessagePart.ToolCall }
+        val nextHasToolResult = nextNode?.currentMessage?.parts?.any { part ->
+            part is UIMessagePart.ToolResult
+        } == true
+        val isBrokenToolCall = hasToolCall && !nextHasToolResult
+        val isBlankAssistantAtEnd = index == loadedNodes.lastIndex &&
+            message.role == MessageRole.ASSISTANT &&
+            message.toContentText().isBlank() &&
+            message.parts.none { part -> part is UIMessagePart.ToolCall }
+        val isDuplicateAssistant = message.role == MessageRole.ASSISTANT &&
+            nextNode?.currentMessage?.role == MessageRole.ASSISTANT
+
+        when {
+            isBrokenToolCall -> {
+                val fallbackMessages = node.messages.filter { candidate ->
+                    candidate.id != message.id
+                }
+                if (fallbackMessages.isNotEmpty()) {
+                    validLoadedNodes += node.copy(
+                        messages = fallbackMessages,
+                        selectIndex = 0
+                    )
+                }
+            }
+            isBlankAssistantAtEnd -> Unit
+            isDuplicateAssistant -> {
+                val isVisible = message.toContentText().isNotBlank() ||
+                    message.parts.any { part -> part is UIMessagePart.ToolCall }
+                if (isVisible) validLoadedNodes += node
+            }
+            else -> validLoadedNodes += node
+        }
+    }
+
+    val validLoadedNodesById = validLoadedNodes.associateBy { node -> node.id }
+    val reconciledNodes = messageNodes.mapNotNull { node ->
+        if (node.messages.isEmpty()) node else validLoadedNodesById[node.id]
+    }
+    return copy(messageNodes = reconciledNodes).normalizeMessageNodes()
+}
+
+/**
+ * Restore message graph entries from an undo snapshot without replacing nodes or
+ * message versions that were added after the snapshot was captured.
+ */
+fun Conversation.restoreMessagesFrom(backup: Conversation): Conversation {
+    require(id == backup.id) {
+        "Cannot restore messages from conversation ${backup.id} into $id"
+    }
+
+    val currentNodesById = messageNodes.associateBy { node -> node.id }
+    val backupNodeIds = backup.messageNodes.mapTo(mutableSetOf()) { node -> node.id }
+    val restoredBackupNodes = backup.messageNodes.map { backupNode ->
+        val currentNode = currentNodesById[backupNode.id] ?: return@map backupNode
+        val backupMessageIds = backupNode.messages.mapTo(mutableSetOf()) { message -> message.id }
+        val newerMessages = currentNode.messages.filter { message -> message.id !in backupMessageIds }
+        val mergedMessages = backupNode.messages + newerMessages
+        val selectedMessageId = if (newerMessages.isEmpty()) {
+            backupNode.messages.getOrNull(backupNode.selectIndex)?.id
+        } else {
+            currentNode.messages.getOrNull(currentNode.selectIndex)?.id
+        }
+        val mergedSelectIndex = mergedMessages
+            .indexOfFirst { message -> message.id == selectedMessageId }
+            .takeIf { index -> index >= 0 }
+            ?: mergedMessages.lastIndex.coerceAtLeast(0)
+
+        currentNode.copy(
+            messages = mergedMessages,
+            selectIndex = mergedSelectIndex,
+            timelineCreatedAt = currentNode.timelineCreatedAt
+                .takeIf { createdAt -> createdAt > 0L }
+                ?: backupNode.timelineCreatedAt
+        )
+    }
+    val newerNodes = messageNodes.filter { node -> node.id !in backupNodeIds }
+    return copy(messageNodes = restoredBackupNodes + newerNodes).normalizeMessageNodes()
 }
 
 @Serializable

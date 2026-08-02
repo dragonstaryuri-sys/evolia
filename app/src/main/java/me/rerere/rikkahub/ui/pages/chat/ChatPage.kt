@@ -514,7 +514,7 @@ private fun ChatPageContent(
                                 action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                                     label = context.getString(R.string.undo),
                                     onClick = {
-                                        vm.updateConversation(backup)
+                                        vm.restoreConversation(backup)
                                         vm.markNodesAsRestored(removedIds)
                                     }
                                 )
@@ -536,7 +536,7 @@ private fun ChatPageContent(
                                 action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                                     label = context.getString(R.string.undo),
                                     onClick = {
-                                        vm.updateConversation(backup)
+                                        vm.restoreConversation(backup)
                                     }
                                 )
                             )
@@ -787,9 +787,7 @@ private fun ChatPageContent(
                                     },
                                     onClearContext = { vm.startNewTopic() },
                                     onUpdateConversation = { updatedConversation ->
-                                        vm.updateConversation(
-                                            updatedConversation
-                                        ); vm.saveConversationAsync()
+                                        vm.updateConversation(updatedConversation)
                                     },
                                     onNavigateToLorebook = { lorebookId ->
                                         navController.navigate(
@@ -887,9 +885,7 @@ private fun ChatPageContent(
                                     },
                                     onClearContext = { vm.startNewTopic() },
                                     onUpdateConversation = { updatedConversation ->
-                                        vm.updateConversation(
-                                            updatedConversation
-                                        ); vm.saveConversationAsync()
+                                        vm.updateConversation(updatedConversation)
                                     },
                                     onNavigateToLorebook = { lorebookId ->
                                         navController.navigate(

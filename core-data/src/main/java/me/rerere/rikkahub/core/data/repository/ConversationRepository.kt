@@ -17,6 +17,7 @@ import me.rerere.rikkahub.core.data.db.dao.*
 import me.rerere.rikkahub.core.data.db.entity.*
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.core.data.model.normalizeMessageNodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -371,10 +372,42 @@ class ConversationRepository(
     }
 
     suspend fun updateConversation(conversation: Conversation) {
-        val updatedConv = if (conversation.isConsolidated) conversation.copy(isConsolidated = false) else conversation
+        val normalized = conversation.normalizeMessageNodes()
+        val updatedConv = if (normalized.isConsolidated) normalized.copy(isConsolidated = false) else normalized
         db.withTransaction {
             conversationDAO.update(conversationToConversationEntity(updatedConv))
             syncMessages(updatedConv)
+        }
+    }
+
+    /** Persist the conversation and its message graph in one transaction. */
+    suspend fun saveConversation(conversation: Conversation) = withContext(Dispatchers.IO) {
+        val normalized = conversation.normalizeMessageNodes()
+        db.withTransaction {
+            conversationDAO.upsert(conversationToConversationEntity(normalized))
+            syncMessages(normalized)
+        }
+    }
+
+    /**
+     * Atomically applies an explicit message/node deletion and the replacement graph.
+     * This avoids the old per-message delete/upsert interleaving used by multi-select.
+     */
+    suspend fun replaceConversationMessages(
+        conversation: Conversation,
+        deletedNodeIds: Set<Uuid>,
+        deletedMessageIds: Set<Uuid>
+    ) = withContext(Dispatchers.IO) {
+        val normalized = conversation.normalizeMessageNodes()
+        db.withTransaction {
+            if (deletedMessageIds.isNotEmpty()) {
+                chatMessageDAO.deleteMessagesByIds(deletedMessageIds.map { it.toString() })
+            }
+            if (deletedNodeIds.isNotEmpty()) {
+                chatMessageDAO.deleteNodesAndMessages(deletedNodeIds.map { it.toString() })
+            }
+            conversationDAO.upsert(conversationToConversationEntity(normalized))
+            syncMessages(normalized)
         }
     }
 
@@ -396,7 +429,7 @@ class ConversationRepository(
                 id = node.id.toString(),
                 conversationId = convId,
                 selectIndex = node.selectIndex,
-                orderIndex = if (node.orderIndex > 0 || index == 0) node.orderIndex else index, // 尽量保持原序
+                orderIndex = index,
                 createdAt = nodeCreatedAt
             )
         }
@@ -852,6 +885,70 @@ class ConversationRepository(
                     publish()
                 }
             }
+        }
+
+        /**
+         * Reconcile cached nodes belonging to one conversation.
+         *
+         * Generation can update the first node of a turn (version selector) and append
+         * several tool nodes in one emission. Updating only the last node leaves the
+         * pagination window stale until the page is reopened. Missing nodes are not
+         * treated as deleted because callers may hold a partially loaded snapshot;
+         * physical removals must be supplied through [deletedNodeIds].
+         */
+        suspend fun syncConversationNodes(
+            conversationId: Uuid,
+            nodes: List<MessageNode>,
+            deletedNodeIds: Set<Uuid> = emptySet()
+        ) = mutex.withLock {
+            val normalizedNodes = nodes.map { node ->
+                if (node.timelineCreatedAt > 0L) {
+                    node
+                } else {
+                    val createdAt = node.messages
+                        .minOfOrNull {
+                            it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                        }
+                        ?: System.currentTimeMillis()
+                    node.copy(timelineCreatedAt = createdAt)
+                }
+            }
+            val incomingById = normalizedNodes.associateBy { it.id }
+            var changed = false
+
+            for (index in _currentNodes.indices) {
+                val cached = _currentNodes[index]
+                if (cached.conversationId != conversationId) continue
+                val replacement = incomingById[cached.id] ?: continue
+                if (cached != replacement) {
+                    _currentNodes[index] = replacement
+                    changed = true
+                }
+            }
+
+            val removed = _currentNodes.removeAll { cached ->
+                cached.conversationId == conversationId && cached.id in deletedNodeIds
+            }
+            changed = changed || removed
+
+            if (!hasNewer) {
+                val cachedIds = _currentNodes.mapTo(mutableSetOf()) { it.id }
+                normalizedNodes
+                    .asSequence()
+                    .filter { it.messages.isNotEmpty() && it.id !in cachedIds }
+                    .forEach { node ->
+                        _currentNodes.add(node)
+                        cachedIds += node.id
+                        changed = true
+                    }
+                _currentNodes.sortWith(compareBy<MessageNode> { it.timelineCreatedAt }.thenBy { it.id.toString() })
+                while (_currentNodes.size > WINDOW_LIMIT) {
+                    _currentNodes.removeAt(0)
+                    hasOlder = true
+                }
+            }
+
+            if (changed) publish()
         }
 
         /**
