@@ -356,6 +356,7 @@ dependencies {
     implementation(project(":search"))
     implementation(project(":tts"))
     implementation(project(":asr"))
+    implementation("com.github.k2-fsa:sherpa-onnx:1.13.4")
     implementation(project(":common"))
     implementation(project(":core-data"))
     implementation(project(":discover"))

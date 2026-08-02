@@ -1,7 +1,11 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -21,6 +25,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -220,6 +225,41 @@ private fun ChatPageContent(
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current
     val context = LocalContext.current
+
+    // 通话前动态申请录音权限（Manifest 声明不足以触发 SystemASR 的 SpeechRecognizer）
+    var pendingCallConvId by remember { mutableStateOf<Uuid?>(null) }
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val convId = pendingCallConvId
+        pendingCallConvId = null
+        if (granted && convId != null) {
+            vm.startCall(convId)
+        } else if (convId != null) {
+            toaster.show("需要录音权限才能进行语音通话", ToastType.Error)
+        }
+    }
+
+    fun startCallWithPermission(convId: Uuid) {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            vm.startCall(convId)
+        } else {
+            pendingCallConvId = convId
+            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // 收集通话错误事件, toast 提示用户（权限缺失/ASR 不可用等）
+    LaunchedEffect(Unit) {
+        vm.callError.collect { msg ->
+            toaster.show(msg, ToastType.Error)
+        }
+    }
+
     val pagingState by vm.chatPaginationState.collectAsStateWithLifecycle()
     val successState = pagingState as? ConversationRepository.ChatPaginationState.Success
     val isHistoryLoading = successState?.loadingDirection == ConversationRepository.PageLoadDirection.OLDER
@@ -306,17 +346,17 @@ private fun ChatPageContent(
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
 
-    // Voice Call States
-    var isCallActive by rememberSaveable { mutableStateOf(false) }
-    var isMuted by remember { mutableStateOf(false) }
-    var isSpeakerOn by remember { mutableStateOf(true) }
-    var callStatus by remember { mutableStateOf(CallStatus.CONNECTING) }
+    // Voice Call States - 由 ChatVM 转发的 VoiceCallManager StateFlow 驱动
+    val isCallActive by vm.isCallActive.collectAsStateWithLifecycle()
+    val isMuted by vm.callIsMuted.collectAsStateWithLifecycle()
+    val isSpeakerOn by vm.callIsSpeakerOn.collectAsStateWithLifecycle()
+    val callStatus by vm.callStatus.collectAsStateWithLifecycle()
 
     // --- 统一返回出口逻辑 ---
     val handleBack: () -> Unit = {
         when {
             isCallActive -> {
-                isCallActive = false
+                vm.hangupCall()
             }
 
             previewMode -> {
@@ -798,7 +838,7 @@ private fun ChatPageContent(
                                             )
                                         )
                                     },
-                                    onStartCall = { isCallActive = true },
+                                    onStartCall = { startCallWithPermission(conversation.id) },
                                     onRefreshContext = { vm.refreshContext() },
                                     onDeleteFile = { vm.deleteFile(it) },
                                     onConsolidate = { vm.consolidateConversation(conversation) }
@@ -898,7 +938,7 @@ private fun ChatPageContent(
                                             )
                                         )
                                     },
-                                    onStartCall = { isCallActive = true },
+                                    onStartCall = { startCallWithPermission(conversation.id) },
                                     onRefreshContext = { vm.refreshContext() },
                                     onDeleteFile = { vm.deleteFile(it) },
                                     onConsolidate = { vm.consolidateConversation(conversation) }
@@ -953,9 +993,9 @@ private fun ChatPageContent(
                             status = callStatus,
                             isMuted = isMuted,
                             isSpeakerOn = isSpeakerOn,
-                            onMuteToggle = { isMuted = !isMuted },
-                            onSpeakerToggle = { isSpeakerOn = !isSpeakerOn },
-                            onHangup = { isCallActive = false },
+                            onMuteToggle = { vm.toggleCallMute() },
+                            onSpeakerToggle = { vm.toggleCallSpeaker() },
+                            onHangup = { vm.hangupCall() },
                             modifier = Modifier.fillMaxSize()
                         )
                     }

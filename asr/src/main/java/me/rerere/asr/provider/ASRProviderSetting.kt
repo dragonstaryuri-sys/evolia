@@ -41,10 +41,38 @@ sealed class ASRProviderSetting {
         )
     }
 
+    /**
+     * 在线 ASR：本地 VAD 切分语音段 → 上传到云端转录 API（如 OpenAI Whisper）→ 返回文本。
+     * 不依赖系统 SpeechRecognizer，兼容所有设备（含国产 ROM）。
+     * 需要联网，延迟约 1-2 秒（取决于网络和 API 响应速度）。
+     */
+    @Serializable
+    @SerialName("online")
+    data class OnlineASR(
+        override var id: Uuid = Uuid.random(),
+        override var name: String = "Online ASR",
+        override val builtIn: Boolean = true,
+        val apiUrl: String = "https://api.openai.com/v1/audio/transcriptions",
+        val apiKey: String = "",
+        val model: String = "whisper-1",
+        val language: String = "zh"
+    ) : ASRProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+            builtIn: Boolean
+        ): ASRProviderSetting = copy(
+            id = id,
+            name = name,
+            builtIn = builtIn
+        )
+    }
+
     companion object {
         val Types by lazy {
             listOf(
                 SystemASR::class,
+                OnlineASR::class,
             )
         }
     }

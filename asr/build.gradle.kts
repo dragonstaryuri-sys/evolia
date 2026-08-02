@@ -44,4 +44,8 @@ dependencies {
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.okhttp)
+
+    // sherpa-onnx: Silero VAD（用于在线 ASR 的语音段切分）
+    implementation("com.github.k2-fsa:sherpa-onnx:1.13.4")
 }

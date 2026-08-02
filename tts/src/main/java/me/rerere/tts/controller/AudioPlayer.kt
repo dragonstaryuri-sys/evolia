@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.PlaybackState
 import me.rerere.tts.model.PlaybackStatus
@@ -40,30 +41,53 @@ class AudioPlayer(context: Context) {
 
     private var positionJob: Job? = null
 
-    fun pause() = player.pause()
-    fun resume() = player.play()
-    fun stop() = player.stop()
-    fun clear() = player.clearMediaItems()
-    fun release() = player.release()
-    fun seekBy(ms: Long) = player.seekTo(player.currentPosition + ms)
+    // 所有 ExoPlayer 操作必须在其创建线程（主线程）执行.
+    // AudioPlayer 可能被 service 层在 IO 线程调用, 因此统一切换到主线程.
+    fun pause() {
+        scope.launch { player.pause() }
+    }
+
+    fun resume() {
+        scope.launch { player.play() }
+    }
+
+    fun stop() {
+        scope.launch { player.stop() }
+    }
+
+    fun clear() {
+        scope.launch { player.clearMediaItems() }
+    }
+
+    fun release() {
+        scope.launch { player.release() }
+    }
+
+    fun seekBy(ms: Long) {
+        scope.launch { player.seekTo(player.currentPosition + ms) }
+    }
+
     fun setSpeed(speed: Float) {
-        player.playbackParameters = PlaybackParameters(speed)
-        _playbackState.update { it.copy(speed = speed) }
+        scope.launch {
+            player.playbackParameters = PlaybackParameters(speed)
+            _playbackState.update { it.copy(speed = speed) }
+        }
     }
 
     @OptIn(UnstableApi::class)
-    suspend fun play(response: TTSResponse) = suspendCancellableCoroutine<Unit> { cont ->
-        val bytes = if (response.format == AudioFormat.PCM) {
-            pcmToWav(response.audioData, response.sampleRate ?: 24000)
-        } else response.audioData
+    suspend fun play(response: TTSResponse) = withContext(Dispatchers.Main.immediate) {
+        suspendCancellableCoroutine<Unit> { cont ->
+            val bytes = if (response.format == AudioFormat.PCM) {
+                pcmToWav(response.audioData, response.sampleRate ?: 24000)
+            } else response.audioData
 
-        val dataSourceFactory = DataSource.Factory { ByteArrayDataSource(bytes) }
-        val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-            .createMediaSource(MediaItem.fromUri(Uri.EMPTY))
+            val dataSourceFactory = DataSource.Factory { ByteArrayDataSource(bytes) }
+            val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                .createMediaSource(MediaItem.fromUri(Uri.EMPTY))
 
-        player.setMediaSource(mediaSource)
-        player.prepare()
-        player.play()
+            player.setMediaSource(mediaSource)
+            player.prepare()
+            player.play()
 
         _playbackState.update {
             it.copy(
@@ -126,9 +150,13 @@ class AudioPlayer(context: Context) {
         }
         player.addListener(listener)
         cont.invokeOnCancellation {
-            player.removeListener(listener)
-            player.stop()
+            // 取消时可能不在主线程, 用 scope.launch 切换; stopPositionUpdates 仅操作 Job, 线程安全
+            scope.launch {
+                player.removeListener(listener)
+                player.stop()
+            }
             stopPositionUpdates()
+        }
         }
     }
 

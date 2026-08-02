@@ -1,5 +1,6 @@
 package me.rerere.asr.provider.providers
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -24,13 +25,38 @@ class SystemASRProvider : ASRProvider<ASRProviderSetting.SystemASR> {
         context: Context,
         providerSetting: ASRProviderSetting.SystemASR
     ): Flow<ASRResult> = callbackFlow {
+        // 诊断: 检查设备上是否有可用的语音识别服务组件
+        val serviceIntent = Intent("android.speech.RecognitionService")
+        val services = context.packageManager.queryIntentServices(serviceIntent, 0)
+        Log.i(
+            TAG,
+            "RecognitionService components: ${
+                services.joinToString { "${it.serviceInfo.packageName}/${it.serviceInfo.name}" }
+                    .ifEmpty { "(none)" }
+            }"
+        )
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             close(RuntimeException("Speech recognition is not available on this device"))
             return@callbackFlow
         }
+        if (services.isEmpty()) {
+            // 部分 ROM 的 isRecognitionAvailable 返回 true 但实际没有服务组件, 导致 error(9).
+            close(RuntimeException("Speech recognition is not available: no RecognitionService installed on this device"))
+            return@callbackFlow
+        }
 
         // SpeechRecognizer 必须在主线程创建与调用，此处由 flowOn(Main.immediate) 保证
-        val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+        // 显式指定默认 RecognitionService 组件, 避免某些 ROM 的 createSpeechRecognizer(context) 选错服务
+        val defaultService = services.firstOrNull { it.isDefault } ?: services.firstOrNull()
+        val component = defaultService?.let {
+            ComponentName(it.serviceInfo.packageName, it.serviceInfo.name)
+        }
+        Log.i(TAG, "Creating SpeechRecognizer with component: $component, offline=${providerSetting.enableOffline}")
+        val recognizer = if (component != null) {
+            SpeechRecognizer.createSpeechRecognizer(context, component)
+        } else {
+            SpeechRecognizer.createSpeechRecognizer(context)
+        }
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, providerSetting.language)
@@ -47,6 +73,7 @@ class SystemASRProvider : ASRProvider<ASRProviderSetting.SystemASR> {
 
             override fun onError(error: Int) {
                 val message = errorMessage(error)
+                Log.w(TAG, "onError: code=$error ($message), component=$component, offline=${providerSetting.enableOffline}")
                 // NO_MATCH / SPEECH_TIMEOUT 视为"未识别到语音"，发空最终结果后正常关闭，
                 // 避免因用户短暂沉默而以异常方式中断通话
                 val isSilence = error == SpeechRecognizer.ERROR_NO_MATCH ||

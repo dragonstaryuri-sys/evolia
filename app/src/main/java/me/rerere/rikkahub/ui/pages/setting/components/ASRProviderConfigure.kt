@@ -36,6 +36,7 @@ fun ASRProviderConfigure(
     ) {
         when (setting) {
             is ASRProviderSetting.SystemASR -> SystemASRConfiguration(setting, onValueChange)
+            is ASRProviderSetting.OnlineASR -> OnlineASRConfiguration(setting, onValueChange)
         }
     }
 }
@@ -121,5 +122,118 @@ private fun SystemASRConfiguration(
             checked = setting.enableOffline,
             onCheckedChange = { onValueChange(setting.copy(enableOffline = it)) }
         )
+    }
+}
+
+@Composable
+private fun OnlineASRConfiguration(
+    setting: ASRProviderSetting.OnlineASR,
+    onValueChange: (ASRProviderSetting) -> Unit
+) {
+    // 名称
+    FormItem(
+        label = { Text(stringResource(R.string.setting_asr_page_name)) },
+        description = { Text(stringResource(R.string.setting_asr_page_name_description)) }
+    ) {
+        OutlinedTextField(
+            value = setting.name,
+            onValueChange = { onValueChange(setting.copy(name = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text(stringResource(R.string.setting_asr_page_name_placeholder)) }
+        )
+    }
+
+    // API URL
+    FormItem(
+        label = { Text("API URL") },
+        description = { Text("兼容 OpenAI Whisper 接口格式的语音转录端点") }
+    ) {
+        OutlinedTextField(
+            value = setting.apiUrl,
+            onValueChange = { onValueChange(setting.copy(apiUrl = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("https://api.openai.com/v1/audio/transcriptions") }
+        )
+    }
+
+    // API Key
+    FormItem(
+        label = { Text("API Key") },
+        description = { Text("用于鉴权的 API Key") }
+    ) {
+        OutlinedTextField(
+            value = setting.apiKey,
+            onValueChange = { onValueChange(setting.copy(apiKey = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("sk-...") }
+        )
+    }
+
+    // 模型
+    FormItem(
+        label = { Text("模型") },
+        description = { Text("语音识别模型名称") }
+    ) {
+        OutlinedTextField(
+            value = setting.model,
+            onValueChange = { onValueChange(setting.copy(model = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("whisper-1") }
+        )
+    }
+
+    // 语言
+    val languages = remember {
+        listOf(
+            "zh" to "中文",
+            "en" to "English",
+            "ja" to "日本語",
+            "ko" to "한국어",
+            "fr" to "Français",
+            "de" to "Deutsch",
+            "es" to "Español",
+            "ru" to "Русский"
+        )
+    }
+    var langExpanded by remember { mutableStateOf(false) }
+    val selectedLangLabel = languages.firstOrNull { it.first == setting.language }?.second ?: setting.language
+    FormItem(
+        label = { Text(stringResource(R.string.setting_asr_page_language)) },
+        description = { Text(stringResource(R.string.setting_asr_page_language_description)) }
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = langExpanded,
+            onExpandedChange = { langExpanded = !langExpanded }
+        ) {
+            OutlinedTextField(
+                value = selectedLangLabel,
+                onValueChange = {},
+                readOnly = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = langExpanded)
+                }
+            )
+            ExposedDropdownMenu(
+                expanded = langExpanded,
+                onDismissRequest = { langExpanded = false }
+            ) {
+                languages.forEach { (code, label) ->
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            onValueChange(setting.copy(language = code))
+                            langExpanded = false
+                        }
+                    )
+                }
+            }
+        }
     }
 }

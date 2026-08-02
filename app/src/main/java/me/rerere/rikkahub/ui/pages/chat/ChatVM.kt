@@ -31,6 +31,8 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.FavoriteRepository
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.voice.VoiceCallManager
+import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.utils.UpdateInfo
@@ -56,7 +58,20 @@ class ChatVM(
     private val appScope: me.rerere.rikkahub.AppScope,
     private val memoryRepo: MemoryRepository,
     private val favoriteRepo: FavoriteRepository,
+    private val voiceCallManager: VoiceCallManager,
 ) : ViewModel() {
+
+    // --- 通话状态暴露（直接转发 VoiceCallManager 的 StateFlow, 避免冗余复制） ---
+    val callStatus: StateFlow<CallStatus> = voiceCallManager.callStatus
+    val callIsMuted: StateFlow<Boolean> = voiceCallManager.isMuted
+    val callIsSpeakerOn: StateFlow<Boolean> = voiceCallManager.isSpeakerOn
+    val isCallActive: StateFlow<Boolean> = voiceCallManager.isActive
+    val callError: SharedFlow<String> = voiceCallManager.callError
+
+    fun startCall(conversationId: Uuid) = voiceCallManager.startCall(conversationId)
+    fun hangupCall() = voiceCallManager.hangup()
+    fun toggleCallMute() = voiceCallManager.toggleMute()
+    fun toggleCallSpeaker() = voiceCallManager.toggleSpeaker()
 
     // --- 分页管理器管理 ---
     private var paginationManager: ConversationRepository.MessagePaginationManager? = null

@@ -158,4 +158,5 @@ private fun ASRProviderItem(
 
 private fun providerDisplayName(provider: ASRProviderSetting): String = when (provider) {
     is ASRProviderSetting.SystemASR -> "System ASR"
+    is ASRProviderSetting.OnlineASR -> "Online ASR (Whisper API)"
 }

@@ -39,7 +39,8 @@ val viewModelModule = module {
             updateChecker = get(),
             appScope = get(),
             memoryRepo = get(),
-            favoriteRepo = get()
+            favoriteRepo = get(),
+            voiceCallManager = get()
         )
     }
     viewModel<SettingVM> {

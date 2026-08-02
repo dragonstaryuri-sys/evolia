@@ -3,10 +3,12 @@ package me.rerere.asr.provider
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
 import me.rerere.asr.model.ASRResult
+import me.rerere.asr.provider.providers.OnlineASRProvider
 import me.rerere.asr.provider.providers.SystemASRProvider
 
 class ASRManager {
     private val systemProvider = SystemASRProvider()
+    private val onlineProvider = OnlineASRProvider()
 
     fun startRecognition(
         providerSetting: ASRProviderSetting,
@@ -14,6 +16,7 @@ class ASRManager {
     ): Flow<ASRResult> {
         return when (providerSetting) {
             is ASRProviderSetting.SystemASR -> systemProvider.startRecognition(context, providerSetting)
+            is ASRProviderSetting.OnlineASR -> onlineProvider.startRecognition(context, providerSetting)
         }
     }
 }

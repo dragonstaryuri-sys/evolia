@@ -195,7 +195,7 @@ class SettingsStore(
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
                 selectedASRProviderId = preferences[SELECTED_ASR_PROVIDER].toUuidOrNull()
-                    ?: DEFAULT_SYSTEM_ASR_ID,
+                    ?: DEFAULT_ONLINE_ASR_ID,
                 autoPlayTts = preferences[AUTO_PLAY_TTS] ?: false,
                 consolidationWorkerIntervalMinutes = preferences[CONSOLIDATION_WORKER_INTERVAL] ?: 300,
                 consolidationRequiresDeviceIdle = preferences[CONSOLIDATION_REQUIRES_DEVICE_IDLE] ?: false,
@@ -457,7 +457,7 @@ data class Settings(
     val ttsProviders: List<TTSProviderSetting> = emptyList(),
     val selectedTTSProviderId: Uuid = DEFAULT_SYSTEM_TTS_ID,
     val asrProviders: List<ASRProviderSetting> = emptyList(),
-    val selectedASRProviderId: Uuid = DEFAULT_SYSTEM_ASR_ID,
+    val selectedASRProviderId: Uuid = DEFAULT_ONLINE_ASR_ID,
     val autoPlayTts: Boolean = false,
     val consolidationWorkerIntervalMinutes: Int = 300,
     val consolidationRequiresDeviceIdle: Boolean = false,
@@ -656,4 +656,8 @@ val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")
 private val DEFAULT_TTS_PROVIDERS = listOf(TTSProviderSetting.SystemTTS(id = DEFAULT_SYSTEM_TTS_ID, name = ""))
 
 val DEFAULT_SYSTEM_ASR_ID = Uuid.parse("7a8b9c0d-1e2f-3a4b-8c9d-0e1f2a3b4c5d")
-private val DEFAULT_ASR_PROVIDERS = listOf(ASRProviderSetting.SystemASR(id = DEFAULT_SYSTEM_ASR_ID, name = ""))
+val DEFAULT_ONLINE_ASR_ID = Uuid.parse("8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e")
+private val DEFAULT_ASR_PROVIDERS = listOf(
+    ASRProviderSetting.SystemASR(id = DEFAULT_SYSTEM_ASR_ID, name = ""),
+    ASRProviderSetting.OnlineASR(id = DEFAULT_ONLINE_ASR_ID, name = "")
+)

@@ -158,6 +158,8 @@ class ChatService(
     private val conversations = ConcurrentHashMap<Uuid, MutableStateFlow<Conversation>>()
     private val conversationReferences = ConcurrentHashMap<Uuid, Int>()
     private val temporaryConversations = ConcurrentHashMap.newKeySet<Uuid>()
+    // 通话中的会话集合：标记后跳过主路径的 L1 自动摘要, 改由 VoiceCallManager 的 25 分钟定时器驱动
+    private val callModeConversations = ConcurrentHashMap.newKeySet<Uuid>()
     private val _generationJobs = MutableStateFlow<Map<Uuid, Job?>>(emptyMap())
     private val generationJobs: StateFlow<Map<Uuid, Job?>> = _generationJobs.asStateFlow()
     private val _errorFlow = MutableSharedFlow<Throwable>()
@@ -1357,7 +1359,10 @@ class ChatService(
                 appScope.launch {
                     coroutineScope {
                         launch { generateSuggestion(conversationId, finalConv) }
-                        launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
+                        // 通话中的会话跳过自动 L1 摘要, 由 VoiceCallManager 的 25 分钟定时器驱动
+                        if (!callModeConversations.contains(conversationId)) {
+                            launch { checkAndAutoSummarize(conversationId, finalConv, settings) }
+                        }
                     }
                 }.invokeOnCompletion { removeConversationReference(conversationId) }
             }
@@ -1603,7 +1608,10 @@ class ChatService(
         if (temporaryConversations.contains(id)) {
             updateConversation(id) { conversation }; return
         }
-        updateConversation(id) { conversation }
+        // 注意: 不调用 updateConversation(id) { conversation }.
+        // 所有调用方在调 saveConversation 前应已通过 updateConversation 更新内存.
+        // 如果这里再覆盖一次, 传入的快照可能是 AI 消息添加前获取的旧快照,
+        // 会覆盖掉内存中已添加的 AI 消息, 导致消息丢失或顺序错乱.
         val existing = conversationRepo.getConversationById(id)
         if (existing == null) {
             conversationRepo.insertConversation(conversation)
@@ -1625,6 +1633,38 @@ class ChatService(
         removeGenerationJob(id)
         conversations.remove(id)
         conversationMutexes.remove(id)
+    }
+
+    /**
+     * 仅停止指定会话的生成任务（不清理会话状态）。
+     * 用于通话打断等场景：需要立即取消 AI 生成但保留会话上下文。
+     */
+    fun stopGeneration(conversationId: Uuid) {
+        _generationJobs.value[conversationId]?.cancel()
+        removeGenerationJob(conversationId)
+        _isAiTypingMap.update { it - conversationId }
+    }
+
+    /**
+     * 标记/取消会话的"通话模式"。
+     * - 启用后, 主对话路径将跳过每次 AI 响应后的 L1 自动摘要；
+     * - 改由 [VoiceCallManager] 内部的 25 分钟定时器调用 [summarizeForCallIfNeeded] 主动触发。
+     * - 用于避免实时通话中频繁触发 AI 摘要调用占用并发槽位、增加端到端延迟。
+     */
+    fun setCallMode(conversationId: Uuid, active: Boolean) {
+        if (active) callModeConversations.add(conversationId)
+        else callModeConversations.remove(conversationId)
+    }
+
+    /**
+     * 通话定时器入口：检查并按需触发该会话的 L1 自动摘要。
+     * 内部直接复用主路径的 [checkAndAutoSummarize] 逻辑（含阈值判断, 未达阈值会快速返回）。
+     */
+    suspend fun summarizeForCallIfNeeded(conversationId: Uuid) {
+        if (!callModeConversations.contains(conversationId)) return
+        val settings = settingsStore.settingsFlow.value
+        val conv = getConversationFlow(conversationId).value
+        checkAndAutoSummarize(conversationId, conv, settings)
     }
 
     private fun checkInvalidMessages(conversationId: Uuid) {
