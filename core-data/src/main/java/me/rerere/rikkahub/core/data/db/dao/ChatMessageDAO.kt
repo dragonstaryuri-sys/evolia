@@ -15,6 +15,9 @@ interface ChatMessageDAO {
     @Query("DELETE FROM chat_messages WHERE node_id IN (:nodeIds)")
     suspend fun deleteMessagesByNodeIds(nodeIds: List<String>)
 
+    @Query("DELETE FROM chat_messages WHERE id IN (:messageIds)")
+    suspend fun deleteMessagesByIds(messageIds: List<String>)
+
     @Transaction
     suspend fun deleteNodesAndMessages(nodeIds: List<String>) {
         deleteMessagesByNodeIds(nodeIds)
