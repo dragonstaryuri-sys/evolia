@@ -878,8 +878,6 @@
 
   <!-- Discover -->
   <string name="discover_page_title">发现</string>
-  <string name="discover_page_forum">论坛</string>
-  <string name="discover_page_forum_desc">社区与扩展 (开发中)</string>
   <string name="discover_page_diary">日记</string>
   <string name="assistant_context_include_diary_title">带入日记到上下文</string>
   <string name="assistant_context_include_diary_desc">启用后，智能体在对话时将参考最近生成的日记内容</string>
