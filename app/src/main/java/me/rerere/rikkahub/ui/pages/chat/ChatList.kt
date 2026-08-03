@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.pages.chat
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -392,64 +393,67 @@ private fun SharedTransitionScope.ChatListNormal(
                             item.group.nodes.any { it.id in selectedItems }
                         }
 
-                        ListSelectableItem(
-                            isSelected = isTurnSelected,
-                            onSelectChange = { selected ->
-                                item.group.nodes.forEach { node ->
-                                    if (selected) {
-                                        if (node.id !in selectedItems) selectedItems.add(node.id)
-                                    } else {
-                                        selectedItems.remove(node.id)
-                                    }
-                                }
+                        // 多选模式下整组若有节点被选中, 给整组加淡色背景以提示组范围
+                        val turnBgColor by animateColorAsState(
+                            targetValue = if (selecting && isTurnSelected) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                            } else {
+                                Color.Transparent
                             },
-                            enabled = selecting
+                            animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+                            label = "turn_bg_color"
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(turnBgColor, MaterialTheme.shapes.medium)
                         ) {
-                            Column {
-                                if (shouldShowTime) {
-                                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = formatTime(item.group.nodes.first().currentMessage.createdAt),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                                        )
-                                    }
+                            if (shouldShowTime) {
+                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = formatTime(item.group.nodes.first().currentMessage.createdAt),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                    )
                                 }
-                                ChatMessageTurn(
-                                    group = item.group,
-                                    isLastTurn = index == 0,
-                                    assistant = settings.getAssistantById(conversation.assistantId),
-                                    loading = loading && item.isGenerating,
-                                    model = settings.getCurrentChatModel(),
-                                    showRegenerate = index == latestUserTurnIndex || index == latestAssistantTurnIndex,
-                                    onCitationClick = onCitationClick,
-                                    onRegenerate = { node -> onRegenerate(node.currentMessage) },
-                                    onEdit = { node -> onEdit(node.currentMessage) },
-                                    onDelete = { node -> onDelete(node.currentMessage) },
-                                    onShare = { node ->
-                                        selecting = true
-                                        selectedItems.clear()
-                                        selectedItems.add(node.id)
-                                    },
-                                    onUpdate = onUpdateMessage,
-                                    onEditLorebookEntry = { entry -> navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId)) },
-                                    onMemoryClick = { memory ->
-                                        scope.launch {
-                                            isMemoryLoading = true
-                                            previewingMemory = memory
-                                            val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
-                                            previewingMemory = memory.copy(memoryContent = full ?: "未找到内容")
-                                            isMemoryLoading = false
-                                        }
-                                    },
-                                    onTypingStateChange = { isTyping ->
-                                        onTypingStateChange(item.group.firstNode.id, isTyping)
-                                    },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                                )
                             }
+                            ChatMessageTurn(
+                                group = item.group,
+                                isLastTurn = index == 0,
+                                assistant = settings.getAssistantById(conversation.assistantId),
+                                loading = loading && item.isGenerating,
+                                model = settings.getCurrentChatModel(),
+                                showRegenerate = index == latestUserTurnIndex || index == latestAssistantTurnIndex,
+                                onCitationClick = onCitationClick,
+                                onRegenerate = { node -> onRegenerate(node.currentMessage) },
+                                onEdit = { node -> onEdit(node.currentMessage) },
+                                onDelete = { node -> onDelete(node.currentMessage) },
+                                onShare = { node ->
+                                    selecting = true
+                                    selectedItems.clear()
+                                    selectedItems.add(node.id)
+                                },
+                                onUpdate = onUpdateMessage,
+                                onEditLorebookEntry = { entry -> navController.navigate(Screen.SettingLorebookDetail(entry.lorebookId, entry.entryId)) },
+                                onMemoryClick = { memory ->
+                                    scope.launch {
+                                        isMemoryLoading = true
+                                        previewingMemory = memory
+                                        val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType)
+                                        previewingMemory = memory.copy(memoryContent = full ?: "未找到内容")
+                                        isMemoryLoading = false
+                                    }
+                                },
+                                onTypingStateChange = { isTyping ->
+                                    onTypingStateChange(item.group.firstNode.id, isTyping)
+                                },
+                                selecting = selecting,
+                                selectedItems = selectedItems,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
                         }
                     }
                     is ChatUIItem.Separator -> {

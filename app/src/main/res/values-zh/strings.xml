@@ -1787,6 +1787,8 @@
   <string name="chat_timeline_collapse">收起</string>
   <string name="chat_timeline_expand">展开</string>
   <string name="chat_timeline_memory_content">内容</string>
+  <string name="chat_load_more">加载更多……</string>
+  <string name="chat_topic_started_all">新对话</string>
   <!-- 日记功能升级 -->
   <string name="diary_view_list">列表</string>
   <string name="diary_view_calendar">日历</string>

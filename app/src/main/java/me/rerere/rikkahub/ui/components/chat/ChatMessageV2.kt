@@ -37,6 +37,8 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,6 +92,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.BuildConfig
+import kotlin.uuid.Uuid
 
 // WeChat Colors
 private val WeChatUserGreen = Color(0xFF95EC69)
@@ -414,6 +418,8 @@ fun ChatMessageTurn(
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
     onTypingStateChange: (Boolean) -> Unit = {},
+    selecting: Boolean = false,
+    selectedItems: MutableList<Uuid> = mutableStateListOf(),
 ) {
     val settings = LocalSettings.current
     val navController = LocalNavController.current
@@ -505,6 +511,8 @@ fun ChatMessageTurn(
                     wechatMode = wechatMode,
                     userAvatar = effectiveDisplay.userAvatar,
                     userNickname = effectiveDisplay.userNickname,
+                    selecting = selecting,
+                    selectedItems = selectedItems,
                     modifier = modifier
                 )
             }
@@ -545,6 +553,8 @@ fun ChatMessageTurn(
                     onMemoryClick = onMemoryClick,
                     wechatMode = wechatMode,
                     onTypingStateChange = onTypingStateChange,
+                    selecting = selecting,
+                    selectedItems = selectedItems,
                     modifier = modifier
                 )
             }
@@ -625,6 +635,8 @@ private fun UserMessageTurn(
     wechatMode: Boolean,
     userAvatar: Avatar,
     userNickname: String,
+    selecting: Boolean,
+    selectedItems: MutableList<Uuid>,
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)
@@ -692,7 +704,12 @@ private fun UserMessageTurn(
                             contentColor = if (wechatMode) WeChatTextBlack else null,
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                onBubbleClick(node)
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
                             }
                         ) {
                             MarkdownBlock(
@@ -714,6 +731,20 @@ private fun UserMessageTurn(
                                 onClick = {
                                     navController.navigate(Screen.SettingUserProfile)
                                 }
+                            )
+                        }
+
+                        if (selecting) {
+                            Checkbox(
+                                checked = node.id in selectedItems,
+                                onCheckedChange = {
+                                    if (it) selectedItems.add(node.id)
+                                    else selectedItems.remove(node.id)
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = MaterialTheme.colorScheme.primary,
+                                    uncheckedColor = MaterialTheme.colorScheme.outline
+                                )
                             )
                         }
                     }
@@ -807,6 +838,8 @@ private fun AssistantMessageTurn(
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
     wechatMode: Boolean,
     onTypingStateChange: (Boolean) -> Unit = {},
+    selecting: Boolean = false,
+    selectedItems: MutableList<Uuid> = mutableStateListOf(),
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -943,6 +976,20 @@ private fun AssistantMessageTurn(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Start
                 ) {
+                    if (selecting) {
+                        Checkbox(
+                            checked = node.id in selectedItems,
+                            onCheckedChange = {
+                                if (it) selectedItems.add(node.id)
+                                else selectedItems.remove(node.id)
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                    }
+
                     if (wechatMode) {
                         UIAvatar(
                             name = avatarName,
@@ -960,7 +1007,14 @@ private fun AssistantMessageTurn(
                             modifier = Modifier
                                 .widthIn(max = maxWidth)
                                 .padding(vertical = 4.dp),
-                            onClick = { onBubbleClick(node) }
+                            onClick = {
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
+                            }
                         )
                     } else {
                         GroupedMessageBubble(
@@ -971,7 +1025,12 @@ private fun AssistantMessageTurn(
                             contentColor = if (wechatMode) WeChatTextBlack else null,
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                onBubbleClick(node)
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
                             }
                         ) {
                             val contentText = if (part is UIMessagePart.Text) part.text else ""
@@ -1036,6 +1095,20 @@ private fun AssistantMessageTurn(
 
                 // ✨ Determine what to render based on part type
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (selecting) {
+                        Checkbox(
+                            checked = node.id in selectedItems,
+                            onCheckedChange = {
+                                if (it) selectedItems.add(node.id)
+                                else selectedItems.remove(node.id)
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                    }
+
                     if (wechatMode) {
                         UIAvatar(
                             name = avatarName,
@@ -1050,7 +1123,14 @@ private fun AssistantMessageTurn(
                         ReasoningFlowBlock(
                             content = part.reasoning,
                             modifier = Modifier.padding(vertical = 4.dp),
-                            onClick = { onBubbleClick(node) }
+                            onClick = {
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
+                            }
                         )
                     } else {
                         val contentText = if (part is UIMessagePart.Text) part.text else ""
@@ -1063,7 +1143,12 @@ private fun AssistantMessageTurn(
                             onClickCitation = { id -> onCitationClick(id) },
                             modifier = Modifier.clickable {
                                 haptics.perform(HapticPattern.Pop)
-                                onBubbleClick(node)
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
                             }
                         )
                     }
