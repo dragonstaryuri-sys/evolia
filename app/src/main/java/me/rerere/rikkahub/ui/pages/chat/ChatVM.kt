@@ -580,7 +580,11 @@ class ChatVM(
                                         lastSummarizedMessageTime = updated.lastSummarizedMessageTime,
                                         lastPruneTime = updated.lastPruneTime,
                                         lastPruneMessageCount = updated.lastPruneMessageCount,
-                                        lastRefreshTime = updated.lastRefreshTime
+                                        lastRefreshTime = updated.lastRefreshTime,
+                                        // 同步手动归档后写入 DB 的截断索引，否则内存态会保留旧值并在
+                                        // saveConversation 时把 DB 里正确的 truncateIndex 覆盖回旧值，
+                                        // 导致下次生成上下文时截断不生效（清理上下文失效）
+                                        truncateIndex = updated.truncateIndex
                                     )
                                 }
                             }
