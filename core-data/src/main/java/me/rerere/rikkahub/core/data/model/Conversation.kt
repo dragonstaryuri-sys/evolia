@@ -233,7 +233,27 @@ fun Conversation.deleteMessages(messageIds: Set<Uuid>): ConversationMessageDelet
         }
     }
 
-    val updated = copy(messageNodes = remainingNodes).normalizeMessageNodes()
+    // 删除节点会导致 messageNodes 收缩，truncateIndex 是位置索引，必须同步平移，
+    // 否则截断点会错位：归档区(索引 < truncateIndex)的节点被删后，截断点会向后
+    // 偏移，把本该保留的最近消息也排除出 AI 上下文；极端情况下 truncateIndex >=
+    // 新 size 会导致下次生成上下文为空。这里按"被整段删除且原位于截断点之前"
+    // 的节点数量下移 truncateIndex。truncateIndex <= 0 表示未启用截断，保持原值。
+    val newTruncateIndex = if (truncateIndex > 0) {
+        val deletedNodesBeforeTruncate = messageNodes
+            .filterIndexed { index, node ->
+                index < truncateIndex && node.id in deletedNodeIds
+            }.size
+        (truncateIndex - deletedNodesBeforeTruncate)
+            .coerceAtLeast(0)
+            .coerceAtMost(remainingNodes.size)
+    } else {
+        truncateIndex
+    }
+
+    val updated = copy(
+        messageNodes = remainingNodes,
+        truncateIndex = newTruncateIndex
+    ).normalizeMessageNodes()
     return ConversationMessageDeletion(updated, deletedNodeIds, actuallyDeletedMessageIds)
 }
 
