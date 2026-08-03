@@ -126,6 +126,7 @@ import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -150,7 +151,7 @@ fun MinimalChatInput(
     state: ChatInputState,
     conversation: Conversation,
     settings: Settings,
-    //isAiTyping: Boolean,
+    isAiTyping: Boolean = false,
     mcpManager: McpManager,
     enableSearch: Boolean,
     onToggleSearch: (Boolean) -> Unit,
@@ -465,6 +466,7 @@ fun MinimalChatInput(
                 assistant = assistant,
                 cameraPermission = cameraPermission,
                 enableSearch = enableSearch,
+                isAiTyping = isAiTyping,
                 onToggleSearch = onToggleSearch,
                 onUpdateChatModel = onUpdateChatModel,
                 onUpdateConversation = onUpdateConversation,
@@ -489,6 +491,7 @@ private fun MinimalPickerContent(
     assistant: Assistant,
     cameraPermission: me.rerere.rikkahub.ui.components.ui.permission.PermissionState,
     enableSearch: Boolean,
+    isAiTyping: Boolean,
     onToggleSearch: (Boolean) -> Unit,
     onUpdateChatModel: (Model) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
@@ -826,7 +829,11 @@ private fun MinimalPickerContent(
             subtitle = if (wechatMode) stringResource(R.string.ui_mode_wechat) else stringResource(R.string.ui_mode_normal),
             onClick = {
                 haptics.perform(HapticPattern.Pop)
-                onUpdateAssistant(assistant.copy(uiSettings = assistant.uiSettings.copy(wechatMode = !wechatMode)))
+                if (isAiTyping) {
+                    toaster.show("回复生成中，暂时无法切换模式", type = ToastType.Info)
+                } else {
+                    onUpdateAssistant(assistant.copy(uiSettings = assistant.uiSettings.copy(wechatMode = !wechatMode)))
+                }
             }
         )
 

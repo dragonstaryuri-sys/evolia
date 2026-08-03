@@ -706,6 +706,7 @@ private fun ChatPageContent(
                                     settings = setting,
                                     conversation = conversation,
                                     mcpManager = vm.mcpManager,
+                                    isAiTyping = isAiTyping,
                                     chatSuggestions = conversation.chatSuggestions,
                                     onClickSuggestion = { suggestion ->
                                         if (currentChatModel != null) {
@@ -810,6 +811,7 @@ private fun ChatPageContent(
                                     settings = setting,
                                     conversation = conversation,
                                     mcpManager = vm.mcpManager,
+                                    isAiTyping = isAiTyping,
                                     chatSuggestions = conversation.chatSuggestions,
                                     onClickSuggestion = { suggestion ->
                                         if (currentChatModel != null) {

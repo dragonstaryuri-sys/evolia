@@ -1271,8 +1271,13 @@ class ChatService(
                                     conversationSnapshot = nextState
                                 }
 
-                                // 4b. 记录第一句节点的非文本 parts（思考过程、工具调用图标等）
-                                val nonTextParts = lastAI.parts.filter { it !is UIMessagePart.Text }
+                                // 4b. 记录第一句节点的非文本 parts（工具调用图标等）
+                                // 微信模式下不存储深度思考内容（Reasoning/Thinking），避免重复且符合口语化场景
+                                val nonTextParts = lastAI.parts.filter {
+                                    it !is UIMessagePart.Text &&
+                                        it !is UIMessagePart.Reasoning &&
+                                        it !is UIMessagePart.Thinking
+                                }
                                 if (nonTextParts.isNotEmpty()) {
                                     wechatFirstNodeNonTextParts = nonTextParts
                                 }
@@ -1331,15 +1336,25 @@ class ChatService(
                                 }
                             } else {
                                 // 非微信模式 或 无最终文本：原同步逻辑
-                                if (anyNewMessages) {
-                                    val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + newMessages)
+                                // 微信模式下过滤掉"仅含思考过程 + 空白文本"的流式 AI 消息，
+                                // 避免推理阶段保存的节点与后续分句节点重复存储思考内容
+                                val messagesToSync = if (wechatMode) {
+                                    newMessages.filter { msg ->
+                                        msg.role != MessageRole.ASSISTANT ||
+                                            msg.parts.any { it is UIMessagePart.ToolCall } ||
+                                            msg.toContentText().isNotBlank()
+                                    }
+                                } else newMessages
+
+                                if (anyNewMessages && messagesToSync.isNotEmpty()) {
+                                    val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + messagesToSync)
                                         .copy(chatSuggestions = emptyList())
                                     currentConversation = nextState
                                     updateConversation(conversationId) { nextState }
                                     conversationSnapshot = nextState
                                 }
 
-                                val toUpdate = baseMessages + newMessages
+                                val toUpdate = baseMessages + messagesToSync
                                 val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
                                     .copy(chatSuggestions = emptyList())
                                 currentConversation = nextState

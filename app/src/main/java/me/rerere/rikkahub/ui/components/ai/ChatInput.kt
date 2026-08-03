@@ -177,6 +177,7 @@ fun ChatInput(
     enableSearch: Boolean,
     onToggleSearch: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    isAiTyping: Boolean = false,
     chatSuggestions: List<String> = emptyList(),
     onClickSuggestion: (String) -> Unit = {},
     onUpdateChatModel: (Model) -> Unit,
@@ -631,6 +632,7 @@ fun ChatInput(
                             state = state,
                             assistant = assistant,
                             settings = settings,
+                            isAiTyping = isAiTyping,
                             onClearContext = onClearContext,
                             onUpdateAssistant = onUpdateAssistant,
                             onUpdateConversation = onUpdateConversation,
@@ -1174,6 +1176,7 @@ internal fun FilesPicker(
     assistant: Assistant,
     state: ChatInputState,
     settings: Settings,
+    isAiTyping: Boolean = false,
     onClearContext: () -> Unit,
     onUpdateAssistant: (Assistant) -> Unit,
     onUpdateConversation: (Conversation) -> Unit,
@@ -1183,6 +1186,7 @@ internal fun FilesPicker(
     onConsolidate: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val toaster = LocalToaster.current
     val amoledMode by rememberAmoledDarkMode()
     val provider = settings.getCurrentChatModel()?.findProvider(providers = settings.providers)
 
@@ -1413,11 +1417,15 @@ internal fun FilesPicker(
                         color = if (amoledMode && isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh,
                         tonalElevation = if (amoledMode && isDarkMode) 0.dp else 6.dp,
                         onClick = {
-                            onUpdateAssistant(
-                                assistant.copy(
-                                    uiSettings = assistant.uiSettings.copy(wechatMode = !wechatMode)
+                            if (isAiTyping) {
+                                toaster.show("回复生成中，暂时无法切换模式", type = ToastType.Info)
+                            } else {
+                                onUpdateAssistant(
+                                    assistant.copy(
+                                        uiSettings = assistant.uiSettings.copy(wechatMode = !wechatMode)
+                                    )
                                 )
-                            )
+                            }
                         }
                     ) {
                         Row(

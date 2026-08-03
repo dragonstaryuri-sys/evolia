@@ -34,7 +34,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 23
-        versionName = "4.4.2"
+        versionName = "4.4.2a"
 
         buildConfigField("String", "GITHUB_REPO", "\"dragonstaryuri-sys/evolia\"")
 
