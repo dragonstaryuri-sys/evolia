@@ -337,6 +337,7 @@
   <string name="reasoning_medium_desc">模型将使用更多推理来回答问题。</string>
   <string name="reasoning_off">关闭</string>
   <string name="reasoning_off_desc">关闭推理功能，模型将直接回答问题。</string>
+  <string name="quote">引用</string>
   <string name="regenerate">重新生成</string>
   <string name="search_ability_scrape">抓取</string>
   <string name="search_ability_search">搜索</string>

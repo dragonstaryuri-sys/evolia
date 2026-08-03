@@ -96,6 +96,7 @@ fun ChatList(
     targetMessageId: String? = null,
     onRegenerate: (UIMessage) -> Unit = {},
     onEdit: (UIMessage) -> Unit = {},
+    onQuote: (UIMessage) -> Unit = {},
     onDelete: (UIMessage) -> Unit = {},
     onUpdateMessage: (MessageNode) -> Unit = {},
     onJumpToMessage: (MessageNode) -> Unit = {},
@@ -192,6 +193,7 @@ fun ChatList(
                             recentlyRestoredNodeIds = recentlyRestoredNodeIds,
                             onRegenerate = onRegenerate,
                             onEdit = onEdit,
+                            onQuote = onQuote,
                             onDelete = onDelete,
                             onUpdateMessage = onUpdateMessage,
                             onGetFullMemoryContent = onGetFullMemoryContent,
@@ -225,6 +227,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onScrolledToNode: () -> Unit = {},
     onRegenerate: (UIMessage) -> Unit,
     onEdit: (UIMessage) -> Unit,
+    onQuote: (UIMessage) -> Unit,
     onDelete: (UIMessage) -> Unit,
     onUpdateMessage: (MessageNode) -> Unit,
     onGetFullMemoryContent: suspend (Int, Int) -> String?,
@@ -428,6 +431,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 onCitationClick = onCitationClick,
                                 onRegenerate = { node -> onRegenerate(node.currentMessage) },
                                 onEdit = { node -> onEdit(node.currentMessage) },
+                                onQuote = { node -> onQuote(node.currentMessage) },
                                 onDelete = { node -> onDelete(node.currentMessage) },
                                 onShare = { node ->
                                     selecting = true

@@ -14,6 +14,7 @@ import androidx.compose.ui.focus.FocusRequester
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -24,6 +25,18 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.common.JsonInstant
 import kotlin.uuid.Uuid
+
+/**
+ * 引用消息数据。
+ * 用于"引用回复"功能，记录被引用消息的发送者名称、文本内容与角色。
+ * 发送时会以 markdown 引用块形式拼接到用户输入文本之前。
+ */
+@Serializable
+data class QuotedMessage(
+    val senderName: String,
+    val content: String,
+    val isUser: Boolean
+)
 
 @Composable
 fun rememberChatInputState(
@@ -46,6 +59,10 @@ class ChatInputState {
     var editingMessage by mutableStateOf<Uuid?>(null)
     var loading by mutableStateOf(false)
 
+    // 引用回复的目标消息。非 null 时输入框上方会显示引用预览卡片，
+    // 发送时会以 markdown 引用块形式拼接到用户输入文本之前。
+    var quotedMessage by mutableStateOf<QuotedMessage?>(null)
+
     // FocusRequester for the text field - allows external focus requests
     val focusRequester = FocusRequester()
 
@@ -53,6 +70,7 @@ class ChatInputState {
         textContent.setTextAndPlaceCursorAtEnd("")
         messageContent = emptyList()
         editingMessage = null
+        quotedMessage = null
     }
 
     fun isEditing() = editingMessage != null
@@ -90,6 +108,24 @@ class ChatInputState {
 
     fun getContents(): List<UIMessagePart> {
         return listOf(UIMessagePart.Text(textContent.text.toString())) + messageContent
+    }
+
+    /**
+     * 获取用于发送的消息内容。
+     * 如果存在引用消息 (quotedMessage)，会在内容列表最前面插入一个 UIMessagePart.Quote 标记。
+     * - UI 渲染时 Quote 被 toContentText/toText 忽略，用户消息气泡只显示纯用户输入。
+     * - 发送给 AI 时由 GenerationHandler.buildMessages 将 Quote 转换为自然语言提示词前缀。
+     * 注意：仅供发送新消息使用，编辑模式不应调用此方法。
+     */
+    fun getSendContents(): List<UIMessagePart> {
+        val baseContents = getContents()
+        val quote = quotedMessage ?: return baseContents
+        val quotePart = UIMessagePart.Quote(
+            senderName = quote.senderName,
+            content = quote.content,
+            isUser = quote.isUser
+        )
+        return listOf(quotePart) + baseContents
     }
 
     fun isEmpty(): Boolean {
@@ -139,9 +175,13 @@ object ChatInputStateSaver : Saver<ChatInputState, String> {
             Uuid.parse(it)
         }
         val textContent = jsonObject["textContent"]?.jsonPrimitive?.contentOrNull ?: ""
+        val quotedMessage = jsonObject["quotedMessage"]?.let {
+            JsonInstant.decodeFromJsonElement<QuotedMessage>(it)
+        }
         val state = ChatInputState()
         state.messageContent = messageContent ?: emptyList()
         state.editingMessage = editingMessage
+        state.quotedMessage = quotedMessage
         state.setMessageText(textContent)
         return state
     }
@@ -161,6 +201,7 @@ object ChatInputStateSaver : Saver<ChatInputState, String> {
             put("textContent", safeText)
             put("messageContent", JsonInstant.encodeToJsonElement(value.messageContent))
             put("editingMessage", JsonInstant.encodeToJsonElement(value.editingMessage))
+            put("quotedMessage", JsonInstant.encodeToJsonElement(value.quotedMessage))
         })
     }
 }

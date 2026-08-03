@@ -411,6 +411,7 @@ fun ChatMessageTurn(
     onRegenerate: (MessageNode) -> Unit = {},
     onEdit: (MessageNode) -> Unit = {},
     onShare: (MessageNode) -> Unit = {},
+    onQuote: (MessageNode) -> Unit = {},
     onDelete: (MessageNode) -> Unit = {},
     onUpdate: (MessageNode) -> Unit = {},
     showRegenerate: Boolean,
@@ -580,6 +581,7 @@ fun ChatMessageTurn(
             onEdit = { onEdit(actionTargetNode) },
             onDelete = { onDelete(actionTargetNode) },
             onShare = { onShare(actionTargetNode) },
+            onQuote = { onQuote(actionTargetNode) },
             model = model,
             onSelectAndCopy = { showSelectCopySheet = true },
             onDismissRequest = { showActionsSheet = false }
@@ -675,6 +677,8 @@ private fun UserMessageTurn(
 
             group.filteredNodes.forEachIndexed { nodeIndex, node ->
                 val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()
+                // 提取引用标记（若存在），用于在首个文本气泡内渲染引用块
+                val quotePart = node.currentMessage.parts.filterIsInstance<UIMessagePart.Quote>().firstOrNull()
                 textParts.forEachIndexed { partIndex, part ->
                     val isFirst = nodeIndex == 0 && partIndex == 0
                     val isLastPart = nodeIndex == group.filteredNodes.lastIndex && partIndex == textParts.lastIndex
@@ -687,6 +691,17 @@ private fun UserMessageTurn(
                         isLastPart -> BubblePosition.LAST
                         else -> BubblePosition.MIDDLE
                     }
+
+                    // 在第一个文本气泡内显示引用块（只显示引用内容，不显示提示词）
+                    val quoteMarkdown = if (isFirst && quotePart != null) {
+                        buildString {
+                            append("> ")
+                            append(quotePart.senderName)
+                            append(": ")
+                            append(quotePart.content.replace("\n", "\n> "))
+                            append("\n\n")
+                        }
+                    } else ""
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -713,7 +728,7 @@ private fun UserMessageTurn(
                             }
                         ) {
                             MarkdownBlock(
-                                content = part.text.replaceRegexes(
+                                content = (quoteMarkdown + part.text).replaceRegexes(
                                     assistant = assistant,
                                     scope = AssistantAffectScope.USER,
                                     visual = true,

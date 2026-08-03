@@ -143,6 +143,7 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
+import me.rerere.rikkahub.ui.hooks.QuotedMessage
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
@@ -276,6 +277,14 @@ fun ChatInput(
                 .padding(bottom = 8.dp, start = 16.dp, end = 16.dp), // Raised toolbar
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Quote preview (引用回复预览) - 显示在输入框上方最顶部
+            state.quotedMessage?.let { quote ->
+                QuotePreviewCard(
+                    quotedMessage = quote,
+                    onClose = { state.quotedMessage = null }
+                )
+            }
+
             // Medias (shown above suggestions when both exist)
             if (state.messageContent.isNotEmpty()) {
                 MediaFileInputRow(
@@ -882,6 +891,87 @@ private fun TextInputRow(
                 FullScreenEditor(state = state) {
                     isFullScreen = false
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 引用回复预览卡片。
+ * 在输入框上方显示被引用消息的发送者与内容摘要，左侧有主题色竖线作为视觉标识。
+ * 点击右侧关闭按钮可清除引用状态。
+ */
+@Composable
+internal fun QuotePreviewCard(
+    quotedMessage: QuotedMessage,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val amoledMode by rememberAmoledDarkMode()
+    val containerColor = if (amoledMode && LocalDarkMode.current) {
+        Color.Black
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val accentColor = if (quotedMessage.isUser) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.tertiary
+    }
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+        tonalElevation = if (amoledMode && LocalDarkMode.current) 0.dp else 4.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize()
+    ) {
+        Row(
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier
+                .padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp)
+        ) {
+            // 左侧主题色竖线 - 引用视觉标识
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(accentColor)
+            )
+            Spacer(Modifier.width(10.dp))
+            // 发送者名称 + 内容摘要
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = quotedMessage.senderName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accentColor,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = quotedMessage.content,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            // 关闭按钮
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.cancel),
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

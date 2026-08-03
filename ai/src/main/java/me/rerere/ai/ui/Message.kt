@@ -438,6 +438,21 @@ sealed class UIMessagePart {
         override val priority: Int = 0
     }
 
+    /**
+     * 引用回复标记。存储被引用消息的发送者名称、文本内容与角色。
+     * - UI 渲染时被忽略（toContentText/toText 只提取 Text 部分），用户消息气泡只显示纯用户输入。
+     * - 发送给 AI 时由 GenerationHandler.buildMessages 转换为自然语言提示词前缀。
+     */
+    @Serializable
+    data class Quote(
+        val senderName: String,
+        val content: String,
+        val isUser: Boolean,
+        override var metadata: JsonObject? = null
+    ) : UIMessagePart() {
+        override val priority: Int = 0
+    }
+
     @Serializable
     data class Image(
         val url: String,
