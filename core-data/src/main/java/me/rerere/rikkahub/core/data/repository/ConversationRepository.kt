@@ -53,6 +53,25 @@ class ConversationRepository(
         private const val PAGE_SIZE = 30
         private const val INITIAL_LOAD_SIZE = 100
         private const val TAG = "ConversationRepo"
+
+        // 分批加载消息时每批的最大节点数。
+        // CursorWindow 默认上限约 2MB，content_json 单条可能达数十 KB，
+        // 50 个节点 × 数条消息 × 数十 KB 已接近安全边界。
+        private const val MESSAGE_LOAD_CHUNK_SIZE = 50
+    }
+
+    /**
+     * 分批加载多个节点的消息，避免单次 IN 查询返回过多 content_json 导致
+     * CursorWindow (2MB) 溢出闪退。
+     */
+    private suspend fun loadMessagesForNodes(
+        nodes: List<ChatMessageNodeEntity>
+    ): Map<String, List<ChatMessageEntity>> {
+        if (nodes.isEmpty()) return emptyMap()
+        return nodes.map { it.id }
+            .chunked(MESSAGE_LOAD_CHUNK_SIZE)
+            .flatMap { batch -> chatMessageDAO.getMessagesByNodeIds(batch) }
+            .groupBy { it.nodeId }
     }
 
     /**
@@ -145,29 +164,16 @@ class ConversationRepository(
     }
 
     suspend fun getLatestNodesByAssistant(assistantId: Uuid, limit: Int): List<MessageNode> = withContext(Dispatchers.IO) {
-        // 将 getLatestNodesWithMessagesOfAssistant 修正为 getLatestNodesWithMetadata
-        chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), limit).map { wrapper ->
-            mapMetadataToNode(wrapper)
-        }
+        val nodes = chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), limit)
+        val messagesByNodeId = loadMessagesForNodes(nodes)
+        nodes.map { node -> mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList()) }
     }
 
     // ✨ 修复：添加获取指定会话节点的方法，增加对 timelineCreatedAt 和 orderIndex 的支持
     suspend fun getNodesOfConversation(conversationId: Uuid, limit: Int): List<MessageNode> = withContext(Dispatchers.IO) {
-        chatMessageDAO.getNodesWithMessagesOfConversation(conversationId.toString(), limit).map { wrapper ->
-            val uiMessages = wrapper.messages
-                .filter { !it.isDeleted }
-                .sortedBy { it.orderIndex }
-                .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-
-            MessageNode(
-                id = Uuid.parse(wrapper.node.id),
-                messages = uiMessages,
-                selectIndex = wrapper.node.selectIndex,
-                conversationId = Uuid.parse(wrapper.node.conversationId),
-                timelineCreatedAt = wrapper.node.createdAt,
-                orderIndex = wrapper.node.orderIndex
-            )
-        }
+        val nodes = chatMessageDAO.getNodesWithMessagesOfConversation(conversationId.toString(), limit)
+        val messagesByNodeId = loadMessagesForNodes(nodes)
+        nodes.map { node -> mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList()) }
     }
 
     private suspend fun fetchFullConversations(
@@ -189,8 +195,9 @@ class ConversationRepository(
             chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, loadLimit)
         }.toSet()
         // 3. 批量获取这些节点的实际消息内容 (contentJson)
+        // 使用安全分块大小，避免 content_json 过大导致 CursorWindow 溢出
         val allMessages = if (nodeIdsToLoad.isNotEmpty()) {
-            nodeIdsToLoad.chunked(900).flatMap { batch ->
+            nodeIdsToLoad.chunked(MESSAGE_LOAD_CHUNK_SIZE).flatMap { batch ->
                 chatMessageDAO.getMessagesByNodeIds(batch)
             }.groupBy { it.nodeId }
         } else emptyMap()
@@ -675,13 +682,17 @@ class ConversationRepository(
         suspend fun loadInitial(): ChatPaginationState = mutex.withLock {
             _state.value = ChatPaginationState.Loading
             return@withLock try {
-                val results = withContext(Dispatchers.IO) {
+                val nodeEntities = withContext(Dispatchers.IO) {
                     chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), BATCH_SIZE + 1)
                 }
-                hasOlder = results.size > BATCH_SIZE
+                hasOlder = nodeEntities.size > BATCH_SIZE
                 hasNewer = false
 
-                val nodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }.reversed()
+                val nodesToLoad = nodeEntities.take(BATCH_SIZE)
+                val messagesByNodeId = withContext(Dispatchers.IO) { loadMessagesForNodes(nodesToLoad) }
+                val nodes = nodesToLoad.map { node ->
+                    mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList())
+                }.reversed()
                 _currentNodes.clear()
                 _currentNodes.addAll(nodes)
 
@@ -711,26 +722,36 @@ class ConversationRepository(
                 val olderResults = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesOlderThan(
                         assistantIdValue,
-                        target.node.createdAt,
-                        target.node.id,
+                        target.createdAt,
+                        target.id,
                         sideSize + 1
                     )
                 }
                 val newerResults = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesNewerThan(
                         assistantIdValue,
-                        target.node.createdAt,
-                        target.node.id,
+                        target.createdAt,
+                        target.id,
                         sideSize + 1
                     )
                 }
 
-                val olderNodes = olderResults.take(sideSize).map(::mapMetadataToNode).reversed()
+                val olderNodesToLoad = olderResults.take(sideSize)
+                val newerNodesToLoad = newerResults.take(sideSize)
+                val allNodesForMessages = olderNodesToLoad + listOf(target) + newerNodesToLoad
+                val messagesByNodeId = withContext(Dispatchers.IO) { loadMessagesForNodes(allNodesForMessages) }
+
+                val olderNodes = olderNodesToLoad.map { node ->
+                    mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList())
+                }.reversed()
                 val targetNode = mapMetadataToNode(
-                    wrapper = target,
+                    node = target,
+                    messages = messagesByNodeId[target.id] ?: emptyList(),
                     selectedMessageId = messageId
                 )
-                val newerNodes = newerResults.take(sideSize).map(::mapMetadataToNode)
+                val newerNodes = newerNodesToLoad.map { node ->
+                    mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList())
+                }
 
                 _currentNodes.clear()
                 _currentNodes.addAll(olderNodes)
@@ -741,7 +762,7 @@ class ConversationRepository(
 
                 Log.d(
                     TAG,
-                    "pagination target: message=$messageId, node=${target.node.id}, " +
+                    "pagination target: message=$messageId, node=${target.id}, " +
                         "window=${_currentNodes.size}, hasOlder=$hasOlder, hasNewer=$hasNewer"
                 )
                 publish()
@@ -758,12 +779,16 @@ class ConversationRepository(
          */
         private suspend fun loadInitialLocked(): ChatPaginationState {
             return try {
-                val results = withContext(Dispatchers.IO) {
+                val nodeEntities = withContext(Dispatchers.IO) {
                     chatMessageDAO.getLatestNodesWithMetadata(assistantId.toString(), BATCH_SIZE + 1)
                 }
-                hasOlder = results.size > BATCH_SIZE
+                hasOlder = nodeEntities.size > BATCH_SIZE
                 hasNewer = false
-                val nodes = results.take(BATCH_SIZE).map(::mapMetadataToNode).reversed()
+                val nodesToLoad = nodeEntities.take(BATCH_SIZE)
+                val messagesByNodeId = withContext(Dispatchers.IO) { loadMessagesForNodes(nodesToLoad) }
+                val nodes = nodesToLoad.map { node ->
+                    mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList())
+                }.reversed()
                 _currentNodes.clear()
                 _currentNodes.addAll(nodes)
                 Log.w(TAG, "pagination target missing; fallback to latest window")
@@ -782,7 +807,7 @@ class ConversationRepository(
                 publish(loadingDirection = PageLoadDirection.OLDER)
                 val anchorNode = _currentNodes.firstOrNull() ?: return@withLock ChatPaginationState.Idle
 
-                val results = withContext(Dispatchers.IO) {
+                val nodeEntities = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesOlderThan(
                         assistantId.toString(),
                         anchorNode.timelineCreatedAt,
@@ -791,9 +816,13 @@ class ConversationRepository(
                     )
                 }
 
-                val newOldNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }.reversed()
+                val nodesToLoad = nodeEntities.take(BATCH_SIZE)
+                val messagesByNodeId = withContext(Dispatchers.IO) { loadMessagesForNodes(nodesToLoad) }
+                val newOldNodes = nodesToLoad.map { node ->
+                    mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList())
+                }.reversed()
                 _currentNodes.addAll(0, newOldNodes)
-                hasOlder = results.size > BATCH_SIZE
+                hasOlder = nodeEntities.size > BATCH_SIZE
 
                 if (_currentNodes.size > WINDOW_LIMIT) {
                     val excessCount = _currentNodes.size - WINDOW_LIMIT
@@ -818,7 +847,7 @@ class ConversationRepository(
                 publish(loadingDirection = PageLoadDirection.NEWER)
                 val anchorNode = _currentNodes.lastOrNull() ?: return@withLock ChatPaginationState.Idle
 
-                val results = withContext(Dispatchers.IO) {
+                val nodeEntities = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesNewerThan(
                         assistantId.toString(),
                         anchorNode.timelineCreatedAt,
@@ -827,9 +856,13 @@ class ConversationRepository(
                     )
                 }
 
-                val newNewerNodes = results.take(BATCH_SIZE).map { mapMetadataToNode(it) }
+                val nodesToLoad = nodeEntities.take(BATCH_SIZE)
+                val messagesByNodeId = withContext(Dispatchers.IO) { loadMessagesForNodes(nodesToLoad) }
+                val newNewerNodes = nodesToLoad.map { node ->
+                    mapMetadataToNode(node, messagesByNodeId[node.id] ?: emptyList())
+                }
                 _currentNodes.addAll(newNewerNodes)
-                hasNewer = results.size > BATCH_SIZE
+                hasNewer = nodeEntities.size > BATCH_SIZE
 
                 if (_currentNodes.size > WINDOW_LIMIT) {
                     val excessCount = _currentNodes.size - WINDOW_LIMIT
@@ -963,13 +996,14 @@ class ConversationRepository(
     }
 
     /**
-     * 辅助方法：将 DAO 返回的带元数据节点转换为 UI 节点模型
+     * 辅助方法：将 DAO 返回的节点实体 + 消息列表转换为 UI 节点模型
      */
     private fun mapMetadataToNode(
-        wrapper: MessageNodeWithMetadata,
+        node: ChatMessageNodeEntity,
+        messages: List<ChatMessageEntity>,
         selectedMessageId: String? = null
     ): MessageNode {
-        val uiMessages = wrapper.messages
+        val uiMessages = messages
             .filter { !it.isDeleted }
             .sortedBy { it.orderIndex }
             .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
@@ -979,12 +1013,12 @@ class ConversationRepository(
         }
 
         return MessageNode(
-            id = Uuid.parse(wrapper.node.id),
+            id = Uuid.parse(node.id),
             messages = uiMessages,
-            selectIndex = targetMessageIndex ?: wrapper.node.selectIndex,
-            conversationId = Uuid.parse(wrapper.node.conversationId),
-            orderIndex = wrapper.node.orderIndex,
-            timelineCreatedAt = wrapper.node.createdAt
+            selectIndex = targetMessageIndex ?: node.selectIndex,
+            conversationId = Uuid.parse(node.conversationId),
+            orderIndex = node.orderIndex,
+            timelineCreatedAt = node.createdAt
         )
     }
 

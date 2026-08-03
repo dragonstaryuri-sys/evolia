@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.core.data.db.dao
 
-import androidx.paging.PagingSource
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 import me.rerere.rikkahub.core.data.db.entity.ChatMessageEntity
@@ -77,14 +76,6 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_messages WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId) AND content_json LIKE '%' || :query || '%' AND is_deleted = 0 ORDER BY created_at DESC")
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
 
-    @Transaction
-    @Query("SELECT n.* FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId ORDER BY c.update_at DESC, n.order_index DESC")
-    fun getNodesWithMessagesOfAssistantPaging(assistantId: String): PagingSource<Int, MessageNodeWithMessages>
-
-    @Transaction
-    @Query("SELECT n.* FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId AND n.conversation_id != :excludeConvId ORDER BY c.update_at DESC, n.order_index DESC LIMIT :limit")
-    fun getLatestNodesOfAssistantExcludingFlow(assistantId: String, excludeConvId: String, limit: Int): Flow<List<MessageNodeWithMessages>>
-
     @Query("SELECT node_id FROM chat_messages WHERE id = :messageId")
     suspend fun getNodeIdByMessageId(messageId: String): String?
 
@@ -104,11 +95,13 @@ interface ChatMessageDAO {
     suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
 
     // --- 滑动窗口分页查询 ---
+    // 注意: 这些查询仅返回节点实体 (ChatMessageNodeEntity)，不再使用 @Relation 加载消息。
+    // 消息内容由 ConversationRepository 通过 getMessagesByNodeIds 分批加载，
+    // 避免 content_json 过大时 CursorWindow (2MB) 溢出导致闪退。
 
     /**
      * 获取最新 N 个节点。排序键为节点创建时间与节点 ID，二者均不可变。
      */
-    @Transaction
     @Query("""
         SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
@@ -116,12 +109,11 @@ interface ChatMessageDAO {
         ORDER BY n.created_at DESC, n.id DESC
         LIMIT :limit
     """)
-    suspend fun getLatestNodesWithMetadata(assistantId: String, limit: Int): List<MessageNodeWithMetadata>
+    suspend fun getLatestNodesWithMetadata(assistantId: String, limit: Int): List<ChatMessageNodeEntity>
 
     /**
      * 直接解析搜索结果所属节点。搜索结果传入的是 message id，而分页游标使用 node id。
      */
-    @Transaction
     @Query("""
         SELECT n.* FROM chat_message_nodes n
         INNER JOIN chat_messages m ON m.node_id = n.id
@@ -134,12 +126,11 @@ interface ChatMessageDAO {
     suspend fun getNodeContainingMessage(
         assistantId: String,
         messageId: String
-    ): MessageNodeWithMetadata?
+    ): ChatMessageNodeEntity?
 
     /**
      * 加载比当前锚点更旧的节点（向上滚动历史）
      */
-    @Transaction
     @Query("""
         SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
@@ -156,12 +147,11 @@ interface ChatMessageDAO {
         anchorCreatedAt: Long,
         anchorNodeId: String,
         limit: Int
-    ): List<MessageNodeWithMetadata>
+    ): List<ChatMessageNodeEntity>
 
     /**
      * 加载比当前锚点更新的节点（向下滚动回最新区域）
      */
-    @Transaction
     @Query("""
         SELECT n.* FROM chat_message_nodes n
         INNER JOIN conversationentity c ON n.conversation_id = c.id
@@ -178,37 +168,14 @@ interface ChatMessageDAO {
         anchorCreatedAt: Long,
         anchorNodeId: String,
         limit: Int
-    ): List<MessageNodeWithMetadata>
+    ): List<ChatMessageNodeEntity>
 
-    // ✨ 新增：获取指定会话最新的 N 个节点
-    @Transaction
+    /**
+     * 获取指定会话最新的 N 个节点
+     */
     @Query("SELECT * FROM chat_message_nodes WHERE conversation_id = :conversationId ORDER BY order_index DESC LIMIT :limit")
-    suspend fun getNodesWithMessagesOfConversation(conversationId: String, limit: Int): List<MessageNodeWithMessages>
+    suspend fun getNodesWithMessagesOfConversation(conversationId: String, limit: Int): List<ChatMessageNodeEntity>
 
     @Query("SELECT COUNT(*) FROM chat_message_nodes n INNER JOIN conversationentity c ON n.conversation_id = c.id WHERE c.assistant_id = :assistantId")
     suspend fun getTotalNodeCountByAssistant(assistantId: String): Int
-
-    @Query("SELECT * FROM chat_messages WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId) AND content_json LIKE '%' || :query || '%' AND is_deleted = 0 ORDER BY created_at DESC")
-    fun searchMessagesOfAssistantPaging(assistantId: String, query: String): PagingSource<Int, ChatMessageEntity>
 }
-
-data class MessageNodeWithMessages(
-    @Embedded val node: ChatMessageNodeEntity,
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "node_id"
-    )
-    val messages: List<ChatMessageEntity>
-)
-
-/**
- * 节点与其消息。节点自身携带稳定的 createdAt 游标字段。
- */
-data class MessageNodeWithMetadata(
-    @Embedded val node: ChatMessageNodeEntity,
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "node_id"
-    )
-    val messages: List<ChatMessageEntity>
-)

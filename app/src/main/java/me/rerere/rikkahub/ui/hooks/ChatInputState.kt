@@ -15,15 +15,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import kotlin.uuid.Uuid
 
 /**
@@ -168,14 +169,17 @@ class ChatInputState {
 object ChatInputStateSaver : Saver<ChatInputState, String> {
     override fun restore(value: String): ChatInputState? {
         val jsonObject = JsonInstant.parseToJsonElement(value).jsonObject
-        val messageContent = jsonObject["messageContent"]?.let {
+        // 注意: nullable 字段在 save 时会被编码为 JsonNull (而非省略 key),
+        // 因此 restore 时必须显式过滤 JsonNull, 否则 decodeFromJsonElement 会抛出
+        // "Expected JsonObject, but had JsonNull" 导致应用崩溃。
+        val messageContent = jsonObject["messageContent"]?.takeIf { it !is JsonNull }?.let {
             JsonInstant.decodeFromJsonElement<List<UIMessagePart>>(it)
         }
-        val editingMessage = jsonObject["editingMessage"]?.jsonPrimitive?.contentOrNull?.let {
+        val editingMessage = jsonObject["editingMessage"]?.jsonPrimitiveOrNull?.contentOrNull?.let {
             Uuid.parse(it)
         }
-        val textContent = jsonObject["textContent"]?.jsonPrimitive?.contentOrNull ?: ""
-        val quotedMessage = jsonObject["quotedMessage"]?.let {
+        val textContent = jsonObject["textContent"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+        val quotedMessage = jsonObject["quotedMessage"]?.takeIf { it !is JsonNull }?.let {
             JsonInstant.decodeFromJsonElement<QuotedMessage>(it)
         }
         val state = ChatInputState()
