@@ -118,22 +118,41 @@ data class MessageTurnGroup(
 
     /**
      * Nodes filtered to only include those with a message matching the active versionTag.
+     *
+     * Fallback strategy (critical for long conversations):
+     * 1. Prefer exact versionTag match → switch selectIndex to that version
+     * 2. Else find the latest untagged (versionTag == null) version → switch to it
+     * 3. **Fallback: keep the node's currently selected (or last) version**
+     *    This prevents historical nodes from being silently dropped when every
+     *    message version has a tag (common after multiple regenerates in long
+     *    chats). Without this fallback we show only the avatar with no content.
      */
     val filteredNodes: List<MessageNode>
         get() {
             val tag = activeVersionTag
             return nodes.mapNotNull { node ->
+                if (node.messages.isEmpty()) {
+                    return@mapNotNull null
+                }
                 if (node.currentMessage.versionTag == tag) {
                     return@mapNotNull node
                 }
-                val index = node.messages.indexOfLast { it.versionTag == tag }
-                if (index != -1) {
-                    node.copy(selectIndex = index)
+                val matchingIndex = node.messages.indexOfLast { it.versionTag == tag }
+                if (matchingIndex != -1) {
+                    return@mapNotNull node.copy(selectIndex = matchingIndex)
+                }
+                val lastUntaggedIndex = node.messages.indexOfLast { it.versionTag == null }
+                if (lastUntaggedIndex != -1) {
+                    return@mapNotNull node.copy(selectIndex = lastUntaggedIndex)
+                }
+                // 兜底：历史节点在多次 regenerate 后，所有版本都可能有不同的 versionTag。
+                // 此时不能丢弃节点，否则 UI 只显示头像不显示内容。
+                // 使用节点当前选择的版本（若 selectIndex 越界则用最后一个版本）。
+                val safeIndex = node.selectIndex.coerceIn(node.messages.indices)
+                if (safeIndex == node.selectIndex) {
+                    node
                 } else {
-                    val lastUntaggedIndex = node.messages.indexOfLast { it.versionTag == null }
-                    if (lastUntaggedIndex != -1) {
-                        node.copy(selectIndex = lastUntaggedIndex)
-                    } else null
+                    node.copy(selectIndex = safeIndex)
                 }
             }
         }
