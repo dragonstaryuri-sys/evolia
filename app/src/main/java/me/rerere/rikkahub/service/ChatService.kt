@@ -1262,7 +1262,10 @@ class ChatService(
                             // 4. 微信模式 + 有最终文本：按标点分句，逐句存为独立节点（含标点，非文本 parts 放第一个节点）
                             if (wechatMode && lastAI != null && fullText.isNotBlank()) {
                                 // 4a. 同步非最终 AI 的消息（工具调用、工具结果等）
-                                val otherMessages = newMessages.filter { it.id != lastAI.id }
+                                // 微信模式下去重：含 Text 的 ASSISTANT 已被分句存储，只保留 nonTextParts
+                                val otherMessages = newMessages
+                                    .filter { it.id != lastAI.id }
+                                    .forWechatSync()
                                 if (otherMessages.isNotEmpty()) {
                                     val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + otherMessages)
                                         .copy(chatSuggestions = emptyList())
@@ -1336,14 +1339,11 @@ class ChatService(
                                 }
                             } else {
                                 // 非微信模式 或 无最终文本：原同步逻辑
-                                // 微信模式下过滤掉"仅含思考过程 + 空白文本"的流式 AI 消息，
-                                // 避免推理阶段保存的节点与后续分句节点重复存储思考内容
+                                // 微信模式下通过 forWechatSync 去重：
+                                // - 含 Text 的 ASSISTANT 已被分句存储，只保留 nonTextParts
+                                // - 仅含思考过程 + 空白文本的流式 AI 消息被过滤
                                 val messagesToSync = if (wechatMode) {
-                                    newMessages.filter { msg ->
-                                        msg.role != MessageRole.ASSISTANT ||
-                                            msg.parts.any { it is UIMessagePart.ToolCall } ||
-                                            msg.toContentText().isNotBlank()
-                                    }
+                                    newMessages.forWechatSync()
                                 } else newMessages
 
                                 if (anyNewMessages && messagesToSync.isNotEmpty()) {
@@ -1448,16 +1448,36 @@ class ChatService(
         }
     }
 
-    private fun buildWechatMessages(
-        lastAI: UIMessage,
-        sentences: List<String>,
-        count: Int,
-    ): List<UIMessagePart> {
-        val parts = lastAI.parts.filter { it !is UIMessagePart.Text }.toMutableList()
-        for (i in 0 until count) {
-            parts.add(UIMessagePart.Text(sentences[i]))
+    /**
+     * 微信模式下同步消息到会话时的去重处理。
+     *
+     * 含 Text 的 ASSISTANT 消息已通过分句存储为独立节点（每句一个新 ID 的 UIMessage），
+     * 这里只保留其 nonTextParts（如 ToolCall），避免 Text 被重复存储为完整节点。
+     *
+     * 同时过滤掉"仅含思考过程 + 空白文本"的流式 AI 消息，
+     * 避免推理阶段保存的节点与后续分句节点重复存储思考内容。
+     */
+    private fun List<UIMessage>.forWechatSync(): List<UIMessage> = mapNotNull { msg ->
+        when {
+            // 非 ASSISTANT 消息（如 TOOL result、USER）原样保留
+            msg.role != MessageRole.ASSISTANT -> msg
+
+            // 含 Text 的 ASSISTANT：Text 已被分句存储，只保留 nonTextParts（ToolCall 等）
+            msg.toContentText().isNotBlank() -> {
+                val nonText = msg.parts.filter {
+                    it !is UIMessagePart.Text &&
+                        it !is UIMessagePart.Reasoning &&
+                        it !is UIMessagePart.Thinking
+                }
+                if (nonText.isEmpty()) null else msg.copy(parts = nonText)
+            }
+
+            // 含 ToolCall 但无 Text 的 ASSISTANT：按完整消息同步（ToolCall 需与 ToolResult 配对）
+            msg.parts.any { it is UIMessagePart.ToolCall } -> msg
+
+            // 仅含思考过程 + 空白文本：跳过
+            else -> null
         }
-        return parts
     }
 
     private fun translateError(e: Throwable): Throwable {
