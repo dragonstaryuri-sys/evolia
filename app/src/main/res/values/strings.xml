@@ -1868,5 +1868,6 @@
   <string name="discover_page_hour_light_desc">Share moments with your agents</string>
   <string name="diary_select_agent_to_comment">Select an agent to comment</string>
   <string name="diary_agent_commenting_to">Commenting as %1$s</string>
+  <string name="diary_comment_switched_to_normal_mode">Switched to normal mode to fully receive comments</string>
 
 </resources>

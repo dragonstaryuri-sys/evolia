@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -420,6 +421,10 @@ class DiaryVM(
         replyToCommentId: String?,
         toaster: AppToasterState?
     ) {
+        // 0. 确保目标 agent 处于普通 UI 模式：微信模式会按标点分句存储 AI 回复，
+        //    导致日记评论的 JSON 决策被截断解析失败。若检测到微信模式，自动切换为普通模式。
+        ensureNormalUiMode(senderIdToSave, toaster)
+
         val userNode = UIMessage(
             role = MessageRole.USER,
             parts = listOf(UIMessagePart.Text(prompt)),
@@ -478,6 +483,32 @@ class DiaryVM(
         )
 
         responseJob.join()
+    }
+
+    /**
+     * 确保目标智能体处于普通 UI 模式。
+     *
+     * 微信模式下 ChatService 会按标点分句存储 AI 回复，导致日记评论的 JSON 决策被截断、
+     * 解析失败（表现为"TA不想评论"）。此处检测到微信模式时自动切换为普通模式并持久化，
+     * 保证评论回复能被完整接收。
+     *
+     * @param assistantId 目标智能体 ID 字符串
+     */
+    private suspend fun ensureNormalUiMode(assistantId: String, toaster: AppToasterState?) {
+        val s = settingsStore.settingsFlow.value
+        val targetAssistant = s.assistants.find { it.id.toString() == assistantId } ?: return
+        val isWechatMode = s.getEffectiveDisplaySetting(targetAssistant).wechatMode
+        if (!isWechatMode) return
+
+        val updatedAssistant = targetAssistant.copy(
+            uiSettings = targetAssistant.uiSettings.copy(wechatMode = false)
+        )
+        settingsStore.update(
+            s.copy(
+                assistants = s.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }
+            )
+        )
+        toaster?.show(app.getString(R.string.diary_comment_switched_to_normal_mode))
     }
 
     /**
