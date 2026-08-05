@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -420,6 +421,10 @@ class DiaryVM(
         replyToCommentId: String?,
         toaster: AppToasterState?
     ) {
+        // 0. 确保目标 agent 处于普通 UI 模式：微信模式会按标点分句存储 AI 回复，
+        //    导致日记评论的 JSON 决策被截断解析失败。若检测到微信模式，自动切换为普通模式。
+        ensureNormalUiMode(senderIdToSave, toaster)
+
         val userNode = UIMessage(
             role = MessageRole.USER,
             parts = listOf(UIMessagePart.Text(prompt)),
@@ -481,6 +486,32 @@ class DiaryVM(
     }
 
     /**
+     * 确保目标智能体处于普通 UI 模式。
+     *
+     * 微信模式下 ChatService 会按标点分句存储 AI 回复，导致日记评论的 JSON 决策被截断、
+     * 解析失败（表现为"TA不想评论"）。此处检测到微信模式时自动切换为普通模式并持久化，
+     * 保证评论回复能被完整接收。
+     *
+     * @param assistantId 目标智能体 ID 字符串
+     */
+    private suspend fun ensureNormalUiMode(assistantId: String, toaster: AppToasterState?) {
+        val s = settingsStore.settingsFlow.value
+        val targetAssistant = s.assistants.find { it.id.toString() == assistantId } ?: return
+        val isWechatMode = s.getEffectiveDisplaySetting(targetAssistant).wechatMode
+        if (!isWechatMode) return
+
+        val updatedAssistant = targetAssistant.copy(
+            uiSettings = targetAssistant.uiSettings.copy(wechatMode = false)
+        )
+        settingsStore.update(
+            s.copy(
+                assistants = s.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }
+            )
+        )
+        toaster?.show(app.getString(R.string.diary_comment_switched_to_normal_mode))
+    }
+
+    /**
      * 解析 AI 的决策回复并存入数据库
      * @param replyToCommentId 回复目标的评论 ID；非回复时传 null
      */
@@ -529,12 +560,23 @@ class DiaryVM(
 
     fun saveDiary(id: String? = null, assistantId: String, content: String, date: String) {
         viewModelScope.launch {
-            val entity = if (id != null && id != "new") {
-                AgentDiaryEntity(id = id, assistantId = assistantId, content = content, date = date)
+            if (id != null && id != "new") {
+                // 修改现有日记：保留原始 createdAt 和 assistantId，使用 @Update 而非 insert(REPLACE)。
+                // insert(REPLACE) 底层是 DELETE+INSERT，DELETE 会触发 DiaryCommentEntity 外键的
+                // CASCADE 删除，导致已有评论全部丢失。
+                val existing = diaryRepo.getDiaryById(id)
+                val entity = AgentDiaryEntity(
+                    id = id,
+                    assistantId = existing?.assistantId ?: assistantId,
+                    content = content,
+                    date = date,
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis()
+                )
+                diaryRepo.updateDiary(entity)
             } else {
-                AgentDiaryEntity(assistantId = assistantId, content = content, date = date)
+                val entity = AgentDiaryEntity(assistantId = assistantId, content = content, date = date)
+                diaryRepo.insertDiary(entity)
             }
-            diaryRepo.insertDiary(entity)
         }
     }
 
@@ -572,7 +614,14 @@ class DiaryVM(
         toaster?.show(app.getString(R.string.discover_page_diary_generating), type = ToastType.Info)
     }
 
-    fun deleteDiary(id: String) { viewModelScope.launch { diaryRepo.deleteDiaryById(id) } }
+    fun deleteDiary(id: String) {
+        viewModelScope.launch {
+            diaryRepo.deleteDiaryById(id)
+            // 同步更新列表 UI：_diaryList 基于 suspend 分页查询填充，不会自动响应 DB 变化，
+            // 需手动移除被删除项，否则要退出页面重进才能看到删除效果。
+            _diaryList.update { list -> list.filterNot { it.id == id } }
+        }
+    }
 
     fun toggleAutoDiary(assistantId: String, enabled: Boolean) {
         viewModelScope.launch {

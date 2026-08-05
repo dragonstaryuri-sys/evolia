@@ -37,6 +37,8 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,6 +92,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.BuildConfig
+import kotlin.uuid.Uuid
 
 // WeChat Colors
 private val WeChatUserGreen = Color(0xFF95EC69)
@@ -114,22 +118,41 @@ data class MessageTurnGroup(
 
     /**
      * Nodes filtered to only include those with a message matching the active versionTag.
+     *
+     * Fallback strategy (critical for long conversations):
+     * 1. Prefer exact versionTag match → switch selectIndex to that version
+     * 2. Else find the latest untagged (versionTag == null) version → switch to it
+     * 3. **Fallback: keep the node's currently selected (or last) version**
+     *    This prevents historical nodes from being silently dropped when every
+     *    message version has a tag (common after multiple regenerates in long
+     *    chats). Without this fallback we show only the avatar with no content.
      */
     val filteredNodes: List<MessageNode>
         get() {
             val tag = activeVersionTag
             return nodes.mapNotNull { node ->
+                if (node.messages.isEmpty()) {
+                    return@mapNotNull null
+                }
                 if (node.currentMessage.versionTag == tag) {
                     return@mapNotNull node
                 }
-                val index = node.messages.indexOfLast { it.versionTag == tag }
-                if (index != -1) {
-                    node.copy(selectIndex = index)
+                val matchingIndex = node.messages.indexOfLast { it.versionTag == tag }
+                if (matchingIndex != -1) {
+                    return@mapNotNull node.copy(selectIndex = matchingIndex)
+                }
+                val lastUntaggedIndex = node.messages.indexOfLast { it.versionTag == null }
+                if (lastUntaggedIndex != -1) {
+                    return@mapNotNull node.copy(selectIndex = lastUntaggedIndex)
+                }
+                // 兜底：历史节点在多次 regenerate 后，所有版本都可能有不同的 versionTag。
+                // 此时不能丢弃节点，否则 UI 只显示头像不显示内容。
+                // 使用节点当前选择的版本（若 selectIndex 越界则用最后一个版本）。
+                val safeIndex = node.selectIndex.coerceIn(node.messages.indices)
+                if (safeIndex == node.selectIndex) {
+                    node
                 } else {
-                    val lastUntaggedIndex = node.messages.indexOfLast { it.versionTag == null }
-                    if (lastUntaggedIndex != -1) {
-                        node.copy(selectIndex = lastUntaggedIndex)
-                    } else null
+                    node.copy(selectIndex = safeIndex)
                 }
             }
         }
@@ -177,14 +200,16 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     }
 
     chronologicalNodes.forEach { node ->
-        val nodeRole = node.currentMessage.role
-        val logicalRole = getGroupingRole(nodeRole)
-        val isTimeBreak = if (currentGroup.isNotEmpty()) {
-            val lastNodeTime = currentGroup.last().currentMessage.createdAt
-            val currentNodeTime = node.currentMessage.createdAt
-            (currentNodeTime.toInstant(TimeZone.currentSystemDefault()) -
-                lastNodeTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
-        } else false
+            val nodeRole = node.currentMessage.role
+            val logicalRole = getGroupingRole(nodeRole)
+            val isTimeBreak = if (currentGroup.isNotEmpty()) {
+                val lastNodeTime = currentGroup.last().currentMessage.createdAt
+                val currentNodeTime = node.currentMessage.createdAt
+                // chronologicalNodes 按 新→旧 遍历，lastNode 比 current 更新，
+                // 时间差 = lastNodeTime - currentNodeTime（正数）
+                (lastNodeTime.toInstant(TimeZone.currentSystemDefault()) -
+                    currentNodeTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+            } else false
 
         if ((logicalRole != currentGroupRole || isTimeBreak) && currentGroup.isNotEmpty()) {
             groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
@@ -212,6 +237,11 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
         .associateBy { it.toolCallId }
 
+    // 同一 toolCallId 在一个轮次内可能因微信分句同步 / regenerate / 上游 provider 重复返回
+    // 而出现在多个 node 中。这里按 toolCallId 去重，避免 LazyColumn key 冲突崩溃，
+    // 同时语义上同一次工具调用也只应在时间线出现一次。
+    val seenToolCallIds = mutableSetOf<String>()
+
     parts.forEach { part ->
         when (part) {
             is UIMessagePart.Reasoning -> {
@@ -230,6 +260,8 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
             }
 
             is UIMessagePart.ToolCall -> {
+                if (!seenToolCallIds.add(part.toolCallId)) return@forEach
+
                 val result = toolResults[part.toolCallId]
                 if (part.toolName in memoryTools) {
                     entries.add(buildMemoryTimelineEntry(part, result))
@@ -407,6 +439,7 @@ fun ChatMessageTurn(
     onRegenerate: (MessageNode) -> Unit = {},
     onEdit: (MessageNode) -> Unit = {},
     onShare: (MessageNode) -> Unit = {},
+    onQuote: (MessageNode) -> Unit = {},
     onDelete: (MessageNode) -> Unit = {},
     onUpdate: (MessageNode) -> Unit = {},
     showRegenerate: Boolean,
@@ -414,6 +447,8 @@ fun ChatMessageTurn(
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
     onTypingStateChange: (Boolean) -> Unit = {},
+    selecting: Boolean = false,
+    selectedItems: MutableList<Uuid> = mutableStateListOf(),
 ) {
     val settings = LocalSettings.current
     val navController = LocalNavController.current
@@ -505,6 +540,8 @@ fun ChatMessageTurn(
                     wechatMode = wechatMode,
                     userAvatar = effectiveDisplay.userAvatar,
                     userNickname = effectiveDisplay.userNickname,
+                    selecting = selecting,
+                    selectedItems = selectedItems,
                     modifier = modifier
                 )
             }
@@ -545,6 +582,8 @@ fun ChatMessageTurn(
                     onMemoryClick = onMemoryClick,
                     wechatMode = wechatMode,
                     onTypingStateChange = onTypingStateChange,
+                    selecting = selecting,
+                    selectedItems = selectedItems,
                     modifier = modifier
                 )
             }
@@ -570,6 +609,7 @@ fun ChatMessageTurn(
             onEdit = { onEdit(actionTargetNode) },
             onDelete = { onDelete(actionTargetNode) },
             onShare = { onShare(actionTargetNode) },
+            onQuote = { onQuote(actionTargetNode) },
             model = model,
             onSelectAndCopy = { showSelectCopySheet = true },
             onDismissRequest = { showActionsSheet = false }
@@ -625,6 +665,8 @@ private fun UserMessageTurn(
     wechatMode: Boolean,
     userAvatar: Avatar,
     userNickname: String,
+    selecting: Boolean,
+    selectedItems: MutableList<Uuid>,
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)
@@ -663,6 +705,8 @@ private fun UserMessageTurn(
 
             group.filteredNodes.forEachIndexed { nodeIndex, node ->
                 val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()
+                // 提取引用标记（若存在），用于在首个文本气泡内渲染引用块
+                val quotePart = node.currentMessage.parts.filterIsInstance<UIMessagePart.Quote>().firstOrNull()
                 textParts.forEachIndexed { partIndex, part ->
                     val isFirst = nodeIndex == 0 && partIndex == 0
                     val isLastPart = nodeIndex == group.filteredNodes.lastIndex && partIndex == textParts.lastIndex
@@ -675,6 +719,17 @@ private fun UserMessageTurn(
                         isLastPart -> BubblePosition.LAST
                         else -> BubblePosition.MIDDLE
                     }
+
+                    // 在第一个文本气泡内显示引用块（只显示引用内容，不显示提示词）
+                    val quoteMarkdown = if (isFirst && quotePart != null) {
+                        buildString {
+                            append("> ")
+                            append(quotePart.senderName)
+                            append(": ")
+                            append(quotePart.content.replace("\n", "\n> "))
+                            append("\n\n")
+                        }
+                    } else ""
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -692,11 +747,16 @@ private fun UserMessageTurn(
                             contentColor = if (wechatMode) WeChatTextBlack else null,
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                onBubbleClick(node)
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
                             }
                         ) {
                             MarkdownBlock(
-                                content = part.text.replaceRegexes(
+                                content = (quoteMarkdown + part.text).replaceRegexes(
                                     assistant = assistant,
                                     scope = AssistantAffectScope.USER,
                                     visual = true,
@@ -714,6 +774,20 @@ private fun UserMessageTurn(
                                 onClick = {
                                     navController.navigate(Screen.SettingUserProfile)
                                 }
+                            )
+                        }
+
+                        if (selecting) {
+                            Checkbox(
+                                checked = node.id in selectedItems,
+                                onCheckedChange = {
+                                    if (it) selectedItems.add(node.id)
+                                    else selectedItems.remove(node.id)
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = MaterialTheme.colorScheme.primary,
+                                    uncheckedColor = MaterialTheme.colorScheme.outline
+                                )
                             )
                         }
                     }
@@ -807,6 +881,8 @@ private fun AssistantMessageTurn(
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)?,
     wechatMode: Boolean,
     onTypingStateChange: (Boolean) -> Unit = {},
+    selecting: Boolean = false,
+    selectedItems: MutableList<Uuid> = mutableStateListOf(),
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -943,6 +1019,20 @@ private fun AssistantMessageTurn(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Start
                 ) {
+                    if (selecting) {
+                        Checkbox(
+                            checked = node.id in selectedItems,
+                            onCheckedChange = {
+                                if (it) selectedItems.add(node.id)
+                                else selectedItems.remove(node.id)
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                    }
+
                     if (wechatMode) {
                         UIAvatar(
                             name = avatarName,
@@ -960,7 +1050,14 @@ private fun AssistantMessageTurn(
                             modifier = Modifier
                                 .widthIn(max = maxWidth)
                                 .padding(vertical = 4.dp),
-                            onClick = { onBubbleClick(node) }
+                            onClick = {
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
+                            }
                         )
                     } else {
                         GroupedMessageBubble(
@@ -971,7 +1068,12 @@ private fun AssistantMessageTurn(
                             contentColor = if (wechatMode) WeChatTextBlack else null,
                             onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                onBubbleClick(node)
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
                             }
                         ) {
                             val contentText = if (part is UIMessagePart.Text) part.text else ""
@@ -1036,6 +1138,20 @@ private fun AssistantMessageTurn(
 
                 // ✨ Determine what to render based on part type
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (selecting) {
+                        Checkbox(
+                            checked = node.id in selectedItems,
+                            onCheckedChange = {
+                                if (it) selectedItems.add(node.id)
+                                else selectedItems.remove(node.id)
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                    }
+
                     if (wechatMode) {
                         UIAvatar(
                             name = avatarName,
@@ -1050,7 +1166,14 @@ private fun AssistantMessageTurn(
                         ReasoningFlowBlock(
                             content = part.reasoning,
                             modifier = Modifier.padding(vertical = 4.dp),
-                            onClick = { onBubbleClick(node) }
+                            onClick = {
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
+                            }
                         )
                     } else {
                         val contentText = if (part is UIMessagePart.Text) part.text else ""
@@ -1063,7 +1186,12 @@ private fun AssistantMessageTurn(
                             onClickCitation = { id -> onCitationClick(id) },
                             modifier = Modifier.clickable {
                                 haptics.perform(HapticPattern.Pop)
-                                onBubbleClick(node)
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
                             }
                         )
                     }

@@ -332,6 +332,7 @@
   <string name="reasoning_off">關閉</string>
   <string name="reasoning_off_desc">關閉推理功能，模型將直接回答問題。</string>
   <string name="reasoning_set_budget">設置推理預算 (%1$d tokens)</string>
+  <string name="quote">引用</string>
   <string name="regenerate">重新生成</string>
   <string name="search_ability_scrape">爬取</string>
   <string name="search_ability_search">搜尋</string>

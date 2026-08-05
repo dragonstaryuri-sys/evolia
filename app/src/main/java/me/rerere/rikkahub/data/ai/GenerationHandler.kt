@@ -1235,7 +1235,20 @@ class GenerationHandler(
 
                     }
                     val originalText = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
-                    val otherParts = msg.parts.filter { it !is UIMessagePart.Text }
+                    // 提取引用标记 (UIMessagePart.Quote) 并转换为自然语言提示词前缀
+                    // 引用 AI 用"你"，引用用户自己用"我"，让对话语气更自然
+                    val quotePart = msg.parts.filterIsInstance<UIMessagePart.Quote>().firstOrNull()
+                    val quotePrefix = quotePart?.let { quote ->
+                        val referenceTarget = if (quote.isUser) "我" else "你"
+                        buildString {
+                            append("引用")
+                            append(referenceTarget)
+                            append("刚才说的内容：\n\n> ")
+                            append(quote.content.replace("\n", "\n> "))
+                            append("\n\n本轮问题：")
+                        }
+                    } ?: ""
+                    val otherParts = msg.parts.filter { it !is UIMessagePart.Text && it !is UIMessagePart.Quote }
 
                     if (dynamicContext.isNotBlank()) {
                         val newTextPart = UIMessagePart.Text(
@@ -1243,12 +1256,13 @@ class GenerationHandler(
                                 appendLine("# 系统消息")
                                 append(dynamicContext)
                                 appendLine("# 用户问题")
+                                append(quotePrefix)
                                 append(originalText)
                             }
                         )
                         add(msg.copy(parts = listOf(newTextPart) + otherParts))
                     } else {
-                        val newTextPart = UIMessagePart.Text(text = originalText)
+                        val newTextPart = UIMessagePart.Text(text = quotePrefix + originalText)
                         add(msg.copy(parts = listOf(newTextPart) + otherParts))
                     }
                 } else {

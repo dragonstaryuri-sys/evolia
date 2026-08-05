@@ -360,6 +360,7 @@
   <string name="reasoning_off">끄기</string>
   <string name="reasoning_off_desc">추론을 비활성화합니다.</string>
   <string name="reasoning_set_budget">예산 설정 (%1$d 토큰)</string>
+  <string name="quote">인용</string>
   <string name="regenerate">다시 생성</string>
   <string name="search_ability_scrape">스크래핑</string>
   <string name="search_ability_search">검색</string>

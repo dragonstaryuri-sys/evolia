@@ -337,6 +337,7 @@
   <string name="reasoning_medium_desc">模型将使用更多推理来回答问题。</string>
   <string name="reasoning_off">关闭</string>
   <string name="reasoning_off_desc">关闭推理功能，模型将直接回答问题。</string>
+  <string name="quote">引用</string>
   <string name="regenerate">重新生成</string>
   <string name="search_ability_scrape">抓取</string>
   <string name="search_ability_search">搜索</string>
@@ -889,8 +890,6 @@
 
   <!-- Discover -->
   <string name="discover_page_title">发现</string>
-  <string name="discover_page_forum">论坛</string>
-  <string name="discover_page_forum_desc">社区与扩展 (开发中)</string>
   <string name="discover_page_diary">日记</string>
   <string name="assistant_context_include_diary_title">带入日记到上下文</string>
   <string name="assistant_context_include_diary_desc">启用后，智能体在对话时将参考最近生成的日记内容</string>
@@ -1800,6 +1799,8 @@
   <string name="chat_timeline_collapse">收起</string>
   <string name="chat_timeline_expand">展开</string>
   <string name="chat_timeline_memory_content">内容</string>
+  <string name="chat_load_more">加载更多……</string>
+  <string name="chat_topic_started_all">新对话</string>
   <!-- 日记功能升级 -->
   <string name="diary_view_list">列表</string>
   <string name="diary_view_calendar">日历</string>
@@ -1840,5 +1841,6 @@
   <string name="discover_page_hour_light_desc">与你的智能体分享此刻</string>
   <string name="diary_select_agent_to_comment">选择一个智能体来评论</string>
   <string name="diary_agent_commenting_to">正在请求 %1$s 的评论</string>
+  <string name="diary_comment_switched_to_normal_mode">已自动切换至普通模式以完整接收评论</string>
 
 </resources>

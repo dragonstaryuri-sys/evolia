@@ -60,6 +60,7 @@ import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.ChatInputState
+import me.rerere.rikkahub.ui.hooks.QuotedMessage
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
 import me.rerere.rikkahub.utils.base64Decode
@@ -542,6 +543,43 @@ private fun ChatPageContent(
                         onEdit = {
                             inputState.editingMessage = it.id
                             inputState.setContents(it.parts)
+                            // 编辑与引用互斥：进入编辑模式时清除引用状态
+                            inputState.quotedMessage = null
+                        },
+                        onQuote = { message ->
+                            // 提取被引用消息的文本内容；若为空（纯图片/文件等），使用占位符
+                            val rawContent = message.toContentText()
+                            val quoteContent = if (rawContent.isBlank()) {
+                                when {
+                                    message.parts.any { it is UIMessagePart.Image } -> "[图片]"
+                                    message.parts.any { it is UIMessagePart.Video } -> "[视频]"
+                                    message.parts.any { it is UIMessagePart.Audio } -> "[语音]"
+                                    message.parts.any { it is UIMessagePart.Document } -> "[文件]"
+                                    else -> "[消息]"
+                                }
+                            } else {
+                                // 截断过长的引用内容，避免预览卡片和上下文过于冗长
+                                if (rawContent.length > 200) {
+                                    rawContent.take(200) + "…"
+                                } else {
+                                    rawContent
+                                }
+                            }
+                            // 发送者名称：用户消息用昵称，AI 消息用 assistant 名字
+                            val senderName = if (message.role == MessageRole.USER) {
+                                setting.displaySetting.userNickname.ifBlank { "User" }
+                            } else {
+                                currentAssistant.name.ifBlank { "Assistant" }
+                            }
+                            inputState.quotedMessage = QuotedMessage(
+                                senderName = senderName,
+                                content = quoteContent,
+                                isUser = message.role == MessageRole.USER
+                            )
+                            // 清除编辑模式（引用与编辑互斥）
+                            inputState.editingMessage = null
+                            // 请求焦点以唤起键盘
+                            inputState.setMessageTextAndFocus(inputState.textContent.text.toString(), scope)
                         },
                         onDelete = { message ->
                             val backup = conversation
@@ -554,7 +592,7 @@ private fun ChatPageContent(
                                 action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                                     label = context.getString(R.string.undo),
                                     onClick = {
-                                        vm.updateConversation(backup)
+                                        vm.restoreConversation(backup)
                                         vm.markNodesAsRestored(removedIds)
                                     }
                                 )
@@ -576,7 +614,7 @@ private fun ChatPageContent(
                                 action = me.rerere.rikkahub.ui.components.ui.ToastAction(
                                     label = context.getString(R.string.undo),
                                     onClick = {
-                                        vm.updateConversation(backup)
+                                        vm.restoreConversation(backup)
                                     }
                                 )
                             )
@@ -746,6 +784,7 @@ private fun ChatPageContent(
                                     settings = setting,
                                     conversation = conversation,
                                     mcpManager = vm.mcpManager,
+                                    isAiTyping = isAiTyping,
                                     chatSuggestions = conversation.chatSuggestions,
                                     onClickSuggestion = { suggestion ->
                                         if (currentChatModel != null) {
@@ -783,7 +822,7 @@ private fun ChatPageContent(
                                                 ); return@MinimalChatInput
                                             }
                                             vm.handleMessageSend(
-                                                inputState.getContents(),
+                                                inputState.getSendContents(),
                                                 isTemporaryChat = isTemporaryChat
                                             )
                                         }
@@ -802,7 +841,7 @@ private fun ChatPageContent(
                                                 ); return@MinimalChatInput
                                             }
                                             vm.handleMessageSend(
-                                                content = inputState.getContents(),
+                                                content = inputState.getSendContents(),
                                                 answer = false,
                                                 isTemporaryChat = isTemporaryChat
                                             )
@@ -827,9 +866,7 @@ private fun ChatPageContent(
                                     },
                                     onClearContext = { vm.startNewTopic() },
                                     onUpdateConversation = { updatedConversation ->
-                                        vm.updateConversation(
-                                            updatedConversation
-                                        ); vm.saveConversationAsync()
+                                        vm.updateConversation(updatedConversation)
                                     },
                                     onNavigateToLorebook = { lorebookId ->
                                         navController.navigate(
@@ -852,6 +889,7 @@ private fun ChatPageContent(
                                     settings = setting,
                                     conversation = conversation,
                                     mcpManager = vm.mcpManager,
+                                    isAiTyping = isAiTyping,
                                     chatSuggestions = conversation.chatSuggestions,
                                     onClickSuggestion = { suggestion ->
                                         if (currentChatModel != null) {
@@ -886,7 +924,7 @@ private fun ChatPageContent(
                                                 toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
                                             }
                                             vm.handleMessageSend(
-                                                inputState.getContents(),
+                                                inputState.getSendContents(),
                                                 isTemporaryChat = isTemporaryChat
                                             )
                                         }
@@ -902,7 +940,7 @@ private fun ChatPageContent(
                                                 toaster.show(errorSelectModelText, type = ToastType.Error); return@ChatInput
                                             }
                                             vm.handleMessageSend(
-                                                content = inputState.getContents(),
+                                                content = inputState.getSendContents(),
                                                 answer = false,
                                                 isTemporaryChat = isTemporaryChat
                                             )
@@ -927,9 +965,7 @@ private fun ChatPageContent(
                                     },
                                     onClearContext = { vm.startNewTopic() },
                                     onUpdateConversation = { updatedConversation ->
-                                        vm.updateConversation(
-                                            updatedConversation
-                                        ); vm.saveConversationAsync()
+                                        vm.updateConversation(updatedConversation)
                                     },
                                     onNavigateToLorebook = { lorebookId ->
                                         navController.navigate(

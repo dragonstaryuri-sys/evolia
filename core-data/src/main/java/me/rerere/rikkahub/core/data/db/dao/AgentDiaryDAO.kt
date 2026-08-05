@@ -11,6 +11,11 @@ interface AgentDiaryDAO {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDiary(diary: AgentDiaryEntity)
 
+    // 编辑日记使用 @Update 而非 @Insert(REPLACE)：REPLACE 底层是 DELETE+INSERT，
+    // DELETE 会触发 DiaryCommentEntity 外键的 CASCADE 删除，导致评论丢失。
+    @Update
+    suspend fun updateDiary(diary: AgentDiaryEntity)
+
     @Query("SELECT * FROM AgentDiaryEntity WHERE assistant_id = :assistantId ORDER BY date DESC")
     fun getDiariesByAssistant(assistantId: String): Flow<List<AgentDiaryEntity>>
 
