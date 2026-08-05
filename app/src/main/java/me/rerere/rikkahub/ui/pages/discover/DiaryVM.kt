@@ -560,12 +560,23 @@ class DiaryVM(
 
     fun saveDiary(id: String? = null, assistantId: String, content: String, date: String) {
         viewModelScope.launch {
-            val entity = if (id != null && id != "new") {
-                AgentDiaryEntity(id = id, assistantId = assistantId, content = content, date = date)
+            if (id != null && id != "new") {
+                // 修改现有日记：保留原始 createdAt 和 assistantId，使用 @Update 而非 insert(REPLACE)。
+                // insert(REPLACE) 底层是 DELETE+INSERT，DELETE 会触发 DiaryCommentEntity 外键的
+                // CASCADE 删除，导致已有评论全部丢失。
+                val existing = diaryRepo.getDiaryById(id)
+                val entity = AgentDiaryEntity(
+                    id = id,
+                    assistantId = existing?.assistantId ?: assistantId,
+                    content = content,
+                    date = date,
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis()
+                )
+                diaryRepo.updateDiary(entity)
             } else {
-                AgentDiaryEntity(assistantId = assistantId, content = content, date = date)
+                val entity = AgentDiaryEntity(assistantId = assistantId, content = content, date = date)
+                diaryRepo.insertDiary(entity)
             }
-            diaryRepo.insertDiary(entity)
         }
     }
 
@@ -603,7 +614,14 @@ class DiaryVM(
         toaster?.show(app.getString(R.string.discover_page_diary_generating), type = ToastType.Info)
     }
 
-    fun deleteDiary(id: String) { viewModelScope.launch { diaryRepo.deleteDiaryById(id) } }
+    fun deleteDiary(id: String) {
+        viewModelScope.launch {
+            diaryRepo.deleteDiaryById(id)
+            // 同步更新列表 UI：_diaryList 基于 suspend 分页查询填充，不会自动响应 DB 变化，
+            // 需手动移除被删除项，否则要退出页面重进才能看到删除效果。
+            _diaryList.update { list -> list.filterNot { it.id == id } }
+        }
+    }
 
     fun toggleAutoDiary(assistantId: String, enabled: Boolean) {
         viewModelScope.launch {

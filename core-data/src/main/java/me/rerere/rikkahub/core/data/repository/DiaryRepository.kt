@@ -13,6 +13,10 @@ class DiaryRepository(
         agentDiaryDao.insertDiary(diary)
     }
 
+    suspend fun updateDiary(diary: AgentDiaryEntity) {
+        agentDiaryDao.updateDiary(diary)
+    }
+
     fun getDiariesByAssistant(assistantId: String): Flow<List<AgentDiaryEntity>> {
         return agentDiaryDao.getDiariesByAssistant(assistantId)
     }
