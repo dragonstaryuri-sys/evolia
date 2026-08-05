@@ -111,8 +111,12 @@ fun ChatList(
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
     var instantScroll by remember { mutableStateOf(false) }
 
+    // ✨ 增加标记位，并以 targetMessageId 为 key。
+    // 这样当 targetMessageId 变化时（比如从搜索页点击了另一个结果再次跳转进来），它会重置为 false。
+    var hasScrolledToTarget by remember(targetMessageId) { mutableStateOf(false) }
+
     LaunchedEffect(targetMessageId, items) {
-        if (!targetMessageId.isNullOrBlank()) {
+        if (!targetMessageId.isNullOrBlank() && !hasScrolledToTarget) {
             val targetNode = items.asSequence()
                 .mapNotNull { item ->
                     when (item) {
@@ -127,6 +131,7 @@ fun ChatList(
             if (targetNode != null) {
                 instantScroll = true
                 scrollToNodeId = targetNode.id
+                hasScrolledToTarget = true // 标记已经定位过目标节点，后续 items 刷新不再干扰
             }
         }
     }
@@ -384,9 +389,11 @@ private fun SharedTransitionScope.ChatListNormal(
                         val isGenerating = item.isGenerating
 
                         // 话题间的时间显示逻辑
+                        // items[0] 最新 → items[last] 最旧；nextItem (index+1) 比当前更旧
+                        // Turn.nodes 旧→新（ChatPage 已 reversed）：first=最旧, last=最新
+                        // 交界处差 = 当前 Turn 最旧节点 - 下一 Turn 最新节点
                         val nextItem = items.getOrNull(index + 1)
                         val shouldShowTime = nextItem == null || nextItem is ChatUIItem.Separator || run {
-                            // 由于现在只有 Turn，提取时间逻辑变简单了
                             val olderTime = (nextItem as? ChatUIItem.Turn)?.group?.nodes?.last()?.currentMessage?.createdAt
                             olderTime == null || (item.group.nodes.first().currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()) -
                                 olderTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes

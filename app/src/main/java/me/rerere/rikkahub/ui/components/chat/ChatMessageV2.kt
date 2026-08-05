@@ -200,14 +200,16 @@ fun List<MessageNode>.groupIntoTurns(): List<MessageTurnGroup> {
     }
 
     chronologicalNodes.forEach { node ->
-        val nodeRole = node.currentMessage.role
-        val logicalRole = getGroupingRole(nodeRole)
-        val isTimeBreak = if (currentGroup.isNotEmpty()) {
-            val lastNodeTime = currentGroup.last().currentMessage.createdAt
-            val currentNodeTime = node.currentMessage.createdAt
-            (currentNodeTime.toInstant(TimeZone.currentSystemDefault()) -
-                lastNodeTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
-        } else false
+            val nodeRole = node.currentMessage.role
+            val logicalRole = getGroupingRole(nodeRole)
+            val isTimeBreak = if (currentGroup.isNotEmpty()) {
+                val lastNodeTime = currentGroup.last().currentMessage.createdAt
+                val currentNodeTime = node.currentMessage.createdAt
+                // chronologicalNodes 按 新→旧 遍历，lastNode 比 current 更新，
+                // 时间差 = lastNodeTime - currentNodeTime（正数）
+                (lastNodeTime.toInstant(TimeZone.currentSystemDefault()) -
+                    currentNodeTime.toInstant(TimeZone.currentSystemDefault())) > 5.minutes
+            } else false
 
         if ((logicalRole != currentGroupRole || isTimeBreak) && currentGroup.isNotEmpty()) {
             groups.add(MessageTurnGroup(currentGroup.toList(), currentGroupRole!!))
@@ -235,6 +237,11 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
     val toolResults = parts.filterIsInstance<UIMessagePart.ToolResult>()
         .associateBy { it.toolCallId }
 
+    // 同一 toolCallId 在一个轮次内可能因微信分句同步 / regenerate / 上游 provider 重复返回
+    // 而出现在多个 node 中。这里按 toolCallId 去重，避免 LazyColumn key 冲突崩溃，
+    // 同时语义上同一次工具调用也只应在时间线出现一次。
+    val seenToolCallIds = mutableSetOf<String>()
+
     parts.forEach { part ->
         when (part) {
             is UIMessagePart.Reasoning -> {
@@ -253,6 +260,8 @@ private fun buildTimelineEntries(parts: List<UIMessagePart>): List<TimelineEntry
             }
 
             is UIMessagePart.ToolCall -> {
+                if (!seenToolCallIds.add(part.toolCallId)) return@forEach
+
                 val result = toolResults[part.toolCallId]
                 if (part.toolName in memoryTools) {
                     entries.add(buildMemoryTimelineEntry(part, result))
