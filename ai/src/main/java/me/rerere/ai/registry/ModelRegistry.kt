@@ -18,6 +18,7 @@ object ModelRegistry {
     val GPT_5 =
         ModelMatcher.containsRegex("gpt-(?!.*\\.)(?:5)") and ModelMatcher.containsRegex("gpt-5-chat", negated = true)
     private val GPT_5_MULTI = ModelMatcher.containsRegex("gpt-5\\.[45]")
+    private val GPT_5_6 = ModelMatcher.containsRegex("gpt-5\\.6")
 
     // 细化视觉模型后缀，避免误匹配 v3/v4 等版本号
     private val VISION_SUFFIX = ModelMatcher.containsRegex("-(vision|vl|v$|v-)")
@@ -33,8 +34,16 @@ object ModelRegistry {
     val GEMINI_PRO_LATEST = ModelMatcher.exact("gemini-pro-latest")
     val GEMINI_LATEST = GEMINI_FLASH_LATEST + GEMINI_PRO_LATEST
     val GEMINI_3_SERIES = GEMINI_3_PRO + GEMINI_3_FLASH
-    val GEMINI_SERIES = GEMINI_20_FLASH + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST
+    private val GEMINI_1_5 = ModelMatcher.containsRegex("gemini-1\\.5")
+    val GEMINI_SERIES = GEMINI_1_5 + GEMINI_20_FLASH + GEMINI_2_5_FLASH + GEMINI_2_5_PRO + GEMINI_3_SERIES + GEMINI_LATEST
     private val OMNI_SUFFIX = ModelMatcher.containsRegex("omni")
+
+    // 音频模型识别 (增强版)
+    // 覆盖: -audio, -speech, -voice (如 grok-3-voice), -live, -realtime
+    private val AUDIO_SUFFIX = ModelMatcher.containsRegex("-(audio|speech|voice|live|realtime)")
+    // GPT-5.5 (在 GPT_5_MULTI 中) 和 GPT-5.6 及其所有变体
+    val AUDIO_MODELS = GPT4O + GEMINI_SERIES + OMNI_SUFFIX + AUDIO_SUFFIX + GPT_5_MULTI + GPT_5_6
+
     private val THINKING_SUFFIX = ModelMatcher.containsRegex("thinking")
     private val CLAUDE_SONNET_3_5 = ModelMatcher.containsRegex("claude-3.5-sonnet")
     private val CLAUDE_SONNET_3_7 = ModelMatcher.containsRegex("claude-3.7-sonnet")
@@ -69,15 +78,15 @@ object ModelRegistry {
     private val IMAGE_GEN_MODELS_MATCH = ModelMatcher.containsRegex("cogview|glm-image|dall-e|flux|stable-diffusion|sdxl")
 
     val VISION_MODELS =
-        GPT4O + GPT_4_1 + GPT_5 + GPT_5_MULTI + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 +
+        GPT4O + GPT_4_1 + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 +
             GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + DOUBAO_SEED + VISION_SUFFIX + OMNI_SUFFIX
     val TOOL_MODELS =
-        GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + GPT_5_MULTI + OPENAI_O_MODELS + O3_MINI + GEMINI_SERIES +
+        GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + O3_MINI + GEMINI_SERIES +
             CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 +
             DEEPSEEK_R1 + DEEPSEEK_V3 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 +
             GLM_4_6 + GLM_4_6V + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED + LLAMA_3_3 + LLAMA_4
     val REASONING_MODELS =
-        GPT_OSS + GPT_5 + GPT_5_MULTI + OPENAI_O_MODELS + O3_MINI + GEMINI_2_5_FLASH + GEMINI_2_5_PRO +
+        GPT_OSS + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + O3_MINI + GEMINI_2_5_FLASH + GEMINI_2_5_PRO +
             GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 +
             GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 +
             DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED +
@@ -85,10 +94,14 @@ object ModelRegistry {
     val CHAT_IMAGE_GEN_MODELS = GEMINI_2_5_IMAGE
 
     val MODEL_INPUT_MODALITIES = ModelData { modelId ->
-        if (VISION_MODELS.match(modelId)) {
-            listOf(Modality.TEXT, Modality.IMAGE)
-        } else {
-            listOf(Modality.TEXT)
+        buildList {
+            add(Modality.TEXT)
+            if (VISION_MODELS.match(modelId)) {
+                add(Modality.IMAGE)
+            }
+            if (AUDIO_MODELS.match(modelId)) {
+                add(Modality.AUDIO)
+            }
         }
     }
 
