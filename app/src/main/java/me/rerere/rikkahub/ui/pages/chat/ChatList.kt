@@ -45,6 +45,7 @@ import me.rerere.rikkahub.data.datastore.getAssistantById
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
+import me.rerere.rikkahub.ui.components.chat.LocalVoiceMessagePlayer
 import me.rerere.rikkahub.ui.components.chat.MessageTurnGroup
 import me.rerere.rikkahub.ui.components.ui.ListSelectableItem
 import me.rerere.rikkahub.ui.components.ui.Tooltip
@@ -106,6 +107,7 @@ fun ChatList(
     onTypingStateChange: (Uuid, Boolean) -> Unit = { _, _ -> },
     onUserScroll: () -> Boolean = { false },
     onRetryPagination: () -> Unit = {},
+    voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -208,6 +210,7 @@ fun ChatList(
                             onUserScroll = onUserScroll,
                             onRetryPagination = onRetryPagination,
                             animatedVisibilityScope = this@AnimatedContent,
+                            voiceMessagePlayer = voiceMessagePlayer,
                         )
                     }
                 }
@@ -242,6 +245,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onRetryPagination: () -> Unit,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
+    voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
 ) {
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
@@ -339,6 +343,9 @@ private fun SharedTransitionScope.ChatListNormal(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+      androidx.compose.runtime.CompositionLocalProvider(
+          LocalVoiceMessagePlayer provides voiceMessagePlayer
+      ) {
         LazyColumn(
             state = state,
             reverseLayout = true,
@@ -506,6 +513,7 @@ private fun SharedTransitionScope.ChatListNormal(
                 }
             }
         }
+      }
 
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             AnimatedVisibility(

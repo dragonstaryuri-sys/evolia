@@ -14,12 +14,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.datastore.getCurrentChatModel
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantAffectScope
@@ -34,6 +36,9 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.FavoriteRepository
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.voice.VoiceCallManager
+import me.rerere.rikkahub.service.voice.VoiceMessagePlayer
+import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
+import me.rerere.asr.provider.ASRManager
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
@@ -46,6 +51,8 @@ import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 private const val TAG = "ChatVM"
 
@@ -61,6 +68,8 @@ class ChatVM(
     private val memoryRepo: MemoryRepository,
     private val favoriteRepo: FavoriteRepository,
     private val voiceCallManager: VoiceCallManager,
+    private val asrManager: ASRManager,
+    val voiceMessagePlayer: VoiceMessagePlayer,
 ) : ViewModel() {
 
     // --- 通话状态暴露（直接转发 VoiceCallManager 的 StateFlow, 避免冗余复制） ---
@@ -69,6 +78,14 @@ class ChatVM(
     val callIsSpeakerOn: StateFlow<Boolean> = voiceCallManager.isSpeakerOn
     val isCallActive: StateFlow<Boolean> = voiceCallManager.isActive
     val callError: SharedFlow<String> = voiceCallManager.callError
+
+    // --- 语音消息转写状态（按住说话松开后，正在 ASR 转文字时为 true） ---
+    private val _voiceTranscribing = MutableStateFlow(false)
+    val voiceTranscribing: StateFlow<Boolean> = _voiceTranscribing.asStateFlow()
+
+    // --- 语音消息相关错误事件（一次性，UI 用 toast 提示） ---
+    private val _voiceEvents = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val voiceEvents: SharedFlow<String> = _voiceEvents.asSharedFlow()
 
     fun startCall(conversationId: Uuid) = voiceCallManager.startCall(conversationId)
     fun hangupCall() = voiceCallManager.hangup()
@@ -402,6 +419,71 @@ class ChatVM(
             conversation.value.messageNodes.lastOrNull()?.let {
                 paginationManager?.injectNewNode(it)
             }
+        }
+    }
+
+    /**
+     * 发送语音消息。
+     *
+     * - 当前对话模型支持音频输入（[Modality.AUDIO]）时，直接发送 [UIMessagePart.Audio]。
+     * - 否则先用 ASR 转文字，把转写结果存入 Audio Part 的 metadata.transcription，
+     *   由 [AudioToTextTransformer] 在发送给 AI 前转成 Text。
+     * - ASR 失败/未配置时仍发送 Audio Part（非多模态模型会显示占位），并 emit 事件提示用户。
+     *
+     * @param audioUri 录音文件 Uri（file:// 形式）
+     * @param durationMs 录音时长（毫秒）
+     */
+    fun sendVoiceMessage(audioUri: Uri, durationMs: Long) {
+        viewModelScope.launch {
+            val currentSettings = settingsStore.settingsFlow.value
+            val model = currentSettings.getCurrentChatModel()
+            val supportsAudio = model?.inputModalities?.contains(Modality.AUDIO) == true
+
+            if (supportsAudio) {
+                val audioPart = UIMessagePart.Audio(
+                    url = audioUri.toString(),
+                    metadata = buildJsonObject {
+                        put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                    }
+                )
+                handleMessageSend(listOf(audioPart))
+                return@launch
+            }
+
+            // 非多模态：先 ASR 转文字
+            val asrProvider = currentSettings.getSelectedASRProvider()
+            if (asrProvider == null) {
+                _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
+                val audioPart = UIMessagePart.Audio(
+                    url = audioUri.toString(),
+                    metadata = buildJsonObject {
+                        put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                    }
+                )
+                handleMessageSend(listOf(audioPart))
+                return@launch
+            }
+
+            _voiceTranscribing.value = true
+            val transcription: String? = try {
+                asrManager.transcribeFile(asrProvider, context, audioUri)
+                    .takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                Log.e(TAG, "sendVoiceMessage: ASR failed", e)
+                _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                null
+            } finally {
+                _voiceTranscribing.value = false
+            }
+
+            val audioMetadata = buildJsonObject {
+                put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                if (transcription != null) {
+                    put(AudioToTextTransformer.METADATA_TRANSCRIPTION, transcription)
+                }
+            }
+            val audioPart = UIMessagePart.Audio(url = audioUri.toString(), metadata = audioMetadata)
+            handleMessageSend(listOf(audioPart))
         }
     }
 

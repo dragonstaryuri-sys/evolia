@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -887,6 +888,7 @@ fun ModelModalityTag(model: Model) {
                 imageVector = when (modality) {
                     Modality.TEXT -> Icons.Rounded.Title
                     Modality.IMAGE -> Icons.Rounded.Image
+                    Modality.AUDIO -> Icons.Rounded.MusicNote
                 },
                 contentDescription = null,
                 modifier = Modifier
@@ -904,6 +906,7 @@ fun ModelModalityTag(model: Model) {
                 imageVector = when (modality) {
                     Modality.TEXT -> Icons.Rounded.Title
                     Modality.IMAGE -> Icons.Rounded.Image
+                    Modality.AUDIO -> Icons.Rounded.MusicNote
                 },
                 contentDescription = null,
                 modifier = Modifier

@@ -46,6 +46,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureClientWithProxy
 import me.rerere.ai.util.configureReferHeaders
+import me.rerere.ai.util.audioMime
 import me.rerere.ai.util.encodeBase64
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
@@ -611,7 +612,7 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                                         part.encodeBase64(false).onSuccess { base64Data ->
                                             add(buildJsonObject {
                                                 put("inline_data", buildJsonObject {
-                                                    put("mime_type", "audio/mp3")
+                                                    put("mime_type", part.audioMime())
                                                     put("data", base64Data)
                                                 })
                                             })

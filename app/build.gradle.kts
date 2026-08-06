@@ -308,6 +308,11 @@ dependencies {
     implementation(libs.barcode.scanning)
     implementation(libs.androidx.camera.core)
 
+    // Media3 (ExoPlayer) - 语音消息播放
+    implementation(libs.androidx.media3.common)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

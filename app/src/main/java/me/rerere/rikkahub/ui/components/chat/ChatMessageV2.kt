@@ -79,6 +79,7 @@ import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
+import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
@@ -794,6 +795,57 @@ private fun UserMessageTurn(
                 }
             }
 
+            // 语音消息：每个 Audio Part 渲染为一个语音条（右对齐，含微信模式头像）
+            group.filteredNodes.forEach { node ->
+                val audioParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Audio>()
+                audioParts.forEach { audio ->
+                    val durationMs = audio.metadata?.get(AudioToTextTransformer.METADATA_DURATION_MS)
+                        ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        VoiceMessageBubble(
+                            audioUrl = audio.url,
+                            durationMs = durationMs,
+                            isUser = true,
+                            selecting = selecting,
+                            onClick = {
+                                if (node.id in selectedItems) selectedItems.remove(node.id)
+                                else selectedItems.add(node.id)
+                            },
+                            containerColor = if (wechatMode) WeChatUserGreen else MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.widthIn(max = maxWidth)
+                        )
+                        if (wechatMode) {
+                            Spacer(Modifier.width(8.dp))
+                            UIAvatar(
+                                name = userNickname,
+                                value = userAvatar,
+                                modifier = Modifier.size(40.dp),
+                                onClick = {
+                                    navController.navigate(Screen.SettingUserProfile)
+                                }
+                            )
+                        }
+                        if (selecting) {
+                            Checkbox(
+                                checked = node.id in selectedItems,
+                                onCheckedChange = {
+                                    if (it) selectedItems.add(node.id)
+                                    else selectedItems.remove(node.id)
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = MaterialTheme.colorScheme.primary,
+                                    uncheckedColor = MaterialTheme.colorScheme.outline
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
             // Toolbar
             AnimatedVisibility(
                 visible = showToolbar,
@@ -1196,6 +1248,57 @@ private fun AssistantMessageTurn(
                         )
                     }
                 }
+            }
+        }
+
+        // 语音消息：Assistant 返回的 Audio Part 渲染为语音条（左对齐，含微信模式头像）
+        val assistantAudios = remember(group.filteredNodes) {
+            group.filteredNodes.flatMap { node ->
+                node.currentMessage.parts.filterIsInstance<UIMessagePart.Audio>().map { node to it }
+            }
+        }
+        assistantAudios.forEach { (node, audio) ->
+            val durationMs = audio.metadata?.get(AudioToTextTransformer.METADATA_DURATION_MS)
+                ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start
+            ) {
+                if (selecting) {
+                    Checkbox(
+                        checked = node.id in selectedItems,
+                        onCheckedChange = {
+                            if (it) selectedItems.add(node.id)
+                            else selectedItems.remove(node.id)
+                        },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+                }
+                if (wechatMode) {
+                    UIAvatar(
+                        name = avatarName,
+                        modifier = Modifier.size(40.dp),
+                        value = avatarValue,
+                        onClick = onAvatarClick
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                VoiceMessageBubble(
+                    audioUrl = audio.url,
+                    durationMs = durationMs,
+                    isUser = false,
+                    selecting = selecting,
+                    onClick = {
+                        if (node.id in selectedItems) selectedItems.remove(node.id)
+                        else selectedItems.add(node.id)
+                    },
+                    containerColor = if (wechatMode) WeChatAiWhite else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.widthIn(max = maxWidth)
+                )
             }
         }
 

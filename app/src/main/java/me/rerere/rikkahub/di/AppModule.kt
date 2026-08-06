@@ -96,6 +96,10 @@ val appModule = module {
         )
     }
 
+    single {
+        me.rerere.rikkahub.service.voice.VoiceMessagePlayer(get())
+    }
+
     singleOf(::ChatService)
 
     workerOf(::BackupWorker)

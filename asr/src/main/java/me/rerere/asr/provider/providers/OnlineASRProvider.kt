@@ -4,7 +4,10 @@ import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.net.Uri
 import android.util.Log
+import androidx.core.net.toFile
+import java.io.File
 import com.k2fsa.sherpa.onnx.SileroVadModelConfig
 import com.k2fsa.sherpa.onnx.Vad
 import com.k2fsa.sherpa.onnx.VadModelConfig
@@ -12,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.asr.model.ASRResult
@@ -166,12 +170,97 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
     private suspend fun transcribe(
         wavBytes: ByteArray,
         setting: ASRProviderSetting.OnlineASR
+    ): String = transcribeBytes(
+        bytes = wavBytes,
+        filename = "audio.wav",
+        mime = "audio/wav",
+        setting = setting
+    )
+
+    /**
+     * 整段式转录：读取 [uri] 指向的音频文件，上传到云端 Whisper 兼容 API。
+     * 支持常见格式（m4a/mp3/wav/webm 等，OpenAI Whisper 官方支持 mp3/mp4/mpeg/mpga/m4a/wav/webm）。
+     */
+    override suspend fun transcribeFile(
+        context: Context,
+        uri: Uri,
+        providerSetting: ASRProviderSetting.OnlineASR
+    ): String = withContext(Dispatchers.IO) {
+        if (providerSetting.apiKey.isBlank()) {
+            throw RuntimeException("Online ASR: API Key is empty, please configure it in ASR settings")
+        }
+        val (bytes, filename, mime) = readAudioFile(context, uri)
+        transcribeBytes(bytes, filename, mime, providerSetting)
+    }
+
+    /**
+     * 读取音频文件为字节数组，并推断文件名与 mime。
+     *
+     * 注意：
+     *  - Uri.lastPathSegment 在路径/文件名含特殊字符或 uuid 段时偶发拿到截断片段（不带扩展名），
+     *    导致 Whisper 兼容服务端按"无扩展名"拒绝（HTTP 400）。
+     *  - 优先走 `Uri.toFile()`（file:// scheme）直接拿 File.getName，再回退 lastPathSegment，
+     *    并确保最终 filename **自带正确扩展名**（若缺失就按 mime 补上）。
+     *  - .m4a 使用 `audio/x-m4a`（部分服务端不识别 `audio/mp4`，会视为视频容器）。
+     */
+    private fun readAudioFile(context: Context, uri: Uri): Triple<ByteArray, String, String> {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw RuntimeException("无法读取音频文件: $uri")
+
+        val rawName = runCatching {
+            if (uri.scheme == "file") uri.toFile().name else null
+        }.getOrNull()
+            ?: uri.lastPathSegment
+            ?: "audio.m4a"
+
+        val lower = rawName.lowercase()
+        val mime = when {
+            lower.endsWith(".wav") -> "audio/wav"
+            lower.endsWith(".mp3") -> "audio/mpeg"
+            lower.endsWith(".m4a") -> "audio/x-m4a"
+            lower.endsWith(".aac") -> "audio/aac"
+            lower.endsWith(".mp4") -> "audio/x-m4a"
+            lower.endsWith(".webm") -> "audio/webm"
+            lower.endsWith(".ogg") -> "audio/ogg"
+            lower.endsWith(".flac") -> "audio/flac"
+            else -> {
+                // 拿不到扩展名，回退查 contentResolver
+                val resolverMime = context.contentResolver.getType(uri).orEmpty()
+                if (resolverMime.startsWith("audio/")) resolverMime else "audio/x-m4a"
+            }
+        }
+
+        // 确保 filename 带上正确扩展名，避免服务端按无扩展名拒绝
+        val ext = when (mime) {
+            "audio/wav" -> ".wav"
+            "audio/mpeg" -> ".mp3"
+            "audio/x-m4a" -> ".m4a"
+            "audio/aac" -> ".aac"
+            "audio/webm" -> ".webm"
+            "audio/ogg" -> ".ogg"
+            "audio/flac" -> ".flac"
+            else -> ".m4a"
+        }
+        val filename = if (File(rawName).extension.isNotBlank()) rawName else (rawName + ext)
+
+        Log.d(TAG, "readAudioFile: uri=$uri, filename=$filename, mime=$mime, size=${bytes.size}")
+        return Triple(bytes, filename, mime)
+    }
+
+    /**
+     * 上传音频字节到云端转录 API（兼容 OpenAI Whisper 接口格式）。
+     */
+    private suspend fun transcribeBytes(
+        bytes: ByteArray,
+        filename: String,
+        mime: String,
+        setting: ASRProviderSetting.OnlineASR
     ): String {
-        val audioBody = wavBytes.toRequestBody("audio/wav".toMediaType())
+        val audioBody = bytes.toRequestBody(mime.toMediaType())
 
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
-            .addFormDataPart("file", "audio.wav", audioBody)
+            .addFormDataPart("file", filename, audioBody)
             .addFormDataPart("model", setting.model)
             .addFormDataPart("language", setting.language)
             .addFormDataPart("response_format", "json")
@@ -183,10 +272,13 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             .post(requestBody)
             .build()
 
+        Log.d(TAG, "transcribeBytes: POST ${setting.apiUrl} file=$filename mime=$mime bytes=${bytes.size} model=${setting.model}")
         val response = client.newCall(request).execute()
         response.use { resp ->
             if (!resp.isSuccessful) {
                 val errBody = resp.body?.string() ?: ""
+                val headersDump = resp.headers.toMultimap().entries.joinToString(";") { (k, v) -> "$k=${v.firstOrNull()}" }
+                Log.e(TAG, "transcribeBytes: FAILED code=${resp.code} headers=$headersDump errBody=$errBody")
                 throw RuntimeException("ASR API ${resp.code}: ${errBody.take(200)}")
             }
             val body = resp.body?.string() ?: ""

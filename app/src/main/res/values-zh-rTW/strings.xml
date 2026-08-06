@@ -548,6 +548,7 @@
   <string name="setting_provider_page_test_connection">測試連接</string>
   <string name="setting_provider_page_test_success">測試成功</string>
   <string name="setting_provider_page_text">文字</string>
+  <string name="setting_provider_page_audio">音訊</string>
   <string name="setting_provider_page_title">提供商</string>
   <string name="setting_provider_page_tool">工具</string>
   <string name="setting_provider_page_vertex_ai">Vertex AI</string>

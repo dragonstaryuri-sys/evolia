@@ -72,12 +72,53 @@ fun UIMessagePart.Audio.encodeBase64(withPrefix: Boolean = true): Result<String>
             if (!file.exists()) {
                 throw IllegalArgumentException("File does not exist: ${this.url}")
             }
+            val mime = guessAudioMime(file.name)
             val bytes = file.readBytes()
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            if (withPrefix) "data:audio/mp3;base64,$encoded" else encoded
+            if (withPrefix) "data:$mime;base64,$encoded" else encoded
         }
 
+        this.url.startsWith("data:") -> url
         else -> throw IllegalArgumentException("Unsupported URL format: $url")
+    }
+}
+
+/**
+ * 根据 url 推断音频 mime（用于 Provider 直接拼装 inline_data / input_audio）。
+ * file:// / data: / http(s):// 都会尝试从路径扩展名推断；无法识别时回退 audio/mpeg。
+ */
+fun UIMessagePart.Audio.audioMime(): String = guessAudioMime(url)
+
+/**
+ * OpenAI input_audio.format 字段值（mp3/wav/mp4 等，不含 "audio/" 前缀）。
+ */
+fun UIMessagePart.Audio.openaiAudioFormat(): String = when (guessAudioMime(url)) {
+    "audio/wav" -> "wav"
+    "audio/mpeg" -> "mp3"
+    "audio/mp4" -> "mp4"
+    "audio/webm" -> "webm"
+    "audio/ogg" -> "ogg"
+    "audio/flac" -> "flac"
+    else -> "mp3"
+}
+
+private fun guessAudioMime(url: String): String {
+    val lower = url.substringBefore('?').lowercase()
+    return when {
+        lower.endsWith(".wav") -> "audio/wav"
+        lower.endsWith(".mp3") -> "audio/mpeg"
+        lower.endsWith(".m4a") -> "audio/mp4"
+        lower.endsWith(".mp4") -> "audio/mp4"
+        lower.endsWith(".webm") -> "audio/webm"
+        lower.endsWith(".ogg") -> "audio/ogg"
+        lower.endsWith(".flac") -> "audio/flac"
+        lower.startsWith("data:audio/wav") -> "audio/wav"
+        lower.startsWith("data:audio/mpeg") || lower.startsWith("data:audio/mp3") -> "audio/mpeg"
+        lower.startsWith("data:audio/mp4") || lower.startsWith("data:audio/m4a") -> "audio/mp4"
+        lower.startsWith("data:audio/webm") -> "audio/webm"
+        lower.startsWith("data:audio/ogg") -> "audio/ogg"
+        lower.startsWith("data:audio/flac") -> "audio/flac"
+        else -> "audio/mpeg"
     }
 }
 

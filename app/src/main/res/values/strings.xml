@@ -1839,6 +1839,22 @@
   <string name="chat_timeline_memory_content">Content</string>
   <string name="chat_load_more">load more...</string>
   <string name="chat_topic_started_all">new topic</string>
+  <string name="chat_voice_button">Voice message</string>
+  <string name="chat_voice_keyboard">Keyboard</string>
+  <string name="chat_hold_to_speak">Hold to speak</string>
+  <string name="chat_release_to_send">Release to send</string>
+  <string name="chat_slide_up_to_cancel">Slide up to cancel</string>
+  <string name="chat_release_to_cancel">Release to cancel</string>
+  <string name="chat_voice_recording">Recording</string>
+  <string name="chat_voice_too_short">Recording too short</string>
+  <string name="chat_voice_transcribing">Transcribing…</string>
+  <string name="chat_voice_asr_failed">Speech recognition failed, sending audio directly</string>
+  <string name="chat_voice_no_asr_configured">No speech recognition configured. Add an ASR provider in settings, or enable audio input on the model.</string>
+  <string name="chat_voice_permission_required">Microphone permission is required to record voice</string>
+  <string name="chat_voice_message">Voice message</string>
+  <string name="chat_voice_play">Play</string>
+  <string name="chat_voice_pause">Pause</string>
+  <string name="setting_provider_page_audio">Audio</string>
   <!-- Diary feature upgrade -->
   <string name="diary_view_list">List</string>
   <string name="diary_view_calendar">Calendar</string>

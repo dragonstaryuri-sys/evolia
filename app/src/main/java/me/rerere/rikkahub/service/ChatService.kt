@@ -147,6 +147,7 @@ private val inputTransformers by lazy {
         me.rerere.rikkahub.data.ai.transformers.UnsupportedFileTransformer,
         DocumentAsPromptTransformer,
         OcrTransformer,
+        me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer,
     )
 }
 

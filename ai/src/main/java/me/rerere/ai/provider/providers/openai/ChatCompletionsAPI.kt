@@ -39,6 +39,7 @@ import me.rerere.ai.util.KeyRoulette
 import me.rerere.ai.util.configureClientWithProxy
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
+import me.rerere.ai.util.openaiAudioFormat
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
@@ -509,14 +510,15 @@ class ChatCompletionsAPI(
                     val textParts = message.parts.filterIsInstance<UIMessagePart.Text>()
                         .filter { it.text.isNotBlank() }
                     val imageParts = message.parts.filterIsInstance<UIMessagePart.Image>()
+                    val audioParts = message.parts.filterIsInstance<UIMessagePart.Audio>()
 
                     when {
                         // 1. 只有单文本，直接发字符串 (最通用)
-                        textParts.size == 1 && imageParts.isEmpty() -> {
+                        textParts.size == 1 && imageParts.isEmpty() && audioParts.isEmpty() -> {
                             put("content", textParts.first().text)
                         }
                         // 2. 无可见内容 (例如只有思维链或工具调用)
-                        textParts.isEmpty() && imageParts.isEmpty() -> {
+                        textParts.isEmpty() && imageParts.isEmpty() && audioParts.isEmpty() -> {
                             // 重要：DeepSeek 规范，有 tool_calls 时 content 必须为 null
                             // 智谱 (open.bigmodel.cn) 在有 tool_calls 时，content 建议为 "" 而不是 null，否则可能导致模型忽略该 turn
                             if (toolCalls.isNotEmpty()) {
@@ -552,6 +554,23 @@ class ChatCompletionsAPI(
                                                 add(buildJsonObject {
                                                     put("type", "text")
                                                     put("text", "")
+                                                })
+                                            }
+                                        }
+                                        is UIMessagePart.Audio -> {
+                                            // OpenAI 规范：input_audio + data(base64) + format
+                                            part.encodeBase64(false).onSuccess { base64Data ->
+                                                add(buildJsonObject {
+                                                    put("type", "input_audio")
+                                                    put("input_audio", buildJsonObject {
+                                                        put("data", base64Data)
+                                                        put("format", part.openaiAudioFormat())
+                                                    })
+                                                })
+                                            }.onFailure {
+                                                add(buildJsonObject {
+                                                    put("type", "text")
+                                                    put("text", "[音频读取失败]")
                                                 })
                                             }
                                         }

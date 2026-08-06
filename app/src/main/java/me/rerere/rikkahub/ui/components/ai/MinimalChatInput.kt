@@ -67,8 +67,10 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FlashOn
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Summarize
@@ -119,6 +121,9 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.voice.VoiceRecorderController
+import me.rerere.rikkahub.service.voice.VoiceRecorderResult
+import me.rerere.rikkahub.ui.components.chat.VoiceRecordButton
 import me.rerere.rikkahub.ui.components.crop.CropImageScreen
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
@@ -171,6 +176,11 @@ fun MinimalChatInput(
     onRefreshContext: suspend () -> ChatService.ContextRefreshResult = { ChatService.ContextRefreshResult(false, errorMessage = "Not configured") },
     onDeleteFile: (Uri) -> Unit = {},
     onConsolidate: () -> Unit = {},
+    voiceRecorderController: VoiceRecorderController? = null,
+    voiceTranscribing: Boolean = false,
+    hasMicPermission: Boolean = false,
+    onRequestMicPermission: () -> Unit = {},
+    onVoiceMessageReady: (VoiceRecorderResult?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -194,10 +204,22 @@ fun MinimalChatInput(
 
     var showPicker by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
-
     // Collapse picker when keyboard opens
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
+
+    var voiceMode by rememberSaveable { mutableStateOf(false) }
+    fun toggleVoiceMode() {
+        if (voiceMode) {
+            voiceMode = false
+        } else if (hasMicPermission) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            voiceMode = true
+        } else {
+            onRequestMicPermission()
+        }
+    }
     LaunchedEffect(imeVisible) {
         if (imeVisible) {
             showPicker = false
@@ -302,6 +324,45 @@ fun MinimalChatInput(
                         )
                     }
                 }
+
+                // Voice / keyboard toggle button (类似微信切换语音/文字)
+                if (voiceRecorderController != null) {
+                    Surface(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            toggleVoiceMode()
+                        },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = if (voiceMode) Icons.Rounded.Keyboard else Icons.Rounded.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // 语音模式：显示按住说话按钮
+                if (voiceMode && voiceRecorderController != null) {
+                    VoiceRecordButton(
+                        controller = voiceRecorderController!!,
+                        transcribing = voiceTranscribing,
+                        onRecordComplete = { result ->
+                            voiceMode = false
+                            onVoiceMessageReady(result)
+                        },
+                        onError = { msg -> toaster.show(msg, ToastType.Error) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                    )
+                } else {
                 // Text field capsule with embedded action button
                 // Corner radius = 24dp (user confirmed this was correct)
                 Surface(
@@ -453,6 +514,7 @@ fun MinimalChatInput(
                         }  // Box for TextField + Action button ends
                     }  // Column ends
                 }  // Surface ends
+                } // else (text field mode) ends
             }  // Row ends
         }  // Column ends
     }  // Box ends

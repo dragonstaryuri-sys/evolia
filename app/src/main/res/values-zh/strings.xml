@@ -1801,6 +1801,22 @@
   <string name="chat_timeline_memory_content">内容</string>
   <string name="chat_load_more">加载更多……</string>
   <string name="chat_topic_started_all">新对话</string>
+  <string name="chat_voice_button">语音消息</string>
+  <string name="chat_voice_keyboard">键盘</string>
+  <string name="chat_hold_to_speak">按住说话</string>
+  <string name="chat_release_to_send">松开发送</string>
+  <string name="chat_slide_up_to_cancel">上滑取消</string>
+  <string name="chat_release_to_cancel">松开取消</string>
+  <string name="chat_voice_recording">录音中</string>
+  <string name="chat_voice_too_short">录音太短</string>
+  <string name="chat_voice_transcribing">转文字中…</string>
+  <string name="chat_voice_asr_failed">语音识别失败，直接发送音频</string>
+  <string name="chat_voice_no_asr_configured">未配置语音识别，请在设置中添加 ASR 服务，或在模型上开启音频输入。</string>
+  <string name="chat_voice_permission_required">需要麦克风权限才能录音</string>
+  <string name="chat_voice_message">语音消息</string>
+  <string name="chat_voice_play">播放</string>
+  <string name="chat_voice_pause">暂停</string>
+  <string name="setting_provider_page_audio">音频</string>
   <!-- 日记功能升级 -->
   <string name="diary_view_list">列表</string>
   <string name="diary_view_calendar">日历</string>

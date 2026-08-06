@@ -40,7 +40,9 @@ val viewModelModule = module {
             appScope = get(),
             memoryRepo = get(),
             favoriteRepo = get(),
-            voiceCallManager = get()
+            voiceCallManager = get(),
+            asrManager = get(),
+            voiceMessagePlayer = get()
         )
     }
     viewModel<SettingVM> {

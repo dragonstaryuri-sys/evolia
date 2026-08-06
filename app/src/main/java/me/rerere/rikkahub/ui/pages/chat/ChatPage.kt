@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.service.voice.VoiceRecorderController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -259,6 +260,44 @@ private fun ChatPageContent(
         vm.callError.collect { msg ->
             toaster.show(msg, ToastType.Error)
         }
+    }
+
+    // --- 语音消息：录音控制器 + 麦克风权限 ---
+    val voiceRecorderController = remember { VoiceRecorderController(context) }
+    DisposableEffect(voiceRecorderController) {
+        onDispose { voiceRecorderController.release() }
+    }
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasMicPermission = granted
+        if (!granted) {
+            toaster.show(context.getString(R.string.chat_voice_permission_required), ToastType.Error)
+        }
+    }
+    val voiceTranscribing by vm.voiceTranscribing.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        vm.voiceEvents.collect { msg -> toaster.show(msg, ToastType.Error) }
+    }
+
+    fun handleVoiceMessageReady(result: me.rerere.rikkahub.service.voice.VoiceRecorderResult?) {
+        if (result == null) {
+            toaster.show(context.getString(R.string.chat_voice_too_short), ToastType.Info)
+            return
+        }
+        if (currentChatModel == null) {
+            toaster.show(context.getString(R.string.error_select_model_first), ToastType.Error)
+            return
+        }
+        vm.sendVoiceMessage(result.uri, result.durationMs)
     }
 
     val pagingState by vm.chatPaginationState.collectAsStateWithLifecycle()
@@ -624,7 +663,8 @@ private fun ChatPageContent(
                             else animatingMessages.remove(nodeId)
                         },
                         onUserScroll = requestPaginationForUserScroll,
-                        onRetryPagination = vm::retryPagination
+                        onRetryPagination = vm::retryPagination,
+                        voiceMessagePlayer = vm.voiceMessagePlayer
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {
@@ -878,7 +918,12 @@ private fun ChatPageContent(
                                     onStartCall = { startCallWithPermission(conversation.id) },
                                     onRefreshContext = { vm.refreshContext() },
                                     onDeleteFile = { vm.deleteFile(it) },
-                                    onConsolidate = { vm.consolidateConversation(conversation) }
+                                    onConsolidate = { vm.consolidateConversation(conversation) },
+                                    voiceRecorderController = voiceRecorderController,
+                                    voiceTranscribing = voiceTranscribing,
+                                    hasMicPermission = hasMicPermission,
+                                    onRequestMicPermission = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                                    onVoiceMessageReady = { handleVoiceMessageReady(it) }
                                 )
                             }
 
@@ -977,7 +1022,12 @@ private fun ChatPageContent(
                                     onStartCall = { startCallWithPermission(conversation.id) },
                                     onRefreshContext = { vm.refreshContext() },
                                     onDeleteFile = { vm.deleteFile(it) },
-                                    onConsolidate = { vm.consolidateConversation(conversation) }
+                                    onConsolidate = { vm.consolidateConversation(conversation) },
+                                    voiceRecorderController = voiceRecorderController,
+                                    voiceTranscribing = voiceTranscribing,
+                                    hasMicPermission = hasMicPermission,
+                                    onRequestMicPermission = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                                    onVoiceMessageReady = { handleVoiceMessageReady(it) }
                                 )
                             }
                         }

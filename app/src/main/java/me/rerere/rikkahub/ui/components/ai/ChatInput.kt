@@ -66,6 +66,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,7 +114,9 @@ import androidx.compose.material.icons.rounded.Photo
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Call
@@ -145,6 +148,9 @@ import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.QuotedMessage
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.voice.VoiceRecorderController
+import me.rerere.rikkahub.service.voice.VoiceRecorderResult
+import me.rerere.rikkahub.ui.components.chat.VoiceRecordButton
 import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.ui.hooks.rememberAmoledDarkMode
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -199,6 +205,11 @@ fun ChatInput(
     },
     onDeleteFile: (Uri) -> Unit = {},
     onConsolidate: () -> Unit = {},
+    voiceRecorderController: VoiceRecorderController? = null,
+    voiceTranscribing: Boolean = false,
+    hasMicPermission: Boolean = false,
+    onRequestMicPermission: () -> Unit = {},
+    onVoiceMessageReady: (VoiceRecorderResult?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -244,6 +255,19 @@ fun ChatInput(
     // Collapse when ime is hidden - always clear focus to show pickers
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
+
+    var voiceMode by rememberSaveable { mutableStateOf(false) }
+    fun toggleVoiceMode() {
+        if (voiceMode) {
+            voiceMode = false
+        } else if (hasMicPermission) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            voiceMode = true
+        } else {
+            onRequestMicPermission()
+        }
+    }
     LaunchedEffect(imeVisible) {
         if (imeVisible) {
             expand = ExpandState.Collapsed
@@ -375,6 +399,50 @@ fun ChatInput(
                         )
                     }
 
+                    // Voice / keyboard toggle button (类似微信切换语音/文字)
+                    if (voiceRecorderController != null) {
+                        val micInteractionSource = remember { MutableInteractionSource() }
+                        val isMicPressed by micInteractionSource.collectIsPressedAsState()
+                        val micScale by animateFloatAsState(
+                            targetValue = if (isMicPressed) 0.85f else 1f,
+                            animationSpec = spring(dampingRatio = 0.4f, stiffness = 400f),
+                            label = "mic_scale"
+                        )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .graphicsLayer { scaleX = micScale; scaleY = micScale }
+                                .clip(CircleShape)
+                                .clickable(
+                                    interactionSource = micInteractionSource,
+                                    indication = LocalIndication.current
+                                ) { toggleVoiceMode() }
+                        ) {
+                            Icon(
+                                imageVector = if (voiceMode) Icons.Rounded.Keyboard else Icons.Rounded.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // 语音模式：显示按住说话按钮，替换文字输入区
+                    if (voiceMode && voiceRecorderController != null) {
+                        VoiceRecordButton(
+                            controller = voiceRecorderController!!,
+                            transcribing = voiceTranscribing,
+                            onRecordComplete = { result ->
+                                voiceMode = false
+                                onVoiceMessageReady(result)
+                            },
+                            onError = { msg -> toaster.show(msg, ToastType.Error) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 40.dp)
+                        )
+                    } else {
                     // Search & Reasoning (Visible when NOT expanded)
                     // Delayed appearance - slight overlap with height animation for smoother feel
                     var showPickers by remember { mutableStateOf(false) }
@@ -613,6 +681,7 @@ fun ChatInput(
                             }
                         }
                     }
+                    } // else (text input mode) ends
 
                 }
             }
