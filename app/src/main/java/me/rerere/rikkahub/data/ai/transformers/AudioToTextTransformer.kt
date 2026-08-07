@@ -36,8 +36,14 @@ object AudioToTextTransformer : InputMessageTransformer {
                         ?.jsonPrimitiveOrNull
                         ?.content
                         ?.takeIf { it.isNotBlank() }
+                    // 有转写结果时拼接提示前缀，让模型明确这是用户发来的语音消息
                     val fallback = "[语音消息]"
-                    UIMessagePart.Text(text = transcription ?: fallback)
+                    val text = if (transcription != null) {
+                        "$VOICE_MESSAGE_TEXT_PREFIX$transcription"
+                    } else {
+                        fallback
+                    }
+                    UIMessagePart.Text(text = text)
                 }
             )
         }
@@ -51,4 +57,6 @@ object AudioToTextTransformer : InputMessageTransformer {
     const val METADATA_TRANSCRIPTION = "transcription"
     /** Audio Part metadata 中存储录音时长（毫秒）的字段名。 */
     const val METADATA_DURATION_MS = "durationMs"
+    /** 当模型不支持音频输入时，拼接在 ASR 转写文本前的提示前缀。 */
+    const val VOICE_MESSAGE_TEXT_PREFIX = "用户给你发送了一条语音消息，内容是："
 }

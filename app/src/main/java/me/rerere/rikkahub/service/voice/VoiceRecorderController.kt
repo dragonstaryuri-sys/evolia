@@ -80,6 +80,10 @@ class VoiceRecorderController(private val context: Context) {
     // durationMs 定时刷新（供 UI 显示录音时长）
     private var durationJob: kotlinx.coroutines.Job? = null
 
+    // 自动停止（达到 MAX_DURATION_MS）时缓存的结果；
+    // 用户松开手指时 stop() 会再次被调用，此时返回该缓存结果，避免消息丢失。
+    private var pendingResult: VoiceRecorderResult? = null
+
     /**
      * 开始录音。若当前已在录音则忽略。
      */
@@ -88,6 +92,8 @@ class VoiceRecorderController(private val context: Context) {
             Log.w(TAG, "start: already recording, ignore")
             return
         }
+        // 清空上次自动停止遗留的 pendingResult
+        pendingResult = null
 
         val dir = File(context.filesDir, "voice_messages").apply {
             if (!exists()) mkdirs()
@@ -144,7 +150,14 @@ class VoiceRecorderController(private val context: Context) {
         durationJob?.cancel()
         durationJob = scope.launch {
             while (isActive && isRecording) {
-                _durationMs.value = SystemClock.elapsedRealtime() - startTimeMs
+                val elapsed = SystemClock.elapsedRealtime() - startTimeMs
+                _durationMs.value = elapsed
+                // 达到最大时长自动停止，缓存结果供用户松开手指时返回
+                if (elapsed >= MAX_DURATION_MS) {
+                    Log.i(TAG, "durationJob: reached MAX_DURATION_MS ($MAX_DURATION_MS ms), auto stop")
+                    pendingResult = stop()
+                    break
+                }
                 delay(60)
             }
         }
@@ -188,6 +201,16 @@ class VoiceRecorderController(private val context: Context) {
      */
     fun stop(): VoiceRecorderResult? {
         if (_state.value != VoiceRecorderState.Recording) {
+            // 自动停止（达到 MAX_DURATION_MS）后 state 变为 Stopped，
+            // 用户此时松开手指会再次调用 stop()，返回缓存的 result 避免消息丢失。
+            // Cancelled 状态不返回（用户主动取消）。
+            if (_state.value == VoiceRecorderState.Stopped) {
+                val cached = pendingResult
+                if (cached != null) {
+                    pendingResult = null
+                    return cached
+                }
+            }
             Log.w(TAG, "stop: not recording, ignore")
             return null
         }
@@ -247,6 +270,7 @@ class VoiceRecorderController(private val context: Context) {
      */
     fun cancel() {
         if (_state.value == VoiceRecorderState.Idle) return
+        pendingResult = null
         durationJob?.cancel()
         isRecording = false
         try { audioRecord?.stop() } catch (_: Exception) {}
@@ -332,5 +356,7 @@ class VoiceRecorderController(private val context: Context) {
     companion object {
         /** 最短有效录音时长，低于此值视为误触。 */
         const val MIN_DURATION_MS = 500L
+        /** 最长录音时长，达到此值自动停止。 */
+        const val MAX_DURATION_MS = 60_000L
     }
 }
