@@ -36,8 +36,14 @@ object AudioToTextTransformer : InputMessageTransformer {
                         ?.jsonPrimitiveOrNull
                         ?.content
                         ?.takeIf { it.isNotBlank() }
-                    val fallback = "[语音消息]"
-                    UIMessagePart.Text(text = transcription ?: fallback)
+                    // 有转写结果时拼接前缀，让 AI 明确知道这是一条语音消息的内容；
+                    // 无转写结果时回退为占位文本
+                    val text = if (transcription != null) {
+                        "用户给你发送了一条语音消息，内容是：$transcription"
+                    } else {
+                        "[语音消息]"
+                    }
+                    UIMessagePart.Text(text = text)
                 }
             )
         }

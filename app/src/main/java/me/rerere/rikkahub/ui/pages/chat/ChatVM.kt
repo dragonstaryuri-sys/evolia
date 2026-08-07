@@ -425,10 +425,11 @@ class ChatVM(
     /**
      * 发送语音消息。
      *
-     * - 当前对话模型支持音频输入（[Modality.AUDIO]）时，直接发送 [UIMessagePart.Audio]。
-     * - 否则先用 ASR 转文字，把转写结果存入 Audio Part 的 metadata.transcription，
-     *   由 [AudioToTextTransformer] 在发送给 AI 前转成 Text。
-     * - ASR 失败/未配置时仍发送 Audio Part（非多模态模型会显示占位），并 emit 事件提示用户。
+     * 流程：
+     * 1. 多模态模型：直接发送 Audio Part，由 Provider 编码音频。
+     * 2. 非多模态模型：**先入列显示语音条**（answer=false，不触发 AI），
+     *    后台异步 ASR 转写，完成后更新消息 metadata 并触发 AI 回复。
+     *    ASR 失败/未配置时仍触发 AI（[AudioToTextTransformer] 会回退为占位文本）。
      *
      * @param audioUri 录音文件 Uri（file:// 形式）
      * @param durationMs 录音时长（毫秒）
@@ -439,31 +440,51 @@ class ChatVM(
             val model = currentSettings.getCurrentChatModel()
             val supportsAudio = model?.inputModalities?.contains(Modality.AUDIO) == true
 
+            val targetId = _currentActiveId.value
+            trackConversation(targetId)
+
+            val audioPart = UIMessagePart.Audio(
+                url = audioUri.toString(),
+                metadata = buildJsonObject {
+                    put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                }
+            )
+
+            // 多模态：直接发送语音，由 AI 自行理解音频
             if (supportsAudio) {
-                val audioPart = UIMessagePart.Audio(
-                    url = audioUri.toString(),
-                    metadata = buildJsonObject {
-                        put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
-                    }
+                chatService.sendMessage(
+                    conversationId = targetId,
+                    content = listOf(audioPart),
+                    answer = true,
+                    includeSkipContextMessages = true
                 )
-                handleMessageSend(listOf(audioPart))
+                conversation.value.messageNodes.lastOrNull()?.let {
+                    paginationManager?.injectNewNode(it)
+                }
                 return@launch
             }
 
-            // 非多模态：先 ASR 转文字
+            // 非多模态：先入列显示语音条（answer=false，不触发 AI）
+            chatService.sendMessage(
+                conversationId = targetId,
+                content = listOf(audioPart),
+                answer = false,
+                includeSkipContextMessages = true
+            )
+            // 注入新节点到分页窗口，让语音条立即可见
+            conversation.value.messageNodes.lastOrNull()?.let {
+                paginationManager?.injectNewNode(it)
+            }
+
+            // ASR 未配置：直接触发 AI（AudioToTextTransformer 会回退为占位文本）
             val asrProvider = currentSettings.getSelectedASRProvider()
             if (asrProvider == null) {
                 _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
-                val audioPart = UIMessagePart.Audio(
-                    url = audioUri.toString(),
-                    metadata = buildJsonObject {
-                        put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
-                    }
-                )
-                handleMessageSend(listOf(audioPart))
+                chatService.triggerAIResponse(conversationId = targetId)
                 return@launch
             }
 
+            // 后台异步 ASR 转写
             _voiceTranscribing.value = true
             val transcription: String? = try {
                 asrManager.transcribeFile(asrProvider, context, audioUri)
@@ -476,14 +497,40 @@ class ChatVM(
                 _voiceTranscribing.value = false
             }
 
-            val audioMetadata = buildJsonObject {
-                put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
-                if (transcription != null) {
-                    put(AudioToTextTransformer.METADATA_TRANSCRIPTION, transcription)
+            // 转写完成后，更新最后一条含 Audio 的用户消息 metadata，再触发 AI 回复
+            if (transcription != null) {
+                chatService.mutateConversationAndSave(targetId) { current ->
+                    // 找到最后一个含 Audio Part 的 USER 节点（即刚发送的语音消息）
+                    val lastAudioUserNodeIndex = current.messageNodes.indexOfLast { node ->
+                        node.currentMessage.role == me.rerere.ai.core.MessageRole.USER &&
+                            node.currentMessage.parts.any { it is UIMessagePart.Audio }
+                    }
+                    if (lastAudioUserNodeIndex == -1) return@mutateConversationAndSave current
+                    current.copy(
+                        messageNodes = current.messageNodes.mapIndexed { index, node ->
+                            if (index != lastAudioUserNodeIndex) return@mapIndexed node
+                            val updatedMessages = node.messages.map { msg ->
+                                if (msg.parts.none { it is UIMessagePart.Audio }) return@map msg
+                                msg.copy(
+                                    parts = msg.parts.map { part ->
+                                        if (part !is UIMessagePart.Audio) return@map part
+                                        val newMetadata = buildJsonObject {
+                                            put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                                            put(AudioToTextTransformer.METADATA_TRANSCRIPTION, transcription)
+                                        }
+                                        part.copy(metadata = newMetadata)
+                                    }
+                                )
+                            }
+                            node.copy(messages = updatedMessages)
+                        }
+                    )
                 }
+                paginationManager?.loadInitial()
             }
-            val audioPart = UIMessagePart.Audio(url = audioUri.toString(), metadata = audioMetadata)
-            handleMessageSend(listOf(audioPart))
+
+            // 触发 AI 回复
+            chatService.triggerAIResponse(conversationId = targetId)
         }
     }
 

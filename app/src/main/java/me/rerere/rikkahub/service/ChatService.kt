@@ -741,51 +741,71 @@ class ChatService(
         }
 
         if (answer) {
-            val settings = settingsStore.settingsFlow.value
-            val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
+            triggerAIResponse(
+                conversationId = conversationId,
+                skipContextForResponse = skipContextForResponse,
+                includeSkipContextMessages = includeSkipContextMessages,
+                responseMessageSource = responseMessageSource
+            )
+        }
+    }
 
-            val debounceJob = appScope.launch {
-                if (wechatMode) {
-                    delay(5000)
-                    _isAiTypingMap.update { it + (conversationId to true) }
-                } else {
-                    _isAiTypingMap.update { it + (conversationId to true) }
-                }
+    /**
+     * 单独触发 AI 回复（不添加用户消息）。
+     *
+     * 用于需要先把用户消息入列显示、再异步准备 context 后触发 AI 生成的场景，
+     * 例如语音消息：先入列显示语音条 → 后台 ASR 转写 → 更新消息 metadata → 调用此方法触发 AI。
+     */
+    fun triggerAIResponse(
+        conversationId: Uuid,
+        skipContextForResponse: Boolean = false,
+        includeSkipContextMessages: Boolean = true,
+        responseMessageSource: MessageSource = MessageSource.NORMAL
+    ) {
+        val settings = settingsStore.settingsFlow.value
+        val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
 
-                val timeoutJob = launch {
-                    delay(600000)
-                    if (_isAiTypingMap.value.containsKey(conversationId)) _isAiTypingMap.update { it - conversationId }
-                }
-                try {
-                    handleMessageComplete(
-                        conversationId = conversationId,
-                        skipContextForResponse = skipContextForResponse,
-                        includeSkipContextMessages = includeSkipContextMessages, // ✨ 传递标记
-                        responseMessageSource = responseMessageSource
-                    )
-                    _generationDoneFlow.emit(conversationId)
-                } catch (e: Exception) {
-                    if (e !is kotlinx.coroutines.CancellationException) {
-                        _errorFlow.emit(translateError(e))
-                    }
-                } finally {
-                    timeoutJob.cancel()
-                    _isAiTypingMap.update { it - conversationId }
-                }
+        val debounceJob = appScope.launch {
+            if (wechatMode) {
+                delay(5000)
+                _isAiTypingMap.update { it + (conversationId to true) }
+            } else {
+                _isAiTypingMap.update { it + (conversationId to true) }
             }
 
-            setGenerationJob(conversationId, debounceJob)
-            wechatDebounceJobs[conversationId] = debounceJob
-
-            debounceJob.invokeOnCompletion {
-                _generationJobs.update { current ->
-                    if (current[conversationId] == debounceJob) current - conversationId else current
-                }
-                wechatDebounceJobs.compute(conversationId) { _, current ->
-                    if (current == debounceJob) null else current
-                }
-                appScope.launch { delay(500); checkAllConversationsReferences() }
+            val timeoutJob = launch {
+                delay(600000)
+                if (_isAiTypingMap.value.containsKey(conversationId)) _isAiTypingMap.update { it - conversationId }
             }
+            try {
+                handleMessageComplete(
+                    conversationId = conversationId,
+                    skipContextForResponse = skipContextForResponse,
+                    includeSkipContextMessages = includeSkipContextMessages,
+                    responseMessageSource = responseMessageSource
+                )
+                _generationDoneFlow.emit(conversationId)
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _errorFlow.emit(translateError(e))
+                }
+            } finally {
+                timeoutJob.cancel()
+                _isAiTypingMap.update { it - conversationId }
+            }
+        }
+
+        setGenerationJob(conversationId, debounceJob)
+        wechatDebounceJobs[conversationId] = debounceJob
+
+        debounceJob.invokeOnCompletion {
+            _generationJobs.update { current ->
+                if (current[conversationId] == debounceJob) current - conversationId else current
+            }
+            wechatDebounceJobs.compute(conversationId) { _, current ->
+                if (current == debounceJob) null else current
+            }
+            appScope.launch { delay(500); checkAllConversationsReferences() }
         }
     }
 

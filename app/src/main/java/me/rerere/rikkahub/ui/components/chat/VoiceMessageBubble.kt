@@ -94,9 +94,8 @@ fun VoiceMessageBubble(
     val icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow
     val iconContentDescription = if (isPlaying) stringResource(R.string.chat_voice_pause) else stringResource(R.string.chat_voice_play)
 
-    // 宽度随时长略增（类似微信），限制范围
-    val widthSec = (actualDuration / 1000f)
-    val bubbleWidth = (72 + widthSec * 4).coerceIn(96f, 220f).dp
+    // 宽度固定，不随时长变化（保持简洁一致的视觉）
+    val bubbleWidth = 120.dp
 
     Surface(
         shape = RoundedCornerShape(18.dp),

@@ -160,6 +160,14 @@ class VoiceRecorderController(private val context: Context) {
 
         try {
             while (isRecording) {
+                // 达到最长录制时长，自动停止
+                val elapsed = SystemClock.elapsedRealtime() - startTimeMs
+                if (elapsed >= MAX_DURATION_MS) {
+                    Log.i(TAG, "recordingLoop: reached max duration ${MAX_DURATION_MS}ms, auto-stop")
+                    isRecording = false
+                    break
+                }
+
                 val read = ar.read(buffer, 0, bufferSize)
                 if (read <= 0) continue
 
@@ -332,5 +340,7 @@ class VoiceRecorderController(private val context: Context) {
     companion object {
         /** 最短有效录音时长，低于此值视为误触。 */
         const val MIN_DURATION_MS = 500L
+        /** 最长录音时长，达到后自动停止。 */
+        const val MAX_DURATION_MS = 60_000L
     }
 }
