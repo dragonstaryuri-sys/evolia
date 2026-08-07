@@ -10,8 +10,11 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
@@ -68,6 +71,13 @@ class VoiceRecorderController(private val context: Context) {
 
     private val _durationMs = MutableStateFlow(0L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
+
+    /**
+     * 达到最长录制时长时会发送一次事件（auto-stop 触发一次）。
+     * UI 层 collect 后应调用 stop() 并把结果发送出去。
+     */
+    private val _autoStopEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val autoStopEvents: SharedFlow<Unit> = _autoStopEvents.asSharedFlow()
 
     private var audioRecord: AudioRecord? = null
     private var outputFile: File? = null
@@ -160,14 +170,6 @@ class VoiceRecorderController(private val context: Context) {
 
         try {
             while (isRecording) {
-                // 达到最长录制时长，自动停止
-                val elapsed = SystemClock.elapsedRealtime() - startTimeMs
-                if (elapsed >= MAX_DURATION_MS) {
-                    Log.i(TAG, "recordingLoop: reached max duration ${MAX_DURATION_MS}ms, auto-stop")
-                    isRecording = false
-                    break
-                }
-
                 val read = ar.read(buffer, 0, bufferSize)
                 if (read <= 0) continue
 
@@ -184,6 +186,15 @@ class VoiceRecorderController(private val context: Context) {
                 for (i in 0 until read) byteBuf.putShort(buffer[i])
                 raf.write(byteBuf.array())
                 dataLength += read.toLong() * 2
+
+                // 达到最长录制时长，自动停录，并通过 autoStopEvents 通知 UI 完成 stop()/发送
+                val elapsed = SystemClock.elapsedRealtime() - startTimeMs
+                if (elapsed >= MAX_DURATION_MS) {
+                    Log.i(TAG, "recordingLoop: reached max duration ${MAX_DURATION_MS}ms, emit auto-stop")
+                    isRecording = false
+                    _autoStopEvents.tryEmit(Unit)
+                    break
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "recordingLoop: error", e)
@@ -340,7 +351,7 @@ class VoiceRecorderController(private val context: Context) {
     companion object {
         /** 最短有效录音时长，低于此值视为误触。 */
         const val MIN_DURATION_MS = 500L
-        /** 最长录音时长，达到后自动停止。 */
-        const val MAX_DURATION_MS = 60_000L
+        /** 最长录音时长（毫秒），达到后自动停止并发送。 */
+        const val MAX_DURATION_MS = 59_000L
     }
 }
