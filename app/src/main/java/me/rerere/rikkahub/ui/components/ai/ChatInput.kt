@@ -169,7 +169,7 @@ import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import androidx.compose.foundation.content.MediaType
 import androidx.compose.foundation.content.ReceiveContentListener
-
+import me.rerere.rikkahub.BuildConfig
 enum class ExpandState {
     Collapsed,
     Files,
@@ -1421,23 +1421,23 @@ internal fun FilesPicker(
                 .fillMaxHeight()) {
                 val isPythonEnabled = assistant.localTools.any { it is LocalToolOption.PythonEngine }
                 FilePickButton(
-                    shape = topMiddleShape,
+                    shape = if (BuildConfig.DEBUG) topMiddleShape else topRightShape,
                     allowAllTypes = isPythonEnabled
                 ) {
                     state.addFiles(it)
                     onDismiss()
                 }
             }
-            Box(modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()) {
-                VoiceCallButton(
-                    assistant = assistant,
-                    onUpdateAssistant = onUpdateAssistant,
-                    shape = topRightShape,
-                    onStartCall = onStartCall
-                ) {
-                    onDismiss()
+            if (BuildConfig.DEBUG) {
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    VoiceCallButton(
+                        assistant = assistant,
+                        onUpdateAssistant = onUpdateAssistant,
+                        shape = topRightShape,
+                        onStartCall = onStartCall
+                    ) {
+                        onDismiss()
+                    }
                 }
             }
         }

@@ -111,6 +111,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import me.rerere.ai.provider.Model
+import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.datastore.Settings
@@ -801,27 +802,29 @@ private fun MinimalPickerContent(
             // Files button - icon only, no label
             MinimalFileButtonGroupedIconOnly(
                 icon = Icons.Rounded.FolderOpen,
-                shape = middleButtonShape,
+                shape = if (BuildConfig.DEBUG) middleButtonShape else rightButtonShape,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     filePickerLauncher.launch("*/*")
                 }
             )
 
-            // Voice Call button
-            MinimalFileButtonGroupedIconOnly(
-                icon = Icons.Rounded.Call,
-                shape = rightButtonShape,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    if ((assistant.thinkingBudget ?: 0) > 0) {
-                        onUpdateAssistant(assistant.copy(thinkingBudget = 0))
+            if (BuildConfig.DEBUG) {
+                // Voice Call button
+                MinimalFileButtonGroupedIconOnly(
+                    icon = Icons.Rounded.Call,
+                    shape = rightButtonShape,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        if ((assistant.thinkingBudget ?: 0) > 0) {
+                            onUpdateAssistant(assistant.copy(thinkingBudget = 0))
+                        }
+                        onStartCall()
+                        onDismiss()
                     }
-                    onStartCall()
-                    onDismiss()
-                }
-            )
+                )
+            }
         }
 
         // Separator
