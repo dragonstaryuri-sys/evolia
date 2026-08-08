@@ -13,8 +13,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,6 +81,7 @@ val LocalVoiceMessagePlayer = compositionLocalOf<VoiceMessagePlayer?> { null }
  * @param showTranscription 是否在气泡下方显示转写内容
  * @param transcription 转写内容（纯文本，不包含"用户发送了一条语音…"前缀）
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VoiceMessageBubble(
     audioUrl: String,
