@@ -289,8 +289,13 @@ private fun ChatPageContent(
     }
 
     fun handleVoiceMessageReady(result: me.rerere.rikkahub.service.voice.VoiceRecorderResult?) {
+        // null 可能是"太短"或"上滑取消"：通过 controller 状态区分
         if (result == null) {
-            toaster.show(context.getString(R.string.chat_voice_too_short), ToastType.Info)
+            val isCancelled = voiceRecorderController.state.value ==
+                me.rerere.rikkahub.service.voice.VoiceRecorderState.Cancelled
+            if (!isCancelled) {
+                toaster.show(context.getString(R.string.chat_voice_too_short), ToastType.Info)
+            }
             return
         }
         if (currentChatModel == null) {
@@ -672,7 +677,8 @@ private fun ChatPageContent(
                         },
                         onUserScroll = requestPaginationForUserScroll,
                         onRetryPagination = vm::retryPagination,
-                        voiceMessagePlayer = vm.voiceMessagePlayer
+                        voiceMessagePlayer = vm.voiceMessagePlayer,
+                        shownTranscriptions = vm.shownTranscriptions,
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {

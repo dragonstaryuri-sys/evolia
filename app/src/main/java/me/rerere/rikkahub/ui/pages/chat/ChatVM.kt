@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.core.net.toUri
 import android.net.Uri
 import android.util.Log
@@ -86,6 +87,9 @@ class ChatVM(
     // --- 语音消息相关错误事件（一次性，UI 用 toast 提示） ---
     private val _voiceEvents = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val voiceEvents: SharedFlow<String> = _voiceEvents.asSharedFlow()
+
+    // --- 语音条「转文字」显示状态：key = audioUrl，存在 VM 里避免 UI 刷新丢失 ---
+    val shownTranscriptions: MutableSet<String> = mutableStateSetOf()
 
     fun startCall(conversationId: Uuid) = voiceCallManager.startCall(conversationId)
     fun hangupCall() = voiceCallManager.hangup()
@@ -615,6 +619,13 @@ class ChatVM(
         val lastUserIndex = currentMessages.subList(0, index + 1).indexOfLast { it.role == me.rerere.ai.core.MessageRole.USER }
         val turnStart = if (lastUserIndex >= 0) lastUserIndex else 0
         val turnEnd = currentMessages.subList(index, currentMessages.size).indexOfFirst { it.role == me.rerere.ai.core.MessageRole.USER }.let { if (it == -1) currentMessages.size else index + it }
+        // 微信模式分句会把同一个 turn 拆成多个 MessageNode；版本分支逻辑只能在单个节点内追加 version。
+        // 当 turn 内 Assistant/TOOL 节点超过 1 个时，无法仅通过"在同一节点里追加新 message version"完成 regenerate，
+        // 必须走整 turn 删除 + 重生成（与 ToolCall 场景一致）。
+        val assistantNodeCountInTurn = currentMessages.subList(turnStart, turnEnd).count {
+            it.role == me.rerere.ai.core.MessageRole.ASSISTANT || it.role == me.rerere.ai.core.MessageRole.TOOL
+        }
+        if (assistantNodeCountInTurn > 1) return false
         for (i in turnStart until turnEnd) { if (currentMessages[i].parts.any { it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult }) return false }
         return true
     }

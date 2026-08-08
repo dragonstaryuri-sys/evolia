@@ -460,7 +460,7 @@
   <string name="setting_page_mcp_desc">配置MCP服务器</string>
   <string name="setting_page_model_and_services">模型与服务</string>
   <string name="setting_page_no_share_app">找不到分享应用</string>
-  <string name="setting_page_providers">提供商</string>
+  <string name="setting_page_providers">大模型提供商</string>
   <string name="setting_page_providers_desc">配置AI提供商</string>
   <string name="setting_page_search_add_provider">添加提供商</string>
   <string name="setting_page_search_common_options">通用选项</string>
@@ -1819,6 +1819,8 @@
   <string name="chat_voice_transcribe">转文字</string>
   <string name="chat_voice_hide_transcription">取消转文字</string>
   <string name="chat_voice_no_transcription">暂无转文字内容</string>
+  <string name="chat_voice_slide_up_cancel">上滑取消</string>
+  <string name="chat_voice_release_to_cancel">松开手指，取消发送</string>
   <string name="setting_provider_page_audio">音频</string>
   <!-- 日记功能升级 -->
   <string name="diary_view_list">列表</string>

@@ -1,23 +1,30 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -28,15 +35,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.asr.provider.ASRProviderSetting
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -62,6 +75,7 @@ fun AsrTab(
             ASRProviderItem(
                 provider = provider,
                 isSelected = isSelected,
+                haptics = haptics,
                 onSelect = {
                     if (!isSelected) {
                         haptics.perform(HapticPattern.Pop)
@@ -70,7 +84,10 @@ fun AsrTab(
                         )
                     }
                 },
-                onEdit = { editingProvider = provider }
+                onEdit = {
+                    haptics.perform(HapticPattern.Pop)
+                    editingProvider = provider
+                }
             )
         }
     }
@@ -124,39 +141,119 @@ fun AsrTab(
 private fun ASRProviderItem(
     provider: ASRProviderSetting,
     isSelected: Boolean,
+    haptics: me.rerere.rikkahub.ui.hooks.PremiumHaptics,
     onSelect: () -> Unit,
     onEdit: () -> Unit
 ) {
-    Card(
-        onClick = onSelect,
-        modifier = Modifier.fillMaxWidth()
+    // 选中 / 未选中背景色动画（对齐 TTS）
+    val backgroundColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow
+            else MaterialTheme.colorScheme.surfaceContainerHigh
+        },
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+        label = "asrSelectionBackground"
+    )
+    // 选中 / 未选中文字颜色动画（对齐 TTS）
+    val textColor by animateColorAsState(
+        targetValue = if (isSelected) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        },
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
+        label = "asrTextColor"
+    )
+    // 选中时更大的圆角（对齐 TTS）
+    val shapeRadius = if (isSelected) 100.dp else 24.dp
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(shapeRadius))
+            .background(backgroundColor)
+            .clickable {
+                haptics.perform(HapticPattern.Pop)
+                onSelect()
+            }
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        ListItem(
-            headlineContent = {
-                Text(
-                    text = provider.name.ifBlank { providerDisplayName(provider) },
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                )
-            },
-            supportingContent = { Text(providerDisplayName(provider)) },
-            trailingContent = {
-                androidx.compose.foundation.layout.Row {
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Rounded.Edit, contentDescription = null)
-                    }
-                    if (isSelected) {
-                        Icon(Icons.Rounded.Check, contentDescription = null)
-                    }
-                }
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = androidx.compose.ui.graphics.Color.Transparent
+        // Provider Icon（40dp，对齐 TTS）
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(
+                    color = if (isSelected) {
+                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                    } else {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    },
+                    shape = rememberAvatarShape(false)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = when (provider) {
+                    is ASRProviderSetting.SystemASR -> Icons.Rounded.PhoneAndroid
+                    is ASRProviderSetting.EvoliaASR -> Icons.Rounded.AutoAwesome
+                    is ASRProviderSetting.OnlineASR -> Icons.Rounded.Cloud
+                },
+                contentDescription = null,
+                modifier = Modifier.size(24.dp)
             )
-        )
+        }
+
+        // 名称 + 副标题
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = provider.name.ifBlank { providerDisplayName(provider) },
+                style = MaterialTheme.typography.titleMedium,
+                color = textColor,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = providerDisplayName(provider),
+                style = MaterialTheme.typography.bodyMedium,
+                color = textColor.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        // 选中指示 Check 图标（对齐 TTS 选中视觉）
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Rounded.Check,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        // 设置按钮（用 Settings 图标，对齐 TTS）。EvoliaASR 不可编辑。
+        if (provider !is ASRProviderSetting.EvoliaASR) {
+            IconButton(onClick = onEdit) {
+                Icon(
+                    imageVector = Icons.Rounded.Settings,
+                    contentDescription = stringResource(R.string.settings),
+                    tint = textColor
+                )
+            }
+        }
     }
 }
 
 private fun providerDisplayName(provider: ASRProviderSetting): String = when (provider) {
     is ASRProviderSetting.SystemASR -> "System ASR"
     is ASRProviderSetting.OnlineASR -> "Online ASR (Whisper API)"
+    is ASRProviderSetting.EvoliaASR -> "Evolia 提供的 ASR 模型"
 }

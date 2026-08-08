@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.io.FileInputStream
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.library)
@@ -10,11 +12,26 @@ android {
     namespace = "me.rerere.asr"
     compileSdk = 36
 
+    // 从根目录 secrets.properties 读取 Evolia ASR API Key（该文件已在 .gitignore 中）
+    val secretsProperties = Properties()
+    val secretsFile = rootProject.file("secrets.properties")
+    if (secretsFile.exists()) {
+        secretsProperties.load(FileInputStream(secretsFile))
+    }
+    val evoliaAsrApiKey = secretsProperties.getProperty("EVOLIA_ASR_API_KEY") ?: ""
+
     defaultConfig {
         minSdk = 26
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+
+        // Evolia ASR API Key 注入 BuildConfig（源码中不出现明文 key）
+        buildConfigField("String", "EVOLIA_ASR_API_KEY", "\"$evoliaAsrApiKey\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {

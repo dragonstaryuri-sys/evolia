@@ -43,6 +43,8 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,7 +53,6 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -469,6 +470,7 @@ fun ChatMessageTurn(
     onTypingStateChange: (Boolean) -> Unit = {},
     selecting: Boolean = false,
     selectedItems: MutableList<Uuid> = mutableStateListOf(),
+    shownTranscriptions: MutableSet<String>,
 ) {
     val settings = LocalSettings.current
     val navController = LocalNavController.current
@@ -494,8 +496,6 @@ fun ChatMessageTurn(
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }
 
-    // ✨ 语音消息：转写显示状态（按 audioUrl 作 key）
-    val shownTranscriptions = remember { mutableStateSetOf<String>() }
     // ✨ 语音消息长按操作表：当前目标（按 audioUrl 定位 Audio Part）
     var voiceActionTarget by remember(group) { mutableStateOf<VoiceActionTarget?>(null) }
 
@@ -1448,6 +1448,12 @@ private fun AssistantMessageTurn(
                     dampingRatio = 0.8f, stiffness = 500f
                 )
             ) { -it } + fadeOut()) {
+            val turnTtsText = remember(group) {
+                group.filteredNodes
+                    .map { it.currentMessage.toContentText() }
+                    .filter { it.isNotBlank() }
+                    .joinToString(separator = "\n")
+            }
             ChatMessageActionButtons(
                 message = group.lastNode.currentMessage,
                 onRegenerate = onRegenerate,
@@ -1457,7 +1463,8 @@ private fun AssistantMessageTurn(
                 onOpenActionSheet = onOpenActionSheet,
                 onEditLorebookEntry = if (wechatMode && !BuildConfig.DEBUG) null else onEditLorebookEntry,
                 onModeClick = if (wechatMode && !BuildConfig.DEBUG) null else onModeClick,
-                onMemoryClick = if (wechatMode && !BuildConfig.DEBUG) null else onMemoryClick
+                onMemoryClick = if (wechatMode && !BuildConfig.DEBUG) null else onMemoryClick,
+                ttsText = turnTtsText
             )
         }
     }
@@ -1591,72 +1598,80 @@ fun VoiceMessageActionsSheet(
 ) {
     if (target == null) return
     val sheetState = rememberModalBottomSheetState(
-        confirmValueChange = { it != SheetValue.PartiallyExpanded },
         skipPartiallyExpanded = true
     )
+    val isDark = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        modifier = Modifier.fillMaxSize(),
-        dragHandle = null,
-        tonalElevation = 0.dp,
-        containerColor = MaterialTheme.colorScheme.surface
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // 1. 多选
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable {
-                        onSelectMode(target.node)
-                        onDismiss()
-                    }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            Card(
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) androidx.compose.ui.graphics.Color.Black
+                    else MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                modifier = Modifier.fillMaxWidth().clickable {
+                    onSelectMode(target.node)
+                    onDismiss()
+                }
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.SelectAll,
-                    contentDescription = "多选",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = stringResource(R.string.chat_page_multi_select),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(16.dp).fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SelectAll,
+                        contentDescription = null,
+                        modifier = Modifier.padding(4.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.chat_page_multi_select),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
             // 2. 删除
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable {
-                        onDelete(target.node)
-                        onDismiss()
-                    }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            Card(
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                modifier = Modifier.fillMaxWidth().clickable {
+                    onDelete(target.node)
+                    onDismiss()
+                }
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.DeleteOutline,
-                    contentDescription = "删除",
-                    tint = MaterialTheme.colorScheme.error
-                )
-                Text(
-                    text = stringResource(R.string.delete),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.error
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(16.dp).fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = null,
+                        modifier = Modifier.padding(4.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        text = stringResource(R.string.delete),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
 
             // 3. 转文字 / 取消转文字
@@ -1665,52 +1680,68 @@ fun VoiceMessageActionsSheet(
             if (hasTranscription) {
                 val icon = if (showTranscription) Icons.Rounded.VisibilityOff else Icons.Rounded.TextFields
                 val labelId = if (showTranscription) R.string.chat_voice_hide_transcription else R.string.chat_voice_transcribe
-                val labelColor = if (showTranscription) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable {
-                            onToggleTranscription()
-                            onDismiss()
-                        }
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                Card(
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) androidx.compose.ui.graphics.Color.Black
+                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        onToggleTranscription()
+                        onDismiss()
+                    }
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = stringResource(labelId),
-                        tint = if (showTranscription) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = stringResource(labelId),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = labelColor
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(16.dp).fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp),
+                            tint = if (showTranscription) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(labelId),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (showTranscription) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                Card(
+                    shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) androidx.compose.ui.graphics.Color.Black
+                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.TextFields,
-                        contentDescription = stringResource(R.string.chat_voice_transcribe),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = stringResource(R.string.chat_voice_no_transcription),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(16.dp).fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.TextFields,
+                            contentDescription = null,
+                            modifier = Modifier.padding(4.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = stringResource(R.string.chat_voice_no_transcription),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            // 底部留白
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

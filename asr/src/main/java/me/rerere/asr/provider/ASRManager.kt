@@ -18,12 +18,14 @@ class ASRManager {
         return when (providerSetting) {
             is ASRProviderSetting.SystemASR -> systemProvider.startRecognition(context, providerSetting)
             is ASRProviderSetting.OnlineASR -> onlineProvider.startRecognition(context, providerSetting)
+            is ASRProviderSetting.EvoliaASR -> onlineProvider.startRecognition(context, providerSetting.toOnlineASR())
         }
     }
 
     /**
      * 整段式转录：读取已有音频文件并一次性转文字。
-     * 仅 [ASRProviderSetting.OnlineASR] 支持；SystemASR 会抛 [UnsupportedOperationException]。
+     * 仅 [ASRProviderSetting.OnlineASR] / [ASRProviderSetting.EvoliaASR] 支持；
+     * SystemASR 会抛 [UnsupportedOperationException]。
      */
     suspend fun transcribeFile(
         providerSetting: ASRProviderSetting,
@@ -33,6 +35,7 @@ class ASRManager {
         return when (providerSetting) {
             is ASRProviderSetting.SystemASR -> systemProvider.transcribeFile(context, uri, providerSetting)
             is ASRProviderSetting.OnlineASR -> onlineProvider.transcribeFile(context, uri, providerSetting)
+            is ASRProviderSetting.EvoliaASR -> onlineProvider.transcribeFile(context, uri, providerSetting.toOnlineASR())
         }
     }
 }

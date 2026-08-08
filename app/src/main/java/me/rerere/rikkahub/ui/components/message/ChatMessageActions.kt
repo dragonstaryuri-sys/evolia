@@ -73,6 +73,7 @@ fun ChatMessageActionButtons(
     onEditLorebookEntry: ((UsedLorebookEntry) -> Unit)? = null,
     onModeClick: ((me.rerere.ai.ui.UsedMode) -> Unit)? = null,
     onMemoryClick: ((me.rerere.ai.ui.UsedMemory) -> Unit)? = null,
+    ttsText: String = message.toContentText(),
 ) {
     val context = LocalContext.current
     val settings = LocalSettings.current
@@ -166,7 +167,7 @@ fun ChatMessageActionButtons(
                             indication = LocalIndication.current,
                             onClick = {
                                 if (!isSpeaking) {
-                                    tts.speak(message.toContentText())
+                                    tts.speak(ttsText)
                                 } else {
                                     tts.stop()
                                 }

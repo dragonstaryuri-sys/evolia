@@ -16,7 +16,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,15 +43,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
@@ -302,6 +307,14 @@ fun VoiceRecordButton(
     val holdToSpeakText = stringResource(R.string.chat_hold_to_speak)
     val recordingText = stringResource(R.string.chat_voice_recording)
     val transcribingText = stringResource(R.string.chat_voice_transcribing)
+    val slideUpCancelText = stringResource(R.string.chat_voice_slide_up_cancel)
+    val releaseToCancelText = stringResource(R.string.chat_voice_release_to_cancel)
+
+    // 上滑取消状态：null=未录音；false=录音中（未上滑）；true=已上滑到取消区
+    var isCancelZone by remember { mutableStateOf(false) }
+    // 录音中是否触发过上滑提示（用于区分文案显示时机）
+    val density = LocalDensity.current
+    val cancelThresholdPx = with(density) { 80.dp.toPx() }
 
     val pulseTransition = rememberInfiniteTransition(label = "rec_pulse")
     val pulseAlpha by pulseTransition.animateFloat(
@@ -313,28 +326,57 @@ fun VoiceRecordButton(
 
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = if (isCancelZone) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHigh
+        },
         modifier = modifier
             .heightIn(min = 48.dp)
             .then(
                 if (transcribing) Modifier
                 else Modifier.pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = {
-                            try {
-                                controller.start()
-                            } catch (e: Exception) {
-                                onError(e.message ?: "录音启动失败")
-                                tryAwaitRelease()
-                                return@detectTapGestures
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        // 按下：开始录音
+                        isCancelZone = false
+                        var startY = down.position.y
+                        var cancelled = false
+                        try {
+                            controller.start()
+                        } catch (e: Exception) {
+                            onError(e.message ?: "录音启动失败")
+                            return@awaitEachGesture
+                        }
+                        // 持续追踪手指移动，检测上滑
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: continue
+                            val currentY = change.position.y
+                            val deltaY = startY - currentY // 正数=上滑
+                            val wasCancelZone = isCancelZone
+                            isCancelZone = deltaY > cancelThresholdPx
+                            if (isCancelZone != wasCancelZone) {
+                                // 触觉反馈：进入/离开取消区时震动一下
+                                // (省略 haptic，避免引入额外依赖)
                             }
-                            val released = tryAwaitRelease()
-                            if (released) {
-                                val result = controller.stop()
-                                onRecordComplete(result)
+                            if (change.changedToUp()) {
+                                // 手指抬起
+                                if (isCancelZone) {
+                                    // 上滑取消
+                                    cancelled = true
+                                    controller.cancel()
+                                    onRecordComplete(null) // null 表示取消，上层不提示"太短"
+                                } else {
+                                    val result = controller.stop()
+                                    onRecordComplete(result)
+                                }
+                                break
                             }
                         }
-                    )
+                        // 静默 cancelled：上面已经处理过了
+                        @Suppress("UNUSED_VARIABLE") val _c = cancelled
+                    }
                 }
             )
     ) {
@@ -368,9 +410,17 @@ fun VoiceRecordButton(
                             drawCircle(color = Color.Red.copy(alpha = pulseAlpha))
                         }
                         Text(
-                            text = "$recordingText  ${formatVoiceDuration(durationMs)}",
+                            text = if (isCancelZone) {
+                                releaseToCancelText
+                            } else {
+                                "$recordingText  ${formatVoiceDuration(durationMs)}  $slideUpCancelText"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = if (isCancelZone) {
+                                MaterialTheme.colorScheme.onErrorContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            }
                         )
                     }
                 }

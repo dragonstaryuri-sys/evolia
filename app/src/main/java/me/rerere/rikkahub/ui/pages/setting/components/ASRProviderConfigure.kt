@@ -37,6 +37,8 @@ fun ASRProviderConfigure(
         when (setting) {
             is ASRProviderSetting.SystemASR -> SystemASRConfiguration(setting, onValueChange)
             is ASRProviderSetting.OnlineASR -> OnlineASRConfiguration(setting, onValueChange)
+            // EvoliaASR 是内置不可编辑项，UI 不显示编辑入口，此处仅需满足 exhaustive when
+            is ASRProviderSetting.EvoliaASR -> {}
         }
     }
 }
@@ -154,7 +156,7 @@ private fun OnlineASRConfiguration(
             onValueChange = { onValueChange(setting.copy(apiUrl = it)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("https://api.openai.com/v1/audio/transcriptions") }
+            placeholder = { Text("https://api.siliconflow.cn/v1/audio/transcriptions") }
         )
     }
 
@@ -182,7 +184,7 @@ private fun OnlineASRConfiguration(
             onValueChange = { onValueChange(setting.copy(model = it)) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            placeholder = { Text("whisper-1") }
+            placeholder = { Text("TeleAI/TeleSpeechASR") }
         )
     }
 

@@ -108,6 +108,7 @@ fun ChatList(
     onUserScroll: () -> Boolean = { false },
     onRetryPagination: () -> Unit = {},
     voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
+    shownTranscriptions: MutableSet<String>,
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -211,6 +212,7 @@ fun ChatList(
                             onRetryPagination = onRetryPagination,
                             animatedVisibilityScope = this@AnimatedContent,
                             voiceMessagePlayer = voiceMessagePlayer,
+                            shownTranscriptions = shownTranscriptions,
                         )
                     }
                 }
@@ -246,6 +248,7 @@ private fun SharedTransitionScope.ChatListNormal(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
     voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
+    shownTranscriptions: MutableSet<String>,
 ) {
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
@@ -377,6 +380,7 @@ private fun SharedTransitionScope.ChatListNormal(
                         loading = true,
                         showRegenerate = false,
                         onCitationClick = onCitationClick,
+                        shownTranscriptions = shownTranscriptions,
                     )
                 }
             }
@@ -468,6 +472,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 },
                                 selecting = selecting,
                                 selectedItems = selectedItems,
+                                shownTranscriptions = shownTranscriptions,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -586,46 +591,6 @@ private fun SharedTransitionScope.ChatListNormal(
             )
 
             previewingMemory?.let { MemoryPreviewDialog(memory = it, isLoading = isMemoryLoading, onDismissRequest = { previewingMemory = null; isMemoryLoading = false }) }
-        }
-    }
-}
-
-@Composable
-private fun MessageItemBox(
-    node: MessageNode, isLastTurn: Boolean, shouldShowTime: Boolean, loading: Boolean,
-    settings: Settings, conversation: Conversation, selecting: Boolean, selectedItems: MutableList<Uuid>,
-    onCitationClick: (String) -> Unit, onRegenerate: (UIMessage) -> Unit, onEdit: (UIMessage) -> Unit, onDelete: (UIMessage) -> Unit,
-    onUpdateMessage: (MessageNode) -> Unit, onGetFullMemoryContent: suspend (Int, Int) -> String?,
-    onAddFavorite: (List<UIMessage>) -> Unit, onTypingStateChange: (Uuid, Boolean) -> Unit,
-    navController: androidx.navigation.NavController, scope: CoroutineScope,
-    onMemoryLoading: (Boolean) -> Unit, onPreviewMemory: (UsedMemory) -> Unit,
-    onStartSelecting: (Uuid) -> Unit
-) {
-    Column {
-        if (shouldShowTime) {
-            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                Text(text = formatTime(node.currentMessage.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
-            }
-        }
-        val isSelected by remember(node.id) { derivedStateOf { selectedItems.contains(node.id) } }
-        ListSelectableItem(isSelected = isSelected, onSelectChange = { if (it) selectedItems.add(node.id) else selectedItems.remove(node.id) }, enabled = selecting) {
-            val showRegenerate by remember(node.currentMessage.role, isLastTurn) { derivedStateOf { node.currentMessage.role == MessageRole.USER || isLastTurn } }
-            ChatMessageTurn(
-                group = MessageTurnGroup(listOf(node), node.currentMessage.role), isLastTurn = isLastTurn, onCitationClick = onCitationClick,
-                model = node.currentMessage.modelId?.let { settings.findModelById(it) }, assistant = settings.getAssistantById(conversation.assistantId),
-                loading = loading, onRegenerate = { onRegenerate(it.currentMessage) }, onEdit = { onEdit(it.currentMessage) }, onDelete = { onDelete(it.currentMessage) },
-                onShare = { onStartSelecting(node.id) },
-                onUpdate = { onUpdateMessage(it) }, onEditLorebookEntry = { navController.navigate(Screen.SettingLorebookDetail(it.lorebookId, it.entryId)) },
-                onMemoryClick = { memory ->
-                    scope.launch { onMemoryLoading(true); onPreviewMemory(memory); val full = onGetFullMemoryContent(memory.memoryId, memory.memoryType); onPreviewMemory(memory.copy(memoryContent = full ?: "未找到内容")); onMemoryLoading(false) }
-                }, showRegenerate = showRegenerate, onTypingStateChange = { onTypingStateChange(node.id, it) }
-            )
-        }
-        val isTruncatePoint = conversation.truncateIndex > 0 && conversation.messageNodes.getOrNull(conversation.truncateIndex - 1)?.id == node.id
-        if (isTruncatePoint) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth()) {
-                HorizontalDivider(modifier = Modifier.weight(1f)); Text(text = stringResource(R.string.chat_page_clear_context), style = MaterialTheme.typography.bodySmall); HorizontalDivider(modifier = Modifier.weight(1f))
-            }
         }
     }
 }

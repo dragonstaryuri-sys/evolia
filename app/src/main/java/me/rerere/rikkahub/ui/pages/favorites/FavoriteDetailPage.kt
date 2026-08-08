@@ -83,7 +83,8 @@ fun FavoriteDetailPage(id: Long) {
                         isLastTurn = false, // 详情页无需动态效果
                         onCitationClick = { /* 详情暂不支持引用 */ },
                         assistant = settings.assistants.find { it.name == fav.agentName },
-                        showRegenerate = false // 详情页不可重生成
+                        showRegenerate = false, // 详情页不可重生成
+                        shownTranscriptions = remember { mutableStateSetOf<String>() } // 详情页不展示语音转文字
                     )
                 }
 

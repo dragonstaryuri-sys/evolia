@@ -1857,6 +1857,8 @@
   <string name="chat_voice_transcribe">Transcribe</string>
   <string name="chat_voice_hide_transcription">Hide transcription</string>
   <string name="chat_voice_no_transcription">No transcription available</string>
+  <string name="chat_voice_slide_up_cancel">Slide up to cancel</string>
+  <string name="chat_voice_release_to_cancel">Release to cancel</string>
   <string name="setting_provider_page_audio">Audio</string>
   <!-- Diary feature upgrade -->
   <string name="diary_view_list">List</string>
