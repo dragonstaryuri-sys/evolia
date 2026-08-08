@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -61,6 +62,61 @@ import java.io.IOException
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
+
+/**
+ * Model-ID substrings that identify "strict schema following" models.
+ * These models ONLY pass parameters that are explicitly declared in the tool's
+ * parameters JSON schema, ignoring parameters that are mentioned in tool
+ * descriptions or MCP tool documentation but omitted from the schema.
+ *
+ * Detection is case-insensitive and matches any substring of the model ID.
+ */
+private val STRICT_TOOL_SCHEMA_MODEL_KEYWORDS = listOf(
+    "glm",      // 智谱 AI / GLM 系列 (glm-4, glm-4-plus, glm-4.5, cogview 等)
+    "claude",   // Anthropic Claude (claude-3, claude-3.5 等)
+)
+
+/**
+ * One-shot instruction injected at the END of the system message.
+ * Only injected when: (a) model is a strict-schema model AND (b) the current
+ * tool list contains at least one MCP tool.
+ */
+private const val MCP_FLEXIBLE_PARAMS_GUIDANCE =
+    "\n\n【MCP 工具参数灵活度原则】\n" +
+        "本对话中名称以 \"mcp_\" 开头的工具来自 MCP 生态。这些工具的实际后端接受的参数通常比它们暴露的 JSON Schema 列表更丰富：如果某工具的描述、其配套文档或对话上下文暗示了其他可用的字段，请**务必将这些字段一并传入**，不要因为该字段没有出现在 parameters 的 properties 列表里就省略。MCP 工具后端会正确识别并处理额外的参数。"
+
+/**
+ * Returns true when the modelId matches any of the known strict-schema keywords.
+ */
+private fun isStrictSchemaModel(modelId: String): Boolean {
+    val lowerId = modelId.lowercase()
+    return STRICT_TOOL_SCHEMA_MODEL_KEYWORDS.any { keyword ->
+        keyword in lowerId
+    }
+}
+
+/**
+ * Returns true if the tool name starts with the MCP prefix ("mcp_").
+ * MCP tools are the only tools that typically have incomplete parameter schemas
+ * (the MCP server author often skips fields to save tokens, expecting the model
+ * to read the free-text description for the rest of the parameters).
+ */
+private fun isMcpTool(toolName: String): Boolean = toolName.startsWith("mcp_")
+
+/**
+ * Adds `additionalProperties: true` to an MCP tool's JSON schema,
+ * signaling both the model and the intermediate layers that extra properties
+ * are allowed. Returns the parameters object unchanged when it's an MCP tool
+ * that already has the flag, or when the tool is a local tool with a complete schema.
+ */
+private fun enhanceMcpToolParameters(rawParameters: JsonElement): JsonObject {
+    val paramsObj = (rawParameters as? JsonObject) ?: buildJsonObject { }
+    if (paramsObj.containsKey("additionalProperties")) return paramsObj
+    return buildJsonObject {
+        paramsObj.forEach { (k, v) -> put(k, v) }
+        put("additionalProperties", JsonPrimitive(true))
+    }
+}
 
 class ChatCompletionsAPI(
     private val client: OkHttpClient,
@@ -273,9 +329,35 @@ class ChatCompletionsAPI(
         stream: Boolean = false,
     ): JsonObject {
         val host = providerSetting.baseUrl.toHttpUrl().host
+
+        // --- Strict model + MCP tool pre-computation ---
+        val modelId = params.model.modelId
+        val strictModel = isStrictSchemaModel(modelId)
+        val hasMcpTool = params.tools.any { tool -> isMcpTool(tool.name) }
+        val injectMcpGuidance = strictModel && hasMcpTool
+
+        // Decorate SYSTEM message with the one-shot MCP guidance when needed
+        val effectiveMessages = if (injectMcpGuidance) {
+            messages.map { uiMessage ->
+                if (uiMessage.role != MessageRole.SYSTEM) return@map uiMessage
+                val existingText = uiMessage.parts
+                    .filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("\n") { it.text }
+                val restParts = uiMessage.parts.filter { it !is UIMessagePart.Text }
+                uiMessage.copy(
+                    parts = buildList {
+                        add(UIMessagePart.Text(text = existingText + MCP_FLEXIBLE_PARAMS_GUIDANCE))
+                        addAll(restParts)
+                    }
+                )
+            }
+        } else {
+            messages
+        }
+
         return buildJsonObject {
             put("model", params.model.modelId)
-            put("messages", buildMessages(messages, host))
+            put("messages", buildMessages(effectiveMessages, host))
 
             if (isModelAllowTemperature(params.model)) {
                 if (params.temperature != null) {
@@ -394,17 +476,22 @@ class ChatCompletionsAPI(
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
                 putJsonArray("tools") {
                     params.tools.forEach { tool ->
+                        val rawParameters = json.encodeToJsonElement(tool.parameters())
+                        // Schema enhancement: ONLY MCP tools get additionalProperties=true
+                        // Local tools have complete schemas and do not need the flexibility flag
+                        val finalParameters = if (isMcpTool(tool.name)) {
+                            enhanceMcpToolParameters(rawParameters)
+                        } else {
+                            rawParameters as? JsonObject ?: buildJsonObject {}
+                        }
                         add(buildJsonObject {
                             put("type", "function")
                             put("function", buildJsonObject {
                                 put("name", tool.name)
+                                // Tool description is never modified here
+                                // The guidance is injected ONCE in the SYSTEM prompt
                                 put("description", tool.description)
-                                put(
-                                    "parameters",
-                                    json.encodeToJsonElement(
-                                        tool.parameters()
-                                    )
-                                )
+                                put("parameters", finalParameters)
                             })
                         })
                     }
@@ -630,13 +717,17 @@ class ChatCompletionsAPI(
                     val toolCallId = toolCalls.jsonObject["id"]?.jsonPrimitive?.contentOrNull
                     val toolName =
                         toolCalls.jsonObject["function"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
-                    val arguments =
-                        toolCalls.jsonObject["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.contentOrNull
+                    val arguments = toolCalls.jsonObject["function"]?.jsonObject?.get("arguments")
+                    val argumentsStr = when (arguments) {
+                        is JsonPrimitive -> arguments.contentOrNull ?: ""
+                        is JsonObject, is JsonArray -> json.encodeToString(arguments)
+                        else -> ""
+                    }
                     add(
                         UIMessagePart.ToolCall(
                             toolCallId = toolCallId ?: "",
                             toolName = toolName ?: "",
-                            arguments = arguments ?: ""
+                            arguments = argumentsStr
                         )
                     )
                 }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -54,6 +55,37 @@ import okhttp3.sse.EventSources
 import kotlin.time.Clock
 
 private const val TAG = "ClaudeProvider"
+
+/**
+ * Model-ID substrings that identify "strict schema following" models.
+ * (Keep in sync with ChatCompletionsAPI & ResponseAPI.)
+ */
+private val STRICT_TOOL_SCHEMA_MODEL_KEYWORDS_CLAUDE = listOf(
+    "glm",      // 智谱 AI / GLM 系列 (即使走中转站也能识别)
+    "claude",   // Anthropic Claude (本 Provider 的本地 Claude 也可能有此问题)
+)
+
+private const val MCP_FLEXIBLE_PARAMS_GUIDANCE_CLAUDE =
+    "\n\n【MCP 工具参数灵活度原则】\n" +
+        "本对话中名称以 \"mcp_\" 开头的工具来自 MCP 生态。这些工具的实际后端接受的参数通常比它们暴露的 JSON Schema 列表更丰富：如果某工具的描述、其配套文档或对话上下文暗示了其他可用的字段，请**务必将这些字段一并传入**，不要因为该字段没有出现在 parameters 的 properties 列表里就省略。MCP 工具后端会正确识别并处理额外的参数。"
+
+private fun isStrictSchemaModelClaude(modelId: String): Boolean {
+    val lowerId = modelId.lowercase()
+    return STRICT_TOOL_SCHEMA_MODEL_KEYWORDS_CLAUDE.any { keyword ->
+        keyword in lowerId
+    }
+}
+
+private fun isMcpToolClaude(toolName: String): Boolean = toolName.startsWith("mcp_")
+
+private fun enhanceMcpToolParametersClaude(rawParameters: JsonElement): JsonObject {
+    val paramsObj = (rawParameters as? JsonObject) ?: buildJsonObject { }
+    if (paramsObj.containsKey("additionalProperties")) return paramsObj
+    return buildJsonObject {
+        paramsObj.forEach { (k, v) -> put(k, v) }
+        put("additionalProperties", JsonPrimitive(true))
+    }
+}
 private const val ANTHROPIC_VERSION = "2023-06-01"
 
 class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSetting.Claude> {
@@ -258,6 +290,12 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
         params: TextGenerationParams,
         stream: Boolean = false
     ): JsonObject {
+        // --- Strict model + MCP tool pre-computation ---
+        val modelId = params.model.modelId
+        val strictModel = isStrictSchemaModelClaude(modelId)
+        val hasMcpTool = params.tools.any { tool -> isMcpToolClaude(tool.name) }
+        val injectMcpGuidance = strictModel && hasMcpTool
+
         return buildJsonObject {
             put("model", params.model.modelId)
             put("messages", buildMessages(messages))
@@ -271,16 +309,29 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
 
             put("stream", stream)
 
-            // system prompt
+            // system prompt (append one-shot MCP guidance when strict model + has MCP tools)
             val systemMessage = messages.firstOrNull { it.role == MessageRole.SYSTEM }
             if (systemMessage != null) {
                 put("system", buildJsonArray {
-                    systemMessage.parts.filterIsInstance<UIMessagePart.Text>().forEach { part ->
+                    systemMessage.parts.filterIsInstance<UIMessagePart.Text>().forEachIndexed { idx, part ->
+                        val text = if (injectMcpGuidance && idx == systemMessage.parts.filterIsInstance<UIMessagePart.Text>().lastIndex) {
+                            part.text + MCP_FLEXIBLE_PARAMS_GUIDANCE_CLAUDE
+                        } else {
+                            part.text
+                        }
                         add(buildJsonObject {
                             put("type", "text")
-                            put("text", part.text)
+                            put("text", text)
                         })
                     }
+                })
+            } else if (injectMcpGuidance) {
+                // No system message, but we still need to inform the model
+                put("system", buildJsonArray {
+                    add(buildJsonObject {
+                        put("type", "text")
+                        put("text", MCP_FLEXIBLE_PARAMS_GUIDANCE_CLAUDE.removePrefix("\n\n"))
+                    })
                 })
             }
 
@@ -301,10 +352,17 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
                 putJsonArray("tools") {
                     params.tools.forEach { tool ->
+                        val rawSchema = json.encodeToJsonElement(tool.parameters())
+                        // Only MCP tools get additionalProperties=true
+                        val finalSchema = if (isMcpToolClaude(tool.name)) {
+                            enhanceMcpToolParametersClaude(rawSchema)
+                        } else {
+                            rawSchema as? JsonObject ?: buildJsonObject {}
+                        }
                         add(buildJsonObject {
                             put("name", tool.name)
                             put("description", tool.description)
-                            put("input_schema", json.encodeToJsonElement(tool.parameters()))
+                            put("input_schema", finalSchema)
                         })
                     }
                 }

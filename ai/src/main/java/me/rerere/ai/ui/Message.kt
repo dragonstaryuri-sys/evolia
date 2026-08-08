@@ -7,6 +7,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
@@ -113,13 +114,32 @@ data class UIMessage(
                         if (deltaPart.toolCallId.isBlank()) {
                             val lastToolCall =
                                 acc.lastOrNull { it is UIMessagePart.ToolCall } as? UIMessagePart.ToolCall
-                            if (lastToolCall == null || lastToolCall.toolCallId.isBlank()) {
-                                acc + deltaPart.copy()
-                            } else {
-                                acc.map { part ->
-                                    if (part == lastToolCall && part is UIMessagePart.ToolCall) {
-                                        part.merge(deltaPart)
-                                    } else part
+                            when {
+                                lastToolCall == null -> {
+                                    acc + deltaPart.copy()
+                                }
+                                // Both have blank id, merge if tool names match or last call already has a name
+                                lastToolCall.toolCallId.isBlank() -> {
+                                    val nameMatches = deltaPart.toolName.isBlank() ||
+                                        deltaPart.toolName == lastToolCall.toolName ||
+                                        lastToolCall.toolName.isNotBlank()
+                                    if (nameMatches) {
+                                        acc.map { part ->
+                                            if (part == lastToolCall && part is UIMessagePart.ToolCall) {
+                                                part.merge(deltaPart)
+                                            } else part
+                                        }
+                                    } else {
+                                        acc + deltaPart.copy()
+                                    }
+                                }
+                                // Last tool call has an id, merge with it
+                                else -> {
+                                    acc.map { part ->
+                                        if (part == lastToolCall && part is UIMessagePart.ToolCall) {
+                                            part.merge(deltaPart)
+                                        } else part
+                                    }
                                 }
                             }
                         } else {
@@ -522,12 +542,62 @@ sealed class UIMessagePart {
         override var metadata: JsonObject? = null
     ) : UIMessagePart() {
         fun merge(other: ToolCall): ToolCall {
+            val mergedArguments = mergeArguments(arguments, other.arguments)
             return ToolCall(
                 toolCallId = toolCallId,
                 toolName = toolName + other.toolName,
-                arguments = arguments + other.arguments,
+                arguments = mergedArguments,
                 metadata = if(other.metadata != null) other.metadata else metadata,
             )
+        }
+
+        private fun mergeArguments(base: String, incoming: String): String {
+            // If either is blank, just return the non-blank one
+            if (base.isBlank()) return incoming
+            if (incoming.isBlank()) return base
+
+            // Try to parse both as JSON objects
+            val baseObj = runCatching { json.parseToJsonElement(base).jsonObject }.getOrNull()
+            val incomingObj = runCatching { json.parseToJsonElement(incoming).jsonObject }.getOrNull()
+
+            return when {
+                // Both are valid JSON objects -> merge them
+                baseObj != null && incomingObj != null -> {
+                    val merged = baseObj.toMutableMap()
+                    incomingObj.forEach { (key, value) ->
+                        val existing = merged[key]
+                        if (existing != null && existing is JsonObject && value is JsonObject) {
+                            val nestedMerged = existing.toMutableMap()
+                            value.forEach { (k, v) -> nestedMerged[k] = v }
+                            merged[key] = JsonObject(nestedMerged)
+                        } else {
+                            merged[key] = value
+                        }
+                    }
+                    json.encodeToString(JsonObject(merged))
+                }
+
+                // Base is valid JSON, incoming is a fragment -> try to merge by concatenating
+                baseObj != null -> {
+                    val concatenated = base.dropLast(1) + incoming.trim().removePrefix("{")
+                    runCatching { json.parseToJsonElement(concatenated) }
+                        .getOrNull()
+                        ?.let { json.encodeToString(it) }
+                        ?: (base + incoming)
+                }
+
+                // Incoming is valid JSON, base is a fragment -> try to merge by concatenating
+                incomingObj != null -> {
+                    val concatenated = incoming.dropLast(1) + base.trim().removePrefix("{")
+                    runCatching { json.parseToJsonElement(concatenated) }
+                        .getOrNull()
+                        ?.let { json.encodeToString(it) }
+                        ?: (base + incoming)
+                }
+
+                // Neither is valid JSON -> simple concatenation (fragment mode)
+                else -> base + incoming
+            }
         }
 
         override val priority: Int = 0

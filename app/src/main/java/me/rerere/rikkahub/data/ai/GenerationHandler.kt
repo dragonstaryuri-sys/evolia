@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -1692,11 +1694,51 @@ class GenerationHandler(
     private fun sanitizeToolCallArguments(arguments: String): String {
         if (arguments.isBlank()) return "{}"
         val trimmed = arguments.trim()
-        var braceCount = 0;
-        var inString = false;
+
+        // 1. 尝试直接解析为完整 JSON
+        json.runCatching { parseToJsonElement(trimmed) }
+            .getOrNull()
+            ?.let { return json.encodeToString(it) }
+
+        // 2. 尝试提取所有有效的 JSON 对象并合并它们
+        val jsonObjects = extractJsonObjects(trimmed)
+        if (jsonObjects.size >= 2) {
+            try {
+                val merged = mergeJsonObjects(jsonObjects)
+                return json.encodeToString(merged)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to merge multiple JSON objects: ${e.message}")
+            }
+        }
+        if (jsonObjects.size == 1) {
+            return jsonObjects.first()
+        }
+
+        // 3. 尝试修复常见问题（补齐缺失的括号）
+        val fixed = fixIncompleteJson(trimmed)
+        json.runCatching { parseToJsonElement(fixed) }
+            .getOrNull()
+            ?.let { return json.encodeToString(it) }
+
+        // 4. 最后兜底：提取第一个有效 JSON 对象
+        val first = extractFirstJsonObject(trimmed)
+        if (first != null) {
+            Log.w(TAG, "Recovered partial JSON: $first")
+            return first
+        }
+
+        Log.w(TAG, "Could not extract valid JSON from: $trimmed")
+        return "{}"
+    }
+
+    private fun extractJsonObjects(input: String): List<String> {
+        val results = mutableListOf<String>()
+        var braceCount = 0
+        var inString = false
         var escape = false
         var startIndex = -1
-        for ((index, char) in trimmed.withIndex()) {
+
+        for ((index, char) in input.withIndex()) {
             if (escape) {
                 escape = false
                 continue
@@ -1708,26 +1750,112 @@ class GenerationHandler(
                     if (startIndex == -1) startIndex = index
                     braceCount++
                 }
-
                 '}' -> if (!inString && startIndex != -1) {
                     braceCount--
                     if (braceCount == 0) {
-                        return trimmed.substring(startIndex, index + 1)
+                        val obj = input.substring(startIndex, index + 1)
+                        json.runCatching { parseToJsonElement(obj) }
+                            .getOrNull()
+                            ?.let { results.add(obj) }
+                        startIndex = -1
                     }
                 }
             }
         }
-        if (startIndex != -1 && braceCount > 0) {
-            val partial = trimmed.substring(startIndex)
-            // 尝试补齐缺失的引号（如果在字符串内）和括号
-            return buildString {
-                append(partial)
-                if (inString) append("\"") // 补引号
-                repeat(braceCount) { append("}") } // 补括号
+        return results
+    }
+
+    private fun extractFirstJsonObject(input: String): String? {
+        var braceCount = 0
+        var inString = false
+        var escape = false
+        var startIndex = -1
+
+        for ((index, char) in input.withIndex()) {
+            if (escape) {
+                escape = false
+                continue
+            }
+            when (char) {
+                '\\' -> if (inString) escape = true
+                '"' -> inString = !inString
+                '{' -> if (!inString) {
+                    if (startIndex == -1) startIndex = index
+                    braceCount++
+                }
+                '}' -> if (!inString && startIndex != -1) {
+                    braceCount--
+                    if (braceCount == 0) {
+                        return input.substring(startIndex, index + 1)
+                    }
+                }
             }
         }
-        Log.w(TAG, "Could not extract valid JSON object from: $trimmed")
-        return "{}"
+        return null
+    }
+
+    private fun fixIncompleteJson(input: String): String {
+        // 尝试找到最后一个完整的 '}'，如果后面还有内容，可能是截断的
+        val lastCompleteBrace = input.lastIndexOf('}')
+        if (lastCompleteBrace > 0 && lastCompleteBrace < input.length - 1) {
+            val afterBrace = input.substring(lastCompleteBrace + 1).trim()
+            if (afterBrace.isNotEmpty()) {
+                // 截断部分可能是不完整的 JSON，尝试补齐
+                val partial = input.substring(0, lastCompleteBrace + 1)
+                return partial
+            }
+        }
+
+        // 如果末尾缺少闭合括号
+        var braceCount = 0
+        var inString = false
+        var escape = false
+        for (char in input) {
+            if (escape) {
+                escape = false
+                continue
+            }
+            when (char) {
+                '\\' -> if (inString) escape = true
+                '"' -> inString = !inString
+                '{' -> braceCount++
+                '}' -> if (braceCount > 0) braceCount--
+            }
+        }
+
+        if (braceCount > 0 || inString) {
+            return buildString {
+                append(input)
+                if (inString) append("\"")
+                repeat(braceCount) { append("}") }
+            }
+        }
+
+        return input
+    }
+
+    private fun mergeJsonObjects(jsonStrings: List<String>): JsonObject {
+        require(jsonStrings.isNotEmpty()) { "Empty JSON object list" }
+        if (jsonStrings.size == 1) {
+            return json.parseToJsonElement(jsonStrings.first()).jsonObject
+        }
+
+        val merged = mutableMapOf<String, JsonElement>()
+        jsonStrings.forEach { str ->
+            val obj = json.parseToJsonElement(str).jsonObject
+            obj.forEach { (key, value) ->
+                merged[key] = when {
+                    merged.containsKey(key) && merged[key] is JsonObject && value is JsonObject -> {
+                        val existing = merged[key]!!.jsonObject
+                        val newMap = existing.toMutableMap()
+                        value.jsonObject.forEach { (k, v) -> newMap[k] = v }
+                        JsonObject(newMap)
+                    }
+                    else -> value
+                }
+            }
+        }
+        return JsonObject(merged)
     }
 
     private fun cosineSimilarity(a: List<Float>, b: List<Float>): Float {

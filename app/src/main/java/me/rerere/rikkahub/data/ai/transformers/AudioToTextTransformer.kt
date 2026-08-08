@@ -53,9 +53,9 @@ object AudioToTextTransformer : InputMessageTransformer {
                     // 有转写结果：拼前缀让 AI 明确知道是语音消息内容
                     // 无转写结果：占位文本（避免上下文空洞）
                     val text = if (transcription != null) {
-                        "用户给你发送了一条语音消息，内容是：$transcription"
+                        "语音消息：$transcription"
                     } else {
-                        "[语音消息]"
+                        "系统提示：语音消息识别失败了，请提醒用户检查语音合成模型的配置，也有可能是网络原因，让她过一会儿再尝试"
                     }
                     UIMessagePart.Text(text = text)
                 }

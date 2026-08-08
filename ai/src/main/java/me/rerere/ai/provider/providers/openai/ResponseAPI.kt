@@ -5,6 +5,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -39,6 +41,7 @@ import me.rerere.ai.util.stringSafe
 import me.rerere.ai.util.toHeaders
 import me.rerere.common.http.await
 import me.rerere.common.http.jsonObjectOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -51,6 +54,41 @@ import kotlin.time.Clock
 
 private const val TAG = "ResponseAPI"
 
+/**
+ * Model-ID substrings that identify "strict schema following" models.
+ * (Shared logic with ChatCompletionsAPI — keep in sync.)
+ */
+private val STRICT_TOOL_SCHEMA_MODEL_KEYWORDS_RESPONSE = listOf(
+    "glm",      // 智谱 AI / GLM 系列
+    "claude",   // Anthropic Claude
+)
+
+/**
+ * One-shot instruction injected at the END of the system instructions.
+ * Only injected when: strict model + list contains at least one MCP tool.
+ */
+private const val MCP_FLEXIBLE_PARAMS_GUIDANCE_RESPONSE =
+    "\n\n【MCP 工具参数灵活度原则】\n" +
+        "本对话中名称以 \"mcp_\" 开头的工具来自 MCP 生态。这些工具的实际后端接受的参数通常比它们暴露的 JSON Schema 列表更丰富：如果某工具的描述、其配套文档或对话上下文暗示了其他可用的字段，请**务必将这些字段一并传入**，不要因为该字段没有出现在 parameters 的 properties 列表里就省略。MCP 工具后端会正确识别并处理额外的参数。"
+
+private fun isStrictSchemaModelResponse(modelId: String): Boolean {
+    val lowerId = modelId.lowercase()
+    return STRICT_TOOL_SCHEMA_MODEL_KEYWORDS_RESPONSE.any { keyword ->
+        keyword in lowerId
+    }
+}
+
+private fun isMcpToolResponse(toolName: String): Boolean = toolName.startsWith("mcp_")
+
+private fun enhanceMcpToolParametersResponse(rawParameters: JsonElement): JsonObject {
+    val paramsObj = (rawParameters as? JsonObject) ?: buildJsonObject { }
+    if (paramsObj.containsKey("additionalProperties")) return paramsObj
+    return buildJsonObject {
+        paramsObj.forEach { (k, v) -> put(k, v) }
+        put("additionalProperties", JsonPrimitive(true))
+    }
+}
+
 class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
     override suspend fun generateText(
         providerSetting: ProviderSetting.OpenAI,
@@ -61,6 +99,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             messages = messages,
             params = params,
             stream = false,
+            providerSetting = providerSetting,
         )
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/responses")
@@ -95,6 +134,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             messages = messages,
             params = params,
             stream = true,
+            providerSetting = providerSetting,
         )
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/responses")
@@ -165,8 +205,17 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
     private fun buildRequestBody(
         messages: List<UIMessage>,
         params: TextGenerationParams,
-        stream: Boolean
+        stream: Boolean,
+        providerSetting: ProviderSetting.OpenAI,
     ): JsonObject {
+        val host = providerSetting.baseUrl.toHttpUrl().host
+
+        // --- Strict model + MCP tool pre-computation ---
+        val modelId = params.model.modelId
+        val strictModel = isStrictSchemaModelResponse(modelId)
+        val hasMcpTool = params.tools.any { tool -> isMcpToolResponse(tool.name) }
+        val injectMcpGuidance = strictModel && hasMcpTool
+
         return buildJsonObject {
             put("model", params.model.modelId)
             put("stream", stream)
@@ -177,12 +226,22 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             }
             if (params.maxTokens != null) put("max_output_tokens", params.maxTokens)
 
-            // system instructions
+            // system instructions (Responses API uses a separate "instructions" field)
+            // When we need the one-shot MCP guidance, append it ONCE at the end here.
             if (messages.any { it.role == MessageRole.SYSTEM }) {
                 val parts = messages.first { it.role == MessageRole.SYSTEM }.parts
-                put(
-                    "instructions",
-                    parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text })
+                val baseInstructions = parts
+                    .filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("\n") { it.text }
+                val finalInstructions = if (injectMcpGuidance) {
+                    baseInstructions + MCP_FLEXIBLE_PARAMS_GUIDANCE_RESPONSE
+                } else {
+                    baseInstructions
+                }
+                put("instructions", finalInstructions)
+            } else if (injectMcpGuidance) {
+                // No system message but we still need the guidance — create "instructions" field from scratch
+                put("instructions", MCP_FLEXIBLE_PARAMS_GUIDANCE_RESPONSE.removePrefix("\n\n"))
             }
 
             // messages
@@ -203,16 +262,20 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             if (params.model.abilities.contains(ModelAbility.TOOL) && params.tools.isNotEmpty()) {
                 putJsonArray("tools") {
                     params.tools.forEach { tool ->
+                        val rawParameters = json.encodeToJsonElement(tool.parameters())
+                        // Only MCP tools get additionalProperties=true
+                        // Local tools already have complete schemas
+                        val finalParameters = if (isMcpToolResponse(tool.name)) {
+                            enhanceMcpToolParametersResponse(rawParameters)
+                        } else {
+                            rawParameters as? JsonObject ?: buildJsonObject {}
+                        }
                         add(buildJsonObject {
                             put("type", "function")
                             put("name", tool.name)
+                            // Tool description untouched — guidance is in "instructions" field (once)
                             put("description", tool.description)
-                            put(
-                                "parameters",
-                                json.encodeToJsonElement(
-                                    tool.parameters()
-                                )
-                            )
+                            put("parameters", finalParameters)
                         })
                     }
                 }
@@ -362,6 +425,12 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                 val type = item["type"]?.jsonPrimitive?.content ?: error("chunk type not found")
                 val id = item["id"]?.jsonPrimitive?.content ?: error("chunk id not found")
                 if (type == "function_call") {
+                    val argsElement = item["arguments"]
+                    val argsStr = when (argsElement) {
+                        is JsonPrimitive -> argsElement.contentOrNull ?: ""
+                        is JsonObject, is JsonArray -> json.encodeToString(argsElement)
+                        else -> ""
+                    }
                     return MessageChunk(
                         id = id,
                         model = "",
@@ -375,8 +444,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                         UIMessagePart.ToolCall(
                                             toolCallId = id,
                                             toolName = item["name"]?.jsonPrimitive?.content ?: "",
-                                            arguments = item["arguments"]?.jsonPrimitive?.content
-                                                ?: ""
+                                            arguments = argsStr
                                         )
                                     )
                                 ),
@@ -412,8 +480,12 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
             "response.function_call_arguments.done" -> {
                 val toolCallId =
                     jsonObject["item_id"]?.jsonPrimitive?.content ?: error("item_id not found")
-                val arguments =
-                    jsonObject["arguments"]?.jsonPrimitive?.content ?: error("arguments not found")
+                val argsElement = jsonObject["arguments"]
+                val argsStr = when (argsElement) {
+                    is JsonPrimitive -> argsElement.contentOrNull ?: error("arguments not found")
+                    is JsonObject, is JsonArray -> json.encodeToString(argsElement)
+                    else -> error("arguments not found")
+                }
                 return MessageChunk(
                     id = toolCallId,
                     model = "",
@@ -426,7 +498,7 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                                     UIMessagePart.ToolCall(
                                         toolCallId = toolCallId,
                                         toolName = "",
-                                        arguments = arguments,
+                                        arguments = argsStr,
                                     )
                                 )
                             ),
@@ -481,13 +553,17 @@ class ResponseAPI(private val client: OkHttpClient) : OpenAIImpl {
                 "function_call" -> {
                     val callId = output["call_id"]?.jsonPrimitive?.content ?: error("call_id not found")
                     val name = output["name"]?.jsonPrimitive?.content ?: error("name not found")
-                    val arguments =
-                        output["arguments"]?.jsonPrimitive?.content ?: error("arguments not found")
+                    val argsElement = output["arguments"]
+                    val argsStr = when (argsElement) {
+                        is JsonPrimitive -> argsElement.contentOrNull ?: error("arguments not found")
+                        is JsonObject, is JsonArray -> json.encodeToString(argsElement)
+                        else -> error("arguments not found")
+                    }
                     parts.add(
                         UIMessagePart.ToolCall(
                             toolCallId = callId,
                             toolName = name,
-                            arguments = arguments
+                            arguments = argsStr
                         )
                     )
                 }
