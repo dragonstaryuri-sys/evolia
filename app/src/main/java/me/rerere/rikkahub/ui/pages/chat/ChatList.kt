@@ -109,6 +109,7 @@ fun ChatList(
     onRetryPagination: () -> Unit = {},
     voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
     shownTranscriptions: MutableSet<String>,
+    onManualTranscribe: (nodeId: Uuid, audioUrl: String) -> Unit = { _, _ -> },
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -213,6 +214,7 @@ fun ChatList(
                             animatedVisibilityScope = this@AnimatedContent,
                             voiceMessagePlayer = voiceMessagePlayer,
                             shownTranscriptions = shownTranscriptions,
+                            onManualTranscribe = onManualTranscribe,
                         )
                     }
                 }
@@ -249,6 +251,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onDeleteMessages: (List<UIMessage>) -> Unit = {},
     voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
     shownTranscriptions: MutableSet<String>,
+    onManualTranscribe: (nodeId: Uuid, audioUrl: String) -> Unit = { _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
@@ -381,6 +384,7 @@ private fun SharedTransitionScope.ChatListNormal(
                         showRegenerate = false,
                         onCitationClick = onCitationClick,
                         shownTranscriptions = shownTranscriptions,
+                        onManualTranscribe = onManualTranscribe,
                     )
                 }
             }
@@ -473,6 +477,7 @@ private fun SharedTransitionScope.ChatListNormal(
                                 selecting = selecting,
                                 selectedItems = selectedItems,
                                 shownTranscriptions = shownTranscriptions,
+                                onManualTranscribe = onManualTranscribe,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 12.dp, vertical = 4.dp)

@@ -471,6 +471,8 @@ fun ChatMessageTurn(
     selecting: Boolean = false,
     selectedItems: MutableList<Uuid> = mutableStateListOf(),
     shownTranscriptions: MutableSet<String>,
+    // 手动为指定 Audio 重新发起 ASR（首次 ASR 失败时长按菜单"转文字"使用）
+    onManualTranscribe: (nodeId: Uuid, audioUrl: String) -> Unit = { _, _ -> },
 ) {
     val settings = LocalSettings.current
     val navController = LocalNavController.current
@@ -680,7 +682,8 @@ fun ChatMessageTurn(
             },
             onToggleTranscription = {
                 if (transcription == null) {
-                    // 无转写内容时忽略（按钮本身已禁用，这里做兜底）
+                    // 优化1：首次 ASR 失败时（metadata 无转写）手动重新发起一次 ASR
+                    onManualTranscribe(voiceTarget.node.id, voiceTarget.audio.url)
                 } else if (isTranscriptionShown) {
                     shownTranscriptions.remove(voiceTarget.audio.url)
                 } else {
@@ -1712,13 +1715,17 @@ fun VoiceMessageActionsSheet(
                     }
                 }
             } else {
+                // 优化1：无转写内容时 = 首次 ASR 失败 / 尚未完成。允许用户点"转文字"手动重新发起 ASR。
                 Card(
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                     colors = CardDefaults.cardColors(
                         containerColor = if (isDark) androidx.compose.ui.graphics.Color.Black
                         else MaterialTheme.colorScheme.surfaceContainerHigh
                     ),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        onToggleTranscription()
+                        onDismiss()
+                    }
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1729,12 +1736,12 @@ fun VoiceMessageActionsSheet(
                             imageVector = Icons.Rounded.TextFields,
                             contentDescription = null,
                             modifier = Modifier.padding(4.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = stringResource(R.string.chat_voice_no_transcription),
+                            text = stringResource(R.string.chat_voice_transcribe),
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 }

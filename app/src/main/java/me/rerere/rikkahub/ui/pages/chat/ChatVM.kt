@@ -20,6 +20,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
@@ -48,12 +49,15 @@ import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.db.entity.FavoriteEntity
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import me.rerere.ai.core.MessageRole
 
 private const val TAG = "ChatVM"
 
@@ -80,9 +84,15 @@ class ChatVM(
     val isCallActive: StateFlow<Boolean> = voiceCallManager.isActive
     val callError: SharedFlow<String> = voiceCallManager.callError
 
-    // --- 语音消息转写状态（按住说话松开后，正在 ASR 转文字时为 true） ---
-    private val _voiceTranscribing = MutableStateFlow(false)
+    // --- 正在后台 ASR 转写的 USER 节点 ID 集合（允许多条并行；集合非空 = 转写中） ---
+    private val pendingASRNodeIds: MutableSet<Uuid> = ConcurrentHashMap.newKeySet<Uuid>()
+
+    // --- 语音消息转写状态：有任一条 pending 即为 true（但**不再阻塞发送**，仅用于 UI 显示"转写中"） ---
+    private val _voiceTranscribing: MutableStateFlow<Boolean> = MutableStateFlow(false)
     val voiceTranscribing: StateFlow<Boolean> = _voiceTranscribing.asStateFlow()
+    private fun refreshVoiceTranscribingState() {
+        _voiceTranscribing.value = pendingASRNodeIds.isNotEmpty()
+    }
 
     // --- 语音消息相关错误事件（一次性，UI 用 toast 提示） ---
     private val _voiceEvents = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -90,6 +100,118 @@ class ChatVM(
 
     // --- 语音条「转文字」显示状态：key = audioUrl，存在 VM 里避免 UI 刷新丢失 ---
     val shownTranscriptions: MutableSet<String> = mutableStateSetOf()
+
+    // 是否有待触发 AI 的 USER 消息（当存在 pending ASR 时发送新消息会置 true，
+    // pending ASR 全部完成后会统一 trigger 一次 AI，避免中间每来一条就触发一次）
+    private val _hasPendingUserMessagesForAI = AtomicBoolean(false)
+
+    /**
+     * 调度器：决定是否现在就触发 AI 回复。
+     *
+     * 规则：
+     * 1. 如果有 pending ASR（语音正在转写）→ 先不触发，记录"有待发送 USER 消息"。
+     * 2. 否则立即 triggerAI。
+     */
+    private suspend fun maybeTriggerAIAfterAsr(targetId: Uuid, markPending: Boolean = true) {
+        if (pendingASRNodeIds.isEmpty()) {
+            // 没有待完成的 ASR → 立即触发
+            chatService.triggerAIResponse(conversationId = targetId)
+            _hasPendingUserMessagesForAI.set(false)
+        } else {
+            if (markPending) {
+                _hasPendingUserMessagesForAI.set(true)
+            }
+            // 等 pendingASRNodeIds 被 ASR 完成流程清空后统一 trigger
+        }
+    }
+
+    /**
+     * 当一条 pending ASR 完成时调用。若集合已清空且有待触发的 USER 消息，
+     * 就触发一次 AI（同一 turn 的多条 USER 消息 + 文字一次性发给 AI）。
+     *
+     * 注意：这是一个 suspend 函数，必须在协程体内**同步**调用，确保 mutateConversationAndSave
+     * 完成后再执行 triggerAI（避免异步 launch 导致 ChatService 的对话快照还没刷新）。
+     */
+    private suspend fun onASRNodeCompleted(targetId: Uuid, nodeId: Uuid) {
+        pendingASRNodeIds.remove(nodeId)
+        refreshVoiceTranscribingState()
+        if (pendingASRNodeIds.isEmpty() && _hasPendingUserMessagesForAI.compareAndSet(true, false)) {
+            chatService.triggerAIResponse(conversationId = targetId)
+        }
+    }
+
+    /**
+     * 手动为指定 Audio part 发起一次 ASR 请求（长按菜单"转文字"使用）。
+     *
+     * 适用于：首次 ASR 失败后，用户手动长按语音条 → "转文字" → 重新发起一次。
+     * 成功后更新对应 node 的 metadata，同时如果 shownTranscriptions 中已包含则自动显示。
+     */
+    fun manualTranscribeAudio(nodeId: Uuid, audioUrl: String) {
+        viewModelScope.launch {
+            val currentSettings = settingsStore.settingsFlow.value
+            val targetId = _currentActiveId.value
+            val asrProvider = currentSettings.getSelectedASRProvider()
+            if (asrProvider == null) {
+                _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
+                return@launch
+            }
+
+            val audioUri = try { Uri.parse(audioUrl) } catch (_: Exception) {
+                _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                return@launch
+            }
+
+            // 不阻塞发送，仅转写 metadata
+            pendingASRNodeIds.add(nodeId)
+            refreshVoiceTranscribingState()
+            val transcription: String? = try {
+                asrManager.transcribeFile(asrProvider, context, audioUri)
+                    .takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                Log.e(TAG, "manualTranscribeAudio: failed", e)
+                _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                null
+            } finally {
+                pendingASRNodeIds.remove(nodeId)
+                refreshVoiceTranscribingState()
+            }
+
+            if (transcription == null) return@launch
+
+            // 将转写结果写入对应 node 的 Audio metadata
+            val durationMs = conversation.value.messageNodes
+                .firstOrNull { it.id == nodeId }
+                ?.currentMessage?.parts
+                ?.filterIsInstance<UIMessagePart.Audio>()
+                ?.firstOrNull { it.url == audioUrl }
+                ?.metadata?.get(AudioToTextTransformer.METADATA_DURATION_MS)
+                ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
+
+            chatService.mutateConversationAndSave(targetId) { current ->
+                current.copy(
+                    messageNodes = current.messageNodes.map { node ->
+                        if (node.id != nodeId) return@map node
+                        val updatedMessages = node.messages.map { msg ->
+                            msg.copy(
+                                parts = msg.parts.map { part ->
+                                    if (part !is UIMessagePart.Audio || part.url != audioUrl) return@map part
+                                    val newMetadata = buildJsonObject {
+                                        put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                                        put(AudioToTextTransformer.METADATA_TRANSCRIPTION, transcription)
+                                    }
+                                    part.copy(metadata = newMetadata)
+                                }
+                            )
+                        }
+                        node.copy(messages = updatedMessages)
+                    }
+                )
+            }
+            paginationManager?.loadInitial()
+            // 转写成功后自动显示在 UI 上（用户既然主动点"转文字"，就直接展示文本）
+            shownTranscriptions.add(audioUrl)
+        }
+    }
 
     fun startCall(conversationId: Uuid) = voiceCallManager.startCall(conversationId)
     fun hangupCall() = voiceCallManager.hangup()
@@ -423,19 +545,28 @@ class ChatVM(
             conversation.value.messageNodes.lastOrNull()?.let {
                 paginationManager?.injectNewNode(it)
             }
+
+            // 优化2：文字发送后也走调度器
+            // 如果此时有语音 pending ASR，就等所有 ASR 完成后统一触发一次 AI（同一 turn 合并发送）
+            // 如果没有 pending，就立即触发（原行为）
+            if (answer) {
+                maybeTriggerAIAfterAsr(targetId, markPending = true)
+            }
         }
     }
 
     /**
      * 发送语音消息。
      *
-     * 流程（无论模型是否支持音频，都会做 ASR 并存入 metadata → chat_messages）：
+     * 优化2：即使有 ASR 正在进行，也允许继续发送（不阻塞输入框/录音按钮）。
+     * 所有同一 turn 的 USER 消息会在**所有 pending ASR 完成后**统一触发一次 AI，
+     * 保证 ASR 结果能被正确拼接到发送给模型的上下文中，避免漏转写。
+     *
+     * 流程：
      * 1. 语音条**立即入列**显示（answer=false，不触发 AI）。
-     * 2. 后台异步 ASR 转文字，完成后更新消息 metadata。
-     * 3. 调用 triggerAIResponse 触发 AI 回复：
-     *    - 支持音频输入的模型："最后一条 USER Audio"会保留给模型直接接收，
-     *      历史 USER Audio + 所有 ASSISTANT Audio 转为文本（省 token、更精准）。
-     *    - 不支持音频输入的模型：全部 Audio 转为 Text 发送。
+     * 2. 后台 ASR 转文字（每条语音独立记录 pending，允许并发多条）。
+     * 3. ASR 完成后，通过 audioUrl 唯一匹配更新对应 Audio Part 的 metadata；
+     *    当所有 pending ASR 清空且有待触发的 USER 消息时，统一 triggerAIResponse 一次。
      *
      * @param audioUri 录音文件 Uri（file:// 形式）
      * @param durationMs 录音时长（毫秒）
@@ -447,9 +578,11 @@ class ChatVM(
             val targetId = _currentActiveId.value
             trackConversation(targetId)
 
-            // 1. 立即入列显示语音条（answer=false，暂不触发 AI）
+            // 1. 立即入列显示语音条（answer=false，暂不触发 AI）。
+            // audioUrl 包含 UUID，可作为唯一匹配定位该 Audio Part。
+            val audioUrl = audioUri.toString()
             val audioPart = UIMessagePart.Audio(
-                url = audioUri.toString(),
+                url = audioUrl,
                 metadata = buildJsonObject {
                     put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
                 }
@@ -460,14 +593,35 @@ class ChatVM(
                 answer = false,
                 includeSkipContextMessages = true
             )
-            conversation.value.messageNodes.lastOrNull()?.let {
-                paginationManager?.injectNewNode(it)
+            // 定位刚插入节点的 nodeId。
+            // 注意：ChatVM.conversation.value 是通过 StateFlow 异步收集的，可能还没刷新。
+            // 必须从 ChatService 内部内存快照（getConversationFlow.value）同步读取最新数据。
+            val serviceSnapshot = chatService.getConversationFlow(targetId).value
+            val insertedNode = serviceSnapshot.messageNodes.lastOrNull { node ->
+                node.currentMessage.role == MessageRole.USER &&
+                    node.currentMessage.parts.any { p -> p is UIMessagePart.Audio && p.url == audioUrl }
+            }
+            val nodeId = insertedNode?.id
+            // UI 注入刚入列的节点（让列表立即显示新语音条）：优先用 ChatService 快照的节点，
+            // 否则回退到 ChatVM conversation 的最后一条节点。
+            (insertedNode ?: conversation.value.messageNodes.lastOrNull())
+                ?.let { paginationManager?.injectNewNode(it) }
+            if (nodeId == null) {
+                // 理论上不会发生：sendMessage 不抛异常就会插入节点
+                chatService.triggerAIResponse(conversationId = targetId)
+                return@launch
             }
 
-            // 2. 后台异步 ASR 转文字：无论模型是否支持音频，都做转写并存入 chat_messages
+            // 2. 加入 pending 集合，允许并发多条
+            pendingASRNodeIds.add(nodeId)
+            refreshVoiceTranscribingState()
+            // 标记：本节点入列了，等 ASR 完成后考虑触发 AI
+            // （即使 ASR 失败，这条消息也还是需要被 AI 看到，所以始终 set true）
+            _hasPendingUserMessagesForAI.set(true)
+
+            // 3. ASR 转文字（同一 viewModelScope 协程内挂起，串行完成后写 metadata → 触发）
             val asrProvider = currentSettings.getSelectedASRProvider()
             val transcription: String? = if (asrProvider != null) {
-                _voiceTranscribing.value = true
                 try {
                     asrManager.transcribeFile(asrProvider, context, audioUri)
                         .takeIf { it.isNotBlank() }
@@ -475,31 +629,25 @@ class ChatVM(
                     Log.e(TAG, "sendVoiceMessage: ASR failed", e)
                     _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
                     null
-                } finally {
-                    _voiceTranscribing.value = false
                 }
             } else {
                 _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
                 null
             }
 
-            // 转写完成后，更新最后一条含 Audio 的用户消息 metadata，再触发 AI 回复
+            // 4. 成功则写入该 Audio Part 的 metadata（按 audioUrl 精确匹配，避免并发覆盖）
             if (transcription != null) {
                 chatService.mutateConversationAndSave(targetId) { current ->
-                    // 找到最后一个含 Audio Part 的 USER 节点（即刚发送的语音消息）
-                    val lastAudioUserNodeIndex = current.messageNodes.indexOfLast { node ->
-                        node.currentMessage.role == me.rerere.ai.core.MessageRole.USER &&
-                            node.currentMessage.parts.any { it is UIMessagePart.Audio }
-                    }
-                    if (lastAudioUserNodeIndex == -1) return@mutateConversationAndSave current
                     current.copy(
-                        messageNodes = current.messageNodes.mapIndexed { index, node ->
-                            if (index != lastAudioUserNodeIndex) return@mapIndexed node
+                        messageNodes = current.messageNodes.map { node ->
+                            val hasMatch = node.currentMessage.parts.any { p ->
+                                p is UIMessagePart.Audio && p.url == audioUrl
+                            }
+                            if (!hasMatch) return@map node
                             val updatedMessages = node.messages.map { msg ->
-                                if (msg.parts.none { it is UIMessagePart.Audio }) return@map msg
                                 msg.copy(
                                     parts = msg.parts.map { part ->
-                                        if (part !is UIMessagePart.Audio) return@map part
+                                        if (part !is UIMessagePart.Audio || part.url != audioUrl) return@map part
                                         val newMetadata = buildJsonObject {
                                             put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
                                             put(AudioToTextTransformer.METADATA_TRANSCRIPTION, transcription)
@@ -515,8 +663,8 @@ class ChatVM(
                 paginationManager?.loadInitial()
             }
 
-            // 触发 AI 回复
-            chatService.triggerAIResponse(conversationId = targetId)
+            // 5. 移除 pending；若已清空且有待触发消息，则**同步**触发一次 AI
+            onASRNodeCompleted(targetId, nodeId)
         }
     }
 

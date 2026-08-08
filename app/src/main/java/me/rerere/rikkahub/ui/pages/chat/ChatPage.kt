@@ -679,6 +679,7 @@ private fun ChatPageContent(
                         onRetryPagination = vm::retryPagination,
                         voiceMessagePlayer = vm.voiceMessagePlayer,
                         shownTranscriptions = vm.shownTranscriptions,
+                        onManualTranscribe = { nodeId, audioUrl -> vm.manualTranscribeAudio(nodeId, audioUrl) },
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {
