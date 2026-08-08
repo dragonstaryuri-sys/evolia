@@ -23,12 +23,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
@@ -37,13 +39,21 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -99,6 +110,15 @@ import kotlin.uuid.Uuid
 private val WeChatUserGreen = Color(0xFF95EC69)
 private val WeChatAiWhite = Color(0xFFFFFFFF)
 private val WeChatTextBlack = Color(0xFF191919)
+
+/**
+ * 语音消息长按操作表的目标：定位到具体消息节点 + 其中的 Audio Part。
+ * 因为一个 MessageNode 里可能有多个 Audio Part，所以需要同时存 node 和 audio。
+ */
+data class VoiceActionTarget(
+    val node: MessageNode,
+    val audio: UIMessagePart.Audio
+)
 
 /**
  * Represents a group of consecutive messages from the same role.
@@ -157,7 +177,6 @@ data class MessageTurnGroup(
                 }
             }
         }
-
     /** All message parts from filtered nodes in the group */
     val allParts: List<UIMessagePart> get() = filteredNodes.flatMap { it.currentMessage.parts }
 
@@ -475,6 +494,11 @@ fun ChatMessageTurn(
     var actionsExpanded by remember { mutableStateOf(false) }
     var showUserToolbar by remember { mutableStateOf(false) }
 
+    // ✨ 语音消息：转写显示状态（按 audioUrl 作 key）
+    val shownTranscriptions = remember { mutableStateSetOf<String>() }
+    // ✨ 语音消息长按操作表：当前目标（按 audioUrl 定位 Audio Part）
+    var voiceActionTarget by remember(group) { mutableStateOf<VoiceActionTarget?>(null) }
+
     // ✨ Pass autoCloseThinking to activity state derivation
     val activityState = deriveActivityState(
         group.allParts,
@@ -543,6 +567,10 @@ fun ChatMessageTurn(
                     userNickname = effectiveDisplay.userNickname,
                     selecting = selecting,
                     selectedItems = selectedItems,
+                    shownTranscriptions = shownTranscriptions,
+                    onAudioLongClick = { node, audio ->
+                        voiceActionTarget = VoiceActionTarget(node, audio)
+                    },
                     modifier = modifier
                 )
             }
@@ -585,6 +613,10 @@ fun ChatMessageTurn(
                     onTypingStateChange = onTypingStateChange,
                     selecting = selecting,
                     selectedItems = selectedItems,
+                    shownTranscriptions = shownTranscriptions,
+                    onAudioLongClick = { node, audio ->
+                        voiceActionTarget = VoiceActionTarget(node, audio)
+                    },
                     modifier = modifier
                 )
             }
@@ -623,6 +655,42 @@ fun ChatMessageTurn(
             onDismissRequest = { showSelectCopySheet = false }
         )
     }
+
+    // ✨ 语音消息长按操作表
+    val voiceTarget = voiceActionTarget
+    if (voiceTarget != null) {
+        val transcription = voiceTarget.audio.metadata?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
+            ?.jsonPrimitiveOrNull
+            ?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+        val isTranscriptionShown = voiceTarget.audio.url in shownTranscriptions
+        VoiceMessageActionsSheet(
+            target = voiceTarget,
+            showTranscription = isTranscriptionShown,
+            onSelectMode = { node ->
+                voiceActionTarget = null
+                selectedItems.clear()
+                selectedItems.add(node.id)
+                // 通知父组件进入多选模式：复用 onShare 语义（ChatList 里 onShare 实现就是进入多选）
+                onShare(node)
+            },
+            onDelete = { node ->
+                voiceActionTarget = null
+                onDelete(node)
+            },
+            onToggleTranscription = {
+                if (transcription == null) {
+                    // 无转写内容时忽略（按钮本身已禁用，这里做兜底）
+                } else if (isTranscriptionShown) {
+                    shownTranscriptions.remove(voiceTarget.audio.url)
+                } else {
+                    shownTranscriptions.add(voiceTarget.audio.url)
+                }
+                voiceActionTarget = null
+            },
+            onDismiss = { voiceActionTarget = null }
+        )
+    }
 }
 
 @Composable
@@ -647,7 +715,38 @@ private fun WeChatRegenerateButton(
 }
 
 /**
+ * 用户消息 turn 内部的单个渲染条目：文本 或 语音，统一按顺序混排。
+ */
+private sealed class UserRenderItem {
+    abstract val node: MessageNode
+    /** 是否是 turn 内的首个渲染条目（用于 BubblePosition.FIRST） */
+    abstract val isFirstInTurn: Boolean
+    /** 是否是 turn 内的最后个渲染条目（用于 BubblePosition.LAST / regenerate 按钮） */
+    abstract val isLastInTurn: Boolean
+    /** turn 内总条目数（用于判断 SINGLE） */
+    abstract val totalInTurn: Int
+
+    data class TextItem(
+        override val node: MessageNode,
+        val part: UIMessagePart.Text,
+        val quoteMarkdown: String,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : UserRenderItem()
+
+    data class AudioItem(
+        override val node: MessageNode,
+        val part: UIMessagePart.Audio,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : UserRenderItem()
+}
+
+/**
  * User message turn - right-aligned stacked bubbles.
+ * 同一 turn 内的 Text / Audio 按 node 顺序 + part 原始顺序混合渲染，不再文字和语音分离。
  */
 @Composable
 private fun UserMessageTurn(
@@ -668,6 +767,8 @@ private fun UserMessageTurn(
     userNickname: String,
     selecting: Boolean,
     selectedItems: MutableList<Uuid>,
+    shownTranscriptions: MutableSet<String>,
+    onAudioLongClick: (node: MessageNode, audio: UIMessagePart.Audio) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)
@@ -704,144 +805,171 @@ private fun UserMessageTurn(
                 }
             }
 
-            group.filteredNodes.forEachIndexed { nodeIndex, node ->
-                val textParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Text>()
-                // 提取引用标记（若存在），用于在首个文本气泡内渲染引用块
-                val quotePart = node.currentMessage.parts.filterIsInstance<UIMessagePart.Quote>().firstOrNull()
-                textParts.forEachIndexed { partIndex, part ->
-                    val isFirst = nodeIndex == 0 && partIndex == 0
-                    val isLastPart = nodeIndex == group.filteredNodes.lastIndex && partIndex == textParts.lastIndex
-                    val totalBubbles = group.filteredNodes.sumOf { n ->
-                        n.currentMessage.parts.filterIsInstance<UIMessagePart.Text>().size
-                    }
-                    val position = if (wechatMode) BubblePosition.SINGLE else when {
-                        totalBubbles == 1 -> BubblePosition.SINGLE
-                        isFirst -> BubblePosition.FIRST
-                        isLastPart -> BubblePosition.LAST
-                        else -> BubblePosition.MIDDLE
-                    }
-
-                    // 在第一个文本气泡内显示引用块（只显示引用内容，不显示提示词）
-                    val quoteMarkdown = if (isFirst && quotePart != null) {
-                        buildString {
-                            append("> ")
-                            append(quotePart.senderName)
-                            append(": ")
-                            append(quotePart.content.replace("\n", "\n> "))
-                            append("\n\n")
-                        }
-                    } else ""
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        if (wechatMode && isLastPart && showRegenerate) {
-                            WeChatRegenerateButton(onClick = onRegenerate)
-                        }
-
-                        GroupedMessageBubble(
-                            position = position,
-                            role = BubbleRole.USER,
-                            modifier = Modifier.widthIn(max = maxWidth),
-                            containerColor = if (wechatMode) WeChatUserGreen else null,
-                            contentColor = if (wechatMode) WeChatTextBlack else null,
-                            onClick = {
-                                haptics.perform(HapticPattern.Pop)
-                                if (selecting) {
-                                    if (node.id in selectedItems) selectedItems.remove(node.id)
-                                    else selectedItems.add(node.id)
-                                } else {
-                                    onBubbleClick(node)
-                                }
-                            }
-                        ) {
-                            MarkdownBlock(
-                                content = (quoteMarkdown + part.text).replaceRegexes(
-                                    assistant = assistant,
-                                    scope = AssistantAffectScope.USER,
-                                    visual = true,
-                                ),
-                                onClickCitation = {}
-                            )
-                        }
-
-                        if (wechatMode) {
-                            Spacer(Modifier.width(8.dp))
-                            UIAvatar(
-                                name = userNickname,
-                                value = userAvatar,
-                                modifier = Modifier.size(40.dp),
-                                onClick = {
-                                    navController.navigate(Screen.SettingUserProfile)
-                                }
-                            )
-                        }
-
-                        if (selecting) {
-                            Checkbox(
-                                checked = node.id in selectedItems,
-                                onCheckedChange = {
-                                    if (it) selectedItems.add(node.id)
-                                    else selectedItems.remove(node.id)
-                                },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = MaterialTheme.colorScheme.primary,
-                                    uncheckedColor = MaterialTheme.colorScheme.outline
+            // ✨ 混合渲染：按 node 顺序 + part 原始顺序，把 Text 和 Audio 展平成统一的渲染条目列表
+            val renderItems = remember(group.filteredNodes, assistant) {
+                val flat = mutableListOf<UserRenderItem>()
+                var globalQuoteMarkdown: String? = null
+                group.filteredNodes.forEachIndexed { _, node ->
+                    val quotePart = node.currentMessage.parts
+                        .filterIsInstance<UIMessagePart.Quote>()
+                        .firstOrNull()
+                    var firstTextInNode = true
+                    node.currentMessage.parts.forEach { part ->
+                        when (part) {
+                            is UIMessagePart.Text -> {
+                                val quote = if (firstTextInNode && quotePart != null && globalQuoteMarkdown == null) {
+                                    buildString {
+                                        append("> ")
+                                        append(quotePart.senderName)
+                                        append(": ")
+                                        append(quotePart.content.replace("\n", "\n> "))
+                                        append("\n\n")
+                                    }.also { globalQuoteMarkdown = it }
+                                } else if (firstTextInNode && globalQuoteMarkdown != null) {
+                                    // 跨 node 的首个 text 也不再重复引用块
+                                    ""
+                                } else ""
+                                firstTextInNode = false
+                                flat += UserRenderItem.TextItem(
+                                    node = node,
+                                    part = part,
+                                    quoteMarkdown = quote,
+                                    isFirstInTurn = false,
+                                    isLastInTurn = false,
+                                    totalInTurn = 0
                                 )
-                            )
+                            }
+                            is UIMessagePart.Audio -> {
+                                flat += UserRenderItem.AudioItem(
+                                    node = node,
+                                    part = part,
+                                    isFirstInTurn = false,
+                                    isLastInTurn = false,
+                                    totalInTurn = 0
+                                )
+                            }
+                            else -> Unit
                         }
+                    }
+                }
+                val total = flat.size
+                flat.mapIndexed { index, item ->
+                    val first = index == 0
+                    val last = index == flat.lastIndex
+                    when (item) {
+                        is UserRenderItem.TextItem -> item.copy(
+                            isFirstInTurn = first,
+                            isLastInTurn = last,
+                            totalInTurn = total
+                        )
+                        is UserRenderItem.AudioItem -> item.copy(
+                            isFirstInTurn = first,
+                            isLastInTurn = last,
+                            totalInTurn = total
+                        )
                     }
                 }
             }
 
-            // 语音消息：每个 Audio Part 渲染为一个语音条（右对齐，含微信模式头像）
-            group.filteredNodes.forEach { node ->
-                val audioParts = node.currentMessage.parts.filterIsInstance<UIMessagePart.Audio>()
-                audioParts.forEach { audio ->
-                    val durationMs = audio.metadata?.get(AudioToTextTransformer.METADATA_DURATION_MS)
-                        ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        VoiceMessageBubble(
-                            audioUrl = audio.url,
-                            durationMs = durationMs,
-                            isUser = true,
-                            selecting = selecting,
-                            onClick = {
-                                if (node.id in selectedItems) selectedItems.remove(node.id)
-                                else selectedItems.add(node.id)
-                            },
-                            containerColor = if (wechatMode) WeChatUserGreen else MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.widthIn(max = maxWidth)
-                        )
-                        if (wechatMode) {
-                            Spacer(Modifier.width(8.dp))
-                            UIAvatar(
-                                name = userNickname,
-                                value = userAvatar,
-                                modifier = Modifier.size(40.dp),
+            renderItems.forEach { item ->
+                val node = item.node
+                val position = if (wechatMode) BubblePosition.SINGLE else when {
+                    item.totalInTurn == 1 -> BubblePosition.SINGLE
+                    item.isFirstInTurn -> BubblePosition.FIRST
+                    item.isLastInTurn -> BubblePosition.LAST
+                    else -> BubblePosition.MIDDLE
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    if (wechatMode && item.isLastInTurn && showRegenerate) {
+                        WeChatRegenerateButton(onClick = onRegenerate)
+                    }
+
+                    when (item) {
+                        is UserRenderItem.TextItem -> {
+                            GroupedMessageBubble(
+                                position = position,
+                                role = BubbleRole.USER,
+                                modifier = Modifier.widthIn(max = maxWidth),
+                                containerColor = if (wechatMode) WeChatUserGreen else null,
+                                contentColor = if (wechatMode) WeChatTextBlack else null,
                                 onClick = {
-                                    navController.navigate(Screen.SettingUserProfile)
+                                    haptics.perform(HapticPattern.Pop)
+                                    if (selecting) {
+                                        if (node.id in selectedItems) selectedItems.remove(node.id)
+                                        else selectedItems.add(node.id)
+                                    } else {
+                                        onBubbleClick(node)
+                                    }
                                 }
-                            )
-                        }
-                        if (selecting) {
-                            Checkbox(
-                                checked = node.id in selectedItems,
-                                onCheckedChange = {
-                                    if (it) selectedItems.add(node.id)
-                                    else selectedItems.remove(node.id)
-                                },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = MaterialTheme.colorScheme.primary,
-                                    uncheckedColor = MaterialTheme.colorScheme.outline
+                            ) {
+                                MarkdownBlock(
+                                    content = (item.quoteMarkdown + item.part.text).replaceRegexes(
+                                        assistant = assistant,
+                                        scope = AssistantAffectScope.USER,
+                                        visual = true,
+                                    ),
+                                    onClickCitation = {}
                                 )
+                            }
+                        }
+
+                        is UserRenderItem.AudioItem -> {
+                            val audio = item.part
+                            val durationMs = audio.metadata?.get(AudioToTextTransformer.METADATA_DURATION_MS)
+                                ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
+                            val transcription = audio.metadata?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
+                                ?.jsonPrimitiveOrNull?.contentOrNull
+                                ?.takeIf { it.isNotBlank() }
+                            VoiceMessageBubble(
+                                audioUrl = audio.url,
+                                durationMs = durationMs,
+                                isUser = true,
+                                selecting = selecting,
+                                onClick = {
+                                    if (selecting) {
+                                        if (node.id in selectedItems) selectedItems.remove(node.id)
+                                        else selectedItems.add(node.id)
+                                    }
+                                },
+                                onLongClick = {
+                                    onAudioLongClick(node, audio)
+                                },
+                                showTranscription = audio.url in shownTranscriptions,
+                                transcription = transcription,
+                                containerColor = if (wechatMode) WeChatUserGreen else MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.widthIn(max = maxWidth)
                             )
                         }
+                    }
+
+                    if (wechatMode) {
+                        Spacer(Modifier.width(8.dp))
+                        UIAvatar(
+                            name = userNickname,
+                            value = userAvatar,
+                            modifier = Modifier.size(40.dp),
+                            onClick = {
+                                navController.navigate(Screen.SettingUserProfile)
+                            }
+                        )
+                    }
+
+                    if (selecting) {
+                        Checkbox(
+                            checked = node.id in selectedItems,
+                            onCheckedChange = {
+                                if (it) selectedItems.add(node.id)
+                                else selectedItems.remove(node.id)
+                            },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = MaterialTheme.colorScheme.primary,
+                                uncheckedColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
                     }
                 }
             }
@@ -905,7 +1033,42 @@ private fun UserMessageTurn(
 }
 
 /**
+ * Assistant 消息 turn 内部的单个渲染条目：Text / Reasoning / Audio，统一按顺序混排。
+ */
+private sealed class AssistantRenderItem {
+    abstract val node: MessageNode
+    abstract val isFirstInTurn: Boolean
+    abstract val isLastInTurn: Boolean
+    abstract val totalInTurn: Int
+
+    data class TextItem(
+        override val node: MessageNode,
+        val part: UIMessagePart.Text,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
+
+    data class ReasoningItem(
+        override val node: MessageNode,
+        val part: UIMessagePart.Reasoning,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
+
+    data class AudioItem(
+        override val node: MessageNode,
+        val part: UIMessagePart.Audio,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
+}
+
+/**
  * Assistant message turn - name + avatar at top, activity pill, stacked bubbles.
+ * 同一 turn 内的 Text / Reasoning / Audio 按 node 顺序 + part 原始顺序混合渲染。
  */
 @Composable
 private fun AssistantMessageTurn(
@@ -935,6 +1098,8 @@ private fun AssistantMessageTurn(
     onTypingStateChange: (Boolean) -> Unit = {},
     selecting: Boolean = false,
     selectedItems: MutableList<Uuid> = mutableStateListOf(),
+    shownTranscriptions: MutableSet<String>,
+    onAudioLongClick: (node: MessageNode, audio: UIMessagePart.Audio) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val settings = LocalSettings.current
@@ -953,28 +1118,55 @@ private fun AssistantMessageTurn(
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     val hasInterestingActivity = activityState !is ActivityState.Hidden && !wechatMode
 
-    // ✨ Modified: Never include Reasoning parts in WeChat mode
-    val allTextBubbles = remember(group.filteredNodes, wechatMode, effectiveDisplay.autoCloseThinking) {
-        mutableListOf<Pair<MessageNode, UIMessagePart>>().apply {
-            group.filteredNodes.forEach { node ->
-                node.currentMessage.parts.forEach { part ->
-                    if (part is UIMessagePart.Text && part.text.isNotBlank()) {
-                        // 微信模式下节点本身就是分句结果（Service 层按标点分句存储），UI 无需再切分
-                        add(node to part)
-                    } else if (part is UIMessagePart.Reasoning && !effectiveDisplay.autoCloseThinking && !wechatMode) {
-                        // ✨ Reasoning is only added if auto-collapse is OFF AND NOT in WeChat mode
-                        if (part.reasoning.isNotBlank()) {
-                            add(node to part)
+    // ✨ 混合渲染：按 node 顺序 + part 原始顺序，展平 Text / Reasoning / Audio
+    val renderItems: List<AssistantRenderItem> = remember(
+        group.filteredNodes,
+        wechatMode,
+        effectiveDisplay.autoCloseThinking
+    ) {
+        val flat = mutableListOf<AssistantRenderItem>()
+        group.filteredNodes.forEach { node ->
+            node.currentMessage.parts.forEach { part ->
+                when (part) {
+                    is UIMessagePart.Text -> {
+                        if (part.text.isNotBlank()) {
+                            flat += AssistantRenderItem.TextItem(
+                                node = node, part = part,
+                                isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                            )
                         }
                     }
+                    is UIMessagePart.Reasoning -> {
+                        if (!effectiveDisplay.autoCloseThinking && !wechatMode && part.reasoning.isNotBlank()) {
+                            flat += AssistantRenderItem.ReasoningItem(
+                                node = node, part = part,
+                                isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                            )
+                        }
+                    }
+                    is UIMessagePart.Audio -> {
+                        flat += AssistantRenderItem.AudioItem(
+                            node = node, part = part,
+                            isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                        )
+                    }
+                    else -> Unit
                 }
+            }
+        }
+        val total = flat.size
+        flat.mapIndexed { index, item ->
+            val first = index == 0
+            val last = index == flat.lastIndex
+            when (item) {
+                is AssistantRenderItem.TextItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
+                is AssistantRenderItem.ReasoningItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
+                is AssistantRenderItem.AudioItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
             }
         }
     }
 
     // --- WeChat Mode Dynamics ---
-    // 微信模式下，节点由 Service 层按标点分句逐句存入（含 delay 节奏），UI 无需延迟动画，直接按节点渲染。
-    // onTypingStateChange 用于通知父组件"正在生成"状态（由 loading 驱动）。
     LaunchedEffect(loading, wechatMode) {
         if (wechatMode) {
             onTypingStateChange(loading)
@@ -984,6 +1176,137 @@ private fun AssistantMessageTurn(
     }
 
     val elementSpacing = 4.dp
+
+    @Composable
+    fun RenderBubbles(withBubbleContainer: Boolean) {
+        renderItems.forEach { item ->
+            val node = item.node
+            val position = if (wechatMode) BubblePosition.SINGLE else when {
+                item.totalInTurn == 1 -> BubblePosition.SINGLE
+                item.isFirstInTurn -> BubblePosition.FIRST
+                item.isLastInTurn -> BubblePosition.LAST
+                else -> BubblePosition.MIDDLE
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Start
+            ) {
+                if (selecting) {
+                    Checkbox(
+                        checked = node.id in selectedItems,
+                        onCheckedChange = {
+                            if (it) selectedItems.add(node.id)
+                            else selectedItems.remove(node.id)
+                        },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary,
+                            uncheckedColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+                }
+
+                if (wechatMode) {
+                    UIAvatar(
+                        name = avatarName,
+                        modifier = Modifier.size(40.dp),
+                        value = avatarValue,
+                        onClick = onAvatarClick
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+
+                when (item) {
+                    is AssistantRenderItem.ReasoningItem -> {
+                        ReasoningFlowBlock(
+                            content = item.part.reasoning,
+                            modifier = if (withBubbleContainer) Modifier
+                                .widthIn(max = maxWidth)
+                                .padding(vertical = 4.dp)
+                            else Modifier.padding(vertical = 4.dp),
+                            onClick = {
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                } else {
+                                    onBubbleClick(node)
+                                }
+                            }
+                        )
+                    }
+
+                    is AssistantRenderItem.TextItem -> {
+                        val onClickBubble: () -> Unit = {
+                            haptics.perform(HapticPattern.Pop)
+                            if (selecting) {
+                                if (node.id in selectedItems) selectedItems.remove(node.id)
+                                else selectedItems.add(node.id)
+                            } else {
+                                onBubbleClick(node)
+                            }
+                        }
+                        if (withBubbleContainer) {
+                            GroupedMessageBubble(
+                                position = position,
+                                role = BubbleRole.ASSISTANT,
+                                modifier = Modifier.widthIn(max = maxWidth),
+                                containerColor = if (wechatMode) WeChatAiWhite else null,
+                                contentColor = if (wechatMode) WeChatTextBlack else null,
+                                onClick = onClickBubble
+                            ) {
+                                MarkdownBlock(
+                                    content = item.part.text.replaceRegexes(
+                                        assistant = assistant,
+                                        scope = AssistantAffectScope.ASSISTANT,
+                                        visual = true
+                                    ),
+                                    onClickCitation = { onCitationClick(it) }
+                                )
+                            }
+                        } else {
+                            MarkdownBlock(
+                                content = item.part.text.replaceRegexes(
+                                    assistant = assistant,
+                                    scope = AssistantAffectScope.ASSISTANT,
+                                    visual = true
+                                ),
+                                onClickCitation = { id -> onCitationClick(id) },
+                                modifier = Modifier.clickable(onClick = onClickBubble)
+                            )
+                        }
+                    }
+
+                    is AssistantRenderItem.AudioItem -> {
+                        val audio = item.part
+                        val durationMs = audio.metadata?.get(AudioToTextTransformer.METADATA_DURATION_MS)
+                            ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
+                        val transcription = audio.metadata?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
+                            ?.jsonPrimitiveOrNull?.contentOrNull
+                            ?.takeIf { it.isNotBlank() }
+                        VoiceMessageBubble(
+                            audioUrl = audio.url,
+                            durationMs = durationMs,
+                            isUser = false,
+                            selecting = selecting,
+                            onClick = {
+                                if (selecting) {
+                                    if (node.id in selectedItems) selectedItems.remove(node.id)
+                                    else selectedItems.add(node.id)
+                                }
+                            },
+                            onLongClick = {
+                                onAudioLongClick(node, audio)
+                            },
+                            showTranscription = audio.url in shownTranscriptions,
+                            transcription = transcription,
+                            containerColor = if (wechatMode) WeChatAiWhite else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.widthIn(max = maxWidth)
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -1057,90 +1380,7 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            val bubblesToShow = allTextBubbles
-            bubblesToShow.forEachIndexed { index, (node, part) ->
-                val isLastBubble = index == allTextBubbles.lastIndex
-                val position = if (wechatMode) BubblePosition.SINGLE else when {
-                    allTextBubbles.size == 1 -> BubblePosition.SINGLE
-                    index == 0 -> BubblePosition.FIRST
-                    isLastBubble -> BubblePosition.LAST
-                    else -> BubblePosition.MIDDLE
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    if (selecting) {
-                        Checkbox(
-                            checked = node.id in selectedItems,
-                            onCheckedChange = {
-                                if (it) selectedItems.add(node.id)
-                                else selectedItems.remove(node.id)
-                            },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = MaterialTheme.colorScheme.primary,
-                                uncheckedColor = MaterialTheme.colorScheme.outline
-                            )
-                        )
-                    }
-
-                    if (wechatMode) {
-                        UIAvatar(
-                            name = avatarName,
-                            modifier = Modifier.size(40.dp),
-                            value = avatarValue,
-                            onClick = onAvatarClick
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-
-                    if (part is UIMessagePart.Reasoning) {
-                        // ✨ Render reasoning as a flow box when not collapsed (already excluded in WeChat mode)
-                        ReasoningFlowBlock(
-                            content = part.reasoning,
-                            modifier = Modifier
-                                .widthIn(max = maxWidth)
-                                .padding(vertical = 4.dp),
-                            onClick = {
-                                if (selecting) {
-                                    if (node.id in selectedItems) selectedItems.remove(node.id)
-                                    else selectedItems.add(node.id)
-                                } else {
-                                    onBubbleClick(node)
-                                }
-                            }
-                        )
-                    } else {
-                        GroupedMessageBubble(
-                            position = position,
-                            role = BubbleRole.ASSISTANT,
-                            modifier = Modifier.widthIn(max = maxWidth),
-                            containerColor = if (wechatMode) WeChatAiWhite else null,
-                            contentColor = if (wechatMode) WeChatTextBlack else null,
-                            onClick = {
-                                haptics.perform(HapticPattern.Pop)
-                                if (selecting) {
-                                    if (node.id in selectedItems) selectedItems.remove(node.id)
-                                    else selectedItems.add(node.id)
-                                } else {
-                                    onBubbleClick(node)
-                                }
-                            }
-                        ) {
-                            val contentText = if (part is UIMessagePart.Text) part.text else ""
-                            MarkdownBlock(
-                                content = contentText.replaceRegexes(
-                                    assistant = assistant,
-                                    scope = AssistantAffectScope.ASSISTANT,
-                                    visual = true
-                                ),
-                                onClickCitation = { onCitationClick(it) }
-                            )
-                        }
-                    }
-                }
-            }
+            RenderBubbles(withBubbleContainer = true)
         } else {
             // Non-bubble mode
             if (!wechatMode) {
@@ -1184,122 +1424,7 @@ private fun AssistantMessageTurn(
                 }
             }
 
-            val bubblesToShow = allTextBubbles
-            bubblesToShow.forEachIndexed { index, (node, part) ->
-                val isLastBubble = index == allTextBubbles.lastIndex
-
-                // ✨ Determine what to render based on part type
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (selecting) {
-                        Checkbox(
-                            checked = node.id in selectedItems,
-                            onCheckedChange = {
-                                if (it) selectedItems.add(node.id)
-                                else selectedItems.remove(node.id)
-                            },
-                            colors = CheckboxDefaults.colors(
-                                checkedColor = MaterialTheme.colorScheme.primary,
-                                uncheckedColor = MaterialTheme.colorScheme.outline
-                            )
-                        )
-                    }
-
-                    if (wechatMode) {
-                        UIAvatar(
-                            name = avatarName,
-                            modifier = Modifier.size(40.dp),
-                            value = avatarValue,
-                            onClick = onAvatarClick
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-
-                    if (part is UIMessagePart.Reasoning) {
-                        ReasoningFlowBlock(
-                            content = part.reasoning,
-                            modifier = Modifier.padding(vertical = 4.dp),
-                            onClick = {
-                                if (selecting) {
-                                    if (node.id in selectedItems) selectedItems.remove(node.id)
-                                    else selectedItems.add(node.id)
-                                } else {
-                                    onBubbleClick(node)
-                                }
-                            }
-                        )
-                    } else {
-                        val contentText = if (part is UIMessagePart.Text) part.text else ""
-                        MarkdownBlock(
-                            content = contentText.replaceRegexes(
-                                assistant = assistant,
-                                scope = AssistantAffectScope.ASSISTANT,
-                                visual = true
-                            ),
-                            onClickCitation = { id -> onCitationClick(id) },
-                            modifier = Modifier.clickable {
-                                haptics.perform(HapticPattern.Pop)
-                                if (selecting) {
-                                    if (node.id in selectedItems) selectedItems.remove(node.id)
-                                    else selectedItems.add(node.id)
-                                } else {
-                                    onBubbleClick(node)
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // 语音消息：Assistant 返回的 Audio Part 渲染为语音条（左对齐，含微信模式头像）
-        val assistantAudios = remember(group.filteredNodes) {
-            group.filteredNodes.flatMap { node ->
-                node.currentMessage.parts.filterIsInstance<UIMessagePart.Audio>().map { node to it }
-            }
-        }
-        assistantAudios.forEach { (node, audio) ->
-            val durationMs = audio.metadata?.get(AudioToTextTransformer.METADATA_DURATION_MS)
-                ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Start
-            ) {
-                if (selecting) {
-                    Checkbox(
-                        checked = node.id in selectedItems,
-                        onCheckedChange = {
-                            if (it) selectedItems.add(node.id)
-                            else selectedItems.remove(node.id)
-                        },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary,
-                            uncheckedColor = MaterialTheme.colorScheme.outline
-                        )
-                    )
-                }
-                if (wechatMode) {
-                    UIAvatar(
-                        name = avatarName,
-                        modifier = Modifier.size(40.dp),
-                        value = avatarValue,
-                        onClick = onAvatarClick
-                    )
-                    Spacer(Modifier.width(8.dp))
-                }
-                VoiceMessageBubble(
-                    audioUrl = audio.url,
-                    durationMs = durationMs,
-                    isUser = false,
-                    selecting = selecting,
-                    onClick = {
-                        if (node.id in selectedItems) selectedItems.remove(node.id)
-                        else selectedItems.add(node.id)
-                    },
-                    containerColor = if (wechatMode) WeChatAiWhite else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.widthIn(max = maxWidth)
-                )
-            }
+            RenderBubbles(withBubbleContainer = false)
         }
 
         if (showTokenUsage && group.combinedUsage != null && !loading && (!wechatMode || BuildConfig.DEBUG)) {
@@ -1440,6 +1565,152 @@ private fun TokenStatisticsInline(
                     color = grayColor
                 )
             }
+        }
+    }
+}
+
+/**
+ * 语音消息长按弹出的操作表：多选 / 删除 / 转文字 或 取消转文字
+ *
+ * @param target 长按的语音消息目标
+ * @param showTranscription 当前是否已显示转写文字（决定按钮文字：转文字 vs 取消转文字）
+ * @param onSelectMode 开启多选模式
+ * @param onDelete 删除该消息
+ * @param onToggleTranscription 切换转写显示状态
+ * @param onDismiss 关闭弹层
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VoiceMessageActionsSheet(
+    target: VoiceActionTarget?,
+    showTranscription: Boolean,
+    onSelectMode: (MessageNode) -> Unit,
+    onDelete: (MessageNode) -> Unit,
+    onToggleTranscription: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (target == null) return
+    val sheetState = rememberModalBottomSheetState(
+        confirmValueChange = { it != SheetValue.PartiallyExpanded },
+        skipPartiallyExpanded = true
+    )
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        modifier = Modifier.fillMaxSize(),
+        dragHandle = null,
+        tonalElevation = 0.dp,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // 1. 多选
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable {
+                        onSelectMode(target.node)
+                        onDismiss()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.SelectAll,
+                    contentDescription = "多选",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = stringResource(R.string.chat_page_multi_select),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            // 2. 删除
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable {
+                        onDelete(target.node)
+                        onDismiss()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.DeleteOutline,
+                    contentDescription = "删除",
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Text(
+                    text = stringResource(R.string.delete),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            // 3. 转文字 / 取消转文字
+            val hasTranscription = (target.audio.metadata?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
+                ?.jsonPrimitiveOrNull?.contentOrNull?.isNotBlank() == true)
+            if (hasTranscription) {
+                val icon = if (showTranscription) Icons.Rounded.VisibilityOff else Icons.Rounded.TextFields
+                val labelId = if (showTranscription) R.string.chat_voice_hide_transcription else R.string.chat_voice_transcribe
+                val labelColor = if (showTranscription) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable {
+                            onToggleTranscription()
+                            onDismiss()
+                        }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = stringResource(labelId),
+                        tint = if (showTranscription) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(labelId),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = labelColor
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.TextFields,
+                        contentDescription = stringResource(R.string.chat_voice_transcribe),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = stringResource(R.string.chat_voice_no_transcription),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

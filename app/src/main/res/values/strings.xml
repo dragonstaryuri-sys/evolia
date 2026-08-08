@@ -1854,6 +1854,9 @@
   <string name="chat_voice_message">Voice message</string>
   <string name="chat_voice_play">Play</string>
   <string name="chat_voice_pause">Pause</string>
+  <string name="chat_voice_transcribe">Transcribe</string>
+  <string name="chat_voice_hide_transcription">Hide transcription</string>
+  <string name="chat_voice_no_transcription">No transcription available</string>
   <string name="setting_provider_page_audio">Audio</string>
   <!-- Diary feature upgrade -->
   <string name="diary_view_list">List</string>

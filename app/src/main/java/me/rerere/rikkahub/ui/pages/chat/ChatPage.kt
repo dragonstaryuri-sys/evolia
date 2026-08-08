@@ -288,14 +288,6 @@ private fun ChatPageContent(
         vm.voiceEvents.collect { msg -> toaster.show(msg, ToastType.Error) }
     }
 
-    // 达到录音最长时长（59s）时，自动停录并发送
-    LaunchedEffect(voiceRecorderController) {
-        voiceRecorderController.autoStopEvents.collect {
-            val result = voiceRecorderController.stop()
-            handleVoiceMessageReady(result)
-        }
-    }
-
     fun handleVoiceMessageReady(result: me.rerere.rikkahub.service.voice.VoiceRecorderResult?) {
         if (result == null) {
             toaster.show(context.getString(R.string.chat_voice_too_short), ToastType.Info)
@@ -306,6 +298,14 @@ private fun ChatPageContent(
             return
         }
         vm.sendVoiceMessage(result.uri, result.durationMs)
+    }
+
+    // 达到录音最长时长（59s）时，自动停录并发送
+    LaunchedEffect(voiceRecorderController) {
+        voiceRecorderController.autoStopEvents.collect {
+            val result = voiceRecorderController.stop()
+            handleVoiceMessageReady(result)
+        }
     }
 
     val pagingState by vm.chatPaginationState.collectAsStateWithLifecycle()

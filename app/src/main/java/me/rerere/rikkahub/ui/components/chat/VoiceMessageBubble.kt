@@ -1,15 +1,23 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -65,7 +74,10 @@ val LocalVoiceMessagePlayer = compositionLocalOf<VoiceMessagePlayer?> { null }
  * @param containerColor 气泡背景色（由调用方传入以匹配微信模式等自定义配色）
  * @param contentColor 气泡内容色
  * @param selecting 是否处于多选模式；为 true 时点击走 [onClick]（由上层切换选中），不再触发播放
- * @param onClick 点击回调（默认走播放器 toggle，可覆盖用于长按等）
+ * @param onClick 点击回调（selecting=true 时必走；否则默认走 toggle 播放）
+ * @param onLongClick 长按回调（用于弹出操作表：多选/删除/转文字）
+ * @param showTranscription 是否在气泡下方显示转写内容
+ * @param transcription 转写内容（纯文本，不包含"用户发送了一条语音…"前缀）
  */
 @Composable
 fun VoiceMessageBubble(
@@ -76,7 +88,10 @@ fun VoiceMessageBubble(
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     selecting: Boolean = false,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
+    showTranscription: Boolean = false,
+    transcription: String? = null,
 ) {
     val player = LocalVoiceMessagePlayer.current
     val playback by (player?.playback?.collectAsState() ?: remember { androidx.compose.runtime.mutableStateOf(null) })
@@ -97,61 +112,98 @@ fun VoiceMessageBubble(
     // 宽度固定，不随时长变化（保持简洁一致的视觉）
     val bubbleWidth = 120.dp
 
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = containerColor,
-        onClick = {
-            if (selecting) {
-                onClick()
-            } else if (player != null) {
-                player.playOrToggle(key, audioUrl.toUri())
-            } else {
-                onClick()
-            }
-        },
-        modifier = modifier.width(bubbleWidth)
+    val bubbleModifier = Modifier
+        .width(bubbleWidth)
+        .combinedClickable(
+            onClick = {
+                if (selecting) {
+                    onClick()
+                } else if (player != null) {
+                    player.playOrToggle(key, audioUrl.toUri())
+                } else {
+                    onClick()
+                }
+            },
+            onLongClick = onLongClick
+        )
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+        modifier = modifier
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = containerColor,
+            modifier = bubbleModifier
         ) {
-            // 用户消息：图标在右；AI 消息：图标在左
-            if (!isUser) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = iconContentDescription,
-                    tint = contentColor,
-                    modifier = Modifier.size(22.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                // 用户消息：图标在右；AI 消息：图标在左
+                if (!isUser) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = iconContentDescription,
+                        tint = contentColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+
+                VoiceWaveform(
+                    isPlaying = isPlaying,
+                    progress = progress,
+                    color = contentColor,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(20.dp)
                 )
+
                 Spacer(Modifier.width(8.dp))
+                Text(
+                    text = formatVoiceDuration(actualDuration),
+                    color = contentColor,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (isUser) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = iconContentDescription,
+                        tint = contentColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
+        }
 
-            VoiceWaveform(
-                isPlaying = isPlaying,
-                progress = progress,
-                color = contentColor,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(20.dp)
-            )
-
-            Spacer(Modifier.width(8.dp))
+        // 下方转写内容：纯文本，不拼接前缀
+        AnimatedVisibility(
+            visible = showTranscription && transcription?.isNotBlank() == true,
+            enter = expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeIn(),
+            exit = shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeOut()
+        ) {
+            val transcriptionBg = if (isUser) {
+                // 用户侧：浅一点的 primaryContainer 同色系半透明
+                containerColor.copy(alpha = 0.35f)
+            } else {
+                // 助手侧：surface 层级半透明
+                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f)
+            }
             Text(
-                text = formatVoiceDuration(actualDuration),
-                color = contentColor,
-                style = MaterialTheme.typography.bodyMedium
+                text = transcription!!,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .width(bubbleWidth + 80.dp) // 文本比语音条稍宽，提升可读性
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(transcriptionBg)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             )
-
-            if (isUser) {
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    imageVector = icon,
-                    contentDescription = iconContentDescription,
-                    tint = contentColor,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
         }
     }
 }

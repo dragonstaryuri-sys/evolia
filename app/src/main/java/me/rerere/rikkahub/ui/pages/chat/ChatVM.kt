@@ -425,11 +425,13 @@ class ChatVM(
     /**
      * 发送语音消息。
      *
-     * 流程：
-     * 1. 多模态模型：直接发送 Audio Part，由 Provider 编码音频。
-     * 2. 非多模态模型：**先入列显示语音条**（answer=false，不触发 AI），
-     *    后台异步 ASR 转写，完成后更新消息 metadata 并触发 AI 回复。
-     *    ASR 失败/未配置时仍触发 AI（[AudioToTextTransformer] 会回退为占位文本）。
+     * 流程（无论模型是否支持音频，都会做 ASR 并存入 metadata → chat_messages）：
+     * 1. 语音条**立即入列**显示（answer=false，不触发 AI）。
+     * 2. 后台异步 ASR 转文字，完成后更新消息 metadata。
+     * 3. 调用 triggerAIResponse 触发 AI 回复：
+     *    - 支持音频输入的模型："最后一条 USER Audio"会保留给模型直接接收，
+     *      历史 USER Audio + 所有 ASSISTANT Audio 转为文本（省 token、更精准）。
+     *    - 不支持音频输入的模型：全部 Audio 转为 Text 发送。
      *
      * @param audioUri 录音文件 Uri（file:// 形式）
      * @param durationMs 录音时长（毫秒）
@@ -437,64 +439,44 @@ class ChatVM(
     fun sendVoiceMessage(audioUri: Uri, durationMs: Long) {
         viewModelScope.launch {
             val currentSettings = settingsStore.settingsFlow.value
-            val model = currentSettings.getCurrentChatModel()
-            val supportsAudio = model?.inputModalities?.contains(Modality.AUDIO) == true
 
             val targetId = _currentActiveId.value
             trackConversation(targetId)
 
+            // 1. 立即入列显示语音条（answer=false，暂不触发 AI）
             val audioPart = UIMessagePart.Audio(
                 url = audioUri.toString(),
                 metadata = buildJsonObject {
                     put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
                 }
             )
-
-            // 多模态：直接发送语音，由 AI 自行理解音频
-            if (supportsAudio) {
-                chatService.sendMessage(
-                    conversationId = targetId,
-                    content = listOf(audioPart),
-                    answer = true,
-                    includeSkipContextMessages = true
-                )
-                conversation.value.messageNodes.lastOrNull()?.let {
-                    paginationManager?.injectNewNode(it)
-                }
-                return@launch
-            }
-
-            // 非多模态：先入列显示语音条（answer=false，不触发 AI）
             chatService.sendMessage(
                 conversationId = targetId,
                 content = listOf(audioPart),
                 answer = false,
                 includeSkipContextMessages = true
             )
-            // 注入新节点到分页窗口，让语音条立即可见
             conversation.value.messageNodes.lastOrNull()?.let {
                 paginationManager?.injectNewNode(it)
             }
 
-            // ASR 未配置：直接触发 AI（AudioToTextTransformer 会回退为占位文本）
+            // 2. 后台异步 ASR 转文字：无论模型是否支持音频，都做转写并存入 chat_messages
             val asrProvider = currentSettings.getSelectedASRProvider()
-            if (asrProvider == null) {
+            val transcription: String? = if (asrProvider != null) {
+                _voiceTranscribing.value = true
+                try {
+                    asrManager.transcribeFile(asrProvider, context, audioUri)
+                        .takeIf { it.isNotBlank() }
+                } catch (e: Exception) {
+                    Log.e(TAG, "sendVoiceMessage: ASR failed", e)
+                    _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                    null
+                } finally {
+                    _voiceTranscribing.value = false
+                }
+            } else {
                 _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
-                chatService.triggerAIResponse(conversationId = targetId)
-                return@launch
-            }
-
-            // 后台异步 ASR 转写
-            _voiceTranscribing.value = true
-            val transcription: String? = try {
-                asrManager.transcribeFile(asrProvider, context, audioUri)
-                    .takeIf { it.isNotBlank() }
-            } catch (e: Exception) {
-                Log.e(TAG, "sendVoiceMessage: ASR failed", e)
-                _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
                 null
-            } finally {
-                _voiceTranscribing.value = false
             }
 
             // 转写完成后，更新最后一条含 Audio 的用户消息 metadata，再触发 AI 回复
