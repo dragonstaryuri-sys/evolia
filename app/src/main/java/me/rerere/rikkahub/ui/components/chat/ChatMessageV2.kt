@@ -886,7 +886,14 @@ private fun UserMessageTurn(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End
                 ) {
-                    if (wechatMode && item.isLastInTurn && showRegenerate) {
+                    // 微信模式：turn 内最后一个条目（任何类型）都显示刷新按钮
+                    // 普通模式：仅 turn 内最后一个条目是语音消息时才显示刷新按钮（其他消息类型点气泡会从底部弹出刷新按钮）
+                    val showSideRegenerate = when {
+                        wechatMode -> item.isLastInTurn && showRegenerate
+                        item is UserRenderItem.AudioItem -> item.isLastInTurn && showRegenerate
+                        else -> false
+                    }
+                    if (showSideRegenerate) {
                         WeChatRegenerateButton(onClick = onRegenerate)
                     }
 
