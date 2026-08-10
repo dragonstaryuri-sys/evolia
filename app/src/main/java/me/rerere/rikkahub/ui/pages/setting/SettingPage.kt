@@ -428,6 +428,14 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         icon = { Icon(Icons.Rounded.Info, null, modifier = Modifier.size(20.dp)) },
                         onClick = { navController.navigate(Screen.SettingAbout) }
                     )
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_feedback),
+                        subtitle = stringResource(R.string.setting_page_feedback_desc),
+                        icon = { Icon(Icons.Rounded.Feedback, null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            context.openUrl("https://my.feishu.cn/wiki/K8biwb7k4ibiFXka7EGcab3jnac?from=from_copylink")
+                        }
+                    )
                 }
             }
 

@@ -1902,4 +1902,7 @@
   <string name="diary_agent_commenting_to">Commenting as %1$s</string>
   <string name="diary_comment_switched_to_normal_mode">Switched to normal mode to fully receive comments</string>
 
+  <string name="setting_page_feedback">Feedback &amp; Suggestions</string>
+  <string name="setting_page_feedback_desc">Submit your feedback via Feishu</string>
+
 </resources>

@@ -1864,4 +1864,7 @@
   <string name="diary_agent_commenting_to">正在请求 %1$s 的评论</string>
   <string name="diary_comment_switched_to_normal_mode">已自动切换至普通模式以完整接收评论</string>
 
+  <string name="setting_page_feedback">反馈与建议</string>
+  <string name="setting_page_feedback_desc">点击提交你的意见或建议</string>
+
 </resources>
