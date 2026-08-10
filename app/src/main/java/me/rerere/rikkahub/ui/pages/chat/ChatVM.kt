@@ -381,66 +381,6 @@ class ChatVM(
     val settings: StateFlow<Settings> =
         settingsStore.settingsFlow.stateIn(viewModelScope, SharingStarted.Lazily, Settings.dummy())
 
-    val newChatStats: StateFlow<me.rerere.rikkahub.ui.components.chat.NewChatStats> = settings
-        .flatMapLatest { currentSettings ->
-            val assistantId = currentSettings.assistantId.toString()
-            combine(
-                conversationRepo.getConversationCountFlow(),
-                conversationRepo.getDailyActivityDatesFlow(),
-                conversationRepo.getConversationHoursFlow(),
-                conversationRepo.getConversationCountByAssistantFlow(assistantId),
-                conversationRepo.getMostUsedModelIdForAssistantFlow(assistantId)
-            ) { totalChats, distinctDates, hours, assistantChats, mostUsedModelId ->
-                val today = LocalDate.now()
-                val formatter = java.time.format.DateTimeFormatter.ISO_LOCAL_DATE
-                val dates = distinctDates.mapNotNull {
-                    try { LocalDate.parse(it, formatter) } catch (e: Exception) { null }
-                }.sortedDescending()
-
-                val hasChattedToday = dates.contains(today)
-                val yesterday = today.minusDays(1)
-                val startDate = when {
-                    hasChattedToday -> today
-                    dates.contains(yesterday) -> yesterday
-                    else -> null
-                }
-
-                val streak = if (startDate != null) {
-                    var count = 0
-                    var current: LocalDate = startDate
-                    while (dates.contains(current)) {
-                        count++
-                        current = current.minusDays(1)
-                    }
-                    count
-                } else 0
-
-                val timeLabel = calculateTimeLabel(hours)
-                val modelName = mostUsedModelId?.let { id ->
-                    try {
-                        val uuid = Uuid.parse(id)
-                        currentSettings.providers.flatMap { it.models }.find { it.id == uuid }?.displayName
-                    } catch (e: Exception) { null }
-                }
-
-                me.rerere.rikkahub.ui.components.chat.NewChatStats(
-                    dailyStreak = streak,
-                    totalChats = totalChats,
-                    timeLabel = timeLabel,
-                    hasChattedToday = hasChattedToday,
-                    assistantChats = assistantChats,
-                    mostUsedModelName = modelName
-                )
-            }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), me.rerere.rikkahub.ui.components.chat.NewChatStats())
-
-    private fun calculateTimeLabel(hours: List<Int>): me.rerere.rikkahub.ui.pages.menu.TimeLabel {
-        if (hours.isEmpty()) return me.rerere.rikkahub.ui.pages.menu.TimeLabel.DAYTIME_CHATTER
-        var earlyBird = 0; var daytime = 0; var nightOwl = 0
-        for (hour in hours) { when (hour) { in 5..10 -> earlyBird++; in 11..17 -> daytime++; else -> nightOwl++ } }
-        return when { earlyBird >= daytime && earlyBird >= nightOwl -> me.rerere.rikkahub.ui.pages.menu.TimeLabel.EARLY_BIRD; daytime >= earlyBird && daytime >= nightOwl -> me.rerere.rikkahub.ui.pages.menu.TimeLabel.DAYTIME_CHATTER; else -> me.rerere.rikkahub.ui.pages.menu.TimeLabel.NIGHT_OWL }
-    }
-
     val enableWebSearch = settings.map { settings ->
         val assistant = settings.assistants.find { it.id == settings.assistantId }
         when (assistant?.searchMode) {

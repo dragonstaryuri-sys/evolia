@@ -37,7 +37,6 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.StrokeCap
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
-import me.rerere.rikkahub.ui.components.chat.NewChatContent
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.service.voice.VoiceRecorderController
 import kotlinx.coroutines.Job
@@ -146,7 +145,6 @@ fun ChatPage(
     val currentChatModel by vm.currentChatModel.collectAsStateWithLifecycle()
     val enableWebSearch by vm.enableWebSearch.collectAsStateWithLifecycle()
     val currentSearchMode by vm.currentSearchMode.collectAsStateWithLifecycle()
-    val newChatStats by vm.newChatStats.collectAsStateWithLifecycle()
 
     val windowAdaptiveInfo = currentWindowDpSize()
     val isBigScreen =
@@ -202,7 +200,6 @@ fun ChatPage(
         currentChatModel = currentChatModel,
         initialSearchQuery = searchQuery,
         targetMessageId = targetMessageId,
-        newChatStats = newChatStats
     )
 }
 
@@ -222,7 +219,6 @@ private fun ChatPageContent(
     currentChatModel: Model?,
     initialSearchQuery: String? = null,
     targetMessageId: String? = null,
-    newChatStats: me.rerere.rikkahub.ui.components.chat.NewChatStats,
 ) {
     val scope = rememberCoroutineScope()
     val toaster = LocalToaster.current

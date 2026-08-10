@@ -566,18 +566,6 @@ class ConversationRepository(
     fun getConversationCountByAssistantFlow(assistantId: String): Flow<Int> =
         conversationDAO.getConversationCountByAssistantFlow(assistantId)
 
-    fun getMostUsedModelIdForAssistantFlow(assistantId: String): Flow<String?> =
-        chatMessageDAO.getAllMessagesContentByAssistant(assistantId)
-            .map { jsonList ->
-                jsonList.asSequence()
-                    .map { JsonInstant.decodeFromString<UIMessage>(it) }
-                    .mapNotNull { it.modelId?.toString() }
-                    .groupingBy { it }
-                    .eachCount()
-                    .maxByOrNull { it.value }?.key
-            }
-            .flowOn(Dispatchers.IO)
-
     private fun conversationSummaryToConversation(summary: LightConversationEntity): Conversation {
         return Conversation(
             id = Uuid.parse(summary.id),
@@ -589,18 +577,6 @@ class ConversationRepository(
             isConsolidated = summary.isConsolidated,
             messageNodes = emptyList()
         )
-    }
-
-    fun getAverageMessageLength(assistantId: Uuid): Flow<Int> {
-        return chatMessageDAO.getAllMessagesContentByAssistant(assistantId.toString())
-            .map { jsonList ->
-                if (jsonList.isEmpty()) return@map 100
-                val totalLength = jsonList.sumOf {
-                    JsonInstant.decodeFromString<UIMessage>(it).toContentText().length.toLong()
-                }
-                (totalLength / jsonList.size).toInt()
-            }
-            .flowOn(Dispatchers.IO)
     }
 
     // ==================================================================================

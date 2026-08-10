@@ -58,9 +58,6 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_messages WHERE node_id IN (:nodeIds)")
     suspend fun getMessagesByNodeIds(nodeIds: List<String>): List<ChatMessageEntity>
 
-    @Query("SELECT content_json FROM chat_messages WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId AND is_virtual = 0)")
-    fun getAllMessagesContentByAssistant(assistantId: String): Flow<List<String>>
-
     @Query("SELECT id FROM chat_message_nodes WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId) ORDER BY created_at DESC, id DESC LIMIT :limit")
     suspend fun getLatestNodeIdsOfAssistant(assistantId: String, limit: Int): List<String>
 
