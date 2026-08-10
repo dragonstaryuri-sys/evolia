@@ -883,7 +883,7 @@ private fun UserMessageTurn(
                     else -> BubblePosition.MIDDLE
                 }
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = if (wechatMode) Alignment.Top else Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End
                 ) {
                     // 微信模式：turn 内最后一个条目（任何类型）都显示刷新按钮
@@ -894,7 +894,10 @@ private fun UserMessageTurn(
                         else -> false
                     }
                     if (showSideRegenerate) {
-                        WeChatRegenerateButton(onClick = onRegenerate)
+                        WeChatRegenerateButton(
+                            onClick = onRegenerate,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
                     }
 
                     when (item) {
@@ -961,7 +964,9 @@ private fun UserMessageTurn(
                         UIAvatar(
                             name = userNickname,
                             value = userAvatar,
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier
+                                .size(40.dp)
+                                .padding(top = 2.dp),
                             onClick = {
                                 navController.navigate(Screen.SettingUserProfile)
                             }
@@ -978,7 +983,8 @@ private fun UserMessageTurn(
                             colors = CheckboxDefaults.colors(
                                 checkedColor = MaterialTheme.colorScheme.primary,
                                 uncheckedColor = MaterialTheme.colorScheme.outline
-                            )
+                            ),
+                            modifier = Modifier.padding(top = 6.dp)
                         )
                     }
                 }
@@ -1198,7 +1204,7 @@ private fun AssistantMessageTurn(
                 else -> BubblePosition.MIDDLE
             }
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = if (wechatMode) Alignment.Top else Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Start
             ) {
                 if (selecting) {
@@ -1211,14 +1217,17 @@ private fun AssistantMessageTurn(
                         colors = CheckboxDefaults.colors(
                             checkedColor = MaterialTheme.colorScheme.primary,
                             uncheckedColor = MaterialTheme.colorScheme.outline
-                        )
+                        ),
+                        modifier = Modifier.padding(top = 6.dp)
                     )
                 }
 
                 if (wechatMode) {
                     UIAvatar(
                         name = avatarName,
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier
+                            .size(40.dp)
+                            .padding(top = 2.dp),
                         value = avatarValue,
                         onClick = onAvatarClick
                     )
