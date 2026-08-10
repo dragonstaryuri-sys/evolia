@@ -1400,9 +1400,6 @@
   <string name="memory_mode_semantic">Semantic (Vector RAG)</string>
   <string name="memory_mode_semantic_desc">Uses AI embeddings to understand context and meaning.</string>
 
-  <string name="rag_retrieval_scope">Retrieval Scope</string>
-  <string name="rag_include_core">Include Core Memories</string>
-  <string name="rag_include_episodic">Include Episodic Memories</string>
   <string name="rag_limit_title">Max Retrieval Results (Top K)</string>
   <string name="rag_keyword_threshold_title">Match Precision Threshold</string>
 

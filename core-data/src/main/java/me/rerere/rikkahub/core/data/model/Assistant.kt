@@ -63,8 +63,6 @@ data class Assistant(
     val ragSimilarityThreshold: Float = 0.4f,
     val ragLimit: Int = 3,
     val enableRecentChatsReference: Boolean = true,
-    val ragIncludeEpisodes: Boolean = true,
-    val ragIncludeCore: Boolean = true,
     val enableRagLogging: Boolean = false,
     val enableMemoryConsolidation: Boolean = true,
     val messageTemplate: String = "{{ message }}",

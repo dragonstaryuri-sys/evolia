@@ -904,39 +904,6 @@ private fun RagSettingsCard(
                 }
             }
         }
-
-        Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp, topStart = 10.dp, topEnd = 10.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = stringResource(R.string.rag_retrieval_scope),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-
-                FormItem(
-                    label = { Text(stringResource(R.string.rag_include_core)) },
-                    tail = {
-                        HapticSwitch(
-                            checked = assistant.ragIncludeCore,
-                            onCheckedChange = { onUpdateAssistant(assistant.copy(ragIncludeCore = it)) }
-                        )
-                    }
-                )
-
-                FormItem(
-                    label = { Text(stringResource(R.string.rag_include_episodic)) },
-                    tail = {
-                        HapticSwitch(
-                            checked = assistant.ragIncludeEpisodes,
-                            onCheckedChange = { onUpdateAssistant(assistant.copy(ragIncludeEpisodes = it)) }
-                        )
-                    }
-                )
-            }
-        }
     }
 }
 

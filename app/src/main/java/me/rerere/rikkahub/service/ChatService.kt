@@ -1041,8 +1041,6 @@ class ChatService(
                                         query = lastUserMsg,
                                         limit = assistant.ragLimit,
                                         similarityThreshold = assistant.ragSimilarityThreshold,
-                                        includeCore = assistant.ragIncludeCore,
-                                        includeEpisodes = assistant.ragIncludeEpisodes,
                                         mode = assistant.memoryRetrievalMode,
                                         excludeConversationId = conversationId.toString()
                                     )

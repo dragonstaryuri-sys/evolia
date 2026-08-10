@@ -942,8 +942,6 @@ class AssistantDetailVM(
                 query = query,
                 limit = currentAssistant.ragLimit,
                 similarityThreshold = currentAssistant.ragSimilarityThreshold,
-                includeCore = currentAssistant.ragIncludeCore,
-                includeEpisodes = currentAssistant.ragIncludeEpisodes,
                 mode = currentAssistant.memoryRetrievalMode
             )
             _retrievalResults.value = results.map { it.first.copy(content = it.first.content) to it.second }

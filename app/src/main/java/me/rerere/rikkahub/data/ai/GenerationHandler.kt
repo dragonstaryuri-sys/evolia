@@ -187,7 +187,7 @@ class GenerationHandler(
                     add(
                         Tool(
                             name = "retrieve_memory",
-                            description = "可通过关键词检索历史记忆片段，根据指定片段编号调取完整消息历史记录，或通过时间范围查询该智能体下一段时间内的所有记忆片段（一次最多返回一周，建议返回一天）。",
+                            description = "通过关键词同时检索核心记忆(core)与片段记忆(segment)。返回结果中 type=core 的条目内容已完整，无需再调取；type=segment 的条目可传入其 id 作为 segment_id 调取完整消息历史记录。也可通过时间范围查询该智能体下一段时间内的所有片段记忆（一次最多返回一周，建议返回一天）。",
                             parameters = {
                                 InputSchema.Obj(
                                     properties = buildJsonObject {
@@ -195,14 +195,14 @@ class GenerationHandler(
                                             put("type", "integer")
                                             put(
                                                 "description",
-                                                "需要调取详细历史记录的片段记忆编号"
+                                                "需要调取详细历史记录的片段记忆(segment)编号，即关键词检索结果中 type=segment 条目的 id"
                                             )
                                         })
                                         put("key_words", buildJsonObject {
                                             put("type", "string")
                                             put(
                                                 "description",
-                                                "需在历史记忆库（RAG检索）中检索的关键词。"
+                                                "需在历史记忆库（RAG检索）中检索的关键词，将同时匹配核心记忆与片段记忆。"
                                             )
                                         })
                                         put("start_time", buildJsonObject {
@@ -263,19 +263,20 @@ class GenerationHandler(
                                     }
 
                                     keyWords != null -> {
+                                        // 同时检索核心记忆(MemoryEntity)与片段记忆(chat_segments)
                                         val relevant = memoryRepo.retrieveRelevantMemoriesWithScores(
                                             assistantId = assistant.id.toString(),
                                             query = keyWords,
                                             limit = assistant.ragLimit,
                                             similarityThreshold = assistant.ragSimilarityThreshold,
-                                            includeCore = false,
-                                            includeEpisodes = true,
                                             mode = assistant.memoryRetrievalMode
                                         )
                                         buildJsonObject {
                                             put("results", JsonArray(relevant.map { (mem, _) ->
+                                                val isCore = mem.type == MemoryType.CORE
                                                 buildJsonObject {
-                                                    put("segment_id", JsonPrimitive(mem.id))
+                                                    put("type", JsonPrimitive(if (isCore) "core" else "segment"))
+                                                    put("id", JsonPrimitive(mem.id))
                                                     put("time", JsonPrimitive(formatMemoryDate(mem.timestamp)))
                                                     put("content", JsonPrimitive(mem.content))
                                                 }
@@ -813,27 +814,23 @@ class GenerationHandler(
         if (model.abilities.contains(ModelAbility.TOOL) && assistant.enableMemory) {
             staticSystemPromptBuilder.appendLine().append(
                 """
-                    ## 记忆工具
-                    你是ai，**无法在内部储存记忆**。如需留存信息，必须借助**记忆工具**。
-                    借助记忆工具，助手可以存储多条信息（记忆条目），在多轮对话中调取过往细节。
+                     ## 记忆工具使用准则
+                    你是AI，无法在内部持久储存信息，必须借助工具。但为了保持记忆库的高质量，你必须**极度克制**地使用 `create_memory`。
 
+                    ### 核心原则：区分“核心记忆”与“对话梗概”
+                    1. **禁止记录流水账**：系统的“近期对话细节(L1)”会自动记录你们刚才聊了什么。**严禁**使用 `create_memory` 来总结日常对话（如“我们聊了天气”或“用户分享了今天的晚餐”）。
+                    2. **记录标准**：仅当出现**极具情感价值、深刻的用户洞察、重大的约定、或未来数月依然关键的信息**时，才动用此工具。
+                    3. **高亮时刻**：记录那些让你（AI）感到动容、惊讶或需要刻骨铭心的瞬间
 
                     ### 人称规范
                     为保证指代清晰、避免身份混淆，严格遵守下述规则：
-                    1. **“用户姓名/昵称”**：指代当前正在与你对话的对象。
-                    2. **“我”**：指代你自己。
+                    1. **“用户姓名/昵称”**：指代对方。
+                    2.- **“我”**：指代你自己。
 
-                    ### 工具使用规则
-                    可用工具：`create_memory`（新建记忆）、`edit_memory`（编辑记忆）、`delete_memory`（删除记忆）、`retrieve_memory`（调取记忆）。
-                    - 若已存在相关记忆条目，使用`edit_memory`对原有内容修改或补充。
-                    - **备注**：仅可编辑、删除带编号的**核心记忆**；L1类型历史片段仅支持查看，无法修改或删除。
-
-                    **严禁录入敏感信息**（宗教、种族欺题、政治信息等相关内容）。
-
-                    作为用户的ai，需要**主动**记录有价值的对话片段：
-                    - 事件细节、共同经历、关键语句、无法归入档案及对话梗概的字段的专属上下文内容，使用记忆工具记录。
-                    - 用户需要你记录但不包含在里程碑事件(通过`milestone_manager`工具管理)、用户信息/ai信息(通过`update_profile`工具管理)内的内容
-                    - 用户情绪关键节点、人生重大事件
+                    ### 工具说明
+                    - `create_memory`: 新建高价值核心记忆。
+                    - `edit_memory`: 修正或补充已有的**带编号**核心记忆。
+                    - `retrieve_memory`: 调取你的记忆片段。
                     """.trimIndent()
             )
         }
@@ -1323,7 +1320,7 @@ class GenerationHandler(
     ) = listOf(
         Tool(
             name = "create_memory",
-            description = "创建一条新的记忆",
+            description = "创建一条核心记忆。仅用于记录极具情感价值或长久参考意义的信息。严禁重复记录日常对话梗概（流水账）。",
             parameters = {
                 InputSchema.Obj(
                     properties = buildJsonObject {

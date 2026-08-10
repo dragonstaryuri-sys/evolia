@@ -1351,9 +1351,6 @@
   <string name="memory_mode_semantic">语义模式 (向量 RAG)</string>
   <string name="memory_mode_semantic_desc">使用 AI 向量嵌入来理解上下文和深层含义。</string>
 
-  <string name="rag_retrieval_scope">检索范围</string>
-  <string name="rag_include_core">核心记忆</string>
-  <string name="rag_include_episodic">片段记忆</string>
   <string name="rag_limit_title">最大检索数量 (Top K)</string>
   <string name="rag_keyword_threshold_title">匹配精度阈值</string>
 
