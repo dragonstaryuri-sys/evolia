@@ -75,6 +75,22 @@ object ModelRegistry {
     private val LLAMA_3_3 = ModelMatcher.containsRegex("llama-3.3")
     private val LLAMA_4 = ModelMatcher.containsRegex("llama-4")
 
+    // 重排序模型：id 含 "rerank"（天然匹配 "reranker"）
+    // 优先级最高，因为 bge/gte 等系列同时存在 embedding 和 reranker 变体
+    private val RERANK_MODELS = ModelMatcher.containsRegex("rerank")
+
+    // 嵌入模型关键词（containsRegex 默认忽略大小写）
+    // e5-：避免误匹配 e.g. deepseek-r1 的 "e"
+    // uae-：Universal AnglE Embedding，避免误匹配 "uae" 作为子串
+    private val EMBEDDING_KEYWORDS = ModelMatcher.containsRegex(
+        "embed|bge|gte|m3e|e5-|voyage|stella|piccolo|text2vec|uae-"
+    )
+    // modality 字段含 embedding（兼容部分接口返回的 modality 元信息）
+    private val EMBEDDING_MODALITY = ModelMatcher.containsRegex("embedding")
+    // 嵌入模型：不含 rerank，且名称命中关键词或 modality 命中
+    // 注意：RERANK_MODELS 优先判断，所以这里无需再次排除，但在 MODEL_TYPE 中要先判断 RERANK
+    private val EMBEDDING_MODELS = EMBEDDING_KEYWORDS + EMBEDDING_MODALITY
+
     private val IMAGE_GEN_MODELS_MATCH = ModelMatcher.containsRegex("cogview|glm-image|dall-e|flux|stable-diffusion|sdxl")
 
     val VISION_MODELS =
@@ -96,20 +112,24 @@ object ModelRegistry {
     val MODEL_INPUT_MODALITIES = ModelData { modelId ->
         buildList {
             add(Modality.TEXT)
-            if (VISION_MODELS.match(modelId)) {
-                add(Modality.IMAGE)
-            }
-            if (AUDIO_MODELS.match(modelId)) {
-                add(Modality.AUDIO)
+            if (!RERANK_MODELS.match(modelId) && !EMBEDDING_MODELS.match(modelId)) {
+                if (VISION_MODELS.match(modelId)) {
+                    add(Modality.IMAGE)
+                }
+                if (AUDIO_MODELS.match(modelId)) {
+                    add(Modality.AUDIO)
+                }
             }
         }
     }
 
     val MODEL_OUTPUT_MODALITIES = ModelData { modelId ->
-        if (CHAT_IMAGE_GEN_MODELS.match(modelId) || IMAGE_GEN_MODELS_MATCH.match(modelId)) {
-            listOf(Modality.TEXT, Modality.IMAGE)
-        } else {
-            listOf(Modality.TEXT)
+        when {
+            RERANK_MODELS.match(modelId) -> listOf(Modality.TEXT)
+            EMBEDDING_MODELS.match(modelId) -> listOf(Modality.TEXT)
+            CHAT_IMAGE_GEN_MODELS.match(modelId) || IMAGE_GEN_MODELS_MATCH.match(modelId) ->
+                listOf(Modality.TEXT, Modality.IMAGE)
+            else -> listOf(Modality.TEXT)
         }
     }
 
@@ -125,10 +145,12 @@ object ModelRegistry {
     }
 
     val MODEL_TYPE = ModelData { modelId ->
-        if (IMAGE_GEN_MODELS_MATCH.match(modelId)) {
-            ModelType.IMAGE
-        } else {
-            ModelType.CHAT
+        when {
+            // RERANK 优先级最高，避免 bge-reranker / gte-rerank 被误判为 EMBEDDING
+            RERANK_MODELS.match(modelId) -> ModelType.RERANK
+            EMBEDDING_MODELS.match(modelId) -> ModelType.EMBEDDING
+            IMAGE_GEN_MODELS_MATCH.match(modelId) -> ModelType.IMAGE
+            else -> ModelType.CHAT
         }
     }
 
