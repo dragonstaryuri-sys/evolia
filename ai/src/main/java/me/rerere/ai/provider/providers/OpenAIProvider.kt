@@ -46,6 +46,22 @@ class OpenAIProvider(
     private val chatCompletionsAPI = ChatCompletionsAPI(client = client, keyRoulette = keyRoulette)
     private val responseAPI = ResponseAPI(client = client)
 
+    // 嵌入模型名称关键词，覆盖主流嵌入模型系列
+    // 注意：bge / gte 系列同时存在 reranker 变体（如 bge-reranker-v2-m3、gte-rerank），
+    // 这些 reranker 会在识别时被 isRerank 优先排除，因此 bge / gte 作为 embedding 关键词是安全的
+    private val embeddingKeywords = listOf(
+        "embed",      // text-embedding-3, jina-embeddings, nomic-embed, cohere/embed-*
+        "bge",        // BAAI/bge-m3, bge-large-zh-v1.5, bge-base-zh-v1.5
+        "gte",        // gte-large-zh, gte-Qwen2-7B-instruct, gte-multilingual-base
+        "m3e",        // m3e-base, m3e-large
+        "e5-",        // e5-large-v2, multilingual-e5-large, intfloat/e5-mistral-7b-instruct
+        "voyage",     // voyage-3, voyage-code-2, voyage-finance-2（voyage 的 rerank 模型 id 不含 voyage）
+        "stella",     // infgrad/stella-base-zh-v2, stella-large-zh-v2
+        "piccolo",    // sensenova/piccolo-base-zh, piccolo-large-zh
+        "text2vec",   // shibing624/text2vec-base-chinese
+        "uae-"        // WhereIsAI/UAE-Large-V1
+    )
+
 
     override suspend fun listModels(providerSetting: ProviderSetting.OpenAI): List<Model> =
         withContext(Dispatchers.IO) {
@@ -112,13 +128,18 @@ class OpenAIProvider(
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 ?: emptyList()
 
-            // 识别逻辑：包含 "embed" 为嵌入模型，包含 "rerank" 为重排序模型
-            val isEmbedding = forceEmbeddingType ||
-                id.contains("embed", ignoreCase = true) ||
-                modality?.contains("embedding", ignoreCase = true) == true ||
-                outputModalities.any { it.contains("embedding", ignoreCase = true) }
-
+            // 识别逻辑：rerank 优先于 embedding 判断
+            // 因为 bge / gte 系列同时存在 embedding 和 reranker 变体（如 bge-reranker-v2-m3），
+            // "rerank" 关键词同时匹配 "rerank" 和 "reranker"，先排除 reranker 避免被误判为 embedding
             val isRerank = id.contains("rerank", ignoreCase = true)
+
+            val isEmbedding = !isRerank && (
+                forceEmbeddingType ||
+                    id.contains("embed", ignoreCase = true) ||
+                    modality?.contains("embedding", ignoreCase = true) == true ||
+                    outputModalities.any { it.contains("embedding", ignoreCase = true) } ||
+                    embeddingKeywords.any { id.contains(it, ignoreCase = true) }
+            )
 
             val iconUrl = modelObj["icon"]?.jsonPrimitive?.contentOrNull
                 ?: architecture?.get("icon")?.jsonPrimitive?.contentOrNull

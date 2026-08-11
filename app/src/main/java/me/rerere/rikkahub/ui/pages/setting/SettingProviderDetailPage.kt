@@ -949,8 +949,21 @@ private fun ConnectionTesterButton(
         Icon(Icons.Rounded.NetworkCheck, null)
     }
     if (showTestDialog) {
-        var model by remember(provider) {
-            mutableStateOf(provider.models.firstOrNull { it.type == ModelType.CHAT })
+        // 该 Provider 下可测试的模型类型（排除 IMAGE，图片生成测试暂未支持）
+        val testableTypes = remember(provider) {
+            listOf(ModelType.CHAT, ModelType.EMBEDDING, ModelType.RERANK).filter { type ->
+                provider.models.any { it.type == type }
+            }
+        }
+        var selectedType by remember(provider) {
+            mutableStateOf(
+                testableTypes.firstOrNull { it == ModelType.CHAT }
+                    ?: testableTypes.firstOrNull()
+                    ?: ModelType.CHAT
+            )
+        }
+        var model by remember(provider, selectedType) {
+            mutableStateOf(provider.models.firstOrNull { it.type == selectedType })
         }
         var testState: UiState<String> by remember { mutableStateOf(UiState.Idle) }
         AlertDialog(
@@ -963,10 +976,42 @@ private fun ConnectionTesterButton(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // 仅当该 Provider 下有多种可测类型时才显示类型切换器
+                    if (testableTypes.size > 1) {
+                        SingleChoiceSegmentedButtonRow(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            testableTypes.forEachIndexed { index, type ->
+                                SegmentedButton(
+                                    shape = SegmentedButtonDefaults.itemShape(
+                                        index,
+                                        testableTypes.size
+                                    ),
+                                    label = {
+                                        Text(
+                                            text = stringResource(
+                                                when (type) {
+                                                    ModelType.CHAT -> R.string.setting_provider_page_chat_model
+                                                    ModelType.EMBEDDING -> R.string.setting_provider_page_embedding_model
+                                                    ModelType.RERANK -> R.string.setting_model_page_rerank_model
+                                                    else -> R.string.setting_provider_page_image_model
+                                                }
+                                            )
+                                        )
+                                    },
+                                    selected = selectedType == type,
+                                    onClick = {
+                                        selectedType = type
+                                        testState = UiState.Idle
+                                    }
+                                )
+                            }
+                        }
+                    }
                     ModelSelector(
                         modelId = model?.id,
                         providers = listOf(provider),
-                        type = ModelType.CHAT,
+                        type = selectedType,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         model = it
@@ -1002,7 +1047,6 @@ private fun ConnectionTesterButton(
                 }
             },
             confirmButton = {
-
                 TextButton(
                     onClick = {
                         if (model == null) return@TextButton
@@ -1010,15 +1054,44 @@ private fun ConnectionTesterButton(
                         scope.launch {
                             runCatching {
                                 testState = UiState.Loading
-                                providerInstance.generateText(
-                                    providerSetting = provider,
-                                    messages = listOf(
-                                        UIMessage.user("hello")
-                                    ),
-                                    params = TextGenerationParams(
-                                        model = model!!,
-                                    )
-                                )
+                                when (selectedType) {
+                                    ModelType.CHAT -> {
+                                        providerInstance.generateText(
+                                            providerSetting = provider,
+                                            messages = listOf(
+                                                UIMessage.user("hello")
+                                            ),
+                                            params = TextGenerationParams(
+                                                model = model!!,
+                                            )
+                                        )
+                                    }
+
+                                    ModelType.EMBEDDING -> {
+                                        val embeddings = providerInstance.createEmbedding(
+                                            providerSetting = provider,
+                                            input = listOf("hello"),
+                                            model = model!!
+                                        )
+                                        check(embeddings.isNotEmpty() && embeddings.first().isNotEmpty()) {
+                                            "Model returned empty embeddings"
+                                        }
+                                    }
+
+                                    ModelType.RERANK -> {
+                                        val results = providerInstance.rerank(
+                                            providerSetting = provider,
+                                            query = "hello",
+                                            documents = listOf("world", "test"),
+                                            model = model!!
+                                        )
+                                        check(results.isNotEmpty()) {
+                                            "Model returned empty rerank results"
+                                        }
+                                    }
+
+                                    else -> error("Unsupported model type for testing: $selectedType")
+                                }
                                 testState = UiState.Success("Success")
                             }.onFailure {
                                 testState = UiState.Error(it)
