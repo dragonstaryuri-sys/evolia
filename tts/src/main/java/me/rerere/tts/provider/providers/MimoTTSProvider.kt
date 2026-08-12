@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
+import me.rerere.common.http.SseEvent
+import me.rerere.common.http.sseFlow
 import me.rerere.tts.model.AudioChunk
 import me.rerere.tts.model.AudioFormat
 import me.rerere.tts.model.TTSRequest
@@ -42,7 +44,7 @@ private fun formatToAudioMime(format: String): String = when (format.trim().lowe
 
 class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
     private val httpClient = OkHttpClient.Builder()
-        .readTimeout(60, TimeUnit.SECONDS) // TTS might take longer
+        .readTimeout(120, TimeUnit.SECONDS) // 流式 SSE 更久的读超时
         .build()
 
     // 预置 MIMO TTS 模型列表
@@ -51,6 +53,9 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
         "mimo-v2.5-tts-voicedesign",
         "mimo-v2.5-tts-voiceclone"
     )
+
+    // MIMO 流式输出统一为 24kHz PCM16LE mono (匹配官方 Python 示例的 np.frombuffer(..., dtype=np.int16) + samplerate=24000)
+    private const val MIMO_STREAM_SAMPLE_RATE = 24000
 
     override fun generateSpeech(
         context: Context,
@@ -62,16 +67,16 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
         val isVoiceClone = model.contains("voiceclone", ignoreCase = true)
         val isStandardTTS = !isVoiceDesign && !isVoiceClone
 
-        // MiMo requires chat completion format
+        // 严格对齐官方 Python 示例：stream=True + SSE
         val requestBody = JSONObject().apply {
             put("model", model)
+            put("stream", true) // ⚠️ 流式调用 (所有 3 个官方示例全是 stream=True)
 
             val messages = JSONArray()
 
             when {
-                // ---- 音色设计 (voicedesign): user 消息 = 音色描述 ----
+                // ---- 音色设计 (voicedesign): user=音色描述，assistant=待合成文本 (必传！即使 optimize_text_preview=true) ----
                 isVoiceDesign -> {
-                    // 音色设计描述必填，放在 user 消息
                     val designPrompt = providerSetting.voiceDesignPrompt.ifBlank {
                         "default warm female voice"
                     }
@@ -79,26 +84,18 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                         put("role", "user")
                         put("content", designPrompt)
                     })
-                    // assistant 消息 = 待合成文本 (若开启 optimize_text_preview 则可省略)
-                    if (!providerSetting.optimizeTextPreview) {
-                        messages.put(JSONObject().apply {
-                            put("role", "assistant")
-                            put("content", request.text)
-                        })
-                    } else if (request.text.isNotBlank()) {
-                        // 即使开启了润色，如果有文本也传过去
-                        messages.put(JSONObject().apply {
-                            put("role", "assistant")
-                            put("content", request.text)
-                        })
-                    }
+                    // ⚠️ 官方示例 optimize_text_preview=True 时仍然传 assistant 消息；必须始终带上
+                    messages.put(JSONObject().apply {
+                        put("role", "assistant")
+                        put("content", request.text)
+                    })
                 }
 
-                // ---- 音色复刻 (voiceclone): 严格对齐官方示例，user 必须为空字符串！----
+                // ---- 音色复刻 (voiceclone): 严格对齐官方示例，user=""，assistant=合成文本 ----
                 isVoiceClone -> {
                     messages.put(JSONObject().apply {
                         put("role", "user")
-                        put("content", "") // ⚠️ 必须是空字符串，官方示例。填其他内容易触发服务端校验异常 → 429
+                        put("content", "") // 必须是空字符串
                     })
                     messages.put(JSONObject().apply {
                         put("role", "assistant")
@@ -106,11 +103,11 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                     })
                 }
 
-                // ---- 标准预置音色 (mimo-v2.5-tts): user 留空，和官方示例保持一致 ----
+                // ---- 标准预置音色 (mimo-v2.5-tts): user 可填风格指令 (示例就是这么用的)，空串也兼容 ----
                 else -> {
                     messages.put(JSONObject().apply {
                         put("role", "user")
-                        put("content", "") // user 为空字符串（如需风格控制可填指令，但官方示例用空串更稳妥，避免限流）
+                        put("content", "") // 留空 (如需风格指令 UI 扩展可后续接入)
                     })
                     messages.put(JSONObject().apply {
                         put("role", "assistant")
@@ -122,22 +119,24 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
             put("messages", messages)
 
             put("audio", JSONObject().apply {
-                put("format", "mp3") // 支持 mp3, wav, pcm — 官方示例用 wav，mp3 也可正常使用
-
+                // 请求的 format 严格匹配官方示例
+                // 但 SSE 流式响应的 delta.audio.data 统一都是 PCM16LE 原始采样 (24kHz mono)，这一点已由 Python 示例 int16.frombuffer 佐证
                 when {
-                    // 标准 TTS：预置音色 (⚠️ audio.speed 字段 MIMO 官方尚未开放，已移除)
+                    // 标准 TTS: format=pcm16 (官方示例)
                     isStandardTTS -> {
+                        put("format", "pcm16")
                         put("voice", providerSetting.voice)
                     }
 
-                    // 音色设计：可选文本润色 (⚠️ audio.speed 字段 MIMO 官方尚未开放，已移除)
+                    // 音色设计: format=pcm16 (官方示例) + optimize_text_preview
                     isVoiceDesign -> {
+                        put("format", "pcm16")
                         put("optimize_text_preview", providerSetting.optimizeTextPreview)
                     }
 
-                    // 音色复刻：voice 字段填完整 data URI: data:audio/{mime};base64,{data}
-                    // ⚠️ 严格对齐官方 Python 示例：只传 format + voice 两个字段！
+                    // 音色复刻: format=wav (官方示例) + voice = Data URI
                     isVoiceClone -> {
+                        put("format", "wav")
                         if (providerSetting.referenceAudioBase64.isNotBlank()) {
                             val mime = formatToAudioMime(providerSetting.referenceAudioFormat)
                             val voiceDataUri = "data:$mime;base64,${providerSetting.referenceAudioBase64}"
@@ -146,73 +145,114 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                     }
                 }
             })
-
-            put("stream", false) // Non-streaming for now
         }
 
-        Log.i(
-            TAG,
-            "generateSpeech: model=$model, " +
-                "isStandard=$isStandardTTS, isVoiceDesign=$isVoiceDesign, isVoiceClone=$isVoiceClone, " +
-                "voice=${providerSetting.voice}, speed=${providerSetting.speed}, " +
-                "referenceAudioLen=${providerSetting.referenceAudioBase64.length}"
-        )
+        val requestLog = buildString {
+            append("model=$model")
+            append(", stream=true")
+            append(", isStandard=$isStandardTTS")
+            append(", isVoiceDesign=$isVoiceDesign")
+            append(", isVoiceClone=$isVoiceClone")
+            if (isStandardTTS) append(", voice=${providerSetting.voice}")
+            if (isVoiceDesign) append(", optimizeTextPreview=${providerSetting.optimizeTextPreview}")
+            if (isVoiceClone) append(", refAudioLen=${providerSetting.referenceAudioBase64.length}")
+            append(", textLen=${request.text.length}")
+        }
+        Log.i(TAG, "generateSpeech(stream=True): $requestLog")
 
         val httpRequest = Request.Builder()
             .url(providerSetting.baseUrl)
             .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
             .addHeader("Content-Type", "application/json")
+            .addHeader("Accept", "text/event-stream") // SSE
             .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        val response = httpClient.newCall(httpRequest).execute()
+        var hasEmittedAudio = false
 
-        if (!response.isSuccessful) {
-            val errorBody = response.body.string()
-            Log.e(TAG, "Mimo TTS request failed: ${response.code} $errorBody")
-            throw Exception("Mimo TTS failed: $errorBody")
-        }
-
-        val responseBody = response.body.string()
-        val jsonResponse = JSONObject(responseBody)
-
-        // Audio is in choices[0].message.audio.data as Base64
-        val choices = jsonResponse.optJSONArray("choices")
-        if (choices == null || choices.length() == 0) {
-            throw Exception("Mimo TTS: Invalid response format, no choices found")
-        }
-
-        val message = choices.getJSONObject(0).optJSONObject("message")
-        val audio = message?.optJSONObject("audio")
-        val base64Data = audio?.optString("data")
-
-        if (base64Data.isNullOrEmpty()) {
-            Log.e(TAG, "Mimo TTS: No audio data in response: $responseBody")
-            throw Exception("Mimo TTS: No audio data in response")
-        }
-
-        val audioData = Base64.decode(base64Data, Base64.DEFAULT)
-
-        emit(
-            AudioChunk(
-                data = audioData,
-                format = AudioFormat.MP3,
-                isLast = true,
-                metadata = buildMap {
-                    put("provider", "mimo")
-                    put("model", model)
-                    if (isStandardTTS) put("voice", providerSetting.voice)
-                    put("speed", providerSetting.speed.toString())
+        // 走 SSE 流式 (httpClient.sseFlow 已封装 SSE 事件解析)
+        httpClient.sseFlow(httpRequest).collect { event ->
+            when (event) {
+                is SseEvent.Open -> {
+                    Log.d(TAG, "MIMO SSE connection opened")
                 }
-            )
-        )
+
+                is SseEvent.Event -> {
+                    val raw = event.data.trim()
+                    if (raw.equals("[DONE]", ignoreCase = true)) {
+                        Log.d(TAG, "MIMO SSE got [DONE]")
+                        return@collect
+                    }
+                    if (raw.isBlank()) return@collect
+
+                    runCatching {
+                        val json = JSONObject(raw)
+                        val choices = json.optJSONArray("choices")
+                        if (choices == null || choices.length() == 0) return@runCatching
+
+                        val delta = choices.getJSONObject(0).optJSONObject("delta")
+                            ?: return@runCatching
+                        val audio = delta.optJSONObject("audio")
+                            ?: return@runCatching
+                        val base64Data = audio.optString("data")
+                        if (base64Data.isNullOrEmpty()) return@runCatching
+
+                        val pcmBytes = Base64.decode(base64Data, Base64.NO_WRAP)
+
+                        // 流式 SSE: 官方 Python 示例用 np.frombuffer(..., dtype=np.int16) + samplerate=24000
+                        // 所以 delta.audio.data 统一都是 PCM16LE 原始字节
+                        emit(
+                            AudioChunk(
+                                data = pcmBytes,
+                                format = AudioFormat.PCM,
+                                sampleRate = MIMO_STREAM_SAMPLE_RATE,
+                                isLast = false,
+                                metadata = buildMap {
+                                    put("provider", "mimo")
+                                    put("model", model)
+                                    put("stream", "true")
+                                    if (isStandardTTS) put("voice", providerSetting.voice)
+                                }
+                            )
+                        )
+                        hasEmittedAudio = true
+                    }.onFailure { e ->
+                        Log.w(TAG, "MIMO SSE chunk parse skipped: ${e.message}, raw_preview=${raw.take(80)}")
+                    }
+                }
+
+                is SseEvent.Closed -> {
+                    Log.d(TAG, "MIMO SSE connection closed, emittedAudio=$hasEmittedAudio")
+                    if (hasEmittedAudio) {
+                        // 发送 isLast 结尾块 (与 MiniMax 模式保持一致)
+                        emit(
+                            AudioChunk(
+                                data = byteArrayOf(),
+                                format = AudioFormat.PCM,
+                                sampleRate = MIMO_STREAM_SAMPLE_RATE,
+                                isLast = true,
+                                metadata = mapOf("provider" to "mimo", "stream" to "done")
+                            )
+                        )
+                    } else {
+                        throw Exception("MIMO SSE stream ended with no audio chunks received (可能是 429 限流或鉴权失败)")
+                    }
+                }
+
+                is SseEvent.Failure -> {
+                    Log.e(TAG, "MIMO SSE failure", event.e)
+                    // 错误消息里如果包含 HTTP status 信息，尽量暴露出来
+                    val msg = event.e.message ?: "SSE stream failed"
+                    throw Exception("MIMO streaming failed: $msg", event.e)
+                }
+            }
+        }
     }
 
     override suspend fun getVoices(
         context: Context,
         providerSetting: TTSProviderSetting.Mimo
     ): List<TTSVoice> {
-        // 仅标准 TTS 模型有预置音色列表
         return listOf(
             TTSVoice("mimo_default", "MiMo-默认", "zh-CN", "Female", "默认音色，中国集群为冰糖，其他集群为 Mia", emptyList()),
             TTSVoice("冰糖", "冰糖 (Bingtang)", "zh-CN", "Female", "中文女性音色", emptyList()),
@@ -228,9 +268,6 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
 
     /**
      * 从官方 API 获取包含 "tts" 的模型列表
-     * 接口地址: GET {baseUrl 去掉 /chat/completions}/models
-     *
-     * @return 模型 id 列表，仅包含含 "tts" 的模型
      */
     suspend fun listModels(
         providerSetting: TTSProviderSetting.Mimo
