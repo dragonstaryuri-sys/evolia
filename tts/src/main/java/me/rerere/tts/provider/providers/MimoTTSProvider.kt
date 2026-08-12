@@ -23,6 +23,23 @@ import java.util.concurrent.TimeUnit
 
 private const val TAG = "MimoTTSProvider"
 
+/**
+ * 将音频文件扩展名映射为标准 MIME 类型，用于构造 MiMo voiceclone 的 data URI
+ * 参考官方示例：voice.mp3 -> data:audio/mpeg;base64,...
+ */
+private fun formatToAudioMime(format: String): String = when (format.trim().lowercase()) {
+    "mp3", "mpeg" -> "audio/mpeg"
+    "wav", "wave" -> "audio/wav"
+    "m4a", "aac", "mp4" -> "audio/mp4"
+    "flac" -> "audio/flac"
+    "ogg", "oga" -> "audio/ogg"
+    "opus" -> "audio/opus"
+    "webm" -> "audio/webm"
+    "amr" -> "audio/amr"
+    "3gp" -> "audio/3gpp"
+    else -> "audio/${format.trim().lowercase().ifBlank { "wav" }}"
+}
+
 class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
     private val httpClient = OkHttpClient.Builder()
         .readTimeout(60, TimeUnit.SECONDS) // TTS might take longer
@@ -77,12 +94,11 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                     }
                 }
 
-                // ---- 音色复刻 (voiceclone): user 消息可选，assistant = 合成文本 ----
+                // ---- 音色复刻 (voiceclone): 严格对齐官方示例，user 必须为空字符串！----
                 isVoiceClone -> {
-                    // user 消息为可选（可以加入风格指令）
                     messages.put(JSONObject().apply {
                         put("role", "user")
-                        put("content", "Speech synthesis request with reference voice")
+                        put("content", "") // ⚠️ 必须是空字符串，官方示例。填其他内容易触发服务端校验异常 → 429
                     })
                     messages.put(JSONObject().apply {
                         put("role", "assistant")
@@ -90,12 +106,11 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                     })
                 }
 
-                // ---- 标准预置音色 (mimo-v2.5-tts) ----
+                // ---- 标准预置音色 (mimo-v2.5-tts): user 留空，和官方示例保持一致 ----
                 else -> {
-                    // user 消息可选（可以加入风格/语气控制）
                     messages.put(JSONObject().apply {
                         put("role", "user")
-                        put("content", "Speech synthesis request")
+                        put("content", "") // user 为空字符串（如需风格控制可填指令，但官方示例用空串更稳妥，避免限流）
                     })
                     messages.put(JSONObject().apply {
                         put("role", "assistant")
@@ -107,30 +122,27 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
             put("messages", messages)
 
             put("audio", JSONObject().apply {
-                put("format", "mp3") // Support mp3, wav, pcm
+                put("format", "mp3") // 支持 mp3, wav, pcm — 官方示例用 wav，mp3 也可正常使用
 
                 when {
-                    // 标准 TTS：预置音色 + 语速
+                    // 标准 TTS：预置音色 (⚠️ audio.speed 字段 MIMO 官方尚未开放，已移除)
                     isStandardTTS -> {
                         put("voice", providerSetting.voice)
-                        put("speed", providerSetting.speed)
                     }
 
-                    // 音色设计：可选文本润色 + 语速
+                    // 音色设计：可选文本润色 (⚠️ audio.speed 字段 MIMO 官方尚未开放，已移除)
                     isVoiceDesign -> {
                         put("optimize_text_preview", providerSetting.optimizeTextPreview)
-                        put("speed", providerSetting.speed)
                     }
 
-                    // 音色复刻：参考音频 + 语速
+                    // 音色复刻：voice 字段填完整 data URI: data:audio/{mime};base64,{data}
+                    // ⚠️ 严格对齐官方 Python 示例：只传 format + voice 两个字段！
                     isVoiceClone -> {
                         if (providerSetting.referenceAudioBase64.isNotBlank()) {
-                            put("reference_audio", providerSetting.referenceAudioBase64)
-                            if (providerSetting.referenceAudioFormat.isNotBlank()) {
-                                put("reference_audio_format", providerSetting.referenceAudioFormat)
-                            }
+                            val mime = formatToAudioMime(providerSetting.referenceAudioFormat)
+                            val voiceDataUri = "data:$mime;base64,${providerSetting.referenceAudioBase64}"
+                            put("voice", voiceDataUri)
                         }
-                        put("speed", providerSetting.speed)
                     }
                 }
             })

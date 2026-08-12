@@ -521,18 +521,26 @@ private fun MimoTTSConfiguration(
         FormItem(
             label = { Text("参考音频") },
             description = {
-                Text(
-                    text = if (localReferenceAudioBase64.isBlank()) {
-                        "选择一段 5-60 秒的清晰人声音频，作为音色复刻的参考。"
-                    } else {
-                        "已加载: $localReferenceAudioFileName" +
-                            (if (localReferenceAudioFormat.isNotBlank()) " · $localReferenceAudioFormat" else "") +
-                            " · ${localReferenceAudioBase64.length * 3 / 4 / 1024} KB"
-                    },
-                    color = if (localReferenceAudioBase64.isBlank())
-                        MaterialTheme.colorScheme.error else
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column {
+                    Text(
+                        text = if (localReferenceAudioBase64.isBlank()) {
+                            "选择一段 5-60 秒的清晰人声音频，作为音色复刻的参考。建议文件 < 1MB。"
+                        } else {
+                            "已加载: $localReferenceAudioFileName" +
+                                (if (localReferenceAudioFormat.isNotBlank()) " · $localReferenceAudioFormat" else "") +
+                                " · ${localReferenceAudioBase64.length * 3 / 4 / 1024} KB"
+                        },
+                        color = if (localReferenceAudioBase64.isBlank())
+                            MaterialTheme.colorScheme.error else
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "⚠️ 429 限流排查：音色克隆资源消耗较大，如遇 \"Too many requests\"，请等待 1-2 分钟后再试；使用更短的参考音频、避免连续请求。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
         ) {
             Column(
@@ -598,10 +606,15 @@ private fun MimoTTSConfiguration(
         }
     }
 
-    // ---- 语速 (所有模型通用) ----
+    // ---- 语速 (MiMo 走客户端 ExoPlayer 播放速度调整) ----
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_speed)) },
-        description = { Text(stringResource(R.string.setting_tts_page_speed_description)) }
+        description = {
+            Text(
+                "MiMo 官方 API 未开放服务端语速参数，语速将通过系统播放器在播放时调整（保留音高）。\n" +
+                    "范围 0.25 ~ 4.0，1.0 为原始速度。"
+            )
+        }
     ) {
         OutlinedNumberInput(
             value = localSpeed,

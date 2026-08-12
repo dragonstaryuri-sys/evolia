@@ -315,9 +315,16 @@ class TtsController(
                             Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
 
-                            // If it's a rate limit error (often indicated by message or code), wait longer
-                            val waitTime = if (errorMsg.contains("rate_limit", ignoreCase = true) || errorMsg.contains("concurrent", ignoreCase = true)) {
-                                10000L // 10 seconds for rate limits
+                            // 如果是限流错误，增加更长的退避时间 (429 / Too many requests / rate_limit / limitation)
+                            val isRateLimit = errorMsg.contains("rate_limit", ignoreCase = true)
+                                || errorMsg.contains("concurrent", ignoreCase = true)
+                                || errorMsg.contains("429")
+                                || errorMsg.contains("too many", ignoreCase = true)
+                                || errorMsg.contains("limitation", ignoreCase = true)
+                                || errorMsg.contains("quota", ignoreCase = true)
+                            val waitTime = if (isRateLimit) {
+                                Log.i(TAG, "Rate limit hit, backing off 15s for chunk ${chunk.index}")
+                                15000L // 15s for rate limits (MiMo voiceclone 容易触发 429)
                             } else {
                                 5000L
                             }
@@ -338,6 +345,10 @@ class TtsController(
                     }
 
                     // 播放 with retry
+                    // 对于 MIMO Provider：官方 API 不支持服务端 audio.speed 字段，改用 ExoPlayer 客户端播放速度
+                    if (provider is TTSProviderSetting.Mimo) {
+                        audio.setSpeed(provider.speed)
+                    }
                     var playbackSuccess = false
                     for (attempt in 1..3) {
                         try {
@@ -452,8 +463,15 @@ class TtsController(
                             Log.w(TAG, "Retrying chunk ${chunk.index} after extended delay (total attempts: $totalAttempts): $errorMsg")
                             _error.update { "TTS Error: $errorMsg" }
 
-                            val waitTime = if (errorMsg.contains("rate_limit", ignoreCase = true) || errorMsg.contains("concurrent", ignoreCase = true)) {
-                                10000L
+                            val isRateLimit = errorMsg.contains("rate_limit", ignoreCase = true)
+                                || errorMsg.contains("concurrent", ignoreCase = true)
+                                || errorMsg.contains("429")
+                                || errorMsg.contains("too many", ignoreCase = true)
+                                || errorMsg.contains("limitation", ignoreCase = true)
+                                || errorMsg.contains("quota", ignoreCase = true)
+                            val waitTime = if (isRateLimit) {
+                                Log.i(TAG, "Rate limit hit (withProvider), backing off 15s for chunk ${chunk.index}")
+                                15000L
                             } else {
                                 5000L
                             }
@@ -473,6 +491,10 @@ class TtsController(
                         continue
                     }
 
+                    // MIMO Provider：客户端播放速度兜底（官方 API 不支持服务端 audio.speed）
+                    if (provider is TTSProviderSetting.Mimo) {
+                        audio.setSpeed(provider.speed)
+                    }
                     // Playback with retry
                     var playbackSuccess = false
                     for (attempt in 1..3) {
