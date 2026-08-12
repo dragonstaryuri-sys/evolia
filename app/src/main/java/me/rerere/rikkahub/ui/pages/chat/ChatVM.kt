@@ -301,6 +301,14 @@ class ChatVM(
         .flatMapLatest { chatService.getGenerationJobStateFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
+    /**
+     * 立即停止当前会话的 AI 生成（同步清理状态，不依赖协程的异步 finally/invokeOnCompletion）。
+     * 相比单纯 cancel conversationJob，能保证终止按钮和 isAiTyping 状态立即同步消失。
+     */
+    fun stopGeneration() {
+        chatService.stopGeneration(_currentActiveId.value)
+    }
+
     private val _recentlyRestoredNodeIds = MutableStateFlow<Set<Uuid>>(emptySet())
     val recentlyRestoredNodeIds: StateFlow<Set<Uuid>> = _recentlyRestoredNodeIds
 

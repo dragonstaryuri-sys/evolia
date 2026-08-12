@@ -518,8 +518,11 @@ private fun ChatPageContent(
         }
     }
 
-    LaunchedEffect(loadingJob) {
-        inputState.loading = loadingJob != null
+    // 终止按钮完全以 isAiTyping 为准：
+    //   - finally 块中立即清除 → AI 停后按钮立即消失，不依赖 invokeOnCompletion 的异步
+    //   - 微信模式 5 秒 debounce 期间 isAiTyping=false → 前 5 秒不显示终止按钮
+    LaunchedEffect(isAiTyping) {
+        inputState.loading = isAiTyping
     }
 
     AssistantChatTheme(assistant = currentAssistant) {
@@ -847,7 +850,7 @@ private fun ChatPageContent(
                                             toaster.show(errorSelectModelText, type = ToastType.Error)
                                         }
                                     },
-                                    onCancelClick = { loadingJob?.cancel() },
+                                    onCancelClick = { vm.stopGeneration() },
                                     enableSearch = enableWebSearch,
                                     onToggleSearch = {
                                         if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
@@ -957,7 +960,7 @@ private fun ChatPageContent(
                                             toaster.show(errorSelectModelText, type = ToastType.Error)
                                         }
                                     },
-                                    onCancelClick = { loadingJob?.cancel() },
+                                    onCancelClick = { vm.stopGeneration() },
                                     enableSearch = enableWebSearch,
                                     onToggleSearch = {
                                         if (enableWebSearch) vm.updateAssistantSearchMode(me.rerere.rikkahub.core.data.model.AssistantSearchMode.Off)
