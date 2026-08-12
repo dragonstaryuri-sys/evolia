@@ -77,6 +77,10 @@ class DiaryVM(
 
     val settings = settingsStore.settingsFlow
 
+    // 保存中状态（手写日记图片压缩/写文件是耗时操作，用于 UI 显示 loading）
+    private val _isSaving = MutableStateFlow(false)
+    val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+
     // OCR 进度状态：imageId -> OcrStatus（用于 UI 实时展示每张图片的解析状态）
     private val _ocrProgress = MutableStateFlow<Map<String, OcrStatus>>(emptyMap())
     val ocrProgress: StateFlow<Map<String, OcrStatus>> = _ocrProgress.asStateFlow()
@@ -313,8 +317,6 @@ class DiaryVM(
             "locale" to Locale.getDefault().displayName
         )
 
-        toaster?.show(app.getString(R.string.diary_agent_commenting_to, targetAssistant.name))
-
         sendHiddenCommandAndListen(
             convId = convId,
             prompt = prompt,
@@ -473,7 +475,6 @@ class DiaryVM(
             "locale" to Locale.getDefault().displayName
         )
 
-        toaster?.show(app.getString(R.string.diary_generating_comment))
         // AI 回复的 replyToId 指向用户刚发的回复评论
         sendHiddenCommandAndListen(
             convId = convId,
@@ -709,25 +710,84 @@ class DiaryVM(
         onSaved: (String) -> Unit = {}
     ) {
         viewModelScope.launch {
-            // 图片压缩+写文件是 IO 操作，必须切到 Dispatchers.IO，否则会阻塞主线程导致 UI 卡顿
-            val diaryId = Uuid.random().toString()
-            val images = withContext(Dispatchers.IO) {
-                imageBitmaps.map { bitmap ->
-                    val imageId = Uuid.random().toString()
-                    val imagePath = DiaryImageUtil.saveDiaryImage(app, diaryId, imageId, bitmap)
-                    DiaryImage(id = imageId, imagePath = imagePath)
+            _isSaving.value = true
+            try {
+                // 图片压缩+写文件是 IO 操作，必须切到 Dispatchers.IO，否则会阻塞主线程导致 UI 卡顿
+                val diaryId = Uuid.random().toString()
+                val images = withContext(Dispatchers.IO) {
+                    imageBitmaps.map { bitmap ->
+                        val imageId = Uuid.random().toString()
+                        val imagePath = DiaryImageUtil.saveDiaryImage(app, diaryId, imageId, bitmap)
+                        DiaryImage(id = imageId, imagePath = imagePath)
+                    }
                 }
-            }
 
-            val entity = AgentDiaryEntity(
-                id = diaryId,
-                assistantId = assistantId,
-                content = textContent,
-                images = images,
-                date = date
-            )
-            diaryRepo.insertDiary(entity)
-            onSaved(diaryId)
+                val entity = AgentDiaryEntity(
+                    id = diaryId,
+                    assistantId = assistantId,
+                    content = textContent,
+                    images = images,
+                    date = date
+                )
+                diaryRepo.insertDiary(entity)
+                onSaved(diaryId)
+            } finally {
+                _isSaving.value = false
+            }
+        }
+    }
+
+    /**
+     * 编辑手写日记：保存图片列表（保留的已有图片 + 新图片）。
+     *
+     * 执行流程：
+     * 1) 新图片先压缩 + 写文件为 webp
+     * 2) 合并 keptExistingImages + newImages
+     * 3) 合并后为空 → 删除整篇日记
+     * 4) 否则 updateDiary 覆盖图片列表
+     *
+     * 整个过程写入 _isSaving，UI 据此显示 loading。
+     */
+    fun updateDiaryWithImages(
+        diaryId: String,
+        keptExistingImages: List<DiaryImage>,
+        newImageBitmaps: List<Bitmap>,
+        content: String,
+        assistantId: String,
+        date: String,
+        onSaved: (deleted: Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isSaving.value = true
+            try {
+                val newImages = withContext(Dispatchers.IO) {
+                    newImageBitmaps.map { bitmap ->
+                        val imageId = Uuid.random().toString()
+                        val imagePath = DiaryImageUtil.saveDiaryImage(app, diaryId, imageId, bitmap)
+                        DiaryImage(id = imageId, imagePath = imagePath)
+                    }
+                }
+                val mergedImages = keptExistingImages + newImages
+                if (mergedImages.isEmpty()) {
+                    // 图片全部删光且没有新图：删除这篇日记
+                    deleteDiary(diaryId)
+                    onSaved(true)
+                } else {
+                    val existing = diaryRepo.getDiaryById(diaryId)
+                    val entity = AgentDiaryEntity(
+                        id = diaryId,
+                        assistantId = existing?.assistantId ?: assistantId,
+                        content = content,
+                        images = mergedImages,
+                        date = date,
+                        createdAt = existing?.createdAt ?: System.currentTimeMillis()
+                    )
+                    diaryRepo.updateDiary(entity)
+                    onSaved(false)
+                }
+            } finally {
+                _isSaving.value = false
+            }
         }
     }
 

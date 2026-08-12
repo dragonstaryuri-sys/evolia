@@ -614,8 +614,21 @@ class AssistantDetailVM(
                 )
 
                 _embeddingProgress.value = EmbeddingProgress(0, 1, true)
-                memoryRepository.regenerateEmbeddings(assistantId.toString()) { current, total ->
-                    _embeddingProgress.value = EmbeddingProgress(current, total, true)
+                try {
+                    val (success, failed) = memoryRepository.regenerateEmbeddings(assistantId.toString()) { current, total ->
+                        _embeddingProgress.value = EmbeddingProgress(current, total, true)
+                    }
+                    if (success == 0 && failed == 0) {
+                        // No-op
+                    } else if (failed > 0) {
+                        setSnackbarMessage(context.getString(R.string.embedding_gen_completed, success, failed))
+                    } else {
+                        setSnackbarMessage(context.getString(R.string.embedding_gen_success, success))
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Regenerate embeddings during optimize failed", e)
+                    val errorMessage = e.localizedMessage ?: e.message ?: context.getString(R.string.backup_page_unknown_error)
+                    setSnackbarMessage(context.getString(R.string.assistant_memory_embedding_failed_with_reason, errorMessage))
                 }
                 _embeddingProgress.value = null
             } catch (e: Exception) {
@@ -951,10 +964,24 @@ class AssistantDetailVM(
     fun regenerateEmbeddings() {
         viewModelScope.launch {
             _embeddingProgress.value = EmbeddingProgress(0, 1, true)
-            memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t ->
-                _embeddingProgress.value = EmbeddingProgress(c, t, true)
+            try {
+                val (success, failed) = memoryRepository.regenerateEmbeddings(assistantId.toString()) { c, t ->
+                    _embeddingProgress.value = EmbeddingProgress(c, t, true)
+                }
+                if (success == 0 && failed == 0) {
+                    setSnackbarMessage(context.getString(R.string.embedding_gen_none))
+                } else if (failed > 0) {
+                    setSnackbarMessage(context.getString(R.string.embedding_gen_completed, success, failed))
+                } else {
+                    setSnackbarMessage(context.getString(R.string.embedding_gen_success, success))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Regenerate embeddings failed", e)
+                val errorMessage = e.localizedMessage ?: e.message ?: context.getString(R.string.backup_page_unknown_error)
+                setSnackbarMessage(context.getString(R.string.assistant_memory_embedding_failed_with_reason, errorMessage))
+            } finally {
+                _embeddingProgress.value = null
             }
-            _embeddingProgress.value = null
         }
     }
 

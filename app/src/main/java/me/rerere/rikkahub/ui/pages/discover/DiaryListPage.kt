@@ -269,53 +269,113 @@ fun DiaryListPage(
                 }
             }
         },
-        bottomBar = {
-            NavigationBar(modifier = Modifier.height(64.dp)) {
-                NavigationBarItem(
-                    selected = isCalendarMode,
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        vm.isCalendarMode.value = true
-                    },
-                    icon = { Icon(Icons.Rounded.CalendarMonth, null) },
-                    label = { Text(stringResource(R.string.diary_view_calendar)) }
-                )
-                NavigationBarItem(
-                    selected = !isCalendarMode,
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        vm.isCalendarMode.value = false
-                    },
-                    icon = { Icon(Icons.AutoMirrored.Rounded.List, null) },
-                    label = { Text(stringResource(R.string.diary_view_list)) }
-                )
-            }
-        },
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (!isCalendarMode) {
-                DiaryListView(
-                    diaries = diaryList,
-                    onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
-                    onDelete = { vm.deleteDiary(it) },
-                    hasMore = hasMore,
-                    isLoadingMore = isLoadingMore,
-                    onLoadMore = { vm.loadMore() }
+        // 浮动小圆 tab 和内容叠在同一层，避免 Scaffold bottomBar 预留空白条
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 内容区域：只应用 Scaffold 的 top padding，底部不占位
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    top = padding.calculateTopPadding(),
+                    bottom = 0.dp
                 )
-            } else {
-                DiaryCalendarView(
-                    selectedDate = selectedDate,
-                    onMonthChange = { currentMonthByPager = it },
-                    datesWithDiaries = datesWithDiaries,
-                    diariesAtSelectedDate = diariesAtSelectedDate,
-                    onDateSelect = {
-                        haptics.perform(HapticPattern.Pop)
-                        vm.selectedDate.value = it
-                    },
-                    onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
-                    onDelete = { vm.deleteDiary(it) }
-                )
+            ) {
+                if (!isCalendarMode) {
+                    DiaryListView(
+                        diaries = diaryList,
+                        onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
+                        onDelete = { vm.deleteDiary(it) },
+                        hasMore = hasMore,
+                        isLoadingMore = isLoadingMore,
+                        onLoadMore = { vm.loadMore() }
+                    )
+                } else {
+                    DiaryCalendarView(
+                        selectedDate = selectedDate,
+                        onMonthChange = { currentMonthByPager = it },
+                        datesWithDiaries = datesWithDiaries,
+                        diariesAtSelectedDate = diariesAtSelectedDate,
+                        onDateSelect = {
+                            haptics.perform(HapticPattern.Pop)
+                            vm.selectedDate.value = it
+                        },
+                        onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
+                        onDelete = { vm.deleteDiary(it) }
+                    )
+                }
+            }
+
+            // 与 Provider 详情页一致的浮动小圆 tab bar（叠在内容最上层）
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.align(Alignment.Center),
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // 日历视图 tab
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .then(
+                                    if (isCalendarMode)
+                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                    else Modifier.clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        vm.isCalendarMode.value = true
+                                    }
+                                )
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.CalendarMonth,
+                                contentDescription = stringResource(R.string.diary_view_calendar),
+                                tint = if (isCalendarMode)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        // 列表视图 tab
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .then(
+                                    if (!isCalendarMode)
+                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                                    else Modifier.clickable {
+                                        haptics.perform(HapticPattern.Tick)
+                                        vm.isCalendarMode.value = false
+                                    }
+                                )
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.List,
+                                contentDescription = stringResource(R.string.diary_view_list),
+                                tint = if (!isCalendarMode)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

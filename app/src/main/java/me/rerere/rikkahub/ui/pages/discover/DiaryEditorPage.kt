@@ -42,6 +42,7 @@ import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.entity.DiaryImage
 import me.rerere.rikkahub.core.data.db.entity.OcrStatus
+import me.rerere.rikkahub.ui.components.chat.TypingIndicator
 import me.rerere.rikkahub.ui.components.crop.FourCornerCropScreen
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
@@ -77,6 +78,7 @@ fun DiaryEditorPage(
     val haptics = rememberPremiumHaptics()
     val scope = rememberCoroutineScope()
     val isNew = diaryId == "new"
+    val isSaving by vm.isSaving.collectAsStateWithLifecycle()
 
     var selectedAssistantId by remember { mutableStateOf("USER") }
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
@@ -184,12 +186,10 @@ fun DiaryEditorPage(
 
     val startGallery: () -> Unit = { galleryLauncher.launch("image/*") }
 
-    // 新建 + USER + 扫描模式：首次进入时立即弹出"拍照/相册"选择入口，
-    // 让用户选择来源进入文档扫描流程
-    var scanEntrySheetShown by remember { mutableStateOf(false) }
+    // 新建 + USER + 扫描模式：直接启动相册选择器（相册里自带拍照入口，二步合一）
     LaunchedEffect(Unit) {
         if (isNew && entryType == "scan" && selectedAssistantId == "USER") {
-            scanEntrySheetShown = true
+            startGallery()
         }
     }
 
@@ -231,30 +231,18 @@ fun DiaryEditorPage(
         } else {
             // 编辑模式
             if (isHandwriteMode) {
-                // 编辑手写日记：保存 (保留的已有图片 + 新图片)，覆盖原图片列表。
-                val app = vm.app
-                scope.launch {
-                    // 新图片写文件（IO）
-                    val newImages = withContext(Dispatchers.IO) {
-                        imageBitmaps.map { bitmap ->
-                            val imageId = Uuid.random().toString()
-                            val imagePath = DiaryImageUtil.saveDiaryImage(app, diaryId, imageId, bitmap)
-                            DiaryImage(id = imageId, imagePath = imagePath)
-                        }
-                    }
-                    val mergedImages = keptExistingImages + newImages
-                    if (mergedImages.isEmpty()) {
-                        // 图片全部删光且没有新图：直接删除这篇日记
-                        vm.deleteDiary(diaryId)
+                // 编辑手写日记：统一走 vm.updateDiaryWithImages（内部维护 isSaving）
+                vm.updateDiaryWithImages(
+                    diaryId = diaryId,
+                    keptExistingImages = keptExistingImages,
+                    newImageBitmaps = imageBitmaps,
+                    content = content,
+                    assistantId = selectedAssistantId,
+                    date = selectedDate.toString()
+                ) { deleted ->
+                    if (deleted) {
                         toaster.show("日记已删除")
                     } else {
-                        vm.saveDiary(
-                            id = diaryId,
-                            assistantId = selectedAssistantId,
-                            content = content,
-                            date = selectedDate.toString(),
-                            overrideImages = mergedImages
-                        )
                         toaster.show("已保存修改")
                     }
                     navController.popBackStack()
@@ -268,7 +256,8 @@ fun DiaryEditorPage(
         }
     }
 
-    BackHandler { navController.popBackStack() }
+    // 保存中禁止返回，避免图片文件写了一半用户就走
+    BackHandler(enabled = !isSaving) { navController.popBackStack() }
 
     // 四角裁剪界面
     if (showCropScreen && imageToCrop != null) {
@@ -284,34 +273,6 @@ fun DiaryEditorPage(
                 imageToCrop = null
             }
         )
-    }
-
-    // 扫描模式入口：新建用户日记且 entryType=scan 时，一进入就弹出"拍照/相册"选择
-    if (scanEntrySheetShown) {
-        val scanSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        LaunchedEffect(scanEntrySheetShown) {
-            if (scanEntrySheetShown) scanSheetState.show()
-        }
-        ModalBottomSheet(
-            onDismissRequest = { scanEntrySheetShown = false },
-            sheetState = scanSheetState,
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            ScanEntrySheetContent(
-                onCamera = {
-                    haptics.perform(HapticPattern.Pop)
-                    scanEntrySheetShown = false
-                    startCamera()
-                },
-                onGallery = {
-                    haptics.perform(HapticPattern.Pop)
-                    scanEntrySheetShown = false
-                    startGallery()
-                },
-                onCancel = { scanEntrySheetShown = false }
-            )
-            Spacer(modifier = Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
-        }
     }
 
     // 处理相机权限 Rationale Dialog
@@ -330,11 +291,26 @@ fun DiaryEditorPage(
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
                 actions = {
-                    IconButton(onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        onSave()
-                    }) {
-                        Icon(Icons.Rounded.Check, null)
+                    if (isSaving) {
+                        // 保存中：显示 loading，禁用点击
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                onSave()
+                            }
+                        ) {
+                            Icon(Icons.Rounded.Check, null)
+                        }
                     }
                 }
             )
@@ -343,143 +319,183 @@ fun DiaryEditorPage(
             .nestedScroll(scrollBehavior.nestedScrollConnection)
             .imePadding()
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp)
-        ) {
-            // 日期选择（新建和编辑都可修改日期）
-            Text(stringResource(R.string.diary_select_date), style = MaterialTheme.typography.labelMedium)
-            Box(modifier = Modifier.padding(vertical = 8.dp)) {
-                AssistChip(
-                    onClick = { showDatePicker = true },
-                    label = { Text(selectedDate.toString()) },
-                    leadingIcon = { Icon(Icons.Rounded.CalendarToday, null, modifier = Modifier.size(16.dp)) }
-                )
-            }
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp)
+            ) {
+                // 日期选择（新建和编辑都可修改日期）
+                Text(stringResource(R.string.diary_select_date), style = MaterialTheme.typography.labelMedium)
+                Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                    AssistChip(
+                        onClick = { showDatePicker = true },
+                        label = { Text(selectedDate.toString()) },
+                        leadingIcon = { Icon(Icons.Rounded.CalendarToday, null, modifier = Modifier.size(16.dp)) }
+                    )
+                }
 
-            if (showDatePicker) {
-                val datePickerState = rememberDatePickerState(
-                    initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                )
-                DatePickerDialog(
-                    onDismissRequest = { showDatePicker = false },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            datePickerState.selectedDateMillis?.let {
-                                selectedDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
-                            }
-                            showDatePicker = false
-                        }) { Text(stringResource(R.string.confirm)) }
-                    }
-                ) { DatePicker(state = datePickerState) }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            if (isHandwriteMode) {
-                // ===== 手写日记模式：只显示拍照/相册 + 图片预览 =====
-                DiaryImagePickerSection(
-                    imageBitmaps = imageBitmaps,
-                    startCamera = startCamera,
-                    startGallery = startGallery,
-                    onRemoveImage = { index ->
-                        imageBitmaps = imageBitmaps.toMutableList().also { it.removeAt(index) }
-                    },
-                    onClickNewImage = { index ->
-                        // 新建模式的图片是 Bitmap，需要先临时保存为文件才能传给预览 dialog
-                        scope.launch(Dispatchers.IO) {
-                            val tempDir = File(context.cacheDir, "diary_preview").apply { mkdirs() }
-                            val paths = imageBitmaps.mapIndexed { i, bm ->
-                                val f = File(tempDir, "preview_$i.png")
-                                runCatching {
-                                    java.io.FileOutputStream(f).use { os ->
-                                        bm.compress(Bitmap.CompressFormat.PNG, 100, os)
-                                    }
+                if (showDatePicker) {
+                    val datePickerState = rememberDatePickerState(
+                        initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    )
+                    DatePickerDialog(
+                        onDismissRequest = { showDatePicker = false },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                datePickerState.selectedDateMillis?.let {
+                                    selectedDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
                                 }
-                                f.absolutePath
+                                showDatePicker = false
+                            }) { Text(stringResource(R.string.confirm)) }
+                        }
+                    ) { DatePicker(state = datePickerState) }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                if (isHandwriteMode) {
+                    // ===== 手写日记模式：只显示从相册导入 + 图片预览 =====
+                    DiaryImagePickerSection(
+                        imageBitmaps = imageBitmaps,
+                        startGallery = startGallery,
+                        onRemoveImage = { index ->
+                            imageBitmaps = imageBitmaps.toMutableList().also { it.removeAt(index) }
+                        },
+                        onClickNewImage = { index ->
+                            scope.launch(Dispatchers.IO) {
+                                val tempDir = File(context.cacheDir, "diary_preview").apply { mkdirs() }
+                                val paths = imageBitmaps.mapIndexed { i, bm ->
+                                    val f = File(tempDir, "preview_$i.png")
+                                    runCatching {
+                                        java.io.FileOutputStream(f).use { os ->
+                                            bm.compress(Bitmap.CompressFormat.PNG, 100, os)
+                                        }
+                                    }
+                                    f.absolutePath
+                                }
+                                previewImagePaths = paths
                             }
-                            previewImagePaths = paths
-                            // 跳到用户点击的那张
-                            // (ImagePreviewDialog 默认显示第 0 张；此处暂直接跳 list，用户可左右滑)
+                        }
+                    )
+
+                    // 编辑模式下展示已有图片（可删除，可预览），并提供"继续添加图片"入口
+                    if (!isNew && keptExistingImages.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        ExistingImagesSection(
+                            images = keptExistingImages,
+                            startGallery = startGallery,
+                            onRemoveImage = { imageId ->
+                                removedExistingImageIds.add(imageId)
+                            },
+                            onClickImage = {
+                                previewImagePaths = keptExistingImages.map { it.imagePath }
+                            }
+                        )
+                    }
+                } else {
+                    // ===== 直接记录模式：只显示文本编辑器 =====
+                    Text(
+                        text = if (isNew) stringResource(R.string.diary_write_hint) else "修改内容",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = AppShapes.CardLarge,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        )
+                    ) {
+                        BasicTextField(
+                            value = content,
+                            onValueChange = { content = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 350.dp)
+                                .padding(20.dp),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                lineHeight = 26.sp
+                            ),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                if (content.isEmpty()) {
+                                    Text(
+                                        "开始记录...",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        )
+                    }
+
+                    // 只有新建模式时，才显示今日日程关联
+                    if (isNew && schedules.isNotEmpty()) {
+                        Spacer(Modifier.height(32.dp))
+                        Text(stringResource(R.string.diary_schedule_link), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
+                        schedules.forEach { schedule ->
+                            Card(
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    val item = "\n- [${if (schedule.isCompleted) "x" else " "}] ${schedule.title}"
+                                    content += item
+                                },
+                                modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                            ) {
+                                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = schedule.isCompleted, onCheckedChange = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(schedule.title, style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
                         }
                     }
-                )
-
-                // 编辑模式下展示已有图片（可删除，可预览）
-                if (!isNew && keptExistingImages.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    ExistingImagesSection(
-                        images = keptExistingImages,
-                        onRemoveImage = { imageId ->
-                            removedExistingImageIds.add(imageId)
-                        },
-                        onClickImage = {
-                            previewImagePaths = keptExistingImages.map { it.imagePath }
-                        }
-                    )
                 }
-            } else {
-                // ===== 直接记录模式：只显示文本编辑器 =====
-                Text(
-                    text = if (isNew) stringResource(R.string.diary_write_hint) else "修改内容",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(12.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = AppShapes.CardLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                    )
+            }
+
+            // 保存中：蒙板 + 统一的 TypingIndicator pill（与日记详情页评论加载风格一致）
+            if (isSaving) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
                 ) {
-                    BasicTextField(
-                        value = content,
-                        onValueChange = { content = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 350.dp)
-                            .padding(20.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            lineHeight = 26.sp
-                        ),
-                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                        decorationBox = { innerTextField ->
-                            if (content.isEmpty()) {
-                                Text(
-                                    "开始记录...",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                )
-                            }
-                            innerTextField()
-                        }
-                    )
-                }
-
-                // 只有新建模式时，才显示今日日程关联
-                if (isNew && schedules.isNotEmpty()) {
-                    Spacer(Modifier.height(32.dp))
-                    Text(stringResource(R.string.diary_schedule_link), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(12.dp))
-                    schedules.forEach { schedule ->
-                        Card(
-                            onClick = {
-                                haptics.perform(HapticPattern.Pop)
-                                val item = "\n- [${if (schedule.isCompleted) "x" else " "}] ${schedule.title}"
-                                content += item
-                            },
-                            modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    Row(
+                        modifier = Modifier.align(Alignment.Center),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
-                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = schedule.isCompleted, onCheckedChange = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(schedule.title, style = MaterialTheme.typography.bodyMedium)
+                            Row(
+                                modifier = Modifier.padding(
+                                    start = 14.dp,
+                                    top = 10.dp,
+                                    end = 18.dp,
+                                    bottom = 10.dp
+                                ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TypingIndicator(
+                                    dotSize = 7.dp,
+                                    dotSpacing = 4.dp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = "正在保存中…",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -499,174 +515,60 @@ fun DiaryEditorPage(
 }
 
 /**
- * 扫描模式入口弹窗内容：提供拍照/相册两个入口
- */
-@Composable
-private fun ScanEntrySheetContent(
-    onCamera: () -> Unit,
-    onGallery: () -> Unit,
-    onCancel: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .padding(top = 8.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // 顶部 drag handle
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.outlineVariant)
-            )
-        }
-        Text(
-            text = stringResource(R.string.diary_scan_entry_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-        // 拍照
-        Card(
-            onClick = onCamera,
-            shape = AppShapes.CardLarge,
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.CameraAlt, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.diary_handwrite_camera),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = stringResource(R.string.diary_scan_camera_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        // 相册
-        Card(
-            onClick = onGallery,
-            shape = AppShapes.CardLarge,
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.secondaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Rounded.Photo, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.diary_handwrite_gallery),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = stringResource(R.string.diary_scan_gallery_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        // 取消
-        OutlinedButton(
-            onClick = onCancel,
-            shape = AppShapes.ButtonPill,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp)
-        ) {
-            Text(stringResource(R.string.cancel))
-        }
-    }
-}
-
-/**
  * 手写日记图片选择区域（新建模式）。
- * 提供拍照/相册入口 + 已选图片预览（可删除）。
- *
- * 拍照/相册逻辑提升到 DiaryEditorPage 顶层，以便 entryType=scan 模式可直接触发。
+ * 只提供从相册导入（相册自带拍照入口），避免重复的拍照选择。
  */
 @Composable
 private fun DiaryImagePickerSection(
     imageBitmaps: List<Bitmap>,
-    startCamera: () -> Unit,
     startGallery: () -> Unit,
     onRemoveImage: (Int) -> Unit,
     onClickNewImage: (Int) -> Unit
 ) {
-    Text(
-        text = stringResource(R.string.diary_handwrite_section_title),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(12.dp))
-
-    // 拍照 / 相册按钮
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        FilledTonalButton(
-            onClick = startCamera,
-            shape = AppShapes.ButtonPill,
-            modifier = Modifier.weight(1f)
+    // 导入图片入口：一个大的漂亮 Card（内置相册自带拍照按钮，不再让用户二选一）
+    Card(
+        onClick = startGallery,
+        shape = AppShapes.CardLarge,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Rounded.CameraAlt, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.diary_handwrite_camera))
-        }
-
-        FilledTonalButton(
-            onClick = startGallery,
-            shape = AppShapes.ButtonPill,
-            modifier = Modifier.weight(1f)
-        ) {
-            Icon(Icons.Rounded.Photo, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.diary_handwrite_gallery))
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.Image,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.diary_handwrite_gallery),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.diary_scan_gallery_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+    Spacer(Modifier.height(12.dp))
 
     // 已选图片预览
     if (imageBitmaps.isNotEmpty()) {
@@ -720,19 +622,59 @@ private fun DiaryImagePickerSection(
  * 去掉 OCR 状态显示（图片理解交给对话模型按需处理），新增：
  * - 每张图片右上角删除按钮（将 imageId 回调给调用方，调用方负责更新"删除集合"）
  * - 点击卡片主体可放大预览
+ * - 顶部提供"继续添加图片"入口（与新建手写日记的导入卡片样式一致）
  */
 @Composable
 private fun ExistingImagesSection(
     images: List<DiaryImage>,
+    startGallery: () -> Unit,
     onRemoveImage: (String) -> Unit,
     onClickImage: () -> Unit
 ) {
-    Text(
-        text = stringResource(R.string.diary_handwrite_images_title),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(8.dp))
+    // 继续添加图片入口
+    Card(
+        onClick = startGallery,
+        shape = AppShapes.CardLarge,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.AddPhotoAlternate,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.diary_handwrite_add_more_images),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.diary_handwrite_add_more_images_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Spacer(Modifier.height(12.dp))
 
     images.forEach { image ->
         EditableImageCard(

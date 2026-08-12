@@ -361,35 +361,41 @@ private fun CommentItemDetailed(
             }
         }
 
-        // 长按弹出菜单
-        DropdownMenu(
-            expanded = showMenu,
-            onDismissRequest = { showMenu = false }
+        // 右侧透明 anchor，让长按菜单从卡片右下方弹出
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .wrapContentSize(Alignment.TopEnd)
         ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.copy)) },
-                leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
-                onClick = {
-                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(comment.content))
-                    showMenu = false
-                    toaster.show(copiedStr)
-                }
-            )
-            val canDelete = true // user 可以删除任何人的评论
-            if (canDelete) {
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
                 DropdownMenuItem(
-                    text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    },
+                    text = { Text(stringResource(R.string.copy)) },
+                    leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(18.dp)) },
                     onClick = {
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(comment.content))
                         showMenu = false
-                        showDeleteConfirm = true
+                        toaster.show(copiedStr)
                     }
                 )
+                val canDelete = true // user 可以删除任何人的评论
+                if (canDelete) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.Delete, null, modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        },
+                        onClick = {
+                            showMenu = false
+                            showDeleteConfirm = true
+                        }
+                    )
+                }
             }
         }
     }
