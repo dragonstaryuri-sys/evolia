@@ -25,6 +25,13 @@ interface AgentDiaryDAO {
     @Query("SELECT * FROM AgentDiaryEntity WHERE id = :id LIMIT 1")
     suspend fun getDiaryById(id: String): AgentDiaryEntity?
 
+    /**
+     * 观察单篇日记（响应式）。当数据库中该日记任何字段（如 OCR 状态、content）更新时，
+     * Room 会自动 emit 新值，无需页面退出重进。
+     */
+    @Query("SELECT * FROM AgentDiaryEntity WHERE id = :id LIMIT 1")
+    fun observeDiaryById(id: String): Flow<AgentDiaryEntity?>
+
     @Query("SELECT * FROM AgentDiaryEntity WHERE assistant_id = :assistantId AND date = :date LIMIT 1")
     suspend fun getDiaryByDate(assistantId: String, date: String): AgentDiaryEntity?
 

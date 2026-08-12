@@ -422,7 +422,7 @@ class RouteActivity : AppCompatActivity() {
                     }
                     composable<Screen.DiaryEditor> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.DiaryEditor>()
-                        DiaryEditorPage(diaryId = route.diaryId)
+                        DiaryEditorPage(diaryId = route.diaryId, entryType = route.entryType)
                     }
                     composable<Screen.DiaryDetail> { backStackEntry ->
                         val route = backStackEntry.toRoute<Screen.DiaryDetail>()

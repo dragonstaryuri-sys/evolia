@@ -29,6 +29,13 @@ class DiaryRepository(
         return agentDiaryDao.getDiaryById(id)
     }
 
+    /**
+     * 观察单篇日记（响应式）：当 DB 中该日记更新时自动 emit。
+     */
+    fun observeDiaryById(id: String): Flow<AgentDiaryEntity?> {
+        return agentDiaryDao.observeDiaryById(id)
+    }
+
     suspend fun getDiaryByDate(assistantId: String, date: String): AgentDiaryEntity? {
         return agentDiaryDao.getDiaryByDate(assistantId, date)
     }

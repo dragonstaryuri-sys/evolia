@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
@@ -42,6 +43,8 @@ import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.service.OcrFailureEvent
+import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalDate
 import java.time.YearMonth
@@ -73,6 +76,10 @@ fun DiaryListPage(
     // 用于跟踪当前显示的月份，以便显示年份标题
     var currentMonthByPager by remember { mutableStateOf(YearMonth.from(selectedDate)) }
 
+    // OCR 失败提醒：保存日记后 OCR 在后台执行，失败时用户已在列表页。
+    // 用一个状态保存最近一条失败通知，用户可手动关闭。
+    var ocrFailureNotification by remember { mutableStateOf<OcrFailureEvent?>(null) }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     val defaultUserStr = stringResource(R.string.diary_filter_user)
@@ -85,6 +92,16 @@ fun DiaryListPage(
     var showAutoDiarySheet by remember { mutableStateOf(false) }
     val autoDiarySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    // ===== 新增日记流程 =====
+    // 作者选择弹窗
+    var showAddDiaryAuthorSheet by remember { mutableStateOf(false) }
+    val addDiaryAuthorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 选中的作者（默认 USER）
+    var pendingAuthorId by remember { mutableStateOf("USER") }
+    // 选完作者后，如果是 USER，弹日记类型（文档扫描/直接记录）
+    var showAddDiaryTypeSheet by remember { mutableStateOf(false) }
+    val addDiaryTypeSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     LaunchedEffect(assistantId) {
         if (assistantId != null) {
             vm.togglePersonnelFilter(assistantId)
@@ -95,8 +112,23 @@ fun DiaryListPage(
         vm.observeTaskResults(toaster)
     }
 
+    // 收集 OCR 失败事件：保存手写日记后，OCR 在 AppScope 后台执行，
+    // 用户已返回列表页。失败时在 topbar 下方显示可关闭的提醒横幅。
+    LaunchedEffect(vm) {
+        vm.ocrFailureEvents.collect { event ->
+            ocrFailureNotification = event
+        }
+    }
+
     LaunchedEffect(showAutoDiarySheet) {
         if (showAutoDiarySheet) autoDiarySheetState.show() else autoDiarySheetState.hide()
+    }
+
+    LaunchedEffect(showAddDiaryAuthorSheet) {
+        if (showAddDiaryAuthorSheet) addDiaryAuthorSheetState.show() else addDiaryAuthorSheetState.hide()
+    }
+    LaunchedEffect(showAddDiaryTypeSheet) {
+        if (showAddDiaryTypeSheet) addDiaryTypeSheetState.show() else addDiaryTypeSheetState.hide()
     }
 
     if (showAutoDiarySheet) {
@@ -111,6 +143,64 @@ fun DiaryListPage(
                     haptics.perform(HapticPattern.Pop)
                     vm.toggleAutoDiary(assistantId, enabled)
                 }
+            )
+            Spacer(modifier = Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
+        }
+    }
+
+    // ===== 新增日记：为谁新建？作者选择弹窗 =====
+    if (showAddDiaryAuthorSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddDiaryAuthorSheet = false },
+            sheetState = addDiaryAuthorSheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            AddDiaryAuthorSheetContent(
+                personnelIds = personnelIds,
+                selectedId = pendingAuthorId,
+                userNickname = userNickname,
+                assistants = settings.assistants,
+                userAvatar = settings.displaySetting.userAvatar,
+                onSelect = { id ->
+                    haptics.perform(HapticPattern.Tick)
+                    pendingAuthorId = id
+                },
+                onConfirm = {
+                    haptics.perform(HapticPattern.Pop)
+                    showAddDiaryAuthorSheet = false
+                    if (pendingAuthorId == "USER") {
+                        // 是 USER，再弹日记类型选择
+                        showAddDiaryTypeSheet = true
+                    } else {
+                        // 是智能体，直接开始生成当日日记
+                        vm.generateTodayDiary(pendingAuthorId, toaster)
+                    }
+                },
+                onDismiss = { showAddDiaryAuthorSheet = false }
+            )
+            Spacer(modifier = Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
+        }
+    }
+
+    // ===== 新增日记：USER 选了作者后选日记类型 =====
+    if (showAddDiaryTypeSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAddDiaryTypeSheet = false },
+            sheetState = addDiaryTypeSheetState,
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            AddDiaryTypeSheetContent(
+                onScan = {
+                    haptics.perform(HapticPattern.Pop)
+                    showAddDiaryTypeSheet = false
+                    navController.navigate(Screen.DiaryEditor(diaryId = "new", entryType = "scan"))
+                },
+                onDirect = {
+                    haptics.perform(HapticPattern.Pop)
+                    showAddDiaryTypeSheet = false
+                    navController.navigate(Screen.DiaryEditor(diaryId = "new", entryType = "text"))
+                },
+                onDismiss = { showAddDiaryTypeSheet = false }
             )
             Spacer(modifier = Modifier.height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
         }
@@ -132,10 +222,11 @@ fun DiaryListPage(
                             }) {
                                 Icon(Icons.Rounded.Search, null)
                             }
-                            // 添加按钮
+                            // 添加按钮：先弹"为谁新建"选择
                             IconButton(onClick = {
                                 haptics.perform(HapticPattern.Pop)
-                                navController.navigate(Screen.DiaryEditor(diaryId = "new"))
+                                pendingAuthorId = "USER" // 默认选中自己
+                                showAddDiaryAuthorSheet = true
                             }) {
                                 Icon(Icons.Rounded.Add, null)
                             }
@@ -160,6 +251,17 @@ fun DiaryListPage(
                             else settings.assistants.find { it.id.toString() == id }?.name ?: "Agent"
                         }
                     )
+                    // OCR 失败提醒横幅：点击"查看原因"跳转日记详情，点击关闭按钮可手动关闭
+                    ocrFailureNotification?.let { event ->
+                        OcrFailureBanner(
+                            failedCount = event.failedCount,
+                            onViewDetail = {
+                                navController.navigate(Screen.DiaryDetail(event.diaryId))
+                                ocrFailureNotification = null
+                            },
+                            onDismiss = { ocrFailureNotification = null }
+                        )
+                    }
                 }
             }
         },
@@ -623,6 +725,67 @@ fun DiarySummaryCard(
     }
 }
 
+/**
+ * OCR 失败提醒横幅：显示在 topbar 下方。
+ *
+ * - 点击"查看原因"跳转到日记详情页查看具体失败原因
+ * - 点击关闭按钮可手动关闭横幅
+ * - 使用 errorContainer 配色，简洁醒目
+ */
+@Composable
+private fun OcrFailureBanner(
+    failedCount: Int,
+    onViewDetail: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Rounded.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(20.dp)
+            )
+            Text(
+                text = stringResource(R.string.diary_ocr_failed_banner, failedCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = onViewDetail,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.diary_ocr_failed_view_detail),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.diary_ocr_failed_dismiss),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun EmptyState(msg: String) {
     Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -706,6 +869,273 @@ private fun AutoDiarySettingsContent(
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 新增日记：作者选择弹窗内容
+ * 列表项 = 头像 + 名称，默认选中 USER，右上角确认按钮
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddDiaryAuthorSheetContent(
+    personnelIds: List<String>,
+    selectedId: String,
+    userNickname: String,
+    assistants: List<me.rerere.rikkahub.core.data.model.Assistant>,
+    userAvatar: me.rerere.rikkahub.core.data.model.Avatar,
+    onSelect: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetScrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    Scaffold(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 420.dp),
+        topBar = {
+            // 顶部：drag handle + 标题 + 右上角确认
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(MaterialTheme.colorScheme.outlineVariant)
+                    )
+                }
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = stringResource(R.string.diary_add_author_title),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    },
+                    actions = {
+                        TextButton(onClick = onConfirm) {
+                            Text(
+                                text = stringResource(R.string.confirm),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Rounded.Close, null)
+                        }
+                    },
+                    scrollBehavior = sheetScrollBehavior,
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                )
+            }
+        },
+        containerColor = Color.Transparent
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(padding)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(bottom = 16.dp)
+        ) {
+            items(personnelIds, key = { it }) { id ->
+                val name = if (id == "USER") userNickname
+                else assistants.find { a -> a.id.toString() == id }?.name ?: ""
+                val avatar = if (id == "USER") userAvatar
+                else assistants.find { a -> a.id.toString() == id }?.avatar
+                    ?: me.rerere.rikkahub.core.data.model.Avatar.Dummy
+                val selected = id == selectedId
+
+                Card(
+                    onClick = { onSelect(id) },
+                    shape = AppShapes.CardMedium,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        UIAvatar(name = name, value = avatar, modifier = Modifier.size(44.dp))
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        // 选中态：Check 圆形按钮
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (selected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 新增日记：USER 选择日记类型（文档扫描 / 直接记录）
+ */
+@Composable
+private fun AddDiaryTypeSheetContent(
+    onScan: () -> Unit,
+    onDirect: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(top = 8.dp, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // drag handle + 标题
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 2.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.diary_add_type_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.Rounded.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        // 文档扫描
+        Card(
+            onClick = onScan,
+            shape = AppShapes.CardLarge,
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Rounded.DocumentScanner,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.diary_add_type_scan),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.diary_add_type_scan_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        // 直接记录
+        Card(
+            onClick = onDirect,
+            shape = AppShapes.CardLarge,
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Rounded.EditNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.diary_add_type_direct),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.diary_add_type_direct_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

@@ -111,6 +111,7 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
 import android.net.Uri
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.cancelAndJoin
 import me.rerere.rikkahub.BuildConfig
@@ -774,8 +775,10 @@ class ChatService(
             }
 
             val timeoutJob = launch {
-                delay(600000)
-                if (_isAiTypingMap.value.containsKey(conversationId)) _isAiTypingMap.update { it - conversationId }
+                delay(15 * 60 * 1000L)
+                // 超时后取消整个生成任务并提示用户
+                _errorFlow.emit(java.net.SocketTimeoutException(context.getString(R.string.chat_generation_timeout)))
+                cancel()
             }
             try {
                 handleMessageComplete(
@@ -1109,8 +1112,7 @@ class ChatService(
                     messages
                 } else messagesForModel
 
-                kotlinx.coroutines.withTimeout(20 * 60 * 1000L) {
-                    generationHandler.generateText(
+                generationHandler.generateText(
                         settings = settings,
                         model = model,
                         messages = finalContextMessages,
@@ -1418,7 +1420,6 @@ class ChatService(
                         wechatSentenceBuffer.clear()
                     }
 
-                }
             }.onFailure { e ->
                 if (e is kotlinx.coroutines.CancellationException) {
                     return@onFailure

@@ -410,8 +410,8 @@
   <string name="setting_model_page_chat_model_desc">全局默认的聊天模型</string>
   <string name="setting_model_page_learning_mode">学习模式提示词</string>
   <string name="setting_model_page_learning_mode_desc">配置用于学习模式的提示词</string>
-  <string name="setting_model_page_ocr_model">OCR 模型</string>
-  <string name="setting_model_page_ocr_model_desc">用于图像识别的模型</string>
+  <string name="setting_model_page_ocr_model">图片识别模型</string>
+  <string name="setting_model_page_ocr_model_desc">可配置ocr模型或支持图片输入的大模型</string>
   <string name="setting_model_page_ocr_prompt_vars">变量：图像数据：{images}</string>
   <string name="setting_model_page_prompt">提示词</string>
   <string name="setting_model_page_reset_to_default">重置为默认</string>
@@ -1761,6 +1761,7 @@
   <string name="chat_activity_reasoned">已思考</string>
   <string name="chat_activity_reasoned_duration">已思考 %s</string>
   <string name="chat_activity_replying">回复中</string>
+  <string name="chat_generation_timeout">生成超时（15 分钟），请检查网络或更换模型后重试</string>
   <string name="chat_activity_searched_web">已联网搜索</string>
   <string name="chat_activity_ran_python">已运行 Python</string>
   <string name="chat_activity_used_tool">已调用工具</string>
@@ -1843,7 +1844,7 @@
   <string name="diary_delete_confirm_title">确认删除</string>
   <string name="diary_delete_confirm_msg">确定要删除这条日记吗？此操作无法撤销。</string>
   <string name="diary_copied">已复制到剪贴板</string>
-  <string name="diary_comment_failed">评论生成失败</string>
+  <string name="diary_comment_failed">已取消评论请求</string>
   <string name="diary_agent_no_reply">TA不想评论...</string>
   <string name="diary_comment_reply_prefix">回复</string>
   <string name="diary_comment_reply">回复</string>
@@ -1860,6 +1861,38 @@
   <string name="diary_select_agent_to_comment">选择一个智能体来评论</string>
   <string name="diary_agent_commenting_to">正在请求 %1$s 的评论</string>
   <string name="diary_comment_switched_to_normal_mode">已自动切换至普通模式以完整接收评论</string>
+
+  <!-- 手写日记 / OCR -->
+  <string name="diary_handwrite_section_title">手写日记</string>
+  <string name="diary_handwrite_camera">拍照</string>
+  <string name="diary_handwrite_gallery">相册</string>
+  <string name="diary_handwrite_images_title">日记图片</string>
+  <string name="diary_crop_adjust_title">调整图片</string>
+  <string name="diary_crop_adjust_hint">拖动四角选中纸张</string>
+  <string name="diary_ocr_no_model">未配置 OCR 模型，无法解析图片</string>
+  <string name="diary_ocr_go_settings">去设置</string>
+  <string name="diary_ocr_pending">待解析</string>
+  <string name="diary_ocr_processing">解析中…</string>
+  <string name="diary_ocr_success">已解析完成</string>
+  <string name="diary_ocr_failed">解析失败</string>
+  <string name="diary_ocr_retry">重试</string>
+  <string name="diary_ocr_parse_now">解析</string>
+  <string name="diary_comment_blocked_title">无法发送评论</string>
+  <string name="diary_comment_blocked_msg">有 %1$d 张图片未解析完成，不能发送评论请求</string>
+  <string name="diary_ocr_failed_banner">OCR 解析失败，%1$d 张图片未成功解析</string>
+  <string name="diary_ocr_failed_view_detail">查看原因</string>
+  <string name="diary_ocr_failed_dismiss">关闭</string>
+
+  <string name="diary_add_author_title">为谁新建日记</string>
+  <string name="diary_add_type_title">选择日记类型</string>
+  <string name="diary_add_type_scan">文档扫描</string>
+  <string name="diary_add_type_scan_desc">导入或拍摄手写页面，裁剪后自动 OCR</string>
+  <string name="diary_add_type_direct">直接记录</string>
+  <string name="diary_add_type_direct_desc">直接以文字形式撰写日记</string>
+
+  <string name="diary_scan_entry_title">文档扫描</string>
+  <string name="diary_scan_camera_desc">拍摄页面照片</string>
+  <string name="diary_scan_gallery_desc">从相册导入图片</string>
 
   <string name="setting_page_feedback">反馈与建议</string>
   <string name="setting_page_feedback_desc">点击提交你的意见或建议</string>

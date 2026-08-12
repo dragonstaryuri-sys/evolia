@@ -13,6 +13,8 @@ data class AgentDiaryEntity(
     val assistantId: String,
     @ColumnInfo(name = "content")
     val content: String,
+    @ColumnInfo(name = "images")
+    val images: List<DiaryImage> = emptyList(),
     @ColumnInfo(name = "date")
     val date: String, // yyyy-MM-dd
     @ColumnInfo(name = "created_at")

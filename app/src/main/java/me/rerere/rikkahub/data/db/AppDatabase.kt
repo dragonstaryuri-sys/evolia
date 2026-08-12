@@ -39,10 +39,14 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = true
 )
-@TypeConverters(TokenUsageConverter::class, AssistantExtendedStateConverter::class)
+@TypeConverters(
+    TokenUsageConverter::class,
+    AssistantExtendedStateConverter::class,
+    DiaryImageConverter::class
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDAO
     abstract fun chatMessageDao(): ChatMessageDAO
@@ -65,6 +69,13 @@ abstract class AppDatabase : RoomDatabase() {
 
     companion object {
         const val TAG = "AppDatabase"
+
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 23->24 迁移：为日记表添加手写日记图片字段（JSON 存储）")
+                db.execSQL("ALTER TABLE `AgentDiaryEntity` ADD COLUMN `images` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
 
         val MIGRATION_22_23 = object : Migration(22, 23) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -412,4 +423,15 @@ object AssistantExtendedStateConverter {
     fun fromAppearance(appearance: AssistantAppearance): String = JsonInstant.encodeToString(appearance)
     @TypeConverter
     fun toAppearance(json: String): AssistantAppearance = JsonInstant.decodeFromString(json)
+}
+
+object DiaryImageConverter {
+    @TypeConverter
+    fun fromImages(images: List<DiaryImage>): String = JsonInstant.encodeToString(images)
+
+    @TypeConverter
+    fun toImages(json: String): List<DiaryImage> {
+        if (json.isBlank()) return emptyList()
+        return runCatching { JsonInstant.decodeFromString<List<DiaryImage>>(json) }.getOrDefault(emptyList())
+    }
 }

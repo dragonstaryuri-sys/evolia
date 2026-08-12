@@ -382,6 +382,9 @@ dependencies {
     // Excel 处理库
     implementation("org.apache.poi:poi-ooxml:5.2.5")
 
+    // OpenCV for Android (手写日记四角透视校正)
+    implementation("org.opencv:opencv:4.11.0")
+
     // tests
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

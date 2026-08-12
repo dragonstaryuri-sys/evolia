@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.discover
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -11,25 +12,33 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.db.entity.DiaryCommentEntity
+import me.rerere.rikkahub.core.data.db.entity.DiaryImage
+import me.rerere.rikkahub.core.data.db.entity.OcrStatus
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,11 +48,17 @@ fun DiaryDetailPage(
 ) {
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
-    val diaryState by remember(diaryId) { vm.getDiaryById(diaryId) }.collectAsStateWithLifecycle(null)
+    // 使用 observeDiaryById（Room 响应式 Flow）：DB 更新会自动 emit，无需退出重进
+    val diaryState by remember(diaryId) { vm.observeDiaryById(diaryId) }.collectAsStateWithLifecycle(null)
     val comments by vm.getComments(diaryId).collectAsStateWithLifecycle(emptyList())
     val settings by vm.settings.collectAsStateWithLifecycle()
+    // 评论请求中：显示 loading + 禁用发送按钮
+    val isCommenting by vm.isCommenting.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+    // 图片放大预览
+    var previewImagePaths by remember { mutableStateOf<List<String>?>(null) }
 
     Scaffold(
         topBar = {
@@ -76,8 +91,6 @@ fun DiaryDetailPage(
             // 回复模式或评论列表变化时，自动滚到底部，确保输入区域与目标评论可见
             LaunchedEffect(replyingTo, comments.size) {
                 if (replyingTo != null || comments.isNotEmpty()) {
-                    // LazyColumn 目前只有 2 个 item（日记正文 + 评论区），0=正文 1=评论
-                    // 滚动到评论区 item，然后 animate 到末尾
                     runCatching { listState.animateScrollToItem(1) }
                 }
             }
@@ -97,6 +110,16 @@ fun DiaryDetailPage(
                             Column {
                                 DetailAuthorHeader(diary, settings)
                                 Spacer(Modifier.height(20.dp))
+                                // 手写日记图片展示：纯图片列表，点击放大预览
+                                if (diary.images.isNotEmpty()) {
+                                    DiaryImagesDisplaySection(
+                                        images = diary.images,
+                                        onClickImage = {
+                                            previewImagePaths = diary.images.map { it.imagePath }
+                                        }
+                                    )
+                                    Spacer(Modifier.height(16.dp))
+                                }
                                 MarkdownBlock(content = diary.content, style = MaterialTheme.typography.bodyLarge)
                             }
                         }
@@ -132,16 +155,81 @@ fun DiaryDetailPage(
                     diary = diary,
                     replyingTo = replyingTo,
                     settings = settings,
+                    isCommenting = isCommenting,
                     onCancelReply = { replyingTo = null },
                     onSend = { senderId, text ->
                         val capturedReplyingTo = replyingTo
                         if (capturedReplyingTo != null) {
-                            vm.replyToComment(diary, capturedReplyingTo, text, toaster)
+                            // 回复评论：检查被回复智能体的模型能力（支持图片就发图片，否则纯文本）
+                            val targetAssistantId = capturedReplyingTo.senderId
+                            if (targetAssistantId != "USER") {
+                                val context = vm.checkCommentImageContext(diary, targetAssistantId)
+                                if (context is CommentImageContext.SendImages) {
+                                    vm.replyToComment(diary, capturedReplyingTo, text, toaster, context.imagePaths)
+                                } else {
+                                    vm.replyToComment(diary, capturedReplyingTo, text, toaster)
+                                }
+                            } else {
+                                vm.replyToComment(diary, capturedReplyingTo, text, toaster)
+                            }
                             replyingTo = null
                         } else {
-                            vm.addComment(diary, senderId, text, toaster)
+                            // 新评论：检查目标智能体的模型能力
+                            if (diary.assistantId == "USER" && senderId != "USER") {
+                                val context = vm.checkCommentImageContext(diary, senderId)
+                                if (context is CommentImageContext.SendImages) {
+                                    vm.addComment(diary, senderId, text, toaster, context.imagePaths)
+                                } else {
+                                    vm.addComment(diary, senderId, text, toaster)
+                                }
+                            } else {
+                                vm.addComment(diary, senderId, text, toaster)
+                            }
                         }
                     }
+                )
+            }
+        }
+    }
+
+    // 图片放大预览
+    previewImagePaths?.let { paths ->
+        ImagePreviewDialog(
+            images = paths,
+            onDismissRequest = { previewImagePaths = null }
+        )
+    }
+}
+
+/**
+ * 日记详情页的图片展示区域。
+ *
+ * 纯图片展示：每张图片纵向排列，点击可放大预览。不再显示 OCR 状态——
+ * 图片的理解交给对话模型在评论时按需处理。
+ */
+@Composable
+private fun DiaryImagesDisplaySection(
+    images: List<DiaryImage>,
+    onClickImage: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        images.forEach { image ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = AppShapes.CardMedium,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                )
+            ) {
+                AsyncImage(
+                    model = File(image.imagePath),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 260.dp)
+                        .clip(AppShapes.CardMedium)
+                        .clickable { onClickImage() },
+                    contentScale = ContentScale.Fit
                 )
             }
         }
@@ -310,6 +398,7 @@ private fun CommentInputAreaDetailed(
     diary: AgentDiaryEntity,
     replyingTo: DiaryCommentEntity?,
     settings: me.rerere.rikkahub.data.datastore.Settings,
+    isCommenting: Boolean,
     onCancelReply: () -> Unit,
     onSend: (String, String) -> Unit
 ) {
@@ -338,6 +427,30 @@ private fun CommentInputAreaDetailed(
 
     Surface(tonalElevation = 8.dp, shadowElevation = 8.dp) {
         Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
+            // 评论请求中：显示加载状态，提示用户留在此页等待
+            if (isCommenting) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    shape = AppShapes.CardMedium,
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "正在为你生成评论，请耐心在此页面等待...",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
             // 回复模式提示条
             if (replyingTo != null && replyToName != null) {
                 Row(
@@ -352,6 +465,7 @@ private fun CommentInputAreaDetailed(
                     Spacer(Modifier.weight(1f))
                     IconButton(
                         onClick = onCancelReply,
+                        enabled = !isCommenting,
                         modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
@@ -382,6 +496,7 @@ private fun CommentInputAreaDetailed(
 
                     AssistChip(
                         onClick = { expanded = true },
+                        enabled = !isCommenting,
                         label = {
                             Text(
                                 settings.assistants.find { it.id.toString() == selectedSenderId }?.name
@@ -405,16 +520,20 @@ private fun CommentInputAreaDetailed(
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it },
+                        enabled = !isCommenting,
                         placeholder = { Text(stringResource(R.string.diary_comment_hint)) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.large,
                         trailingIcon = {
-                            IconButton(onClick = {
-                                if (selectedSenderId != "USER") {
-                                    onSend(selectedSenderId, text)
-                                    text = ""
-                                }
-                            }) {
+                            IconButton(
+                                onClick = {
+                                    if (selectedSenderId != "USER") {
+                                        onSend(selectedSenderId, text)
+                                        text = ""
+                                    }
+                                },
+                                enabled = !isCommenting && selectedSenderId != "USER"
+                            ) {
                                 Icon(Icons.AutoMirrored.Rounded.Send, null)
                             }
                         }
@@ -426,16 +545,20 @@ private fun CommentInputAreaDetailed(
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
+                    enabled = !isCommenting,
                     placeholder = { Text(stringResource(R.string.diary_comment_hint)) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
                     trailingIcon = {
-                        IconButton(onClick = {
-                            if (text.isNotBlank()) {
-                                onSend("USER", text)
-                                text = ""
-                            }
-                        }) {
+                        IconButton(
+                            onClick = {
+                                if (text.isNotBlank()) {
+                                    onSend("USER", text)
+                                    text = ""
+                                }
+                            },
+                            enabled = !isCommenting && text.isNotBlank()
+                        ) {
                             Icon(Icons.AutoMirrored.Rounded.Send, null)
                         }
                     }

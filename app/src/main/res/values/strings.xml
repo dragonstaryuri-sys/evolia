@@ -1799,6 +1799,7 @@
   <string name="chat_activity_reasoned">Reasoned</string>
   <string name="chat_activity_reasoned_duration">Reasoned for %s</string>
   <string name="chat_activity_replying">Replying</string>
+  <string name="chat_generation_timeout">Generation timed out (15 min). Please check your network or try a different model.</string>
   <string name="chat_activity_searched_web">Searched the Web</string>
   <string name="chat_activity_ran_python">Ran Python</string>
   <string name="chat_activity_used_tool">Used tool</string>
@@ -1898,6 +1899,38 @@
   <string name="diary_select_agent_to_comment">Select an agent to comment</string>
   <string name="diary_agent_commenting_to">Commenting as %1$s</string>
   <string name="diary_comment_switched_to_normal_mode">Switched to normal mode to fully receive comments</string>
+
+  <!-- Handwritten Diary / OCR -->
+  <string name="diary_handwrite_section_title">Handwritten Diary</string>
+  <string name="diary_handwrite_camera">Camera</string>
+  <string name="diary_handwrite_gallery">Gallery</string>
+  <string name="diary_handwrite_images_title">Diary Images</string>
+  <string name="diary_crop_adjust_title">Adjust Image</string>
+  <string name="diary_crop_adjust_hint">Drag corners to select paper</string>
+  <string name="diary_ocr_no_model">No OCR model configured, cannot parse images</string>
+  <string name="diary_ocr_go_settings">Go to Settings</string>
+  <string name="diary_ocr_pending">Pending</string>
+  <string name="diary_ocr_processing">Processing…</string>
+  <string name="diary_ocr_success">Parsed</string>
+  <string name="diary_ocr_failed">Failed</string>
+  <string name="diary_ocr_retry">Retry</string>
+  <string name="diary_ocr_parse_now">Parse</string>
+  <string name="diary_comment_blocked_title">Cannot Send Comment</string>
+  <string name="diary_comment_blocked_msg">%1$d image(s) not parsed, cannot send comment request</string>
+  <string name="diary_ocr_failed_banner">OCR parsing failed: %1$d image(s) could not be parsed</string>
+  <string name="diary_ocr_failed_view_detail">View Details</string>
+  <string name="diary_ocr_failed_dismiss">Dismiss</string>
+
+  <string name="diary_add_author_title">New Diary</string>
+  <string name="diary_add_type_title">Choose Entry Type</string>
+  <string name="diary_add_type_scan">Scan Document</string>
+  <string name="diary_add_type_scan_desc">Import/photograph pages, then crop + OCR</string>
+  <string name="diary_add_type_direct">Write Directly</string>
+  <string name="diary_add_type_direct_desc">Compose text diary directly</string>
+
+  <string name="diary_scan_entry_title">Scan Document</string>
+  <string name="diary_scan_camera_desc">Take a photo of the page</string>
+  <string name="diary_scan_gallery_desc">Import from album</string>
 
   <string name="setting_page_feedback">Feedback &amp; Suggestions</string>
   <string name="setting_page_feedback_desc">Submit your feedback via Feishu</string>

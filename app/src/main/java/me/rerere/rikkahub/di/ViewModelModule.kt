@@ -116,7 +116,8 @@ val viewModelModule = module {
             diaryRepo = get(),
             chatService = get(),
             scheduleDao = get(),
-            conversationRepo = get()
+            conversationRepo = get(),
+            diaryOcrService = get()
         )
     }
 

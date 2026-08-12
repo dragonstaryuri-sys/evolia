@@ -128,7 +128,15 @@ sealed interface Screen {
     data class DiaryList(val assistantId: String? = null) : Screen
 
     @Serializable
-    data class DiaryEditor(val diaryId: String) : Screen
+    data class DiaryEditor(
+        val diaryId: String,
+        /**
+         * 进入模式：
+         * - "text"：直接记录（默认，正常文本编辑）
+         * - "scan"：文档扫描模式（新建用户日记时，一进入就启动相册/拍照）
+         */
+        val entryType: String = "text"
+    ) : Screen
 
     // ✨ 新增：日记详情页
     @Serializable

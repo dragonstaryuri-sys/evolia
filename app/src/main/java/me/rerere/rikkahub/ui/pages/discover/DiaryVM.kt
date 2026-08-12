@@ -9,6 +9,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
@@ -18,6 +19,7 @@ import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.AppToasterState
 import java.time.LocalDate
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageSource
@@ -28,9 +30,15 @@ import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.db.entity.DiaryCommentEntity
+import me.rerere.rikkahub.core.data.db.entity.DiaryImage
+import me.rerere.rikkahub.core.data.db.entity.OcrStatus
 import me.rerere.rikkahub.core.data.model.toMessageNode
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.DiaryOcrService
+import me.rerere.rikkahub.utils.DiaryImageUtil
+import android.graphics.Bitmap
 import java.time.ZoneId
 import java.util.Locale
 import kotlin.uuid.Uuid
@@ -41,16 +49,67 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.contentOrNull
 import java.time.Instant
 
+/**
+ * 评论发送前的图片上下文判断结果。
+ *
+ * 用于手写日记（含图片）的评论流程：
+ * - [SendImages]：目标模型支持图片输入，直接发送日记图片文件路径
+ * - [UseOcrText]：目标模型不支持图片，但所有图片已成功 OCR，使用 diary.content（合并 OCR 文本）
+ * - [Blocked]：存在未解析成功的图片，不能发送评论请求，UI 应弹窗提示并提供解析入口
+ * - [NoImages]：日记无图片，正常发送文本
+ */
+sealed class CommentImageContext {
+    data class SendImages(val imagePaths: List<String>) : CommentImageContext()
+    data object UseOcrText : CommentImageContext()
+    data class Blocked(val unparsedCount: Int) : CommentImageContext()
+    data object NoImages : CommentImageContext()
+}
+
 class DiaryVM(
     val app: Application,
     private val settingsStore: SettingsStore,
     private val diaryRepo: DiaryRepository,
     private val chatService: ChatService,
     private val scheduleDao: ScheduleDAO,
-    private val conversationRepo: ConversationRepository
+    private val conversationRepo: ConversationRepository,
+    private val diaryOcrService: DiaryOcrService
 ) : AndroidViewModel(app) {
 
     val settings = settingsStore.settingsFlow
+
+    // OCR 进度状态：imageId -> OcrStatus（用于 UI 实时展示每张图片的解析状态）
+    private val _ocrProgress = MutableStateFlow<Map<String, OcrStatus>>(emptyMap())
+    val ocrProgress: StateFlow<Map<String, OcrStatus>> = _ocrProgress.asStateFlow()
+
+    // OCR 错误信息：imageId -> 错误信息
+    private val _ocrErrors = MutableStateFlow<Map<String, String>>(emptyMap())
+    val ocrErrors: StateFlow<Map<String, String>> = _ocrErrors.asStateFlow()
+
+    // OCR 失败一次性事件（转发自 DiaryOcrService，全局跨页面共享）
+    val ocrFailureEvents = diaryOcrService.ocrFailureEvents
+
+    // 是否配置了 OCR 模型
+    val isOcrModelConfigured: StateFlow<Boolean> = settings.map {
+        diaryOcrService.isOcrModelConfigured()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    /**
+     * 评论发送前的图片上下文判断。
+     *
+     * 关键：日记有图片就一律 [CommentImageContext.SendImages]，**不要在此处判断模型能力**。
+     * 原因是：ChatService 在发送消息前会执行 Transformer pipeline（包括 [OcrTransformer]）：
+     * - 如果目标对话模型本身支持图片 → Image parts 原样送模型直接视觉理解。
+     * - 如果目标对话模型不支持图片 → OcrTransformer 会用 `settings.ocrModelId`（即用户配置的图片模型）
+     *   先把图片 OCR/视觉描述成 `<image_file_ocr>...</image_file_ocr>` 文本块，再替换原 Image parts
+     *   送给对话模型——这和"普通对话中发图片、模型不支持图片时的自动 fallback"完全一致。
+     *
+     * 之前此处判断模型能力并在不支持图片时返回 NoImages，会导致图片根本送不到 Transformer 链路，
+     * 结果不支持图片的模型只能看到空的 diary.content，相当于"没发图片"。
+     */
+    fun checkCommentImageContext(diary: AgentDiaryEntity, targetAssistantId: String): CommentImageContext {
+        if (diary.images.isEmpty()) return CommentImageContext.NoImages
+        return CommentImageContext.SendImages(diary.images.map { it.imagePath })
+    }
 
     private val _selectedAssistantIds = MutableStateFlow(setOf("ALL"))
     val selectedAssistantIds = _selectedAssistantIds.asStateFlow()
@@ -174,8 +233,17 @@ class DiaryVM(
      * 两种场景：
      * 1. 日记主人是 USER：用户选择智能体来评论 → 触发 triggerAgentCommentFlow
      * 2. 日记主人不是 USER：用户直接评论 → 保存评论后通知日记主人
+     *
+     * @param imagePaths 手写日记图片路径列表。当目标模型支持图片输入时，随评论指令一并发送；
+     *                   为 null 或空时不携带图片（纯文本日记或模型不支持图片走 OCR 文本）。
      */
-    fun addComment(diary: AgentDiaryEntity, senderId: String, content: String, toaster: AppToasterState? = null) {
+    fun addComment(
+        diary: AgentDiaryEntity,
+        senderId: String,
+        content: String,
+        toaster: AppToasterState? = null,
+        imagePaths: List<String>? = null
+    ) {
         if (_isCommenting.value) return
         viewModelScope.launch {
             _isCommenting.value = true
@@ -183,7 +251,7 @@ class DiaryVM(
                 if (diary.assistantId == "USER") {
                     // 场景1：日记主人是 USER，用户选择智能体来评论
                     // senderId 为选中的智能体 ID，content 为用户可选的附加说明
-                    triggerAgentCommentFlow(diary, senderId, content, toaster)
+                    triggerAgentCommentFlow(diary, senderId, content, imagePaths, toaster)
                 } else {
                     // 场景2：日记主人不是 USER，用户直接评论（senderId 固定为 "USER"）
                     val userComment = DiaryCommentEntity(diaryId = diary.id, senderId = "USER", content = content)
@@ -206,11 +274,14 @@ class DiaryVM(
      * 场景：日记主人是 USER，用户选择一个智能体来对日记发表评论
      * 流程：将完整日记内容 + 用户可选附加说明 + 评论指令发送到选中智能体的最新会话，
      *       要求 AI 返回 reply(0/1) 和 content，决定是否入库。
+     *
+     * @param imagePaths 手写日记图片路径列表。非空时随指令一并发送给支持图片输入的模型。
      */
     private suspend fun triggerAgentCommentFlow(
         diary: AgentDiaryEntity,
         selectedAssistantId: String,
         userNote: String,
+        imagePaths: List<String>?,
         toaster: AppToasterState?
     ) {
         val s = settingsStore.settingsFlow.value
@@ -251,6 +322,7 @@ class DiaryVM(
             diaryId = diary.id,
             isJsonDecision = true,
             replyToCommentId = null,
+            imagePaths = imagePaths,
             toaster = toaster
         )
     }
@@ -260,14 +332,17 @@ class DiaryVM(
      * - 用户回复先入库（replyToId 指向被回复的评论）
      * - 如果被回复的是智能体，通知该智能体决定是否回复用户
      * - 如果被回复的是 USER，不触发 AI（用户自行查看决定是否回复）
+     *
      * @param targetComment 被回复的评论
      * @param content 用户的回复内容
+     * @param imagePaths 手写日记图片路径列表。当被回复的是智能体且其模型支持图片输入时随指令发送。
      */
     fun replyToComment(
         diary: AgentDiaryEntity,
         targetComment: DiaryCommentEntity,
         content: String,
-        toaster: AppToasterState? = null
+        toaster: AppToasterState? = null,
+        imagePaths: List<String>? = null
     ) {
         if (_isCommenting.value) return
         viewModelScope.launch {
@@ -285,7 +360,7 @@ class DiaryVM(
 
                 // 2. 如果被回复的是智能体，通知该智能体决定是否回复
                 if (targetComment.senderId != "USER") {
-                    triggerAgentReplyToCommentFlow(diary, targetComment, userReply, content, toaster)
+                    triggerAgentReplyToCommentFlow(diary, targetComment, userReply, content, imagePaths, toaster)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -342,15 +417,18 @@ class DiaryVM(
     /**
      * 场景：用户回复了某条智能体评论，通知该智能体决定是否回复用户。
      * 消息发给被回复评论的 senderId 对应的智能体（而非日记主人）。
+     *
      * @param targetComment 被回复的评论（senderId 是智能体）
      * @param userReply 用户刚发的回复评论 Entity（AI 回复的 replyToId 指向它）
      * @param userReplyContent 用户回复的内容文本
+     * @param imagePaths 手写日记图片路径列表。非空时随指令一并发送给支持图片输入的模型。
      */
     private suspend fun triggerAgentReplyToCommentFlow(
         diary: AgentDiaryEntity,
         targetComment: DiaryCommentEntity,
         userReply: DiaryCommentEntity,
         userReplyContent: String,
+        imagePaths: List<String>?,
         toaster: AppToasterState?
     ) {
         val s = settingsStore.settingsFlow.value
@@ -404,13 +482,17 @@ class DiaryVM(
             diaryId = diary.id,
             isJsonDecision = true,
             replyToCommentId = userReply.id,
+            imagePaths = imagePaths,
             toaster = toaster
         )
     }
 
     /**
      * 核心隐形通讯逻辑
+     *
      * @param replyToCommentId 关联的目标评论 ID；非回复评论时传 null
+     * @param imagePaths 手写日记图片路径列表。非空时在指令消息中追加 Image 部件，
+     *                   使支持图片输入的模型能直接"看到"日记图片。
      */
     private suspend fun sendHiddenCommandAndListen(
         convId: Uuid,
@@ -419,15 +501,26 @@ class DiaryVM(
         diaryId: String,
         isJsonDecision: Boolean,
         replyToCommentId: String?,
+        imagePaths: List<String>? = null,
         toaster: AppToasterState?
     ) {
         // 0. 确保目标 agent 处于普通 UI 模式：微信模式会按标点分句存储 AI 回复，
         //    导致日记评论的 JSON 决策被截断解析失败。若检测到微信模式，自动切换为普通模式。
         ensureNormalUiMode(senderIdToSave, toaster)
 
+        // 构建指令消息部件：文本指令 + 可选的日记图片（支持图片输入的模型可直接"看到"手写日记）
+        val messageParts = buildList {
+            add(UIMessagePart.Text(prompt))
+            if (!imagePaths.isNullOrEmpty()) {
+                imagePaths.forEach { path ->
+                    add(UIMessagePart.Image("file://$path"))
+                }
+            }
+        }
+
         val userNode = UIMessage(
             role = MessageRole.USER,
-            parts = listOf(UIMessagePart.Text(prompt)),
+            parts = messageParts,
             skipContext = true, // 标记指令消息不在列表显示
             messageSource = MessageSource.DIARY_COMMENT // 日记评论来源：历史消息截断到100字
         ).toMessageNode(convId)
@@ -441,9 +534,9 @@ class DiaryVM(
             return
         }
 
-        // 2. 开启回复监听：先等到生成完成信号 generationDoneFlow，再取最终完整消息。
-        //    之前用 .first() 会在流式生成的第一个非空 token 到达就截走，得到半截 JSON 解析失败显示"不想评论"。
-        //    现在必须等 generationDoneFlow 确认当次生成 fully finished，此时会话中的 skipContext AI 回复是完整稳定的。
+        // 2. 开启回复监听：使用 viewModelScope，当用户离开日记详情页时立即取消此监听。
+        //    发送评论请求后请用户停留在此页等待（UI 会显示 loading 提示）。
+        //    应用切到后台不算"退出详情页"——viewModelScope 不会因后台而 cancel，生成可继续。
         val responseJob = viewModelScope.launch {
             // 2a. 等待生成完成（generationDoneFlow 会在 handleMessageComplete onSuccess/onFailure 后 emit）
             chatService.generationDoneFlow.first { it == convId }
@@ -558,7 +651,19 @@ class DiaryVM(
         emitAll(scheduleDao.getSchedulesForDay(start, end))
     }
 
-    fun saveDiary(id: String? = null, assistantId: String, content: String, date: String) {
+    /**
+     * 保存日记（新建或编辑）。
+     *
+     * @param overrideImages 编辑手写日记时传入：用此列表覆盖数据库中该日记的原有 images。
+     *   传 null 表示保留原有 images（直接记录模式 / 不需要修改图片列表时）。
+     */
+    fun saveDiary(
+        id: String? = null,
+        assistantId: String,
+        content: String,
+        date: String,
+        overrideImages: List<DiaryImage>? = null
+    ) {
         viewModelScope.launch {
             if (id != null && id != "new") {
                 // 修改现有日记：保留原始 createdAt 和 assistantId，使用 @Update 而非 insert(REPLACE)。
@@ -569,6 +674,7 @@ class DiaryVM(
                     id = id,
                     assistantId = existing?.assistantId ?: assistantId,
                     content = content,
+                    images = overrideImages ?: (existing?.images ?: emptyList()),
                     date = date,
                     createdAt = existing?.createdAt ?: System.currentTimeMillis()
                 )
@@ -577,6 +683,144 @@ class DiaryVM(
                 val entity = AgentDiaryEntity(assistantId = assistantId, content = content, date = date)
                 diaryRepo.insertDiary(entity)
             }
+        }
+    }
+
+    /**
+     * 保存手写日记（带图片）。
+     *
+     * 流程：
+     * 1. 生成 diaryId
+     * 2. 将每个 Bitmap 保存为 webp 文件（≤500KB）
+     * 3. 创建 DiaryImage 列表并插入数据库
+     * 4. 后台触发逐张 OCR 解析
+     *
+     * @param assistantId 作者 ID（"USER" 或智能体 ID）
+     * @param date 日期字符串 yyyy-MM-dd
+     * @param imageBitmaps 用户导入/拍摄裁剪后的图片 Bitmap 列表
+     * @param textContent 可选的手动文字补充（与 OCR 结果合并）
+     * @return 新创建的日记 ID（用于页面跳转后继续观察 OCR 进度）
+     */
+    fun saveDiaryWithImages(
+        assistantId: String,
+        date: String,
+        imageBitmaps: List<Bitmap>,
+        textContent: String = "",
+        onSaved: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            // 图片压缩+写文件是 IO 操作，必须切到 Dispatchers.IO，否则会阻塞主线程导致 UI 卡顿
+            val diaryId = Uuid.random().toString()
+            val images = withContext(Dispatchers.IO) {
+                imageBitmaps.map { bitmap ->
+                    val imageId = Uuid.random().toString()
+                    val imagePath = DiaryImageUtil.saveDiaryImage(app, diaryId, imageId, bitmap)
+                    DiaryImage(id = imageId, imagePath = imagePath)
+                }
+            }
+
+            val entity = AgentDiaryEntity(
+                id = diaryId,
+                assistantId = assistantId,
+                content = textContent,
+                images = images,
+                date = date
+            )
+            diaryRepo.insertDiary(entity)
+            onSaved(diaryId)
+        }
+    }
+
+    /**
+     * 编辑手写日记时追加新图片。
+     *
+     * 将新图片保存为文件后追加到 diary.images 列表。不再触发本地 OCR ——
+     * 图片的理解交给对话模型在评论时按需处理。
+     */
+    fun appendImagesToDiary(
+        diaryId: String,
+        newImageBitmaps: List<Bitmap>,
+        onSaved: () -> Unit = {}
+    ) {
+        if (newImageBitmaps.isEmpty()) {
+            onSaved()
+            return
+        }
+        viewModelScope.launch {
+            val diary = diaryRepo.getDiaryById(diaryId) ?: return@launch
+            val newImages = withContext(Dispatchers.IO) {
+                newImageBitmaps.map { bitmap ->
+                    val imageId = Uuid.random().toString()
+                    val imagePath = DiaryImageUtil.saveDiaryImage(app, diaryId, imageId, bitmap)
+                    DiaryImage(id = imageId, imagePath = imagePath)
+                }
+            }
+            val updatedDiary = diary.copy(images = diary.images + newImages)
+            diaryRepo.updateDiary(updatedDiary)
+            onSaved()
+        }
+    }
+
+    /**
+     * 重试单张日记图片的 OCR 解析。
+     * OCR 服务在 AppScope 中执行，不受 VM 生命周期影响。
+     */
+    fun retryOcrImage(diaryId: String, imageId: String) {
+        diaryOcrService.retryOcrImage(diaryId, imageId) { id, status, _, error ->
+            _ocrProgress.update { it + (id to status) }
+            if (error != null) {
+                _ocrErrors.update { it + (id to error) }
+            } else {
+                _ocrErrors.update { it - id }
+            }
+        }
+    }
+
+    /**
+     * 获取单张图片的 OCR 状态（优先用 _ocrProgress 中的实时状态，回退到数据库状态）。
+     */
+    fun getOcrStatusForImage(image: DiaryImage): OcrStatus {
+        return _ocrProgress.value[image.id] ?: image.ocrStatus
+    }
+
+    /**
+     * 获取单张图片的 OCR 错误信息。
+     */
+    fun getOcrErrorForImage(image: DiaryImage): String? {
+        return _ocrErrors.value[image.id] ?: image.ocrError
+    }
+
+    /**
+     * 触发日记图片的 OCR 解析，并跟踪进度。
+     * OCR 服务在 AppScope 中执行，不受 VM 生命周期影响。
+     *
+     * 失败事件由 DiaryOcrService.ocrFailureEvents 全局发送，任何页面都可收集。
+     */
+    private fun triggerOcrForDiary(diary: AgentDiaryEntity) {
+        // 初始化进度状态
+        val initialProgress = diary.images.associate { it.id to it.ocrStatus }
+        _ocrProgress.update { it + initialProgress }
+
+        diaryOcrService.ocrDiaryImages(diary) { imageId, status, _, error ->
+            _ocrProgress.update { it + (imageId to status) }
+            if (error != null) {
+                _ocrErrors.update { it + (imageId to error) }
+            } else {
+                _ocrErrors.update { it - imageId }
+            }
+        }
+    }
+
+    /**
+     * 对外暴露的 OCR 触发入口（用于评论弹窗中的"解析"按钮）。
+     *
+     * 重新读取最新 diary 实体后触发未解析图片的 OCR，实时更新 [_ocrProgress]。
+     * OCR 在 AppScope 中执行，不受 VM 生命周期影响。
+     */
+    fun triggerOcrForDiaryById(diaryId: String) {
+        viewModelScope.launch {
+            val diary = diaryRepo.getDiaryById(diaryId) ?: return@launch
+            triggerOcrForDiary(diary)
         }
     }
 
@@ -589,6 +833,12 @@ class DiaryVM(
     }
 
     fun getDiaryById(id: String) = flow { emit(diaryRepo.getDiaryById(id)) }
+
+    /**
+     * 观察单篇日记（响应式）：直接委托 Room Flow，当 DB 更新（如 OCR 状态写入、content 合并）时，
+     * 下游 collector 会立即收到新值，无需退出页面重进。
+     */
+    fun observeDiaryById(id: String): Flow<AgentDiaryEntity?> = diaryRepo.observeDiaryById(id)
 
     val isGenerating = WorkManager.getInstance(app)
         .getWorkInfosByTagFlow("diary_gen")
@@ -616,6 +866,8 @@ class DiaryVM(
 
     fun deleteDiary(id: String) {
         viewModelScope.launch {
+            // 删除日记关联的图片文件
+            DiaryImageUtil.deleteDiaryImages(app, id)
             diaryRepo.deleteDiaryById(id)
             // 同步更新列表 UI：_diaryList 基于 suspend 分页查询填充，不会自动响应 DB 变化，
             // 需手动移除被删除项，否则要退出页面重进才能看到删除效果。

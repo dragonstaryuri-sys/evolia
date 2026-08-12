@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
 import me.rerere.rikkahub.core.data.repository.DoubaoImportManager
+import me.rerere.rikkahub.service.DiaryOcrService
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -89,7 +90,8 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_19_20,
                 AppDatabase.MIGRATION_20_21,
                 AppDatabase.MIGRATION_21_22, // 👈 核心修复：在此处注册迁移路径
-                AppDatabase.MIGRATION_22_23
+                AppDatabase.MIGRATION_22_23,
+                AppDatabase.MIGRATION_23_24
             )
             .build()
     }
@@ -122,6 +124,7 @@ val dataSourceModule = module {
 
     single { MilestoneRepository(milestoneDAO = get()) }
     single { DiaryRepository(agentDiaryDao = get()) }
+    single { DiaryOcrService(settingsStore = get(), providerManager = get(), diaryRepo = get(), appScope = get()) }
     single { McpManager(settingsStore = get(), appScope = get()) }
 
     single { DoubaoImportManager(context = get(), conversationRepo = get()) }
