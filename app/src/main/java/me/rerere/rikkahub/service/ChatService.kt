@@ -763,6 +763,14 @@ class ChatService(
         includeSkipContextMessages: Boolean = true,
         responseMessageSource: MessageSource = MessageSource.NORMAL
     ) {
+        // 取消已存在的生成任务，防止出现孤儿任务继续流式存储未保存的分句。
+        // sendMessage 已取消一次，但 maybeTriggerAIAfterAsr 等调用方可能未取消，
+        // 两次 triggerAIResponse 调用会导致第一个任务成为孤儿（不在任何 Map 中），
+        // 继续持有 mutex 流式写入分句，用户发新消息时无法被打断。
+        _generationJobs.value[conversationId]?.cancel()
+        wechatDebounceJobs[conversationId]?.cancel()
+        _isAiTypingMap.update { it - conversationId }
+
         val settings = settingsStore.settingsFlow.value
         val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
 
