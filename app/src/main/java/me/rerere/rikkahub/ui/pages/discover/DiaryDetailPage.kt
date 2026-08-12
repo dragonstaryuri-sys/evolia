@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
@@ -29,6 +30,7 @@ import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.db.entity.DiaryCommentEntity
 import me.rerere.rikkahub.core.data.db.entity.DiaryImage
 import me.rerere.rikkahub.core.data.db.entity.OcrStatus
+import me.rerere.rikkahub.ui.components.chat.TypingIndicator
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
@@ -427,27 +429,32 @@ private fun CommentInputAreaDetailed(
 
     Surface(tonalElevation = 8.dp, shadowElevation = 8.dp) {
         Column(modifier = Modifier.padding(16.dp).navigationBarsPadding()) {
-            // 评论请求中：显示加载状态，提示用户留在此页等待
+            // 评论请求中：显示加载状态（与对话页面 Waiting pill 统一样式：三个跳动的小圆点 + 提示文字）
             if (isCommenting) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    shape = AppShapes.CardMedium,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // 与 ActivityPill Waiting 状态一致的 pill 容器：surfaceContainerHigh + 20dp 圆角
+                    androidx.compose.material3.Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = "正在为你生成评论，请耐心在此页面等待...",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        TypingIndicator(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            dotSize = 7.dp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Text(
+                        text = "正在为你生成评论，请耐心在此页面等待...",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 
