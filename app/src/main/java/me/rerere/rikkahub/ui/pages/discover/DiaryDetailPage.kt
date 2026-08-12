@@ -511,12 +511,28 @@ private fun CommentInputAreaDetailed(
                                 style = MaterialTheme.typography.labelMedium
                             )
                         },
+                        leadingIcon = {
+                            settings.assistants.find { it.id.toString() == selectedSenderId }?.let { assistant ->
+                                UIAvatar(
+                                    name = assistant.name,
+                                    value = assistant.avatar,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        },
                         trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, null, modifier = Modifier.size(16.dp)) }
                     )
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         settings.assistants.forEach { assistant ->
                             DropdownMenuItem(
                                 text = { Text(assistant.name) },
+                                leadingIcon = {
+                                    UIAvatar(
+                                        name = assistant.name,
+                                        value = assistant.avatar,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
                                 onClick = { selectedSenderId = assistant.id.toString(); expanded = false }
                             )
                         }

@@ -249,6 +249,10 @@ fun DiaryListPage(
                         getAssistantName = { id ->
                             if (id == "USER") userNickname
                             else settings.assistants.find { it.id.toString() == id }?.name ?: "Agent"
+                        },
+                        getAssistantAvatar = { id ->
+                            if (id == "USER") settings.displaySetting.userAvatar
+                            else settings.assistants.find { it.id.toString() == id }?.avatar ?: me.rerere.rikkahub.core.data.model.Avatar.Dummy
                         }
                     )
                     // OCR 失败提醒横幅：点击"查看原因"跳转日记详情，点击关闭按钮可手动关闭
@@ -322,7 +326,8 @@ private fun PersonnelFilterBar(
     personnelIds: List<String>,
     selectedIds: Set<String>,
     onToggle: (String) -> Unit,
-    getAssistantName: (String) -> String
+    getAssistantName: (String) -> String,
+    getAssistantAvatar: (String) -> me.rerere.rikkahub.core.data.model.Avatar
 ) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -333,17 +338,34 @@ private fun PersonnelFilterBar(
             FilterChip(
                 selected = selectedIds.contains("ALL"),
                 onClick = { onToggle("ALL") },
-                label = { Text(stringResource(R.string.diary_filter_all)) }
+                label = { Text(stringResource(R.string.diary_filter_all)) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Rounded.Groups,
+                        null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             )
         }
         items(personnelIds) { id ->
+            val isSelected = selectedIds.contains(id)
             FilterChip(
-                selected = selectedIds.contains(id),
+                selected = isSelected,
                 onClick = { onToggle(id) },
                 label = { Text(getAssistantName(id)) },
-                leadingIcon = if (selectedIds.contains(id)) {
-                    { Icon(Icons.Rounded.Check, null, modifier = Modifier.size(16.dp)) }
-                } else null
+                leadingIcon = {
+                    if (isSelected) {
+                        Icon(Icons.Rounded.Check, null, modifier = Modifier.size(16.dp))
+                    } else {
+                        UIAvatar(
+                            name = getAssistantName(id),
+                            value = getAssistantAvatar(id),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             )
         }
     }
@@ -714,6 +736,21 @@ fun DiarySummaryCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
+            // 手写日记（有图片）：在正文上方显示"yyyy年M月d日 扫描日记"
+            if (diary.images.isNotEmpty()) {
+                val formattedDate = remember(diary.date) {
+                    runCatching {
+                        LocalDate.parse(diary.date)
+                            .format(DateTimeFormatter.ofPattern("yyyy年M月d日"))
+                    }.getOrNull() ?: diary.date
+                }
+                Text(
+                    text = "$formattedDate 扫描日记",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             MarkdownBlock(
                 content = diary.content,
                 style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
