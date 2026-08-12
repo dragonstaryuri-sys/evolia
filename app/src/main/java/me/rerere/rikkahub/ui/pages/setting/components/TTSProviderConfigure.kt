@@ -1,7 +1,11 @@
 package me.rerere.rikkahub.ui.pages.setting.components
 
+import android.net.Uri
 import android.speech.tts.TextToSpeech
+import android.util.Base64
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,14 +17,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
+import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.BasicAlertDialog
@@ -41,6 +49,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,7 +70,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
@@ -69,6 +82,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.tts.provider.providers.MimoTTSProvider
 
 private const val TAG = "TTSProviderConfigure"
 
@@ -111,11 +125,16 @@ fun TTSProviderConfigure(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MimoTTSConfiguration(
     setting: TTSProviderSetting.Mimo,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
+    val tts = LocalTTSState.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     // 自动修正预设地址
     LaunchedEffect(setting.id) {
         if (setting.baseUrl != "https://api.xiaomimimo.com/v1/chat/completions") {
@@ -123,6 +142,116 @@ private fun MimoTTSConfiguration(
         }
     }
 
+    // ---- 本地状态 + 防抖回写 (参考 MiniMax/Azure 模式) ----
+    var localApiKey by remember(setting.apiKey) { mutableStateOf(setting.apiKey) }
+    var localModel by remember(setting.model) { mutableStateOf(setting.model) }
+    var localVoice by remember(setting.voice) { mutableStateOf(setting.voice) }
+    var localSpeed by remember(setting.speed) { mutableStateOf(setting.speed) }
+    var localVoiceDesignPrompt by remember(setting.voiceDesignPrompt) { mutableStateOf(setting.voiceDesignPrompt) }
+    var localOptimizeTextPreview by remember(setting.optimizeTextPreview) { mutableStateOf(setting.optimizeTextPreview) }
+    var localReferenceAudioBase64 by remember(setting.referenceAudioBase64) { mutableStateOf(setting.referenceAudioBase64) }
+    var localReferenceAudioFileName by remember(setting.referenceAudioFileName) { mutableStateOf(setting.referenceAudioFileName) }
+    var localReferenceAudioFormat by remember(setting.referenceAudioFormat) { mutableStateOf(setting.referenceAudioFormat) }
+
+    // 防抖 500ms 后统一回写
+    LaunchedEffect(
+        localApiKey, localModel, localVoice, localSpeed,
+        localVoiceDesignPrompt, localOptimizeTextPreview,
+        localReferenceAudioBase64, localReferenceAudioFileName, localReferenceAudioFormat
+    ) {
+        delay(500)
+        val changed = localApiKey != setting.apiKey ||
+            localModel != setting.model ||
+            localVoice != setting.voice ||
+            localSpeed != setting.speed ||
+            localVoiceDesignPrompt != setting.voiceDesignPrompt ||
+            localOptimizeTextPreview != setting.optimizeTextPreview ||
+            localReferenceAudioBase64 != setting.referenceAudioBase64 ||
+            localReferenceAudioFileName != setting.referenceAudioFileName ||
+            localReferenceAudioFormat != setting.referenceAudioFormat
+        if (changed) {
+            onValueChange(
+                setting.copy(
+                    apiKey = localApiKey,
+                    model = localModel,
+                    voice = localVoice,
+                    speed = localSpeed,
+                    voiceDesignPrompt = localVoiceDesignPrompt,
+                    optimizeTextPreview = localOptimizeTextPreview,
+                    referenceAudioBase64 = localReferenceAudioBase64,
+                    referenceAudioFileName = localReferenceAudioFileName,
+                    referenceAudioFormat = localReferenceAudioFormat
+                )
+            )
+        }
+    }
+
+    // ---- 模型相关 ----
+    var modelExpanded by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isFetchingModels by remember { mutableStateOf(false) }
+    val presetModels = remember { MimoTTSProvider().presetModels }
+
+    // 从官方拉取模型列表
+    fun fetchModelsFromApi() {
+        if (localApiKey.isBlank()) return
+        scope.launch {
+            isFetchingModels = true
+            try {
+                val tempSetting = setting.copy(apiKey = localApiKey)
+                val models = tts.listMimoModels(tempSetting)
+                fetchedModels = models.filter { it.contains("tts", ignoreCase = true) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Mimo fetch models failed", e)
+            } finally {
+                isFetchingModels = false
+            }
+        }
+    }
+
+    // ---- 模型类型判断 ----
+    val isVoiceDesignModel = localModel.contains("voicedesign", ignoreCase = true)
+    val isVoiceCloneModel = localModel.contains("voiceclone", ignoreCase = true)
+    val isStandardTTSModel = !isVoiceDesignModel && !isVoiceCloneModel
+
+    // ---- 音色复刻：音频文件选择 ----
+    var isConvertingAudio by remember { mutableStateOf(false) }
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            isConvertingAudio = true
+            try {
+                val fileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && nameIndex != -1) cursor.getString(nameIndex) else null
+                } ?: uri.lastPathSegment ?: "audio"
+
+                // 推断格式
+                val format = fileName.substringAfterLast('.', "").lowercase().takeIf { it.isNotBlank() }
+                    ?: context.contentResolver.getType(uri)?.substringAfterLast('/') ?: "wav"
+
+                val base64 = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        val bytes = input.readBytes()
+                        Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    }
+                }
+                if (base64 != null) {
+                    localReferenceAudioBase64 = base64
+                    localReferenceAudioFileName = fileName
+                    localReferenceAudioFormat = format
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to read reference audio", e)
+            } finally {
+                isConvertingAudio = false
+            }
+        }
+    }
+
+    // ---- UI ----
     var apiKeyVisible by remember { mutableStateOf(false) }
 
     FormItem(
@@ -130,10 +259,8 @@ private fun MimoTTSConfiguration(
         description = { Text("小米 MiMo API Key") }
     ) {
         OutlinedTextField(
-            value = setting.apiKey,
-            onValueChange = { newApiKey ->
-                onValueChange(setting.copy(apiKey = newApiKey))
-            },
+            value = localApiKey,
+            onValueChange = { localApiKey = it.trim() },
             modifier = Modifier
                 .fillMaxWidth()
                 .onFocusChanged { if (!it.isFocused) apiKeyVisible = false },
@@ -163,69 +290,324 @@ private fun MimoTTSConfiguration(
         )
     }
 
+    // ---- 模型选择器：预设 + 官方获取 + 手动输入 ----
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
-        description = { Text("模型名称") }
-    ) {
-        OutlinedTextField(
-            value = setting.model,
-            onValueChange = { newModel ->
-                onValueChange(setting.copy(model = newModel))
-            },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("mimo-v2.5-tts") }
-        )
-    }
-
-    var voiceExpanded by remember { mutableStateOf(false) }
-    val voices = listOf("mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean")
-
-    FormItem(
-        label = { Text(stringResource(R.string.setting_tts_page_voice)) },
-        description = { Text("预置音色") }
-    ) {
-        ExposedDropdownMenuBox(
-            expanded = voiceExpanded,
-            onExpandedChange = { voiceExpanded = !voiceExpanded }
-        ) {
-            OutlinedTextField(
-                value = setting.voice,
-                onValueChange = { newVoice ->
-                    onValueChange(setting.copy(voice = newVoice))
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
+        description = {
+            Text(
+                when {
+                    isVoiceDesignModel -> "音色设计：通过文本描述定制音色"
+                    isVoiceCloneModel -> "音色复刻：基于音频样本复刻任意音色"
+                    else -> "标准 TTS：使用预置精品音色"
                 }
             )
-            ExposedDropdownMenu(
-                expanded = voiceExpanded,
-                onDismissRequest = { voiceExpanded = false }
+        }
+    ) {
+        Column {
+            ExposedDropdownMenuBox(
+                expanded = modelExpanded,
+                onExpandedChange = { modelExpanded = !modelExpanded }
             ) {
-                voices.forEach { voice ->
-                    DropdownMenuItem(
-                        text = { Text(voice) },
-                        onClick = {
-                            voiceExpanded = false
-                            onValueChange(setting.copy(voice = voice))
+                OutlinedTextField(
+                    value = localModel,
+                    onValueChange = { localModel = it.trim() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                    placeholder = { Text("mimo-v2.5-tts") },
+                    trailingIcon = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(end = 4.dp)
+                        ) {
+                            if (isFetchingModels) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.size(4.dp))
+                            }
+                            IconButton(
+                                onClick = { fetchModelsFromApi() },
+                                enabled = localApiKey.isNotBlank() && !isFetchingModels
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Refresh,
+                                    contentDescription = "从官方获取 TTS 模型"
+                                )
+                            }
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
                         }
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = modelExpanded,
+                    onDismissRequest = { modelExpanded = false }
+                ) {
+                    // 预设模型
+                    if (presetModels.isNotEmpty()) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "— 预设模型 —",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            onClick = {}
+                        )
+                        presetModels.forEach { model ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(model)
+                                        Text(
+                                            text = when (model) {
+                                                "mimo-v2.5-tts" -> "标准 TTS · 预置精品音色"
+                                                "mimo-v2.5-tts-voicedesign" -> "音色设计 · 文本描述定制音色"
+                                                "mimo-v2.5-tts-voiceclone" -> "音色复刻 · 音频样本复刻音色"
+                                                else -> ""
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    modelExpanded = false
+                                    localModel = model
+                                }
+                            )
+                        }
+                    }
+                    // API 拉取到的模型
+                    if (fetchedModels.isNotEmpty()) {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    "— 官方模型 (${fetchedModels.size}) —",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            onClick = {}
+                        )
+                        fetchedModels.forEach { model ->
+                            DropdownMenuItem(
+                                text = { Text(model) },
+                                onClick = {
+                                    modelExpanded = false
+                                    localModel = model
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ========== 按模型类型显示不同参数 ==========
+
+    // ---- 1. 标准 TTS (mimo-v2.5-tts): 预置音色选择 ----
+    if (isStandardTTSModel) {
+        var voiceExpanded by remember { mutableStateOf(false) }
+        val voices = remember {
+            listOf("mimo_default", "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean")
+        }
+
+        FormItem(
+            label = { Text(stringResource(R.string.setting_tts_page_voice)) },
+            description = { Text("预置音色，仅标准 TTS 模型可用") }
+        ) {
+            ExposedDropdownMenuBox(
+                expanded = voiceExpanded,
+                onExpandedChange = { voiceExpanded = !voiceExpanded }
+            ) {
+                OutlinedTextField(
+                    value = localVoice,
+                    onValueChange = { localVoice = it.trim() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                    placeholder = { Text("Dean / 冰糖 / mimo_default") },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = voiceExpanded)
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = voiceExpanded,
+                    onDismissRequest = { voiceExpanded = false }
+                ) {
+                    voices.forEach { voice ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(voice)
+                                    Text(
+                                        text = when (voice) {
+                                            "mimo_default" -> "默认音色 (依集群)"
+                                            "冰糖", "茉莉" -> "中文 · 女声"
+                                            "苏打", "白桦" -> "中文 · 男声"
+                                            "Mia", "Chloe" -> "英文 · 女声"
+                                            "Milo", "Dean" -> "英文 · 男声"
+                                            else -> ""
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                voiceExpanded = false
+                                localVoice = voice
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- 2. 音色设计 (voicedesign): 描述文本 + 润色开关 ----
+    if (isVoiceDesignModel) {
+        FormItem(
+            label = { Text("音色设计描述") },
+            description = {
+                Text(
+                    "用自然语言描述你想要的音色，越具体效果越好。必填参数，将放在 user 消息中。",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        ) {
+            OutlinedTextField(
+                value = localVoiceDesignPrompt,
+                onValueChange = { localVoiceDesignPrompt = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+                placeholder = {
+                    Text(
+                        "例如：\n" +
+                            "Young female, ASMR close-up feel, audible breathing, very slow and relaxing.\n" +
+                            "或：年迈的老先生，北方口音，语速缓慢，嗓音沙哑沧桑，像在讲故事。"
+                    )
+                },
+                maxLines = 8
+            )
+        }
+
+        FormItem(
+            label = { Text("智能润色目标文本") },
+            description = { Text("开启后可省略 assistant 消息，让模型自动生成匹配音色的播报文本 (optimize_text_preview)") }
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                Switch(
+                    checked = localOptimizeTextPreview,
+                    onCheckedChange = { localOptimizeTextPreview = it }
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    if (localOptimizeTextPreview) "已开启润色" else "使用原始合成文本",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+    }
+
+    // ---- 3. 音色复刻 (voiceclone): 上传参考音频 ----
+    if (isVoiceCloneModel) {
+        FormItem(
+            label = { Text("参考音频") },
+            description = {
+                Text(
+                    text = if (localReferenceAudioBase64.isBlank()) {
+                        "选择一段 5-60 秒的清晰人声音频，作为音色复刻的参考。"
+                    } else {
+                        "已加载: $localReferenceAudioFileName" +
+                            (if (localReferenceAudioFormat.isNotBlank()) " · $localReferenceAudioFormat" else "") +
+                            " · ${localReferenceAudioBase64.length * 3 / 4 / 1024} KB"
+                    },
+                    color = if (localReferenceAudioBase64.isBlank())
+                        MaterialTheme.colorScheme.error else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { audioPickerLauncher.launch("audio/*") },
+                        enabled = !isConvertingAudio
+                    ) {
+                        if (isConvertingAudio) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.size(8.dp))
+                            Text("处理中…")
+                        } else {
+                            Icon(Icons.Rounded.Upload, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text(if (localReferenceAudioBase64.isBlank()) "选择音频文件" else "更换音频")
+                        }
+                    }
+
+                    if (localReferenceAudioBase64.isNotBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        IconButton(
+                            onClick = {
+                                localReferenceAudioBase64 = ""
+                                localReferenceAudioFileName = ""
+                                localReferenceAudioFormat = ""
+                            }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = "移除参考音频",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Rounded.Audiotrack,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                if (localReferenceAudioFormat.isNotBlank()) {
+                    OutlinedTextField(
+                        value = localReferenceAudioFormat,
+                        onValueChange = { localReferenceAudioFormat = it.trim().lowercase() },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("音频格式 (可选，自动识别)") },
+                        placeholder = { Text("wav / mp3 / m4a / flac ...") },
+                        singleLine = true
                     )
                 }
             }
         }
     }
 
+    // ---- 语速 (所有模型通用) ----
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_speed)) },
         description = { Text(stringResource(R.string.setting_tts_page_speed_description)) }
     ) {
         OutlinedNumberInput(
-            value = setting.speed,
+            value = localSpeed,
             onValueChange = { newSpeed ->
                 if (newSpeed in 0.25f..4.0f) {
-                    onValueChange(setting.copy(speed = newSpeed))
+                    localSpeed = newSpeed
                 }
             },
             modifier = Modifier.fillMaxWidth(),

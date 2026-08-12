@@ -54,4 +54,13 @@ class TTSManager(private val context: Context) {
             is TTSProviderSetting.Azure -> azureProvider.getVoices(context, providerSetting)
         }
     }
+
+    /**
+     * MiMo TTS 专用：从官方 API 获取包含 "tts" 的模型列表
+     */
+    suspend fun listMimoModels(
+        providerSetting: TTSProviderSetting.Mimo
+    ): List<String> {
+        return mimoProvider.listModels(providerSetting)
+    }
 }

@@ -53,7 +53,17 @@ sealed class TTSProviderSetting {
         val baseUrl: String = "https://api.xiaomimimo.com/v1/chat/completions",
         val model: String = "mimo-v2.5-tts",
         val voice: String = "Dean",
-        val speed: Float = 1.0f
+        val speed: Float = 1.0f,
+        // mimo-v2.5-tts-voicedesign: 音色设计描述文本 (放在 user message 中)
+        val voiceDesignPrompt: String = "",
+        // mimo-v2.5-tts-voicedesign: 是否智能润色目标文本
+        val optimizeTextPreview: Boolean = false,
+        // mimo-v2.5-tts-voiceclone: 参考音频 base64 (不含 data:audio/xxx;base64, 前缀)
+        val referenceAudioBase64: String = "",
+        // mimo-v2.5-tts-voiceclone: 参考音频文件名 (仅显示用)
+        val referenceAudioFileName: String = "",
+        // mimo-v2.5-tts-voiceclone: 参考音频格式 (wav/mp3/m4a 等)
+        val referenceAudioFormat: String = ""
     ) : TTSProviderSetting() {
         override fun copyProvider(
             id: Uuid,

@@ -115,6 +115,9 @@ interface CustomTtsState {
     /** Get available voices for a provider. */
     suspend fun getVoices(providerSetting: TTSProviderSetting): List<TTSVoice>
 
+    /** MiMo TTS 专用：从官方 API 获取包含 "tts" 的模型列表 */
+    suspend fun listMimoModels(providerSetting: TTSProviderSetting.Mimo): List<String>
+
     /** Cleanup resources. */
     fun cleanup()
 }
@@ -302,6 +305,10 @@ private class CustomTtsStateImpl(
 
     override suspend fun getVoices(providerSetting: TTSProviderSetting): List<TTSVoice> {
         return ttsManager.getVoices(providerSetting)
+    }
+
+    override suspend fun listMimoModels(providerSetting: TTSProviderSetting.Mimo): List<String> {
+        return ttsManager.listMimoModels(providerSetting)
     }
 
     override fun cleanup() {
