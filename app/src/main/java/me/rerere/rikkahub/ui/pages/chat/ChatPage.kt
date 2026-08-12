@@ -185,6 +185,14 @@ fun ChatPage(
         }
     }
 
+    // 监听滚动到底部事件（发送新消息后触发）
+    LaunchedEffect(Unit) {
+        vm.scrollToBottomEvent.collect {
+            // 倒序列表：index=0 即为最新消息（底部）
+            chatListState.animateScrollToItem(0)
+        }
+    }
+
     ChatPageContent(
         inputState = inputState,
         loadingJob = loadingJob,

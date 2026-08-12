@@ -616,6 +616,7 @@ class MemoryRepository(
         var current = 0
         var successCount = 0
         var failureCount = 0
+        var firstError: Exception? = null
         onProgress(0, total)
         if (total == 0) return 0 to 0
 
@@ -634,7 +635,10 @@ class MemoryRepository(
                 ))
                 embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = memory.id, memoryType = memory.type, modelId = currentModelId, embedding = byteArray))
                 successCount++
-            } catch (e: Exception) { failureCount++ }
+            } catch (e: Exception) {
+                failureCount++
+                if (firstError == null) firstError = e
+            }
             onProgress(current, total)
         }
 
@@ -650,8 +654,16 @@ class MemoryRepository(
                 chatSegmentDAO.insertSegment(segment.copy(embedding = byteArray, embeddingModelId = currentModelId))
                 embeddingCacheDAO.insertEmbedding(EmbeddingCacheEntity(memoryId = segment.id, memoryType = MemoryType.SEGMENT, modelId = currentModelId, embedding = byteArray))
                 successCount++
-            } catch (e: Exception) { failureCount++ }
+            } catch (e: Exception) {
+                failureCount++
+                if (firstError == null) firstError = e
+            }
             onProgress(current, total)
+        }
+
+        // 如果有失败，抛出第一个错误以便上层展示给用户
+        if (firstError != null) {
+            throw firstError
         }
         return successCount to failureCount
     }

@@ -1279,6 +1279,7 @@
   <string name="embedding_gen_completed">Completed: %1$d success, %2$d failed. Check your settings.</string>
   <string name="embedding_gen_success">Successfully generated %d embeddings.</string>
   <string name="embedding_gen_none">No embeddings needed regeneration.</string>
+  <string name="assistant_memory_embedding_failed_with_reason">Embedding failed: %s</string>
 
   <!-- Diary Related -->
   <string name="diary_already_generated">Today\'s diary already exists</string>
@@ -1905,6 +1906,8 @@
   <string name="diary_handwrite_camera">Camera</string>
   <string name="diary_handwrite_gallery">Gallery</string>
   <string name="diary_handwrite_images_title">Diary Images</string>
+  <string name="diary_handwrite_add_more_images">Add More Images</string>
+  <string name="diary_handwrite_add_more_images_desc">Choose existing photos or take a new one</string>
   <string name="diary_crop_adjust_title">Adjust Image</string>
   <string name="diary_crop_adjust_hint">Drag corners to select paper</string>
   <string name="diary_ocr_no_model">No OCR model configured, cannot parse images</string>

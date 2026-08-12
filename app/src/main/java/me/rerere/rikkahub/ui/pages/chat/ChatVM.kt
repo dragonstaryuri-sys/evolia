@@ -318,6 +318,10 @@ class ChatVM(
     private val _conversationDeletedFlow = MutableSharedFlow<Conversation>()
     val conversationDeletedFlow: SharedFlow<Conversation> = _conversationDeletedFlow.asSharedFlow()
 
+    // 发送消息后通知 UI 滚动到底部（倒序列表中 index=0 即为最新消息）
+    private val _scrollToBottomEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val scrollToBottomEvent: SharedFlow<Unit> = _scrollToBottomEvent.asSharedFlow()
+
     fun markNodesAsRestored(nodeIds: Set<Uuid>) {
         _recentlyRestoredNodeIds.value = _recentlyRestoredNodeIds.value + nodeIds
         viewModelScope.launch {
@@ -493,6 +497,8 @@ class ChatVM(
             conversation.value.messageNodes.lastOrNull()?.let {
                 paginationManager?.injectNewNode(it)
             }
+            // 通知 UI 滚动到底部
+            _scrollToBottomEvent.tryEmit(Unit)
 
             // 优化2：文字发送后也走调度器
             // 如果此时有语音 pending ASR，就等所有 ASR 完成后统一触发一次 AI（同一 turn 合并发送）
@@ -554,6 +560,8 @@ class ChatVM(
             // 否则回退到 ChatVM conversation 的最后一条节点。
             (insertedNode ?: conversation.value.messageNodes.lastOrNull())
                 ?.let { paginationManager?.injectNewNode(it) }
+            // 通知 UI 滚动到底部
+            _scrollToBottomEvent.tryEmit(Unit)
             if (nodeId == null) {
                 // 理论上不会发生：sendMessage 不抛异常就会插入节点
                 chatService.triggerAIResponse(conversationId = targetId)

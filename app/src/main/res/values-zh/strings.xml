@@ -1198,6 +1198,7 @@
   <string name="embedding_gen_success">成功生成 %d 条嵌入。</string>
   <string name="embedding_gen_none">无需重新生成嵌入。</string>
   <string name="generating_embeddings">生成向量</string>
+  <string name="assistant_memory_embedding_failed_with_reason">嵌入失败：%s</string>
   <string name="assistant_memory_group_consolidation">整合</string>
 
   <!-- Assistant Context Page -->
@@ -1867,6 +1868,8 @@
   <string name="diary_handwrite_camera">拍照</string>
   <string name="diary_handwrite_gallery">相册</string>
   <string name="diary_handwrite_images_title">日记图片</string>
+  <string name="diary_handwrite_add_more_images">继续添加图片</string>
+  <string name="diary_handwrite_add_more_images_desc">选择已有照片或拍照</string>
   <string name="diary_crop_adjust_title">调整图片</string>
   <string name="diary_crop_adjust_hint">拖动四角选中纸张</string>
   <string name="diary_ocr_no_model">未配置 OCR 模型，无法解析图片</string>
