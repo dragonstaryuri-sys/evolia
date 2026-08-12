@@ -56,6 +56,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.datastore.ChatInputStyle
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
+import me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -1055,40 +1056,12 @@ private fun ChatPageContent(
                         }
                     }
 
-                    AnimatedVisibility(
+                    FullscreenLoadingOverlay(
                         visible = isSyncingContext || isConsolidating,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        val infiniteTransition = rememberInfiniteTransition(label = "sync_background_breathing")
-                        val breathingAlpha by infiniteTransition.animateFloat(
-                            initialValue = 0.6f,
-                            targetValue = 0.85f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
-                                repeatMode = RepeatMode.Reverse
-                            ),
-                            label = "breathing_alpha"
+                        hint = if (isConsolidating) stringResource(R.string.consolidating_in_progress) else stringResource(
+                            R.string.syncing_context_animation_hint
                         )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(MaterialTheme.colorScheme.background.copy(alpha = breathingAlpha))
-                                .clickable(enabled = true, onClick = {}),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                DocumentLoadingAnimation(modifier = Modifier.padding(bottom = 24.dp))
-                                Text(
-                                    text = if (isConsolidating) stringResource(R.string.consolidating_in_progress) else stringResource(
-                                        R.string.syncing_context_animation_hint
-                                    ),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-                        }
-                    }
+                    )
 
                     // Voice Call Overlay
                     AnimatedVisibility(
@@ -1110,25 +1083,6 @@ private fun ChatPageContent(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun DocumentLoadingAnimation(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(120.dp), contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.primary,
-            strokeWidth = 3.dp,
-            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-            strokeCap = StrokeCap.Round
-        )
-        Icon(
-            imageVector = Icons.Rounded.Description,
-            contentDescription = null,
-            modifier = Modifier.size(54.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
     }
 }
 

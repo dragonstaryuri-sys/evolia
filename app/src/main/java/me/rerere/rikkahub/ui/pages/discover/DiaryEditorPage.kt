@@ -42,7 +42,7 @@ import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.entity.DiaryImage
 import me.rerere.rikkahub.core.data.db.entity.OcrStatus
-import me.rerere.rikkahub.ui.components.chat.TypingIndicator
+import me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay
 import me.rerere.rikkahub.ui.components.crop.FourCornerCropScreen
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
@@ -461,46 +461,12 @@ fun DiaryEditorPage(
                 }
             }
 
-            // 保存中：蒙板 + 统一的 TypingIndicator pill（与日记详情页评论加载风格一致）
-            if (isSaving) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
-                ) {
-                    Row(
-                        modifier = Modifier.align(Alignment.Center),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(
-                                    start = 14.dp,
-                                    top = 10.dp,
-                                    end = 18.dp,
-                                    bottom = 10.dp
-                                ),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TypingIndicator(
-                                    dotSize = 7.dp,
-                                    dotSpacing = 4.dp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    text = "正在保存中…",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            // 保存中：统一全屏加载蒙板（与 ChatPage 归档动画风格一致）
+            FullscreenLoadingOverlay(
+                visible = isSaving,
+                icon = Icons.Rounded.Image,
+                hint = "正在保存中…"
+            )
         }
         } // PermissionManager 结束
 
