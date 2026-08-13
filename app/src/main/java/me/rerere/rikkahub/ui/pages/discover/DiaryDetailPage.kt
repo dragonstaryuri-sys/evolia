@@ -61,6 +61,7 @@ fun DiaryDetailPage(
 
     // 图片放大预览
     var previewImagePaths by remember { mutableStateOf<List<String>?>(null) }
+    var previewInitialIndex by remember { mutableIntStateOf(0) }
 
     Scaffold(
         topBar = {
@@ -116,7 +117,8 @@ fun DiaryDetailPage(
                                 if (diary.images.isNotEmpty()) {
                                     DiaryImagesDisplaySection(
                                         images = diary.images,
-                                        onClickImage = {
+                                        onClickImage = { index ->
+                                            previewInitialIndex = index
                                             previewImagePaths = diary.images.map { it.imagePath }
                                         }
                                     )
@@ -198,7 +200,8 @@ fun DiaryDetailPage(
     previewImagePaths?.let { paths ->
         ImagePreviewDialog(
             images = paths,
-            onDismissRequest = { previewImagePaths = null }
+            onDismissRequest = { previewImagePaths = null },
+            initialIndex = previewInitialIndex
         )
     }
 }
@@ -212,10 +215,10 @@ fun DiaryDetailPage(
 @Composable
 private fun DiaryImagesDisplaySection(
     images: List<DiaryImage>,
-    onClickImage: () -> Unit
+    onClickImage: (Int) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        images.forEach { image ->
+        images.forEachIndexed { index, image ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = AppShapes.CardMedium,
@@ -230,7 +233,7 @@ private fun DiaryImagesDisplaySection(
                         .fillMaxWidth()
                         .heightIn(max = 260.dp)
                         .clip(AppShapes.CardMedium)
-                        .clickable { onClickImage() },
+                        .clickable { onClickImage(index) },
                     contentScale = ContentScale.Fit
                 )
             }

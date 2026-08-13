@@ -55,7 +55,6 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.utils.DiaryImageUtil
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
 import java.time.LocalDate
@@ -87,14 +86,15 @@ fun DiaryEditorPage(
 
     // 手写日记图片状态
     var imageBitmaps by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
-    var showCropScreen by remember { mutableStateOf(false) }
-    var imageToCrop by remember { mutableStateOf<Uri?>(null) }
+    // 裁剪队列：多张图片按顺序逐张裁剪
+    var cropQueue by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
     // 编辑时：被用户删除的已有图片 id 集合
     val removedExistingImageIds = remember { mutableStateListOf<String>() }
 
     // 图片放大预览
     var previewImagePaths by remember { mutableStateOf<List<String>?>(null) }
+    var previewInitialIndex by remember { mutableIntStateOf(0) }
 
     val filteredDiaries by vm.filteredDiaries.collectAsStateWithLifecycle()
     val schedules by vm.getSchedulesForDate(selectedDate).collectAsStateWithLifecycle(emptyList())
@@ -132,18 +132,10 @@ fun DiaryEditorPage(
     var cameraOutputUri by remember { mutableStateOf<Uri?>(null) }
     var cameraOutputFile by remember { mutableStateOf<File?>(null) }
 
-    // 选择图片后进入裁剪流程（单张→裁剪；多张→直接加载 Bitmap）
+    // 选择图片后进入裁剪流程（无论单张还是多张，都按顺序逐张裁剪）
     val handleAddImageUris: (List<Uri>) -> Unit = { uris ->
-        if (uris.size == 1) {
-            imageToCrop = uris.first()
-            showCropScreen = true
-        } else {
-            scope.launch {
-                val loaded = uris.mapNotNull { uri ->
-                    DiaryImageUtil.loadBitmapFromUri(context, uri)
-                }
-                imageBitmaps = imageBitmaps + loaded
-            }
+        if (uris.isNotEmpty()) {
+            cropQueue = cropQueue + uris
         }
     }
 
@@ -259,18 +251,19 @@ fun DiaryEditorPage(
     // 保存中禁止返回，避免图片文件写了一半用户就走
     BackHandler(enabled = !isSaving) { navController.popBackStack() }
 
-    // 四角裁剪界面
-    if (showCropScreen && imageToCrop != null) {
+    // 四角裁剪界面（从队列中逐张裁剪）
+    val cropUri = cropQueue.firstOrNull()
+    if (cropUri != null) {
         FourCornerCropScreen(
-            sourceUri = imageToCrop!!,
+            sourceUri = cropUri,
             onCropComplete = { croppedBitmap ->
                 imageBitmaps = imageBitmaps + croppedBitmap
-                showCropScreen = false
-                imageToCrop = null
+                // 移除已裁剪的第一张，队列中还有则自动显示下一张
+                cropQueue = cropQueue.drop(1)
             },
             onCancel = {
-                showCropScreen = false
-                imageToCrop = null
+                // 取消裁剪：清空整个剩余队列
+                cropQueue = emptyList()
             }
         )
     }
@@ -376,6 +369,7 @@ fun DiaryEditorPage(
                                     }
                                     f.absolutePath
                                 }
+                                previewInitialIndex = index
                                 previewImagePaths = paths
                             }
                         }
@@ -390,7 +384,8 @@ fun DiaryEditorPage(
                             onRemoveImage = { imageId ->
                                 removedExistingImageIds.add(imageId)
                             },
-                            onClickImage = {
+                            onClickImage = { index ->
+                                previewInitialIndex = index
                                 previewImagePaths = keptExistingImages.map { it.imagePath }
                             }
                         )
@@ -474,7 +469,8 @@ fun DiaryEditorPage(
         previewImagePaths?.let { paths ->
             ImagePreviewDialog(
                 images = paths,
-                onDismissRequest = { previewImagePaths = null }
+                onDismissRequest = { previewImagePaths = null },
+                initialIndex = previewInitialIndex
             )
         }
     }
@@ -595,7 +591,7 @@ private fun ExistingImagesSection(
     images: List<DiaryImage>,
     startGallery: () -> Unit,
     onRemoveImage: (String) -> Unit,
-    onClickImage: () -> Unit
+    onClickImage: (Int) -> Unit
 ) {
     // 继续添加图片入口
     Card(
@@ -642,11 +638,11 @@ private fun ExistingImagesSection(
     }
     Spacer(Modifier.height(12.dp))
 
-    images.forEach { image ->
+    images.forEachIndexed { index, image ->
         EditableImageCard(
             imagePath = image.imagePath,
             onRemove = { onRemoveImage(image.id) },
-            onClick = onClickImage
+            onClick = { onClickImage(index) }
         )
         Spacer(Modifier.height(8.dp))
     }

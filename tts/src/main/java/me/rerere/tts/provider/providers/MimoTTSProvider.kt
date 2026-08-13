@@ -55,7 +55,7 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
     )
 
     // MIMO 流式输出统一为 24kHz PCM16LE mono (匹配官方 Python 示例的 np.frombuffer(..., dtype=np.int16) + samplerate=24000)
-    private const val MIMO_STREAM_SAMPLE_RATE = 24000
+    private val MIMO_STREAM_SAMPLE_RATE = 24000
 
     override fun generateSpeech(
         context: Context,
@@ -240,10 +240,13 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                 }
 
                 is SseEvent.Failure -> {
-                    Log.e(TAG, "MIMO SSE failure", event.e)
-                    // 错误消息里如果包含 HTTP status 信息，尽量暴露出来
-                    val msg = event.e.message ?: "SSE stream failed"
-                    throw Exception("MIMO streaming failed: $msg", event.e)
+                    Log.e(TAG, "MIMO SSE failure", event.throwable)
+                    val parts = mutableListOf<String>()
+                    event.throwable?.message?.let { parts.add(it) }
+                    event.response?.code?.let { parts.add("HTTP $it") }
+                    event.errorBody?.take(300)?.let { parts.add("body=$it") }
+                    val msg = if (parts.isNotEmpty()) parts.joinToString(" | ") else "SSE stream failed"
+                    throw event.throwable ?: Exception("MIMO streaming failed: $msg")
                 }
             }
         }

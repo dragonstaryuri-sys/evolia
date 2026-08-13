@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,11 +43,19 @@ fun ImagePreviewDialog(
     images: List<String>,
     onDismissRequest: () -> Unit,
     prompt: String? = null, // Optional prompt to display
+    initialIndex: Int = 0, // 点击哪张图就从哪张开始
 ) {
     val context = LocalContext.current
     val state = rememberZoomablePagerState { images.size }
     val scope = rememberCoroutineScope()
     val isDarkMode = LocalDarkMode.current
+
+    // 打开时滚动到用户点击的那张图片
+    LaunchedEffect(initialIndex) {
+        if (initialIndex in 0 until images.size) {
+            state.scrollToPage(initialIndex)
+        }
+    }
     
     Dialog(
         onDismissRequest = onDismissRequest,
