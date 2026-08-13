@@ -42,6 +42,7 @@ import me.rerere.rikkahub.service.voice.VoiceMessagePlayer
 import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.asr.provider.ASRManager
 import me.rerere.rikkahub.ui.components.chat.CallStatus
+import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.utils.UpdateInfo
@@ -75,6 +76,7 @@ class ChatVM(
     private val voiceCallManager: VoiceCallManager,
     private val asrManager: ASRManager,
     val voiceMessagePlayer: VoiceMessagePlayer,
+    private val customTtsState: CustomTtsState,
 ) : ViewModel() {
 
     // --- 通话状态暴露（直接转发 VoiceCallManager 的 StateFlow, 避免冗余复制） ---
@@ -271,6 +273,11 @@ class ChatVM(
 
     private val anchorConversationId: Uuid = Uuid.parse(id)
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
+
+    // 启动自动朗读监听（在 CustomTtsState 单例作用域中运行，不随 VM 销毁而停止）
+    init {
+        customTtsState.startAutoRead(anchorConversationId, chatService)
+    }
 
     val isAiTyping: StateFlow<Boolean> = _currentActiveId
         .flatMapLatest { id -> chatService.getAiTypingFlow(id) }

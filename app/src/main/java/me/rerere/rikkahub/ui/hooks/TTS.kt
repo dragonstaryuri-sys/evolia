@@ -2,23 +2,24 @@ package me.rerere.rikkahub.ui.hooks
 
 import android.content.Context
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.tts.model.PlaybackState
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
+import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.stripMarkdown
-import me.rerere.tts.model.TTSResponse
 import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
@@ -26,6 +27,7 @@ import me.rerere.tts.controller.TtsController
 import org.koin.compose.koinInject
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import kotlin.uuid.Uuid
 
 private const val TAG = "TTS"
 
@@ -34,36 +36,12 @@ private val EMOJI_REGEX = Regex("[\\uD83C-\\uDBFF\\uDC00-\\uDFFF]|[\\u2600-\\u27
 
 /**
  * Composable function to remember and manage custom TTS state.
- * Uses user-configured TTS providers instead of system TTS.
+ * Now backed by a Koin singleton, so the TTS controller persists across page navigation
+ * and survives background/foreground transitions.
  */
 @Composable
 fun rememberCustomTtsState(): CustomTtsState {
-    val context = LocalContext.current
-    val settingsStore = koinInject<SettingsStore>()
-    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
-
-    // Remember the CustomTtsState instance across recompositions
-    val ttsState = remember {
-        CustomTtsStateImpl(
-            context = context.applicationContext,
-            settingsStore = settingsStore
-        )
-    }
-
-    // Update the provider when settings change
-    DisposableEffect(settings.selectedTTSProviderId, settings.ttsProviders) {
-        ttsState.updateProvider(settings.getSelectedTTSProvider())
-        onDispose { }
-    }
-
-    // Cleanup resources when the state is disposed
-    DisposableEffect(ttsState) {
-        onDispose {
-            ttsState.cleanup()
-        }
-    }
-
-    return ttsState
+    return koinInject()
 }
 
 /**
@@ -118,14 +96,26 @@ interface CustomTtsState {
     /** MiMo TTS 专用：从官方 API 获取包含 "tts" 的模型列表 */
     suspend fun listMimoModels(providerSetting: TTSProviderSetting.Mimo): List<String>
 
+    /**
+     * 开始为指定会话自动朗读。
+     * 在单例自己的协程作用域中运行，不依赖 UI 生命周期。
+     * 即使退出对话页面或应用切到后台，朗读会持续到 AI 生成结束。
+     * 切换到新会话时会自动取消旧会话的自动朗读。
+     */
+    fun startAutoRead(conversationId: Uuid, chatService: ChatService)
+
+    /** 停止自动朗读监听。 */
+    fun stopAutoRead()
+
     /** Cleanup resources. */
     fun cleanup()
 }
 
 /**
- * Internal implementation of CustomTtsState.
+ * Koin singleton implementation of CustomTtsState.
+ * Lives for the entire app process, decoupled from any Composable / ViewModel lifecycle.
  */
-private class CustomTtsStateImpl(
+class CustomTtsStateImpl(
     private val context: Context,
     private val settingsStore: SettingsStore
 ) : CustomTtsState, KoinComponent {
@@ -133,8 +123,13 @@ private class CustomTtsStateImpl(
     private val ttsManager by inject<TTSManager>()
     private val controller by lazy { me.rerere.tts.controller.TtsController(context, ttsManager) }
 
-    private val scope = CoroutineScope(Dispatchers.Main)
-    private var currentJob: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    // --- 自动朗读状态 ---
+    private var autoReadJob: Job? = null
+    private val autoReadMutex = Mutex()
+    private var lastProcessedMessageId: Uuid? = null
+    private var lastProcessedIndex = 0
 
     override val isAvailable: StateFlow<Boolean> get() = controller.isAvailable
     override val isSpeaking: StateFlow<Boolean> get() = controller.isSpeaking
@@ -143,8 +138,13 @@ private class CustomTtsStateImpl(
     override val totalChunks: StateFlow<Int> get() = controller.totalChunks
     override val playbackState: StateFlow<PlaybackState> get() = controller.playbackState
 
-    fun updateProvider(provider: TTSProviderSetting?) {
-        controller.setProvider(provider)
+    init {
+        // 监听 settings 变化，自动更新 TTS provider
+        scope.launch {
+            settingsStore.settingsFlow.collect { settings ->
+                controller.setProvider(settings.getSelectedTTSProvider())
+            }
+        }
     }
 
     override fun speak(text: String, flushCalled: Boolean, overrideSetting: TTSProviderSetting?) {
@@ -311,8 +311,94 @@ private class CustomTtsStateImpl(
         return ttsManager.listMimoModels(providerSetting)
     }
 
+    override fun startAutoRead(conversationId: Uuid, chatService: ChatService) {
+        // 取消之前的自动朗读
+        autoReadJob?.cancel()
+        lastProcessedMessageId = null
+        lastProcessedIndex = 0
+
+        val convFlow = chatService.getConversationFlow(conversationId)
+        val jobFlow = chatService.getGenerationJobStateFlow(conversationId)
+        val autoPlayFlow = settingsStore.settingsFlow.map { it.autoPlayTts }
+
+        autoReadJob = scope.launch {
+            combine(convFlow, jobFlow, autoPlayFlow) { conv, job, autoPlay ->
+                Triple(conv, job, autoPlay)
+            }.collect { (conv, job, autoPlay) ->
+                if (!autoPlay) {
+                    controller.stop()
+                    val lastMsg = conv.currentMessages.lastOrNull()
+                    if (lastMsg?.role == MessageRole.ASSISTANT) {
+                        val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
+                            .joinToString("\n") { it.text }
+                        lastProcessedMessageId = lastMsg.id
+                        lastProcessedIndex = rawContent.length
+                    } else {
+                        lastProcessedMessageId = null
+                        lastProcessedIndex = 0
+                    }
+                    return@collect
+                }
+
+                val lastMsg = conv.currentMessages.lastOrNull()
+                if (lastMsg?.role == MessageRole.ASSISTANT) {
+                    val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
+                        .joinToString("\n") { it.text }
+
+                    if (lastProcessedMessageId != lastMsg.id) {
+                        if (lastProcessedMessageId == null && job == null) {
+                            lastProcessedMessageId = lastMsg.id
+                            lastProcessedIndex = rawContent.length
+                        } else {
+                            lastProcessedMessageId = lastMsg.id
+                            lastProcessedIndex = 0
+                        }
+                    }
+                    val terminators = charArrayOf('。', '！', '？', '；', '\n', '.', '!', '?', ';')
+                    var i = lastProcessedIndex
+                    while (i < rawContent.length) {
+                        if (rawContent[i] in terminators) {
+                            val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
+                            if (sentence.isNotEmpty()) {
+                                scope.launch {
+                                    autoReadMutex.withLock {
+                                        speak(sentence, flushCalled = false)
+                                    }
+                                }
+                            }
+                            lastProcessedIndex = i + 1
+                        }
+                        i++
+                    }
+
+                    if (job == null && lastProcessedIndex < rawContent.length) {
+                        val remaining = rawContent.substring(lastProcessedIndex).trim()
+                        if (remaining.isNotEmpty()) {
+                            scope.launch {
+                                autoReadMutex.withLock {
+                                    speak(remaining, flushCalled = false)
+                                }
+                            }
+                        }
+                        lastProcessedIndex = rawContent.length
+                    }
+                } else {
+                    lastProcessedMessageId = null
+                    lastProcessedIndex = 0
+                }
+            }
+        }
+    }
+
+    override fun stopAutoRead() {
+        autoReadJob?.cancel()
+        autoReadJob = null
+        lastProcessedMessageId = null
+        lastProcessedIndex = 0
+    }
+
     override fun cleanup() {
+        autoReadJob?.cancel()
         controller.dispose()
-        currentJob = null
     }
 }

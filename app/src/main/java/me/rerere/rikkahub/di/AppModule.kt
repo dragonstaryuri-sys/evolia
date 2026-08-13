@@ -19,6 +19,8 @@ import me.rerere.rikkahub.service.AgentTaskWorker
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.voice.VoiceCallManager
 import me.rerere.rikkahub.utils.UpdateChecker
+import me.rerere.rikkahub.ui.hooks.CustomTtsState
+import me.rerere.rikkahub.ui.hooks.CustomTtsStateImpl
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.provider.TTSManager
 import org.koin.androidx.workmanager.dsl.workerOf
@@ -64,6 +66,14 @@ val appModule = module {
 
     single {
         TTSManager(get())
+    }
+
+    // UI 朗读用的 TTS 状态（单例，生命周期与进程一致，不随页面销毁）
+    single<CustomTtsState> {
+        CustomTtsStateImpl(
+            context = get(),
+            settingsStore = get()
+        )
     }
 
     single {

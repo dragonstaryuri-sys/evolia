@@ -42,7 +42,8 @@ val viewModelModule = module {
             favoriteRepo = get(),
             voiceCallManager = get(),
             asrManager = get(),
-            voiceMessagePlayer = get()
+            voiceMessagePlayer = get(),
+            customTtsState = get()
         )
     }
     viewModel<SettingVM> {

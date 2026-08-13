@@ -42,8 +42,6 @@ import me.rerere.rikkahub.service.voice.VoiceRecorderController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Model
 import me.rerere.ai.ui.UIMessagePart
@@ -450,74 +448,6 @@ private fun ChatPageContent(
     val isConsolidating by vm.isConsolidating.collectAsStateWithLifecycle()
 
     val tts = LocalTTSState.current
-    val ttsMutex = remember { Mutex() }
-    val ttsScope = rememberCoroutineScope()
-    var lastProcessedMessageId by remember { mutableStateOf<Uuid?>(null) }
-    var lastProcessedIndex by remember { mutableStateOf(0) }
-
-    LaunchedEffect(conversation, loadingJob, setting.autoPlayTts) {
-        val lastMsg = conversation.currentMessages.lastOrNull()
-
-        if (!setting.autoPlayTts) {
-            tts.stop()
-            if (lastMsg?.role == MessageRole.ASSISTANT) {
-                val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
-                    .joinToString("\n") { it.text }
-                lastProcessedMessageId = lastMsg.id
-                lastProcessedIndex = rawContent.length
-            } else {
-                lastProcessedMessageId = null
-                lastProcessedIndex = 0
-            }
-            return@LaunchedEffect
-        }
-
-        if (lastMsg?.role == MessageRole.ASSISTANT) {
-            val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
-                .joinToString("\n") { it.text }
-
-            if (lastProcessedMessageId != lastMsg.id) {
-                if (lastProcessedMessageId == null && loadingJob == null) {
-                    lastProcessedMessageId = lastMsg.id
-                    lastProcessedIndex = rawContent.length
-                } else {
-                    lastProcessedMessageId = lastMsg.id
-                    lastProcessedIndex = 0
-                }
-            }
-            val terminators = charArrayOf('。', '！', '？', '；', '\n', '.', '!', '?', ';')
-            var i = lastProcessedIndex
-            while (i < rawContent.length) {
-                if (rawContent[i] in terminators) {
-                    val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
-                    if (sentence.isNotEmpty()) {
-                        ttsScope.launch {
-                            ttsMutex.withLock {
-                                tts.speak(sentence, flushCalled = false)
-                            }
-                        }
-                    }
-                    lastProcessedIndex = i + 1
-                }
-                i++
-            }
-
-            if (loadingJob == null && lastProcessedIndex < rawContent.length) {
-                val remaining = rawContent.substring(lastProcessedIndex).trim()
-                if (remaining.isNotEmpty()) {
-                    ttsScope.launch {
-                        ttsMutex.withLock {
-                            tts.speak(remaining, flushCalled = false)
-                        }
-                    }
-                }
-                lastProcessedIndex = rawContent.length
-            }
-        } else {
-            lastProcessedMessageId = null
-            lastProcessedIndex = 0
-        }
-    }
 
     var lastProviderIndex by rememberSaveable { mutableStateOf(0) }
 
