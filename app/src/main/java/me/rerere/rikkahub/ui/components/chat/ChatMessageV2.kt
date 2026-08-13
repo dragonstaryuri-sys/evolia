@@ -1453,7 +1453,12 @@ private fun AssistantMessageTurn(
             )
         }
 
-        val showActions = !loading && (isLastTurn || actionsExpanded || (wechatMode && BuildConfig.DEBUG))
+        // 操作按钮（复制/刷新/更多）只有在 AI 正文内容存在时才显示。
+        // 仅含思考过程（ReasoningItem）或完全为空时不显示，避免"气泡还没出来按钮先出来了"。
+        val hasMainContent = renderItems.any {
+            it is AssistantRenderItem.TextItem || it is AssistantRenderItem.AudioItem
+        }
+        val showActions = !loading && hasMainContent && (isLastTurn || actionsExpanded || (wechatMode && BuildConfig.DEBUG))
         AnimatedVisibility(
             visible = showActions,
             enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) + slideInVertically(

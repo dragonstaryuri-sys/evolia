@@ -447,7 +447,11 @@ private fun SharedTransitionScope.ChatListNormal(
                                 group = item.group,
                                 isLastTurn = index == 0,
                                 assistant = settings.getAssistantById(conversation.assistantId),
-                                loading = loading && item.isGenerating,
+                                // 只用 loadingJob 判断 loading 状态，不依赖 isAiTyping。
+                                // isAiTyping 在 finally 块中清除（先），loadingJob 在
+                                // invokeOnCompletion 中清除（后），两者之间存在时序间隙，
+                                // 会导致 loading 短暂变 false 从而让操作按钮提前显示。
+                                loading = loading && (index == 0),
                                 model = settings.getCurrentChatModel(),
                                 showRegenerate = index == latestUserTurnIndex || index == latestAssistantTurnIndex,
                                 onCitationClick = onCitationClick,

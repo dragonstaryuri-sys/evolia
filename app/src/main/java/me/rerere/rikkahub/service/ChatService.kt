@@ -1377,19 +1377,17 @@ class ChatService(
                                     newMessages.forWechatSync()
                                 } else newMessages
 
-                                if (anyNewMessages && messagesToSync.isNotEmpty()) {
-                                    val nextState = conversationSnapshot.updateCurrentMessages(baseMessages + messagesToSync)
+                                // 保留唯一的一次 update：updateCurrentMessages 内部既会创建新节点
+                                // （anyNewMessages=true 的场景）也会增量更新已存在节点的内容。
+                                // 连续 update 两次反而会让下游 StateFlow/distinctUntilChanged 可能
+                                // 合并中间的流式 delta，造成用户侧感知"整段跳出来"。
+                                if (messagesToSync.isNotEmpty()) {
+                                    val toUpdate = baseMessages + messagesToSync
+                                    val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
                                         .copy(chatSuggestions = emptyList())
                                     currentConversation = nextState
                                     updateConversation(conversationId) { nextState }
-                                    conversationSnapshot = nextState
                                 }
-
-                                val toUpdate = baseMessages + messagesToSync
-                                val nextState = conversationSnapshot.updateCurrentMessages(toUpdate)
-                                    .copy(chatSuggestions = emptyList())
-                                currentConversation = nextState
-                                updateConversation(conversationId) { nextState }
                             }
 
                         }
