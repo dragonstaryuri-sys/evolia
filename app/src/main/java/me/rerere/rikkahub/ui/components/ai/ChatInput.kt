@@ -434,7 +434,6 @@ fun ChatInput(
                             controller = voiceRecorderController!!,
                             transcribing = voiceTranscribing,
                             onRecordComplete = { result ->
-                                voiceMode = false
                                 onVoiceMessageReady(result)
                             },
                             onError = { msg -> toaster.show(msg, ToastType.Error) },

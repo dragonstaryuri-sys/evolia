@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Mic
@@ -58,6 +60,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.runtime.collectAsState
 import androidx.core.net.toUri
 import me.rerere.rikkahub.R
@@ -402,27 +406,13 @@ fun VoiceRecordButton(
                     }
                 }
                 isRecording -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Canvas(modifier = Modifier.size(10.dp)) {
-                            drawCircle(color = Color.Red.copy(alpha = pulseAlpha))
-                        }
-                        Text(
-                            text = if (isCancelZone) {
-                                releaseToCancelText
-                            } else {
-                                "$recordingText  ${formatVoiceDuration(durationMs)}  $slideUpCancelText"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (isCancelZone) {
-                                MaterialTheme.colorScheme.onErrorContainer
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            }
-                        )
-                    }
+                    // 录音中按钮自身只显示一个简单的 Mic 图标（详细状态走中央遮罩 Popup）
+                    Icon(
+                        imageVector = Icons.Rounded.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
                 }
                 else -> {
                     Row(
@@ -442,6 +432,100 @@ fun VoiceRecordButton(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    // 录音中浮层：屏幕中央遮罩，类似微信，避免手指挡住按钮看不到状态
+    if (isRecording) {
+        Popup(
+            properties = PopupProperties(
+                focusable = false,
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        ) {
+            RecordingOverlay(
+                durationMs = durationMs,
+                isCancelZone = isCancelZone,
+                pulseAlpha = pulseAlpha,
+                recordingText = recordingText,
+                slideUpCancelText = slideUpCancelText,
+                releaseToCancelText = releaseToCancelText
+            )
+        }
+    }
+}
+
+/**
+ * 录音中遮罩浮层（屏幕中央，类似微信）。
+ *
+ * 显示：波形动画 + 录音时长 + 上滑取消提示；进入取消区时整块变红并提示松开取消。
+ */
+@Composable
+private fun RecordingOverlay(
+    durationMs: Long,
+    isCancelZone: Boolean,
+    pulseAlpha: Float,
+    recordingText: String,
+    slideUpCancelText: String,
+    releaseToCancelText: String
+) {
+    Box(
+        modifier = Modifier
+            .wrapContentSize()
+            .padding(top = 120.dp), // 上偏避免遮挡输入栏，让浮层落在屏幕中央偏上
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .clip(RoundedCornerShape(24.dp))
+                .background(
+                    if (isCancelZone) Color(0xCCFF4D4F)
+                    else Color(0xCC000000)
+                )
+                .padding(horizontal = 32.dp, vertical = 24.dp)
+        ) {
+            // 波形/取消图标
+            if (isCancelZone) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Mic,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = Color(0xFFFF4D4F)
+                    )
+                }
+            } else {
+                Canvas(modifier = Modifier.size(40.dp)) {
+                    drawCircle(color = Color.White.copy(alpha = pulseAlpha))
+                }
+            }
+
+            Text(
+                text = if (isCancelZone) {
+                    releaseToCancelText
+                } else {
+                    "$recordingText  ${formatVoiceDuration(durationMs)}"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White
+            )
+
+            if (!isCancelZone) {
+                Text(
+                    text = slideUpCancelText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
             }
         }
     }
