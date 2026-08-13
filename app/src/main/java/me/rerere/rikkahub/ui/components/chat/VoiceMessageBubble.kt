@@ -546,8 +546,8 @@ private fun WaveformBars(
     val maxHeight = 36.dp
 
     Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
         repeat(barCount) { index ->
