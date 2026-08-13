@@ -95,6 +95,7 @@ fun DiaryEditorPage(
     // 图片放大预览
     var previewImagePaths by remember { mutableStateOf<List<String>?>(null) }
     var previewInitialIndex by remember { mutableIntStateOf(0) }
+    var isPreparingPreview by remember { mutableStateOf(false) }
 
     val filteredDiaries by vm.filteredDiaries.collectAsStateWithLifecycle()
     val schedules by vm.getSchedulesForDate(selectedDate).collectAsStateWithLifecycle(emptyList())
@@ -358,6 +359,7 @@ fun DiaryEditorPage(
                             imageBitmaps = imageBitmaps.toMutableList().also { it.removeAt(index) }
                         },
                         onClickNewImage = { index ->
+                            isPreparingPreview = true
                             scope.launch(Dispatchers.IO) {
                                 val tempDir = File(context.cacheDir, "diary_preview").apply { mkdirs() }
                                 val paths = imageBitmaps.mapIndexed { i, bm ->
@@ -371,6 +373,7 @@ fun DiaryEditorPage(
                                 }
                                 previewInitialIndex = index
                                 previewImagePaths = paths
+                                isPreparingPreview = false
                             }
                         }
                     )
@@ -461,6 +464,13 @@ fun DiaryEditorPage(
                 visible = isSaving,
                 icon = Icons.Rounded.Image,
                 hint = "正在保存中…"
+            )
+
+            // 图片预览准备中：Bitmap 写缓存文件需要一点时间
+            FullscreenLoadingOverlay(
+                visible = isPreparingPreview,
+                icon = Icons.Rounded.Image,
+                hint = "加载中…"
             )
         }
         } // PermissionManager 结束
