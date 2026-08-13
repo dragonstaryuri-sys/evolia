@@ -23,13 +23,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -436,7 +437,7 @@ fun VoiceRecordButton(
         }
     }
 
-    // 录音中浮层：屏幕中央遮罩，类似微信，避免手指挡住按钮看不到状态
+    // 录音中浮层：全屏半透明遮罩 + 底部波形/提示，类似微信
     if (isRecording) {
         Popup(
             properties = PopupProperties(
@@ -447,8 +448,8 @@ fun VoiceRecordButton(
         ) {
             RecordingOverlay(
                 durationMs = durationMs,
+                amplitude = controller.amplitude.collectAsState().value,
                 isCancelZone = isCancelZone,
-                pulseAlpha = pulseAlpha,
                 recordingText = recordingText,
                 slideUpCancelText = slideUpCancelText,
                 releaseToCancelText = releaseToCancelText
@@ -458,37 +459,37 @@ fun VoiceRecordButton(
 }
 
 /**
- * 录音中遮罩浮层（屏幕中央，类似微信）。
+ * 录音中遮罩浮层（全屏半透明 + 底部波形，类似微信）。
  *
- * 显示：波形动画 + 录音时长 + 上滑取消提示；进入取消区时整块变红并提示松开取消。
+ * 背景：半透明黑色/红色（取消区）。底部：波形动画 + 时长 + 操作提示。
  */
 @Composable
 private fun RecordingOverlay(
     durationMs: Long,
+    amplitude: Int,
     isCancelZone: Boolean,
-    pulseAlpha: Float,
     recordingText: String,
     slideUpCancelText: String,
     releaseToCancelText: String
 ) {
+    val bgColor = if (isCancelZone) Color(0x99FF4D4F) else Color(0x66000000)
+    val accentColor = if (isCancelZone) Color(0xFFFF4D4F) else Color(0xFFFFFFFF)
+
     Box(
         modifier = Modifier
-            .wrapContentSize()
-            .padding(top = 120.dp), // 上偏避免遮挡输入栏，让浮层落在屏幕中央偏上
-        contentAlignment = Alignment.Center
+            .fillMaxSize()
+            .background(bgColor)
     ) {
+        // 底部波形 + 提示区域
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
-                .clip(RoundedCornerShape(24.dp))
-                .background(
-                    if (isCancelZone) Color(0xCCFF4D4F)
-                    else Color(0xCC000000)
-                )
-                .padding(horizontal = 32.dp, vertical = 24.dp)
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(bottom = 120.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 波形/取消图标
+            // 波形 / 取消图标
             if (isCancelZone) {
                 Box(
                     modifier = Modifier
@@ -501,32 +502,67 @@ private fun RecordingOverlay(
                         imageVector = Icons.Rounded.Mic,
                         contentDescription = null,
                         modifier = Modifier.size(28.dp),
-                        tint = Color(0xFFFF4D4F)
+                        tint = accentColor
                     )
                 }
             } else {
-                Canvas(modifier = Modifier.size(40.dp)) {
-                    drawCircle(color = Color.White.copy(alpha = pulseAlpha))
-                }
+                // 波形条：根据 amplitude 动态变化
+                WaveformBars(
+                    amplitude = amplitude,
+                    color = accentColor,
+                    modifier = Modifier.fillMaxWidth(0.7f)
+                )
             }
 
+            // 时长
             Text(
-                text = if (isCancelZone) {
-                    releaseToCancelText
-                } else {
-                    "$recordingText  ${formatVoiceDuration(durationMs)}"
-                },
-                style = MaterialTheme.typography.bodyMedium,
+                text = formatVoiceDuration(durationMs),
+                style = MaterialTheme.typography.headlineSmall,
                 color = Color.White
             )
 
-            if (!isCancelZone) {
-                Text(
-                    text = slideUpCancelText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.7f)
-                )
-            }
+            // 操作提示
+            Text(
+                text = if (isCancelZone) releaseToCancelText else "$recordingText  |  $slideUpCancelText",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.9f)
+            )
+        }
+    }
+}
+
+/**
+ * 波形条：20 根竖条，根据 amplitude (0-32767) 动态伸缩。
+ */
+@Composable
+private fun WaveformBars(
+    amplitude: Int,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    val normalized = (amplitude.coerceIn(0, 8000) / 8000f) // 0f~1f
+    val barCount = 20
+    val baseHeight = 6.dp
+    val maxHeight = 36.dp
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(barCount) { index ->
+            val timeFactor = kotlin.math.sin(
+                (System.currentTimeMillis() / 120.0 + index * 0.8).toFloat()
+            )
+            val heightFactor = (0.25f + normalized * 0.75f * (0.4f + 0.6f * timeFactor)).coerceIn(0.15f, 1f)
+            val h = baseHeight + (maxHeight - baseHeight) * heightFactor
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(h)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(color.copy(alpha = 0.6f + 0.4f * normalized))
+            )
         }
     }
 }
