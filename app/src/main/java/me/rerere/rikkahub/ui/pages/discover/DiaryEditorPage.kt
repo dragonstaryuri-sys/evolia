@@ -351,7 +351,9 @@ fun DiaryEditorPage(
                 Spacer(Modifier.height(16.dp))
 
                 if (isHandwriteMode) {
-                    // ===== 手写日记模式：只显示从相册导入 + 图片预览 =====
+                    // ===== 手写日记模式：编辑模式下保留 ExistingImagesSection 顶部的
+                    // "继续添加图片" 作为唯一入口，隐藏 DiaryImagePickerSection 的导入 Card 避免重复
+                    val editingWithExistingImages = !isNew && keptExistingImages.isNotEmpty()
                     DiaryImagePickerSection(
                         imageBitmaps = imageBitmaps,
                         startGallery = startGallery,
@@ -375,11 +377,12 @@ fun DiaryEditorPage(
                                 previewImagePaths = paths
                                 isPreparingPreview = false
                             }
-                        }
+                        },
+                        showImportCard = !editingWithExistingImages,
                     )
 
                     // 编辑模式下展示已有图片（可删除，可预览），并提供"继续添加图片"入口
-                    if (!isNew && keptExistingImages.isNotEmpty()) {
+                    if (editingWithExistingImages) {
                         Spacer(Modifier.height(16.dp))
                         ExistingImagesSection(
                             images = keptExistingImages,
@@ -487,60 +490,66 @@ fun DiaryEditorPage(
 }
 
 /**
- * 手写日记图片选择区域（新建模式）。
+ * 手写日记图片选择区域（新建 + 编辑模式共用）。
  * 只提供从相册导入（相册自带拍照入口），避免重复的拍照选择。
+ *
+ * @param showImportCard  是否显示顶部"从相册导入"Card（编辑模式下由 ExistingImagesSection 顶部的
+ *                        "继续添加图片"接管入口，传 false 即可避免重复）
  */
 @Composable
 private fun DiaryImagePickerSection(
     imageBitmaps: List<Bitmap>,
     startGallery: () -> Unit,
     onRemoveImage: (Int) -> Unit,
-    onClickNewImage: (Int) -> Unit
+    onClickNewImage: (Int) -> Unit,
+    showImportCard: Boolean = true,
 ) {
-    // 导入图片入口：一个大的漂亮 Card（内置相册自带拍照按钮，不再让用户二选一）
-    Card(
-        onClick = startGallery,
-        shape = AppShapes.CardLarge,
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
+    if (showImportCard) {
+        // 导入图片入口：一个大的漂亮 Card（内置相册自带拍照按钮，不再让用户二选一）
+        Card(
+            onClick = startGallery,
+            shape = AppShapes.CardLarge,
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.Rounded.Image,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(26.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Rounded.Image,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.diary_handwrite_gallery),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.diary_scan_gallery_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.diary_handwrite_gallery),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = stringResource(R.string.diary_scan_gallery_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Spacer(Modifier.height(12.dp))
     }
-    Spacer(Modifier.height(12.dp))
 
     // 已选图片预览
     if (imageBitmaps.isNotEmpty()) {
