@@ -25,7 +25,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Upload
@@ -897,12 +900,15 @@ private fun AzureTTSConfiguration(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MiniMaxTTSConfiguration(
     setting: TTSProviderSetting.MiniMax,
     onValueChange: (TTSProviderSetting) -> Unit
 ) {
     val tts = LocalTTSState.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var voices by remember { mutableStateOf<List<TTSVoice>>(emptyList()) }
     var isLoadingVoices by remember { mutableStateOf(false) }
 
@@ -913,32 +919,88 @@ private fun MiniMaxTTSConfiguration(
         }
     }
 
+    // ====== 本地状态 + 防抖回写 ======
     var localApiKey by remember(setting.apiKey) { mutableStateOf(setting.apiKey) }
     var localBaseUrl by remember(setting.baseUrl) { mutableStateOf(setting.baseUrl) }
+    var localGroupId by remember(setting.groupId) { mutableStateOf(setting.groupId) }
     var localModel by remember(setting.model) { mutableStateOf(setting.model) }
+    var localVoiceType by remember(setting.voiceType) { mutableStateOf(setting.voiceType) }
+    // 预置音色
     var localVoiceId by remember(setting.voiceId) { mutableStateOf(setting.voiceId) }
     var localEmotion by remember(setting.emotion) { mutableStateOf(setting.emotion) }
     var localSpeed by remember(setting.speed) { mutableStateOf(setting.speed) }
+    // 音色设计（designPreviewText 用内置默认值，不让用户填）
+    var localDesignPrompt by remember(setting.designPrompt) { mutableStateOf(setting.designPrompt) }
+    var localDesignedVoiceId by remember(setting.designedVoiceId) { mutableStateOf(setting.designedVoiceId) }
+    // 音色复刻（试听参数 previewModel/previewText 直接不传，不生成 demo_audio）
+    var localCloneVoiceId by remember(setting.cloneVoiceId) { mutableStateOf(setting.cloneVoiceId) }
+    var localCloneFileId by remember(setting.cloneFileId) { mutableStateOf(setting.cloneFileId) }
+    var localCloneAudioFileName by remember(setting.cloneAudioFileName) { mutableStateOf(setting.cloneAudioFileName) }
+    var localClonePromptAudioFileId by remember(setting.clonePromptAudioFileId) { mutableStateOf(setting.clonePromptAudioFileId) }
+    var localClonePromptAudioFileName by remember(setting.clonePromptAudioFileName) { mutableStateOf(setting.clonePromptAudioFileName) }
+    var localClonePromptText by remember(setting.clonePromptText) { mutableStateOf(setting.clonePromptText) }
+    var localCloneNoiseReduction by remember(setting.cloneNeedNoiseReduction) { mutableStateOf(setting.cloneNeedNoiseReduction) }
+    var localCloneVolumeNorm by remember(setting.cloneNeedVolumeNormalization) { mutableStateOf(setting.cloneNeedVolumeNormalization) }
 
     val currentVoice = remember(localVoiceId, voices) { voices.find { it.id == localVoiceId } }
     val supportedStyles = remember(currentVoice) { currentVoice?.styles ?: listOf("calm") }
 
-    LaunchedEffect(localApiKey, localBaseUrl, localModel, localVoiceId, localEmotion, localSpeed) {
-        if (localApiKey != setting.apiKey || localBaseUrl != setting.baseUrl ||
-            localModel != setting.model || localVoiceId != setting.voiceId ||
-            localEmotion != setting.emotion || localSpeed != setting.speed) {
-            delay(500)
-            onValueChange(setting.copy(
-                apiKey = localApiKey,
-                baseUrl = localBaseUrl,
-                model = localModel,
-                voiceId = localVoiceId,
-                emotion = localEmotion,
-                speed = localSpeed
-            ))
+    // 防抖回写 500ms
+    LaunchedEffect(
+        localApiKey, localBaseUrl, localGroupId, localModel, localVoiceType,
+        localVoiceId, localEmotion, localSpeed,
+        localDesignPrompt, localDesignedVoiceId,
+        localCloneVoiceId, localCloneFileId, localCloneAudioFileName,
+        localClonePromptAudioFileId, localClonePromptAudioFileName, localClonePromptText,
+        localCloneNoiseReduction, localCloneVolumeNorm
+    ) {
+        delay(500)
+        val changed =
+            localApiKey != setting.apiKey ||
+                localBaseUrl != setting.baseUrl ||
+                localGroupId != setting.groupId ||
+                localModel != setting.model ||
+                localVoiceType != setting.voiceType ||
+                localVoiceId != setting.voiceId ||
+                localEmotion != setting.emotion ||
+                localSpeed != setting.speed ||
+                localDesignPrompt != setting.designPrompt ||
+                localDesignedVoiceId != setting.designedVoiceId ||
+                localCloneVoiceId != setting.cloneVoiceId ||
+                localCloneFileId != setting.cloneFileId ||
+                localCloneAudioFileName != setting.cloneAudioFileName ||
+                localClonePromptAudioFileId != setting.clonePromptAudioFileId ||
+                localClonePromptAudioFileName != setting.clonePromptAudioFileName ||
+                localClonePromptText != setting.clonePromptText ||
+                localCloneNoiseReduction != setting.cloneNeedNoiseReduction ||
+                localCloneVolumeNorm != setting.cloneNeedVolumeNormalization
+        if (changed) {
+            onValueChange(
+                setting.copy(
+                    apiKey = localApiKey,
+                    baseUrl = localBaseUrl,
+                    groupId = localGroupId,
+                    model = localModel,
+                    voiceType = localVoiceType,
+                    voiceId = localVoiceId,
+                    emotion = localEmotion,
+                    speed = localSpeed,
+                    designPrompt = localDesignPrompt,
+                    designedVoiceId = localDesignedVoiceId,
+                    cloneVoiceId = localCloneVoiceId,
+                    cloneFileId = localCloneFileId,
+                    cloneAudioFileName = localCloneAudioFileName,
+                    clonePromptAudioFileId = localClonePromptAudioFileId,
+                    clonePromptAudioFileName = localClonePromptAudioFileName,
+                    clonePromptText = localClonePromptText,
+                    cloneNeedNoiseReduction = localCloneNoiseReduction,
+                    cloneNeedVolumeNormalization = localCloneVolumeNorm
+                )
+            )
         }
     }
 
+    // 加载预置音色列表
     LaunchedEffect(localApiKey) {
         if (localApiKey.isNotBlank()) {
             isLoadingVoices = true
@@ -952,6 +1014,81 @@ private fun MiniMaxTTSConfiguration(
         }
     }
 
+    // ====== 加载 & 错误状态 ======
+    var isGenerating by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // ====== 音频上传 (音色复刻) ======
+    var uploadingPurpose by remember { mutableStateOf<String?>(null) } // voice_clone / prompt_audio
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val purpose = uploadingPurpose ?: return@rememberLauncherForActivityResult
+        uploadingPurpose = null
+        scope.launch {
+            isGenerating = true
+            errorMessage = null
+            try {
+                // 1. 读取文件名 & 大小
+                val displayName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (cursor.moveToFirst()) {
+                        val name = if (nameIdx != -1) cursor.getString(nameIdx) else null
+                        val size = if (sizeIdx != -1) cursor.getLong(sizeIdx) else 0L
+                        if (purpose == "voice_clone" && size > 20 * 1024 * 1024) {
+                            throw Exception("复刻音频不能超过 20MB（当前 ${size / 1024 / 1024}MB）")
+                        }
+                        name
+                    } else null
+                } ?: uri.lastPathSegment ?: "audio"
+
+                // 2. 拷贝到缓存文件
+                val cacheFile = withContext(Dispatchers.IO) {
+                    val ext = displayName.substringAfterLast('.', "mp3")
+                    val f = java.io.File(
+                        context.cacheDir,
+                        "minimax_${purpose}_${System.currentTimeMillis()}.$ext"
+                    )
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        java.io.FileOutputStream(f).use { out -> input.copyTo(out) }
+                    }
+                    f
+                }
+
+                // 3. 上传到 MiniMax
+                val tempSetting = setting.copy(
+                    apiKey = localApiKey,
+                    groupId = localGroupId
+                )
+                val fileId = tts.miniMaxUploadFile(tempSetting, cacheFile, purpose)
+
+                // 4. 写入本地状态
+                when (purpose) {
+                    "voice_clone" -> {
+                        localCloneFileId = fileId
+                        localCloneAudioFileName = displayName
+                    }
+                    "prompt_audio" -> {
+                        localClonePromptAudioFileId = fileId
+                        localClonePromptAudioFileName = displayName
+                    }
+                }
+
+                // 5. 清理缓存
+                cacheFile.delete()
+                errorMessage = null
+            } catch (e: Exception) {
+                Log.e(TAG, "MiniMax audio upload failed", e)
+                errorMessage = e.localizedMessage ?: "上传失败"
+            } finally {
+                isGenerating = false
+            }
+        }
+    }
+
+    // ====== 通用 API Key UI ======
     var apiKeyVisible by remember { mutableStateOf(false) }
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_api_key)) },
@@ -971,6 +1108,18 @@ private fun MiniMaxTTSConfiguration(
     }
 
     FormItem(
+        label = { Text("Group ID") },
+        description = { Text("（可选）MiniMax 账户的 GroupId，部分账户需要。没有可留空。") }
+    ) {
+        OutlinedTextField(
+            value = localGroupId,
+            onValueChange = { localGroupId = it.trim() },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("留空或填写您的 GroupId") }
+        )
+    }
+
+    FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_base_url)) },
         description = { Text("接口地址 (预设地址，不可编辑)") }
     ) {
@@ -982,74 +1131,508 @@ private fun MiniMaxTTSConfiguration(
         )
     }
 
-    FormItem(label = { Text(stringResource(R.string.setting_tts_page_model)) }) {
-        OutlinedTextField(value = localModel, onValueChange = { localModel = it }, modifier = Modifier.fillMaxWidth())
-    }
-
-    var showVoicePicker by remember { mutableStateOf(false) }
-    FormItem(label = { Text(stringResource(R.string.setting_tts_page_voice_id)) }) {
+    FormItem(
+        label = { Text(stringResource(R.string.setting_tts_page_model)) },
+        description = { Text("用于语音合成的模型，推荐 speech-02-hd / speech-2.5-hd-preview 等") }
+    ) {
         OutlinedTextField(
-            value = localVoiceId,
-            onValueChange = { localVoiceId = it },
-            modifier = Modifier.fillMaxWidth(),
-            trailingIcon = {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
-                    if (isLoadingVoices) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    IconButton(onClick = { showVoicePicker = true }) { Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Voice") }
-                }
-            }
+            value = localModel,
+            onValueChange = { localModel = it.trim() },
+            modifier = Modifier.fillMaxWidth()
         )
     }
 
-    var showStylePicker by remember { mutableStateOf(false) }
-    val hasStyles = supportedStyles.size > 1
-    FormItem(label = { Text(stringResource(R.string.setting_tts_page_emotion)) }) {
-        OutlinedTextField(
-            value = if (hasStyles) localEmotion else "calm",
-            onValueChange = { if (hasStyles) localEmotion = it },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = hasStyles,
-            trailingIcon = {
-                if (hasStyles) {
-                    IconButton(onClick = { showStylePicker = true }) { Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style") }
+    // ====== 音色来源类型选择 ======
+    FormItem(
+        label = { Text("音色来源") },
+        description = {
+            Text(
+                when (localVoiceType) {
+                    TTSProviderSetting.MiniMaxVoiceType.DEFAULT -> "使用系统预置精品音色，立即可用。"
+                    TTSProviderSetting.MiniMaxVoiceType.DESIGN -> "用自然语言描述你想要的音色，AI 为你生成个性化 voice_id。"
+                    TTSProviderSetting.MiniMaxVoiceType.CLONE -> "上传 10 秒~5 分钟的清晰音频，快速复刻目标音色。"
                 }
+            )
+        }
+    ) {
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = localVoiceType == TTSProviderSetting.MiniMaxVoiceType.DEFAULT,
+                onClick = { localVoiceType = TTSProviderSetting.MiniMaxVoiceType.DEFAULT },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+            ) {
+                Text("预置音色", style = MaterialTheme.typography.labelSmall)
             }
-        )
+            SegmentedButton(
+                selected = localVoiceType == TTSProviderSetting.MiniMaxVoiceType.DESIGN,
+                onClick = { localVoiceType = TTSProviderSetting.MiniMaxVoiceType.DESIGN },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+            ) {
+                Text("音色设计", style = MaterialTheme.typography.labelSmall)
+            }
+            SegmentedButton(
+                selected = localVoiceType == TTSProviderSetting.MiniMaxVoiceType.CLONE,
+                onClick = { localVoiceType = TTSProviderSetting.MiniMaxVoiceType.CLONE },
+                shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+            ) {
+                Text("音色复刻", style = MaterialTheme.typography.labelSmall)
+            }
+        }
     }
 
+    // ====== 错误提示 ======
+    errorMessage?.let { err ->
+        FormItem(
+            label = { Text("操作提示", color = MaterialTheme.colorScheme.error) },
+            description = { Text(err, color = MaterialTheme.colorScheme.error) }
+        ) {}
+    }
+
+    // ============================================================================
+    // 分支 A：预置音色
+    // ============================================================================
+    if (localVoiceType == TTSProviderSetting.MiniMaxVoiceType.DEFAULT) {
+        var showVoicePicker by remember { mutableStateOf(false) }
+        FormItem(label = { Text(stringResource(R.string.setting_tts_page_voice_id)) }) {
+            OutlinedTextField(
+                value = localVoiceId,
+                onValueChange = { localVoiceId = it },
+                modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
+                        if (isLoadingVoices) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        IconButton(onClick = { showVoicePicker = true }) {
+                            Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Voice")
+                        }
+                    }
+                }
+            )
+        }
+
+        var showStylePicker by remember { mutableStateOf(false) }
+        val hasStyles = supportedStyles.size > 1
+        FormItem(label = { Text(stringResource(R.string.setting_tts_page_emotion)) }) {
+            OutlinedTextField(
+                value = if (hasStyles) localEmotion else "calm",
+                onValueChange = { if (hasStyles) localEmotion = it },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = hasStyles,
+                trailingIcon = {
+                    if (hasStyles) {
+                        IconButton(onClick = { showStylePicker = true }) {
+                            Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style")
+                        }
+                    }
+                }
+            )
+        }
+
+        if (showVoicePicker) {
+            MiniMaxVoicePicker(
+                voices = voices,
+                currentVoiceId = localVoiceId,
+                onSelect = {
+                    localVoiceId = it.id
+                    localEmotion = it.styles.firstOrNull() ?: "calm"
+                    showVoicePicker = false
+                },
+                onDismiss = { showVoicePicker = false }
+            )
+        }
+
+        if (showStylePicker) {
+            MiniMaxStylePicker(
+                currentStyle = localEmotion,
+                supportedStyles = supportedStyles,
+                onSelect = {
+                    localEmotion = it
+                    showStylePicker = false
+                },
+                onDismiss = { showStylePicker = false }
+            )
+        }
+    }
+
+    // ============================================================================
+    // 分支 B：音色设计 (Voice Design)
+    // ============================================================================
+    if (localVoiceType == TTSProviderSetting.MiniMaxVoiceType.DESIGN) {
+        FormItem(
+            label = { Text("音色描述 Prompt") },
+            description = {
+                Text(
+                    "必填。用自然语言描述你想要的音色：性别、年龄、情绪、说话风格、口音、场景等。",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        ) {
+            OutlinedTextField(
+                value = localDesignPrompt,
+                onValueChange = { localDesignPrompt = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+                placeholder = {
+                    Text(
+                        "例如：\n" +
+                            "讲述悬疑故事的播音员，声音低沉富有磁性，语速时快时慢，营造紧张神秘的氛围。\n" +
+                            "或：年迈的老先生，北方口音，语速缓慢，嗓音沙哑沧桑，像在讲故事。\n" +
+                            "或：年轻女生，声音温柔慵懒像刚睡醒，带一点点鼻音，语速很慢。"
+                    )
+                },
+                maxLines = 8
+            )
+        }
+
+        // 生成按钮（试听文本用数据模型内置的默认值，不让用户手动填）
+        FormItem(label = { Text("生成音色") }) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            isGenerating = true
+                            errorMessage = null
+                            try {
+                                // designPreviewText 使用 setting 默认值（内置试听文本）
+                                val temp = setting.copy(
+                                    apiKey = localApiKey,
+                                    groupId = localGroupId,
+                                    designPrompt = localDesignPrompt
+                                )
+                                val (voiceId, trialHex) = tts.miniMaxVoiceDesign(temp)
+                                localDesignedVoiceId = voiceId
+                                errorMessage = "✅ 音色设计成功！已保存 voice_id = $voiceId"
+                                Log.i(TAG, "MiniMax voiceDesign OK: voice_id=$voiceId, trialHexLen=${trialHex.length}")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "MiniMax voiceDesign failed", e)
+                                errorMessage = "❌ " + (e.localizedMessage ?: "音色设计失败")
+                            } finally {
+                                isGenerating = false
+                            }
+                        }
+                    },
+                    enabled = !isGenerating && localApiKey.isNotBlank() && localDesignPrompt.isNotBlank()
+                ) {
+                    if (isGenerating) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                        Text("设计中…")
+                    } else {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("生成个性化音色")
+                    }
+                }
+
+                if (localDesignedVoiceId.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = "当前 voice_id：",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = localDesignedVoiceId,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        text = "⚠️ 该音色为临时音色，请在 7 天内至少在本应用进行一次语音合成（点右上角试听即可），否则会被 MiniMax 删除。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // 分支 C：音色复刻 (Voice Clone)
+    // ============================================================================
+    if (localVoiceType == TTSProviderSetting.MiniMaxVoiceType.CLONE) {
+        // —— 自定义 voice_id ——
+        val voiceIdError = remember(localCloneVoiceId) {
+            if (localCloneVoiceId.isBlank()) null
+            else tts.miniMaxValidateVoiceId(localCloneVoiceId).exceptionOrNull()?.localizedMessage
+        }
+        FormItem(
+            label = { Text("自定义 voice_id") },
+            description = {
+                Column {
+                    Text("必填。将来在 TTS 中引用该音色的标识。规则：长度 8-256，首字符必须是字母，只允许字母数字 - _，末尾不能是 -/_。")
+                    if (voiceIdError != null) {
+                        Text(voiceIdError, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        ) {
+            OutlinedTextField(
+                value = localCloneVoiceId,
+                onValueChange = { localCloneVoiceId = it.trim() },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("例如：MiniMax001、MyVoice_01、Clone-2025abc") },
+                isError = voiceIdError != null
+            )
+        }
+
+        // —— 复刻主音频 ——
+        FormItem(
+            label = { Text("复刻音频（10s ~ 5min，≤ 20MB）") },
+            description = {
+                Column {
+                    Text(
+                        text = if (localCloneFileId == 0L) {
+                            "必填。选择一段清晰的人声录音（mp3 / m4a / wav），环境安静，发音标准。"
+                        } else {
+                            "✅ 已上传：$localCloneAudioFileName ｜ file_id = $localCloneFileId"
+                        },
+                        color = if (localCloneFileId == 0L) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        uploadingPurpose = "voice_clone"
+                        audioPickerLauncher.launch("audio/*")
+                    },
+                    enabled = !isGenerating && localApiKey.isNotBlank()
+                ) {
+                    if (isGenerating && uploadingPurpose == "voice_clone") {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                        Text("上传中…")
+                    } else {
+                        Icon(Icons.Rounded.Upload, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(if (localCloneFileId == 0L) "选择并上传" else "重新上传")
+                    }
+                }
+                if (localCloneFileId != 0L) {
+                    Spacer(Modifier.size(8.dp))
+                    IconButton(
+                        onClick = {
+                            localCloneFileId = 0L
+                            localCloneAudioFileName = ""
+                        }
+                    ) {
+                        Icon(
+                            Icons.Rounded.Close,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+
+        // —— clone_prompt：示例音频（可选） ——
+        FormItem(
+            label = { Text("示例音频（可选，< 8s）") },
+            description = {
+                Text(
+                    if (localClonePromptAudioFileId == 0L)
+                        "可选。上传一段非常短的示例音频（< 8s）+ 其对应文本，有助于增强音色相似度和稳定性。"
+                    else
+                        "✅ 已上传：$localClonePromptAudioFileName ｜ file_id = $localClonePromptAudioFileId"
+                )
+            }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            uploadingPurpose = "prompt_audio"
+                            audioPickerLauncher.launch("audio/*")
+                        },
+                        enabled = !isGenerating && localApiKey.isNotBlank()
+                    ) {
+                        if (isGenerating && uploadingPurpose == "prompt_audio") {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.size(8.dp))
+                            Text("上传中…")
+                        } else {
+                            Icon(Icons.Rounded.Upload, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                            Text(if (localClonePromptAudioFileId == 0L) "选择示例音频" else "重新上传")
+                        }
+                    }
+                    if (localClonePromptAudioFileId != 0L) {
+                        Spacer(Modifier.size(8.dp))
+                        IconButton(
+                            onClick = {
+                                localClonePromptAudioFileId = 0L
+                                localClonePromptAudioFileName = ""
+                            }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Close,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = localClonePromptText,
+                    onValueChange = { localClonePromptText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("示例音频对应的文本（句末请加标点）") },
+                    placeholder = { Text("例如：这是一段用于音色复刻的示例文本。") },
+                    enabled = localClonePromptAudioFileId != 0L || localClonePromptText.isNotBlank()
+                )
+            }
+        }
+
+        // —— 降噪 & 音量归一化 ——
+        FormItem(label = { Text("音频预处理") }) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                ) {
+                    Switch(
+                        checked = localCloneNoiseReduction,
+                        onCheckedChange = { localCloneNoiseReduction = it }
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            if (localCloneNoiseReduction) "降噪：已开启" else "降噪：关闭",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "对复刻音频执行降噪处理，适合环境音较大的录音。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                ) {
+                    Switch(
+                        checked = localCloneVolumeNorm,
+                        onCheckedChange = { localCloneVolumeNorm = it }
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            if (localCloneVolumeNorm) "音量归一化：已开启" else "音量归一化：关闭",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "将复刻音频音量调整到统一水平，适合音量忽大忽小的录音。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // —— 执行复刻按钮 ——
+        FormItem(label = { Text("开始复刻") }) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            isGenerating = true
+                            errorMessage = null
+                            try {
+                                // 不传 previewModel / previewText，仅生成音色（不额外合成 demo_audio）
+                                val temp = setting.copy(
+                                    apiKey = localApiKey,
+                                    groupId = localGroupId,
+                                    cloneVoiceId = localCloneVoiceId,
+                                    cloneFileId = localCloneFileId,
+                                    clonePromptAudioFileId = localClonePromptAudioFileId,
+                                    clonePromptText = localClonePromptText,
+                                    cloneNeedNoiseReduction = localCloneNoiseReduction,
+                                    cloneNeedVolumeNormalization = localCloneVolumeNorm
+                                )
+                                val demoUrl = tts.miniMaxVoiceClone(temp)
+                                errorMessage = "✅ 音色复刻成功！voice_id = ${temp.cloneVoiceId}"
+                                Log.i(TAG, "MiniMax voiceClone OK: voice_id=${temp.cloneVoiceId}, demoUrlLen=${demoUrl.length}")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "MiniMax voiceClone failed", e)
+                                errorMessage = "❌ " + (e.localizedMessage ?: "音色复刻失败")
+                            } finally {
+                                isGenerating = false
+                            }
+                        }
+                    },
+                    enabled = !isGenerating &&
+                        localApiKey.isNotBlank() &&
+                        localCloneFileId != 0L &&
+                        localCloneVoiceId.isNotBlank() &&
+                        voiceIdError == null
+                ) {
+                    if (isGenerating) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                        Text("复刻中…")
+                    } else {
+                        Icon(Icons.Rounded.ContentCopy, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text("执行音色复刻")
+                    }
+                }
+
+                if (localCloneVoiceId.isNotBlank() && voiceIdError == null && localCloneFileId != 0L) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text("当前复刻 voice_id：", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            localCloneVoiceId,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        "⚠️ 该音色为临时音色，请在 7 天内至少在本应用进行一次语音合成（点右上角试听即可），否则会被 MiniMax 删除；同时 MiniMax 需要账号完成个人/企业认证才可使用复刻。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+        }
+    }
+
+    // ============================================================================
+    // 通用：语速（所有音色类型都用 voice_setting.speed）
+    // ============================================================================
     FormItem(label = { Text(stringResource(R.string.setting_tts_page_speed)) }) {
         OutlinedNumberInput(
             value = localSpeed,
             onValueChange = { if (it in 0.25f..4.0f) localSpeed = it },
             modifier = Modifier.fillMaxWidth(),
             label = stringResource(R.string.setting_tts_page_speed)
-        )
-    }
-
-    if (showVoicePicker) {
-        MiniMaxVoicePicker(
-            voices = voices,
-            currentVoiceId = localVoiceId,
-            onSelect = {
-                localVoiceId = it.id
-                localEmotion = it.styles.firstOrNull() ?: "calm"
-                showVoicePicker = false
-                onValueChange(setting.copy(voiceId = it.id, emotion = localEmotion))
-            },
-            onDismiss = { showVoicePicker = false }
-        )
-    }
-
-    if (showStylePicker) {
-        MiniMaxStylePicker(
-            currentStyle = localEmotion,
-            supportedStyles = supportedStyles,
-            onSelect = {
-                localEmotion = it
-                showStylePicker = false
-                onValueChange(setting.copy(emotion = it))
-            },
-            onDismiss = { showStylePicker = false }
         )
     }
 }

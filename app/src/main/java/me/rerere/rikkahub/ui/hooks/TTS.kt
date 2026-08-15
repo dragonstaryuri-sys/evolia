@@ -97,6 +97,28 @@ interface CustomTtsState {
     /** MiMo TTS 专用：从官方 API 获取包含 "tts" 的模型列表 */
     suspend fun listMimoModels(providerSetting: TTSProviderSetting.Mimo): List<String>
 
+    // ================== MiniMax 音色设计 & 复刻 专用接口 ==================
+
+    /** MiniMax 专用：上传音频文件（purpose = voice_clone / prompt_audio）*/
+    suspend fun miniMaxUploadFile(
+        providerSetting: TTSProviderSetting.MiniMax,
+        file: java.io.File,
+        purpose: String
+    ): Long
+
+    /** MiniMax 专用：音色设计，返回 Pair(voice_id, trial_audio_hex) */
+    suspend fun miniMaxVoiceDesign(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): Pair<String, String>
+
+    /** MiniMax 专用：音色复刻，返回试听音频 URL（如有） */
+    suspend fun miniMaxVoiceClone(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): String
+
+    /** MiniMax 专用：校验自定义 voice_id 格式 */
+    fun miniMaxValidateVoiceId(voiceId: String): Result<Unit>
+
     /**
      * 开始为指定会话自动朗读。
      * 在单例自己的协程作用域中运行，不依赖 UI 生命周期。
@@ -322,6 +344,32 @@ class CustomTtsStateImpl(
 
     override suspend fun listMimoModels(providerSetting: TTSProviderSetting.Mimo): List<String> {
         return ttsManager.listMimoModels(providerSetting)
+    }
+
+    // ================== MiniMax 音色设计 & 复刻 接口实现 ==================
+
+    override suspend fun miniMaxUploadFile(
+        providerSetting: TTSProviderSetting.MiniMax,
+        file: java.io.File,
+        purpose: String
+    ): Long {
+        return ttsManager.miniMaxUploadFile(providerSetting, file, purpose)
+    }
+
+    override suspend fun miniMaxVoiceDesign(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): Pair<String, String> {
+        return ttsManager.miniMaxVoiceDesign(providerSetting)
+    }
+
+    override suspend fun miniMaxVoiceClone(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): String {
+        return ttsManager.miniMaxVoiceClone(providerSetting)
+    }
+
+    override fun miniMaxValidateVoiceId(voiceId: String): Result<Unit> {
+        return ttsManager.miniMaxValidateVoiceId(voiceId)
     }
 
     override fun startAutoRead(conversationId: Uuid, chatService: ChatService) {

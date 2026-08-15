@@ -63,4 +63,51 @@ class TTSManager(private val context: Context) {
     ): List<String> {
         return mimoProvider.listModels(providerSetting)
     }
+
+    // ================== MiniMax 音色设计 & 复刻 专用接口 ==================
+
+    /**
+     * MiniMax 专用：上传音频文件（用于音色复刻的主音频或示例音频）
+     *
+     * @param providerSetting MiniMax 配置
+     * @param file 本地音频文件（mp3/m4a/wav，主音频 10s-5min，示例音频<8s）
+     * @param purpose "voice_clone"（复刻主音频）或 "prompt_audio"（示例音频）
+     * @return MiniMax 返回的 file_id
+     */
+    suspend fun miniMaxUploadFile(
+        providerSetting: TTSProviderSetting.MiniMax,
+        file: java.io.File,
+        purpose: String
+    ): Long {
+        return miniMaxProvider.uploadFile(providerSetting, file, purpose)
+    }
+
+    /**
+     * MiniMax 专用：音色设计（Voice Design），通过文本描述生成个性化音色
+     *
+     * @return Pair(voice_id, trial_audio_hex)
+     */
+    suspend fun miniMaxVoiceDesign(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): Pair<String, String> {
+        return miniMaxProvider.voiceDesign(providerSetting)
+    }
+
+    /**
+     * MiniMax 专用：音色复刻（Voice Clone），基于音频样本快速复刻
+     *
+     * @return 试听音频 URL（若配置了试听文本），否则空串
+     */
+    suspend fun miniMaxVoiceClone(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): String {
+        return miniMaxProvider.voiceClone(providerSetting)
+    }
+
+    /**
+     * MiniMax 专用：校验自定义 voice_id 格式是否合法
+     */
+    fun miniMaxValidateVoiceId(voiceId: String): Result<Unit> {
+        return runCatching { miniMaxProvider.validateVoiceId(voiceId) }
+    }
 }

@@ -149,6 +149,19 @@ sealed class TTSProviderSetting {
         }
     }
 
+    /**
+     * MiniMax 音色来源类型
+     */
+    @Serializable
+    enum class MiniMaxVoiceType {
+        /** 系统预置音色 */
+        DEFAULT,
+        /** 音色设计：通过文本描述生成个性化音色 */
+        DESIGN,
+        /** 音色复刻：基于音频样本快速复刻音色 */
+        CLONE
+    }
+
     @Serializable
     @SerialName("minimax")
     data class MiniMax(
@@ -157,10 +170,46 @@ sealed class TTSProviderSetting {
         override val builtIn: Boolean = false,
         val apiKey: String = "",
         val baseUrl: String = "https://api.minimaxi.com/v1",
+        val groupId: String = "",
         val model: String = "speech-2.5-hd-preview",
+        /** 音色来源类型：预置 / 音色设计 / 音色复刻 */
+        val voiceType: MiniMaxVoiceType = MiniMaxVoiceType.DEFAULT,
+        // ===== 系统预置音色 =====
         val voiceId: String = "female-shaonv",
         val emotion: String = "calm",
-        val speed: Float = 1.0f
+        val speed: Float = 1.0f,
+        // ===== 音色设计 (Voice Design) =====
+        /** 音色描述 prompt（音色设计必填） */
+        val designPrompt: String = "",
+        /** 试听文本（音色设计必填，用于生成 trial_audio） */
+        val designPreviewText: String = "夜深了，古屋里只有他一人。窗外传来若有若无的脚步声。",
+        /** 音色设计生成的 voice_id（API 返回后填入） */
+        val designedVoiceId: String = "",
+        /** 音色设计返回的试听音频 hex（仅预览，不持久化用于TTS） */
+        val designedTrialAudioHex: String = "",
+        // ===== 音色复刻 (Voice Clone) =====
+        /** 用户自定义的复刻 voice_id（8-256字符，首字母英文，复刻必填） */
+        val cloneVoiceId: String = "",
+        /** 复刻音频上传后得到的 file_id（复刻必填） */
+        val cloneFileId: Long = 0L,
+        /** 复刻音频的本地文件名（仅UI展示用） */
+        val cloneAudioFileName: String = "",
+        /** 可选：示例音频 file_id（用于 clone_prompt.prompt_audio，增强相似度） */
+        val clonePromptAudioFileId: Long = 0L,
+        /** 可选：示例音频对应文本（clone_prompt.prompt_text，句末需有标点） */
+        val clonePromptText: String = "",
+        /** 可选：示例音频文件名（仅UI展示用） */
+        val clonePromptAudioFileName: String = "",
+        /** 是否开启降噪 */
+        val cloneNeedNoiseReduction: Boolean = false,
+        /** 是否开启音量归一化 */
+        val cloneNeedVolumeNormalization: Boolean = false,
+        /** 复刻试听用的模型（传text+model时返回demo_audio），如 speech-2.5-hd-preview */
+        val clonePreviewModel: String = "speech-2.5-hd-preview",
+        /** 复刻试听文本（可选，限制2000字内） */
+        val clonePreviewText: String = "",
+        /** 复刻返回的 demo_audio 试听链接（仅预览） */
+        val cloneDemoAudioUrl: String = ""
     ) : TTSProviderSetting() {
         override fun copyProvider(
             id: Uuid,
