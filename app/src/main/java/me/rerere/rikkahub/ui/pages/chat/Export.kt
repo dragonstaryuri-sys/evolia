@@ -4,17 +4,21 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -41,18 +45,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.navigation.compose.rememberNavController
+import coil3.SingletonImageLoader
+import coil3.asDrawable
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import androidx.compose.material.icons.Icons
@@ -68,6 +80,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
@@ -95,7 +109,6 @@ import me.rerere.rikkahub.utils.exportImage
 import me.rerere.rikkahub.utils.getActivity
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.toLocalString
-import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.core.data.model.Avatar
 import org.koin.compose.koinInject
 import java.io.FileOutputStream
@@ -324,6 +337,18 @@ private suspend fun exportToImage(
         return
     }
 
+    // 预加载头像图片，避免 AsyncImage 异步加载在截图时还未完成
+    val assistant = settings.assistants.find { it.id == conversation.assistantId }
+    val userAvatar = settings.displaySetting.userAvatar
+    val assistantAvatar = assistant?.avatar ?: Avatar.Dummy
+
+    val userAvatarBitmap = withContext(Dispatchers.IO) {
+        preloadAvatarBitmap(context, userAvatar)
+    }
+    val assistantAvatarBitmap = withContext(Dispatchers.IO) {
+        preloadAvatarBitmap(context, assistantAvatar)
+    }
+
     val bitmap = composer.composableToBitmap(
         activity = activity,
         width = 540.dp,
@@ -333,7 +358,9 @@ private suspend fun exportToImage(
                 ExportedChatImage(
                     conversation = conversation,
                     messages = messages,
-                    options = options
+                    options = options,
+                    userAvatarBitmap = userAvatarBitmap,
+                    assistantAvatarBitmap = assistantAvatarBitmap
                 )
             }
         }
@@ -379,7 +406,9 @@ data class ImageExportOptions(val expandReasoning: Boolean = false)
 private fun ExportedChatImage(
     conversation: Conversation,
     messages: List<UIMessage>,
-    options: ImageExportOptions = ImageExportOptions()
+    options: ImageExportOptions = ImageExportOptions(),
+    userAvatarBitmap: ImageBitmap? = null,
+    assistantAvatarBitmap: ImageBitmap? = null
 ) {
     val navBackStack = rememberNavController()
     val highlighter = koinInject<Highlighter>()
@@ -400,14 +429,19 @@ private fun ExportedChatImage(
                 ) {
                     // Header removed for chat-list style
 
-                    // Messages (Filter skipContext)
-                    messages.filter { !it.skipContext }.forEach { message ->
-                        ExportedChatMessage(
-                            message = message,
-                            options = options,
-                            conversation = conversation
-                        )
-                    }
+                    // Messages: filter skipContext, then sort by createdAt ascending
+                    // (聊天界面 reverseLayout 使 index 0 = 最新，导出需按时间正序排列)
+                    messages.filter { !it.skipContext }
+                        .sortedBy { it.createdAt.toInstant(TimeZone.currentSystemDefault()) }
+                        .forEach { message ->
+                            ExportedChatMessage(
+                                message = message,
+                                options = options,
+                                conversation = conversation,
+                                userAvatarBitmap = userAvatarBitmap,
+                                assistantAvatarBitmap = assistantAvatarBitmap
+                            )
+                        }
 
                     // Watermark (Keep small)
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -427,7 +461,9 @@ private fun ExportedChatImage(
 private fun ExportedChatMessage(
     message: UIMessage,
     conversation: Conversation,
-    options: ImageExportOptions = ImageExportOptions()
+    options: ImageExportOptions = ImageExportOptions(),
+    userAvatarBitmap: ImageBitmap? = null,
+    assistantAvatarBitmap: ImageBitmap? = null
 ) {
     if (message.parts.isEmptyUIMessage()) return
     val context = LocalContext.current
@@ -442,12 +478,15 @@ private fun ExportedChatMessage(
         assistant?.name ?: "AI"
     }
 
+    val avatarValue = if (isUser) settings.displaySetting.userAvatar else (assistant?.avatar ?: Avatar.Dummy)
+    val avatarBitmap = if (isUser) userAvatarBitmap else assistantAvatarBitmap
+
     val avatarContent: @Composable () -> Unit = {
-        UIAvatar(
+        ExportedAvatar(
             name = senderName,
-            modifier = Modifier.size(40.dp),
-            value = if (isUser) settings.displaySetting.userAvatar else (assistant?.avatar ?: Avatar.Dummy),
-            loading = false
+            value = avatarValue,
+            bitmap = avatarBitmap,
+            modifier = Modifier.size(40.dp)
         )
     }
 
@@ -545,6 +584,76 @@ private fun ExportedChatMessage(
         if (isUser) {
             Spacer(modifier = Modifier.width(8.dp))
             avatarContent()
+        }
+    }
+}
+
+/**
+ * 导出专用头像组件。使用预加载的 [ImageBitmap] 同步渲染，
+ * 避免 AsyncImage 在 BitmapComposer 截图时来不及加载导致头像空白。
+ */
+@Composable
+private fun ExportedAvatar(
+    name: String,
+    value: Avatar,
+    bitmap: ImageBitmap?,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = CircleShape,
+        modifier = modifier,
+        tonalElevation = 4.dp,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            when {
+                value is Avatar.Image && bitmap != null -> {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                value is Avatar.Resource && bitmap != null -> {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                value is Avatar.Resource -> {
+                    Image(
+                        painter = painterResource(value.id),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                value is Avatar.Emoji -> {
+                    Text(
+                        text = value.content,
+                        fontSize = 20.sp,
+                        lineHeight = 1.em,
+                        modifier = Modifier.padding(2.dp)
+                    )
+                }
+                else -> {
+                    // Avatar.Dummy 或头像图片加载失败时，显示首字母
+                    val initial = name
+                        .ifBlank { stringResource(R.string.user_default_name) }
+                        .firstOrNull()?.toString()?.uppercase() ?: "A"
+                    Text(
+                        text = initial,
+                        fontSize = 20.sp,
+                        lineHeight = 1.em
+                    )
+                }
+            }
         }
     }
 }
@@ -669,4 +778,36 @@ private fun shareFile(context: Context, uri: Uri, mimeType: String) {
             context.getString(R.string.chat_page_export_share_via)
         )
     )
+}
+
+/**
+ * 同步预加载头像图片为 [ImageBitmap]，用于导出图片时同步渲染头像。
+ * 仅对 [Avatar.Image] 和 [Avatar.Resource] 生效；其他类型返回 null。
+ */
+private suspend fun preloadAvatarBitmap(
+    context: Context,
+    avatar: Avatar
+): ImageBitmap? {
+    val data: Any = when (avatar) {
+        is Avatar.Image -> avatar.url
+        is Avatar.Resource -> avatar.id
+        else -> return null
+    }
+
+    val imageLoader = SingletonImageLoader.get(context)
+    val request = ImageRequest.Builder(context)
+        .data(data)
+        .allowHardware(false) // 软件位图，兼容 drawToBitmap
+        .build()
+
+    return runCatching {
+        val result = imageLoader.execute(request)
+        if (result is SuccessResult) {
+            result.image?.asDrawable(context.resources)?.let { drawable ->
+                (drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap?.asImageBitmap()
+            }
+        } else {
+            null
+        }
+    }.getOrNull()
 }
