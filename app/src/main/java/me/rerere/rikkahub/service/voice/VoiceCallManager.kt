@@ -79,7 +79,7 @@ private data class CallIdentity(
  * 关键能力:
  * - 接通问候、思考前导（填空档，减少"等AI"感）
  * - 回声尾窗：TTS 播放结束后的 ~220ms 提高 VAD 门槛，避免尾巴回声触发误打断
- * - 自然挂断：当用户说"再见/挂了"等 farewell 词时，等 AI 告别 TTS 真正排空再 hangup
+ * - 后台模型挂断检测：AI 回复结束后异步请求后台模型判断用户是否有挂断意图，YES则自动挂断
  * - PCM 环形预卷：~1 秒缓冲，确保打断时用户开头几个字不被吞
  */
 class VoiceCallManager(
@@ -128,7 +128,12 @@ class VoiceCallManager(
     private var duckConfirmJob: Job? = null
     // 接通问候 + 思考前导 TTS 的 Job（取消 generation 时需要一起 cancel）
     private var listenerCueJob: Job? = null
-    // 自然挂断由用户手动触发，不再自动判断
+    // 自然挂断：由后台模型异步判断，不再由对话模型或关键词列表判断
+
+    // 后台模型挂断检测：AI 回复结束后异步请求后台模型判断用户是否有挂断意图
+    private var hangupCheckJob: Job? = null
+    @Volatile private var lastUserInputText: String = ""
+    @Volatile private var lastAiReplyText: String = ""
 
     // 流式 TTS: 跟踪已喂给 TTS 的 AI 文本长度（当前 generation）
     // - lastFedTextLen: 已经"分析过"的总文本字符数（按标点切句时推进）
@@ -393,6 +398,10 @@ class VoiceCallManager(
 
     private fun sendUserMessage(text: String, convId: Uuid) {
         Log.i(TAG, "sendUserMessage turn=${identity.turnId}: \"$text\"")
+        // 取消上一轮的后台模型挂断检测（用户开始了新的对话轮）
+        hangupCheckJob?.cancel(); hangupCheckJob = null
+        lastUserInputText = text
+        lastAiReplyText = ""
         val priorConv = chatService.getConversationFlow(convId).value
         priorAssistantNodeId = priorConv.messageNodes.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
         Log.d(TAG, "priorAssistantNodeId=$priorAssistantNodeId")
@@ -487,6 +496,7 @@ class VoiceCallManager(
             val aiText = aiNode?.currentMessage?.parts
                 ?.filterIsInstance<UIMessagePart.Text>()
                 ?.joinToString("") { it.text } ?: ""
+            lastAiReplyText = aiText
             if (aiText.length > lastFedTextLen.coerceAtLeast(0)) {
                 val remaining = aiText.substring(lastFedTextLen.coerceAtLeast(0).coerceAtMost(aiText.length))
                 if (remaining.isNotBlank()) {
@@ -548,6 +558,28 @@ class VoiceCallManager(
         if (expectGenId != null && identity.generationId != expectGenId) {
             startListeningSafely()
             return
+        }
+        // 后台模型异步判断是否挂断（不阻塞监听）
+        val userText = lastUserInputText
+        val aiText = lastAiReplyText
+        if (userText.isNotBlank() && aiText.isNotBlank()) {
+            val checkAnchorUserText = userText
+            hangupCheckJob?.cancel()
+            hangupCheckJob = scope.launch {
+                Log.i(TAG, "HangupCheck: ask bg model user=\"${userText.take(60)}\" ai=\"${aiText.take(60)}\"")
+                val shouldHangup = chatService.checkCallHangupIntent(convId, userText, aiText)
+                Log.i(TAG, "HangupCheck: result=$shouldHangup active=${_isActive.value} anchorChanged=${lastUserInputText != checkAnchorUserText}")
+                if (!_isActive.value) return@launch
+                // 用户真的发了新的有效文本消息（新的 sendUserMessage 覆盖了 lastUserInputText）→ 不挂断
+                if (lastUserInputText != checkAnchorUserText) {
+                    Log.i(TAG, "HangupCheck: user sent new real message \"${lastUserInputText.take(60)}\", skip")
+                    return@launch
+                }
+                if (shouldHangup) {
+                    Log.i(TAG, "Background model detected hangup intent → graceful hangup")
+                    if (_isActive.value) hangup()
+                }
+            }
         }
         startListeningSafely()
     }
@@ -986,6 +1018,7 @@ class VoiceCallManager(
         responseJob?.cancel()
         listenerCueJob?.cancel(); listenerCueJob = null
         duckConfirmJob?.cancel(); duckConfirmJob = null
+        hangupCheckJob?.cancel(); hangupCheckJob = null
         ttsController.stop()
         // 恢复音量（避免被 duck 后退出通话，下次进音量残留低）
         ttsController.setVolume(1f)
