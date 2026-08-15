@@ -992,26 +992,26 @@ private fun ChatPageContent(
                             R.string.syncing_context_animation_hint
                         )
                     )
-
-                    // Voice Call Overlay
-                    AnimatedVisibility(
-                        visible = isCallActive,
-                        enter = fadeIn() + expandIn(expandFrom = Alignment.BottomCenter),
-                        exit = fadeOut() + shrinkOut(shrinkTowards = Alignment.BottomCenter)
-                    ) {
-                        CallScreen(
-                            assistant = currentAssistant,
-                            status = callStatus,
-                            isMuted = isMuted,
-                            isSpeakerOn = isSpeakerOn,
-                            onMuteToggle = { vm.toggleCallMute() },
-                            onSpeakerToggle = { vm.toggleCallSpeaker() },
-                            onHangup = { vm.hangupCall() },
-                            onInterrupt = { vm.manualInterruptCall() },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
                 }
+            }
+
+            // Voice Call Overlay：直接在 Surface 层级覆盖 Scaffold，真正全屏（盖住顶部 TopBar）
+            AnimatedVisibility(
+                visible = isCallActive,
+                enter = fadeIn() + expandIn(expandFrom = Alignment.BottomCenter),
+                exit = fadeOut() + shrinkOut(shrinkTowards = Alignment.BottomCenter)
+            ) {
+                CallScreen(
+                    assistant = currentAssistant,
+                    status = callStatus,
+                    isMuted = isMuted,
+                    isSpeakerOn = isSpeakerOn,
+                    onMuteToggle = { vm.toggleCallMute() },
+                    onSpeakerToggle = { vm.toggleCallSpeaker() },
+                    onHangup = { vm.hangupCall() },
+                    onInterrupt = { vm.manualInterruptCall() },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }

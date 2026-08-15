@@ -210,7 +210,7 @@ class VoiceCallManager(
         listenerCueJob?.cancel()
         listenerCueJob = scope.launch {
             // 简短接通问候，让用户感知"接通了"
-            val greetingText = "喂？能听到吗"
+            val greetingText = "喂？"
             Log.i(TAG, "Call greeting: \"$greetingText\"")
             lastGreetingText = greetingText
             // 接通问候属于 call 级别的 listener cue，单独占一个 turn/generation，绝不写入 chat messages
