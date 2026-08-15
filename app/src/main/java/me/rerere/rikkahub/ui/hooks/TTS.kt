@@ -18,6 +18,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.tts.model.PlaybackState
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
+import java.util.concurrent.atomic.AtomicBoolean
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.model.TTSVoice
@@ -107,6 +108,16 @@ interface CustomTtsState {
     /** 停止自动朗读监听。 */
     fun stopAutoRead()
 
+    /**
+     * 进入通话时暂停自动朗读：立即停掉当前正在播的句子，并且 [startAutoRead] 的 collect 循环
+     * 会暂停消费新的 assistant 消息（但不推进 lastProcessed* 指针，恢复后从断点继续，不漏读）。
+     * 允许重复调用（幂等）。
+     */
+    fun pauseAutoReadForCall()
+
+    /** 通话结束后恢复自动朗读消费。允许重复调用（幂等）。 */
+    fun resumeAutoReadAfterCall()
+
     /** Cleanup resources. */
     fun cleanup()
 }
@@ -130,6 +141,8 @@ class CustomTtsStateImpl(
     private val autoReadMutex = Mutex()
     private var lastProcessedMessageId: Uuid? = null
     private var lastProcessedIndex = 0
+    // 通话期间挂起自动朗读消费（true 时 startAutoRead 不推进指针、不调用 speak）
+    private val autoReadPaused = AtomicBoolean(false)
 
     override val isAvailable: StateFlow<Boolean> get() = controller.isAvailable
     override val isSpeaking: StateFlow<Boolean> get() = controller.isSpeaking
@@ -325,6 +338,12 @@ class CustomTtsStateImpl(
             combine(convFlow, jobFlow, autoPlayFlow) { conv, job, autoPlay ->
                 Triple(conv, job, autoPlay)
             }.collect { (conv, job, autoPlay) ->
+                // 通话中：暂停自动朗读消费，但不推进 lastProcessed* 指针
+                // 挂断恢复后，从通话开始前的断点继续朗读，保证不漏读也不重复读
+                if (autoReadPaused.get()) {
+                    return@collect
+                }
+
                 if (!autoPlay) {
                     controller.stop()
                     val lastMsg = conv.currentMessages.lastOrNull()
@@ -395,6 +414,21 @@ class CustomTtsStateImpl(
         autoReadJob = null
         lastProcessedMessageId = null
         lastProcessedIndex = 0
+    }
+
+    override fun pauseAutoReadForCall() {
+        val wasPaused = autoReadPaused.getAndSet(true)
+        if (!wasPaused) {
+            // 立刻停掉自动朗读正在播的这句话，防止和通话 TTS 重叠
+            scope.launch { autoReadMutex.withLock { controller.stop() } }
+            Log.d(TAG, "[AutoRead] PAUSED by voice call")
+        }
+    }
+
+    override fun resumeAutoReadAfterCall() {
+        if (autoReadPaused.getAndSet(false)) {
+            Log.d(TAG, "[AutoRead] RESUMED after voice call")
+        }
     }
 
     override fun cleanup() {

@@ -41,7 +41,8 @@ enum class CallStatus {
     CONNECTING,
     LISTENING,
     THINKING,
-    SPEAKING
+    SPEAKING,
+    DUCKING
 }
 
 @Composable
@@ -53,6 +54,7 @@ fun CallScreen(
     onMuteToggle: () -> Unit,
     onSpeakerToggle: () -> Unit,
     onHangup: () -> Unit,
+    onInterrupt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics()
@@ -63,9 +65,19 @@ fun CallScreen(
     // 内圈缩放
     val innerScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (status == CallStatus.SPEAKING) 1.25f else 1.1f,
+        targetValue = when (status) {
+            CallStatus.SPEAKING -> 1.25f
+            CallStatus.DUCKING -> 1.18f
+            else -> 1.1f
+        },
         animationSpec = infiniteRepeatable(
-            animation = tween(if (status == CallStatus.SPEAKING) 1200 else 2500, easing = FastOutSlowInEasing),
+            animation = tween(
+                when (status) {
+                    CallStatus.SPEAKING -> 1200
+                    CallStatus.DUCKING -> 400
+                    else -> 2500
+                }, easing = FastOutSlowInEasing
+            ),
             repeatMode = RepeatMode.Reverse
         ),
         label = "inner_scale"
@@ -74,9 +86,19 @@ fun CallScreen(
     // 外圈缩放 (稍微滞后且幅度更大)
     val outerScale by infiniteTransition.animateFloat(
         initialValue = 1.05f,
-        targetValue = if (status == CallStatus.SPEAKING) 1.45f else 1.15f,
+        targetValue = when (status) {
+            CallStatus.SPEAKING -> 1.45f
+            CallStatus.DUCKING -> 1.3f
+            else -> 1.15f
+        },
         animationSpec = infiniteRepeatable(
-            animation = tween(if (status == CallStatus.SPEAKING) 1500 else 3000, easing = LinearOutSlowInEasing),
+            animation = tween(
+                when (status) {
+                    CallStatus.SPEAKING -> 1500
+                    CallStatus.DUCKING -> 500
+                    else -> 3000
+                }, easing = LinearOutSlowInEasing
+            ),
             repeatMode = RepeatMode.Reverse
         ),
         label = "outer_scale"
@@ -87,6 +109,7 @@ fun CallScreen(
         targetValue = when (status) {
             CallStatus.SPEAKING -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
             CallStatus.THINKING -> Color.White.copy(alpha = 0.3f)
+            CallStatus.DUCKING -> Color(0xFFFFC107).copy(alpha = 0.55f)
             else -> Color.White.copy(alpha = 0.2f)
         },
         animationSpec = tween(500),
@@ -174,11 +197,62 @@ fun CallScreen(
                             CallStatus.LISTENING -> stringResource(R.string.call_status_listening)
                             CallStatus.THINKING -> stringResource(R.string.call_status_thinking)
                             CallStatus.SPEAKING -> stringResource(R.string.call_status_speaking)
+                            CallStatus.DUCKING -> stringResource(R.string.call_status_ducking)
                         },
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.85f)
                     )
+                }
+                // 手动打断按钮：只在 AI 正在思考/说话/检测到用户声音时显示
+                if (status == CallStatus.THINKING ||
+                    status == CallStatus.SPEAKING ||
+                    status == CallStatus.DUCKING
+                ) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val interruptInteractionSource = remember { MutableInteractionSource() }
+                    val isInterruptPressed by interruptInteractionSource.collectIsPressedAsState()
+                    val interruptScale by animateFloatAsState(
+                        targetValue = if (isInterruptPressed) 0.9f else 1f,
+                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                        label = "interrupt_scale"
+                    )
+                    Surface(
+                        color = Color.White.copy(alpha = 0.15f),
+                        shape = CircleShape,
+                        modifier = Modifier
+                            .graphicsLayer {
+                                scaleX = interruptScale
+                                scaleY = interruptScale
+                            }
+                            .clickable(
+                                interactionSource = interruptInteractionSource,
+                                indication = ripple(bounded = false, radius = 28.dp),
+                                onClick = {
+                                    haptics.perform(HapticPattern.Pop)
+                                    onInterrupt()
+                                }
+                            )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.FrontHand,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "打断",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White
+                            )
+                        }
+                    }
                 }
             }
 

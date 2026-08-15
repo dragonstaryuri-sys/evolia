@@ -22,14 +22,12 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.MessageRole as CoreMessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
-import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
-import me.rerere.ai.registry.ModelRegistry
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.MessageSource
@@ -51,7 +49,6 @@ import me.rerere.rikkahub.data.ai.transformers.onGenerationFinish
 import me.rerere.rikkahub.data.ai.transformers.transforms
 import me.rerere.rikkahub.data.ai.transformers.visualTransforms
 import me.rerere.rikkahub.data.datastore.Settings
-import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
@@ -135,7 +132,8 @@ class GenerationHandler(
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = false,
         responseMessageSource: MessageSource = MessageSource.NORMAL,
-        conversationId: Uuid? = null
+        conversationId: Uuid? = null,
+        isCallMode: Boolean = false,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -373,7 +371,8 @@ class GenerationHandler(
                 temporarySummaries = temporarySummaries,
                 includeSkipContextMessages = includeSkipContextMessages,
                 responseMessageSource = responseMessageSource,
-                conversationId = conversationId
+                conversationId = conversationId,
+                isCallMode = isCallMode
             )
 
 
@@ -512,7 +511,8 @@ class GenerationHandler(
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList(),
         includeSkipContextMessages: Boolean = false,
-        conversationId: Uuid? = null
+        conversationId: Uuid? = null,
+        isCallMode: Boolean = false,
     ): BuildMessagesResult {
         fun estimateTokens(text: String) = text.length / 4
         fun estimateTokens(message: UIMessage) = estimateTokens(message.toText())
@@ -873,13 +873,26 @@ class GenerationHandler(
             summaryPromptBuilder.append(entry.prompt)
         }
 
-        // 微信模式指令注入 (移至最后，增加优先级)
+        // 微信模式 / 通话模式指令注入 (移至最后，增加优先级)
+        // 注意：两者二选一。通话模式优先级高于微信模式：正在通话时只插通话提示
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
-        if (wechatMode) {
-            summaryPromptBuilder.appendLine("\n## 回复规范 (最高优先级 - 必须执行)")
-            summaryPromptBuilder.appendLine("- 说话口语化、有活人感，回复简短直接，不超过5句话，禁止冷漠无情")
-            summaryPromptBuilder.appendLine("- 请不要使用任何动作或神态描写（如 *微笑*、(叹气) 等），而是像在直接与用户对话或发消息，直接说出你的回答或想法")
-            summaryPromptBuilder.appendLine("- 严禁使用任何形式的括号。")
+        when {
+            isCallMode -> {
+                summaryPromptBuilder.appendLine("\n## 回复规范（最高优先级 · 实时语音通话）")
+                summaryPromptBuilder.appendLine("- 你和用户正在打电话，回复要口语化、简洁直接，像面对面说话。")
+                summaryPromptBuilder.appendLine("- 回答要干脆，少用书面语、少写解释性铺垫；如果需要确认信息就直接问。")
+                summaryPromptBuilder.appendLine("- 除了调用工具之外，不要输出 Markdown、代码块、列表、标签或 JSON，说人话。")
+                summaryPromptBuilder.appendLine("- 判断用户是否要结束通话（如：再见/挂了/不聊了/拜拜/先这样/结束吧 等表达，或明确无继续对话意愿）：")
+                summaryPromptBuilder.appendLine("  · 如果确认要结束：先自然地说一句告别语，然后**在你回复文本的最后**，原样输出以下指令标签（前后不要加任何字符）：<CALL:ACTION=hangup/>")
+                summaryPromptBuilder.appendLine("  · 注意：标签会在朗读前被系统剥离，用户不会听到；但说告别语是必须的，要等你说完再见再挂断。")
+                summaryPromptBuilder.appendLine("  · 如果只是短暂停顿/思考/转话题，或需要再确认，不要输出标签，继续正常对话。")
+            }
+            wechatMode -> {
+                summaryPromptBuilder.appendLine("\n## 回复规范 (最高优先级 - 必须执行)")
+                summaryPromptBuilder.appendLine("- 说话口语化、有活人感，回复简短直接，不超过5句话，禁止冷漠无情")
+                summaryPromptBuilder.appendLine("- 请不要使用任何动作或神态描写（如 *微笑*、(叹气) 等），而是像在直接与用户对话或发消息，直接说出你的回答或想法")
+                summaryPromptBuilder.appendLine("- 严禁使用任何形式的括号。")
+            }
         }
 
         val staticSystemPrompt = staticSystemPromptBuilder.toString()
@@ -962,8 +975,6 @@ class GenerationHandler(
                     val today = java.time.LocalDate.now()
                     val zoneId = ZoneId.systemDefault()
                     val startOfDay = today.atStartOfDay(zoneId).toInstant().toEpochMilli()
-
-                    val currentConvIdStr = conversationId?.toString()
                     val memoriesToInject = mutableListOf<AssistantMemory>()
 
                     // 核心修改：带入当天来自其他窗口的所有 L2 (Episodic) 片段
@@ -1053,8 +1064,8 @@ class GenerationHandler(
                 }
 
                 ContextPriority.BALANCED -> {
-                    var msgIndex = 0;
-                    var memIndex = 0;
+                    var msgIndex = 0
+                    var memIndex = 0
                     var addedSomething = true
                     while (addedSomething && availableTokens > 0) {
                         addedSomething = false
@@ -1520,7 +1531,8 @@ class GenerationHandler(
         temporarySummaries: List<String> = emptyList(),
         includeSkipContextMessages: Boolean = false,
         responseMessageSource: MessageSource = MessageSource.NORMAL,
-        conversationId: Uuid? = null
+        conversationId: Uuid? = null,
+        isCallMode: Boolean = false,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,
@@ -1534,7 +1546,8 @@ class GenerationHandler(
             contextSummary = contextSummary,
             temporarySummaries = temporarySummaries,
             includeSkipContextMessages = includeSkipContextMessages,
-            conversationId = conversationId
+            conversationId = conversationId,
+            isCallMode = isCallMode
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
 
@@ -1545,10 +1558,10 @@ class GenerationHandler(
 
             Log.i(TAG, "💬 [FIELD: messages] (Sequence for Context Caching)")
             internalMessages.forEachIndexed { index, msg ->
-                val layerTag = when {
-                    msg.role == CoreMessageRole.SYSTEM && index == 0 -> "LAYER 0: STATIC PRESET"
-                    msg.role == CoreMessageRole.SYSTEM && index == 1 && internalMessages.size > 2 -> "LAYER 1: SEMI-STATIC"
-                    msg.role == CoreMessageRole.SYSTEM && index == internalMessages.lastIndex -> "LAYER 2: DYNAMIC"
+                val layerTag = when (msg.role) {
+                    CoreMessageRole.SYSTEM if index == 0 -> "LAYER 0: STATIC PRESET"
+                    CoreMessageRole.SYSTEM if index == 1 && internalMessages.size > 2 -> "LAYER 1: SEMI-STATIC"
+                    CoreMessageRole.SYSTEM if index == internalMessages.lastIndex -> "LAYER 2: DYNAMIC"
                     else -> "${msg.role.name}:"
                 }
 

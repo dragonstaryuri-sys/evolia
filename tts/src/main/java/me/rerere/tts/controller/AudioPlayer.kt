@@ -40,6 +40,8 @@ class AudioPlayer(context: Context) {
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
     private var positionJob: Job? = null
+    private var volumeBeforeDuck: Float = 1f
+    private var duckAnimationJob: Job? = null
 
     // 所有 ExoPlayer 操作必须在其创建线程（主线程）执行.
     // AudioPlayer 可能被 service 层在 IO 线程调用, 因此统一切换到主线程.
@@ -71,6 +73,60 @@ class AudioPlayer(context: Context) {
         scope.launch {
             player.playbackParameters = PlaybackParameters(speed)
             _playbackState.update { it.copy(speed = speed) }
+        }
+    }
+
+    /** 直接设置音量 (0f ~ 1f) */
+    fun setVolume(volume: Float) {
+        scope.launch {
+            player.volume = volume.coerceIn(0f, 1f)
+        }
+    }
+
+    /**
+     * 两阶段打断：Duck（压低音量）。
+     * - PDF 推荐 240ms 内降到 0.2 左右，表示"我听到你要说话了"；
+     * - 若 520ms 内未确认 interrupt，会调用 [restoreVolume] 回弹。
+     */
+    fun duckVolume(targetVolume: Float = 0.2f, durationMs: Long = 240L) {
+        scope.launch {
+            duckAnimationJob?.cancel()
+            volumeBeforeDuck = player.volume
+            val start = player.volume
+            val end = targetVolume.coerceIn(0f, 1f)
+            val steps = (durationMs / 16L).coerceAtLeast(1L)
+            var step = 0
+            duckAnimationJob = launch {
+                while (step < steps) {
+                    val progress = step.toFloat() / steps.toFloat()
+                    val eased = 1f - (1f - progress) * (1f - progress) // easeOutQuad
+                    player.volume = start + (end - start) * eased
+                    delay(16L)
+                    step++
+                }
+                player.volume = end
+            }
+        }
+    }
+
+    /** 从 duck 状态恢复音量（打断取消或抢话放弃时） */
+    fun restoreVolume(durationMs: Long = 160L) {
+        scope.launch {
+            duckAnimationJob?.cancel()
+            val start = player.volume
+            val end = volumeBeforeDuck.coerceIn(0f, 1f)
+            val steps = (durationMs / 16L).coerceAtLeast(1L)
+            var step = 0
+            duckAnimationJob = launch {
+                while (step < steps) {
+                    val progress = step.toFloat() / steps.toFloat()
+                    val eased = 1f - (1f - progress) * (1f - progress)
+                    player.volume = start + (end - start) * eased
+                    delay(16L)
+                    step++
+                }
+                player.volume = end
+            }
         }
     }
 

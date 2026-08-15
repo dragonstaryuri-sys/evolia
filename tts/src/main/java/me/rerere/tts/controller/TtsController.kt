@@ -78,6 +78,12 @@ class TtsController(
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
+    // 已播放完成的总字符数（基于 chunk.text 累加）。
+    // 用于 VoiceCallManager 手动打断时精确判断"用户真正听到了多少"。
+    // flush=true 时重置为0。
+    private val _playedTextLength = MutableStateFlow(0)
+    val playedTextLength: StateFlow<Int> = _playedTextLength.asStateFlow()
+
     init {
         // 同步底层播放器状态到统一状态，并补充分片信息
         scope.launch {
@@ -194,6 +200,7 @@ class TtsController(
         _currentChunk.update { 0 }
         _totalChunks.update { 0 }
         _error.update { null }
+        _playedTextLength.update { 0 }
         _playbackState.update { PlaybackState(status = PlaybackStatus.Idle) }
     }
 
@@ -221,6 +228,21 @@ class TtsController(
         audio.setSpeed(speed)
     }
 
+    /** 两阶段打断的 Duck：压低音量（240ms 动画） */
+    fun duckVolume(targetVolume: Float = 0.2f, durationMs: Long = 240L) {
+        audio.duckVolume(targetVolume, durationMs)
+    }
+
+    /** 从 duck 状态恢复音量（未确认 interrupt 回弹） */
+    fun restoreVolume(durationMs: Long = 160L) {
+        audio.restoreVolume(durationMs)
+    }
+
+    /** 直接设置音量 */
+    fun setVolume(volume: Float) {
+        audio.setVolume(volume)
+    }
+
     /** 跳过下一段（不打断当前正在播放） */
     fun skipNext() {
         if (queue.isNotEmpty()) {
@@ -243,6 +265,7 @@ class TtsController(
         _isSpeaking.update { false }
         _currentChunk.update { 0 }
         _totalChunks.update { 0 }
+        _playedTextLength.update { 0 }
         _playbackState.update { PlaybackState(status = PlaybackStatus.Idle) }
     }
 
@@ -365,6 +388,10 @@ class TtsController(
                                 delay(500)
                             }
                         }
+                    }
+                    // 播放成功 → 累加已播放完成的字符数（用于手动打断精确截断）
+                    if (playbackSuccess) {
+                        _playedTextLength.update { it + chunk.text.length }
                     }
 
                     if (queue.isNotEmpty()) delay(chunkDelayMs)
@@ -512,6 +539,10 @@ class TtsController(
                                 delay(500)
                             }
                         }
+                    }
+                    // 播放成功 → 累加已播放完成的字符数
+                    if (playbackSuccess) {
+                        _playedTextLength.update { it + chunk.text.length }
                     }
 
                     if (queue.isNotEmpty()) delay(chunkDelayMs)

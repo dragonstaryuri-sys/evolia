@@ -102,7 +102,8 @@ val appModule = module {
             chatService = get(),
             ttsController = get(),
             asrManager = get(),
-            settingsStore = get()
+            settingsStore = get(),
+            customTtsState = get()
         )
     }
 

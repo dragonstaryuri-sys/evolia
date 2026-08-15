@@ -1007,6 +1007,7 @@ private fun ChatPageContent(
                             onMuteToggle = { vm.toggleCallMute() },
                             onSpeakerToggle = { vm.toggleCallSpeaker() },
                             onHangup = { vm.hangupCall() },
+                            onInterrupt = { vm.manualInterruptCall() },
                             modifier = Modifier.fillMaxSize()
                         )
                     }

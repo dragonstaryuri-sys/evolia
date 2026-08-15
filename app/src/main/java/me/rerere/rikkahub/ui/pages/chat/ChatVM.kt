@@ -219,6 +219,7 @@ class ChatVM(
     fun hangupCall() = voiceCallManager.hangup()
     fun toggleCallMute() = voiceCallManager.toggleMute()
     fun toggleCallSpeaker() = voiceCallManager.toggleSpeaker()
+    fun manualInterruptCall() = voiceCallManager.manualInterrupt()
 
     // --- 分页管理器管理 ---
     private var paginationManager: ConversationRepository.MessagePaginationManager? = null

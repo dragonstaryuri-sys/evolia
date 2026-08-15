@@ -1128,6 +1128,7 @@ class ChatService(
                         memories = retrievedMemories,
                         inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
                         outputTransformers = outputTransformers,
+                        isCallMode = callModeConversations.contains(conversationId),
                         tools = buildList {
                             val isMain = assistant.isMain
 
@@ -1731,6 +1732,57 @@ class ChatService(
         if (aiList.isNotEmpty()) return aiList.distinct().joinToString(",")
         val localList = local.split(",").map { it.trim().lowercase() }.filter { it.isNotBlank() }
         return localList.distinct().joinToString(",")
+    }
+
+    /**
+     * 截断当前 conversation 里"最新一条 ASSISTANT 消息"的文字内容。
+     * 用于通话模式手动打断 AI 回复：只保留"已经 TTS 念过的前缀"，删掉没念完的尾巴。
+     *
+     * - 每条 UIMessage 里可能有多个 Text part：按它们在 parts 列表中的顺序
+     *   逐个拼接文本长度进行截断。非 Text part（图片、附件等）原样保留。
+     * - 如果 maxTextLen <= 0：删除整个消息体（为空 UIMessage.parts = emptyList()）。
+     * - 如果 maxTextLen >= 总文字长度：什么都不做。
+     */
+    suspend fun truncateLastAssistantMessage(conversationId: Uuid, maxTextLen: Int) {
+        if (maxTextLen < 0) return
+        mutateConversationAndSave(conversationId) { conv ->
+            val nodes = conv.messageNodes
+            val idx = nodes.indexOfLast { it.role == MessageRole.ASSISTANT }
+            if (idx == -1) return@mutateConversationAndSave conv
+            val oldNode = nodes[idx]
+            val curMsg = oldNode.currentMessage
+            if (curMsg.parts.isEmpty()) return@mutateConversationAndSave conv
+            if (curMsg.role != MessageRole.ASSISTANT) return@mutateConversationAndSave conv
+
+            val allTextLen = curMsg.parts.sumOf { (it as? UIMessagePart.Text)?.text?.length ?: 0 }
+            if (maxTextLen >= allTextLen) return@mutateConversationAndSave conv
+
+            val newParts = mutableListOf<UIMessagePart>()
+            var remaining = maxTextLen
+            for (part in curMsg.parts) {
+                when (part) {
+                    is UIMessagePart.Text -> {
+                        if (remaining <= 0) continue
+                        val t = part.text
+                        if (t.length <= remaining) {
+                            newParts.add(part); remaining -= t.length
+                        } else {
+                            val cut = t.substring(0, remaining.coerceAtMost(t.length))
+                            newParts.add(part.copy(text = cut))
+                            remaining = 0
+                        }
+                    }
+                    else -> newParts.add(part)
+                }
+            }
+
+            val newMsg = curMsg.copy(parts = newParts)
+            val newNodeMessages = oldNode.messages.mapIndexed { i, m ->
+                if (i == oldNode.selectIndex) newMsg else m
+            }
+            val newNode = oldNode.copy(messages = newNodeMessages)
+            conv.copy(messageNodes = nodes.toMutableList().apply { set(idx, newNode) })
+        }
     }
 
     /** Apply a field/node mutation to the latest in-memory value, then persist it. */

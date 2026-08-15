@@ -35,6 +35,7 @@ import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.chat.CallStatus
+import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.model.PlaybackStatus
 import kotlin.uuid.Uuid
@@ -42,22 +43,49 @@ import kotlin.uuid.Uuid
 private const val TAG = "VoiceCallManager"
 
 /**
- * 语音通话管理器。
+ * 三层身份：避免旧异步结果串改新轮状态（遵循 PDF 的 call/turn/generation 协议）。
  *
- * 状态机: CONNECTING → LISTENING → THINKING → SPEAKING →(打断/完成)→ LISTENING → ... → IDLE(hangup)
+ * - callSessionId : 整通电话生命周期，从 startCall 到 hangup；
+ * - turnId        : 一轮（用户说 + AI答），每次 ASR final 时生成新 turn；
+ * - generationId  : 一次 AI 生成 + 对应 TTS，AI 开始回答时生成；
  *
- * 录音通道分配（避免麦克风冲突）:
- * - LISTENING: 由 SystemASR 的 SpeechRecognizer 自行录音识别
- * - SPEAKING:  由 [VadDetector] + AudioRecord 持续监听, 检测用户开口即打断
+ * 所有回调（ASR 结果、TTS 播放完成、模型流结束）都先校验身份再改状态。
+ * 取消旧 generation 时：属于它的迟到 chunk / Promise 被永久丢弃。
+ */
+private data class CallIdentity(
+    val callSessionId: String,
+    val turnId: String? = null,
+    val generationId: String? = null
+) {
+    fun newTurn(): CallIdentity =
+        copy(turnId = "turn_${Uuid.random().toString().substring(0, 8)}", generationId = null)
+    fun newGeneration(): CallIdentity =
+        copy(generationId = "gen_${Uuid.random().toString().substring(0, 8)}")
+}
+
+/**
+ * 语音通话管理器（升级为 GPT-Live 风格的实时双工）。
  *
- * 低延迟 TTS: 观察 AI 消息增量, 按句子边界逐句喂给 [TtsController]（首句生成完即播, 不等整段）。
+ * 状态机:
+ *   IDLE(hangup) → CONNECTING → LISTENING → THINKING → SPEAKING →(Ducking可选)→ LISTENING → ...
+ *                                                         ↑ (自然抢话2阶段)
+ * 打断两阶段 (PDF §D):
+ *   240ms DUCK: 检测到疑似人声 → 压低AI音量 + 橙色光圈闪烁 + 保留PCM预卷
+ *   520ms INTERRUPT: 持续说话确认 → 停TTS/取消生成/回到LISTENING/把预卷送入下一轮ASR
+ *
+ * 关键能力:
+ * - 接通问候、思考前导（填空档，减少"等AI"感）
+ * - 回声尾窗：TTS 播放结束后的 ~220ms 提高 VAD 门槛，避免尾巴回声触发误打断
+ * - 自然挂断：当用户说"再见/挂了"等 farewell 词时，等 AI 告别 TTS 真正排空再 hangup
+ * - PCM 环形预卷：~1 秒缓冲，确保打断时用户开头几个字不被吞
  */
 class VoiceCallManager(
     private val context: Context,
     private val chatService: ChatService,
     private val ttsController: TtsController,
     private val asrManager: ASRManager,
-    private val settingsStore: SettingsStore
+    private val settingsStore: SettingsStore,
+    private val customTtsState: CustomTtsState
 ) {
     private val _callStatus = MutableStateFlow(CallStatus.CONNECTING)
     val callStatus: StateFlow<CallStatus> = _callStatus.asStateFlow()
@@ -71,7 +99,7 @@ class VoiceCallManager(
     private val _isActive = MutableStateFlow(false)
     val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
 
-    // 通话错误事件（一次性）: 权限缺失/ASR 不可用等, 供 UI 层 toast 提示
+    // 通话错误事件（一次性）
     private val _callError = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val callError: SharedFlow<String> = _callError.asSharedFlow()
 
@@ -81,56 +109,117 @@ class VoiceCallManager(
     private var vadDetector: VadDetector? = null
     private var audioRecord: AudioRecord? = null
 
+    // ===== 三层身份 =====
+    @Volatile private var identity: CallIdentity = CallIdentity(callSessionId = "none")
+
+    // ===== PCM 环形预卷（~1 秒，防止打断时吞首字） =====
+    // 每帧 32ms（512 samples @16kHz），31 帧 ≈ 1 秒
+    private val preRollFrames: ArrayDeque<ShortArray> = ArrayDeque()
+
     @Volatile private var isVadRunning = false
     private var asrJob: Job? = null
     private var responseJob: Job? = null
     private var interruptionJob: Job? = null
-    // 通话期间的 L1 定时归档：每 25 分钟检查一次未归档消息数是否达阈值
     private var l1TimerJob: Job? = null
+    // 240ms duck → 520ms interrupt 的确认计时 Job；若中途用户闭嘴则取消、回弹音量
+    private var duckConfirmJob: Job? = null
+    // 接通问候 + 思考前导 TTS 的 Job（取消 generation 时需要一起 cancel）
+    private var listenerCueJob: Job? = null
+    // 自然挂断：farewell 时等待 TTS 排空的硬截止
+    private var farewellHangupJob: Job? = null
 
-    // 流式 TTS: 跟踪已喂给 TTS 的 AI 文本长度
+    // 流式 TTS: 跟踪已喂给 TTS 的 AI 文本长度（当前 generation）
+    // - lastFedTextLen: 已经"分析过"的总文本字符数（按标点切句时推进）
+    // - spokenTextLen:   已经"真正喂给 TTS"的字符数（已经执行 speak()、视为"将被念出来"）
+    //                    手动打断时以此为界：≤ spokenTextLen 的部分保留，> spokenTextLen 的部分截断
     @Volatile private var lastFedTextLen = 0
+    @Volatile private var spokenTextLen = 0
     @Volatile private var priorAssistantNodeId: Uuid? = null
     @Volatile private var speakingStarted = false
 
-    // ASR 权限误报重试标志: 部分 ROM 的 SpeechRecognizer 首次启动会误报 error(9),
-    // 即使 RECORD_AUDIO 已授权. 允许重试一次避免误杀.
+    // 回声尾窗：最后一次观察到 TTS 播放的时间戳；处于尾窗内时动态提高 RMS 门限
+    @Volatile private var lastTtsPlayingAtMs: Long = 0L
+
+    // ASR 权限误报重试标志
     @Volatile private var asrPermissionRetryUsed = false
+
+    // ASR 启动忽略期：此时间戳之前的 final 结果一律丢弃（防止扬声器回声被识别成 user 消息）
+    @Volatile private var asrIgnoreUntil: Long = 0L
+    // 最近播过的问候文本，用于 ASR 内容匹配过滤（防止回声被识别成 user 消息）
+    @Volatile private var lastGreetingText: String? = null
+
+    // 标记本轮 turn 的用户消息是否为 farewell 意图（本地关键词匹配 + ASR 文本）
+    // 注意：从 2026-08-15 起，本地关键词仅作为"软信号"给 Prompt 提示 AI。
+    // 真正的挂断判定必须由 AI 在回复末尾输出 <CALL:ACTION=hangup/> 标签，避免关键词误触发。
+    @Volatile private var pendingFarewell = false
+
+    // AI 驱动的挂断请求：当检测到 AI 回复文本中出现 <CALL:ACTION=hangup/> 标签时置 true。
+    // 文本会在送入 TTS 前被剥离该标签，用户不会听到；AI 说完告别后由 handleAfterAiResponse 触发 graceful hangup。
+    @Volatile private var aiRequestedHangup = false
+    private val hangupTagRegex = Regex("""<CALL:ACTION=hangup\s*/?>""", RegexOption.IGNORE_CASE)
+
+    // ========================================================================
+    //  startCall / hangup
+    // ========================================================================
 
     fun startCall(conversationId: Uuid) {
         if (_isActive.value) return
+        // 通话开始：立刻停掉对话页的自动朗读，避免双重播放
+        customTtsState.pauseAutoReadForCall()
+
         this.conversationId = conversationId
         _isActive.value = true
         _callStatus.value = CallStatus.CONNECTING
         resetStreamingState()
 
-        // 标记会话进入通话模式：跳过主路径每轮 AI 响应的 L1 自动摘要, 改由下方定时器驱动
+        // 初始化三层身份：新的 callSession
+        identity = CallIdentity(callSessionId = "call_${Uuid.random().toString().substring(0, 8)}")
+        Log.i(TAG, "startCall: session=${identity.callSessionId}, convId=$conversationId")
+
+        // 预热 & 模式
         chatService.setCallMode(conversationId, active = true)
         startL1Timer(conversationId)
-
-        // 权限预热: 某些 ROM 上 SpeechRecognizer 即使 checkSelfPermission=GRANTED,
-        // 仍因 AppOps 未记录 RECORD_AUDIO op 而报 error(9). 短暂打开一次 AudioRecord
-        // 可让系统记录该 op, 避免后续 ASR 启动时权限检查失败.
         warmUpRecordAudioPermission()
 
-        // 初始化 VAD（用于 SPEAKING 打断）
         runCatching {
             vadDetector = VadDetector(context).also { Log.i(TAG, "VAD initialized") }
         }.onFailure { Log.e(TAG, "VAD init failed", it) }
 
-        // 配置 TTS provider
         val settings = settingsStore.settingsFlow.value
         ttsController.setProvider(settings.getSelectedTTSProvider())
 
-        Log.i(TAG, "startCall: conversationId=$conversationId")
-        startListening()
+        // 接通问候（PDF §3.3 call greeting）：先打个招呼，再进入监听
+        playCallGreetingThenListen()
     }
 
-    /**
-     * 录音权限预热: 短暂打开 AudioRecord 触发 AppOps 记录 RECORD_AUDIO op, 然后立即释放.
-     * 解决 SpeechRecognizer error(9) insufficient permissions（checkSelfPermission 已 GRANTED
-     * 但 AppOps 侧无记录导致系统 ASR 服务拒绝录音的场景）.
-     */
+    private fun playCallGreetingThenListen() {
+        val convId = conversationId ?: return
+        listenerCueJob?.cancel()
+        listenerCueJob = scope.launch {
+            // 简短接通问候，让用户感知"接通了"
+            val greetingText = "喂？能听到吗"
+            Log.i(TAG, "Call greeting: \"$greetingText\"")
+            lastGreetingText = greetingText
+            // 接通问候属于 call 级别的 listener cue，单独占一个 turn/generation，绝不写入 chat messages
+            identity = identity.newTurn().newGeneration()
+            runCatching {
+                ttsController.setVolume(1f)
+                ttsController.speak(greetingText, flush = true)
+                // 问候期间持续判断是否被抢话（如果用户立刻说，也允许打断）
+                var silent = 0L
+                while (_isActive.value && ttsController.isSpeaking.value) {
+                    delay(100)
+                    silent += 100
+                    if (silent > 4000L) break // 保护：问候最多等 4s
+                }
+            }.onFailure { Log.w(TAG, "Greeting play failed", it) }
+            // 关键：设置 ASR 启动忽略期，从此刻起 2.5s 内的 ASR final 一律丢弃
+            // 防止扬声器回声 + ASR 内部音频缓冲导致的误识别
+            asrIgnoreUntil = System.currentTimeMillis() + ASR_IGNORE_PERIOD_MS
+            if (_isActive.value) startListening()
+        }
+    }
+
     private fun warmUpRecordAudioPermission() {
         runCatching {
             val minBuf = AudioRecord.getMinBufferSize(
@@ -153,11 +242,6 @@ class VoiceCallManager(
         }.onFailure { Log.w(TAG, "warmUpRecordAudioPermission failed", it) }
     }
 
-    /**
-     * 通话期间 L1 定时归档：每 25 分钟触发一次, 由 ChatService.summarizeForCallIfNeeded 内部判断阈值。
-     * - 避免实时通话每轮 AI 响应都触发摘要调用占用并发槽位、增加端到端延迟；
-     * - 同时保证长通话不会让未归档消息无限堆积, 影响后续上下文质量。
-     */
     private fun startL1Timer(convId: Uuid) {
         l1TimerJob?.cancel()
         l1TimerJob = scope.launch {
@@ -175,15 +259,18 @@ class VoiceCallManager(
         l1TimerJob = null
     }
 
-    /**
-     * 开始监听用户语音（LISTENING）。
-     * 使用 SystemASR 的 SpeechRecognizer 实时录音识别。
-     */
+    // ========================================================================
+    //  LISTENING（ASR 实时识别）
+    // ========================================================================
+
     private fun startListening() {
         val convId = conversationId ?: return
         if (!_isActive.value) return
+        // 确保音量回弹（上一轮 duck 状态残留兜底）
+        ttsController.restoreVolume(durationMs = 120L)
+        duckConfirmJob?.cancel(); duckConfirmJob = null
+
         if (_isMuted.value) {
-            // 静音状态下不启动识别, 等待取消静音
             _callStatus.value = CallStatus.LISTENING
             return
         }
@@ -194,27 +281,70 @@ class VoiceCallManager(
             return
         }
 
+        // 新 turn：记录身份（ASR final 后会再 newGeneration）
+        identity = identity.newTurn()
+        pendingFarewell = false
+
         asrJob?.cancel()
+        val snapshotTurnId = identity.turnId
+        val snapshotSessionId = identity.callSessionId
         asrJob = scope.launch {
             try {
                 asrManager.startRecognition(asrSetting, context).collect { result ->
+                    // 关键：先验身份。如果 turn/session 变了，这个结果就过期
+                    if (identity.callSessionId != snapshotSessionId || identity.turnId != snapshotTurnId) {
+                        Log.d(TAG, "ASR result stale: turn changed, drop '${result.text}'")
+                        return@collect
+                    }
                     if (result.isFinal && result.text.isNotBlank()) {
-                        Log.i(TAG, "ASR final: ${result.text}")
+                        // ASR 启动忽略期：丢弃接通问候后的回声残余
+                        if (System.currentTimeMillis() < asrIgnoreUntil) {
+                            Log.w(TAG, "ASR final dropped (ignore period): '${result.text}'")
+                            return@collect
+                        }
+                        // 内容匹配过滤：如果 ASR 结果是问候文本的子串，或问候文本是 ASR 结果的子串，
+                        // 说明是扬声器回声被识别了，直接丢弃
+                        val greeting = lastGreetingText
+                        if (greeting != null) {
+                            val asrText = result.text.trim()
+                            val normalizedGreeting = greeting.replace("[？?！!,.，。 ]".toRegex(), "")
+                            val normalizedAsr = asrText.replace("[？?！!,.，。 ]".toRegex(), "")
+                            if (normalizedGreeting.contains(normalizedAsr) || normalizedAsr.contains(normalizedGreeting)) {
+                                Log.w(TAG, "ASR final dropped (matches greeting echo): '$asrText' vs greeting='$greeting'")
+                                return@collect
+                            }
+                        }
+                        Log.i(TAG, "ASR final turn=$snapshotTurnId: ${result.text}")
+
+                        // 本地轻量 farewell 分类（PDF §16 graceful hangup）
+                        val text = result.text
+                        if (isFarewellText(text)) {
+                            Log.i(TAG, "Detected farewell intention in: \"$text\"")
+                            pendingFarewell = true
+                        }
+
                         _callStatus.value = CallStatus.THINKING
-                        sendUserMessage(result.text, convId)
+                        // ================================================================
+                        //  PDF §5 + §15 关键：AI 开始回复前立刻停掉 ASR 流式识别。
+                        //  AI 说话期间只跑 VAD 做打断检测，ASR 必须保持静默。
+                        //  否则扬声器的 AI 语音会被麦克风录下来，被 ASR 当成用户说话发送。
+                        // ================================================================
+                        val currentAsrJob = asrJob
+                        sendUserMessage(text, convId)
+                        // sendUserMessage 之后身份已经推进 turn/generation，
+                        // 此时立刻 cancel 旧的 ASR job（如果还没收尾的话），
+                        // 等到 awaitTtsCompleteThenHandle → startListening 再重新开新 ASR。
+                        currentAsrJob?.cancel()
                         return@collect
                     }
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (e: Exception) {
-                // SystemASR 通过 close(exception) 传递错误, 这里兜底避免协程异常导致 App 崩溃.
                 Log.e(TAG, "ASR stream error", e)
                 val msg = e.message.orEmpty()
                 when {
                     msg.contains("insufficient permissions") -> {
-                        // 部分 ROM 的 SpeechRecognizer 首次启动误报 error(9), 即使权限已授予.
-                        // 用 checkSelfPermission 二次确认: 若确已授权且未重试过, 允许重试一次.
                         val granted = ContextCompat.checkSelfPermission(
                             context, Manifest.permission.RECORD_AUDIO
                         ) == PackageManager.PERMISSION_GRANTED
@@ -222,7 +352,6 @@ class VoiceCallManager(
                             asrPermissionRetryUsed = true
                             Log.w(TAG, "ASR error(9) but RECORD_AUDIO granted, retrying once (ROM bug)")
                             scope.launch { _callError.emit("系统语音识别初始化中, 正在重试...") }
-                            // 延迟后重试, 避免立即重试时 SpeechRecognizer 内部状态未恢复仍失败
                             scope.launch {
                                 kotlinx.coroutines.delay(ASR_RETRY_DELAY_MS)
                                 if (_isActive.value && _callStatus.value == CallStatus.LISTENING) {
@@ -247,59 +376,95 @@ class VoiceCallManager(
                         return@launch
                     }
                     msg.contains("ASR API") -> {
-                        // 在线 ASR API 调用错误（401/403/500 等），重试无意义
                         scope.launch { _callError.emit("在线 ASR API 错误: $msg") }
                         hangup()
                         return@launch
                     }
                     else -> {
-                        // 其他错误（网络/服务端等）: 短暂提示后回到监听重试
                         scope.launch { _callError.emit("语音识别异常: $msg, 正在重试") }
                     }
                 }
             }
-            // 流正常结束（沉默或错误）且仍活跃, 继续监听
-            if (_isActive.value && _callStatus.value == CallStatus.LISTENING) {
+            if (_isActive.value && _callStatus.value == CallStatus.LISTENING &&
+                identity.callSessionId == snapshotSessionId && identity.turnId == snapshotTurnId
+            ) {
                 startListening()
             }
         }
     }
 
+    /** 关键词匹配 farewell（简单可扩展；后续可换成模型分类） */
+    private fun isFarewellText(text: String): Boolean {
+        val t = text.trim()
+        if (t.length > 20) return false // 长句一般不是直接告别
+        val keywords = listOf(
+            "再见", "拜拜", "拜了", "挂了", "我先挂", "挂断",
+            "先挂", "我挂了", "结束通话", "不聊了", "就到这吧",
+            "goodbye", "bye bye", "bye", "see you", "hang up"
+        )
+        return keywords.any { kw -> t.contains(kw, ignoreCase = true) }
+    }
+
+    // ========================================================================
+    //  sendUserMessage → THINKING前导 → observe AI stream
+    // ========================================================================
+
     private fun sendUserMessage(text: String, convId: Uuid) {
-        Log.i(TAG, "sendUserMessage: \"$text\" -> convId=$convId")
-        // 记录发送前的最后一个 ASSISTANT 节点 ID
-        // 用于在 observeAiResponseStreaming 中只观察新创建的 ASSISTANT 节点
-        // 否则 lastOrNull { ASSISTANT } 会取到上一轮的旧节点，导致把上一轮的回答重新念一遍
+        Log.i(TAG, "sendUserMessage turn=${identity.turnId}: \"$text\"")
         val priorConv = chatService.getConversationFlow(convId).value
         priorAssistantNodeId = priorConv.messageNodes.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
         Log.d(TAG, "priorAssistantNodeId=$priorAssistantNodeId")
 
-        // 重置流式 TTS 状态：新一轮 AI 响应从头开始喂
-        // 否则 lastFedTextLen 保留上一轮的值，新节点文本长度增长到超过旧值时
-        // substring(lastFedTextLen) 会跳过新回答的前半段
         lastFedTextLen = 0
+        spokenTextLen = 0
         speakingStarted = false
 
+        // 新 generation：用于绑定 AI 生成 & 对应 TTS
+        identity = identity.newGeneration()
+        val snapshotGenId = identity.generationId
+        Log.i(TAG, "  → generation=$snapshotGenId")
+
+        // 思考前导"嗯"已移除（用户反馈太假）
         chatService.sendMessage(
             conversationId = convId,
             content = listOf(UIMessagePart.Text(text)),
             skipContextForResponse = false
         )
-        observeAiResponseStreaming(convId)
+        observeAiResponseStreaming(convId, snapshotGenId)
     }
 
     /**
-     * 观察 AI 流式响应, 按句子边界逐句喂 TTS（低延迟首句即播）。
+     * 思考前导（Listener Cue）：用户说完立刻先"嗯..."或"好的..."，填空档。
+     * 正式首句 TTS(seq=0) 到来时，会立即抢占（被 interrupt/flush）。
      */
-    private fun observeAiResponseStreaming(convId: Uuid) {
+    private fun playThinkingCue(forGenId: String?) {
+        listenerCueJob?.cancel()
+        listenerCueJob = scope.launch {
+            // 等 ~120ms，如果模型首句已经出来就不必播了
+            delay(THINKING_CUE_DELAY_MS)
+            if (forGenId != null && identity.generationId != forGenId) {
+                Log.d(TAG, "thinking cue skipped: generation already advanced")
+                return@launch
+            }
+            if (speakingStarted) return@launch // 正式 TTS 已启动
+            if (!_isActive.value || _callStatus.value != CallStatus.THINKING) return@launch
+            val cue = "嗯。"
+            Log.d(TAG, "Play thinking cue: \"$cue\"")
+            runCatching { ttsController.speak(cue, flush = true) }
+                .onFailure { Log.w(TAG, "thinking cue play failed", it) }
+        }
+    }
+
+    private fun observeAiResponseStreaming(convId: Uuid, expectGenId: String?) {
         responseJob?.cancel()
         responseJob = scope.launch {
-            // 流式观察 AI 文本增量
             val streamJob = launch {
                 chatService.getConversationFlow(convId).collect { conv ->
                     if (!_isActive.value) return@collect
-                    // 只观察 priorAssistantNodeId 之后的新 ASSISTANT 节点
-                    // 不能用 id != priorAssistantNodeId，否则会取到更早的旧 ASSISTANT 节点
+                    // 身份校验：如果 generationId 已经过期（被打断换了新 turn），直接丢弃
+                    if (expectGenId != null && identity.generationId != expectGenId) {
+                        return@collect
+                    }
                     val aiNode = findNewAssistantNode(conv.messageNodes) ?: return@collect
                     val aiText = aiNode.currentMessage.parts
                         .filterIsInstance<UIMessagePart.Text>()
@@ -307,15 +472,19 @@ class VoiceCallManager(
 
                     if (aiText.length > lastFedTextLen) {
                         if (!speakingStarted && aiText.isNotBlank()) {
+                            // 正式回答首句到来：
+                            // 1. 停掉 thinking cue（flush=true 会清掉 cue）
+                            listenerCueJob?.cancel()
                             speakingStarted = true
+                            // 记录到回声尾窗时间戳（后面打断检测会用）
+                            lastTtsPlayingAtMs = System.currentTimeMillis()
                             _callStatus.value = CallStatus.SPEAKING
-                            startInterruptionDetection(convId)
+                            startInterruptionDetection(convId, expectGenId)
                         }
-                        feedNewSentences(aiText)
+                        feedNewSentences(aiText, expectGenId)
                     }
                 }
             }
-            // 等待生成完成
             try {
                 chatService.generationDoneFlow.first { it == convId }
             } catch (e: CancellationException) {
@@ -325,34 +494,68 @@ class VoiceCallManager(
             streamJob.cancel()
 
             if (!_isActive.value) return@launch
-            // flush 生成完成后剩余未播文本
+            // generation 过期（已经被打断换轮），不要 flush
+            if (expectGenId != null && identity.generationId != expectGenId) {
+                Log.i(TAG, "observeAiResponseStreaming: stale gen=$expectGenId, skip flush")
+                return@launch
+            }
+            // flush 剩余
             val conv = chatService.getConversationFlow(convId).value
             val aiNode = findNewAssistantNode(conv.messageNodes)
-            val aiText = aiNode?.currentMessage?.parts
+            var aiText = aiNode?.currentMessage?.parts
                 ?.filterIsInstance<UIMessagePart.Text>()
                 ?.joinToString("") { it.text } ?: ""
-            // 防御性检查：lastFedTextLen 可能被并发的旧 streamJob 修改
+            // ====== AI 挂断标签：flush 前也剥离 & 检测 ======
+            val hangupMatchedInFinal = hangupTagRegex.containsMatchIn(aiText)
+            if (hangupMatchedInFinal) {
+                aiRequestedHangup = true
+                Log.i(TAG, "Detected hangup tag in final AI text, stripping before TTS flush")
+                aiText = hangupTagRegex.replace(aiText, "")
+                // 同步从 DB 最后一条 AI 消息里剔除标签（避免回看聊天记录出现 XML 标签）
+                val tagToStrip = hangupTagRegex
+                scope.launch(Dispatchers.IO) {
+                    runCatching {
+                        chatService.mutateConversationAndSave(convId) { c ->
+                            val nodes = c.messageNodes
+                            val idx = nodes.indexOfLast { it.role == MessageRole.ASSISTANT }
+                            if (idx == -1) return@mutateConversationAndSave c
+                            val oldNode = nodes[idx]
+                            val curMsg = oldNode.currentMessage
+                            if (curMsg.parts.isEmpty()) return@mutateConversationAndSave c
+                            val newParts = curMsg.parts.map { p ->
+                                if (p is UIMessagePart.Text) {
+                                    p.copy(text = tagToStrip.replace(p.text, ""))
+                                } else p
+                            }
+                            val newMsg = curMsg.copy(parts = newParts)
+                            val newNodeMessages = oldNode.messages.mapIndexed { i, m ->
+                                if (i == oldNode.selectIndex) newMsg else m
+                            }
+                            val newNode = oldNode.copy(messages = newNodeMessages)
+                            c.copy(messageNodes = nodes.toMutableList().apply { set(idx, newNode) })
+                        }
+                    }.onFailure { Log.w(TAG, "Strip hangup tag from DB failed", it) }
+                }
+            }
             if (aiText.length > lastFedTextLen.coerceAtLeast(0)) {
                 val remaining = aiText.substring(lastFedTextLen.coerceAtLeast(0).coerceAtMost(aiText.length))
                 if (remaining.isNotBlank()) {
-                    ttsController.speak(remaining, flush = false)
+                    if (expectGenId == null || identity.generationId == expectGenId) {
+                        ttsController.speak(remaining, flush = false)
+                        lastTtsPlayingAtMs = System.currentTimeMillis()
+                        spokenTextLen = aiText.length
+                    }
                     lastFedTextLen = aiText.length
                 }
             }
-            // 无任何文本输出, 回到监听
             if (!speakingStarted) {
-                if (_isActive.value) startListening()
+                if (_isActive.value) handleAfterAiResponse(convId, expectGenId)
                 return@launch
             }
-            // 等待 TTS 播放完成
-            awaitTtsCompleteThenListen()
+            awaitTtsCompleteThenHandle(convId, expectGenId)
         }
     }
 
-    /**
-     * 在 messageNodes 中找到 priorAssistantNodeId 之后的新 ASSISTANT 节点。
-     * 如果 priorAssistantNodeId 为 null 或不在列表中，返回最后一个 ASSISTANT 节点。
-     */
     private fun findNewAssistantNode(messageNodes: List<MessageNode>): MessageNode? {
         val priorIndex = if (priorAssistantNodeId != null) {
             messageNodes.indexOfFirst { it.id == priorAssistantNodeId }
@@ -364,13 +567,16 @@ class VoiceCallManager(
         }
     }
 
-    /** 提取新增文本中的完整句子喂给 TTS, 保留不完整尾部。 */
-    private fun feedNewSentences(fullText: String) {
-        // 局部快照：防止并发场景下 lastFedTextLen 被另一个 streamJob 修改
+    private fun feedNewSentences(fullText: String, expectGenId: String?) {
         val fedLen = lastFedTextLen
         if (fedLen >= fullText.length) return
-        val newPart = fullText.substring(fedLen)
-        // 按句末标点切分（中英文）。保留标点。
+        var newPart = fullText.substring(fedLen)
+        // ====== AI 挂断标签：先剥离再念，同时记录命中 ======
+        if (hangupTagRegex.containsMatchIn(newPart)) {
+            aiRequestedHangup = true
+            Log.i(TAG, "Detected hangup tag in AI stream, stripping before TTS")
+            newPart = hangupTagRegex.replace(newPart, "")
+        }
         val sentenceEnd = Regex("[。！？!?；;\n]")
         var lastCut = 0
         var match: MatchResult? = sentenceEnd.find(newPart)
@@ -378,55 +584,122 @@ class VoiceCallManager(
             val end = match.range.last + 1
             val sentence = newPart.substring(lastCut, end).trim()
             if (sentence.isNotEmpty()) {
-                ttsController.speak(sentence, flush = false)
+                // 身份仍然有效才喂
+                if (expectGenId == null || identity.generationId == expectGenId) {
+                    ttsController.speak(sentence, flush = false)
+                    lastTtsPlayingAtMs = System.currentTimeMillis()
+                    // spokenTextLen 记录"已经真正交给 TTS 播放的文字长度"（完整文本前缀，不含截断）
+                    spokenTextLen = (fedLen + end).coerceAtMost(fullText.length)
+                }
             }
             lastCut = end
             match = sentenceEnd.find(newPart, end)
         }
-        // 已喂到 lastCut, 更新已喂长度（基于快照值，避免并发覆盖）
         lastFedTextLen = fedLen + lastCut
     }
 
-    private suspend fun awaitTtsCompleteThenListen() {
-        // 等待 TTS 真正播放完成
-        // isSpeaking=false 仅在 TTS worker 退出（queue 为空）时出现
-        // 但流式分句喂入时，worker 可能在句间短暂退出（下一句尚未添加到 queue），
-        // 导致 isSpeaking 短暂为 false。使用宽限期过滤这种间隙，避免误判为播放结束。
-        // 注意：去掉了 sawSpeaking 收集器——若 TTS 在调用前已完成，收集器永远收不到
-        // true，会导致死循环。直接轮询当前值即可覆盖所有情况。
+    /** AI 回答结束后的路由：AI 主动请求挂断 → 等TTS排空后 graceful hangup，否则回到监听 */
+    private fun handleAfterAiResponse(convId: Uuid, expectGenId: String?) {
+        // 身份过时说明被打断，不应再继续 hangup 逻辑
+        if (expectGenId != null && identity.generationId != expectGenId) {
+            startListeningSafely()
+            return
+        }
+        // 真正的挂断以 AI 输出的 <CALL:ACTION=hangup/> 标签为准，不再使用本地关键词直接触发
+        // pendingFarewell 仅作为"软信号"通过 Prompt 提示 AI 做判断，避免误触发
+        if (aiRequestedHangup) {
+            Log.i(TAG, "AI requested hangup via tag, start graceful hangup")
+            startGracefulHangup(convId, expectGenId)
+        } else {
+            startListeningSafely()
+        }
+    }
+
+    private suspend fun awaitTtsCompleteThenHandle(convId: Uuid, expectGenId: String?) {
         var silentSince = 0L
-        while (_isActive.value && _callStatus.value == CallStatus.SPEAKING) {
+        while (_isActive.value && (_callStatus.value == CallStatus.SPEAKING || _callStatus.value == CallStatus.DUCKING)) {
+            // generation 被打断 → 不再等
+            if (expectGenId != null && identity.generationId != expectGenId) break
             if (!ttsController.isSpeaking.value) {
                 if (silentSince == 0L) silentSince = System.currentTimeMillis()
                 if (System.currentTimeMillis() - silentSince >= TTS_SILENCE_TIMEOUT_MS) {
-                    Log.d(TAG, "TTS complete (isSpeaking=false for ${TTS_SILENCE_TIMEOUT_MS}ms)")
+                    Log.d(TAG, "TTS complete gen=$expectGenId (silent for ${TTS_SILENCE_TIMEOUT_MS}ms)")
                     break
                 }
             } else {
+                lastTtsPlayingAtMs = System.currentTimeMillis()
                 silentSince = 0L
             }
             kotlinx.coroutines.delay(100)
         }
         stopInterruptionDetection()
         resetStreamingState()
+        handleAfterAiResponse(convId, expectGenId)
+    }
+
+    private fun startListeningSafely() {
         if (_isActive.value) startListening()
     }
 
+    // ========================================================================
+    //  自然挂断 Graceful Hangup（PDF §16）
+    // ========================================================================
+
+    private fun startGracefulHangup(convId: Uuid, expectGenId: String?) {
+        Log.i(TAG, "startGracefulHangup gen=$expectGenId (waiting for farewell TTS to drain)")
+        _callStatus.value = CallStatus.SPEAKING // 仍在念告别
+        farewellHangupJob?.cancel()
+        val snapSession = identity.callSessionId
+        farewellHangupJob = scope.launch {
+            val deadline = System.currentTimeMillis() + FAREWELL_HARD_DEADLINE_MS
+            var drained = false
+            while (_isActive.value && System.currentTimeMillis() < deadline) {
+                if (!ttsController.isSpeaking.value) {
+                    // 连续 800ms 没说话才判定"排空"
+                    var silence = 0L
+                    var confirmed = true
+                    while (silence < 800L) {
+                        if (ttsController.isSpeaking.value || _callStatus.value == CallStatus.DUCKING) {
+                            confirmed = false; break
+                        }
+                        delay(80); silence += 80
+                    }
+                    if (confirmed) { drained = true; break }
+                }
+                // 身份变了（用户立刻又抢话回来）→ 取消 hangup 计划
+                if (snapSession != identity.callSessionId) {
+                    Log.i(TAG, "farewell hangup aborted: session advanced")
+                    return@launch
+                }
+                delay(80)
+            }
+            if (!_isActive.value) return@launch
+            if (expectGenId != null && identity.generationId != expectGenId) {
+                Log.i(TAG, "farewell hangup aborted: gen advanced")
+                startListeningSafely()
+                return@launch
+            }
+            Log.i(TAG, "Graceful hangup now (drained=$drained)")
+            hangup()
+        }
+    }
+
+    // ========================================================================
+    //  打断检测（两阶段 DUCK → INTERRUPT） + PCM 预卷 + 回声尾窗
+    // ========================================================================
+
     /**
-     * 启动打断检测（SPEAKING 期间）。
-     *
-     * 抗扬声器回声策略：
-     * 1. AudioSource.VOICE_COMMUNICATION + 显式 AcousticEchoCanceler + NoiseSuppressor
-     * 2. VAD threshold 0.7 + minSpeechDuration 0.6s
-     * 3. 滑动平均能量门限：用最近 SLIDING_WINDOW_FRAMES 帧的 RMS 平均值作为动态基准
-     *    —— 基准自动跟随 TTS 音量变化，音量大时门槛自动提高
-     *    —— 用户说话时冻结基准更新，避免被拉高
-     * 4. 连续 BARGE_IN_CONFIRM_FRAMES 帧都满足条件才确认打断
+     * SPEAKING 期间启动 VAD + AudioRecord，做：
+     * 1. 持续写 PCM 环形预卷
+     * 2. 尾窗 220ms 动态提高 RMS 门槛（PDF §15.2）
+     * 3. 240ms duck → 520ms interrupt 的两阶段确认
      */
-    private fun startInterruptionDetection(convId: Uuid) {
+    private fun startInterruptionDetection(convId: Uuid, expectGenId: String?) {
         if (vadDetector == null) return
         val vad = vadDetector ?: return
         vad.reset()
+        // 清空预卷（上一轮残留）
+        synchronized(preRollFrames) { preRollFrames.clear() }
 
         val minBuf = AudioRecord.getMinBufferSize(
             VadDetector.SAMPLE_RATE,
@@ -446,131 +719,213 @@ class VoiceCallManager(
         )
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
             Log.e(TAG, "AudioRecord init failed")
-            audioRecord?.release()
-            audioRecord = null
+            audioRecord?.release(); audioRecord = null
             return
         }
 
-        // 启用系统级 AEC + NS
         val sessionId = audioRecord?.audioSessionId ?: 0
         try {
-            if (AcousticEchoCanceler.isAvailable()) {
-                aecEffect = AcousticEchoCanceler.create(sessionId)
-                aecEffect?.let {
-                    it.enabled = true
-                    Log.i(TAG, "AEC enabled (session=$sessionId)")
-                }
-            } else {
-                Log.w(TAG, "AEC not available on this device")
-            }
-            if (NoiseSuppressor.isAvailable()) {
-                nsEffect = NoiseSuppressor.create(sessionId)
-                nsEffect?.let {
-                    it.enabled = true
-                    Log.i(TAG, "NoiseSuppressor enabled (session=$sessionId)")
-                }
-            }
+            // ====== AEC 先默认关闭，日志打印可用状态 ======
+            // 现象：部分机型 AEC 会把麦克风收音几乎消成 0（RMS 长期 0.0000），导致完全打不断
+            // 解决：默认关闭 AEC，用业务层的 strictBoost/tailBoost + absoluteFloor 兜底防误触发
+            val aecAvailable = AcousticEchoCanceler.isAvailable()
+            Log.i(TAG, "AEC available=$aecAvailable → disabled by default (avoid mic muted)")
+            // val nsAvailable = NoiseSuppressor.isAvailable()
+            // NoiseSuppressor 也先默认不挂，避免和 AEC 一起把声音搞没
+            Log.i(TAG, "NoiseSuppressor skipped (default off)")
         } catch (e: Exception) {
-            Log.w(TAG, "Audio effect init failed: ${e.message}")
+            Log.w(TAG, "Audio effect check failed: ${e.message}")
         }
 
         isVadRunning = true
         audioRecord?.startRecording()
-        Log.i(TAG, "Interruption detection started")
+        Log.i(TAG, "Interruption detection started gen=$expectGenId")
 
         interruptionJob?.cancel()
+        val snapGenId = expectGenId
         interruptionJob = scope.launch(Dispatchers.IO) {
-            // 关键：等待 TTS 实际开始播放后再采样基准
-            // 否则基准是安静噪声（0.001），TTS 播放后回声 RMS 远超基准被误判为用户说话
+            // 等 TTS 真的开始播放，再建立回声基准
             var waitMs = 0
-            while (isVadRunning && isActive && _callStatus.value == CallStatus.SPEAKING) {
+            while (isVadRunning && isActive &&
+                (snapGenId == null || identity.generationId == snapGenId)
+            ) {
                 if (ttsController.playbackState.value.status == PlaybackStatus.Playing) break
-                delay(50)
-                waitMs += 50
+                delay(50); waitMs += 50
                 if (waitMs >= 5000) {
-                    Log.w(TAG, "TTS did not start playing within 5s, skipping interruption detection")
+                    Log.w(TAG, "TTS did not start within 5s, skip interruption detection")
                     return@launch
                 }
             }
-            if (!isVadRunning || !isActive || _callStatus.value != CallStatus.SPEAKING) return@launch
-
-            // 额外等 200ms 让回声路径稳定
-            delay(200)
-            Log.i(TAG, "TTS is playing, starting baseline sampling after ${waitMs}ms wait")
+            if (!isVadRunning || !isActive) return@launch
+            if (snapGenId != null && identity.generationId != snapGenId) return@launch
+            delay(200) // 让回声路径稳定
+            Log.i(TAG, "TTS playing; start baseline after ${waitMs}ms")
 
             val buffer = ShortArray(VadDetector.WINDOW_SIZE)
             var consecutiveSpeechFrames = 0
+            var duckTriggered = false
+            var frameCount = 0L  // 调试用：每 40 帧(~1.3s)采样打印一次 RMS/阈值状态
 
-            // 滑动窗口：记录最近 N 帧的 RMS，用于计算动态基准
             val slidingWindow = ArrayDeque<Double>()
             var slidingAvg = 0.0
             var baselineReady = false
 
-            while (isVadRunning && isActive && _callStatus.value == CallStatus.SPEAKING) {
+            while (isVadRunning && isActive) {
+                // generation 被打断：退出
+                if (snapGenId != null && identity.generationId != snapGenId) break
                 val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
-                if (read <= 0) {
-                    consecutiveSpeechFrames = 0
-                    continue
+                if (read <= 0) { consecutiveSpeechFrames = 0; continue }
+
+                // 1) 写 PCM 预卷（环形 ~1s）；deep copy 避免后续 buffer 复用覆盖
+                val frameCopy = buffer.copyOf()
+                synchronized(preRollFrames) {
+                    preRollFrames.addLast(frameCopy)
+                    while (preRollFrames.size > PRE_ROLL_MAX_FRAMES) preRollFrames.removeFirst()
                 }
-                if (_isMuted.value) {
-                    consecutiveSpeechFrames = 0
-                    continue
-                }
+
+                if (_isMuted.value) { consecutiveSpeechFrames = 0; continue }
                 val samples = FloatArray(read) { buffer[it] / 32768.0f }
                 val rms = calculateRms(samples)
 
-                // 阶段 1: 预热滑动窗口（TTS 播放后采样回声基准）
                 if (!baselineReady) {
                     slidingWindow.addLast(rms)
                     if (slidingWindow.size >= BASELINE_LEARN_FRAMES) {
                         slidingAvg = slidingWindow.average()
+                            // ===== baseline 最小值保护：防止全静音时 baseline=0，导致后面稍微有一点声就被当抢话 =====
+                            .coerceAtLeast(0.002)
                         baselineReady = true
-                        Log.i(TAG, "Sliding baseline ready: avg=${"%.4f".format(slidingAvg)}, " +
-                            "threshold=${"%.4f".format(slidingAvg * BARGE_IN_RMS_MULTIPLIER)}")
+                        Log.i(TAG, "Sliding baseline ready: avg=${"%.4f".format(slidingAvg)}")
                     }
                     continue
                 }
 
-                // 阶段 2: 检测用户打断（VAD + 滑动平均能量门限）
+                // PDF §13 Barge-in + §15 Echo：
+                //   TTS 正在 PLAYING 时 → 开启「抢话严格模式」（AEC 已默认关闭，这里仅用非常温和的 boost 做回声兜
+                //   底）：
+                //   1. 回声门限 boost 1.1（基本不抬高）
+                //   2. 绝对声压下限 0.004（满幅 0.4%，只要有正常呼吸声以上就能过）
+                //   3. 连续帧完全取消倍率，直接 8/16 帧 = 256/512ms
+                val ttsNowPlaying = ttsController.playbackState.value.status == PlaybackStatus.Playing
+                val strictBargeIn = ttsNowPlaying
+                // strictBoost 降到 1.1，几乎等于不抬高
+                val strictBoost = if (strictBargeIn) 1.1 else 1.0
+                // 回声尾窗：最近 220ms 内 TTS 在播放 → 门限 × 1.1（轻微）
+                val tailBoost = if (
+                    System.currentTimeMillis() - lastTtsPlayingAtMs < ECHO_TAIL_WINDOW_MS
+                ) ECHO_TAIL_BOOST else 1.0
+                // 绝对声压下限：严格模式 0.004（0.4% 满幅），非严格 0.003。
+                // 之前 0.015 → 0.01 → 0.004，保证低声说话也能过
+                val absoluteFloor = if (strictBargeIn) 0.004 else 0.003
+
+                val rmsThreshold = (slidingAvg * BARGE_IN_RMS_MULTIPLIER * tailBoost * strictBoost)
+                    .coerceAtLeast(absoluteFloor)
+                // 连续帧完全取消倍率：严格/非严格都用 8/16 帧
+                val duckFrames = BARGE_IN_DUCK_FRAMES
+                val confirmFrames = BARGE_IN_CONFIRM_FRAMES
+
                 vad.acceptWaveform(samples)
-                val rmsThreshold = slidingAvg * BARGE_IN_RMS_MULTIPLIER
                 val vadDetected = vad.isSpeechDetected()
-                val loudEnough = rms > rmsThreshold
+                val loudEnough = rms >= rmsThreshold
+
+                // ===== 调试：每 40 帧打印一次 RMS 概览 + AudioRecord read 长度 =====
+                frameCount++
+                if (frameCount % 40L == 0L) {
+                    Log.i(TAG, buildString {
+                        append("VAD frame=$frameCount read=$read strict=$strictBargeIn ")
+                        append("rms=${"%.4f".format(rms)} thr=${"%.4f".format(rmsThreshold)} ")
+                        append("baseline=${"%.4f".format(slidingAvg)} ")
+                        append("boosts: tail=$tailBoost strict=$strictBoost mult=$BARGE_IN_RMS_MULTIPLIER ")
+                        append("vad=$vadDetected loud=$loudEnough cons=$consecutiveSpeechFrames/$duckFrames~$confirmFrames")
+                    })
+                }
 
                 if (vadDetected && loudEnough) {
                     consecutiveSpeechFrames++
-                    // 检测到用户说话时，冻结滑动窗口更新（避免基准被拉高）
-                    if (consecutiveSpeechFrames >= BARGE_IN_CONFIRM_FRAMES) {
-                        Log.i(TAG, "Barge-in confirmed: frames=$consecutiveSpeechFrames, " +
-                            "rms=${"%.4f".format(rms)}, avg=${"%.4f".format(slidingAvg)}, " +
-                            "threshold=${"%.4f".format(rmsThreshold)}")
-                        interrupt(convId)
+                    // 阶段 1：累计帧到 duckFrames，触发 duck
+                    if (!duckTriggered && consecutiveSpeechFrames >= duckFrames) {
+                        duckTriggered = true
+                        Log.i(TAG, "Duck frames=$consecutiveSpeechFrames strict=$strictBargeIn rms=${"%.4f".format(rms)} thr=${"%.4f".format(rmsThreshold)}")
+                        triggerDuck(convId, snapGenId)
+                    }
+                    // 阶段 2：累计 confirmFrames，确认 interrupt
+                    if (duckTriggered && consecutiveSpeechFrames >= confirmFrames) {
+                        Log.i(TAG, "Barge-in confirmed frames=$consecutiveSpeechFrames strict=$strictBargeIn")
+                        confirmInterrupt(convId, snapGenId)
                         break
                     }
                 } else {
-                    // 未检测到打断：更新滑动窗口（追踪回声变化）
-                    slidingWindow.addLast(rms)
-                    if (slidingWindow.size > SLIDING_WINDOW_FRAMES) slidingWindow.removeFirst()
-                    slidingAvg = slidingWindow.average()
-
-                    if (consecutiveSpeechFrames > 0) {
-                        Log.d(TAG, "Counter reset: $consecutiveSpeechFrames -> 0 " +
-                            "(vad=$vadDetected, rms=${"%.4f".format(rms)}, " +
-                            "avg=${"%.4f".format(slidingAvg)}, threshold=${"%.4f".format(rmsThreshold)})")
+                    // ====== 只要有任一条件不满足，就清零连续计数 ======
+                    // 允许"声压够了但 VAD 一时没认出来"这种情况放宽：loudEnough 为 true 时，连续帧至少保持不变、不立即清零
+                    if (!loudEnough) {
+                        // 声压都不够，直接清零
+                        consecutiveSpeechFrames = 0
+                    } else if (consecutiveSpeechFrames > 0) {
+                        // 声压够了但 VAD=false：允许容忍 3 帧 (~100ms) 的 VAD 抖动，不减到 0，只 -1
+                        consecutiveSpeechFrames = (consecutiveSpeechFrames - 1).coerceAtLeast(0)
                     }
-                    consecutiveSpeechFrames = 0
+                    // 用户闭嘴：若已经 duck 但未到 confirm → 回弹、取消 duckConfirm、继续
+                    if (duckTriggered && consecutiveSpeechFrames == 0) {
+                        Log.i(TAG, "Speech stopped after duck; restore volume, abort interrupt")
+                        cancelDuckAndRestore(snapGenId)
+                        duckTriggered = false
+                    }
+                    // 非语音：更新基准（追踪回声变化）
+                    // ====== baseline 上限保护 ======
+                    // 如果当前帧 RMS 明显大于现有 baseline（>1.6×baseline 或 >absoluteFloor×2.5），
+                    // 说明这不是背景噪声（更像是用户在说话、或扬声器音量突然变大的漏音），
+                    // 就**不把这帧放进滑动窗口**，避免 baseline 被越抬越高导致打不断。
+                    val safeMaxForUpdate = (slidingAvg * 1.6)
+                        .coerceAtLeast(absoluteFloor * 2.5)
+                    if (rms <= safeMaxForUpdate) {
+                        slidingWindow.addLast(rms)
+                        if (slidingWindow.size > SLIDING_WINDOW_FRAMES) slidingWindow.removeFirst()
+                        val newAvg = slidingWindow.average()
+                            // 同样：baseline 永远不低于 0.002，避免全静音导致永远 0、下一次一有值就炸
+                            .coerceAtLeast(0.002)
+                        slidingAvg = newAvg
+                    }
                 }
             }
         }
     }
 
-    /** 计算 PCM 样本的 RMS（音量能量）。 */
+    /** 阶段1：DUCK - 压低 TTS 音量 + 切换 UI 状态（不取消生成） */
+    private fun triggerDuck(convId: Uuid, expectGenId: String?) {
+        // 身份校验
+        if (expectGenId != null && identity.generationId != expectGenId) return
+        if (!_isActive.value) return
+        val wasSpeaking = _callStatus.value == CallStatus.SPEAKING
+        if (!wasSpeaking) return
+        _callStatus.value = CallStatus.DUCKING
+        ttsController.duckVolume(targetVolume = DUCK_TARGET_VOLUME, durationMs = DUCK_DURATION_MS)
+    }
+
+    /** 用户闭嘴、抢话不成立 → 回弹 */
+    private fun cancelDuckAndRestore(expectGenId: String?) {
+        if (expectGenId != null && identity.generationId != expectGenId) return
+        duckConfirmJob?.cancel(); duckConfirmJob = null
+        ttsController.restoreVolume(durationMs = 160L)
+        if (_callStatus.value == CallStatus.DUCKING) {
+            _callStatus.value = CallStatus.SPEAKING
+        }
+    }
+
+    /** 阶段2：INTERRUPT - 确认抢话，停 TTS/取消生成/回到监听 */
+    private fun confirmInterrupt(convId: Uuid, expectGenId: String?) {
+        if (expectGenId != null && identity.generationId != expectGenId) {
+            Log.d(TAG, "confirmInterrupt: stale gen=$expectGenId, skip")
+            return
+        }
+        // 先取消 farewell hangup（用户打断告别意味着不想挂）
+        farewellHangupJob?.cancel(); farewellHangupJob = null
+        pendingFarewell = false
+        interrupt(convId)
+    }
+
     private fun calculateRms(samples: FloatArray): Double {
         if (samples.isEmpty()) return 0.0
         var sum = 0.0
-        for (s in samples) {
-            sum += s * s
-        }
+        for (s in samples) sum += s * s
         return kotlin.math.sqrt(sum / samples.size)
     }
 
@@ -579,36 +934,92 @@ class VoiceCallManager(
 
     private fun stopInterruptionDetection() {
         isVadRunning = false
-        interruptionJob?.cancel()
-        interruptionJob = null
-        try {
-            audioRecord?.stop()
-        } catch (_: Exception) {
-        }
-        audioRecord?.release()
-        audioRecord = null
-        // 释放音频效果
-        try { aecEffect?.let { it.enabled = false; it.release() } } catch (_: Exception) {}
+        interruptionJob?.cancel(); interruptionJob = null
+        duckConfirmJob?.cancel(); duckConfirmJob = null
+        runCatching { audioRecord?.stop() }
+        audioRecord?.release(); audioRecord = null
+        runCatching { aecEffect?.let { it.enabled = false; it.release() } }
         aecEffect = null
-        try { nsEffect?.let { it.enabled = false; it.release() } } catch (_: Exception) {}
+        runCatching { nsEffect?.let { it.enabled = false; it.release() } }
         nsEffect = null
         Log.d(TAG, "Interruption detection stopped")
     }
 
-    /** 用户打断: 立即停 TTS + 取消生成 + 回到监听 */
+    /**
+     * 用户打断:
+     *  PDF §14: 1.新 turn id 2.旧 generation 标 cancel 3.停TTS 4.停本地反馈
+     *         5.清 pending chunks 6.通知后端取消 7.UI→LISTENING 8.保留预卷 9.接下一轮
+     */
     private fun interrupt(convId: Uuid) {
+        Log.i(TAG, "interrupt turn=${identity.turnId} gen=${identity.generationId}")
+        // =========================================================================
+        //  1. 先做"只保留已经念过的文字"：
+        //     - ttsPlayedLen = TTS 真正播放完成的字符数（每个 chunk 播放结束后累加，最精确）
+        //     - spokenTextLen = 已经喂给 TTS 队列的字符数（作为兜底下限，避免 TTS 刚喂进去还没播就被打断时截断为0）
+        //     最终取两者中"≥兜底 且 不超过队列提交量"的值。
+        // =========================================================================
+        val ttsPlayedLen = ttsController.playedTextLength.value.coerceAtLeast(0)
+        val queueFedLen = spokenTextLen.coerceAtLeast(0)
+        // 兜底：实际播放长度不能超过已提交给 TTS 队列的长度（理论上不会，但防御一下）
+        val safePlayedLen = ttsPlayedLen.coerceAtMost(queueFedLen)
+        // 如果 TTS 还没开始播（played=0），但 spokenTextLen 已经有些内容被提交了，至少保留用户"马上要听到的"第一句
+        val saveSpokenLen = if (safePlayedLen > 0) safePlayedLen else queueFedLen
+        Log.i(TAG, "  → truncate: ttsPlayed=$ttsPlayedLen queueFed=$queueFedLen use=$saveSpokenLen")
+        val wasSpeaking = speakingStarted
+        // 停 TTS + 本地思考前导
         ttsController.stop()
+        listenerCueJob?.cancel(); listenerCueJob = null
+        // 取消生成
         chatService.stopGeneration(convId)
         stopInterruptionDetection()
-        responseJob?.cancel()
+        responseJob?.cancel(); responseJob = null
         resetStreamingState()
+        // 推进身份：新 turn（打断意味着用户要开始新一轮说）
+        identity = identity.newTurn()
+
+        // 如果 AI 真的开始说话过 (wasSpeaking)，并且还有没念到的内容 → 从表里截断
+        if (wasSpeaking) {
+            scope.launch(Dispatchers.IO) {
+                runCatching {
+                    chatService.truncateLastAssistantMessage(convId, saveSpokenLen)
+                    Log.i(TAG, "Interrupt: truncated to spokenLen=$saveSpokenLen")
+                }.onFailure {
+                    Log.w(TAG, "Interrupt: truncate failed", it)
+                }
+            }
+        }
+        // 预卷已保留在 preRollFrames，等下一轮 ASR 开始后可自然衔接
         if (_isActive.value) startListening()
     }
 
     private fun resetStreamingState() {
         lastFedTextLen = 0
+        spokenTextLen = 0
         speakingStarted = false
         priorAssistantNodeId = null
+        aiRequestedHangup = false
+    }
+
+    // ========================================================================
+    //  UI actions: toggleMute / toggleSpeaker / hangup / manualInterrupt
+    // ========================================================================
+
+    /**
+     * 手动打断：用户点击按钮强制打断 AI 回复，回到倾听状态。
+     * 只在 THINKING / SPEAKING / DUCKING 状态下生效。
+     */
+    fun manualInterrupt() {
+        val currentStatus = _callStatus.value
+        if (currentStatus != CallStatus.THINKING &&
+            currentStatus != CallStatus.SPEAKING &&
+            currentStatus != CallStatus.DUCKING
+        ) {
+            Log.d(TAG, "manualInterrupt: ignored (status=$currentStatus)")
+            return
+        }
+        val convId = conversationId ?: return
+        Log.i(TAG, "Manual interrupt by user (status=$currentStatus)")
+        interrupt(convId)
     }
 
     fun toggleMute() {
@@ -616,10 +1027,8 @@ class VoiceCallManager(
         val muted = _isMuted.value
         Log.i(TAG, "Mute toggled: $muted")
         if (muted) {
-            // 静音: 取消当前识别, 等待取消静音
             asrJob?.cancel()
         } else {
-            // 取消静音: 重新监听（若当前在 LISTENING）
             if (_isActive.value && _callStatus.value == CallStatus.LISTENING) {
                 startListening()
             }
@@ -628,48 +1037,65 @@ class VoiceCallManager(
 
     fun toggleSpeaker() {
         _isSpeakerOn.update { !it }
-        // TODO: 实际切换音频输出路由到扬声器/听筒（需 AudioPlayer 暴露路由控制）
+        // TODO: 切换音频路由
     }
 
     fun hangup() {
-        Log.i(TAG, "hangup")
+        Log.i(TAG, "hangup session=${identity.callSessionId}")
         _isActive.value = false
         _callStatus.value = CallStatus.CONNECTING
         stopInterruptionDetection()
         stopL1Timer()
         asrJob?.cancel()
         responseJob?.cancel()
+        listenerCueJob?.cancel(); listenerCueJob = null
+        farewellHangupJob?.cancel(); farewellHangupJob = null
+        duckConfirmJob?.cancel(); duckConfirmJob = null
         ttsController.stop()
+        // 恢复音量（避免被 duck 后退出通话，下次进音量残留低）
+        ttsController.setVolume(1f)
         conversationId?.let {
             chatService.stopGeneration(it)
-            // 解除通话模式: 后续该会话的 AI 响应恢复主路径的 L1 自动摘要
             chatService.setCallMode(it, active = false)
         }
-        vadDetector?.release()
-        vadDetector = null
+        vadDetector?.release(); vadDetector = null
+        synchronized(preRollFrames) { preRollFrames.clear() }
         conversationId = null
         resetStreamingState()
         _isMuted.value = false
         asrPermissionRetryUsed = false
+        pendingFarewell = false
+        identity = CallIdentity(callSessionId = "none")
+        // 通话结束：恢复对话页的自动朗读（从通话开始前的断点继续，不漏读）
+        customTtsState.resumeAutoReadAfterCall()
     }
 
     companion object {
-        // L1 归档定时检查间隔：25 分钟
+        // PCM 预卷帧数（每帧 32ms，31 帧 ≈ 1 秒）
+        private const val PRE_ROLL_MAX_FRAMES = 31
+
         private const val L1_CHECK_INTERVAL_MS = 25L * 60 * 1000
-        // ASR 权限误报重试延迟
         private const val ASR_RETRY_DELAY_MS = 600L
-        // 连续确认帧数（每帧 32ms，20 帧 ≈ 640ms，要求持续说话才打断）
-        private const val BARGE_IN_CONFIRM_FRAMES = 20
-        // 预热帧数（前 20 帧 ≈ 640ms 建立初始基准）
+        private const val THINKING_CUE_DELAY_MS = 120L // 等 120ms，首句出来就不播 cue
+        // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
+        //  8 帧 ≈ 256ms → DUCK
+        // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
+        private const val BARGE_IN_DUCK_FRAMES = 8
+        private const val BARGE_IN_CONFIRM_FRAMES = 16
+        private const val DUCK_TARGET_VOLUME = 0.2f
+        private const val DUCK_DURATION_MS = 240L
         private const val BASELINE_LEARN_FRAMES = 20
-        // 滑动窗口大小（30 帧 ≈ 960ms，追踪最近 1 秒的回声变化）
         private const val SLIDING_WINDOW_FRAMES = 30
-        // 能量门限倍数：用户说话 RMS 需超过滑动平均 × 此倍数才算打断
-        // 2.0 倍：扬声器回声波动一般不超过平均的 1.5 倍，用户说话增量超过 2 倍
-        private const val BARGE_IN_RMS_MULTIPLIER = 2.5
-        // TTS 播放完成判定：isSpeaking=false 持续超过此时长才认为播放结束
-        // 流式分句播放时，worker 在句间可能短暂退出（等待下一句添加到 queue），
-        // 1500ms 宽限期可过滤这种间隙，避免 ASR 在 TTS 仍在播放时提前启动
+        // RMS 超过 baseline 多少倍视为抢话。1.8→1.4，确保正常音量就能过
+        private const val BARGE_IN_RMS_MULTIPLIER = 1.4
+        // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"
+        private const val ECHO_TAIL_WINDOW_MS = 220L
+        // 尾窗门限倍数：轻微抬高即可
+        private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
+        private const val FAREWELL_HARD_DEADLINE_MS = 30_000L
+        // ASR 启动忽略期：接通问候后 2.5s 内的 ASR final 一律丢弃，
+        // 防止扬声器回声 + ASR 内部音频缓冲导致的误识别
+        private const val ASR_IGNORE_PERIOD_MS = 2500L
     }
 }
