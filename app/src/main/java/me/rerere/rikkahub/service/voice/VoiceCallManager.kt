@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.asr.provider.ASRManager
+import me.rerere.rikkahub.common.utils.WebRtcAudioProcessor
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
@@ -36,6 +37,7 @@ import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
+import me.rerere.tts.controller.AudioPlayer
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.model.PlaybackStatus
 import kotlin.uuid.Uuid
@@ -157,6 +159,15 @@ class VoiceCallManager(
     // 文本会在送入 TTS 前被剥离该标签，用户不会听到；AI 说完告别后由 handleAfterAiResponse 触发 graceful hangup。
     @Volatile private var aiRequestedHangup = false
     private val hangupTagRegex = Regex("""<CALL:ACTION=hangup\s*/?>""", RegexOption.IGNORE_CASE)
+
+    // ===== WebRTC APM：AEC3 + NS 全双工回声消除（session 绑定，Android MediaServer 自动路由 far-end） =====
+    // 原理：WebRtcAudioEffects 是 android.media.AudioEffect 的子类，绑定到 AudioRecord.audioSessionId 后，
+    //      Android 框架层会自动：
+    //      (1) 把同设备上 ExoPlayer/AudioTrack 播放的 TTS 作为 far-end 参考（AEC3 参考信号）
+    //      (2) 把 AudioRecord 采集的 PCM 作为 near-end 输入
+    //      (3) 底层 native 跑 WebRTC AEC3 + NoiseSuppressor，处理完才交给 AudioRecord.read()
+    //      所以不用我们手动喂 far-end PCM、不用做 SRC、不用管时序对齐。
+    @Volatile private var apm: WebRtcAudioProcessor? = null
 
     // ========================================================================
     //  startCall / hangup
@@ -725,16 +736,37 @@ class VoiceCallManager(
 
         val sessionId = audioRecord?.audioSessionId ?: 0
         try {
-            // ====== AEC 先默认关闭，日志打印可用状态 ======
-            // 现象：部分机型 AEC 会把麦克风收音几乎消成 0（RMS 长期 0.0000），导致完全打不断
-            // 解决：默认关闭 AEC，用业务层的 strictBoost/tailBoost + absoluteFloor 兜底防误触发
-            val aecAvailable = AcousticEchoCanceler.isAvailable()
-            Log.i(TAG, "AEC available=$aecAvailable → disabled by default (avoid mic muted)")
-            // val nsAvailable = NoiseSuppressor.isAvailable()
-            // NoiseSuppressor 也先默认不挂，避免和 AEC 一起把声音搞没
-            Log.i(TAG, "NoiseSuppressor skipped (default off)")
+            // ====== WebRTC APM 正式接管回声消除：AEC3 + NS（session 绑定方式） ======
+            // Android 系统 AcousticEchoCanceler 跨设备一致性差（部分机型过消音、部分机型不消），
+            // 用 WebRTC 官方 AEC3 算法统一处理，效果最稳定。
+            val systemAecAvailable = runCatching { AcousticEchoCanceler.isAvailable() }.getOrDefault(false)
+            Log.i(TAG, "System AEC available=$systemAecAvailable → skipped, using WebRTC AEC3 (session bind)")
+            // NoiseSuppressor 同样交给 WebRTC NS，避免重复处理
+            Log.i(TAG, "System NS skipped → using WebRTC NoiseSuppression")
+            // ===== 创建 APM → 绑定到 AudioRecord session（必须在 startRecording() 之前调用 enable()） =====
+            // 绑定后，MediaServer 会自动把 ExoPlayer/AudioTrack 播放的 TTS 作为 far-end 参考，
+            // AudioRecord.read() 返回的直接就是消过回声 + 降噪的 PCM，不用我们手动喂 far/near。
+            runCatching {
+                val newApm = WebRtcAudioProcessor()
+                apm = newApm
+                if (newApm.isAvailable()) {
+                    val ok = newApm.attachToAudioRecordSession(sessionId)
+                    Log.i(
+                        TAG,
+                        "WebRTC APM ready (session=$sessionId, attachOk=$ok) → " +
+                            "AEC3=${newApm.isAecSupported} NS=${newApm.isNsSupported}"
+                    )
+                } else {
+                    Log.w(TAG, "WebRTC APM unavailable (.so load failed?), fallback pure VAD")
+                }
+                // far-end 监听器不需要了：WebRtcAudioEffects 走 MediaServer 自动路由
+                ttsController.setOnFarPcmListener(null)
+            }.onFailure { e ->
+                Log.e(TAG, "WebRTC APM init FAILED, fallback pure VAD: ${e.message}")
+                apm = null
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Audio effect check failed: ${e.message}")
+            Log.w(TAG, "Audio effect setup failed: ${e.message}")
         }
 
         isVadRunning = true
@@ -776,6 +808,10 @@ class VoiceCallManager(
                 val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                 if (read <= 0) { consecutiveSpeechFrames = 0; continue }
 
+                // 关键：WebRtcAudioEffects 已通过 sessionId 绑定到这个 AudioRecord 上，
+                // 所以 buffer 里 read() 返回的**已经是** WebRTC AEC3 消回声 + NS 降噪后的 PCM，
+                // 不用再手动 processStream，MediaServer 在 native 层帮我们做了。
+
                 // 1) 写 PCM 预卷（环形 ~1s）；deep copy 避免后续 buffer 复用覆盖
                 val frameCopy = buffer.copyOf()
                 synchronized(preRollFrames) {
@@ -783,9 +819,17 @@ class VoiceCallManager(
                     while (preRollFrames.size > PRE_ROLL_MAX_FRAMES) preRollFrames.removeFirst()
                 }
 
+                // 计算 rawMax（看 PCM 声压，判断 AEC3 是否真的在工作：AI 说话时 rawMax 应压得很低）
+                var rawMax = 0
+                for (i in 0 until read) {
+                    val v = kotlin.math.abs(buffer[i].toInt())
+                    if (v > rawMax) rawMax = v
+                }
+
                 if (_isMuted.value) { consecutiveSpeechFrames = 0; continue }
                 val samples = FloatArray(read) { buffer[it] / 32768.0f }
                 val rms = calculateRms(samples)
+                val floatMax = samples.maxOrNull() ?: 0f
 
                 if (!baselineReady) {
                     slidingWindow.addLast(rms)
@@ -827,11 +871,18 @@ class VoiceCallManager(
                 val vadDetected = vad.isSpeechDetected()
                 val loudEnough = rms >= rmsThreshold
 
-                // ===== 调试：每 40 帧打印一次 RMS 概览 + AudioRecord read 长度 =====
+                // ===== 调试：每 40 帧打印一次 RMS 概览 =====
+                // AEC3 生效判断（重点看 strict=true 的 AI 说话期间）：
+                //   ✅ 生效：AI 大声说话时 rawMax 仍然很小（几十~几百，和 baseline 差不多）
+                //   ❌ 没生效：AI 说话时 rawMax 飙到几千上万
+                // 注意：因为 AEC 在底层 AudioEffect 处理，应用层 read() 到的直接是"消后"的结果，
+                // 所以看不到 before 对比，只能靠 strict 状态下的绝对值判断。
                 frameCount++
                 if (frameCount % 40L == 0L) {
                     Log.i(TAG, buildString {
                         append("VAD frame=$frameCount read=$read strict=$strictBargeIn ")
+                        append("apm=${if (apm?.isAvailable() == true) "AEC3+NS" else "OFF"} ")
+                        append("rawMax=$rawMax floatMax=${"%.4f".format(floatMax)} ")
                         append("rms=${"%.4f".format(rms)} thr=${"%.4f".format(rmsThreshold)} ")
                         append("baseline=${"%.4f".format(slidingAvg)} ")
                         append("boosts: tail=$tailBoost strict=$strictBoost mult=$BARGE_IN_RMS_MULTIPLIER ")
@@ -942,7 +993,12 @@ class VoiceCallManager(
         aecEffect = null
         runCatching { nsEffect?.let { it.enabled = false; it.release() } }
         nsEffect = null
-        Log.d(TAG, "Interruption detection stopped")
+        // ====== 释放 WebRTC APM + 解绑 far-end 监听 ======
+        // 先解绑监听避免 TTS 继续喂数据到死掉的 APM，再 close 释放 native 资源
+        runCatching { ttsController.setOnFarPcmListener(null) }
+        runCatching { apm?.close() }
+        apm = null
+        Log.d(TAG, "Interruption detection stopped (WebRTC APM released)")
     }
 
     /**
@@ -1059,6 +1115,10 @@ class VoiceCallManager(
             chatService.setCallMode(it, active = false)
         }
         vadDetector?.release(); vadDetector = null
+        // ====== 兜底：hangup 时再清一次 APM / far-end 监听，防止 stopInterruptionDetection 漏调 ======
+        runCatching { ttsController.setOnFarPcmListener(null) }
+        runCatching { apm?.close() }
+        apm = null
         synchronized(preRollFrames) { preRollFrames.clear() }
         conversationId = null
         resetStreamingState()

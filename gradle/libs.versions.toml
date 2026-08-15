@@ -67,6 +67,17 @@ android-mail = "1.6.8"
 bugly = "4.1.9.3"
 bugly-native = "3.9.2"
 
+# === WebRTC APM 库（原来走 JitPack：无法解析，改用本地 aar，见下） ===
+# 注意：com.github.webrtc-sdk:android 不是通过 Maven 发布的，而是在 GitHub Release 上传 libwebrtc.aar
+#      所以我们直接把 aar 放到 common/libs/libwebrtc.aar，用 file 依赖（100% 可靠）
+#
+# 下载地址（选最新稳定版即可，比如 v137.7151.01 的 libwebrtc.aar 约 45MB）：
+#   https://github.com/webrtc-sdk/android/releases/tag/v137.7151.01
+#   → 下载 Assets 里的 libwebrtc.aar（不是 _prefixed 那个）
+#   → 放到 D:\proj_code\as\DreamLand_lc\common\libs\libwebrtc.aar
+# WebRTC 版本号仅做文档记录，Gradle 实际走的是本地文件依赖
+webrtcAndroid = "137.7151.01"
+
 [libraries]
 android-mail = { module = "com.sun.mail:android-mail", version.ref = "android-mail" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
@@ -163,6 +174,9 @@ androidx-glance-material3 = { group = "androidx.glance", name = "glance-material
 # Bugly
 bugly-crashreport = { module = "com.tencent.bugly:crashreport", version.ref = "bugly" }
 bugly-nativecrashreport = { module = "com.tencent.bugly:nativecrashreport", version.ref = "bugly-native" }
+
+# === 原 JitPack 方案（弃用：无法解析）：已改为 common/libs/libwebrtc.aar 本地依赖 ===
+# webrtc-android = { module = "com.github.webrtc-sdk:android", version.ref = "webrtcAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

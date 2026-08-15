@@ -269,6 +269,11 @@ class TtsController(
         _playbackState.update { PlaybackState(status = PlaybackStatus.Idle) }
     }
 
+    /** WebRTC AEC far-end 参考信号：TTS 即将播放的 PCM 回调 */
+    fun setOnFarPcmListener(listener: AudioPlayer.OnFarPcmListener?) {
+        audio.setOnFarPcmListener(listener)
+    }
+
     /** 释放资源 */
     fun dispose() {
         stop()

@@ -43,6 +43,27 @@ class AudioPlayer(context: Context) {
     private var volumeBeforeDuck: Float = 1f
     private var duckAnimationJob: Job? = null
 
+    // ===== Far-end PCM 回调（WebRTC AEC3 参考信号） =====
+    // 回调时机：TTS 调用 play() 时，在交给 ExoPlayer 播放之前立刻发出。
+    // 为什么不挂 ExoPlayer AudioProcessor 钩子？
+    //   AEC3 对 far-end 时序要求宽松（最多容忍 ~100ms 延迟），
+    //   直接在 play() 入口发 PCM 更简单，且避免依赖 ExoPlayer 内部实现细节。
+    fun interface OnFarPcmListener {
+        /**
+         * @param pcm      原始 PCM 字节（16-bit 小端）
+         * @param sampleRateHz 采样率（可能是 24k / 48k / 16k 等，上层需要 SRC 到 16k 再喂 WebRTC）
+         * @param channels 通道数（TTS 通常是 1，单声道）
+         */
+        fun onPcmReady(pcm: ByteArray, sampleRateHz: Int, channels: Int)
+    }
+
+    @Volatile
+    private var farPcmListener: OnFarPcmListener? = null
+
+    fun setOnFarPcmListener(listener: OnFarPcmListener?) {
+        farPcmListener = listener
+    }
+
     // 所有 ExoPlayer 操作必须在其创建线程（主线程）执行.
     // AudioPlayer 可能被 service 层在 IO 线程调用, 因此统一切换到主线程.
     fun pause() {
@@ -133,6 +154,21 @@ class AudioPlayer(context: Context) {
     @OptIn(UnstableApi::class)
     suspend fun play(response: TTSResponse) = withContext(Dispatchers.Main.immediate) {
         suspendCancellableCoroutine<Unit> { cont ->
+            // ====== WebRTC AEC far-end 参考：PCM 模式下先把原始音频回调给上层 ======
+            // 注意：即使是非 PCM 格式（比如 MP3/OPUS），也可以在这里解码后回调，
+            // 但目前所有 TTS Provider 在通话模式下都用 PCM 流式，所以只处理 PCM 就够了。
+            if (response.format == AudioFormat.PCM) {
+                val listener = farPcmListener
+                val sampleRate = response.sampleRate ?: 24000
+                val channels = 1 // TTS 输出固定单声道
+                // 立刻回调原始 PCM 字节 + 采样率，不阻塞播放（上层用协程/非阻塞消费）
+                runCatching {
+                    listener?.onPcmReady(response.audioData, sampleRate, channels)
+                }.onFailure {
+                    android.util.Log.w("AudioPlayer", "Far-end PCM callback failed", it)
+                }
+            }
+
             val bytes = if (response.format == AudioFormat.PCM) {
                 pcmToWav(response.audioData, response.sampleRate ?: 24000)
             } else response.audioData

@@ -60,7 +60,7 @@ dependencies {
     api(libs.kotlinx.coroutines.core)
     api(libs.kotlinx.datetime)
 
-    // apache commons
+    // Apache Commons
     api(libs.commons.text)
 
     // floating
@@ -69,4 +69,16 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
+
+    // WebRTC APM：AEC3 / NS / AGC / VAD 全家桶，跨设备一致性最好的回声消除
+    // 注意：使用本地 aar 文件，不依赖 Maven 仓库（100% 可靠）。
+    //
+    // 你需要做的：
+    //   1. 打开 https://github.com/webrtc-sdk/android/releases/tag/v137.7151.01
+    //   2. 在 Assets 里下载 libwebrtc.aar（约 45MB，不要下载 _prefixed 那个）
+    //   3. 放到 common/libs/libwebrtc.aar（即：D:\proj_code\as\DreamLand_lc\common\libs\libwebrtc.aar）
+    //      如果 libs 目录不存在就手动建一个
+    //
+    // 用 api 暴露给上层模块（app / tts 等都能直接 import org.webrtc.*）
+    api(files("libs/libwebrtc.aar"))
 }
