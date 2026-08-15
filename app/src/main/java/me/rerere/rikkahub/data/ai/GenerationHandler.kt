@@ -882,10 +882,6 @@ class GenerationHandler(
                 summaryPromptBuilder.appendLine("- 你和用户正在打电话，回复要口语化、简洁直接，像面对面说话。")
                 summaryPromptBuilder.appendLine("- 回答要干脆，少用书面语、少写解释性铺垫；如果需要确认信息就直接问。")
                 summaryPromptBuilder.appendLine("- 除了调用工具之外，不要输出 Markdown、代码块、列表、标签或 JSON，说人话。")
-                summaryPromptBuilder.appendLine("- 判断用户是否要结束通话（如：再见/挂了/不聊了/拜拜/先这样/结束吧 等表达，或明确无继续对话意愿）：")
-                summaryPromptBuilder.appendLine("  · 如果确认要结束：先自然地说一句告别语，然后**在你回复文本的最后**，原样输出以下指令标签（前后不要加任何字符）：<CALL:ACTION=hangup/>")
-                summaryPromptBuilder.appendLine("  · 注意：标签会在朗读前被系统剥离，用户不会听到；但说告别语是必须的，要等你说完再见再挂断。")
-                summaryPromptBuilder.appendLine("  · 如果只是短暂停顿/思考/转话题，或需要再确认，不要输出标签，继续正常对话。")
             }
             wechatMode -> {
                 summaryPromptBuilder.appendLine("\n## 回复规范 (最高优先级 - 必须执行)")

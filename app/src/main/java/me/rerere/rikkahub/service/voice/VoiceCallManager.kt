@@ -3,6 +3,7 @@ package me.rerere.rikkahub.service.voice
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -127,8 +128,7 @@ class VoiceCallManager(
     private var duckConfirmJob: Job? = null
     // 接通问候 + 思考前导 TTS 的 Job（取消 generation 时需要一起 cancel）
     private var listenerCueJob: Job? = null
-    // 自然挂断：farewell 时等待 TTS 排空的硬截止
-    private var farewellHangupJob: Job? = null
+    // 自然挂断由用户手动触发，不再自动判断
 
     // 流式 TTS: 跟踪已喂给 TTS 的 AI 文本长度（当前 generation）
     // - lastFedTextLen: 已经"分析过"的总文本字符数（按标点切句时推进）
@@ -149,16 +149,6 @@ class VoiceCallManager(
     @Volatile private var asrIgnoreUntil: Long = 0L
     // 最近播过的问候文本，用于 ASR 内容匹配过滤（防止回声被识别成 user 消息）
     @Volatile private var lastGreetingText: String? = null
-
-    // 标记本轮 turn 的用户消息是否为 farewell 意图（本地关键词匹配 + ASR 文本）
-    // 注意：从 2026-08-15 起，本地关键词仅作为"软信号"给 Prompt 提示 AI。
-    // 真正的挂断判定必须由 AI 在回复末尾输出 <CALL:ACTION=hangup/> 标签，避免关键词误触发。
-    @Volatile private var pendingFarewell = false
-
-    // AI 驱动的挂断请求：当检测到 AI 回复文本中出现 <CALL:ACTION=hangup/> 标签时置 true。
-    // 文本会在送入 TTS 前被剥离该标签，用户不会听到；AI 说完告别后由 handleAfterAiResponse 触发 graceful hangup。
-    @Volatile private var aiRequestedHangup = false
-    private val hangupTagRegex = Regex("""<CALL:ACTION=hangup\s*/?>""", RegexOption.IGNORE_CASE)
 
     // ===== WebRTC APM：AEC3 + NS 全双工回声消除（session 绑定，Android MediaServer 自动路由 far-end） =====
     // 原理：WebRtcAudioEffects 是 android.media.AudioEffect 的子类，绑定到 AudioRecord.audioSessionId 后，
@@ -231,6 +221,7 @@ class VoiceCallManager(
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun warmUpRecordAudioPermission() {
         runCatching {
             val minBuf = AudioRecord.getMinBufferSize(
@@ -257,7 +248,7 @@ class VoiceCallManager(
         l1TimerJob?.cancel()
         l1TimerJob = scope.launch {
             while (_isActive.value) {
-                kotlinx.coroutines.delay(L1_CHECK_INTERVAL_MS)
+                delay(L1_CHECK_INTERVAL_MS)
                 if (!_isActive.value) break
                 runCatching { chatService.summarizeForCallIfNeeded(convId) }
                     .onFailure { Log.w(TAG, "L1 timer summarize failed", it) }
@@ -294,7 +285,6 @@ class VoiceCallManager(
 
         // 新 turn：记录身份（ASR final 后会再 newGeneration）
         identity = identity.newTurn()
-        pendingFarewell = false
 
         asrJob?.cancel()
         val snapshotTurnId = identity.turnId
@@ -327,13 +317,6 @@ class VoiceCallManager(
                         }
                         Log.i(TAG, "ASR final turn=$snapshotTurnId: ${result.text}")
 
-                        // 本地轻量 farewell 分类（PDF §16 graceful hangup）
-                        val text = result.text
-                        if (isFarewellText(text)) {
-                            Log.i(TAG, "Detected farewell intention in: \"$text\"")
-                            pendingFarewell = true
-                        }
-
                         _callStatus.value = CallStatus.THINKING
                         // ================================================================
                         //  PDF §5 + §15 关键：AI 开始回复前立刻停掉 ASR 流式识别。
@@ -341,7 +324,7 @@ class VoiceCallManager(
                         //  否则扬声器的 AI 语音会被麦克风录下来，被 ASR 当成用户说话发送。
                         // ================================================================
                         val currentAsrJob = asrJob
-                        sendUserMessage(text, convId)
+                        sendUserMessage(result.text, convId)
                         // sendUserMessage 之后身份已经推进 turn/generation，
                         // 此时立刻 cancel 旧的 ASR job（如果还没收尾的话），
                         // 等到 awaitTtsCompleteThenHandle → startListening 再重新开新 ASR。
@@ -364,7 +347,7 @@ class VoiceCallManager(
                             Log.w(TAG, "ASR error(9) but RECORD_AUDIO granted, retrying once (ROM bug)")
                             scope.launch { _callError.emit("系统语音识别初始化中, 正在重试...") }
                             scope.launch {
-                                kotlinx.coroutines.delay(ASR_RETRY_DELAY_MS)
+                                delay(ASR_RETRY_DELAY_MS)
                                 if (_isActive.value && _callStatus.value == CallStatus.LISTENING) {
                                     startListening()
                                 }
@@ -402,18 +385,6 @@ class VoiceCallManager(
                 startListening()
             }
         }
-    }
-
-    /** 关键词匹配 farewell（简单可扩展；后续可换成模型分类） */
-    private fun isFarewellText(text: String): Boolean {
-        val t = text.trim()
-        if (t.length > 20) return false // 长句一般不是直接告别
-        val keywords = listOf(
-            "再见", "拜拜", "拜了", "挂了", "我先挂", "挂断",
-            "先挂", "我挂了", "结束通话", "不聊了", "就到这吧",
-            "goodbye", "bye bye", "bye", "see you", "hang up"
-        )
-        return keywords.any { kw -> t.contains(kw, ignoreCase = true) }
     }
 
     // ========================================================================
@@ -513,41 +484,9 @@ class VoiceCallManager(
             // flush 剩余
             val conv = chatService.getConversationFlow(convId).value
             val aiNode = findNewAssistantNode(conv.messageNodes)
-            var aiText = aiNode?.currentMessage?.parts
+            val aiText = aiNode?.currentMessage?.parts
                 ?.filterIsInstance<UIMessagePart.Text>()
                 ?.joinToString("") { it.text } ?: ""
-            // ====== AI 挂断标签：flush 前也剥离 & 检测 ======
-            val hangupMatchedInFinal = hangupTagRegex.containsMatchIn(aiText)
-            if (hangupMatchedInFinal) {
-                aiRequestedHangup = true
-                Log.i(TAG, "Detected hangup tag in final AI text, stripping before TTS flush")
-                aiText = hangupTagRegex.replace(aiText, "")
-                // 同步从 DB 最后一条 AI 消息里剔除标签（避免回看聊天记录出现 XML 标签）
-                val tagToStrip = hangupTagRegex
-                scope.launch(Dispatchers.IO) {
-                    runCatching {
-                        chatService.mutateConversationAndSave(convId) { c ->
-                            val nodes = c.messageNodes
-                            val idx = nodes.indexOfLast { it.role == MessageRole.ASSISTANT }
-                            if (idx == -1) return@mutateConversationAndSave c
-                            val oldNode = nodes[idx]
-                            val curMsg = oldNode.currentMessage
-                            if (curMsg.parts.isEmpty()) return@mutateConversationAndSave c
-                            val newParts = curMsg.parts.map { p ->
-                                if (p is UIMessagePart.Text) {
-                                    p.copy(text = tagToStrip.replace(p.text, ""))
-                                } else p
-                            }
-                            val newMsg = curMsg.copy(parts = newParts)
-                            val newNodeMessages = oldNode.messages.mapIndexed { i, m ->
-                                if (i == oldNode.selectIndex) newMsg else m
-                            }
-                            val newNode = oldNode.copy(messages = newNodeMessages)
-                            c.copy(messageNodes = nodes.toMutableList().apply { set(idx, newNode) })
-                        }
-                    }.onFailure { Log.w(TAG, "Strip hangup tag from DB failed", it) }
-                }
-            }
             if (aiText.length > lastFedTextLen.coerceAtLeast(0)) {
                 val remaining = aiText.substring(lastFedTextLen.coerceAtLeast(0).coerceAtMost(aiText.length))
                 if (remaining.isNotBlank()) {
@@ -582,12 +521,6 @@ class VoiceCallManager(
         val fedLen = lastFedTextLen
         if (fedLen >= fullText.length) return
         var newPart = fullText.substring(fedLen)
-        // ====== AI 挂断标签：先剥离再念，同时记录命中 ======
-        if (hangupTagRegex.containsMatchIn(newPart)) {
-            aiRequestedHangup = true
-            Log.i(TAG, "Detected hangup tag in AI stream, stripping before TTS")
-            newPart = hangupTagRegex.replace(newPart, "")
-        }
         val sentenceEnd = Regex("[。！？!?；;\n]")
         var lastCut = 0
         var match: MatchResult? = sentenceEnd.find(newPart)
@@ -609,21 +542,14 @@ class VoiceCallManager(
         lastFedTextLen = fedLen + lastCut
     }
 
-    /** AI 回答结束后的路由：AI 主动请求挂断 → 等TTS排空后 graceful hangup，否则回到监听 */
+    /** AI 回答结束后回到监听状态 */
     private fun handleAfterAiResponse(convId: Uuid, expectGenId: String?) {
-        // 身份过时说明被打断，不应再继续 hangup 逻辑
+        // 身份过时说明被打断，不应再继续
         if (expectGenId != null && identity.generationId != expectGenId) {
             startListeningSafely()
             return
         }
-        // 真正的挂断以 AI 输出的 <CALL:ACTION=hangup/> 标签为准，不再使用本地关键词直接触发
-        // pendingFarewell 仅作为"软信号"通过 Prompt 提示 AI 做判断，避免误触发
-        if (aiRequestedHangup) {
-            Log.i(TAG, "AI requested hangup via tag, start graceful hangup")
-            startGracefulHangup(convId, expectGenId)
-        } else {
-            startListeningSafely()
-        }
+        startListeningSafely()
     }
 
     private suspend fun awaitTtsCompleteThenHandle(convId: Uuid, expectGenId: String?) {
@@ -653,49 +579,6 @@ class VoiceCallManager(
     }
 
     // ========================================================================
-    //  自然挂断 Graceful Hangup（PDF §16）
-    // ========================================================================
-
-    private fun startGracefulHangup(convId: Uuid, expectGenId: String?) {
-        Log.i(TAG, "startGracefulHangup gen=$expectGenId (waiting for farewell TTS to drain)")
-        _callStatus.value = CallStatus.SPEAKING // 仍在念告别
-        farewellHangupJob?.cancel()
-        val snapSession = identity.callSessionId
-        farewellHangupJob = scope.launch {
-            val deadline = System.currentTimeMillis() + FAREWELL_HARD_DEADLINE_MS
-            var drained = false
-            while (_isActive.value && System.currentTimeMillis() < deadline) {
-                if (!ttsController.isSpeaking.value) {
-                    // 连续 800ms 没说话才判定"排空"
-                    var silence = 0L
-                    var confirmed = true
-                    while (silence < 800L) {
-                        if (ttsController.isSpeaking.value || _callStatus.value == CallStatus.DUCKING) {
-                            confirmed = false; break
-                        }
-                        delay(80); silence += 80
-                    }
-                    if (confirmed) { drained = true; break }
-                }
-                // 身份变了（用户立刻又抢话回来）→ 取消 hangup 计划
-                if (snapSession != identity.callSessionId) {
-                    Log.i(TAG, "farewell hangup aborted: session advanced")
-                    return@launch
-                }
-                delay(80)
-            }
-            if (!_isActive.value) return@launch
-            if (expectGenId != null && identity.generationId != expectGenId) {
-                Log.i(TAG, "farewell hangup aborted: gen advanced")
-                startListeningSafely()
-                return@launch
-            }
-            Log.i(TAG, "Graceful hangup now (drained=$drained)")
-            hangup()
-        }
-    }
-
-    // ========================================================================
     //  打断检测（两阶段 DUCK → INTERRUPT） + PCM 预卷 + 回声尾窗
     // ========================================================================
 
@@ -705,6 +588,7 @@ class VoiceCallManager(
      * 2. 尾窗 220ms 动态提高 RMS 门槛（PDF §15.2）
      * 3. 240ms duck → 520ms interrupt 的两阶段确认
      */
+    @SuppressLint("MissingPermission")
     private fun startInterruptionDetection(convId: Uuid, expectGenId: String?) {
         if (vadDetector == null) return
         val vad = vadDetector ?: return
@@ -967,9 +851,6 @@ class VoiceCallManager(
             Log.d(TAG, "confirmInterrupt: stale gen=$expectGenId, skip")
             return
         }
-        // 先取消 farewell hangup（用户打断告别意味着不想挂）
-        farewellHangupJob?.cancel(); farewellHangupJob = null
-        pendingFarewell = false
         interrupt(convId)
     }
 
@@ -1053,7 +934,6 @@ class VoiceCallManager(
         spokenTextLen = 0
         speakingStarted = false
         priorAssistantNodeId = null
-        aiRequestedHangup = false
     }
 
     // ========================================================================
@@ -1105,7 +985,6 @@ class VoiceCallManager(
         asrJob?.cancel()
         responseJob?.cancel()
         listenerCueJob?.cancel(); listenerCueJob = null
-        farewellHangupJob?.cancel(); farewellHangupJob = null
         duckConfirmJob?.cancel(); duckConfirmJob = null
         ttsController.stop()
         // 恢复音量（避免被 duck 后退出通话，下次进音量残留低）
@@ -1124,7 +1003,6 @@ class VoiceCallManager(
         resetStreamingState()
         _isMuted.value = false
         asrPermissionRetryUsed = false
-        pendingFarewell = false
         identity = CallIdentity(callSessionId = "none")
         // 通话结束：恢复对话页的自动朗读（从通话开始前的断点继续，不漏读）
         customTtsState.resumeAutoReadAfterCall()
@@ -1153,7 +1031,6 @@ class VoiceCallManager(
         // 尾窗门限倍数：轻微抬高即可
         private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
-        private const val FAREWELL_HARD_DEADLINE_MS = 30_000L
         // ASR 启动忽略期：接通问候后 2.5s 内的 ASR final 一律丢弃，
         // 防止扬声器回声 + ASR 内部音频缓冲导致的误识别
         private const val ASR_IGNORE_PERIOD_MS = 2500L
