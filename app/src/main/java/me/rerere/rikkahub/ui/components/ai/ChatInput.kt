@@ -442,244 +442,244 @@ fun ChatInput(
                                 .heightIn(min = 40.dp)
                         )
                     } else {
-                    // Search & Reasoning (Visible when NOT expanded)
-                    // Delayed appearance - slight overlap with height animation for smoother feel
-                    var showPickers by remember { mutableStateOf(false) }
-                    LaunchedEffect(isExpanded) {
-                        if (!isExpanded) {
-                            // Start showing buttons while height is still animating (100ms overlap)
-                            kotlinx.coroutines.delay(100)
-                            showPickers = true
-                        } else {
-                            // Hide immediately when expanding
-                            showPickers = false
-                        }
-                    }
-
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showPickers,
-                        modifier = Modifier,
-                        enter = androidx.compose.animation.fadeIn(
-                            animationSpec = androidx.compose.animation.core.tween(150)
-                        ) + androidx.compose.animation.expandHorizontally(
-                            animationSpec = androidx.compose.animation.core.tween(
-                                200,
-                                easing = androidx.compose.animation.core.FastOutSlowInEasing
-                            )
-                        ),
-                        exit = androidx.compose.animation.fadeOut(
-                            animationSpec = androidx.compose.animation.core.tween(100)
-                        ) + androidx.compose.animation.shrinkHorizontally(
-                            animationSpec = androidx.compose.animation.core.tween(150)
-                        )
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Search
-                            val enableSearchMsg = stringResource(R.string.web_search_enabled)
-                            val disableSearchMsg = stringResource(R.string.web_search_disabled)
-                            val chatModel = settings.getCurrentChatModel()
-
-                            SearchPickerButton(
-                                enableSearch = enableSearch,
-                                settings = settings,
-                                shape = CircleShape,
-                                onToggleSearch = { enabled ->
-                                    onToggleSearch(enabled)
-                                    toaster.show(
-                                        message = if (enabled) enableSearchMsg else disableSearchMsg,
-                                        duration = 1.seconds,
-                                        type = if (enabled) {
-                                            ToastType.Success
-                                        } else {
-                                            ToastType.Normal
-                                        }
-                                    )
-                                },
-                                onUpdateSearchService = onUpdateSearchService,
-                                model = chatModel,
-                                selectedProviderIndex = when (val mode = assistant.searchMode) {
-                                    is me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider -> mode.index
-                                    else -> -1
-                                },
-                                isBuiltInMode = assistant.searchMode is me.rerere.rikkahub.core.data.model.AssistantSearchMode.BuiltIn,
-                                preferBuiltInSearch = assistant.preferBuiltInSearch,
-                                onTogglePreferBuiltInSearch = { enabled ->
-                                    onUpdateAssistant(assistant.copy(preferBuiltInSearch = enabled))
-                                },
-                                contentColor = if (enableSearch || chatModel?.tools?.contains(BuiltInTools.Search) == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                onlyIcon = true
-                            )
-
-                            // Reasoning
-                            val hasReasoning = chatModel?.abilities?.contains(ModelAbility.REASONING) == true
-                            if (hasReasoning) {
-                                ReasoningButton(
-                                    reasoningTokens = assistant.thinkingBudget ?: 0,
-                                    shape = CircleShape,
-                                    onUpdateReasoningTokens = {
-                                        onUpdateAssistant(assistant.copy(thinkingBudget = it))
-                                    },
-                                    onlyIcon = true,
-                                    contentColor = if (ReasoningLevel.fromBudgetTokens(
-                                            assistant.thinkingBudget ?: 0
-                                        ).isEnabled
-                                    ) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                )
+                        // Search & Reasoning (Visible when NOT expanded)
+                        // Delayed appearance - slight overlap with height animation for smoother feel
+                        var showPickers by remember { mutableStateOf(false) }
+                        LaunchedEffect(isExpanded) {
+                            if (!isExpanded) {
+                                // Start showing buttons while height is still animating (100ms overlap)
+                                kotlinx.coroutines.delay(100)
+                                showPickers = true
+                            } else {
+                                // Hide immediately when expanding
+                                showPickers = false
                             }
                         }
-                    }
 
-                    // Inner Capsule (Text Input Field + Model Picker + Send Button)
-                    val amoledMode by rememberAmoledDarkMode()
-                    val containerColor =
-                        if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
-                    val elevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
-
-                    CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
-                        Surface(
-                            shape = RoundedCornerShape(innerCornerSize), // Dynamic Inner Shape
-                            color = containerColor,
-                            tonalElevation = elevation,
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 40.dp)
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showPickers,
+                            modifier = Modifier,
+                            enter = androidx.compose.animation.fadeIn(
+                                animationSpec = androidx.compose.animation.core.tween(150)
+                            ) + androidx.compose.animation.expandHorizontally(
+                                animationSpec = androidx.compose.animation.core.tween(
+                                    200,
+                                    easing = androidx.compose.animation.core.FastOutSlowInEasing
+                                )
+                            ),
+                            exit = androidx.compose.animation.fadeOut(
+                                animationSpec = androidx.compose.animation.core.tween(100)
+                            ) + androidx.compose.animation.shrinkHorizontally(
+                                animationSpec = androidx.compose.animation.core.tween(150)
+                            )
                         ) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(start = 12.dp, end = 4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    TextInputRow(
-                                        state = state,
-                                        context = context,
-                                        isFocused = isFocused,
-                                        onFocusChange = { isFocused = it },
-                                        trailingIcon = {
-                                            // Crossfade between Model Picker and Send Button
-                                            // Send button shows ONLY when keyboard is open (focused) AND has content, or loading
-                                            val showSendButton = state.loading || (isFocused && !state.isEmpty())
-                                            androidx.compose.animation.AnimatedContent(
-                                                targetState = showSendButton,
-                                                transitionSpec = {
-                                                    androidx.compose.animation.fadeIn(
-                                                        animationSpec = androidx.compose.animation.core.spring(
-                                                            dampingRatio = 0.6f,
-                                                            stiffness = 400f
-                                                        )
-                                                    ) togetherWith androidx.compose.animation.fadeOut(
-                                                        animationSpec = androidx.compose.animation.core.spring(
-                                                            dampingRatio = 0.6f,
-                                                            stiffness = 400f
-                                                        )
-                                                    )
-                                                },
-                                                label = "button_crossfade"
-                                            ) { expanded ->
-                                                if (expanded) {
-                                                    // Send Button with physics-based press feedback
-                                                    val sendInteractionSource = remember { MutableInteractionSource() }
-                                                    val isSendPressed by sendInteractionSource.collectIsPressedAsState()
-                                                    val sendScale by animateFloatAsState(
-                                                        targetValue = if (isSendPressed) 0.85f else 1f,
-                                                        animationSpec = spring(
-                                                            dampingRatio = 0.4f,
-                                                            stiffness = 400f
-                                                        ),
-                                                        label = "send_scale"
-                                                    )
-                                                    val sendAlpha by animateFloatAsState(
-                                                        targetValue = if (isSendPressed) 0.8f else 1f,
-                                                        animationSpec = spring(
-                                                            dampingRatio = 0.6f,
-                                                            stiffness = 300f
-                                                        ),
-                                                        label = "send_alpha"
-                                                    )
-                                                    Box(
-                                                        contentAlignment = Alignment.Center,
-                                                        modifier = Modifier
-                                                            .size(36.dp)
-                                                            .graphicsLayer {
-                                                                scaleX = sendScale
-                                                                scaleY = sendScale
-                                                                alpha = sendAlpha
-                                                            }
-                                                            .clip(CircleShape)
-                                                            .combinedClickable(
-                                                                interactionSource = sendInteractionSource,
-                                                                indication = null,
-                                                                enabled = (state.loading || !state.isEmpty()),
-                                                                onClick = {
-                                                                    //if (isAiTyping) return@combinedClickable
-                                                                    expand = ExpandState.Collapsed
-                                                                    sendMessage()
-                                                                },
-                                                                onLongClick = {
-                                                                    //if (isAiTyping) return@combinedClickable
-                                                                    expand = ExpandState.Collapsed
-                                                                    sendMessageWithoutAnswer()
-                                                                }
-                                                            )
-                                                            .background(
-                                                                color = when {
-                                                                    //isAiTyping -> MaterialTheme.colorScheme.surfaceContainerHigh
-                                                                    state.loading && !wechatMode -> MaterialTheme.colorScheme.errorContainer
-                                                                    state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh
-                                                                    else -> MaterialTheme.colorScheme.primary
-                                                                }
-                                                            )
-                                                    ) {
-                                                        val contentColor = when {
-                                                            state.loading && !wechatMode -> MaterialTheme.colorScheme.onErrorContainer
-                                                            state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(
-                                                                alpha = 0.38f
-                                                            )
+                                // Search
+                                val enableSearchMsg = stringResource(R.string.web_search_enabled)
+                                val disableSearchMsg = stringResource(R.string.web_search_disabled)
+                                val chatModel = settings.getCurrentChatModel()
 
-                                                            else -> MaterialTheme.colorScheme.onPrimary
-                                                        }
-                                                        if (state.loading && !wechatMode) {
-                                                            KeepScreenOn()
-                                                            Icon(
-                                                                Icons.Rounded.Stop,
-                                                                stringResource(R.string.stop),
-                                                                tint = contentColor,
-                                                                modifier = Modifier.size(20.dp)
-                                                            )
-                                                        } else {
-                                                            Icon(
-                                                                Icons.Rounded.ArrowUpward,
-                                                                stringResource(R.string.send),
-                                                                tint = contentColor,
-                                                                modifier = Modifier.size(20.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                } else {
-                                                    // Model Selector
-                                                    ModelSelector(
-                                                        modelId = assistant.chatModelId ?: settings.chatModelId,
-                                                        providers = settings.providers,
-                                                        onSelect = {
-                                                            onUpdateChatModel(it)
-                                                            dismissExpand()
-                                                        },
-                                                        type = ModelType.CHAT,
-                                                        onlyIcon = true,
-                                                        modifier = Modifier.size(36.dp),
-                                                    )
-                                                }
+                                SearchPickerButton(
+                                    enableSearch = enableSearch,
+                                    settings = settings,
+                                    shape = CircleShape,
+                                    onToggleSearch = { enabled ->
+                                        onToggleSearch(enabled)
+                                        toaster.show(
+                                            message = if (enabled) enableSearchMsg else disableSearchMsg,
+                                            duration = 1.seconds,
+                                            type = if (enabled) {
+                                                ToastType.Success
+                                            } else {
+                                                ToastType.Normal
                                             }
-                                        }
+                                        )
+                                    },
+                                    onUpdateSearchService = onUpdateSearchService,
+                                    model = chatModel,
+                                    selectedProviderIndex = when (val mode = assistant.searchMode) {
+                                        is me.rerere.rikkahub.core.data.model.AssistantSearchMode.Provider -> mode.index
+                                        else -> -1
+                                    },
+                                    isBuiltInMode = assistant.searchMode is me.rerere.rikkahub.core.data.model.AssistantSearchMode.BuiltIn,
+                                    preferBuiltInSearch = assistant.preferBuiltInSearch,
+                                    onTogglePreferBuiltInSearch = { enabled ->
+                                        onUpdateAssistant(assistant.copy(preferBuiltInSearch = enabled))
+                                    },
+                                    contentColor = if (enableSearch || chatModel?.tools?.contains(BuiltInTools.Search) == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    onlyIcon = true
+                                )
+
+                                // Reasoning
+                                val hasReasoning = chatModel?.abilities?.contains(ModelAbility.REASONING) == true
+                                if (hasReasoning) {
+                                    ReasoningButton(
+                                        reasoningTokens = assistant.thinkingBudget ?: 0,
+                                        shape = CircleShape,
+                                        onUpdateReasoningTokens = {
+                                            onUpdateAssistant(assistant.copy(thinkingBudget = it))
+                                        },
+                                        onlyIcon = true,
+                                        contentColor = if (ReasoningLevel.fromBudgetTokens(
+                                                assistant.thinkingBudget ?: 0
+                                            ).isEnabled
+                                        ) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                             }
                         }
-                    }
+
+                        // Inner Capsule (Text Input Field + Model Picker + Send Button)
+                        val amoledMode by rememberAmoledDarkMode()
+                        val containerColor =
+                            if (amoledMode && LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        val elevation = if (amoledMode && LocalDarkMode.current) 0.dp else 6.dp
+
+                        CompositionLocalProvider(LocalAbsoluteTonalElevation provides if (amoledMode && LocalDarkMode.current) 0.dp else LocalAbsoluteTonalElevation.current) {
+                            Surface(
+                                shape = RoundedCornerShape(innerCornerSize), // Dynamic Inner Shape
+                                color = containerColor,
+                                tonalElevation = elevation,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 40.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 12.dp, end = 4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        TextInputRow(
+                                            state = state,
+                                            context = context,
+                                            isFocused = isFocused,
+                                            onFocusChange = { isFocused = it },
+                                            trailingIcon = {
+                                                // Crossfade between Model Picker and Send Button
+                                                // Send button shows ONLY when keyboard is open (focused) AND has content, or loading
+                                                val showSendButton = state.loading || (isFocused && !state.isEmpty())
+                                                androidx.compose.animation.AnimatedContent(
+                                                    targetState = showSendButton,
+                                                    transitionSpec = {
+                                                        androidx.compose.animation.fadeIn(
+                                                            animationSpec = androidx.compose.animation.core.spring(
+                                                                dampingRatio = 0.6f,
+                                                                stiffness = 400f
+                                                            )
+                                                        ) togetherWith androidx.compose.animation.fadeOut(
+                                                            animationSpec = androidx.compose.animation.core.spring(
+                                                                dampingRatio = 0.6f,
+                                                                stiffness = 400f
+                                                            )
+                                                        )
+                                                    },
+                                                    label = "button_crossfade"
+                                                ) { expanded ->
+                                                    if (expanded) {
+                                                        // Send Button with physics-based press feedback
+                                                        val sendInteractionSource = remember { MutableInteractionSource() }
+                                                        val isSendPressed by sendInteractionSource.collectIsPressedAsState()
+                                                        val sendScale by animateFloatAsState(
+                                                            targetValue = if (isSendPressed) 0.85f else 1f,
+                                                            animationSpec = spring(
+                                                                dampingRatio = 0.4f,
+                                                                stiffness = 400f
+                                                            ),
+                                                            label = "send_scale"
+                                                        )
+                                                        val sendAlpha by animateFloatAsState(
+                                                            targetValue = if (isSendPressed) 0.8f else 1f,
+                                                            animationSpec = spring(
+                                                                dampingRatio = 0.6f,
+                                                                stiffness = 300f
+                                                            ),
+                                                            label = "send_alpha"
+                                                        )
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .graphicsLayer {
+                                                                    scaleX = sendScale
+                                                                    scaleY = sendScale
+                                                                    alpha = sendAlpha
+                                                                }
+                                                                .clip(CircleShape)
+                                                                .combinedClickable(
+                                                                    interactionSource = sendInteractionSource,
+                                                                    indication = null,
+                                                                    enabled = (state.loading || !state.isEmpty()),
+                                                                    onClick = {
+                                                                        //if (isAiTyping) return@combinedClickable
+                                                                        expand = ExpandState.Collapsed
+                                                                        sendMessage()
+                                                                    },
+                                                                    onLongClick = {
+                                                                        //if (isAiTyping) return@combinedClickable
+                                                                        expand = ExpandState.Collapsed
+                                                                        sendMessageWithoutAnswer()
+                                                                    }
+                                                                )
+                                                                .background(
+                                                                    color = when {
+                                                                        //isAiTyping -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                                                        state.loading && !wechatMode -> MaterialTheme.colorScheme.errorContainer
+                                                                        state.isEmpty() -> MaterialTheme.colorScheme.surfaceContainerHigh
+                                                                        else -> MaterialTheme.colorScheme.primary
+                                                                    }
+                                                                )
+                                                        ) {
+                                                            val contentColor = when {
+                                                                state.loading && !wechatMode -> MaterialTheme.colorScheme.onErrorContainer
+                                                                state.isEmpty() -> MaterialTheme.colorScheme.onSurface.copy(
+                                                                    alpha = 0.38f
+                                                                )
+
+                                                                else -> MaterialTheme.colorScheme.onPrimary
+                                                            }
+                                                            if (state.loading && !wechatMode) {
+                                                                KeepScreenOn()
+                                                                Icon(
+                                                                    Icons.Rounded.Stop,
+                                                                    stringResource(R.string.stop),
+                                                                    tint = contentColor,
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
+                                                            } else {
+                                                                Icon(
+                                                                    Icons.Rounded.ArrowUpward,
+                                                                    stringResource(R.string.send),
+                                                                    tint = contentColor,
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    } else {
+                                                        // Model Selector
+                                                        ModelSelector(
+                                                            modelId = assistant.chatModelId ?: settings.chatModelId,
+                                                            providers = settings.providers,
+                                                            onSelect = {
+                                                                onUpdateChatModel(it)
+                                                                dismissExpand()
+                                                            },
+                                                            type = ModelType.CHAT,
+                                                            onlyIcon = true,
+                                                            modifier = Modifier.size(36.dp),
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     } // else (text input mode) ends
 
                 }
@@ -1390,7 +1390,7 @@ internal fun FilesPicker(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         // Row 1: Take Photo, Pick Image, Pick File, Start Call
         Row(
@@ -1427,18 +1427,18 @@ internal fun FilesPicker(
                     onDismiss()
                 }
             }
-            if (BuildConfig.DEBUG) {
-                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    VoiceCallButton(
-                        assistant = assistant,
-                        onUpdateAssistant = onUpdateAssistant,
-                        shape = topRightShape,
-                        onStartCall = onStartCall
-                    ) {
-                        onDismiss()
-                    }
+
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                VoiceCallButton(
+                    assistant = assistant,
+                    onUpdateAssistant = onUpdateAssistant,
+                    shape = topRightShape,
+                    onStartCall = onStartCall
+                ) {
+                    onDismiss()
                 }
             }
+
         }
 
         // Row 2: Modes and Lorebooks

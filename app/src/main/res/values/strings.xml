@@ -1379,6 +1379,8 @@
   <!-- Tips -->
   <string name="notification_chat_generating">Chat is generating...</string>
   <string name="notification_channel_chat_generation">Chat Generation</string>
+  <string name="notification_voice_call_active">Voice call in progress</string>
+  <string name="notification_channel_voice_call">Voice Call</string>
   <string name="setting_provider_page_balance_authorize_key">Authorize Key</string>
   <string name="setting_provider_page_balance_user_id">User ID</string>
   <string name="master_memory_backup_title">Copy Current Profile</string>

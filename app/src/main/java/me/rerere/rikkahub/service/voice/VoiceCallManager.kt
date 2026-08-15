@@ -36,12 +36,14 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.VoiceCallForegroundService
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.tts.controller.AudioPlayer
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.model.PlaybackStatus
 import kotlin.uuid.Uuid
+import kotlin.collections.set
 
 private const val TAG = "VoiceCallManager"
 
@@ -135,11 +137,13 @@ class VoiceCallManager(
     @Volatile private var lastUserInputText: String = ""
     @Volatile private var lastAiReplyText: String = ""
 
-    // 流式 TTS: 跟踪已喂给 TTS 的 AI 文本长度（当前 generation）
-    // - lastFedTextLen: 已经"分析过"的总文本字符数（按标点切句时推进）
-    // - spokenTextLen:   已经"真正喂给 TTS"的字符数（已经执行 speak()、视为"将被念出来"）
-    //                    手动打断时以此为界：≤ spokenTextLen 的部分保留，> spokenTextLen 的部分截断
-    @Volatile private var lastFedTextLen = 0
+    // 流式 TTS: 按 ASSISTANT 节点粒度追踪（工具调用链路会产生多个新 ASSISTANT 节点）
+    // - fedLengthPerNode:  每个节点已经"按标点切句分析过"的字符数（key = 节点 Uuid）
+    // - lastSpokenNodeId:  上一次真正喂给 TTS 的节点 ID（用于 spokenTextLen 计算）
+    // - spokenTextLen:     已经"真正喂给 TTS"的总字符数（手动打断 truncate 的依据，前缀累积）
+    // - spokenPartsPerNode:每个节点已播报的文本长度（用于总 spokenTextLen 计算）
+    @Volatile private var fedLengthPerNode = HashMap<Uuid, Int>()
+    @Volatile private var spokenPartsPerNode = HashMap<Uuid, Int>()
     @Volatile private var spokenTextLen = 0
     @Volatile private var priorAssistantNodeId: Uuid? = null
     @Volatile private var speakingStarted = false
@@ -186,6 +190,9 @@ class VoiceCallManager(
         chatService.setCallMode(conversationId, active = true)
         startL1Timer(conversationId)
         warmUpRecordAudioPermission()
+
+        // 启动前台 Service + WakeLock，保证后台/息屏后通话不中断
+        VoiceCallForegroundService.start(context)
 
         runCatching {
             vadDetector = VadDetector(context).also { Log.i(TAG, "VAD initialized") }
@@ -406,7 +413,8 @@ class VoiceCallManager(
         priorAssistantNodeId = priorConv.messageNodes.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
         Log.d(TAG, "priorAssistantNodeId=$priorAssistantNodeId")
 
-        lastFedTextLen = 0
+        fedLengthPerNode = HashMap()
+        spokenPartsPerNode = HashMap()
         spokenTextLen = 0
         speakingStarted = false
 
@@ -456,23 +464,31 @@ class VoiceCallManager(
                     if (expectGenId != null && identity.generationId != expectGenId) {
                         return@collect
                     }
-                    val aiNode = findNewAssistantNode(conv.messageNodes) ?: return@collect
-                    val aiText = aiNode.currentMessage.parts
-                        .filterIsInstance<UIMessagePart.Text>()
-                        .joinToString("") { it.text }
+                    // 遍历本轮产生的**所有**新 ASSISTANT 节点
+                    // 工具调用链路会产生多个：节点1=前导话术+ToolCall，节点2=工具结果总结
+                    val newAiNodes = findNewAssistantNodes(conv.messageNodes)
+                    if (newAiNodes.isEmpty()) return@collect
 
-                    if (aiText.length > lastFedTextLen) {
-                        if (!speakingStarted && aiText.isNotBlank()) {
-                            // 正式回答首句到来：
-                            // 1. 停掉 thinking cue（flush=true 会清掉 cue）
-                            listenerCueJob?.cancel()
-                            speakingStarted = true
-                            // 记录到回声尾窗时间戳（后面打断检测会用）
-                            lastTtsPlayingAtMs = System.currentTimeMillis()
-                            _callStatus.value = CallStatus.SPEAKING
-                            startInterruptionDetection(convId, expectGenId)
+                    newAiNodes.forEach { aiNode ->
+                        val aiText = aiNode.currentMessage.parts
+                            .filterIsInstance<UIMessagePart.Text>()
+                            .joinToString("") { it.text }
+                        val nodeFedLen = fedLengthPerNode[aiNode.id] ?: 0
+
+                        if (aiText.length > nodeFedLen) {
+                            if (!speakingStarted && aiText.isNotBlank()) {
+                                // 正式回答首句到来：
+                                // 1. 停掉 thinking cue（flush=true 会清掉 cue）
+                                listenerCueJob?.cancel()
+                                speakingStarted = true
+                                // 记录到回声尾窗时间戳（后面打断检测会用）
+                                lastTtsPlayingAtMs = System.currentTimeMillis()
+                                _callStatus.value = CallStatus.SPEAKING
+                                startInterruptionDetection(convId, expectGenId)
+                            }
+                            Log.d(TAG, "TTS feed node=${aiNode.id} textLen=${aiText.length} nodeFedLen=$nodeFedLen (${aiText.take(30)}...)")
+                            feedNewSentencesForNode(aiNode, aiText, expectGenId)
                         }
-                        feedNewSentences(aiText, expectGenId)
                     }
                 }
             }
@@ -490,24 +506,31 @@ class VoiceCallManager(
                 Log.i(TAG, "observeAiResponseStreaming: stale gen=$expectGenId, skip flush")
                 return@launch
             }
-            // flush 剩余
+            // flush 剩余：遍历所有新 ASSISTANT 节点，把每个节点还没喂完的残句都 flush 掉
             val conv = chatService.getConversationFlow(convId).value
-            val aiNode = findNewAssistantNode(conv.messageNodes)
-            val aiText = aiNode?.currentMessage?.parts
-                ?.filterIsInstance<UIMessagePart.Text>()
-                ?.joinToString("") { it.text } ?: ""
-            lastAiReplyText = aiText
-            if (aiText.length > lastFedTextLen.coerceAtLeast(0)) {
-                val remaining = aiText.substring(lastFedTextLen.coerceAtLeast(0).coerceAtMost(aiText.length))
-                if (remaining.isNotBlank()) {
-                    if (expectGenId == null || identity.generationId == expectGenId) {
-                        ttsController.speak(remaining, flush = false)
-                        lastTtsPlayingAtMs = System.currentTimeMillis()
-                        spokenTextLen = aiText.length
+            val newAiNodes = findNewAssistantNodes(conv.messageNodes)
+            val flushSb = StringBuilder()
+            newAiNodes.forEach { aiNode ->
+                val aiText = aiNode.currentMessage.parts
+                    .filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("") { it.text }
+                val nodeFedLen = fedLengthPerNode[aiNode.id] ?: 0
+                if (aiText.length > nodeFedLen) {
+                    val remaining = aiText.substring(nodeFedLen.coerceAtMost(aiText.length)).stripMarkdownForTts()
+                    if (remaining.isNotBlank()) {
+                        if (expectGenId == null || identity.generationId == expectGenId) {
+                            ttsController.speak(remaining, flush = false)
+                            flushSb.append(remaining)
+                            lastTtsPlayingAtMs = System.currentTimeMillis()
+                            spokenPartsPerNode[aiNode.id] = aiText.length
+                        }
+                        fedLengthPerNode[aiNode.id] = aiText.length
                     }
-                    lastFedTextLen = aiText.length
                 }
             }
+            spokenTextLen = spokenPartsPerNode.values.sum()
+            lastAiReplyText = newAiNodes.joinToString("\n") { it.currentMessage.toContentText() }
+
             if (!speakingStarted) {
                 if (_isActive.value) handleAfterAiResponse(convId, expectGenId)
                 return@launch
@@ -516,19 +539,64 @@ class VoiceCallManager(
         }
     }
 
-    private fun findNewAssistantNode(messageNodes: List<MessageNode>): MessageNode? {
+    /**
+     * 找出用户本轮发送后，新出现的**所有**ASSISTANT 节点（工具调用链路会产生多个：前导话术节点、工具结果总结节点）
+     */
+    private fun findNewAssistantNodes(messageNodes: List<MessageNode>): List<MessageNode> {
         val priorIndex = if (priorAssistantNodeId != null) {
             messageNodes.indexOfFirst { it.id == priorAssistantNodeId }
         } else -1
         return if (priorIndex >= 0) {
-            messageNodes.drop(priorIndex + 1).lastOrNull { it.role == MessageRole.ASSISTANT }
+            messageNodes.drop(priorIndex + 1).filter { it.role == MessageRole.ASSISTANT }
         } else {
-            messageNodes.lastOrNull { it.role == MessageRole.ASSISTANT }
+            messageNodes.filter { it.role == MessageRole.ASSISTANT }
         }
     }
 
-    private fun feedNewSentences(fullText: String, expectGenId: String?) {
-        val fedLen = lastFedTextLen
+    @Deprecated("Use findNewAssistantNodes + node-based tracking", ReplaceWith("findNewAssistantNodes(messageNodes).lastOrNull()"))
+    private fun findNewAssistantNode(messageNodes: List<MessageNode>): MessageNode? =
+        findNewAssistantNodes(messageNodes).lastOrNull()
+
+    /**
+     * 去除文本中的 Markdown 特殊标记，避免 TTS 念乱码：
+     * - 标题 #、列表符号（- 或 *）、代码块 ```、行内代码 ``、链接 [text](url)、引用 >、加粗 **、斜体 *、表格
+     */
+    private fun String.stripMarkdownForTts(): String {
+        if (this.isBlank()) return this
+        var result = this
+        // 1. 代码块 ```...``` → 删内容（太长不念），保留"一段代码"提示
+        result = result.replace(Regex("```[\\s\\S]*?```"), "（代码片段）")
+        // 2. 行内代码 `code` → 保留文字，去掉反引号
+        result = result.replace(Regex("`([^`]+)`"), "$1")
+        // 3. 链接 [text](url) → 只保留 text
+        result = result.replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
+        // 4. 图片 ![alt](url) → 不念图片
+        result = result.replace(Regex("!\\[[^\\]]*\\]\\([^)]+\\)"), "（图片）")
+        // 5. 标题 ### / ## / # → 去掉前缀
+        result = result.replace(Regex("^#{1,6}\\s+", RegexOption.MULTILINE), "")
+        // 6. 列表符号 - / * / + / 1. 2. → 保留换行（已经有换行作为分句标点）
+        result = result.replace(Regex("^\\s*[-*+]\\s+", RegexOption.MULTILINE), "")
+        result = result.replace(Regex("^\\s*\\d+\\.\\s+", RegexOption.MULTILINE), "")
+        // 7. 引用 > → 去掉
+        result = result.replace(Regex("^>\\s*", RegexOption.MULTILINE), "")
+        // 8. 加粗 **text** / __text__ → 只保留 text
+        result = result.replace(Regex("\\*\\*([^*]+)\\*\\*"), "$1")
+        result = result.replace(Regex("__([^_]+)__"), "$1")
+        // 9. 斜体 *text* / _text_ → 只保留 text
+        result = result.replace(Regex("\\*([^*]+)\\*"), "$1")
+        result = result.replace(Regex("_([^_]+)_"), "$1")
+        // 10. 表格 | 分隔符 / --- → 去掉
+        result = result.replace(Regex("\\|"), "，")
+        result = result.replace(Regex("-{3,}"), "")
+        // 11. 行尾两个以上空格换行替换成正常换行
+        result = result.replace(Regex("\\s{2,}\\n"), "\n")
+        // 12. 多余的空行压缩
+        result = result.replace(Regex("\\n{3,}"), "\n\n")
+        return result.trim()
+    }
+
+    private fun feedNewSentencesForNode(node: MessageNode, fullText: String, expectGenId: String?) {
+        val fedLen = fedLengthPerNode[node.id] ?: 0
         if (fedLen >= fullText.length) return
         var newPart = fullText.substring(fedLen)
         val sentenceEnd = Regex("[。！？!?；;\n]")
@@ -536,20 +604,22 @@ class VoiceCallManager(
         var match: MatchResult? = sentenceEnd.find(newPart)
         while (match != null) {
             val end = match.range.last + 1
-            val sentence = newPart.substring(lastCut, end).trim()
+            val sentence = newPart.substring(lastCut, end).trim().stripMarkdownForTts()
             if (sentence.isNotEmpty()) {
                 // 身份仍然有效才喂
                 if (expectGenId == null || identity.generationId == expectGenId) {
                     ttsController.speak(sentence, flush = false)
                     lastTtsPlayingAtMs = System.currentTimeMillis()
-                    // spokenTextLen 记录"已经真正交给 TTS 播放的文字长度"（完整文本前缀，不含截断）
-                    spokenTextLen = (fedLen + end).coerceAtMost(fullText.length)
+                    // spokenPartsPerNode: 记录该节点已播报长度（用于总 spokenTextLen 计算）
+                    val nodeSpokenEnd = (fedLen + end).coerceAtMost(fullText.length)
+                    spokenPartsPerNode[node.id] = nodeSpokenEnd
+                    spokenTextLen = spokenPartsPerNode.values.sum()
                 }
             }
             lastCut = end
             match = sentenceEnd.find(newPart, end)
         }
-        lastFedTextLen = fedLen + lastCut
+        fedLengthPerNode[node.id] = fedLen + lastCut
     }
 
     /** AI 回答结束后回到监听状态 */
@@ -962,7 +1032,8 @@ class VoiceCallManager(
     }
 
     private fun resetStreamingState() {
-        lastFedTextLen = 0
+        fedLengthPerNode = HashMap()
+        spokenPartsPerNode = HashMap()
         spokenTextLen = 0
         speakingStarted = false
         priorAssistantNodeId = null
@@ -1026,6 +1097,8 @@ class VoiceCallManager(
             chatService.stopGeneration(it)
             chatService.setCallMode(it, active = false)
         }
+        // 停止前台 Service + 释放 WakeLock
+        VoiceCallForegroundService.stop(context)
         vadDetector?.release(); vadDetector = null
         // ====== 兜底：hangup 时再清一次 APM / far-end 监听，防止 stopInterruptionDetection 漏调 ======
         runCatching { ttsController.setOnFarPcmListener(null) }

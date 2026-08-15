@@ -882,6 +882,7 @@ class GenerationHandler(
                 summaryPromptBuilder.appendLine("- 你和用户正在打电话，回复要口语化、简洁直接，像面对面说话。")
                 summaryPromptBuilder.appendLine("- 回答要干脆，少用书面语、少写解释性铺垫；如果需要确认信息就直接问。")
                 summaryPromptBuilder.appendLine("- 除了调用工具之外，不要输出 Markdown、代码块、列表、标签或 JSON，说人话。")
+                summaryPromptBuilder.appendLine("- ⚠️ 若需要调用工具（搜索、日程、设备控制等），**必须先用一两句口语化的过渡话术告诉用户你要去做什么**，例如：“好，等我查一下”“等等，我看看你的日程”，等用户有预期后再调用工具；")
             }
             wechatMode -> {
                 summaryPromptBuilder.appendLine("\n## 回复规范 (最高优先级 - 必须执行)")

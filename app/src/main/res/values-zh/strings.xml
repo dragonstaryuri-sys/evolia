@@ -1333,6 +1333,8 @@
   <!-- Tips -->
   <string name="notification_chat_generating">正在生成回复...</string>
   <string name="notification_channel_chat_generation">后台生成保活 (防止系统强制挂起对话)</string>
+  <string name="notification_voice_call_active">语音通话进行中</string>
+  <string name="notification_channel_voice_call">语音通话</string>
   <string name="setting_provider_page_balance_authorize_key">余额查询授权码 (Authorize Key)</string>
   <string name="setting_provider_page_balance_user_id">用户 ID (User ID)</string>
 

@@ -808,22 +808,22 @@ private fun MinimalPickerContent(
                 }
             )
 
-            if (BuildConfig.DEBUG) {
-                // Voice Call button
-                MinimalFileButtonGroupedIconOnly(
-                    icon = Icons.Rounded.Call,
-                    shape = rightButtonShape,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        if ((assistant.thinkingBudget ?: 0) > 0) {
-                            onUpdateAssistant(assistant.copy(thinkingBudget = 0))
-                        }
-                        onStartCall()
-                        onDismiss()
+
+            // Voice Call button
+            MinimalFileButtonGroupedIconOnly(
+                icon = Icons.Rounded.Call,
+                shape = rightButtonShape,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    if ((assistant.thinkingBudget ?: 0) > 0) {
+                        onUpdateAssistant(assistant.copy(thinkingBudget = 0))
                     }
-                )
-            }
+                    onStartCall()
+                    onDismiss()
+                }
+            )
+
         }
 
         // Separator
