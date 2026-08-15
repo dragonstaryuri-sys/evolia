@@ -127,8 +127,9 @@ android {
                 println("提示: 当前未配置有效的 Release 签名。")
             }
 
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // 开源项目不混淆：避免 R8 把 Sherpa-Onnx JNI 字段名混淆后导致 ASR/VAD 崩溃
+            isMinifyEnabled = false
+            isShrinkResources = false
             isZipAlignEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

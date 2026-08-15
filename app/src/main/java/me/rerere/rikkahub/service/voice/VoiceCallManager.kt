@@ -5,12 +5,14 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -98,6 +100,7 @@ class VoiceCallManager(
     private val _isMuted = MutableStateFlow(false)
     val isMuted: StateFlow<Boolean> = _isMuted.asStateFlow()
 
+    // 通话默认外放扬声器（用户更习惯免提），可点按钮切到听筒
     private val _isSpeakerOn = MutableStateFlow(true)
     val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn.asStateFlow()
 
@@ -109,6 +112,70 @@ class VoiceCallManager(
     val callError: SharedFlow<String> = _callError.asSharedFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // ===== 音频路由控制（听筒/扬声器） =====
+    private val audioManager by lazy { context.getSystemService<AudioManager>() }
+    @Volatile private var savedAudioMode: Int = AudioManager.MODE_NORMAL
+    @Volatile private var savedSpeakerOn: Boolean = false
+    @Volatile private var savedVolume: Int = -1
+
+    /**
+     * 进入通话音频模式：
+     * 1. 切到 MODE_IN_COMMUNICATION（VoIP 模式，让系统走通话路径，正确路由听筒/扬声器）
+     * 2. 保存旧状态，hangup 时还原
+     * 3. 按当前 _isSpeakerOn 设置扬声器路由
+     */
+    private fun enterCallAudioMode() {
+        val am = audioManager ?: return
+        runCatching {
+            savedAudioMode = am.mode
+            savedSpeakerOn = am.isSpeakerphoneOn
+            savedVolume = am.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
+        }
+        runCatching {
+            am.mode = AudioManager.MODE_IN_COMMUNICATION
+        }
+        applySpeakerRoute(_isSpeakerOn.value)
+        Log.i(TAG, "enterCallAudioMode: mode→IN_COMMUNICATION, speaker=${_isSpeakerOn.value}")
+    }
+
+    /**
+     * 退出通话音频模式：还原 AudioManager 状态
+     */
+    private fun leaveCallAudioMode() {
+        val am = audioManager ?: return
+        runCatching {
+            am.isSpeakerphoneOn = savedSpeakerOn
+        }
+        runCatching {
+            am.mode = savedAudioMode
+        }
+        Log.i(TAG, "leaveCallAudioMode: mode→$savedAudioMode, speaker restored→$savedSpeakerOn")
+    }
+
+    /**
+     * 实际切换扬声器/听筒路由。
+     * - 扬声器开：isSpeakerphoneOn=true，使用 STREAM_VOICE_CALL 的默认音量
+     * - 扬声器关（听筒）：isSpeakerphoneOn=false，音量降低防止听筒过载
+     */
+    private fun applySpeakerRoute(speakerOn: Boolean) {
+        val am = audioManager ?: return
+        runCatching {
+            am.isSpeakerphoneOn = speakerOn
+            if (speakerOn) {
+                // 扬声器：恢复音量（适度，不取最大避免爆音）
+                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+                val targetVol = (maxVol * 0.85f).toInt().coerceIn(1, maxVol)
+                am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
+            } else {
+                // 听筒：使用较小音量（听筒灵敏度高，太大刺耳）
+                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+                val targetVol = if (savedVolume in 1..maxVol) savedVolume else (maxVol * 0.45f).toInt().coerceIn(1, maxVol)
+                am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
+            }
+        }.onFailure { Log.w(TAG, "applySpeakerRoute($speakerOn) failed", it) }
+        Log.i(TAG, "applySpeakerRoute: speaker=$speakerOn")
+    }
 
     private var conversationId: Uuid? = null
     private var vadDetector: VadDetector? = null
@@ -185,6 +252,9 @@ class VoiceCallManager(
         // 初始化三层身份：新的 callSession
         identity = CallIdentity(callSessionId = "call_${Uuid.random().toString().substring(0, 8)}")
         Log.i(TAG, "startCall: session=${identity.callSessionId}, convId=$conversationId")
+
+        // ===== 音频路由：进入通话模式，切到 VoIP 路径 =====
+        enterCallAudioMode()
 
         // 预热 & 模式
         chatService.setCallMode(conversationId, active = true)
@@ -1076,7 +1146,7 @@ class VoiceCallManager(
 
     fun toggleSpeaker() {
         _isSpeakerOn.update { !it }
-        // TODO: 切换音频路由
+        applySpeakerRoute(_isSpeakerOn.value)
     }
 
     fun hangup() {
@@ -1110,6 +1180,8 @@ class VoiceCallManager(
         _isMuted.value = false
         asrPermissionRetryUsed = false
         identity = CallIdentity(callSessionId = "none")
+        // 退出通话音频模式：还原 audio mode / speaker route
+        leaveCallAudioMode()
         // 通话结束：恢复对话页的自动朗读（从通话开始前的断点继续，不漏读）
         customTtsState.resumeAutoReadAfterCall()
     }
