@@ -1647,7 +1647,7 @@ private fun MiniMaxVoicePicker(
 ) {
     val haptics = rememberPremiumHaptics()
     var searchQuery by remember { mutableStateOf("") }
-    var filterGender by remember { mutableIntStateOf(0) } // 0: All, 1: Male, 2: Female
+    var filterGender by remember { mutableIntStateOf(0) } // 0: All, 1: Male, 2: Female, 3: Custom
 
     val filteredVoices by remember(voices, searchQuery, filterGender) {
         derivedStateOf {
@@ -1659,6 +1659,7 @@ private fun MiniMaxVoicePicker(
                 val matchesGender = when (filterGender) {
                     1 -> voiceGender == "male"
                     2 -> voiceGender == "female"
+                    3 -> voiceGender != "male" && voiceGender != "female"
                     else -> true
                 }
                 matchesSearch && matchesGender
@@ -1676,9 +1677,10 @@ private fun MiniMaxVoicePicker(
                 // 维度矩阵
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        SegmentedButton(selected = filterGender == 0, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 0 }, shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)) { Text(stringResource(R.string.setting_tts_page_azure_filter_gender_all), style = MaterialTheme.typography.labelSmall) }
-                        SegmentedButton(selected = filterGender == 1, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 1 }, shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)) { Text(stringResource(R.string.setting_tts_page_azure_filter_male), style = MaterialTheme.typography.labelSmall) }
-                        SegmentedButton(selected = filterGender == 2, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 2 }, shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)) { Text(stringResource(R.string.setting_tts_page_azure_filter_female), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(selected = filterGender == 0, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 0 }, shape = SegmentedButtonDefaults.itemShape(index = 0, count = 4)) { Text(stringResource(R.string.setting_tts_page_azure_filter_gender_all), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(selected = filterGender == 1, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 1 }, shape = SegmentedButtonDefaults.itemShape(index = 1, count = 4)) { Text(stringResource(R.string.setting_tts_page_azure_filter_male), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(selected = filterGender == 2, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 2 }, shape = SegmentedButtonDefaults.itemShape(index = 2, count = 4)) { Text(stringResource(R.string.setting_tts_page_azure_filter_female), style = MaterialTheme.typography.labelSmall) }
+                        SegmentedButton(selected = filterGender == 3, onClick = { haptics.perform(HapticPattern.Pop); filterGender = 3 }, shape = SegmentedButtonDefaults.itemShape(index = 3, count = 4)) { Text("自定义", style = MaterialTheme.typography.labelSmall) }
                     }
                 }
 
@@ -1689,7 +1691,7 @@ private fun MiniMaxVoicePicker(
                         ListItem(
                             modifier = Modifier.clickable { haptics.perform(HapticPattern.Pop); onSelect(voice) },
                             headlineContent = { Text(voice.name, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                            supportingContent = { Text("${voice.gender ?: ""} | ${voice.id} | ${voice.description ?: ""}", style = MaterialTheme.typography.labelSmall) },
+                            supportingContent = { Text("${when (voice.gender?.lowercase()) { "male" -> "男声"; "female" -> "女声"; else -> "自定义" }} | ${voice.id} | ${voice.description ?: ""}", style = MaterialTheme.typography.labelSmall) },
                             trailingContent = if (isSelected) { { Icon(Icons.Rounded.Visibility, tint = MaterialTheme.colorScheme.primary, contentDescription = null) } } else null,
                             colors = ListItemDefaults.colors(containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface)
                         )

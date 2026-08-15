@@ -85,6 +85,23 @@ private data class MiniMaxVoiceCloneResponse(
     val base_resp: MiniMaxBaseResp = MiniMaxBaseResp()
 )
 
+/** 获取音色列表响应 */
+@Serializable
+private data class MiniMaxGetVoiceResponse(
+    val system_voice: List<MiniMaxSystemVoice> = emptyList(),
+    val voice_cloning: List<JsonElement> = emptyList(),
+    val voice_generation: List<JsonElement> = emptyList(),
+    val base_resp: MiniMaxBaseResp = MiniMaxBaseResp()
+)
+
+@Serializable
+private data class MiniMaxSystemVoice(
+    val voice_id: String = "",
+    val voice_name: String = "",
+    val description: List<String> = emptyList(),
+    val created_time: String = ""
+)
+
 // ======================== Provider 实现 ========================
 
 class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
@@ -213,8 +230,79 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
         context: Context,
         providerSetting: TTSProviderSetting.MiniMax
     ): List<TTSVoice> {
-        val commonEmotions = listOf("calm", "happy", "sad", "angry", "fearful", "disgusted", "surprised")
+        // 没有 API Key 时使用内置列表兜底
+        if (providerSetting.apiKey.isBlank()) {
+            Log.i(TAG, "getVoices: apiKey 为空，使用内置音色列表兜底")
+            return buildInMiniMaxVoices()
+        }
 
+        return runCatching { fetchSystemVoices(providerSetting) }
+            .onFailure { Log.e(TAG, "getVoices: 拉取在线音色列表失败，回退内置列表", it) }
+            .getOrElse { buildInMiniMaxVoices() }
+    }
+
+    /** 通用情感列表：speech-2.x 模型的 voice_setting.emotion 通用支持的情感值 */
+    private val commonEmotions = listOf("calm", "happy", "sad", "angry", "fearful", "disgusted", "surprised")
+
+    /**
+     * 调用 MiniMax /v1/get_voice 实时拉取系统预置音色列表
+     */
+    private suspend fun fetchSystemVoices(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<TTSVoice> = withContext(Dispatchers.IO) {
+        val urlBuilder = StringBuilder("${providerSetting.baseUrl}/get_voice")
+        if (providerSetting.groupId.isNotBlank()) {
+            urlBuilder.append("?GroupId=${providerSetting.groupId}")
+        }
+
+        val requestBody = buildJsonObject {
+            put("voice_type", "system")
+        }
+
+        val request = Request.Builder()
+            .url(urlBuilder.toString())
+            .addHeader("Authorization", "Bearer ${providerSetting.apiKey}")
+            .addHeader("Content-Type", "application/json")
+            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
+            .build()
+
+        Log.i(TAG, "fetchSystemVoices: calling $urlBuilder")
+
+        val response = httpClient.newCall(request).execute()
+        val bodyStr = response.body.string()
+        if (!response.isSuccessful) {
+            throw Exception("MiniMax get_voice failed: HTTP ${response.code}, body=$bodyStr")
+        }
+
+        val parsed = json.decodeFromString<MiniMaxGetVoiceResponse>(bodyStr)
+        if (parsed.base_resp.status_code != 0L) {
+            throw Exception("MiniMax get_voice error: ${parsed.base_resp.status_msg} (code=${parsed.base_resp.status_code})")
+        }
+
+        val voices = parsed.system_voice.mapNotNull { sysVoice ->
+            val id = sysVoice.voice_id
+            if (id.isBlank()) return@mapNotNull null
+            val name = sysVoice.voice_name.ifBlank { id }
+            val desc = sysVoice.description.firstOrNull() ?: ""
+            val gender = inferGender(id, name, desc)
+            // locale 粗略推断：voice_id 或 name 含 Chinese/Mandarin/中文关键词则 zh-CN，否则默认 zh-CN
+            val locale = inferLocale(id, name, desc)
+            TTSVoice(
+                id = id,
+                name = name,
+                locale = locale,
+                gender = gender,
+                description = desc,
+                styles = commonEmotions
+            )
+        }
+
+        Log.i(TAG, "fetchSystemVoices: got ${voices.size} voices")
+        if (voices.isEmpty()) buildInMiniMaxVoices() else voices
+    }
+
+    /** 内置兜底音色列表（和原来的一致） */
+    private fun buildInMiniMaxVoices(): List<TTSVoice> {
         return listOf(
             TTSVoice("female-shaonv", "少女 (Shaonv)", "zh-CN", "Female", "甜美少女音", commonEmotions),
             TTSVoice("female-yujie", "御姐 (Yujie)", "zh-CN", "Female", "成熟女性音", commonEmotions),
@@ -228,6 +316,38 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
             TTSVoice("audiobook_female_1", "叙事女声 (Audiobook)", "zh-CN", "Female", "适合朗读", commonEmotions),
             TTSVoice("cartoon_pig", "猪小屁 (Cartoon)", "zh-CN", "Male", "卡通音", listOf("calm"))
         )
+    }
+
+    /**
+     * 根据 voice_id 关键词 + voice_name / description 文本推断性别
+     */
+    private fun inferGender(voiceId: String, voiceName: String, description: String): String {
+        val idLower = voiceId.lowercase()
+        val combined = "$voiceName $description"
+
+        // 1. voice_id 精确关键词（官方命名，优先级最高）
+        if (idLower.contains("female")) return "Female"
+        if (idLower.contains("male")) return "Male"
+
+        // 2. 中文文本关键词匹配
+        val femaleRegex = Regex("女性|女生|女孩|少女|御姐|女士|姐姐|阿姨|妈妈|女声|她|主播|新闻女")
+        val maleRegex = Regex("男性|男生|男孩|少年|青年|先生|哥哥|叔叔|爸爸|男声|他|总裁|高管|播音员|老先生|弟弟")
+
+        if (femaleRegex.containsMatchIn(combined)) return "Female"
+        if (maleRegex.containsMatchIn(combined)) return "Male"
+
+        // 3. 兜底：Unknown（在 UI 的 "自定义" 分类下显示）
+        return "Unknown"
+    }
+
+    /**
+     * 粗略推断 locale：含 Chinese/Mandarin/中文 关键词或全中文名字 => zh-CN，其他暂时默认 zh-CN
+     */
+    private fun inferLocale(voiceId: String, voiceName: String, description: String): String {
+        val combined = "$voiceId $voiceName $description"
+        val hasChineseMark = combined.contains(Regex("Chinese|Mandarin|普通话|中文"))
+        val hasChineseChar = combined.any { it.code in 0x4E00..0x9FFF }
+        return if (hasChineseMark || hasChineseChar) "zh-CN" else "en-US"
     }
 
     // ======================== 文件上传 ========================
