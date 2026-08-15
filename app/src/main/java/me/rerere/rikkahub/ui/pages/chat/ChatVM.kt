@@ -47,6 +47,8 @@ import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.utils.UpdateInfo
 import me.rerere.rikkahub.utils.deleteChatFiles
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import me.rerere.rikkahub.utils.toLocalString
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
@@ -88,6 +90,9 @@ class ChatVM(
 
     // --- 正在后台 ASR 转写的 USER 节点 ID 集合（允许多条并行；集合非空 = 转写中） ---
     private val pendingASRNodeIds: MutableSet<Uuid> = ConcurrentHashMap.newKeySet<Uuid>()
+
+    // --- ASR 串行锁：保证多条语音按发送顺序依次转写，不并发 ---
+    private val asrMutex = Mutex()
 
     // --- 语音消息转写状态：有任一条 pending 即为 true（但**不再阻塞发送**，仅用于 UI 显示"转写中"） ---
     private val _voiceTranscribing: MutableStateFlow<Boolean> = MutableStateFlow(false)
@@ -302,6 +307,44 @@ class ChatVM(
     val conversation: StateFlow<Conversation> = _currentActiveId
         .flatMapLatest { chatService.getConversationFlow(it) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, Conversation.dummy())
+
+    /**
+     * 通话页面显示的「最新一条消息」（USER / ASSISTANT 取有内容的最近一条）。
+     * 只取**通话开始之后**产生的消息，避免一接通就显示之前的历史对话。
+     * 只取文本内容，简单净化 Markdown；过长省略。
+     */
+    data class CallLatestMessage(
+        val role: MessageRole,
+        val text: String
+    )
+    val callLatestMessage: StateFlow<CallLatestMessage?> = conversation
+        .combine(voiceCallManager.callStartTimeMs) { conv, callStartMs ->
+            if (callStartMs <= 0L) return@combine null
+            // 只取通话开始时间之后产生的节点；timelineCreatedAt 是节点最早消息时间
+            conv.messageNodes
+                .filter { it.timelineCreatedAt >= callStartMs }
+                .asReversed()
+                .firstNotNullOfOrNull { node ->
+                    when (node.role) {
+                        MessageRole.USER, MessageRole.ASSISTANT -> {
+                            val text = node.currentMessage.parts
+                                .filterIsInstance<UIMessagePart.Text>()
+                                .joinToString("") { it.text }
+                                .trim()
+                                .replace(Regex("```[\\s\\S]*?```"), "")
+                                .replace(Regex("[#*_>`]+"), "")
+                                .replace(Regex("\\[[^\\]]+\\]\\([^)]+\\)"), "")
+                            if (text.isBlank()) null
+                            else CallLatestMessage(
+                                role = node.role,
+                                text = if (text.length > 80) text.take(80) + "…" else text
+                            )
+                        }
+                        else -> null
+                    }
+                }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     var chatListInitialized by mutableStateOf(false)
 
@@ -583,16 +626,18 @@ class ChatVM(
             // （即使 ASR 失败，这条消息也还是需要被 AI 看到，所以始终 set true）
             _hasPendingUserMessagesForAI.set(true)
 
-            // 3. ASR 转文字（同一 viewModelScope 协程内挂起，串行完成后写 metadata → 触发）
+            // 3. ASR 转文字（用 asrMutex 保证多条语音按发送顺序串行转写，不并发）
             val asrProvider = currentSettings.getSelectedASRProvider()
             val transcription: String? = if (asrProvider != null) {
-                try {
-                    asrManager.transcribeFile(asrProvider, context, audioUri)
-                        .takeIf { it.isNotBlank() }
-                } catch (e: Exception) {
-                    Log.e(TAG, "sendVoiceMessage: ASR failed", e)
-                    _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
-                    null
+                asrMutex.withLock {
+                    try {
+                        asrManager.transcribeFile(asrProvider, context, audioUri)
+                            .takeIf { it.isNotBlank() }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "sendVoiceMessage: ASR failed", e)
+                        _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                        null
+                    }
                 }
             } else {
                 _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))

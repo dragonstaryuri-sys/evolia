@@ -107,6 +107,11 @@ class VoiceCallManager(
     private val _isActive = MutableStateFlow(false)
     val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
 
+    // 通话开始时间戳（毫秒）。hangup 时清零。
+    // 用于 UI 只显示通话开始后产生的新消息，过滤掉通话前的历史对话。
+    private val _callStartTimeMs = MutableStateFlow(0L)
+    val callStartTimeMs: StateFlow<Long> = _callStartTimeMs.asStateFlow()
+
     // 通话错误事件（一次性）
     private val _callError = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val callError: SharedFlow<String> = _callError.asSharedFlow()
@@ -246,6 +251,7 @@ class VoiceCallManager(
 
         this.conversationId = conversationId
         _isActive.value = true
+        _callStartTimeMs.value = System.currentTimeMillis()
         _callStatus.value = CallStatus.CONNECTING
         resetStreamingState()
 
@@ -279,16 +285,33 @@ class VoiceCallManager(
         val convId = conversationId ?: return
         listenerCueJob?.cancel()
         listenerCueJob = scope.launch {
-            // 简短接通问候，让用户感知"接通了"
+            // 1. 【并行优化】立刻启动 ASR 录音初始化（但还不接受 final 结果，由 asrIgnoreUntil 控制）
+            //    这样问候语播完时，AudioRecord + ASR engine 已经就绪，用户一开口就能被识别
+            if (!_isMuted.value) {
+                _callStatus.value = CallStatus.LISTENING
+                val settings = settingsStore.settingsFlow.value
+                val asrSetting = settings.getSelectedASRProvider()
+                if (asrSetting != null) {
+                    // 先启动一次监听（内部会初始化 AudioRecord + ASR engine），
+                    // 下面的 asrIgnoreUntil 会保证问候期间的结果被丢弃
+                    warmUpAsrAndListening(asrSetting)
+                }
+            }
+
+            // 2. 接通问候："喂？"。忽略期从这一刻起算，不念完也允许用户抢话
             val greetingText = "喂？"
-            Log.i(TAG, "Call greeting: \"$greetingText\"")
+            val greetingStartMs = System.currentTimeMillis()
+            Log.i(TAG, "Call greeting: \"$greetingText\" start")
             lastGreetingText = greetingText
             // 接通问候属于 call 级别的 listener cue，单独占一个 turn/generation，绝不写入 chat messages
             identity = identity.newTurn().newGeneration()
+            // 关键：ASR 忽略期从问候开始的瞬间开始算，不再等问候播完再加
+            //       800ms 足够覆盖"喂？"的播放 + 尾音回声（之前 2500ms 太长了）
+            asrIgnoreUntil = greetingStartMs + ASR_IGNORE_PERIOD_MS
+
             runCatching {
                 ttsController.setVolume(1f)
                 ttsController.speak(greetingText, flush = true)
-                // 问候期间持续判断是否被抢话（如果用户立刻说，也允许打断）
                 var silent = 0L
                 while (_isActive.value && ttsController.isSpeaking.value) {
                     delay(100)
@@ -296,10 +319,69 @@ class VoiceCallManager(
                     if (silent > 4000L) break // 保护：问候最多等 4s
                 }
             }.onFailure { Log.w(TAG, "Greeting play failed", it) }
-            // 关键：设置 ASR 启动忽略期，从此刻起 2.5s 内的 ASR final 一律丢弃
-            // 防止扬声器回声 + ASR 内部音频缓冲导致的误识别
-            asrIgnoreUntil = System.currentTimeMillis() + ASR_IGNORE_PERIOD_MS
-            if (_isActive.value) startListening()
+
+            // 3. 等到忽略期结束（如果问候太短，忽略期还没过）
+            val waitMs = asrIgnoreUntil - System.currentTimeMillis()
+            if (waitMs > 0) {
+                Log.i(TAG, "Greeting done, waiting ignore remainder ${waitMs}ms before accepting ASR")
+                delay(waitMs)
+            }
+
+            // 4. 正式进入监听：如果上面的 warmUpAsrAndListening 被用户取消/打断了，这里兜底再启
+            if (_isActive.value) {
+                Log.i(TAG, "Now accepting user voice input (greeting ignore period ended)")
+                // 如果 warmUpAsrAndListening 已经启动了一次监听且仍在运行，startListening 会先 cancel 再重启，安全
+                startListening()
+            }
+        }
+    }
+
+    /**
+     * 预热/提前启动 ASR 录音链路，不等待问候语播放完成。
+     * 逻辑和 startListening 一致但不强制切换 CallStatus（交给外面的 UI 状态控制）。
+     */
+    @SuppressLint("MissingPermission")
+    private fun warmUpAsrAndListening(asrSetting: me.rerere.asr.provider.ASRProviderSetting) {
+        val convId = conversationId ?: return
+        identity = identity.newTurn()
+        asrJob?.cancel()
+        val snapshotTurnId = identity.turnId
+        val snapshotSessionId = identity.callSessionId
+        asrJob = scope.launch {
+            try {
+                asrManager.startRecognition(asrSetting, context).collect { result ->
+                    if (identity.callSessionId != snapshotSessionId || identity.turnId != snapshotTurnId) {
+                        Log.d(TAG, "Warmup ASR result stale: drop '${result.text}'")
+                        return@collect
+                    }
+                    if (result.isFinal && result.text.isNotBlank()) {
+                        if (System.currentTimeMillis() < asrIgnoreUntil) {
+                            Log.w(TAG, "Warmup ASR final dropped (ignore period): '${result.text}'")
+                            return@collect
+                        }
+                        val greeting = lastGreetingText
+                        if (greeting != null) {
+                            val asrText = result.text.trim()
+                            val normalizedGreeting = greeting.replace("[？?！!,.，。 ]".toRegex(), "")
+                            val normalizedAsr = asrText.replace("[？?！!,.，。 ]".toRegex(), "")
+                            if (normalizedGreeting.contains(normalizedAsr) || normalizedAsr.contains(normalizedGreeting)) {
+                                Log.w(TAG, "Warmup ASR final dropped (matches greeting echo): '$asrText'")
+                                return@collect
+                            }
+                        }
+                        // warmup 期间命中用户真正说话：立刻转正
+                        Log.i(TAG, "Warmup ASR final (user spoke early) turn=$snapshotTurnId: ${result.text}")
+                        _callStatus.value = CallStatus.THINKING
+                        val currentAsrJob = asrJob
+                        sendUserMessage(result.text, convId)
+                        if (currentAsrJob === asrJob) asrJob?.cancel()
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Log.e(TAG, "Warmup ASR stream error", t)
+            }
         }
     }
 
@@ -1180,6 +1262,7 @@ class VoiceCallManager(
         _isMuted.value = false
         asrPermissionRetryUsed = false
         identity = CallIdentity(callSessionId = "none")
+        _callStartTimeMs.value = 0L
         // 退出通话音频模式：还原 audio mode / speaker route
         leaveCallAudioMode()
         // 通话结束：恢复对话页的自动朗读（从通话开始前的断点继续，不漏读）
@@ -1209,8 +1292,8 @@ class VoiceCallManager(
         // 尾窗门限倍数：轻微抬高即可
         private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
-        // ASR 启动忽略期：接通问候后 2.5s 内的 ASR final 一律丢弃，
-        // 防止扬声器回声 + ASR 内部音频缓冲导致的误识别
-        private const val ASR_IGNORE_PERIOD_MS = 2500L
+        // ASR 忽略期：从接通问候「开始播放」的瞬间开始计时，800ms 足够覆盖"喂？"的播+回声尾音
+        // （此前等问候播完再加 2500ms，叠加 4s+ 长延迟导致用户说了半天不响应）
+        private const val ASR_IGNORE_PERIOD_MS = 800L
     }
 }

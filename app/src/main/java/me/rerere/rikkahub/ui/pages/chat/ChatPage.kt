@@ -407,6 +407,7 @@ private fun ChatPageContent(
     val isMuted by vm.callIsMuted.collectAsStateWithLifecycle()
     val isSpeakerOn by vm.callIsSpeakerOn.collectAsStateWithLifecycle()
     val callStatus by vm.callStatus.collectAsStateWithLifecycle()
+    val callLatestMessage by vm.callLatestMessage.collectAsStateWithLifecycle()
 
     // --- 统一返回出口逻辑 ---
     val handleBack: () -> Unit = {
@@ -873,7 +874,7 @@ private fun ChatPageContent(
                                     onDeleteFile = { vm.deleteFile(it) },
                                     onConsolidate = { vm.consolidateConversation(conversation) },
                                     voiceRecorderController = voiceRecorderController,
-                                    voiceTranscribing = voiceTranscribing,
+                                    voiceTranscribing = false,
                                     hasMicPermission = hasMicPermission,
                                     onRequestMicPermission = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
                                     onVoiceMessageReady = { handleVoiceMessageReady(it) }
@@ -977,7 +978,7 @@ private fun ChatPageContent(
                                     onDeleteFile = { vm.deleteFile(it) },
                                     onConsolidate = { vm.consolidateConversation(conversation) },
                                     voiceRecorderController = voiceRecorderController,
-                                    voiceTranscribing = voiceTranscribing,
+                                    voiceTranscribing = false,
                                     hasMicPermission = hasMicPermission,
                                     onRequestMicPermission = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
                                     onVoiceMessageReady = { handleVoiceMessageReady(it) }
@@ -1006,6 +1007,8 @@ private fun ChatPageContent(
                     status = callStatus,
                     isMuted = isMuted,
                     isSpeakerOn = isSpeakerOn,
+                    latestMessageRole = callLatestMessage?.role,
+                    latestMessageText = callLatestMessage?.text,
                     onMuteToggle = { vm.toggleCallMute() },
                     onSpeakerToggle = { vm.toggleCallSpeaker() },
                     onHangup = { vm.hangupCall() },

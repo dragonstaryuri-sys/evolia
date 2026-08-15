@@ -2,12 +2,15 @@ package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -25,8 +28,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -51,6 +58,8 @@ fun CallScreen(
     status: CallStatus,
     isMuted: Boolean,
     isSpeakerOn: Boolean,
+    latestMessageRole: MessageRole? = null,
+    latestMessageText: String? = null,
     onMuteToggle: () -> Unit,
     onSpeakerToggle: () -> Unit,
     onHangup: () -> Unit,
@@ -256,47 +265,93 @@ fun CallScreen(
                 }
             }
 
-            // 中间动态头像/多层呼吸光圈
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f)) {
-                // 外层灵动光圈
-                Box(
-                    modifier = Modifier
-                        .size(240.dp)
-                        .graphicsLayer {
-                            scaleX = outerScale
-                            scaleY = outerScale
-                            alpha = if (status == CallStatus.SPEAKING) 0.4f else 0.15f
-                        }
-                        .background(auraColor, CircleShape)
-                )
+            // 中间：动态头像 + 最新一条消息气泡
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // 动态头像 / 多层呼吸光圈
+                Box(contentAlignment = Alignment.Center) {
+                    // 外层灵动光圈
+                    Box(
+                        modifier = Modifier
+                            .size(240.dp)
+                            .graphicsLayer {
+                                scaleX = outerScale
+                                scaleY = outerScale
+                                alpha = if (status == CallStatus.SPEAKING) 0.4f else 0.15f
+                            }
+                            .background(auraColor, CircleShape)
+                    )
 
-                // 内层灵动光圈
-                Box(
-                    modifier = Modifier
-                        .size(200.dp)
-                        .graphicsLayer {
-                            scaleX = innerScale
-                            scaleY = innerScale
-                            alpha = if (status == CallStatus.SPEAKING) 0.6f else 0.3f
-                        }
-                        .background(auraColor, CircleShape)
-                )
+                    // 内层灵动光圈
+                    Box(
+                        modifier = Modifier
+                            .size(200.dp)
+                            .graphicsLayer {
+                                scaleX = innerScale
+                                scaleY = innerScale
+                                alpha = if (status == CallStatus.SPEAKING) 0.6f else 0.3f
+                            }
+                            .background(auraColor, CircleShape)
+                    )
 
-                // 实体头像
-                UIAvatar(
-                    value = assistant.avatar,
-                    name = assistant.name,
-                    modifier = Modifier
-                        .size(160.dp)
-                        .clip(CircleShape)
-                        .graphicsLayer {
-                            // 极轻微的头像自身缩放
-                            val s = 1f + (innerScale - 1f) * 0.1f
-                            scaleX = s
-                            scaleY = s
-                        },
-                    onUpdate = null
-                )
+                    // 实体头像
+                    UIAvatar(
+                        value = assistant.avatar,
+                        name = assistant.name,
+                        modifier = Modifier
+                            .size(160.dp)
+                            .clip(CircleShape)
+                            .graphicsLayer {
+                                // 极轻微的头像自身缩放
+                                val s = 1f + (innerScale - 1f) * 0.1f
+                                scaleX = s
+                                scaleY = s
+                            },
+                        onUpdate = null
+                    )
+                }
+
+                // 最新一条对话气泡：放在头像和底部按钮之间，做个居中胶囊
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !latestMessageText.isNullOrBlank(),
+                    enter = fadeIn(tween(300)),
+                    exit = fadeOut(tween(200)),
+                    modifier = Modifier.padding(top = 36.dp, start = 24.dp, end = 24.dp)
+                ) {
+                    val isUser = latestMessageRole == MessageRole.USER
+                    // user 和 agent 都用同样的半透明白底，整体风格统一
+                    val bubbleColor = Color.White.copy(alpha = 0.12f)
+                    val textColor = Color.White
+                    val iconTint = if (isUser) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth(0.85f)
+                            .background(bubbleColor, RoundedCornerShape(20.dp))
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isUser) Icons.Rounded.Person else Icons.Rounded.AutoAwesome,
+                            contentDescription = null,
+                            tint = iconTint,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = latestMessageText ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 14.sp,
+                            color = textColor,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Start,
+                            lineHeight = 20.sp
+                        )
+                    }
+                }
             }
 
             // 底部控制按钮
