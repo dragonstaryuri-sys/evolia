@@ -372,6 +372,10 @@ class VoiceCallManager(
                         // warmup 期间命中用户真正说话：立刻转正
                         Log.i(TAG, "Warmup ASR final (user spoke early) turn=$snapshotTurnId: ${result.text}")
                         _callStatus.value = CallStatus.THINKING
+                        // 在 sendUserMessage(→调 LLM) 之前，先播一个"嗯"之类的提示语，
+                        // 给用户即时反馈"我听到了"，并掩盖 LLM 首字延迟。
+                        val ttsForCue = settingsStore.settingsFlow.value.getSelectedTTSProvider()
+                        playListenerCueNow(ttsForCue)
                         val currentAsrJob = asrJob
                         sendUserMessage(result.text, convId)
                         if (currentAsrJob === asrJob) asrJob?.cancel()
@@ -482,6 +486,10 @@ class VoiceCallManager(
                         Log.i(TAG, "ASR final turn=$snapshotTurnId: ${result.text}")
 
                         _callStatus.value = CallStatus.THINKING
+                        // 用户语音转写成功 → 发给 LLM 之前先播个"嗯/哦/啊"之类的提示语，
+                        // 掩盖 LLM 首字延迟，给用户"听到了"的即时反馈。
+                        val ttsForCue = settingsStore.settingsFlow.value.getSelectedTTSProvider()
+                        playListenerCueNow(ttsForCue)
                         // ================================================================
                         //  PDF §5 + §15 关键：AI 开始回复前立刻停掉 ASR 流式识别。
                         //  AI 说话期间只跑 VAD 做打断检测，ASR 必须保持静默。
@@ -575,7 +583,6 @@ class VoiceCallManager(
         val snapshotGenId = identity.generationId
         Log.i(TAG, "  → generation=$snapshotGenId")
 
-        // 思考前导"嗯"已移除（用户反馈太假）
         chatService.sendMessage(
             conversationId = convId,
             content = listOf(UIMessagePart.Text(text)),
@@ -584,27 +591,6 @@ class VoiceCallManager(
         observeAiResponseStreaming(convId, snapshotGenId)
     }
 
-    /**
-     * 思考前导（Listener Cue）：用户说完立刻先"嗯..."或"好的..."，填空档。
-     * 正式首句 TTS(seq=0) 到来时，会立即抢占（被 interrupt/flush）。
-     */
-    private fun playThinkingCue(forGenId: String?) {
-        listenerCueJob?.cancel()
-        listenerCueJob = scope.launch {
-            // 等 ~120ms，如果模型首句已经出来就不必播了
-            delay(THINKING_CUE_DELAY_MS)
-            if (forGenId != null && identity.generationId != forGenId) {
-                Log.d(TAG, "thinking cue skipped: generation already advanced")
-                return@launch
-            }
-            if (speakingStarted) return@launch // 正式 TTS 已启动
-            if (!_isActive.value || _callStatus.value != CallStatus.THINKING) return@launch
-            val cue = "嗯。"
-            Log.d(TAG, "Play thinking cue: \"$cue\"")
-            runCatching { ttsController.speak(cue, flush = true) }
-                .onFailure { Log.w(TAG, "thinking cue play failed", it) }
-        }
-    }
 
     private fun observeAiResponseStreaming(convId: Uuid, expectGenId: String?) {
         responseJob?.cancel()
@@ -712,15 +698,27 @@ class VoiceCallManager(
     /**
      * 去除文本中的 Markdown 特殊标记，避免 TTS 念乱码：
      * - 标题 #、列表符号（- 或 *）、代码块 ```、行内代码 ``、链接 [text](url)、引用 >、加粗 **、斜体 *、表格
+     *
+     * 额外保护：MiniMax 官方支持的 (xxx) 语气词标签（如 (breath) / (laughs) / (emm) 等）
+     * 不会被替换或删除，会原样透传给 TTS。
      */
     private fun String.stripMarkdownForTts(): String {
         if (this.isBlank()) return this
-        var result = this
+
+        // Step 0: 先把 TTS 语气词标签 (xxx) 整体「摘出来」用占位符保护，避免被后面的 Markdown 正则误伤。
+        //         标签名只允许 a-z 和 -，正好匹配 Minimax 官方列表。
+        val protectedTags = mutableListOf<String>()
+        var result = this.replace(Regex("\\([a-z][a-z-]*\\)")) { match ->
+            protectedTags.add(match.value)
+            val index = protectedTags.size - 1
+            "\u0000TTSTAG$index\u0000"
+        }
+
         // 1. 代码块 ```...``` → 删内容（太长不念），保留"一段代码"提示
         result = result.replace(Regex("```[\\s\\S]*?```"), "（代码片段）")
         // 2. 行内代码 `code` → 保留文字，去掉反引号
         result = result.replace(Regex("`([^`]+)`"), "$1")
-        // 3. 链接 [text](url) → 只保留 text
+        // 3. 链接 [text](url) → 只保留 text  （注意：url 位置此时不会再匹配 TTS 标签，因为已被保护）
         result = result.replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"), "$1")
         // 4. 图片 ![alt](url) → 不念图片
         result = result.replace(Regex("!\\[[^\\]]*\\]\\([^)]+\\)"), "（图片）")
@@ -734,7 +732,7 @@ class VoiceCallManager(
         // 8. 加粗 **text** / __text__ → 只保留 text
         result = result.replace(Regex("\\*\\*([^*]+)\\*\\*"), "$1")
         result = result.replace(Regex("__([^_]+)__"), "$1")
-        // 9. 斜体 *text* / _text_ → 只保留 text
+        // 9. 斜体 *text* / _text_ → 只保留 text  （注意两边都是独立下划线单词，不会误伤 TTS 标签占位符）
         result = result.replace(Regex("\\*([^*]+)\\*"), "$1")
         result = result.replace(Regex("_([^_]+)_"), "$1")
         // 10. 表格 | 分隔符 / --- → 去掉
@@ -744,6 +742,12 @@ class VoiceCallManager(
         result = result.replace(Regex("\\s{2,}\\n"), "\n")
         // 12. 多余的空行压缩
         result = result.replace(Regex("\\n{3,}"), "\n\n")
+
+        // Step Z: 还原被保护的 TTS 标签
+        result = result.replace(Regex("\u0000TTSTAG(\\d+)\u0000")) { match ->
+            val idx = match.groupValues[1].toInt()
+            protectedTags.getOrNull(idx) ?: ""
+        }
         return result.trim()
     }
 
@@ -1269,6 +1273,50 @@ class VoiceCallManager(
         customTtsState.resumeAutoReadAfterCall()
     }
 
+    // ========================================================================
+    //  听话提示语（Listener Cue）：ASR final → 发 LLM 前，先播个"嗯~"之类的
+    // ========================================================================
+
+    /**
+     * 生成一轮随机的"听话提示语"：
+     * 1. 基础词：从「嗯 / 哦 / 啊」随机 1 个
+     * 2. 如果当前 TTS provider 是 MiniMax，且模型是 speech-2.8-hd / speech-2.8-turbo，
+     *    再从官方语气词标签里随机 1 个拼接在后面（如 "嗯(coughs)"），每轮随机。
+     *
+     * 这个提示语会直接喂给 TTS.speak（不经过 stripMarkdownForTts），因此语气词标签 (xxx)
+     * 一定能原样发到 MiniMax，不会被过滤。
+     */
+    private fun generateListenerCue(ttsSetting: me.rerere.tts.provider.TTSProviderSetting?): String {
+        val base = LISTENER_CUE_BASE.random()
+        if (ttsSetting is me.rerere.tts.provider.TTSProviderSetting.MiniMax) {
+            val model = ttsSetting.model.trim().lowercase()
+            val supportTags = model.startsWith("speech-2.8-") // hd / turbo 都符合
+            if (supportTags) {
+                val tag = MINIMAX_TTS_SPONTANEOUS_TAGS.random()
+                // 注意：这里不需要也不应该再经过 stripMarkdownForTts，直接给 TTS。
+                // 后续 AI 正文如果自己带了同格式标签，stripMarkdownForTts 已经做了保护不会被清。
+                return buildString {
+                    append(base)
+                    append(tag)
+                }
+            }
+        }
+        return base
+    }
+
+    /**
+     * 立刻播放「听话提示语」(flush=true，会把之前还没播完的 THINKING_CUE 之类顶掉)，
+     * 用于用户刚刚说完、我们正在调 LLM 的这一小段空档，让用户知道我们"听到了"。
+     */
+    private fun playListenerCueNow(ttsSetting: me.rerere.tts.provider.TTSProviderSetting?) {
+        val cue = generateListenerCue(ttsSetting)
+        Log.i(TAG, "playListenerCueNow: \"$cue\"")
+        runCatching {
+            // cue 是我们自己构造的短文本，不走 stripMarkdownForTts，确保 (xxx) 标签完整透传。
+            ttsController.speak(cue, flush = true)
+        }.onFailure { Log.w(TAG, "listener cue play failed", it) }
+    }
+
     companion object {
         // PCM 预卷帧数（每帧 32ms，31 帧 ≈ 1 秒）
         private const val PRE_ROLL_MAX_FRAMES = 31
@@ -1293,7 +1341,17 @@ class VoiceCallManager(
         private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
         // ASR 忽略期：从接通问候「开始播放」的瞬间开始计时，800ms 足够覆盖"喂？"的播+回声尾音
-        // （此前等问候播完再加 2500ms，叠加 4s+ 长延迟导致用户说了半天不响应）
         private const val ASR_IGNORE_PERIOD_MS = 800L
+
+        // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
+        //   基础语气词：随机选一个"嗯 / 哦 / 啊"
+        private val LISTENER_CUE_BASE = listOf("嗯", "哦", "啊..")
+        //   Minimax speech-2.8 系列支持的官方语气词标签列表
+        private val MINIMAX_TTS_SPONTANEOUS_TAGS = listOf(
+            "(laughs)", "(chuckle)", "(coughs)", "(clear-throat)",
+            "(breath)", "(pant)", "(inhale)", "(exhale)", "(gasps)",
+            "(sniffs)", "(sighs)", "(snorts)", "(lip-smacking)",
+            "(humming)", "(hissing)", "(emm)", "(sneezes)"
+        )
     }
 }
