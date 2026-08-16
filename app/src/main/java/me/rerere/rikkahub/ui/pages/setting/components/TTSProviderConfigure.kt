@@ -220,12 +220,16 @@ private fun MimoTTSConfiguration(
 
     // ---- 音色复刻：音频文件选择 ----
     var isConvertingAudio by remember { mutableStateOf(false) }
+    // MiMo voiceclone 官方仅支持 mp3 和 wav 格式
+    val supportedAudioFormats = setOf("mp3", "wav")
+    var audioFormatError by remember { mutableStateOf<String?>(null) }
     val audioPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             isConvertingAudio = true
+            audioFormatError = null
             try {
                 val fileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                     val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
@@ -234,7 +238,13 @@ private fun MimoTTSConfiguration(
 
                 // 推断格式
                 val format = fileName.substringAfterLast('.', "").lowercase().takeIf { it.isNotBlank() }
-                    ?: context.contentResolver.getType(uri)?.substringAfterLast('/') ?: "wav"
+                    ?: context.contentResolver.getType(uri)?.substringAfterLast('/') ?: ""
+
+                // MiMo 音色复刻仅支持 mp3 / wav 格式，其他格式官方会报错
+                if (format.isNotBlank() && format !in supportedAudioFormats) {
+                    audioFormatError = "MiMo 官方音色复刻仅支持 MP3 或 WAV 格式，当前文件格式为 \"$format\"，请先转换后再上传。"
+                    return@launch
+                }
 
                 val base64 = withContext(Dispatchers.IO) {
                     context.contentResolver.openInputStream(uri)?.use { input ->
@@ -245,10 +255,11 @@ private fun MimoTTSConfiguration(
                 if (base64 != null) {
                     localReferenceAudioBase64 = base64
                     localReferenceAudioFileName = fileName
-                    localReferenceAudioFormat = format
+                    localReferenceAudioFormat = format.ifBlank { "wav" }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to read reference audio", e)
+                audioFormatError = "读取音频失败: ${e.message ?: e.javaClass.simpleName}"
             } finally {
                 isConvertingAudio = false
             }
@@ -528,7 +539,7 @@ private fun MimoTTSConfiguration(
                 Column {
                     Text(
                         text = if (localReferenceAudioBase64.isBlank()) {
-                            "选择一段 5-60 秒的清晰人声音频，作为音色复刻的参考。建议文件 < 1MB。"
+                            "仅支持 MP3 或 WAV 格式。选择一段 5-60 秒的清晰人声音频，建议文件 < 1MB。"
                         } else {
                             "已加载: $localReferenceAudioFileName" +
                                 (if (localReferenceAudioFormat.isNotBlank()) " · $localReferenceAudioFormat" else "") +
@@ -544,6 +555,14 @@ private fun MimoTTSConfiguration(
                         color = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.padding(top = 4.dp)
                     )
+                    if (audioFormatError != null) {
+                        Text(
+                            text = "❌ $audioFormatError",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
         ) {
@@ -568,7 +587,7 @@ private fun MimoTTSConfiguration(
                         } else {
                             Icon(Icons.Rounded.Upload, contentDescription = null)
                             Spacer(Modifier.size(8.dp))
-                            Text(if (localReferenceAudioBase64.isBlank()) "选择音频文件" else "更换音频")
+                            Text(if (localReferenceAudioBase64.isBlank()) "选择 MP3/WAV 音频" else "更换音频")
                         }
                     }
 
@@ -601,8 +620,14 @@ private fun MimoTTSConfiguration(
                         value = localReferenceAudioFormat,
                         onValueChange = { localReferenceAudioFormat = it.trim().lowercase() },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("音频格式 (可选，自动识别)") },
-                        placeholder = { Text("wav / mp3 / m4a / flac ...") },
+                        label = { Text("音频格式 (仅 mp3 / wav)") },
+                        placeholder = { Text("mp3 或 wav") },
+                        isError = localReferenceAudioFormat.isNotBlank() && localReferenceAudioFormat !in supportedAudioFormats,
+                        supportingText = {
+                            if (localReferenceAudioFormat.isNotBlank() && localReferenceAudioFormat !in supportedAudioFormats) {
+                                Text("MiMo 音色复刻仅支持 mp3 或 wav，当前填写的格式会导致官方接口报错。", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
                         singleLine = true
                     )
                 }

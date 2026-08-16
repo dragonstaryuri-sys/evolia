@@ -246,7 +246,10 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
                     event.response?.code?.let { parts.add("HTTP $it") }
                     event.errorBody?.take(300)?.let { parts.add("body=$it") }
                     val msg = if (parts.isNotEmpty()) parts.joinToString(" | ") else "SSE stream failed"
-                    throw event.throwable ?: Exception("MIMO streaming failed: $msg")
+                    // 关键修复：始终抛出包含 HTTP code + 错误体的异常
+                    // 之前 throw event.throwable ?: Exception(...) 会丢失 msg 中的 "HTTP 429" 诊断信息
+                    // 导致 TtsController 的 429 识别失效，15s 长退避不会触发
+                    throw Exception("MIMO streaming failed: $msg", event.throwable)
                 }
             }
         }
