@@ -1941,4 +1941,38 @@
   <string name="setting_page_feedback">Feedback &amp; Suggestions</string>
   <string name="setting_page_feedback_desc">Submit your feedback via Feishu</string>
 
+  <!-- Wake Word -->
+  <string name="setting_page_wake_word">Voice Wake Word</string>
+  <string name="setting_page_wake_word_desc">Say wake word to start a voice call</string>
+  <string name="setting_wake_word_page_title">Voice Wake Word</string>
+  <string name="setting_wake_word_group_basic">Basic</string>
+  <string name="setting_wake_word_group_model">Model</string>
+  <string name="setting_wake_word_group_wake">Wake Word Settings</string>
+  <string name="setting_wake_word_enable">Enable Voice Wake</string>
+  <string name="setting_wake_word_enable_on">Listening for wake word</string>
+  <string name="setting_wake_word_enable_off">Tap to enable wake word detection</string>
+  <string name="setting_wake_word_model_status">Model Status</string>
+  <string name="setting_wake_word_model_ready">Model ready</string>
+  <string name="setting_wake_word_model_builtin">Built-in model (ready)</string>
+  <string name="setting_wake_word_model_bundled_not_ready">Model built-in, tap enable to auto-prepare</string>
+  <string name="setting_wake_word_model_not_downloaded">Model not downloaded</string>
+  <string name="setting_wake_word_model_copying">Preparing %1$d/%2$d: %3$s</string>
+  <string name="setting_wake_word_model_downloading">Downloading %1$d/%2$d: %3$s</string>
+  <string name="setting_wake_word_model_error">Failed, tap enable to retry</string>
+  <string name="setting_wake_word_prepare_builtin">Prepare Built-in Model</string>
+  <string name="setting_wake_word_download">Download Model</string>
+  <string name="setting_wake_word_delete_model">Delete Model</string>
+  <string name="setting_wake_word_sensitivity">Sensitivity</string>
+  <string name="setting_wake_word_sensitivity_desc">Higher = easier to trigger, lower = fewer false positives</string>
+  <string name="setting_wake_word_sensitivity_low">Fewer false triggers</string>
+  <string name="setting_wake_word_sensitivity_high">Easier to wake</string>
+  <string name="setting_wake_word_custom">Custom Wake Words</string>
+  <string name="setting_wake_word_custom_desc">One per line. Format: pinyin tokens @ display text\nExample: n i h a o a i f u @ 你好艾芙</string>
+  <string name="setting_wake_word_reset">Reset</string>
+  <string name="setting_wake_word_apply">Apply</string>
+  <string name="setting_wake_word_help_title">How to use</string>
+  <string name="setting_wake_word_help_content">1. Download the KWS model (about 4MB, stored locally)\n2. Enable voice wake\n3. Say your wake word to auto-start a voice call\n\nThe wake word detection runs entirely on-device. Audio is never uploaded.\n\nCustom wake words use Chinese pinyin tokens from the model\'s vocabulary.</string>
+  <string name="notification_wake_word_active">Listening for wake word</string>
+  <string name="notification_channel_wake_word">Voice Wake Word</string>
+
 </resources>

@@ -88,6 +88,7 @@ import me.rerere.rikkahub.ui.pages.markdown.MarkdownViewerPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUICustomizationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingFontsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingEmailPage
+import me.rerere.rikkahub.ui.pages.setting.SettingWakeWordPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUserProfilePage
 import me.rerere.rikkahub.ui.pages.setting.SettingPermissionCheckPage
 import me.rerere.rikkahub.ui.pages.home.HomePage
@@ -413,6 +414,7 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingUICustomization> { SettingUICustomizationPage() }
                     composable<Screen.SettingFonts> { SettingFontsPage() }
                     composable<Screen.SettingEmail> { SettingEmailPage() }
+                    composable<Screen.SettingWakeWord> { SettingWakeWordPage() }
                     composable<Screen.SettingUserProfile> { SettingUserProfilePage() }
                     composable<Screen.SettingPermissionCheck> { SettingPermissionCheckPage() }
                     composable<Screen.Discover> { DiscoverPage() }

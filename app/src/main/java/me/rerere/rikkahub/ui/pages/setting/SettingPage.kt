@@ -312,6 +312,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
 
                     SettingGroupItem(
+                        title = stringResource(R.string.setting_page_wake_word),
+                        subtitle = stringResource(R.string.setting_page_wake_word_desc),
+                        icon = { Icon(Icons.Rounded.GraphicEq, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingWakeWord) }
+                    )
+
+                    SettingGroupItem(
                         title = stringResource(R.string.setting_page_email_service),
                         subtitle = stringResource(R.string.setting_page_email_service_desc),
                         icon = { Icon(Icons.Rounded.Email, null, modifier = Modifier.size(20.dp)) },

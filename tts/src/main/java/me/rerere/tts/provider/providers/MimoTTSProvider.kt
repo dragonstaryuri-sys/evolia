@@ -28,13 +28,22 @@ private const val TAG = "MimoTTSProvider"
 /**
  * 将音频文件扩展名映射为标准 MIME 类型，用于构造 MiMo voiceclone 的 data URI
  * 参考官方示例：voice.mp3 -> data:audio/mpeg;base64,...
+ *
+ * ⚠️ MiMo 服务端通过 data URI 中的 MIME 子类型匹配扩展名白名单 (mp3/flac/m4a/wav/ogg)
+ * - mp3 → audio/mpeg (官方示例，服务器识别 mpeg→mp3)
+ * - m4a → audio/m4a (不能用 audio/mp4！服务器不认 mp4，只认 m4a)
+ * - wav → audio/wav
+ * - flac → audio/flac
+ * - ogg → audio/ogg
  */
 private fun formatToAudioMime(format: String): String = when (format.trim().lowercase()) {
     "mp3", "mpeg" -> "audio/mpeg"
     "wav", "wave" -> "audio/wav"
-    "m4a", "aac", "mp4" -> "audio/mp4"
+    "m4a" -> "audio/m4a"
     "flac" -> "audio/flac"
     "ogg", "oga" -> "audio/ogg"
+    // 以下格式 MiMo 官方不支持，仅做兜底映射（服务器会拒绝）
+    "aac", "mp4" -> "audio/mp4"
     "opus" -> "audio/opus"
     "webm" -> "audio/webm"
     "amr" -> "audio/amr"

@@ -40,6 +40,7 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import kotlin.uuid.Uuid
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -110,6 +111,9 @@ class SettingsStore(
         val LOREBOOKS = stringPreferencesKey("lorebooks")
         val AUTO_BACKUP_ON_START = booleanPreferencesKey("auto_backup_on_start")
         val LAST_AUTO_BACKUP_TIME = longPreferencesKey("last_auto_backup_time")
+        val ENABLE_WAKE_WORD = booleanPreferencesKey("enable_wake_word")
+        val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
+        val CUSTOM_WAKE_WORDS = stringPreferencesKey("custom_wake_words")
     }
 
     private val dataStore = context.settingsStore
@@ -207,6 +211,9 @@ class SettingsStore(
                 } ?: emptyList(),
                 autoBackupOnStart = preferences[AUTO_BACKUP_ON_START] ?: false,
                 lastAutoBackupTime = preferences[LAST_AUTO_BACKUP_TIME] ?: 0L,
+                enableWakeWord = preferences[ENABLE_WAKE_WORD] ?: false,
+                wakeWordSensitivity = preferences[WAKE_WORD_SENSITIVITY] ?: 0.5f,
+                customWakeWords = preferences[CUSTOM_WAKE_WORDS] ?: DEFAULT_WAKE_WORDS,
             )
         }
         .map {
@@ -377,6 +384,9 @@ class SettingsStore(
             preferences[LOREBOOKS] = JsonInstant.encodeToString(settingsToSave.lorebooks)
             preferences[AUTO_BACKUP_ON_START] = settingsToSave.autoBackupOnStart
             preferences[LAST_AUTO_BACKUP_TIME] = settingsToSave.lastAutoBackupTime
+            preferences[ENABLE_WAKE_WORD] = settingsToSave.enableWakeWord
+            preferences[WAKE_WORD_SENSITIVITY] = settingsToSave.wakeWordSensitivity
+            preferences[CUSTOM_WAKE_WORDS] = settingsToSave.customWakeWords
         }
     }
 
@@ -465,6 +475,9 @@ data class Settings(
     val lorebooks: List<Lorebook> = emptyList(),
     val autoBackupOnStart: Boolean = false,
     val lastAutoBackupTime: Long = 0L,
+    val enableWakeWord: Boolean = false,
+    val wakeWordSensitivity: Float = 0.5f,
+    val customWakeWords: String = DEFAULT_WAKE_WORDS,
 ) {
     companion object {
         fun dummy() = Settings(init = true)
@@ -663,3 +676,7 @@ private val DEFAULT_ASR_PROVIDERS = listOf(
     ASRProviderSetting.EvoliaASR(id = DEFAULT_EVOLIA_ASR_ID, name = ""),
     ASRProviderSetting.OnlineASR(id = DEFAULT_ONLINE_ASR_ID, name = "")
 )
+
+// 默认唤醒词：你好艾芙 (n i h a o a i f u)
+// 格式：每行一个，拼音 tokens（空格分隔）@ 显示文本
+const val DEFAULT_WAKE_WORDS = "n i h a o a i f u @ 你好艾芙"

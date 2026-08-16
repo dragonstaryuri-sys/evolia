@@ -127,6 +127,11 @@
         android:exported="false" />
 
     <service
+        android:name=".service.voice.WakeWordService"
+        android:foregroundServiceType="microphone"
+        android:exported="false" />
+
+    <service
         android:name=".service.EvoliaMonitorService"
         android:label="Evolia Monitor"
         android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

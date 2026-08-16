@@ -107,6 +107,14 @@ val appModule = module {
         )
     }
 
+    // 语音唤醒词模型管理器（KWS 模型下载与管理）
+    single {
+        me.rerere.rikkahub.service.voice.WakeWordModelManager(
+            context = get(),
+            okHttpClient = get()
+        )
+    }
+
     single {
         me.rerere.rikkahub.service.voice.VoiceMessagePlayer(get())
     }

@@ -119,6 +119,9 @@ sealed interface Screen {
     data object SettingEmail : Screen
 
     @Serializable
+    data object SettingWakeWord : Screen
+
+    @Serializable
     data object SettingUserProfile : Screen
 
     @Serializable

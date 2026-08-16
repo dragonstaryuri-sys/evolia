@@ -1903,4 +1903,38 @@
   <string name="setting_page_feedback">反馈与建议</string>
   <string name="setting_page_feedback_desc">点击提交你的意见或建议</string>
 
+  <!-- 语音唤醒 -->
+  <string name="setting_page_wake_word">语音唤醒</string>
+  <string name="setting_page_wake_word_desc">说唤醒词自动拨通语音通话</string>
+  <string name="setting_wake_word_page_title">语音唤醒</string>
+  <string name="setting_wake_word_group_basic">基础</string>
+  <string name="setting_wake_word_group_model">模型</string>
+  <string name="setting_wake_word_group_wake">唤醒设置</string>
+  <string name="setting_wake_word_enable">启用语音唤醒</string>
+  <string name="setting_wake_word_enable_on">正在监听唤醒词</string>
+  <string name="setting_wake_word_enable_off">点击启用唤醒词检测</string>
+  <string name="setting_wake_word_model_status">模型状态</string>
+  <string name="setting_wake_word_model_ready">模型已就绪</string>
+  <string name="setting_wake_word_model_builtin">内置模型（已就绪）</string>
+  <string name="setting_wake_word_model_bundled_not_ready">模型已内置，开启唤醒即可自动准备</string>
+  <string name="setting_wake_word_model_not_downloaded">模型未下载</string>
+  <string name="setting_wake_word_model_copying">准备中 %1$d/%2$d：%3$s</string>
+  <string name="setting_wake_word_model_downloading">下载中 %1$d/%2$d：%3$s</string>
+  <string name="setting_wake_word_model_error">准备失败，开启唤醒会重试</string>
+  <string name="setting_wake_word_prepare_builtin">准备内置模型</string>
+  <string name="setting_wake_word_download">下载模型</string>
+  <string name="setting_wake_word_delete_model">删除模型</string>
+  <string name="setting_wake_word_sensitivity">唤醒灵敏度</string>
+  <string name="setting_wake_word_sensitivity_desc">高=容易唤醒，低=减少误触发</string>
+  <string name="setting_wake_word_sensitivity_low">少误触发</string>
+  <string name="setting_wake_word_sensitivity_high">易唤醒</string>
+  <string name="setting_wake_word_custom">自定义唤醒词</string>
+  <string name="setting_wake_word_custom_desc">每行一个，格式：拼音 tokens @ 显示文本\n例如：n i h a o a i f u @ 你好艾芙</string>
+  <string name="setting_wake_word_reset">重置</string>
+  <string name="setting_wake_word_apply">应用</string>
+  <string name="setting_wake_word_help_title">使用说明</string>
+  <string name="setting_wake_word_help_content">1. 下载唤醒模型（约 4MB，本地存储）\n2. 开启语音唤醒\n3. 说出唤醒词即可自动拨通通话\n\n唤醒词检测完全在设备端运行，音频不会上传网络。\n\n自定义唤醒词需使用模型词表中的拼音 token。</string>
+  <string name="notification_wake_word_active">正在监听唤醒词</string>
+  <string name="notification_channel_wake_word">语音唤醒</string>
+
 </resources>
