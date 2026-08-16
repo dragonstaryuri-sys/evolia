@@ -228,12 +228,13 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
         var sseError: Exception? = null
 
         // ========== 根据模型类型选择请求策略 ==========
-        // 实测 (你的日志印证):
-        //   - voiceclone / voicedesign + stream=true  →  HTTP 400 "invalid audio format" (服务器 SSE 路径参数校验不兼容)
-        //   - voiceclone / voicedesign + stream=false →  HTTP 429 (参数校验通过，只是限流)
-        //   - standard mimo-v2.5-tts + stream=true    →  按官方文档正常工作
-        // 所以 voiceclone / voicedesign 直接走 non-stream，standard 走 SSE
-        val useStreaming = isStandardTTS
+        // 实测:
+        //   - voiceclone + stream=true  →  HTTP 400 "invalid audio format" (服务器 SSE 路径参数校验不兼容)
+        //   - voiceclone + stream=false →  HTTP 429 (参数校验通过，只是限流)
+        //   - standard mimo-v2.5-tts + stream=true  →  按官方文档正常工作
+        //   - voicedesign + stream=true →  正常工作 (用户确认 voicedesign 没问题)
+        // 所以只有 voiceclone 直接走 non-stream，其他都走 SSE
+        val useStreaming = !isVoiceClone
 
         if (useStreaming) {
             // ---- Path 1: SSE streaming (仅标准 mimo-v2.5-tts) ----
@@ -312,10 +313,10 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
             val lastMsg = sseError?.message ?: "(no streaming error)"
             Log.w(TAG, "SSE failed → fallback to non-stream. SSE error: $lastMsg")
         } else {
-            Log.i(TAG, "Non-stream request directly (voiceclone/voicedesign skips SSE per server behavior)")
+            Log.i(TAG, "Non-stream request directly (voiceclone skips SSE per server behavior)")
         }
 
-        // ========== Non-streaming 请求 (voiceclone/voicedesign 直连，或 standard SSE 失败时) ==========
+        // ========== Non-streaming 请求 (voiceclone 直连，或 standard/voicedesign SSE 失败时) ==========
         // 注意：这里故意 *不* 写 stream 字段，完全匹配官方 Python 示例的默认值
         val nonStreamBody = JSONObject().apply {
             put("model", model)

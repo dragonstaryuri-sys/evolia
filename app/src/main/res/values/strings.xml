@@ -1948,15 +1948,24 @@
   <string name="setting_wake_word_group_basic">Basic</string>
   <string name="setting_wake_word_group_model">Model</string>
   <string name="setting_wake_word_group_wake">Wake Word Settings</string>
+  <string name="setting_wake_word_group_test">Test</string>
   <string name="setting_wake_word_enable">Enable Voice Wake</string>
   <string name="setting_wake_word_enable_on">Listening for wake word</string>
   <string name="setting_wake_word_enable_off">Tap to enable wake word detection</string>
+
+  <string name="setting_wake_word_assistant">Wake Assistant</string>
+  <string name="setting_wake_word_assistant_fallback">Not set, using current main assistant: \"%1$s\"</string>
+  <string name="setting_wake_word_assistant_follow">Follow current main assistant: %1$s</string>
+  <string name="setting_wake_word_assistant_hint">Which assistant should receive the wake word call. Fallback to your current main assistant when unset.</string>
+  <string name="setting_wake_word_assistant_updated">Wake call assistant is now: %1$s</string>
   <string name="setting_wake_word_model_status">Model Status</string>
   <string name="setting_wake_word_model_ready">Model ready</string>
   <string name="setting_wake_word_model_builtin">Built-in model (ready)</string>
   <string name="setting_wake_word_model_bundled_not_ready">Model built-in, tap enable to auto-prepare</string>
   <string name="setting_wake_word_model_not_downloaded">Model not downloaded</string>
   <string name="setting_wake_word_model_copying">Preparing %1$d/%2$d: %3$s</string>
+  <string name="setting_wake_word_model_downloading_archive">Downloading model archive… %1$d%%</string>
+  <string name="setting_wake_word_model_extracting">Extracting model files…</string>
   <string name="setting_wake_word_model_downloading">Downloading %1$d/%2$d: %3$s</string>
   <string name="setting_wake_word_model_error">Failed, tap enable to retry</string>
   <string name="setting_wake_word_prepare_builtin">Prepare Built-in Model</string>
@@ -1974,5 +1983,17 @@
   <string name="setting_wake_word_help_content">1. Download the KWS model (about 4MB, stored locally)\n2. Enable voice wake\n3. Say your wake word to auto-start a voice call\n\nThe wake word detection runs entirely on-device. Audio is never uploaded.\n\nCustom wake words use Chinese pinyin tokens from the model\'s vocabulary.</string>
   <string name="notification_wake_word_active">Listening for wake word</string>
   <string name="notification_channel_wake_word">Voice Wake Word</string>
+
+  <string name="wake_word_model_prepare_failed">Wake word model is missing. Please download it in Settings.</string>
+  <string name="wake_word_detector_init_failed">Failed to initialize wake word detector. Check keyword pinyin format.</string>
+  <string name="wake_word_audio_init_failed">Failed to open microphone. Grant RECORD_AUDIO permission first.</string>
+
+  <string name="setting_wake_word_test_title">Simulated Wake Test</string>
+  <string name="setting_wake_word_test_desc">Bypass microphone, directly simulate a wake hit to validate the call pipeline</string>
+  <string name="setting_wake_word_test_trigger">Simulate wake &amp; start call</string>
+  <string name="setting_wake_word_test_launching">Starting call…</string>
+  <string name="setting_wake_word_test_success">Simulated wake succeeded, call started with \"%1$s\"</string>
+  <string name="setting_wake_word_test_failed">Simulated wake failed: %1$s</string>
+  <string name="setting_wake_word_test_hint">If this button opens the call screen correctly, the overall pipeline is healthy. From there, tune sensitivity or try a more distinct/shorter pinyin sequence if KWS never fires.</string>
 
 </resources>

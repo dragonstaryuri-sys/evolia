@@ -114,6 +114,7 @@ class SettingsStore(
         val ENABLE_WAKE_WORD = booleanPreferencesKey("enable_wake_word")
         val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
         val CUSTOM_WAKE_WORDS = stringPreferencesKey("custom_wake_words")
+        val WAKE_WORD_ASSISTANT_ID = stringPreferencesKey("wake_word_assistant_id")
     }
 
     private val dataStore = context.settingsStore
@@ -214,6 +215,7 @@ class SettingsStore(
                 enableWakeWord = preferences[ENABLE_WAKE_WORD] ?: false,
                 wakeWordSensitivity = preferences[WAKE_WORD_SENSITIVITY] ?: 0.5f,
                 customWakeWords = preferences[CUSTOM_WAKE_WORDS] ?: DEFAULT_WAKE_WORDS,
+                wakeWordAssistantId = preferences[WAKE_WORD_ASSISTANT_ID].toUuidOrNull(),
             )
         }
         .map {
@@ -387,6 +389,7 @@ class SettingsStore(
             preferences[ENABLE_WAKE_WORD] = settingsToSave.enableWakeWord
             preferences[WAKE_WORD_SENSITIVITY] = settingsToSave.wakeWordSensitivity
             preferences[CUSTOM_WAKE_WORDS] = settingsToSave.customWakeWords
+            preferences[WAKE_WORD_ASSISTANT_ID] = settingsToSave.wakeWordAssistantId?.toString() ?: ""
         }
     }
 
@@ -478,6 +481,7 @@ data class Settings(
     val enableWakeWord: Boolean = false,
     val wakeWordSensitivity: Float = 0.5f,
     val customWakeWords: String = DEFAULT_WAKE_WORDS,
+    val wakeWordAssistantId: Uuid? = null,
 ) {
     companion object {
         fun dummy() = Settings(init = true)

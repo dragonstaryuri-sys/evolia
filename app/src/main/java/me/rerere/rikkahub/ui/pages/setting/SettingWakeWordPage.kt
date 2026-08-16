@@ -20,14 +20,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,22 +67,31 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.DEFAULT_WAKE_WORDS
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.service.voice.WakeWordModelManager
 import me.rerere.rikkahub.service.voice.WakeWordService
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
+import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val modelManager = koinInject<WakeWordModelManager>()
+    val chatService: me.rerere.rikkahub.service.ChatService = koinInject()
+    val voiceCallManager = koinInject<me.rerere.rikkahub.service.voice.VoiceCallManager>()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val toaster = LocalToaster.current
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -101,8 +119,12 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
     }
 
     val bundled by remember { mutableStateOf(modelManager.hasBundledAssets()) }
-    val isPreparing = downloadState is WakeWordModelManager.DownloadState.Downloading
-            || downloadState is WakeWordModelManager.DownloadState.CopyingFromAssets
+    val isPreparing = when (downloadState) {
+        is WakeWordModelManager.DownloadState.CopyingFromAssets,
+        is WakeWordModelManager.DownloadState.DownloadingArchive,
+        is WakeWordModelManager.DownloadState.ExtractingArchive -> true
+        else -> false
+    }
 
     // 下载/拷贝状态变化时刷新模型就绪状态
     LaunchedEffect(downloadState) {
@@ -164,6 +186,125 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
                             )
                         }
                     )
+                    // ====== 唤醒接听智能体 ======
+                    var assistantDropdownExpanded by remember { mutableStateOf(false) }
+                    val currentAssistant = settings.wakeWordAssistantId
+                        ?.let { id -> settings.assistants.find { it.id == id } }
+                    val fallbackAssistant = settings.getCurrentAssistant()
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_wake_word_assistant),
+                        subtitle = currentAssistant?.name
+                            ?: stringResource(
+                                R.string.setting_wake_word_assistant_fallback,
+                                fallbackAssistant.name
+                            ),
+                        icon = {
+                            Icon(Icons.Rounded.Person, null, modifier = Modifier.size(20.dp))
+                        }
+                    )
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                        AssistChip(
+                            onClick = { assistantDropdownExpanded = true },
+                            label = {
+                                Text(
+                                    text = currentAssistant?.name
+                                        ?: stringResource(
+                                            R.string.setting_wake_word_assistant_follow,
+                                            fallbackAssistant.name
+                                        ),
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            },
+                            leadingIcon = {
+                                val assistant = currentAssistant ?: fallbackAssistant
+                                UIAvatar(
+                                    name = assistant.name,
+                                    value = assistant.avatar,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Rounded.ArrowDropDown,
+                                    null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        )
+                        DropdownMenu(
+                            expanded = assistantDropdownExpanded,
+                            onDismissRequest = { assistantDropdownExpanded = false }
+                        ) {
+                            // "跟随当前主智能体"选项
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            R.string.setting_wake_word_assistant_follow,
+                                            fallbackAssistant.name
+                                        )
+                                    )
+                                },
+                                leadingIcon = {
+                                    UIAvatar(
+                                        name = fallbackAssistant.name,
+                                        value = fallbackAssistant.avatar,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                onClick = {
+                                    scope.launch {
+                                        vm.updateSettings(
+                                            settings.copy(wakeWordAssistantId = null)
+                                        )
+                                    }
+                                    assistantDropdownExpanded = false
+                                    toaster.show(
+                                        message = context.getString(
+                                            R.string.setting_wake_word_assistant_updated,
+                                            fallbackAssistant.name
+                                        ),
+                                        type = ToastType.Success
+                                    )
+                                }
+                            )
+                            settings.assistants.forEach { assistant ->
+                                DropdownMenuItem(
+                                    text = { Text(assistant.name) },
+                                    leadingIcon = {
+                                        UIAvatar(
+                                            name = assistant.name,
+                                            value = assistant.avatar,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        scope.launch {
+                                            vm.updateSettings(
+                                                settings.copy(
+                                                    wakeWordAssistantId = assistant.id
+                                                )
+                                            )
+                                        }
+                                        assistantDropdownExpanded = false
+                                        toaster.show(
+                                            message = context.getString(
+                                                R.string.setting_wake_word_assistant_updated,
+                                                assistant.name
+                                            ),
+                                            type = ToastType.Success
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.setting_wake_word_assistant_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -188,14 +329,13 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
                                     st.fileName
                                 )
                             }
-                            downloadState is WakeWordModelManager.DownloadState.Downloading -> {
-                                val dl = downloadState as WakeWordModelManager.DownloadState.Downloading
-                                stringResource(
-                                    R.string.setting_wake_word_model_downloading,
-                                    dl.fileIndex,
-                                    dl.totalFiles,
-                                    dl.fileName
-                                )
+                            downloadState is WakeWordModelManager.DownloadState.DownloadingArchive -> {
+                                val dl = downloadState as WakeWordModelManager.DownloadState.DownloadingArchive
+                                val pct = (dl.progress * 100).toInt().coerceIn(0, 100)
+                                stringResource(R.string.setting_wake_word_model_downloading_archive, pct)
+                            }
+                            downloadState is WakeWordModelManager.DownloadState.ExtractingArchive -> {
+                                stringResource(R.string.setting_wake_word_model_extracting)
                             }
                             downloadState is WakeWordModelManager.DownloadState.Error -> {
                                 stringResource(R.string.setting_wake_word_model_error)
@@ -379,6 +519,90 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // ===== 测试 & 调试 =====
+            item {
+                SettingsGroup(title = stringResource(R.string.setting_wake_word_group_test)) {
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_wake_word_test_title),
+                        subtitle = stringResource(R.string.setting_wake_word_test_desc),
+                        icon = { Icon(Icons.Rounded.Bolt, null, modifier = Modifier.size(20.dp)) }
+                    )
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        // 模拟唤醒按钮：直接走 WakeWordService 里 handleWakeWordTrigger 的同等链路（但在 UI 线程启动）
+                        var triggerLoading by remember { mutableStateOf(false) }
+                        FilledTonalButton(
+                            onClick = {
+                                if (triggerLoading) return@FilledTonalButton
+                                val selectedAssistantId = settings.wakeWordAssistantId
+                                val assistant = selectedAssistantId
+                                    ?.let { id -> settings.assistants.find { it.id == id } }
+                                    ?: settings.getCurrentAssistant()
+                                triggerLoading = true
+                                scope.launch {
+                                    runCatching {
+                                        val conversationId = Uuid.random()
+                                        chatService.initializeConversation(
+                                            conversationId = conversationId,
+                                            targetAssistantId = assistant.id,
+                                            skipAutoArchive = true
+                                        )
+                                        voiceCallManager.startCall(conversationId)
+                                        val intent = android.content.Intent(
+                                            context,
+                                            me.rerere.rikkahub.RouteActivity::class.java
+                                        ).apply {
+                                            flags =
+                                                android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                                                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                            putExtra("conversationId", conversationId.toString())
+                                        }
+                                        context.startActivity(intent)
+                                    }.onFailure { t ->
+                                        toaster.show(
+                                            message = context.getString(
+                                                R.string.setting_wake_word_test_failed,
+                                                t.message ?: ""
+                                            ),
+                                            type = ToastType.Error
+                                        )
+                                    }.onSuccess {
+                                        toaster.show(
+                                            message = context.getString(
+                                                R.string.setting_wake_word_test_success,
+                                                assistant.name
+                                            ),
+                                            type = ToastType.Success
+                                        )
+                                    }
+                                    triggerLoading = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !triggerLoading
+                        ) {
+                            if (triggerLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.setting_wake_word_test_launching))
+                            } else {
+                                Icon(Icons.Rounded.PlayArrow, null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.setting_wake_word_test_trigger))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.setting_wake_word_test_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
