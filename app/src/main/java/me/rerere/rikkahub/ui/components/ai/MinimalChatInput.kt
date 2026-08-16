@@ -808,19 +808,21 @@ private fun MinimalPickerContent(
                 }
             )
 
-
-            // Voice Call button
-            MinimalFileButtonGroupedIconOnly(
-                icon = Icons.Rounded.Call,
-                shape = rightButtonShape,
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    // 不再强制关闭深度思考（Reasoning）：通话保持用户原有设置不变
-                    onStartCall()
-                    onDismiss()
-                }
-            )
+            // 通话按钮仅在 Debug 版本显示，Release 版本隐藏
+            if (BuildConfig.DEBUG) {
+                // Voice Call button
+                MinimalFileButtonGroupedIconOnly(
+                    icon = Icons.Rounded.Call,
+                    shape = rightButtonShape,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        // 不再强制关闭深度思考（Reasoning）：通话保持用户原有设置不变
+                        onStartCall()
+                        onDismiss()
+                    }
+                )
+            }
 
         }
 

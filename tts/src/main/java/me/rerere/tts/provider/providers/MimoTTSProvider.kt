@@ -47,11 +47,10 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
         .readTimeout(120, TimeUnit.SECONDS) // 流式 SSE 更久的读超时
         .build()
 
-    // 预置 MIMO TTS 模型列表
+    // 预置 MIMO TTS 模型列表 (暂时隐藏 voiceclone 模型，存在 bug)
     val presetModels = listOf(
         "mimo-v2.5-tts",
-        "mimo-v2.5-tts-voicedesign",
-        "mimo-v2.5-tts-voiceclone"
+        "mimo-v2.5-tts-voicedesign"
     )
 
     // MIMO 流式输出统一为 24kHz PCM16LE mono (匹配官方 Python 示例的 np.frombuffer(..., dtype=np.int16) + samplerate=24000)
@@ -302,7 +301,9 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
             for (i in 0 until data.length()) {
                 val modelObj = data.optJSONObject(i) ?: continue
                 val modelId = modelObj.optString("id")
-                if (modelId.isNotBlank() && modelId.contains("tts", ignoreCase = true)) {
+                // 暂时过滤掉 voiceclone 模型，存在 bug
+                if (modelId.isNotBlank() && modelId.contains("tts", ignoreCase = true)
+                    && !modelId.contains("voiceclone", ignoreCase = true)) {
                     result.add(modelId)
                 }
             }

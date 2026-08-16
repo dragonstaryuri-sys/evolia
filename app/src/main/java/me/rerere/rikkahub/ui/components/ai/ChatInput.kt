@@ -1428,14 +1428,17 @@ internal fun FilesPicker(
                 }
             }
 
-            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                VoiceCallButton(
-                    assistant = assistant,
-                    onUpdateAssistant = onUpdateAssistant,
-                    shape = topRightShape,
-                    onStartCall = onStartCall
-                ) {
-                    onDismiss()
+            // 通话按钮仅在 Debug 版本显示，Release 版本隐藏
+            if (BuildConfig.DEBUG) {
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    VoiceCallButton(
+                        assistant = assistant,
+                        onUpdateAssistant = onUpdateAssistant,
+                        shape = topRightShape,
+                        onStartCall = onStartCall
+                    ) {
+                        onDismiss()
+                    }
                 }
             }
 

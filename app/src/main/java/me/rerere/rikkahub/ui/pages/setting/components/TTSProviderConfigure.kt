@@ -204,7 +204,11 @@ private fun MimoTTSConfiguration(
             try {
                 val tempSetting = setting.copy(apiKey = localApiKey)
                 val models = tts.listMimoModels(tempSetting)
-                fetchedModels = models.filter { it.contains("tts", ignoreCase = true) }
+                // 暂时过滤掉 voiceclone 模型，存在 bug
+                fetchedModels = models.filter {
+                    it.contains("tts", ignoreCase = true)
+                        && !it.contains("voiceclone", ignoreCase = true)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Mimo fetch models failed", e)
             } finally {
