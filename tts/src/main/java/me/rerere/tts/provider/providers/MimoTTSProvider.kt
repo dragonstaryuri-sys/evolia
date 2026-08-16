@@ -164,7 +164,11 @@ class MimoTTSProvider : TTSProvider<TTSProviderSetting.Mimo> {
             append(", isVoiceClone=$isVoiceClone")
             if (isStandardTTS) append(", voice=${providerSetting.voice}")
             if (isVoiceDesign) append(", optimizeTextPreview=${providerSetting.optimizeTextPreview}")
-            if (isVoiceClone) append(", refAudioLen=${providerSetting.referenceAudioBase64.length}")
+            if (isVoiceClone) {
+                append(", refAudioFormat=${providerSetting.referenceAudioFormat}")
+                append(", refAudioMime=${formatToAudioMime(providerSetting.referenceAudioFormat)}")
+                append(", refAudioLen=${providerSetting.referenceAudioBase64.length}")
+            }
             append(", textLen=${request.text.length}")
         }
         Log.i(TAG, "generateSpeech(stream=True): $requestLog")
