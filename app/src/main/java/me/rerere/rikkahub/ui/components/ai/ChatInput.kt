@@ -1428,6 +1428,8 @@ internal fun FilesPicker(
                 }
             }
 
+            // 通话按钮仅在 Debug 版本显示，Release 版本隐藏
+
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 VoiceCallButton(
                     assistant = assistant,
@@ -1438,6 +1440,7 @@ internal fun FilesPicker(
                     onDismiss()
                 }
             }
+
 
         }
 

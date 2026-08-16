@@ -808,7 +808,6 @@ private fun MinimalPickerContent(
                 }
             )
 
-
             // Voice Call button
             MinimalFileButtonGroupedIconOnly(
                 icon = Icons.Rounded.Call,

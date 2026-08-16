@@ -204,7 +204,11 @@ private fun MimoTTSConfiguration(
             try {
                 val tempSetting = setting.copy(apiKey = localApiKey)
                 val models = tts.listMimoModels(tempSetting)
-                fetchedModels = models.filter { it.contains("tts", ignoreCase = true) }
+                // 暂时过滤掉 voiceclone 模型，存在 bug
+                fetchedModels = models.filter {
+                    it.contains("tts", ignoreCase = true)
+                        && !it.contains("voiceclone", ignoreCase = true)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Mimo fetch models failed", e)
             } finally {
@@ -988,7 +992,14 @@ private fun MiniMaxTTSConfiguration(
     var localCloneVolumeNorm by remember(setting.cloneNeedVolumeNormalization) { mutableStateOf(setting.cloneNeedVolumeNormalization) }
 
     val currentVoice = remember(localVoiceId, voices) { voices.find { it.id == localVoiceId } }
-    val supportedStyles = remember(currentVoice) { currentVoice?.styles ?: listOf("calm") }
+    // 预置音色分支：跟随音色自带的 styles；音色设计 / 音色复刻分支：使用 speech-2.x 通用的 7 种情感
+    val supportedStyles = remember(currentVoice, localVoiceType) {
+        if (localVoiceType == TTSProviderSetting.MiniMaxVoiceType.DEFAULT) {
+            currentVoice?.styles ?: listOf("calm")
+        } else {
+            listOf("calm", "happy", "sad", "angry", "fearful", "disgusted", "surprised")
+        }
+    }
 
     // 防抖回写 500ms
     LaunchedEffect(
@@ -1310,24 +1321,6 @@ private fun MiniMaxTTSConfiguration(
             )
         }
 
-        var showStylePicker by remember { mutableStateOf(false) }
-        val hasStyles = supportedStyles.size > 1
-        FormItem(label = { Text(stringResource(R.string.setting_tts_page_emotion)) }) {
-            OutlinedTextField(
-                value = if (hasStyles) localEmotion else "calm",
-                onValueChange = { if (hasStyles) localEmotion = it },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = hasStyles,
-                trailingIcon = {
-                    if (hasStyles) {
-                        IconButton(onClick = { showStylePicker = true }) {
-                            Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style")
-                        }
-                    }
-                }
-            )
-        }
-
         if (showVoicePicker) {
             MiniMaxVoicePicker(
                 voices = voices,
@@ -1340,18 +1333,39 @@ private fun MiniMaxTTSConfiguration(
                 onDismiss = { showVoicePicker = false }
             )
         }
+    }
 
-        if (showStylePicker) {
-            MiniMaxStylePicker(
-                currentStyle = localEmotion,
-                supportedStyles = supportedStyles,
-                onSelect = {
-                    localEmotion = it
-                    showStylePicker = false
-                },
-                onDismiss = { showStylePicker = false }
-            )
-        }
+    // ============================================================================
+    // Emotion 选择（三个音色分支通用：预置音色 / 音色设计 / 音色复刻）
+    // ============================================================================
+    var showStylePicker by remember { mutableStateOf(false) }
+    val hasStyles = supportedStyles.size > 1
+    FormItem(label = { Text(stringResource(R.string.setting_tts_page_emotion)) }) {
+        OutlinedTextField(
+            value = if (hasStyles) localEmotion else "calm",
+            onValueChange = { if (hasStyles) localEmotion = it },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = hasStyles,
+            trailingIcon = {
+                if (hasStyles) {
+                    IconButton(onClick = { showStylePicker = true }) {
+                        Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Style")
+                    }
+                }
+            }
+        )
+    }
+
+    if (showStylePicker) {
+        MiniMaxStylePicker(
+            currentStyle = localEmotion,
+            supportedStyles = supportedStyles,
+            onSelect = {
+                localEmotion = it
+                showStylePicker = false
+            },
+            onDismiss = { showStylePicker = false }
+        )
     }
 
     // ============================================================================
