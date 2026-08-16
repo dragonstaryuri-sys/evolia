@@ -929,6 +929,21 @@ private fun MiniMaxTTSConfiguration(
     var localBaseUrl by remember(setting.baseUrl) { mutableStateOf(setting.baseUrl) }
     var localGroupId by remember(setting.groupId) { mutableStateOf(setting.groupId) }
     var localModel by remember(setting.model) { mutableStateOf(setting.model) }
+    var miniMaxModelExpanded by remember { mutableStateOf(false) }
+    val miniMaxPresetModels = remember {
+        // 官方当前提供的标准 TTS 模型（按版本从新到旧排序）+ 常见预览模型
+        listOf(
+            "speech-2.8-hd",
+            "speech-2.8-turbo",
+            "speech-2.6-hd",
+            "speech-2.6-turbo",
+            "speech-02-hd",
+            "speech-02-turbo",
+            "speech-01-hd",
+            "speech-01-turbo",
+            "speech-2.5-hd-preview"
+        )
+    }
     var localVoiceType by remember(setting.voiceType) { mutableStateOf(setting.voiceType) }
     // 预置音色
     var localVoiceId by remember(setting.voiceId) { mutableStateOf(setting.voiceId) }
@@ -1144,13 +1159,63 @@ private fun MiniMaxTTSConfiguration(
 
     FormItem(
         label = { Text(stringResource(R.string.setting_tts_page_model)) },
-        description = { Text("用于语音合成的模型，推荐 speech-02-hd / speech-2.5-hd-preview 等") }
+        description = { Text("用于语音合成的模型。可从下拉选择预置模型，也支持自行输入官方后续新增的模型名。") }
     ) {
-        OutlinedTextField(
-            value = localModel,
-            onValueChange = { localModel = it.trim() },
-            modifier = Modifier.fillMaxWidth()
-        )
+        ExposedDropdownMenuBox(
+            expanded = miniMaxModelExpanded,
+            onExpandedChange = { miniMaxModelExpanded = !miniMaxModelExpanded }
+        ) {
+            OutlinedTextField(
+                value = localModel,
+                onValueChange = { localModel = it.trim() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
+                placeholder = { Text("例如：speech-02-hd") },
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = miniMaxModelExpanded)
+                },
+                shape = MaterialTheme.shapes.medium
+            )
+            ExposedDropdownMenu(
+                expanded = miniMaxModelExpanded,
+                onDismissRequest = { miniMaxModelExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            "— 官方预置模型 —",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = {}
+                )
+                miniMaxPresetModels.forEach { model ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = model,
+                                fontWeight = if (model == localModel) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        onClick = {
+                            localModel = model
+                            miniMaxModelExpanded = false
+                        },
+                        leadingIcon = {
+                            if (model == localModel) {
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+        }
     }
 
     // ====== 音色来源类型选择 ======

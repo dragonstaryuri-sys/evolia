@@ -816,9 +816,7 @@ private fun MinimalPickerContent(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     haptics.perform(HapticPattern.Pop)
-                    if ((assistant.thinkingBudget ?: 0) > 0) {
-                        onUpdateAssistant(assistant.copy(thinkingBudget = 0))
-                    }
+                    // 不再强制关闭深度思考（Reasoning）：通话保持用户原有设置不变
                     onStartCall()
                     onDismiss()
                 }
