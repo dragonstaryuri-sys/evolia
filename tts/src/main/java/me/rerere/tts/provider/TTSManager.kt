@@ -9,8 +9,9 @@ import me.rerere.tts.provider.providers.AzureTTSProvider
 import me.rerere.tts.provider.providers.CustomTTSProvider
 import me.rerere.tts.provider.providers.ElevenLabsTTSProvider
 import me.rerere.tts.provider.providers.GeminiTTSProvider
-import me.rerere.tts.provider.providers.MimoTTSProvider
+import me.rerere.tts.provider.providers.MiniMaxSimpleVoice
 import me.rerere.tts.provider.providers.MiniMaxTTSProvider
+import me.rerere.tts.provider.providers.MimoTTSProvider
 import me.rerere.tts.provider.providers.OpenAITTSProvider
 import me.rerere.tts.provider.providers.SystemTTSProvider
 
@@ -109,5 +110,25 @@ class TTSManager(private val context: Context) {
      */
     fun miniMaxValidateVoiceId(voiceId: String): Result<Unit> {
         return runCatching { miniMaxProvider.validateVoiceId(voiceId) }
+    }
+
+    /**
+     * MiniMax 专用：拉取用户账号下已有的【音色设计(voice_generation)】音色列表
+     * 仅在账号完成过语音合成的音色会被返回（未激活临时音色不显示）
+     */
+    suspend fun miniMaxListVoiceGeneration(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<MiniMaxSimpleVoice> {
+        return miniMaxProvider.getVoiceGeneration(providerSetting)
+    }
+
+    /**
+     * MiniMax 专用：拉取用户账号下已有的【音色复刻(voice_cloning)】音色列表
+     * 仅在账号完成过语音合成的复刻音色会被返回（未激活临时音色不显示）
+     */
+    suspend fun miniMaxListVoiceCloning(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<MiniMaxSimpleVoice> {
+        return miniMaxProvider.getVoiceCloning(providerSetting)
     }
 }

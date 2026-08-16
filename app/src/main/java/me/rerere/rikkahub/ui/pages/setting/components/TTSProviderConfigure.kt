@@ -85,6 +85,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.tts.provider.providers.MiniMaxSimpleVoice
 import me.rerere.tts.provider.providers.MimoTTSProvider
 
 private const val TAG = "TTSProviderConfigure"
@@ -911,6 +912,10 @@ private fun MiniMaxTTSConfiguration(
     val scope = rememberCoroutineScope()
     var voices by remember { mutableStateOf<List<TTSVoice>>(emptyList()) }
     var isLoadingVoices by remember { mutableStateOf(false) }
+    // 用户已有的音色设计(voice_generation) / 音色复刻(voice_cloning) 列表
+    var existingDesignVoices by remember { mutableStateOf(emptyList<MiniMaxSimpleVoice>()) }
+    var existingCloneVoices by remember { mutableStateOf(emptyList<MiniMaxSimpleVoice>()) }
+    var isLoadingExistingVoices by remember { mutableStateOf(false) }
 
     // 自动修正预设地址
     LaunchedEffect(setting.id) {
@@ -1000,16 +1005,22 @@ private fun MiniMaxTTSConfiguration(
         }
     }
 
-    // 加载预置音色列表
+    // 加载预置音色列表 + 用户已有音色（design/clone）
     LaunchedEffect(localApiKey) {
         if (localApiKey.isNotBlank()) {
             isLoadingVoices = true
+            isLoadingExistingVoices = true
             try {
-                voices = tts.getVoices(setting.copy(apiKey = localApiKey))
+                val temp = setting.copy(apiKey = localApiKey, groupId = localGroupId)
+                voices = tts.getVoices(temp)
+                existingDesignVoices = tts.miniMaxListVoiceGeneration(temp)
+                existingCloneVoices = tts.miniMaxListVoiceCloning(temp)
+                Log.i(TAG, "MiniMax: 在线音色加载完成: system=${voices.size}, design=${existingDesignVoices.size}, clone=${existingCloneVoices.size}")
             } catch (e: Exception) {
                 Log.e(TAG, "MiniMax: Fetch voices failed", e)
             } finally {
                 isLoadingVoices = false
+                isLoadingExistingVoices = false
             }
         }
     }
@@ -1257,6 +1268,104 @@ private fun MiniMaxTTSConfiguration(
     // 分支 B：音色设计 (Voice Design)
     // ============================================================================
     if (localVoiceType == TTSProviderSetting.MiniMaxVoiceType.DESIGN) {
+        // ---- 已有音色（voice_generation）选择，放在 Prompt 输入框上方 ----
+        FormItem(
+            label = { Text("已有音色") },
+            description = {
+                Text(
+                    "从账号下已激活的「音色设计」音色中直接选用，无需重新生成。\n" +
+                        "注：临时音色需至少成功调用一次 TTS 后才会出现在此列表中。"
+                )
+            }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                var expanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    OutlinedTextField(
+                        value = run {
+                            val v = existingDesignVoices.firstOrNull { it.voiceId == localDesignedVoiceId }
+                            when {
+                                isLoadingExistingVoices -> "加载中…"
+                                existingDesignVoices.isEmpty() -> "（暂无可选的音色设计）"
+                                v != null -> "${v.voiceName}  (${v.voiceId})"
+                                localDesignedVoiceId.isNotBlank() -> "当前选中（生成的临时音色）：$localDesignedVoiceId"
+                                else -> "请选择已有音色…"
+                            }
+                        },
+                        onValueChange = { },
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        trailingIcon = {
+                            if (isLoadingExistingVoices) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                            }
+                        },
+                        shape = MaterialTheme.shapes.medium
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        if (existingDesignVoices.isEmpty() && !isLoadingExistingVoices) {
+                            DropdownMenuItem(
+                                text = { Text("（还没有已激活的音色设计，试试在下方生成一个并试听一次吧）") },
+                                onClick = { expanded = false }
+                            )
+                        }
+                        existingDesignVoices.forEach { v ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = v.voiceName,
+                                            fontWeight = if (v.voiceId == localDesignedVoiceId) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Text(
+                                            text = "${v.voiceId}${if (v.createdTime.isNotBlank()) " · 创建于 ${v.createdTime}" else ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    localDesignedVoiceId = v.voiceId
+                                    expanded = false
+                                },
+                                leadingIcon = {
+                                    if (v.voiceId == localDesignedVoiceId) {
+                                        Icon(
+                                            Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+                if (localDesignedVoiceId.isNotBlank() && existingDesignVoices.none { it.voiceId == localDesignedVoiceId }) {
+                    Text(
+                        "💡 当前使用的是本次会话内新生成的临时音色（还未在列表中激活），到右上角试听一次即可正式激活。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+        }
+
         FormItem(
             label = { Text("音色描述 Prompt") },
             description = {
@@ -1362,6 +1471,106 @@ private fun MiniMaxTTSConfiguration(
     // 分支 C：音色复刻 (Voice Clone)
     // ============================================================================
     if (localVoiceType == TTSProviderSetting.MiniMaxVoiceType.CLONE) {
+        // ---- 已有音色（voice_cloning）选择，放在自定义 voice_id 上方 ----
+        FormItem(
+            label = { Text("已有音色") },
+            description = {
+                Text(
+                    "从账号下已激活的「音色复刻」音色中直接选用，无需重新上传音频复刻。\n" +
+                        "注：临时复刻音色需至少成功调用一次 TTS 后才会出现在此列表中。"
+                )
+            }
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                var expanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    OutlinedTextField(
+                        value = run {
+                            val v = existingCloneVoices.firstOrNull { it.voiceId == localCloneVoiceId }
+                            when {
+                                isLoadingExistingVoices -> "加载中…"
+                                existingCloneVoices.isEmpty() -> "（暂无可选的音色复刻）"
+                                v != null -> "${v.voiceName}  (${v.voiceId})"
+                                localCloneVoiceId.isNotBlank() -> "当前自定义 voice_id：$localCloneVoiceId"
+                                else -> "请选择已有音色…"
+                            }
+                        },
+                        onValueChange = { },
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Rounded.ContentCopy,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        trailingIcon = {
+                            if (isLoadingExistingVoices) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            } else {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                            }
+                        },
+                        shape = MaterialTheme.shapes.medium
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        if (existingCloneVoices.isEmpty() && !isLoadingExistingVoices) {
+                            DropdownMenuItem(
+                                text = { Text("（还没有已激活的音色复刻，试试在下方上传音频复刻一个并试听一次吧）") },
+                                onClick = { expanded = false }
+                            )
+                        }
+                        existingCloneVoices.forEach { v ->
+                            DropdownMenuItem(
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = v.voiceName,
+                                            fontWeight = if (v.voiceId == localCloneVoiceId) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        Text(
+                                            text = "${v.voiceId}${if (v.createdTime.isNotBlank()) " · 创建于 ${v.createdTime}" else ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    // 选已有音色的话，直接把该 voice_id 写入 localCloneVoiceId，并清空上传必填项
+                                    localCloneVoiceId = v.voiceId
+                                    expanded = false
+                                },
+                                leadingIcon = {
+                                    if (v.voiceId == localCloneVoiceId) {
+                                        Icon(
+                                            Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+                // 选了已有音色时：友好提示用户不必再上传音频
+                if (localCloneVoiceId.isNotBlank() && existingCloneVoices.any { it.voiceId == localCloneVoiceId }) {
+                    Text(
+                        "💡 已从已有音色中选择，可直接使用，无需重新上传音频和执行复刻。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+        }
+
         // —— 自定义 voice_id ——
         val voiceIdError = remember(localCloneVoiceId) {
             if (localCloneVoiceId.isBlank()) null
@@ -1371,7 +1580,10 @@ private fun MiniMaxTTSConfiguration(
             label = { Text("自定义 voice_id") },
             description = {
                 Column {
-                    Text("必填。将来在 TTS 中引用该音色的标识。规则：长度 8-256，首字符必须是字母，只允许字母数字 - _，末尾不能是 -/_。")
+                    Text(
+                        "必填。将来在 TTS 中引用该音色的标识。规则：长度 8-256，首字符必须是字母，只允许字母数字 - _，末尾不能是 -/_。",
+                        color = MaterialTheme.colorScheme.error
+                    )
                     if (voiceIdError != null) {
                         Text(voiceIdError, color = MaterialTheme.colorScheme.error)
                     }

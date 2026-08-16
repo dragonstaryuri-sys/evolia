@@ -87,25 +87,37 @@ private data class MiniMaxVoiceCloneResponse(
     val base_resp: MiniMaxBaseResp = MiniMaxBaseResp()
 )
 
-/** 获取音色列表响应
- *  注意：voice_cloning / voice_generation 这两个字段 MiniMax 有时会显式返回 null
- *        我们只用 system_voice，所以声明为 @Serializable 的 JsonElement 并给默认值，
- *        让 Json { ignoreUnknownKeys = true } 自动忽略（decode 默认不会走 ignoreUnknownKeys
- *        对显式 null 的处理，所以干脆把字段移除，让 ignoreUnknownKeys 彻底略过）。
+/**
+ * /v1/get_voice 通用响应
+ * 所有列表字段都声明为 JsonElement?，因为 MiniMax 有时会显式返回 null 而非 []，
+ * 必须先拿到原始 JSON 节点再手动解析成 List<MiniMaxVoiceItem>，避免 JsonDecodingException。
  */
 @Serializable
 private data class MiniMaxGetVoiceResponse(
-    val system_voice: List<MiniMaxSystemVoice> = emptyList(),
+    val system_voice: JsonElement? = null,
+    val voice_cloning: JsonElement? = null,
+    val voice_generation: JsonElement? = null,
     val base_resp: MiniMaxBaseResp = MiniMaxBaseResp()
 )
 
+/**
+ * system_voice / voice_cloning / voice_generation 三个数组里的元素结构基本一致，
+ * 只是 description、voice_name 等字段偶尔会缺省，用这个统一结构。
+ */
 @Serializable
-private data class MiniMaxSystemVoice(
+private data class MiniMaxVoiceItem(
     val voice_id: String = "",
     val voice_name: String = "",
-    // description 可能显式返回 null：先解码为 JsonElement，后处理时再提取
     val description: JsonElement? = null,
     val created_time: String = ""
+)
+
+/** 对外暴露的简化音色条目 */
+data class MiniMaxSimpleVoice(
+    val voiceId: String,
+    val voiceName: String,
+    val description: String,
+    val createdTime: String
 )
 
 // ======================== Provider 实现 ========================
@@ -242,27 +254,59 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
             return buildInMiniMaxVoices()
         }
 
-        return runCatching { fetchSystemVoices(providerSetting) }
+        return runCatching { fetchFullVoiceBundle(providerSetting).systemVoices }
             .onFailure { Log.e(TAG, "getVoices: 拉取在线音色列表失败，回退内置列表", it) }
             .getOrElse { buildInMiniMaxVoices() }
+    }
+
+    /**
+     * 拉取用户已有的【音色设计(voice_generation)】音色列表
+     */
+    suspend fun getVoiceGeneration(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<MiniMaxSimpleVoice> {
+        if (providerSetting.apiKey.isBlank()) return emptyList()
+        return runCatching { fetchFullVoiceBundle(providerSetting).generationVoices }
+            .onFailure { Log.e(TAG, "getVoiceGeneration 失败", it) }
+            .getOrElse { emptyList() }
+    }
+
+    /**
+     * 拉取用户已有的【音色复刻(voice_cloning)】音色列表
+     * 注意：快速复刻得到的音色为未激活状态，需正式调用一次才可在本接口查询到
+     */
+    suspend fun getVoiceCloning(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<MiniMaxSimpleVoice> {
+        if (providerSetting.apiKey.isBlank()) return emptyList()
+        return runCatching { fetchFullVoiceBundle(providerSetting).cloningVoices }
+            .onFailure { Log.e(TAG, "getVoiceCloning 失败", it) }
+            .getOrElse { emptyList() }
     }
 
     /** 通用情感列表：speech-2.x 模型的 voice_setting.emotion 通用支持的情感值 */
     private val commonEmotions = listOf("calm", "happy", "sad", "angry", "fearful", "disgusted", "surprised")
 
+    private data class VoiceBundle(
+        val systemVoices: List<TTSVoice>,
+        val generationVoices: List<MiniMaxSimpleVoice>,
+        val cloningVoices: List<MiniMaxSimpleVoice>
+    )
+
     /**
-     * 调用 MiniMax /v1/get_voice 实时拉取系统预置音色列表
+     * 统一调用 /v1/get_voice voice_type=all，一次性拿到 system / generation / cloning 三份列表，
+     * 避免重复 HTTP 请求，各调用方按分类取自己那份。
      */
-    private suspend fun fetchSystemVoices(
+    private suspend fun fetchFullVoiceBundle(
         providerSetting: TTSProviderSetting.MiniMax
-    ): List<TTSVoice> = withContext(Dispatchers.IO) {
+    ): VoiceBundle = withContext(Dispatchers.IO) {
         val urlBuilder = StringBuilder("${providerSetting.baseUrl}/get_voice")
         if (providerSetting.groupId.isNotBlank()) {
             urlBuilder.append("?GroupId=${providerSetting.groupId}")
         }
 
         val requestBody = buildJsonObject {
-            put("voice_type", "system")
+            put("voice_type", "all")
         }
 
         val request = Request.Builder()
@@ -272,7 +316,7 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
             .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
             .build()
 
-        Log.i(TAG, "fetchSystemVoices: calling $urlBuilder")
+        Log.i(TAG, "fetchFullVoiceBundle: calling $urlBuilder")
 
         val response = httpClient.newCall(request).execute()
         val bodyStr = response.body.string()
@@ -285,35 +329,74 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
             throw Exception("MiniMax get_voice error: ${parsed.base_resp.status_msg} (code=${parsed.base_resp.status_code})")
         }
 
-        val voices = parsed.system_voice.mapNotNull { sysVoice ->
-            val id = sysVoice.voice_id
-            if (id.isBlank()) return@mapNotNull null
-            val name = sysVoice.voice_name.ifBlank { id }
-            // description 可能是 null / ["xxx"] / 单个字符串，安全提取
-            val descEl = sysVoice.description
-            val desc = when {
-                descEl == null -> ""
-                descEl is JsonArray -> descEl.firstOrNull()
-                    ?.let { if (it is JsonPrimitive && it.isString) it.content else null }
-                    .orEmpty()
-                descEl is JsonPrimitive && descEl.isString -> descEl.content
-                else -> ""
-            }
-            val gender = inferGender(id, name, desc)
-            // locale 粗略推断：voice_id 或 name 含 Chinese/Mandarin/中文关键词则 zh-CN，否则默认 zh-CN
-            val locale = inferLocale(id, name, desc)
+        // ---- 三份数组分别安全解析 ----
+        val systemItems = parseVoiceItemArray(parsed.system_voice)
+        val generationItems = parseVoiceItemArray(parsed.voice_generation)
+        val cloningItems = parseVoiceItemArray(parsed.voice_cloning)
+
+        // 系统音色 -> TTSVoice（预置音色选择器用）
+        val systemTTS = systemItems.mapNotNull { item ->
+            if (item.voiceId.isBlank()) return@mapNotNull null
+            val gender = inferGender(item.voiceId, item.voiceName, item.description)
+            val locale = inferLocale(item.voiceId, item.voiceName, item.description)
             TTSVoice(
-                id = id,
-                name = name,
+                id = item.voiceId,
+                name = item.voiceName.ifBlank { item.voiceId },
                 locale = locale,
                 gender = gender,
-                description = desc,
+                description = item.description,
                 styles = commonEmotions
             )
         }
 
-        Log.i(TAG, "fetchSystemVoices: got ${voices.size} voices")
-        if (voices.isEmpty()) buildInMiniMaxVoices() else voices
+        Log.i(
+            TAG,
+            "fetchFullVoiceBundle: system=${systemTTS.size}, generation=${generationItems.size}, cloning=${cloningItems.size}"
+        )
+        VoiceBundle(
+            systemVoices = systemTTS.ifEmpty { buildInMiniMaxVoices() },
+            generationVoices = generationItems,
+            cloningVoices = cloningItems
+        )
+    }
+
+    /** 从 JsonElement 里安全地提取字符串：必须是 JsonPrimitive 且 isString */
+    private fun JsonElement?.safeString(): String {
+        if (this == null) return ""
+        if (this is JsonPrimitive && this.isString) return this.content
+        return ""
+    }
+
+    /**
+     * 将 MiniMax 返回的 JsonElement?(null 或 array) 解析成 List<MiniMaxSimpleVoice>
+     */
+    private fun parseVoiceItemArray(element: JsonElement?): List<MiniMaxSimpleVoice> {
+        if (element == null || element !is JsonArray) return emptyList()
+        return element.mapNotNull { node ->
+            if (node !is kotlinx.serialization.json.JsonObject) return@mapNotNull null
+            val obj = node.jsonObject
+            val voiceId = obj["voice_id"].safeString()
+            if (voiceId.isBlank()) return@mapNotNull null
+            val voiceName = obj["voice_name"].safeString()
+            val createdTime = obj["created_time"].safeString()
+            val desc = parseDescription(obj["description"])
+            MiniMaxSimpleVoice(
+                voiceId = voiceId,
+                voiceName = voiceName.ifBlank { voiceId },
+                description = desc,
+                createdTime = createdTime
+            )
+        }
+    }
+
+    /** 兼容 description 为 null / ["xxx"] / 纯字符串三种情况 */
+    private fun parseDescription(descEl: JsonElement?): String = when {
+        descEl == null -> ""
+        descEl is JsonArray -> descEl.firstOrNull()
+            ?.let { if (it is JsonPrimitive && it.isString) it.content else null }
+            .orEmpty()
+        descEl is JsonPrimitive && descEl.isString -> descEl.content
+        else -> ""
     }
 
     /** 内置兜底音色列表（和原来的一致） */

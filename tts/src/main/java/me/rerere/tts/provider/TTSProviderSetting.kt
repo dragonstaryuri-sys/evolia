@@ -183,7 +183,7 @@ sealed class TTSProviderSetting {
         val designPrompt: String = "",
         /** 试听文本（音色设计必填，用于生成 trial_audio） */
         val designPreviewText: String = "夜深了，古屋里只有他一人。窗外传来若有若无的脚步声。",
-        /** 音色设计生成的 voice_id（API 返回后填入） */
+        /** 选中的音色设计 voice_id（可能是 API 新生成的 designedVoiceId，也可能是从已有 voice_generation 列表选的） */
         val designedVoiceId: String = "",
         /** 音色设计返回的试听音频 hex（仅预览，不持久化用于TTS） */
         val designedTrialAudioHex: String = "",

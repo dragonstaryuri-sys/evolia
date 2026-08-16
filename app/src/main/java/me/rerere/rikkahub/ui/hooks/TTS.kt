@@ -24,6 +24,7 @@ import me.rerere.rikkahub.utils.stripMarkdown
 import me.rerere.tts.model.TTSVoice
 import me.rerere.tts.provider.TTSManager
 import me.rerere.tts.provider.TTSProviderSetting
+import me.rerere.tts.provider.providers.MiniMaxSimpleVoice
 import me.rerere.tts.controller.TtsController
 import org.koin.compose.koinInject
 import org.koin.core.component.KoinComponent
@@ -118,6 +119,12 @@ interface CustomTtsState {
 
     /** MiniMax 专用：校验自定义 voice_id 格式 */
     fun miniMaxValidateVoiceId(voiceId: String): Result<Unit>
+
+    /** MiniMax 专用：拉取用户账号下已有的【音色设计】音色列表（voice_generation，需先激活才会显示） */
+    suspend fun miniMaxListVoiceGeneration(providerSetting: TTSProviderSetting.MiniMax): List<MiniMaxSimpleVoice>
+
+    /** MiniMax 专用：拉取用户账号下已有的【音色复刻】音色列表（voice_cloning，需先激活才会显示） */
+    suspend fun miniMaxListVoiceCloning(providerSetting: TTSProviderSetting.MiniMax): List<MiniMaxSimpleVoice>
 
     /**
      * 开始为指定会话自动朗读。
@@ -370,6 +377,18 @@ class CustomTtsStateImpl(
 
     override fun miniMaxValidateVoiceId(voiceId: String): Result<Unit> {
         return ttsManager.miniMaxValidateVoiceId(voiceId)
+    }
+
+    override suspend fun miniMaxListVoiceGeneration(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<MiniMaxSimpleVoice> {
+        return ttsManager.miniMaxListVoiceGeneration(providerSetting)
+    }
+
+    override suspend fun miniMaxListVoiceCloning(
+        providerSetting: TTSProviderSetting.MiniMax
+    ): List<MiniMaxSimpleVoice> {
+        return ttsManager.miniMaxListVoiceCloning(providerSetting)
     }
 
     override fun startAutoRead(conversationId: Uuid, chatService: ChatService) {
