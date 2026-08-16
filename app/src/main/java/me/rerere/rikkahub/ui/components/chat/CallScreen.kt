@@ -9,8 +9,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -326,11 +328,14 @@ fun CallScreen(
                     val bubbleColor = Color.White.copy(alpha = 0.12f)
                     val textColor = Color.White
                     val iconTint = if (isUser) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                    // 固定最大高度（≈4.5 行文字），气泡高度不超过这个值；文字超出时内部滚动
+                    val bubbleMaxHeight = 96.dp
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier
                             .fillMaxWidth(0.85f)
+                            .heightIn(max = bubbleMaxHeight)
                             .background(bubbleColor, RoundedCornerShape(20.dp))
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
@@ -338,18 +343,24 @@ fun CallScreen(
                             imageVector = if (isUser) Icons.Rounded.Person else Icons.Rounded.AutoAwesome,
                             contentDescription = null,
                             tint = iconTint,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier
+                                .size(18.dp)
+                                .padding(top = 2.dp)
                         )
-                        Text(
-                            text = latestMessageText ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontSize = 14.sp,
-                            color = textColor,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Start,
-                            lineHeight = 20.sp
-                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text(
+                                text = latestMessageText ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontSize = 14.sp,
+                                color = textColor,
+                                textAlign = TextAlign.Start,
+                                lineHeight = 20.sp
+                            )
+                        }
                     }
                 }
             }

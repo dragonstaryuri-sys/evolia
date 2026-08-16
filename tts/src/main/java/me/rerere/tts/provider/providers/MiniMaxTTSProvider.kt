@@ -8,7 +8,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -85,12 +87,15 @@ private data class MiniMaxVoiceCloneResponse(
     val base_resp: MiniMaxBaseResp = MiniMaxBaseResp()
 )
 
-/** 获取音色列表响应 */
+/** 获取音色列表响应
+ *  注意：voice_cloning / voice_generation 这两个字段 MiniMax 有时会显式返回 null
+ *        我们只用 system_voice，所以声明为 @Serializable 的 JsonElement 并给默认值，
+ *        让 Json { ignoreUnknownKeys = true } 自动忽略（decode 默认不会走 ignoreUnknownKeys
+ *        对显式 null 的处理，所以干脆把字段移除，让 ignoreUnknownKeys 彻底略过）。
+ */
 @Serializable
 private data class MiniMaxGetVoiceResponse(
     val system_voice: List<MiniMaxSystemVoice> = emptyList(),
-    val voice_cloning: List<JsonElement> = emptyList(),
-    val voice_generation: List<JsonElement> = emptyList(),
     val base_resp: MiniMaxBaseResp = MiniMaxBaseResp()
 )
 
@@ -98,7 +103,8 @@ private data class MiniMaxGetVoiceResponse(
 private data class MiniMaxSystemVoice(
     val voice_id: String = "",
     val voice_name: String = "",
-    val description: List<String> = emptyList(),
+    // description 可能显式返回 null：先解码为 JsonElement，后处理时再提取
+    val description: JsonElement? = null,
     val created_time: String = ""
 )
 
@@ -283,7 +289,16 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
             val id = sysVoice.voice_id
             if (id.isBlank()) return@mapNotNull null
             val name = sysVoice.voice_name.ifBlank { id }
-            val desc = sysVoice.description.firstOrNull() ?: ""
+            // description 可能是 null / ["xxx"] / 单个字符串，安全提取
+            val descEl = sysVoice.description
+            val desc = when {
+                descEl == null -> ""
+                descEl is JsonArray -> descEl.firstOrNull()
+                    ?.let { if (it is JsonPrimitive && it.isString) it.content else null }
+                    .orEmpty()
+                descEl is JsonPrimitive && descEl.isString -> descEl.content
+                else -> ""
+            }
             val gender = inferGender(id, name, desc)
             // locale 粗略推断：voice_id 或 name 含 Chinese/Mandarin/中文关键词则 zh-CN，否则默认 zh-CN
             val locale = inferLocale(id, name, desc)

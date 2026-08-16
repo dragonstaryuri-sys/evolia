@@ -335,10 +335,10 @@ class ChatVM(
                                 .replace(Regex("[#*_>`]+"), "")
                                 .replace(Regex("\\[[^\\]]+\\]\\([^)]+\\)"), "")
                             if (text.isBlank()) null
-                            else CallLatestMessage(
-                                role = node.role,
-                                text = if (text.length > 80) text.take(80) + "…" else text
-                            )
+                        else CallLatestMessage(
+                            role = node.role,
+                            text = text
+                        )
                         }
                         else -> null
                     }

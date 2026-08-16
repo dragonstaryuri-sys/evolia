@@ -2006,12 +2006,9 @@ fun VoiceCallButton(
         }
     ) {
         haptics.perform(HapticPattern.Pop)
-        // 1. 关闭深度思考 (Reasoning)
-        if ((assistant.thinkingBudget ?: 0) > 0) {
-            onUpdateAssistant(assistant.copy(thinkingBudget = 0))
-        }
-
-        // 2. 唤起通话逻辑
+        // 不再强制关闭深度思考（Reasoning）：通话也可以保持深度思考开启，
+        // 由用户自己在设置里控制。
+        // 唤起通话逻辑
         onStartCall()
         onDismiss()
     }
