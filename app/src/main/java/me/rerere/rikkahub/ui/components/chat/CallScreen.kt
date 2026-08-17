@@ -62,6 +62,7 @@ fun CallScreen(
     isSpeakerOn: Boolean,
     latestMessageRole: MessageRole? = null,
     latestMessageText: String? = null,
+    listeningText: String? = null,
     onMuteToggle: () -> Unit,
     onSpeakerToggle: () -> Unit,
     onHangup: () -> Unit,
@@ -316,14 +317,21 @@ fun CallScreen(
                     )
                 }
 
-                // 最新一条对话气泡：放在头像和底部按钮之间，做个居中胶囊
+                // 最新一条对话气泡（含"正在听"时的识别文字）：
+                // - LISTENING 状态且有 listeningText（ASR 实时 partial）：优先显示，角色=USER，末尾加闪烁省略号
+                // - 否则：显示最近一条已落盘的消息
+                val isListeningNow = status == CallStatus.LISTENING && listeningText != null
+                val (displayRole, displayText, showTypingDot) = when {
+                    isListeningNow -> Triple(MessageRole.USER, listeningText.orEmpty(), true)
+                    else -> Triple(latestMessageRole, latestMessageText.orEmpty(), false)
+                }
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = !latestMessageText.isNullOrBlank(),
+                    visible = displayText.isNotBlank(),
                     enter = fadeIn(tween(300)),
                     exit = fadeOut(tween(200)),
                     modifier = Modifier.padding(top = 36.dp, start = 24.dp, end = 24.dp)
                 ) {
-                    val isUser = latestMessageRole == MessageRole.USER
+                    val isUser = displayRole == MessageRole.USER
                     // user 和 agent 都用同样的半透明白底，整体风格统一
                     val bubbleColor = Color.White.copy(alpha = 0.12f)
                     val textColor = Color.White
@@ -352,14 +360,35 @@ fun CallScreen(
                                 .weight(1f)
                                 .verticalScroll(rememberScrollState())
                         ) {
-                            Text(
-                                text = latestMessageText ?: "",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontSize = 14.sp,
-                                color = textColor,
-                                textAlign = TextAlign.Start,
-                                lineHeight = 20.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = displayText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontSize = 14.sp,
+                                    color = textColor,
+                                    textAlign = TextAlign.Start,
+                                    lineHeight = 20.sp
+                                )
+                                if (showTypingDot) {
+                                    // 识别中闪烁省略号：给用户明确的"还在继续识别"信号
+                                    val dotAlpha by infiniteTransition.animateFloat(
+                                        initialValue = 0.2f,
+                                        targetValue = 1f,
+                                        animationSpec = infiniteRepeatable(
+                                            animation = tween(600, easing = FastOutSlowInEasing),
+                                            repeatMode = RepeatMode.Reverse
+                                        ),
+                                        label = "listening_dot_alpha"
+                                    )
+                                    Text(
+                                        text = "…",
+                                        fontSize = 18.sp,
+                                        color = Color(0xFF4CAF50).copy(alpha = dotAlpha),
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(start = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

@@ -41,6 +41,7 @@ import me.rerere.rikkahub.service.voice.VoiceCallManager
 import me.rerere.rikkahub.service.voice.VoiceMessagePlayer
 import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.asr.provider.ASRManager
+import me.rerere.asr.provider.ASRProviderSetting
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.rikkahub.utils.UiState
@@ -107,6 +108,92 @@ class ChatVM(
 
     // --- 语音条「转文字」显示状态：key = audioUrl，存在 VM 里避免 UI 刷新丢失 ---
     val shownTranscriptions: MutableSet<String> = mutableStateSetOf()
+
+    // ========================================================================
+    // 录音期间并行流式 ASR（SystemASR 走本地流式识别，不再 fallback 云端）
+    //
+    // 工作方式：
+    //   用户按下录音 → startRecordingASRSession() 启动 SystemASR 流式识别（如果当前选的是 SystemASR）
+    //   用户松手 / 取消 → finishRecordingASRSession() 停止识别并返回缓存的最终文本
+    //   sendVoiceMessage() 收到非空文本 → 直接跳过 transcribeFile，避免云端 fallback
+    //   若流式识别结果为空 / 启动失败 / 非 SystemASR → 走原先的 transcribeFile + fallback 兜底
+    // ========================================================================
+    private var recordingASRSessionJob: kotlinx.coroutines.Job? = null
+    private val recordingASRFinalText = MutableStateFlow<String?>(null)
+
+    /**
+     * 启动"录音期间并行流式 ASR 会话"。
+     * 仅当当前选中的 ASR 是 SystemASR 时真正启动；其他 provider 不做任何事
+     * （它们本身支持 transcribeFile，不需要这条旁路）。
+     *
+     * 必须与 [finishRecordingASRSession] 配对使用：
+     * 录音开始（按下）时调用，录音停止（松手/取消/超时）时必须调 finish 收尾。
+     */
+    fun startRecordingASRSession() {
+        // 收尾上一次会话（若有未释放的），避免泄漏
+        recordingASRSessionJob?.cancel()
+        recordingASRSessionJob = null
+        recordingASRFinalText.value = null
+
+        val settings = settingsStore.settingsFlow.value
+        val asrSetting = settings.getSelectedASRProvider() as? ASRProviderSetting.SystemASR
+            ?: run {
+                Log.d(TAG, "startRecordingASRSession: current provider is not SystemASR, skip streaming")
+                return
+            }
+        Log.i(TAG, "startRecordingASRSession: start parallel SystemASR streaming for voice message")
+
+        val job = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            try {
+                asrManager.startRecognition(asrSetting, context).collect { result ->
+                    // isFinal=true 视为最终结果（覆盖之前的 partial）
+                    // 若用户松手时还没等到 final，就用最后一次收到的 partial 兜底（result.isFinal=false 也存）
+                    recordingASRFinalText.value = result.text
+                    Log.v(
+                        TAG,
+                        "recording ASR: isFinal=${result.isFinal}, text='${result.text.take(40)}${if (result.text.length > 40) "…" else ""}'"
+                    )
+                }
+            } catch (e: Exception) {
+                // 最常见：麦克风共享冲突，部分设备不允许 AudioRecord + SpeechRecognizer 同时开
+                Log.w(
+                    TAG,
+                    "startRecordingASRSession: parallel SystemASR failed (likely mic conflict), " +
+                        "will fall back to cloud transcription: ${e.message}"
+                )
+                // 不抛异常，把结果留空 → sendVoiceMessage 会自动走云端 fallback
+                recordingASRFinalText.value = null
+            }
+        }
+        job.invokeOnCompletion { cause ->
+            if (cause != null && cause !is kotlinx.coroutines.CancellationException) {
+                Log.w(TAG, "startRecordingASRSession: job completed with error: ${cause.message}")
+            }
+        }
+        recordingASRSessionJob = job
+    }
+
+    /**
+     * 停止"录音期间并行流式 ASR 会话"，返回期间收集到的最终转写文本。
+     * 无论录音成功发送 / 过短取消 / 上滑取消，都必须调用一次以释放 SpeechRecognizer 资源。
+     *
+     * @return 若 SystemASR 启动成功且有有效文本，返回该文本；否则返回 null（让上层走云端 fallback）。
+     */
+    fun finishRecordingASRSession(): String? {
+        val job = recordingASRSessionJob
+        recordingASRSessionJob = null
+        job?.cancel()
+
+        val text = recordingASRFinalText.value?.takeIf { it.isNotBlank() }
+        recordingASRFinalText.value = null
+
+        if (text != null) {
+            Log.i(TAG, "finishRecordingASRSession: parallel SystemASR OK, text='${text.take(50)}'")
+        } else {
+            Log.d(TAG, "finishRecordingASRSession: no parallel text, will fall back to cloud transcribeFile")
+        }
+        return text
+    }
 
     // 是否有待触发 AI 的 USER 消息（当存在 pending ASR 时发送新消息会置 true，
     // pending ASR 全部完成后会统一 trigger 一次 AI，避免中间每来一条就触发一次）
@@ -346,6 +433,12 @@ class ChatVM(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /**
+     * 通话页面显示的「正在听」识别文字（ASR partial 结果）。
+     * 直接透传 VoiceCallManager，用于 LISTENING 状态时在气泡中实时显示用户说到哪了。
+     */
+    val callListeningText: StateFlow<String?> get() = voiceCallManager.listeningText
+
     var chatListInitialized by mutableStateOf(false)
 
     val conversationJob: StateFlow<Job?> = _currentActiveId
@@ -575,8 +668,10 @@ class ChatVM(
      *
      * @param audioUri 录音文件 Uri（file:// 形式）
      * @param durationMs 录音时长（毫秒）
+     * @param preTranscribedText 录音期间已通过并行流式 ASR 拿到的文本（例如 SystemASR 实时识别结果）。
+     *   传非空文本时**直接跳过** transcribeFile（省去一次云端 fallback）；传 null 则走原有 ASR 转写逻辑。
      */
-    fun sendVoiceMessage(audioUri: Uri, durationMs: Long) {
+    fun sendVoiceMessage(audioUri: Uri, durationMs: Long, preTranscribedText: String? = null) {
         viewModelScope.launch {
             val currentSettings = settingsStore.settingsFlow.value
 
@@ -627,21 +722,60 @@ class ChatVM(
             _hasPendingUserMessagesForAI.set(true)
 
             // 3. ASR 转文字（用 asrMutex 保证多条语音按发送顺序串行转写，不并发）
-            val asrProvider = currentSettings.getSelectedASRProvider()
-            val transcription: String? = if (asrProvider != null) {
-                asrMutex.withLock {
-                    try {
-                        asrManager.transcribeFile(asrProvider, context, audioUri)
-                            .takeIf { it.isNotBlank() }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "sendVoiceMessage: ASR failed", e)
-                        _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
-                        null
-                    }
-                }
+            // 优先级：
+            //   1) 若录音期间已通过并行流式 SystemASR 拿到文本（preTranscribedText）→ 直接用，跳过网络
+            //   2) 否则走"整段文件转录"：SystemASR 不支持，自动 fallback 到 EvoliaASR/OnlineASR
+            val transcription: String? = if (!preTranscribedText.isNullOrBlank()) {
+                Log.i(
+                    TAG,
+                    "sendVoiceMessage: using parallel streaming SystemASR result " +
+                        "(skip transcribeFile), text='${preTranscribedText.take(50)}'"
+                )
+                preTranscribedText
             } else {
-                _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
-                null
+                val selectedAsrProvider = currentSettings.getSelectedASRProvider()
+                val effectiveAsrProvider = if (selectedAsrProvider is ASRProviderSetting.SystemASR) {
+                    val evoliaFallback = currentSettings.asrProviders
+                        .asSequence()
+                        .filterIsInstance<ASRProviderSetting.EvoliaASR>()
+                        .firstOrNull()
+                    val onlineFallback = currentSettings.asrProviders
+                        .asSequence()
+                        .filterIsInstance<ASRProviderSetting.OnlineASR>()
+                        .firstOrNull { it.apiKey.isNotBlank() }
+                    val fallback = evoliaFallback ?: onlineFallback
+                    if (fallback != null) {
+                        Log.i(
+                            TAG,
+                            "sendVoiceMessage: SystemASR selected, " +
+                                "fallback to ${fallback.name} for file transcription"
+                        )
+                    } else {
+                        Log.w(
+                            TAG,
+                            "sendVoiceMessage: SystemASR selected but no fallback " +
+                                "(EvoliaASR/OnlineASR with API key) available for file transcription"
+                        )
+                    }
+                    fallback
+                } else {
+                    selectedAsrProvider
+                }
+                if (effectiveAsrProvider != null) {
+                    asrMutex.withLock {
+                        try {
+                            asrManager.transcribeFile(effectiveAsrProvider, context, audioUri)
+                                .takeIf { it.isNotBlank() }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "sendVoiceMessage: ASR failed", e)
+                            _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                            null
+                        }
+                    }
+                } else {
+                    _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
+                    null
+                }
             }
 
             // 4. 成功则写入该 Audio Part 的 metadata（按 audioUrl 精确匹配，避免并发覆盖）

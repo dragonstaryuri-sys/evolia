@@ -291,7 +291,24 @@ private fun ChatPageContent(
         vm.voiceEvents.collect { msg -> toaster.show(msg, ToastType.Error) }
     }
 
+    // 监听录音状态：按下录音（进入 Recording）时启动并行流式 SystemASR 实时识别
+    LaunchedEffect(voiceRecorderController) {
+        var lastState: me.rerere.rikkahub.service.voice.VoiceRecorderState? = null
+        voiceRecorderController.state.collect { newState ->
+            if (newState == me.rerere.rikkahub.service.voice.VoiceRecorderState.Recording &&
+                lastState != me.rerere.rikkahub.service.voice.VoiceRecorderState.Recording) {
+                // Idle → Recording：用户刚按下录音键
+                vm.startRecordingASRSession()
+            }
+            lastState = newState
+        }
+    }
+
     fun handleVoiceMessageReady(result: me.rerere.rikkahub.service.voice.VoiceRecorderResult?) {
+        // 无论录音是否有效（发送/取消/过短）都必须收尾 ASR 会话，
+        // 释放 SpeechRecognizer 并拿到（若有）并行流式识别结果
+        val streamedText = vm.finishRecordingASRSession()
+
         // null 可能是"太短"或"上滑取消"：通过 controller 状态区分
         if (result == null) {
             val isCancelled = voiceRecorderController.state.value ==
@@ -305,7 +322,7 @@ private fun ChatPageContent(
             toaster.show(context.getString(R.string.error_select_model_first), ToastType.Error)
             return
         }
-        vm.sendVoiceMessage(result.uri, result.durationMs)
+        vm.sendVoiceMessage(result.uri, result.durationMs, preTranscribedText = streamedText)
     }
 
     // 达到录音最长时长（59s）时，自动停录并发送
@@ -408,6 +425,7 @@ private fun ChatPageContent(
     val isSpeakerOn by vm.callIsSpeakerOn.collectAsStateWithLifecycle()
     val callStatus by vm.callStatus.collectAsStateWithLifecycle()
     val callLatestMessage by vm.callLatestMessage.collectAsStateWithLifecycle()
+    val callListeningText by vm.callListeningText.collectAsStateWithLifecycle()
 
     // --- 统一返回出口逻辑 ---
     val handleBack: () -> Unit = {
@@ -1009,6 +1027,7 @@ private fun ChatPageContent(
                     isSpeakerOn = isSpeakerOn,
                     latestMessageRole = callLatestMessage?.role,
                     latestMessageText = callLatestMessage?.text,
+                    listeningText = callListeningText,
                     onMuteToggle = { vm.toggleCallMute() },
                     onSpeakerToggle = { vm.toggleCallSpeaker() },
                     onHangup = { vm.hangupCall() },

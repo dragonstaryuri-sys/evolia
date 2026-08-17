@@ -12,6 +12,7 @@ import com.k2fsa.sherpa.onnx.SileroVadModelConfig
 import com.k2fsa.sherpa.onnx.Vad
 import com.k2fsa.sherpa.onnx.VadModelConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
@@ -27,20 +28,33 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.sqrt
 
 private const val TAG = "OnlineASRProvider"
 
 /**
- * 在线 ASR：本地 Silero VAD 切分语音段 → 编码 WAV → 上传到云端转录 API → 返回文本。
+ * 在线 ASR（伪流式 · 分段切片 + Prompt 续接）：
  *
- * 工作流程：
- * 1. AudioRecord 录制 16kHz PCM
- * 2. VAD 检测语音段（用户开始说话 → 说完一句话 → 静音结束）
- * 3. 取出完整语音段，编码为 WAV
- * 4. HTTP POST 到 transcription API（兼容 OpenAI Whisper 接口）
- * 5. 返回识别文本，继续下一轮监听
+ * 设计目标：在普通 Whisper 兼容"整段上传"API 上实现"边说边出字"的实时效果。
  *
- * 兼容所有设备，不依赖系统 SpeechRecognizer。
+ * 工作原理：
+ *  1. AudioRecord 永不停歇，彻底消除上传期间丢字。
+ *  2. 录音数据持续投喂 Silero VAD 做句子端点切分（final）。
+ *  3. Partial 触发（isFinal=false）—— 分段切片模式：
+ *     - 当前切片 PCM 累积到 ≥ MIN_SLICE_MS（1s）时，
+ *       要么遇到 ≥ SHORT_SILENCE_SLICE_MS（200ms）的小停顿 → 自然断点切片
+ *       要么连续说话超过 MAX_SLICE_MS（3s）→ 强制超时切片
+ *     - 切片时：把当前切片的 PCM 独立编码 WAV 上传 Whisper，
+ *       并把之前所有切片的识别结果作为 `prompt` 参数传给 Whisper（上下文续接）。
+ *     - Whisper 返回后：追加到 recognizedText，拼接结果作为 partial 发出 → UI 实时显示。
+ *  4. Final 触发（isFinal=true）：VAD 检测到 300ms 静音，
+ *     把 VAD segment 内剩余 PCM 作为最后一个切片上传 → 拼接 → 发 final →
+ *     清空切片缓冲和 recognizedText，开始下一句话。
+ *
+ * 对比"累积快照"模式（每次重新上传从句首到当前的全部音频）：
+ *  - 每次只上传 1-3s 切片，API 延迟稳定（不再随说话时长线性增长）
+ *  - 用 prompt 参数做上下文续接，拼接可靠
  */
 class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
 
@@ -65,7 +79,7 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             return@channelFlow
         }
 
-        // 初始化 VAD
+        // 初始化 VAD：minSilence 从 0.5s 降到 0.3s，配合伪流式端点检测
         val vad = Vad(
             assetManager = context.assets,
             config = VadModelConfig(
@@ -95,7 +109,8 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
-            maxOf(minBuf * 2, WINDOW_SIZE * 4 * 2) // 留足缓冲
+            // 更大的缓冲：伪流式期间持续录音，防止后台上传时缓冲溢出
+            maxOf(minBuf * 4, WINDOW_SIZE * 16 * 2)
         )
 
         if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
@@ -105,11 +120,23 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             return@channelFlow
         }
 
-        Log.i(TAG, "startRecognition: apiUrl=${providerSetting.apiUrl}, model=${providerSetting.model}, lang=${providerSetting.language}")
+        Log.i(TAG, "startRecognition (slice+prompt): apiUrl=${providerSetting.apiUrl}, model=${providerSetting.model}, lang=${providerSetting.language}")
 
         try {
             audioRecord.startRecording()
             val buffer = ShortArray(WINDOW_SIZE)
+
+            // ===== 分段切片状态 =====
+            // 当前切片正在累积的 PCM（Float，-1..1）
+            val slicePcm = ArrayList<Float>(SAMPLE_RATE * 4) // 预分配 4s 容量
+            // 已识别并确认的文本（之前所有切片的拼接结果）
+            val recognizedText = AtomicReference("")
+            // 轻量 RMS 辅助判定：当前 32ms window 是否含有语音能量
+            var inSpeechAux = false
+            var lastSpeechEnergyAtMs = 0L
+            // 切片开始的毫秒时间戳（用于计算切片时长）
+            var sliceStartMs = 0L
+            val scope = this // channelFlow 的 ProducerScope，用于 launch 异步上传
 
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, WINDOW_SIZE)
@@ -118,42 +145,134 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 val samples = FloatArray(read) { buffer[it] / 32768.0f }
                 vad.acceptWaveform(samples)
 
-                // VAD 自动切分语音段：检测到用户说完一句话后会在这里产出 segment
+                val now = System.currentTimeMillis()
+
+                // --- 1. 轻量 RMS 能量检测 ---
+                var sumSq = 0.0
+                for (s in samples) sumSq += (s * s).toDouble()
+                val rms = sqrt(sumSq / samples.size).toFloat()
+                if (rms > RMS_SPEECH_THRESHOLD) {
+                    if (!inSpeechAux) {
+                        // 语音开始，记录切片起点
+                        sliceStartMs = now
+                    }
+                    inSpeechAux = true
+                    lastSpeechEnergyAtMs = now
+                } else if (inSpeechAux && now - lastSpeechEnergyAtMs > 600L) {
+                    inSpeechAux = false
+                }
+
+                // --- 2. 累积当前切片 PCM ---
+                if (inSpeechAux || slicePcm.isNotEmpty()) {
+                    slicePcm.addAll(samples.asList())
+                }
+
+                // --- 2.1 切片诊断日志：每累积 5s 打一行帮助排查 ---
+                val sliceMs = slicePcm.size * 1000 / SAMPLE_RATE
+                val silenceMs = now - lastSpeechEnergyAtMs
+                if (sliceMs >= 5000 && sliceMs % 5000 < 32) {
+                    Log.d(TAG, "[切片诊断] 已累积=${sliceMs}ms 静音=${silenceMs}ms RMS=${"%.4f".format(rms)}" +
+                        " inSpeech=$inSpeechAux 阈值RMS=$RMS_SPEECH_THRESHOLD 切片条件: ≥${MIN_SLICE_MS}ms且停顿≥${SHORT_SILENCE_SLICE_MS}ms")
+                }
+
+                // --- 3. 触发切片上传（Partial）：停顿触发 + 超长安全保护切片 ---
+                // 主要触发：检测到 ≥SHORT_SILENCE_SLICE_MS 的自然停顿（用户换气/断句）
+                // 安全触发：累积 ≥MAX_SLICE_MS 并且当前帧 RMS 低于阈值（至少是换气间隙），强制切
+                val pauseTriggered = sliceMs >= MIN_SLICE_MS && silenceMs >= SHORT_SILENCE_SLICE_MS
+                val maxLenTriggered = sliceMs >= MAX_SLICE_MS && rms <= RMS_SPEECH_THRESHOLD
+                val shouldSlice = (pauseTriggered || maxLenTriggered) && slicePcm.isNotEmpty()
+                if (shouldSlice && slicePcm.isNotEmpty()) {
+                    // 切片快照
+                    val sliceSamples = slicePcm.toFloatArray()
+                    slicePcm.clear()
+                    sliceStartMs = now
+                    // 当前已识别文本快照（作为 prompt 传给 Whisper）
+                    val promptText = recognizedText.get()
+                    val triggerReason = if (pauseTriggered) "停顿触发" else "超长保护触发"
+
+                    scope.launch(Dispatchers.IO) {
+                        val sliceText = try {
+                            val pcm = ShortArray(sliceSamples.size) {
+                                (sliceSamples[it] * 32767f).toInt().toShort()
+                            }
+                            val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
+                            val sliceMsValue = sliceSamples.size * 1000 / SAMPLE_RATE
+                            Log.i(TAG, "┌─[Partial 切片上传][$triggerReason] 时长=${sliceMsValue}ms 停顿=${silenceMs}ms" +
+                                " prompt=\"${promptText.take(30)}\"")
+                            val result = transcribe(wavBytes, providerSetting, promptText)
+                            Log.i(TAG, "└─[Partial 切片返回] 识别=\"${result.trim()}\" 累积=\"${(promptText + result.trim()).trim()}\"")
+                            result
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Slice transcribe failed", e)
+                            ""
+                        }
+                        if (sliceText.isNotBlank() && isActive) {
+                            // 追加到已识别文本（prompt 续接模式下，直接拼接）
+                            val newText = if (promptText.isEmpty()) sliceText.trim()
+                                         else (promptText + sliceText.trim())
+                            recognizedText.set(newText)
+                            // 作为 partial 发出 → UI 实时显示
+                            if (isActive) {
+                                send(ASRResult(text = newText, isFinal = false))
+                            }
+                        }
+                    }.invokeOnCompletion { /* 协程结束，不管成功失败 */ }
+                }
+
+                // --- 4. VAD 产出完整 segment：Final ---
+                //    VAD segment 只作为"用户说完了"的信号，不用它的音频数据。
+                //    因为每帧 PCM 同时投喂了 VAD 和 slicePcm，两者包含的音频是重复的。
+                //    如果合并上传，Whisper 会收到两遍同样的音频，导致识别结果重复。
+                //    所以只用 slicePcm 里累积的音频（切片后的剩余部分，或没切片时的完整一句）。
                 while (!vad.empty() && isActive) {
                     val segment = vad.front()
                     vad.pop()
 
                     if (segment.samples.isEmpty()) continue
 
-                    // 停止录音，避免在 HTTP 等待期间缓冲溢出
-                    audioRecord.stop()
+                    // 只用 slicePcm，不用 VAD segment 的音频
+                    val finalSamples = slicePcm.toFloatArray()
+                    slicePcm.clear()
+                    val finalMs = finalSamples.size * 1000 / SAMPLE_RATE
+                    val promptText = recognizedText.get()
+                    val hadPartial = promptText.isNotEmpty()
+                    Log.i(TAG, "┌─[Final 句子结束] 剩余切片=${finalMs}ms" +
+                        " 已有Partial=${if (hadPartial) "是" else "否"}" +
+                        " 已识别=\"${promptText.take(30)}\"")
 
-                    // 语音段 FloatArray → 16bit PCM → WAV
-                    val pcm = ShortArray(segment.samples.size) {
-                        (segment.samples[it] * 32767f).toInt().toShort()
+                    scope.launch(Dispatchers.IO) {
+                        if (finalSamples.isEmpty()) {
+                            // slicePcm 为空（刚切片完用户就没再说话），直接用已识别文本作为 final
+                            if (promptText.isNotBlank() && isActive) {
+                                Log.i(TAG, "└─[Final 直接发送] (无剩余音频) 最终文本=\"$promptText\"")
+                                send(ASRResult(text = promptText, isFinal = true))
+                            }
+                            return@launch
+                        }
+                        val pcm = ShortArray(finalSamples.size) {
+                            (finalSamples[it] * 32767f).toInt().toShort()
+                        }
+                        val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
+                        val text = try {
+                            transcribe(wavBytes, providerSetting, promptText)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Final transcribe failed", e)
+                            ""
+                        }
+                        if (text.isNotBlank() && isActive) {
+                            val finalText = if (promptText.isEmpty()) text.trim()
+                                           else (promptText + text.trim())
+                            Log.i(TAG, "└─[Final 最终发送] 新增=\"${text.trim()}\" 最终文本=\"$finalText\"")
+                            send(ASRResult(text = finalText, isFinal = true))
+                        }
                     }
-                    val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
 
-                    Log.d(TAG, "Transcribing ${pcm.size} samples (${pcm.size * 1000 / SAMPLE_RATE}ms)")
-
-                    // 上传到云端转录 API
-                    val text = try {
-                        transcribe(wavBytes, providerSetting)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Transcribe failed", e)
-                        // 转录失败不中断，发出空结果让上层继续
-                        ""
-                    }
-
-                    if (text.isNotBlank()) {
-                        send(ASRResult(text = text.trim(), isFinal = true))
-                    }
-
-                    // 重置 VAD 状态，重新开始录音
+                    // 重置状态
+                    recognizedText.set("")
+                    inSpeechAux = false
+                    sliceStartMs = 0L
                     vad.reset()
-                    if (isActive) {
-                        audioRecord.startRecording()
-                    }
+                    // NOTE: 音频录制永不停止！
                 }
             }
         } finally {
@@ -166,15 +285,18 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
 
     /**
      * 上传 WAV 音频到云端转录 API（兼容 OpenAI Whisper 接口格式）。
+     * [prompt] 用于上下文续接：把之前切片的识别结果传给 Whisper，让后续切片有上下文。
      */
     private suspend fun transcribe(
         wavBytes: ByteArray,
-        setting: ASRProviderSetting.OnlineASR
+        setting: ASRProviderSetting.OnlineASR,
+        prompt: String = ""
     ): String = transcribeBytes(
         bytes = wavBytes,
         filename = "audio.wav",
         mime = "audio/wav",
-        setting = setting
+        setting = setting,
+        prompt = prompt
     )
 
     /**
@@ -190,7 +312,8 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             throw RuntimeException("Online ASR: API Key is empty, please configure it in ASR settings")
         }
         val (bytes, filename, mime) = readAudioFile(context, uri)
-        transcribeBytes(bytes, filename, mime, providerSetting)
+        // 文件转录场景不需要 prompt 续接，整段上传
+        transcribeBytes(bytes, filename, mime, providerSetting, prompt = "")
     }
 
     /**
@@ -249,22 +372,34 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
 
     /**
      * 上传音频字节到云端转录 API（兼容 OpenAI Whisper 接口格式）。
+     * [prompt] 用于上下文续接（可选）：把之前切片的识别结果作为 prompt 传给 Whisper，
+     * 让后续切片的识别有上下文。仅在非空时添加到 multipart 表单。
      */
     private suspend fun transcribeBytes(
         bytes: ByteArray,
         filename: String,
         mime: String,
-        setting: ASRProviderSetting.OnlineASR
+        setting: ASRProviderSetting.OnlineASR,
+        prompt: String = ""
     ): String {
         val audioBody = bytes.toRequestBody(mime.toMediaType())
 
-        val requestBody = MultipartBody.Builder()
+        val builder = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", filename, audioBody)
             .addFormDataPart("model", setting.model)
             .addFormDataPart("language", setting.language)
             .addFormDataPart("response_format", "json")
-            .build()
+
+        // prompt 参数：Whisper 官方文档推荐的上下文续接方式
+        // 把前一段的识别结果作为 prompt，Whisper 会据此调整识别方向
+        if (prompt.isNotBlank()) {
+            // Whisper prompt 上限约 224 tokens，这里取最后 200 字符做简单截断
+            val truncatedPrompt = prompt.takeLast(200)
+            builder.addFormDataPart("prompt", truncatedPrompt)
+        }
+
+        val requestBody = builder.build()
 
         val request = Request.Builder()
             .url(setting.apiUrl)
@@ -272,7 +407,7 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             .post(requestBody)
             .build()
 
-        Log.d(TAG, "transcribeBytes: POST ${setting.apiUrl} file=$filename mime=$mime bytes=${bytes.size} model=${setting.model}")
+        Log.d(TAG, "transcribeBytes: POST ${setting.apiUrl} file=$filename mime=$mime bytes=${bytes.size} model=${setting.model} promptLen=${prompt.length}")
         val response = client.newCall(request).execute()
         response.use { resp ->
             if (!resp.isSuccessful) {
@@ -353,10 +488,26 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
 
     companion object {
         private const val SAMPLE_RATE = 16000
-        private const val WINDOW_SIZE = 512 // Silero VAD 固定 512 样本
+        private const val WINDOW_SIZE = 512 // Silero VAD 固定 512 样本（≈32ms @ 16k）
         private const val VAD_THRESHOLD = 0.5F
-        private const val MIN_SILENCE_DURATION_SEC = 0.5F // 说完一句话后的静音时长（比打断检测更长）
+        // VAD final 句子端点：800ms 静音才判定用户说完了
+        // （500ms 容易把思考型停顿误判为说完了；800ms 给用户更多缓冲，反正 partial 已经出字了不卡体验）
+        private const val MIN_SILENCE_DURATION_SEC = 0.8F
         private const val MIN_SPEECH_DURATION_SEC = 0.3F  // 过滤过短的噪声
         private const val MAX_SPEECH_DURATION_SEC = 30F    // 单次最长 30 秒
+
+        // ===== 分段切片（Slice + Prompt 续接）参数 =====
+        // RMS 能量阈值（≈-38dBFS，-46dBFS 太灵敏了，呼吸声/底噪都算语音）
+        // 调大后只有真正说话的音量才会刷新 lastSpeechEnergyAtMs，避免静音时长一直被刷新
+        private const val RMS_SPEECH_THRESHOLD = 0.012F
+        // 切片最小时长：累积至少 500ms 才允许切片上传，避免过短片段浪费 API 调用
+        private const val MIN_SLICE_MS = 500
+        // 切片最大时长：累积 ≥5s 并且当前帧 RMS 低于阈值（换气间隙），强制切片防止长句不切
+        // 这个是"安全网"，主要触发还是靠停顿；所以必须同时满足 RMS 低（至少是换气间隙）
+        private const val MAX_SLICE_MS = 5000
+        // 切片停顿阈值：检测到 ≥60ms 的自然停顿就切片
+        // （逗号停顿 50-100ms，60ms 抓大部分换气；句号停顿 300+ms 直接命中；
+        //  阈值明显短于 VAD final 的 800ms，因此停顿时一定先 partial 后 final。）
+        private const val SHORT_SILENCE_SLICE_MS = 60
     }
 }
