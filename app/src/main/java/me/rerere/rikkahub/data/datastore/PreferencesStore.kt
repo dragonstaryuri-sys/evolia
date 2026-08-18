@@ -329,9 +329,8 @@ class SettingsStore(
                         diaryModelId = assistant.diaryModelId?.let { id ->
                             if (allModels.any { m -> m.id == id }) id else null
                         },
-                        embeddingModelId = assistant.embeddingModelId?.let { id ->
-                            if (allModels.any { m -> m.id == id }) id else null
-                        },
+                        // Embedding model is a global-only setting — no per-assistant override.
+                        embeddingModelId = null,
                     )
                 },
                 ttsProviders = settings.ttsProviders.distinctBy { it.id },
