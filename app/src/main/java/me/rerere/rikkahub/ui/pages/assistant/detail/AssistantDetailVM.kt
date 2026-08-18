@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.datastore.findProvider
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.core.data.db.entity.ChatMessageEntity
 import me.rerere.rikkahub.core.data.db.entity.TokenUsageEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
@@ -65,6 +66,15 @@ import me.rerere.rikkahub.core.data.model.Conversation
 import java.time.Instant
 
 private const val TAG = "AssistantDetailVM"
+
+// 安全解码：损坏消息返回 null + 记日志，绝不闪退
+private fun decodeUIMessageSafe(entity: ChatMessageEntity, tagExtra: Any? = null): UIMessage? =
+    runCatching { JsonInstant.decodeFromString<UIMessage>(entity.contentJson) }.getOrNull()
+        ?: run {
+            Log.e(TAG, "decodeUIMessageSafe: 损坏消息 id=${entity.id} extra=$tagExtra; 预览=${entity.contentJson.take(150)}…")
+            null
+        }
+
 
 @Serializable
 data class AssistantMemoryOp(
@@ -213,14 +223,12 @@ class AssistantDetailVM(
         scope = viewModelScope, started = SharingStarted.Lazily, initialValue = emptyList()
     )
 
-    val currentEmbeddingModelId: StateFlow<String> = combine(
-        assistant,
-        settings
-    ) { assistant, settings ->
-        (assistant.embeddingModelId ?: settings.embeddingModelId).toString()
-    }.stateIn(
-        scope = viewModelScope, started = SharingStarted.Lazily, initialValue = ""
-    )
+    // Embedding model is a global-only setting — no per-assistant override.
+    val currentEmbeddingModelId: StateFlow<String> = settings
+        .map { it.embeddingModelId.toString() }
+        .stateIn(
+            scope = viewModelScope, started = SharingStarted.Lazily, initialValue = ""
+        )
 
     // 重排序模型现在仅使用全局配置
     val currentRerankModelId: StateFlow<String?> = settings
@@ -295,7 +303,9 @@ class AssistantDetailVM(
                         val existingEpisode = episodeMap[conv.id.toString()]
                         val anchorTime = existingEpisode?.endTime ?: 0L
                         val newMessagesEntities = conversationRepository.getMessagesForSummary(conv.id.toString(), anchorTime)
-                        val newMessages = newMessagesEntities.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+                        val newMessages = newMessagesEntities.mapNotNull {
+                            decodeUIMessageSafe(it, tagExtra = "consolidate:${conv.id}")
+                        }
 
                         val summary = if (newMessages.isEmpty() && existingEpisode != null) {
                             existingEpisode.content
@@ -460,10 +470,11 @@ class AssistantDetailVM(
                 while (processedOffset < toSummarizeEntities.size) {
                     val currentBatch = toSummarizeEntities.drop(processedOffset).take(threshold)
                     if (currentBatch.size < 2) break
-                    val text = currentBatch.joinToString("\n") { entity ->
-                        val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
+                    val text = currentBatch.mapNotNull { entity ->
+                        val uiMsg = decodeUIMessageSafe(entity, tagExtra = "detailSummary")
+                            ?: return@mapNotNull null
                         "${uiMsg.role}: ${uiMsg.toContentText().take(500)}"
-                    }
+                    }.joinToString("\n")
 
                     val locale = Locale.getDefault().displayName
                     val prompt = DEFAULT_TEMP_SUMMARY_PROMPT

@@ -5,6 +5,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -49,6 +50,13 @@ data class UIMessage(
     val skipContext: Boolean = false, // 如果为 true，这条消息在后续对话中不会被作为上下文发送给 AI
     val messageSource: MessageSource = MessageSource.NORMAL // 消息来源标识，控制 skipContext 消息在上下文中的截断策略
 ) {
+    /**
+     * 标记此消息是否为「损坏消息占位」。
+     * - true: 由 [decodeUIMessageSafely] 在 contentJson 损坏时生成的兜底占位，不应被写回数据库（避免覆盖原始损坏数据）。
+     * - @Transient: 不参与 JSON 序列化，反序列化时取默认值 false。
+     */
+    @Transient
+    var isPlaceholder: Boolean = false
     private fun appendChunk(chunk: MessageChunk): UIMessage {
         val choice = chunk.choices.getOrNull(0)
         return choice?.delta?.let { delta ->

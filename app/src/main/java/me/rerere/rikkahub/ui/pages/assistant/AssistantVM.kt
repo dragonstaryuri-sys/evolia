@@ -47,7 +47,6 @@ class AssistantVM(
                 chatModelId = assistantWithUniqueId.chatModelId ?: settings.chatModelId,
                 backgroundModelId = assistantWithUniqueId.backgroundModelId ?: settings.backgroundModelId,
                 summarizerModelId = assistantWithUniqueId.summarizerModelId ?: settings.summarizerModelId,
-                embeddingModelId = assistantWithUniqueId.embeddingModelId ?: settings.embeddingModelId,
                 memoryModelId = assistantWithUniqueId.memoryModelId ?: settings.memoryModelId,
                 diaryModelId = assistantWithUniqueId.diaryModelId ?: settings.diaryModelId
             )

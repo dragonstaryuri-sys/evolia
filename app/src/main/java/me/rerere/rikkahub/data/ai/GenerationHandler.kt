@@ -115,6 +115,13 @@ class GenerationHandler(
     private val appScope: AppScope,
     private val scheduleRepo: ScheduleRepository,
 ) {
+    // 安全解码：损坏消息返回 null，避免某条脏消息让整个生成/检索流程崩掉
+    private fun safeDecodeUIMessage(contentJson: String, tagExtra: Any? = null): UIMessage? =
+        runCatching { json.decodeFromString<UIMessage>(contentJson) }.getOrNull()
+            ?: run {
+                android.util.Log.e(TAG, "safeDecodeUIMessage: 损坏消息 extra=$tagExtra; 预览=${contentJson.take(150)}…")
+                null
+            }
     fun generateText(
         settings: Settings,
         model: Model,
@@ -296,11 +303,12 @@ class GenerationHandler(
                                         )
 
                                         val details = if (messageEntities.isNotEmpty()) {
-                                            messageEntities.joinToString("\n") { entity ->
-                                                // 从 JSON 反序列化出 UIMessage 对象
-                                                val uiMsg = json.decodeFromString<UIMessage>(entity.contentJson)
+                                            messageEntities.mapNotNull { entity ->
+                                                // 从 JSON 反序列化出 UIMessage 对象（损坏消息跳过）
+                                                val uiMsg = safeDecodeUIMessage(entity.contentJson, tagExtra = "segment_details")
+                                                    ?: return@mapNotNull null
                                                 "${uiMsg.role}: ${uiMsg.toContentText()}"
-                                            }
+                                            }.joinToString("\n")
                                         } else {
                                             "No original messages found in this time range."
                                         }

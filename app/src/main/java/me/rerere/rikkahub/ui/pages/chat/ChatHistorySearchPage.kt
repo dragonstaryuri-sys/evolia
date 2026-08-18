@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,11 +33,22 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.common.JsonInstant
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private const val TAG = "ChatHistorySearch"
+
+private fun ChatMessageEntity.decodeUIMessageSafely(): UIMessage? =
+    runCatching { JsonInstant.decodeFromString<UIMessage>(this.contentJson) }.getOrNull()
+        ?: run {
+            Log.e(TAG, "decodeUIMessageSafely: 损坏消息 id=${this.id}; 预览=${this.contentJson.take(150)}…")
+            null
+        }
 
 class ChatHistorySearchVM(
     val assistantId: String,
@@ -54,8 +66,8 @@ class ChatHistorySearchVM(
                 .map { entities ->
                     // 1. 核心过滤逻辑：仅检索回复中的正式内容 (Text)，排除思考内容 (Reasoning/Thinking)
                     entities.filter { entity ->
-                        val message = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
-                        // ✨ 增加过滤：排除掉 skipContext 的系统消息
+                        val message = entity.decodeUIMessageSafely() ?: return@filter false
+                        // ✨ 增加过滤：排除掉 skipContext 的系统消息；损坏消息直接跳过
                         !message.skipContext && message.toContentText().contains(q, ignoreCase = true)
                     }
                 }
@@ -158,7 +170,11 @@ fun ChatHistorySearchPage(assistantId: String) {
 @Composable
 private fun SearchItem(entity: ChatMessageEntity, assistantName: String, onClick: () -> Unit) {
     val message = remember(entity.contentJson) {
-        JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
+        entity.decodeUIMessageSafely()
+            ?: UIMessage(
+                role = MessageRole.ASSISTANT,
+                parts = listOf(UIMessagePart.Text(text = "[此消息已损坏，无法显示]\n预览：${entity.contentJson.take(120)}…"))
+            )
     }
 
     Surface(

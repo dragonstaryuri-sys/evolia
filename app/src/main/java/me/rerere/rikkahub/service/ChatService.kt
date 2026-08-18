@@ -118,6 +118,17 @@ import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
 
+// ------------------------------------------------------------------
+//  安全解码 UIMessage：损坏的消息只记日志 + 抛 null，绝不闪退
+// ------------------------------------------------------------------
+internal fun decodeUIMessageOrNull(json: String, tagExtra: Any? = null): UIMessage? =
+    runCatching { JsonInstant.decodeFromString<UIMessage>(json) }.getOrNull()
+        ?: run {
+            Log.e(TAG, "decodeUIMessageOrNull: 损坏消息, 上下文=$tagExtra; 预览: ${json.take(150)}…")
+            null
+        }
+
+
 internal fun selectMessagesForGeneration(
     messageNodes: List<MessageNode>,
     contextEndNodeId: Uuid?,
@@ -627,7 +638,9 @@ class ChatService(
                 existingEpisode?.endTime ?: 0L,
                 limit = 300
             )
-            val newMessages = newMessagesEntities.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+            val newMessages = newMessagesEntities.mapNotNull {
+                decodeUIMessageOrNull(it.contentJson, tagExtra = "archive:$conversationId")
+            }
 
             if (newMessages.isEmpty() && baseSummary != null && !force) {
                 return
@@ -1604,10 +1617,11 @@ class ChatService(
         val max = if (wechatMode) (assistant.detailMemoryThreshold * 2).toInt() else assistant.detailMemoryThreshold
 
         // 获取最近的消息（取 200 条以防 tool 消息过多），然后在内存中统计 user 和 assistant 角色
-        val newMessages = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime, 200)
-        val coreMessageCount = newMessages.count {
-            val role = JsonInstant.decodeFromString<UIMessage>(it.contentJson).role
-            role == MessageRole.USER || role == MessageRole.ASSISTANT
+        val newMessagesEntities = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime, 200)
+        val coreMessageCount = newMessagesEntities.count { entity ->
+            val uiMsg = decodeUIMessageOrNull(entity.contentJson, tagExtra = "checkSummary:$id")
+                ?: return@count false
+            uiMsg.role == MessageRole.USER || uiMsg.role == MessageRole.ASSISTANT
         }
 
         if (coreMessageCount >= max) summarizeAndRefresh(id, skipArchive = true)
@@ -1637,7 +1651,8 @@ class ChatService(
                 val handler = providerManager.getProviderByType(provider)
                 val text = StringBuilder().apply {
                     toSummarizeEntities.forEach { entity ->
-                        val uiMsg = JsonInstant.decodeFromString<UIMessage>(entity.contentJson)
+                        val uiMsg = decodeUIMessageOrNull(entity.contentJson, tagExtra = "summarize:$id")
+                            ?: return@forEach
                         // ✨ 仅将 user 和 assistant 的内容拼接给总结模型
                         if (uiMsg.role == MessageRole.USER || uiMsg.role == MessageRole.ASSISTANT) {
                             append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")

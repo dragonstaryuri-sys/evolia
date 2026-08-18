@@ -199,7 +199,6 @@ fun AgentListPage() {
                             createState.open(
                                 Assistant(
                                     chatModelId = settings.chatModelId,
-                                    embeddingModelId = settings.embeddingModelId,
                                     memoryModelId = settings.memoryModelId,
                                     diaryModelId = settings.diaryModelId,
                                 )

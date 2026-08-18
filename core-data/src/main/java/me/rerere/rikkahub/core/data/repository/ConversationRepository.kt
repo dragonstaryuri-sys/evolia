@@ -21,10 +21,12 @@ import me.rerere.rikkahub.core.data.model.normalizeMessageNodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.deleteChatFiles
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.datetime.TimeZone
@@ -37,6 +39,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 
 class ConversationRepository(
     private val context: Context,
@@ -59,6 +63,32 @@ class ConversationRepository(
         // 50 个节点 × 数条消息 × 数十 KB 已接近安全边界。
         private const val MESSAGE_LOAD_CHUNK_SIZE = 50
     }
+
+    // ------------------------------------------------------------------
+    //  安全解码：任何一条 content_json 损坏都不应该让整个页面闪退。
+    //  损坏的消息会被替换为「占位消息」，显示原始 JSON 前 N 字以便排查。
+    // ------------------------------------------------------------------
+    private fun decodeUIMessageSafely(entity: ChatMessageEntity): UIMessage {
+        return runCatching { JsonInstant.decodeFromString<UIMessage>(entity.contentJson) }
+            .getOrElse { ex ->
+                Log.e(TAG, "decodeUIMessageSafely: 损坏消息 id=${entity.id} conv=${entity.conversationId}", ex)
+                Log.e(TAG, "decodeUIMessageSafely: 完整原始 contentJson=\n${entity.contentJson}")
+                val preview = entity.contentJson.take(500)
+                UIMessage(
+                    id = runCatching { Uuid.parse(entity.id) }.getOrDefault(Uuid.random()),
+                    role = MessageRole.ASSISTANT,
+                    parts = listOf(
+                        UIMessagePart.Text(text = "\n[此消息已损坏，无法显示]\n原始内容预览：$preview…")
+                    ),
+                    createdAt = Clock.System.now()
+                        .toLocalDateTime(TimeZone.currentSystemDefault()),
+                    skipContext = true
+                ).also { it.isPlaceholder = true }
+            }
+    }
+
+    private fun List<ChatMessageEntity>.decodeMessagesSafely(): List<UIMessage> =
+        this.filter { !it.isDeleted }.map { decodeUIMessageSafely(it) }
 
     /**
      * 分批加载多个节点的消息，避免单次 IN 查询返回过多 content_json 导致
@@ -212,10 +242,7 @@ class ConversationRepository(
             val messageNodes = nodesFromDb.sortedBy { it.orderIndex }.map { nodeEntity ->
                 // ✨ 关键点：只有在这个节点属于“待加载范围”时，才解析它的内容
                 val messages = if (nodeEntity.id in nodeIdsToLoad) {
-                    allMessages[nodeEntity.id]
-                        ?.filter { !it.isDeleted }
-                        ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-                        ?: emptyList()
+                    allMessages[nodeEntity.id]?.decodeMessagesSafely() ?: emptyList()
                 } else {
                     emptyList() // 否则保持为空消息列表，作为占位符
                 }
@@ -266,10 +293,7 @@ class ConversationRepository(
         }.groupBy { it.nodeId }
 
         pendingNodes.map { nodeEntity ->
-            val messages = messagesMap[nodeEntity.id]
-                ?.filter { !it.isDeleted }
-                ?.map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
-                ?: emptyList()
+            val messages = messagesMap[nodeEntity.id]?.decodeMessagesSafely() ?: emptyList()
 
             MessageNode(
                 id = Uuid.parse(nodeEntity.id),
@@ -441,7 +465,7 @@ class ConversationRepository(
             )
         }
         val messageEntities = conversation.messageNodes.flatMap { node ->
-            node.messages.mapIndexed { index, msg ->
+            node.messages.filter { !it.isPlaceholder }.mapIndexed { index, msg ->
                 ChatMessageEntity(
                     id = msg.id.toString(),
                     nodeId = node.id.toString(),
@@ -980,9 +1004,8 @@ class ConversationRepository(
         selectedMessageId: String? = null
     ): MessageNode {
         val uiMessages = messages
-            .filter { !it.isDeleted }
             .sortedBy { it.orderIndex }
-            .map { JsonInstant.decodeFromString<UIMessage>(it.contentJson) }
+            .decodeMessagesSafely()
         val targetMessageIndex = selectedMessageId?.let { targetId ->
             uiMessages.indexOfFirst { message -> message.id.toString() == targetId }
                 .takeIf { it >= 0 }

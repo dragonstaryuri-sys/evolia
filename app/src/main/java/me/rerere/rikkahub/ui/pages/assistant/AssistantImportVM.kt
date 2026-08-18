@@ -141,7 +141,6 @@ class AssistantImportVM(
                             avatar = if (data.botInfo.avatar.isNotBlank()) Avatar.Image(data.botInfo.avatar) else Avatar.Dummy,
                             isMain = isMainAgent,
                             chatModelId = settings.chatModelId,
-                            embeddingModelId = settings.embeddingModelId
                         )
                         if (isMainAgent) {
                             settings.assistants.map { it.copy(isMain = false) } + newAssistant
