@@ -1495,22 +1495,22 @@ class VoiceCallManager(
         private const val ASR_IGNORE_PERIOD_MS = 800L
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
-        //   基础语气词（带概率权重）：嗯 40% / 啊.. 30% / 哦 20% / 嗯嗯 10%
         private val LISTENER_CUE_BASE = listOf(
-            "嗯" to 40,
-            "啊.." to 30,
-            "哦" to 20,
-            "嗯嗯" to 10
+            "嗯！" to 5,
+            "嗯..." to 30,
+            "啊.." to 25,
+            "哦..." to 20,
+            "哦哦" to 10,
+            "嗯嗯~" to 10
         )
         //   LLM 超过 1s 还没返回可朗读内容时的"等待提示"（带概率权重）：
-        //   等等 20% / 哦。 20% / 我想想 10% / 等一下 20% / 啊。。 25% / 啊！ 5%
         private val WAITING_CUE_BASE = listOf(
-            "等等" to 20,
+            "等等——" to 20,
             "哦。" to 20,
-            "我想想" to 10,
-            "等一下" to 20,
+            "我想想..." to 5,
+            "等一下.." to 20,
             "啊。。" to 25,
-            "啊！" to 5
+            "啊！" to 10
         )
         //   Minimax speech-2.8 系列支持的官方语气词标签列表
         private val MINIMAX_TTS_SPONTANEOUS_TAGS = listOf(
