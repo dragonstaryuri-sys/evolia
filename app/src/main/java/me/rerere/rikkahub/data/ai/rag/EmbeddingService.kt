@@ -14,14 +14,14 @@ class EmbeddingService(
     private val settingsStore: SettingsStore
 ) : IEmbeddingService {
     /**
-     * Get the current embedding model ID for an assistant (or global if not set).
+     * Get the current embedding model ID.
+     * NOTE: Embedding model is ALWAYS a global setting – no per-assistant override.
      * Resolves to an actually-existing EMBEDDING model: falls back to the first
      * available embedding model if the configured ID is missing.
      */
     override fun getEmbeddingModelId(assistantId: String?): String {
         val settings = settingsStore.settingsFlow.value
-        val assistant = if (assistantId != null) settings.assistants.find { it.id.toString() == assistantId } else null
-        val configuredModelId = assistant?.embeddingModelId ?: settings.embeddingModelId
+        val configuredModelId = settings.embeddingModelId
         val resolvedModel = settings.findModelById(configuredModelId)
             ?: settings.providers
                 .flatMap { it.models }
@@ -41,13 +41,8 @@ class EmbeddingService(
     suspend fun embedBatch(texts: List<String>, assistantId: String? = null): EmbeddingResult {
         val settings = settingsStore.settingsFlow.value
 
-        // Use assistant embedding model if available, otherwise use global
-        val configuredModelId = if (assistantId != null) {
-            val assistant = settings.assistants.find { it.id.toString() == assistantId }
-            assistant?.embeddingModelId ?: settings.embeddingModelId
-        } else {
-            settings.embeddingModelId
-        }
+        // Embedding model is ALWAYS a global setting – no per-assistant override.
+        val configuredModelId = settings.embeddingModelId
 
         // 1. 首先尝试直接用配置的 modelId 查找
         // 2. 若找不到，自动降级：找 providers 中第一个 type == EMBEDDING 的模型
