@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelType
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -278,22 +279,77 @@ class SettingsStore(
         }
         .map { settings ->
             val validMcpServerIds = settings.mcpServers.map { it.id }.toSet()
+            val dedupedProviders = settings.providers.distinctBy { it.id }.map { provider ->
+                when (provider) {
+                    is ProviderSetting.OpenAI -> provider.copy(models = provider.models.distinctBy { it.id })
+                    is ProviderSetting.Google -> provider.copy(models = provider.models.distinctBy { it.id })
+                    is ProviderSetting.Claude -> provider.copy(models = provider.models.distinctBy { it.id })
+                }
+            }
+            val allModels = dedupedProviders.flatMap { it.models }
+            val firstChatModel = allModels.firstOrNull { it.type == ModelType.CHAT }?.id ?: GEMINI_2_5_FLASH_ID
+            val firstEmbeddingModel = allModels.firstOrNull { it.type == ModelType.EMBEDDING }?.id
+            val firstRerankModel = allModels.firstOrNull { it.type == ModelType.RERANK }?.id
+            val firstImageModel = allModels.firstOrNull { it.type == ModelType.IMAGE }?.id
+
+            fun resolveModelId(configured: Uuid, fallbackType: ModelType, defaultFallback: Uuid = GEMINI_2_5_FLASH_ID): Uuid {
+                return if (allModels.any { it.id == configured }) configured
+                else allModels.firstOrNull { it.type == fallbackType }?.id ?: defaultFallback
+            }
+
+            fun resolveNullableModelId(configured: Uuid?, fallbackType: ModelType): Uuid? {
+                return if (configured != null && allModels.any { it.id == configured }) configured
+                else allModels.firstOrNull { it.type == fallbackType }?.id
+            }
+
+            val resolvedChatModelId = resolveModelId(settings.chatModelId, ModelType.CHAT)
+            val resolvedEmbeddingModelId = firstEmbeddingModel ?: settings.embeddingModelId.let {
+                if (allModels.any { m -> m.id == it }) it else null
+            } ?: Uuid.random()
             settings.copy(
-                providers = settings.providers.distinctBy { it.id }.map { provider ->
-                    when (provider) {
-                        is ProviderSetting.OpenAI -> provider.copy(models = provider.models.distinctBy { it.id })
-                        is ProviderSetting.Google -> provider.copy(models = provider.models.distinctBy { it.id })
-                        is ProviderSetting.Claude -> provider.copy(models = provider.models.distinctBy { it.id })
-                    }
-                },
+                providers = dedupedProviders,
                 assistants = settings.assistants.distinctBy { it.id }.map { assistant ->
-                    assistant.copy(mcpServers = assistant.mcpServers.filter { it in validMcpServerIds }.toSet())
+                    assistant.copy(
+                        mcpServers = assistant.mcpServers.filter { it in validMcpServerIds }.toSet(),
+                        chatModelId = assistant.chatModelId?.let { id ->
+                            if (allModels.any { m -> m.id == id }) id else null
+                        },
+                        backgroundModelId = assistant.backgroundModelId?.let { id ->
+                            if (allModels.any { m -> m.id == id }) id else null
+                        },
+                        summarizerModelId = assistant.summarizerModelId?.let { id ->
+                            if (allModels.any { m -> m.id == id }) id else null
+                        },
+                        suggestionModelId = assistant.suggestionModelId?.let { id ->
+                            if (allModels.any { m -> m.id == id }) id else null
+                        },
+                        memoryModelId = assistant.memoryModelId?.let { id ->
+                            if (allModels.any { m -> m.id == id }) id else null
+                        },
+                        diaryModelId = assistant.diaryModelId?.let { id ->
+                            if (allModels.any { m -> m.id == id }) id else null
+                        },
+                        embeddingModelId = assistant.embeddingModelId?.let { id ->
+                            if (allModels.any { m -> m.id == id }) id else null
+                        },
+                    )
                 },
                 ttsProviders = settings.ttsProviders.distinctBy { it.id },
                 asrProviders = settings.asrProviders.distinctBy { it.id },
                 favoriteModels = settings.favoriteModels.filter { uuid ->
-                    settings.providers.flatMap { it.models }.any { it.id == uuid }
-                }
+                    allModels.any { it.id == uuid }
+                },
+                chatModelId = resolvedChatModelId,
+                backgroundModelId = resolveModelId(settings.backgroundModelId, ModelType.CHAT),
+                summarizerModelId = resolveModelId(settings.summarizerModelId, ModelType.CHAT),
+                suggestionModelId = resolveModelId(settings.suggestionModelId, ModelType.CHAT),
+                memoryModelId = resolveModelId(settings.memoryModelId, ModelType.CHAT),
+                diaryModelId = resolveModelId(settings.diaryModelId, ModelType.CHAT),
+                imageGenerationModelId = resolveNullableModelId(settings.imageGenerationModelId, ModelType.IMAGE)
+                    ?: settings.imageGenerationModelId,
+                ocrModelId = resolveModelId(settings.ocrModelId, ModelType.CHAT),
+                embeddingModelId = resolvedEmbeddingModelId,
+                rerankModelId = resolveNullableModelId(settings.rerankModelId, ModelType.RERANK)
             )
         }
         .onEach { get<PebbleEngine>().templateCache.invalidateAll() }
