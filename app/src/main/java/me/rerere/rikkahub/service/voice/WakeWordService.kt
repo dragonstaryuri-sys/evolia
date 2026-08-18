@@ -1,9 +1,12 @@
 package me.rerere.rikkahub.service.voice
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -19,6 +22,7 @@ import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -255,7 +259,17 @@ class WakeWordService : Service(), KoinComponent {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun startAudioRecord(): Boolean {
+        // 权限检查：确保调用方已授予 RECORD_AUDIO
+        val hasRecordPermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasRecordPermission) {
+            Log.e(TAG, "Missing RECORD_AUDIO permission")
+            return false
+        }
         return try {
             val sampleRate = WakeWordDetector.SAMPLE_RATE
             val readSize = WakeWordDetector.READ_BUFFER_SIZE

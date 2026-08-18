@@ -1,11 +1,15 @@
 package me.rerere.asr.provider.providers
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.net.toFile
 import java.io.File
 import com.k2fsa.sherpa.onnx.SileroVadModelConfig
@@ -71,10 +75,11 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
     @Serializable
     private data class TranscriptionResponse(val text: String = "")
 
+    @SuppressLint("MissingPermission")
     override fun startRecognition(
         context: Context,
         providerSetting: ASRProviderSetting.OnlineASR
-    ) = channelFlow {
+    ) = channelFlow @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO) {
         // 校验配置
         if (providerSetting.apiKey.isBlank()) {
             close(RuntimeException("Online ASR: API Key is empty, please configure it in ASR settings"))
@@ -100,20 +105,37 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             )
         )
 
+        // 权限检查：确保调用方已授予 RECORD_AUDIO
+        val hasRecordPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasRecordPermission) {
+            vad.release()
+            close(SecurityException("缺少RECORD_AUDIO权限，请先授予麦克风权限。"))
+            return@channelFlow
+        }
+
         // 初始化 AudioRecord
         val minBuf = AudioRecord.getMinBufferSize(
             SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
-        val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            // 更大的缓冲：伪流式期间持续录音，防止后台上传时缓冲溢出
-            maxOf(minBuf * 4, WINDOW_SIZE * 16 * 2)
-        )
+        val audioRecord = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                // 更大的缓冲：伪流式期间持续录音，防止后台上传时缓冲溢出
+                maxOf(minBuf * 4, WINDOW_SIZE * 16 * 2)
+            )
+        } catch (e: SecurityException) {
+            vad.release()
+            close(e)
+            return@channelFlow
+        }
 
         if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
             audioRecord.release()

@@ -1,12 +1,16 @@
 package me.rerere.rikkahub.service.voice
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -93,10 +97,21 @@ class VoiceRecorderController(private val context: Context) {
     /**
      * 开始录音。若当前已在录音则忽略。
      */
+    @SuppressLint("MissingPermission")
     fun start() {
         if (_state.value == VoiceRecorderState.Recording) {
             Log.w(TAG, "start: already recording, ignore")
             return
+        }
+
+        // 权限检查：确保调用方已授予 RECORD_AUDIO
+        val hasRecordPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasRecordPermission) {
+            _state.value = VoiceRecorderState.Idle
+            throw SecurityException("Missing RECORD_AUDIO permission. Please grant microphone permission first.")
         }
 
         val dir = File(context.filesDir, "voice_messages").apply {
@@ -115,13 +130,18 @@ class VoiceRecorderController(private val context: Context) {
             throw RuntimeException("无法初始化录音（采样率/声道不支持）")
         }
 
-        val ar = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            minBuf * 2
-        )
+        val ar = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuf * 2
+            )
+        } catch (e: SecurityException) {
+            _state.value = VoiceRecorderState.Idle
+            throw e
+        }
         if (ar.state != AudioRecord.STATE_INITIALIZED) {
             Log.e(TAG, "start: AudioRecord not initialized")
             try { ar.release() } catch (_: Exception) {}

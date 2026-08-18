@@ -924,6 +924,16 @@ class VoiceCallManager(
         // 清空预卷（上一轮残留）
         synchronized(preRollFrames) { preRollFrames.clear() }
 
+        // 权限检查：确保调用方已授予 RECORD_AUDIO
+        val hasRecordPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasRecordPermission) {
+            Log.e(TAG, "startInterruptionDetection: Missing RECORD_AUDIO permission")
+            return
+        }
+
         val minBuf = AudioRecord.getMinBufferSize(
             VadDetector.SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
@@ -933,13 +943,18 @@ class VoiceCallManager(
             Log.e(TAG, "AudioRecord min buffer error: $minBuf")
             return
         }
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            VadDetector.SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            minBuf * 2
-        )
+        audioRecord = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                VadDetector.SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                minBuf * 2
+            )
+        } catch (e: SecurityException) {
+            Log.e(TAG, "startInterruptionDetection: SecurityException: ${e.message}")
+            return
+        }
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
             Log.e(TAG, "AudioRecord init failed")
             audioRecord?.release(); audioRecord = null
