@@ -28,6 +28,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.sqrt
 
@@ -138,6 +140,23 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             var sliceStartMs = 0L
             val scope = this // channelFlow 的 ProducerScope，用于 launch 异步上传
 
+            // ★ 并发控制：同一时间只允许一个切片在 API 请求中
+            //   前一个切片未返回时，新的切片不会触发，避免请求堆积和竞态
+            //   ★ 超时放行：如果 API 卡了 >3s，强制放行新切片（旧切片用 CAS 防覆盖）
+            val sliceInFlight = AtomicBoolean(false)
+            var sliceInFlightStartMs = 0L
+
+            // ★ 竞态保护：每次 Final 时递增 epoch，切片返回时检查 epoch 是否过期
+            //   如果切片上传后 epoch 变了，说明 Final 已经执行了，丢弃该切片结果
+            val sliceEpoch = AtomicInteger(0)
+
+            // ★ Final 后静默期：Final 后一段时间内忽略噪声，不累积 slicePcm
+            //   防止环境噪声/回声持续触发 inSpeechAux → 空切片循环
+            var finalGracePeriodUntil = 0L
+
+            // ★ 连续空结果计数：连续 N 次切片返回空文本 → 判定为纯噪声，停止上传
+            var consecutiveEmptyCount = 0
+
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, WINDOW_SIZE)
                 if (read <= 0) continue
@@ -148,10 +167,12 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 val now = System.currentTimeMillis()
 
                 // --- 1. 轻量 RMS 能量检测 ---
+                // ★ Final 静默期内强制忽略能量，防止噪声/回声触发 inSpeechAux
+                val inGracePeriod = now < finalGracePeriodUntil
                 var sumSq = 0.0
                 for (s in samples) sumSq += (s * s).toDouble()
                 val rms = sqrt(sumSq / samples.size).toFloat()
-                if (rms > RMS_SPEECH_THRESHOLD) {
+                if (!inGracePeriod && rms > RMS_SPEECH_THRESHOLD) {
                     if (!inSpeechAux) {
                         // 语音开始，记录切片起点
                         sliceStartMs = now
@@ -178,45 +199,105 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 // --- 3. 触发切片上传（Partial）：停顿触发 + 超长安全保护切片 ---
                 // 主要触发：检测到 ≥SHORT_SILENCE_SLICE_MS 的自然停顿（用户换气/断句）
                 // 安全触发：累积 ≥MAX_SLICE_MS 并且当前帧 RMS 低于阈值（至少是换气间隙），强制切
+                // ★ 并发控制 + 超时放行：
+                //   前一个切片 API 未返回时，不触发新切片 → 避免请求堆积
+                //   但如果 API 卡了 >3s，强制放行（旧切片用前缀检查防覆盖）
+                //   ★ 噪声保护：连续 ≥2 次空结果且没有已识别文本 → 停止无意义的空切片上传
+                //     但当用户开始新一句话（VAD 产出 segment → 重置计数器）时恢复
                 val pauseTriggered = sliceMs >= MIN_SLICE_MS && silenceMs >= SHORT_SILENCE_SLICE_MS
                 val maxLenTriggered = sliceMs >= MAX_SLICE_MS && rms <= RMS_SPEECH_THRESHOLD
-                val shouldSlice = (pauseTriggered || maxLenTriggered) && slicePcm.isNotEmpty()
-                if (shouldSlice && slicePcm.isNotEmpty()) {
+                val inflightTimedOut = sliceInFlight.get() && (now - sliceInFlightStartMs) > SLICE_INFLIGHT_TIMEOUT_MS
+                if (inflightTimedOut) {
+                    Log.w(TAG, "sliceInFlight timed out (${now - sliceInFlightStartMs}ms), force-allowing new slice")
+                    sliceInFlight.set(false)
+                }
+                // 噪声保护：连续空切片时暂停，但只在 promptText 为空时（没有已识别内容）
+                val noisePaused = consecutiveEmptyCount >= 2 && recognizedText.get().isEmpty()
+                val canSlice = !sliceInFlight.get() && !noisePaused
+                val shouldSlice = (pauseTriggered || maxLenTriggered) && canSlice && slicePcm.isNotEmpty()
+                if (shouldSlice) {
                     // 切片快照
                     val sliceSamples = slicePcm.toFloatArray()
                     slicePcm.clear()
                     sliceStartMs = now
+                    sliceInFlight.set(true)
+                    sliceInFlightStartMs = now
                     // 当前已识别文本快照（作为 prompt 传给 Whisper）
                     val promptText = recognizedText.get()
+                    // 捕获当前 epoch，用于返回时检查是否已被 Final 取代
+                    val capturedEpoch = sliceEpoch.get()
                     val triggerReason = if (pauseTriggered) "停顿触发" else "超长保护触发"
 
                     scope.launch(Dispatchers.IO) {
-                        val sliceText = try {
-                            val pcm = ShortArray(sliceSamples.size) {
-                                (sliceSamples[it] * 32767f).toInt().toShort()
+                        try {
+                            val sliceText = try {
+                                val pcm = ShortArray(sliceSamples.size) {
+                                    (sliceSamples[it] * 32767f).toInt().toShort()
+                                }
+                                val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
+                                val sliceMsValue = sliceSamples.size * 1000 / SAMPLE_RATE
+                                Log.i(TAG, "┌─[Partial 切片上传][$triggerReason] 时长=${sliceMsValue}ms 停顿=${silenceMs}ms" +
+                                    " prompt=\"${promptText.take(30)}\"")
+                                val result = transcribe(wavBytes, providerSetting, promptText)
+                                Log.i(TAG, "└─[Partial 切片返回] 识别=\"${result.trim()}\" 累积=\"${(promptText + result.trim()).trim()}\"")
+                                result
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Slice transcribe failed", e)
+                                ""
                             }
-                            val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
-                            val sliceMsValue = sliceSamples.size * 1000 / SAMPLE_RATE
-                            Log.i(TAG, "┌─[Partial 切片上传][$triggerReason] 时长=${sliceMsValue}ms 停顿=${silenceMs}ms" +
-                                " prompt=\"${promptText.take(30)}\"")
-                            val result = transcribe(wavBytes, providerSetting, promptText)
-                            Log.i(TAG, "└─[Partial 切片返回] 识别=\"${result.trim()}\" 累积=\"${(promptText + result.trim()).trim()}\"")
-                            result
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Slice transcribe failed", e)
-                            ""
-                        }
-                        if (sliceText.isNotBlank() && isActive) {
-                            // 追加到已识别文本（prompt 续接模式下，直接拼接）
-                            val newText = if (promptText.isEmpty()) sliceText.trim()
-                                         else (promptText + sliceText.trim())
-                            recognizedText.set(newText)
-                            // 作为 partial 发出 → UI 实时显示
-                            if (isActive) {
-                                send(ASRResult(text = newText, isFinal = false))
+                            // ★ 竞态检查：如果 epoch 变了，说明 Final 已经执行了，丢弃该切片结果
+                            if (capturedEpoch != sliceEpoch.get()) {
+                                Log.i(TAG, "Slice dropped (epoch mismatch: Final already sent)")
+                                return@launch
                             }
+                            if (sliceText.isNotBlank() && isActive) {
+                                consecutiveEmptyCount = 0  // 有内容，重置空计数器
+                                // ★ 前缀检查追加（替代 CAS）：
+                                //   超时放行后，两个切片可能并发返回。
+                                //   切片A上传时 promptText="foo"，切片B也上传时 promptText="foo"
+                                //   切片A先返回 → recognizedText = "foobar"
+                                //   切片B返回时：检查 recognizedText 是否以 "foo" 开头
+                                //     → 是 → 追加到当前 recognizedText 末尾："foobar" + "baz" = "foobarbaz"
+                                //     → 否 → epoch mismatch，丢弃
+                                val currentText = recognizedText.get()
+                                val newText = when {
+                                    // 正常情况：recognizedText 没变
+                                    currentText == promptText -> {
+                                        if (promptText.isEmpty()) sliceText.trim()
+                                        else (promptText + sliceText.trim())
+                                    }
+                                    // 超时放行：前一个切片已更新 recognizedText，追加到当前末尾
+                                    promptText.isNotEmpty() && currentText.startsWith(promptText) -> {
+                                        currentText + sliceText.trim()
+                                    }
+                                    // epoch mismatch：recognizedText 被清空或不匹配，丢弃
+                                    else -> {
+                                        Log.i(TAG, "Slice prefix mismatch (recognizedText changed), dropping stale result")
+                                        null
+                                    }
+                                }
+                                if (newText != null) {
+                                    recognizedText.set(newText)
+                                    if (isActive) {
+                                        send(ASRResult(text = newText, isFinal = false))
+                                    }
+                                }
+                            } else {
+                                // 空结果：可能是噪声。递增计数器
+                                consecutiveEmptyCount++
+                                Log.d(TAG, "Slice empty, consecutiveEmptyCount=$consecutiveEmptyCount")
+                                // 连续 2 次空且没有已识别文本 → 判定为噪声，清空 slicePcm
+                                // 但不永久阻止后续切片：当 VAD 检测到新语音段时会重置 consecutiveEmptyCount
+                                if (consecutiveEmptyCount >= 2 && promptText.isEmpty()) {
+                                    slicePcm.clear()
+                                    inSpeechAux = false
+                                    Log.i(TAG, "Noise detected (2x empty slices), clearing slicePcm (will resume on new VAD segment)")
+                                }
+                            }
+                        } finally {
+                            sliceInFlight.set(false)
                         }
-                    }.invokeOnCompletion { /* 协程结束，不管成功失败 */ }
+                    }
                 }
 
                 // --- 4. VAD 产出完整 segment：Final ---
@@ -229,6 +310,9 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     vad.pop()
 
                     if (segment.samples.isEmpty()) continue
+
+                    // ★ Final 时递增 epoch，让还在飞行中的切片返回时自动丢弃
+                    val finalEpoch = sliceEpoch.incrementAndGet()
 
                     // 只用 slicePcm，不用 VAD segment 的音频
                     val finalSamples = slicePcm.toFloatArray()
@@ -259,9 +343,19 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                             Log.e(TAG, "Final transcribe failed", e)
                             ""
                         }
-                        if (text.isNotBlank() && isActive) {
-                            val finalText = if (promptText.isEmpty()) text.trim()
-                                           else (promptText + text.trim())
+                        // ★ Bug 修复：即使剩余切片转录返回空（噪声/太短），
+                        //   只要之前有 Partial 识别到了内容，就必须把已识别文本作为 Final 发出去
+                        //   否则用户的完整句子会被丢弃！
+                        val finalText = when {
+                            text.isNotBlank() && promptText.isEmpty() -> text.trim()
+                            text.isNotBlank() && promptText.isNotEmpty() -> (promptText + text.trim())
+                            text.isBlank() && promptText.isNotEmpty() -> {
+                                Log.i(TAG, "Final transcribe returned empty, falling back to promptText")
+                                promptText
+                            }
+                            else -> null  // 两个都空，什么都不发
+                        }
+                        if (finalText != null && isActive) {
                             Log.i(TAG, "└─[Final 最终发送] 新增=\"${text.trim()}\" 最终文本=\"$finalText\"")
                             send(ASRResult(text = finalText, isFinal = true))
                         }
@@ -271,6 +365,12 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     recognizedText.set("")
                     inSpeechAux = false
                     sliceStartMs = 0L
+                    // ★ 重置并发标志，确保下一轮可以正常切片
+                    sliceInFlight.set(false)
+                    // ★ Final 后设静默期：1.5s 内忽略噪声，防止回声/环境音触发空切片循环
+                    finalGracePeriodUntil = System.currentTimeMillis() + FINAL_GRACE_PERIOD_MS
+                    // ★ 重置空计数器：VAD 产出新 segment 说明用户开始新一句话
+                    consecutiveEmptyCount = 0
                     vad.reset()
                     // NOTE: 音频录制永不停止！
                 }
@@ -502,12 +602,21 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         private const val RMS_SPEECH_THRESHOLD = 0.012F
         // 切片最小时长：累积至少 500ms 才允许切片上传，避免过短片段浪费 API 调用
         private const val MIN_SLICE_MS = 500
-        // 切片最大时长：累积 ≥5s 并且当前帧 RMS 低于阈值（换气间隙），强制切片防止长句不切
+        // 切片最大时长：累积 ≥3s 并且当前帧 RMS 低于阈值（换气间隙），强制切片防止长句不切
         // 这个是"安全网"，主要触发还是靠停顿；所以必须同时满足 RMS 低（至少是换气间隙）
-        private const val MAX_SLICE_MS = 5000
-        // 切片停顿阈值：检测到 ≥60ms 的自然停顿就切片
-        // （逗号停顿 50-100ms，60ms 抓大部分换气；句号停顿 300+ms 直接命中；
-        //  阈值明显短于 VAD final 的 800ms，因此停顿时一定先 partial 后 final。）
-        private const val SHORT_SILENCE_SLICE_MS = 60
+        // 从 5s 降到 3s：减小单次上传体积，API 响应更快
+        private const val MAX_SLICE_MS = 3000
+        // 切片停顿阈值：检测到 ≥250ms 的自然停顿就切片
+        // （逗号停顿 100-200ms，句号停顿 300+ms；250ms 能抓句号级停顿，不会把字间停顿误判；
+        //  之前 60ms 导致疯狂切片 → API 堆积 → 延迟爆炸。现在 RMS 已修正到 0.012，
+        //  250ms 能正常触发。阈值明显短于 VAD final 的 800ms，因此停顿时一定先 partial 后 final。）
+        private const val SHORT_SILENCE_SLICE_MS = 250
+        // Final 后静默期：Final 发送后 1.5s 内忽略 RMS 能量，防止回声/环境噪声触发空切片循环
+        // （TTS 的"嗯"提示语 + AI 回复音 都可能产生回声，1.5s 足够覆盖）
+        private const val FINAL_GRACE_PERIOD_MS = 1500L
+        // 切片 API 超时放行：如果前一个切片 API 卡了 >3s 还没返回，强制放行新切片
+        // （旧切片返回时用 CAS 检查 recognizedText 是否已被更新，避免覆盖新结果）
+        // 防止一个慢 API 请求阻塞整个识别链路，导致音频堆积成巨大 Final
+        private const val SLICE_INFLIGHT_TIMEOUT_MS = 3000L
     }
 }

@@ -383,10 +383,14 @@ class VoiceCallManager(
                         _callStatus.value = CallStatus.THINKING
                         // 在 sendUserMessage(→调 LLM) 之前，先播一个"嗯"之类的提示语，
                         // 给用户即时反馈"我听到了"，并掩盖 LLM 首字延迟。
+                        // ★ 等 cue 实际播完再发消息 + 启动 waiting 计时，否则 waiting cue 每次都误报
                         val ttsForCue = settingsStore.settingsFlow.value.getSelectedTTSProvider()
-                        playListenerCueNow(ttsForCue)
+                        val cuePlayed = kotlinx.coroutines.withTimeoutOrNull(3000L) {
+                            playListenerCueNow(ttsForCue)
+                        } ?: false
+                        Log.d(TAG, "Warmup: listener cue played=$cuePlayed, now sendUserMessage + scheduleWaitingCue")
                         val currentAsrJob = asrJob
-                        sendUserMessage(result.text, convId)
+                        sendUserMessage(result.text, convId, startWaitingCue = true)
                         if (currentAsrJob === asrJob) asrJob?.cancel()
                     }
                 }
@@ -509,15 +513,19 @@ class VoiceCallManager(
                         _callStatus.value = CallStatus.THINKING
                         // 用户语音转写成功 → 发给 LLM 之前先播个"嗯/哦/啊"之类的提示语，
                         // 掩盖 LLM 首字延迟，给用户"听到了"的即时反馈。
+                        // ★ 等 cue 实际播完再发消息 + 启动 waiting 计时，否则 waiting cue 每次都误报
                         val ttsForCue = settingsStore.settingsFlow.value.getSelectedTTSProvider()
-                        playListenerCueNow(ttsForCue)
+                        val cuePlayed = kotlinx.coroutines.withTimeoutOrNull(3000L) {
+                            playListenerCueNow(ttsForCue)
+                        } ?: false
+                        Log.d(TAG, "Listening: listener cue played=$cuePlayed, now sendUserMessage + scheduleWaitingCue")
                         // ================================================================
                         //  PDF §5 + §15 关键：AI 开始回复前立刻停掉 ASR 流式识别。
                         //  AI 说话期间只跑 VAD 做打断检测，ASR 必须保持静默。
                         //  否则扬声器的 AI 语音会被麦克风录下来，被 ASR 当成用户说话发送。
                         // ================================================================
                         val currentAsrJob = asrJob
-                        sendUserMessage(result.text, convId)
+                        sendUserMessage(result.text, convId, startWaitingCue = true)
                         // sendUserMessage 之后身份已经推进 turn/generation，
                         // 此时立刻 cancel 旧的 ASR job（如果还没收尾的话），
                         // 等到 awaitTtsCompleteThenHandle → startListening 再重新开新 ASR。
@@ -584,8 +592,8 @@ class VoiceCallManager(
     //  sendUserMessage → THINKING前导 → observe AI stream
     // ========================================================================
 
-    private fun sendUserMessage(text: String, convId: Uuid) {
-        Log.i(TAG, "sendUserMessage turn=${identity.turnId}: \"$text\"")
+    private fun sendUserMessage(text: String, convId: Uuid, startWaitingCue: Boolean = false) {
+        Log.i(TAG, "sendUserMessage turn=${identity.turnId} startWaitingCue=$startWaitingCue: \"$text\"")
         // 取消上一轮的后台模型挂断检测（用户开始了新的对话轮）
         hangupCheckJob?.cancel(); hangupCheckJob = null
         lastUserInputText = text
@@ -609,28 +617,31 @@ class VoiceCallManager(
             content = listOf(UIMessagePart.Text(text)),
             skipContextForResponse = false
         )
-        scheduleWaitingCue()
+        // ★ 只有语音通话（cue 播完后）才启动 waitingCue 计时；
+        //    文本输入/其他非语音场景 startWaitingCue=false，不需要等待提示。
+        if (startWaitingCue) scheduleWaitingCue()
         observeAiResponseStreaming(convId, snapshotGenId)
     }
 
     /**
      * 启动"等待提示"超时检测：
-     * 在 ListenerCue 播完后 1s，如果 LLM 还没返回可朗读内容（speakingStarted == false），
-     * 就随机播放一个 WaitingCue（等等/哦。/我想想/等一下/啊。。/啊！）。
-     * 如果期间 LLM 首字已到（speakingStarted=true），则取消不播。
+     * 此时 ListenerCue（嗯/啊/哦）已经实际播完。再等 WAITING_CUE_DELAY_MS，
+     * 如果 LLM 还没返回可朗读内容（TTS 已喂了内容 → speakingStarted == true），
+     * 就随机播一个 WaitingCue（等等/哦。/我想想/等一下/啊。。/啊！）。
+     * 期间 speakingStarted=true 时，observeAiResponseStreaming 会立刻 cancel 本 job。
      */
     private fun scheduleWaitingCue() {
         waitingCueJob?.cancel()
         waitingCueJob = scope.launch {
-            // 等 ListenerCue（嗯/啊/哦）播完，再等 1s
             delay(WAITING_CUE_DELAY_MS)
-            // 如果 LLM 首字已经到了，speakingStarted 会被设为 true，不需要播 waiting cue
-            if (speakingStarted) return@launch
+            if (speakingStarted) {
+                Log.d(TAG, "scheduleWaitingCue: suppressed (speakingStarted already true)")
+                return@launch
+            }
             if (!_isActive.value || _callStatus.value != CallStatus.THINKING) return@launch
-            // LLM 还没返回可朗读内容，播放等待提示
             val ttsSetting = settingsStore.settingsFlow.value.getSelectedTTSProvider()
             val cue = generateWaitingCue(ttsSetting)
-            Log.i(TAG, "playWaitingCue: \"$cue\" (LLM 首字超 ${WAITING_CUE_DELAY_MS}ms 未到)")
+            Log.i(TAG, "playWaitingCue: \"$cue\" (cue播完后等了 ${WAITING_CUE_DELAY_MS}ms 仍无 LLM 朗读内容)")
             runCatching {
                 ttsController.speak(cue, flush = false)
             }.onFailure { Log.w(TAG, "waiting cue play failed", it) }
@@ -660,18 +671,22 @@ class VoiceCallManager(
                         val nodeFedLen = fedLengthPerNode[aiNode.id] ?: 0
 
                         if (aiText.length > nodeFedLen) {
-                            if (!speakingStarted && aiText.isNotBlank()) {
-                                // 正式回答首句到来：
-                                // 1. 停掉 thinking cue（flush=true 会清掉 cue）
+                            // ★ 先喂句子，再根据是否真的喂了可朗读内容判断是否启动 speakingStarted
+                            val actuallySpoken = feedNewSentencesForNode(aiNode, aiText, expectGenId)
+
+                            // 只有真正喂了 TTS 可朗读文本（不是纯 think 标签/tool call 描述）
+                            // 才认为 speakingStarted：否则 waitingCue 永远 cancel 太早/太晚
+                            if (!speakingStarted && actuallySpoken) {
                                 listenerCueJob?.cancel()
+                                waitingCueJob?.cancel()  // LLM 已产出可朗读内容 → 立刻取消 waitingCue 检测
+                                waitingCueJob = null
                                 speakingStarted = true
-                                // 记录到回声尾窗时间戳（后面打断检测会用）
+                                Log.i(TAG, "speakingStarted = true (LLM 首句可朗读内容已喂 TTS)")
                                 lastTtsPlayingAtMs = System.currentTimeMillis()
                                 _callStatus.value = CallStatus.SPEAKING
                                 startInterruptionDetection(convId, expectGenId)
                             }
-                            Log.d(TAG, "TTS feed node=${aiNode.id} textLen=${aiText.length} nodeFedLen=$nodeFedLen (${aiText.take(30)}...)")
-                            feedNewSentencesForNode(aiNode, aiText, expectGenId)
+                            Log.d(TAG, "TTS feed node=${aiNode.id} textLen=${aiText.length} nodeFedLen=$nodeFedLen actuallySpoken=$actuallySpoken (${aiText.take(30)}...)")
                         }
                     }
                 }
@@ -797,12 +812,19 @@ class VoiceCallManager(
         return result.trim()
     }
 
-    private fun feedNewSentencesForNode(node: MessageNode, fullText: String, expectGenId: String?) {
+    /**
+     * 按句号/感叹号/问号切句，喂给 TTS controller。
+     *
+     * @return 本轮是否真的喂了**可朗读**文本（即 stripMarkdownForTts 后非空的内容）。
+     *         如果只有 think 标签 / tool call / 纯 markdown 标记，返回 false，调用方不会误以为"首字到了"。
+     */
+    private fun feedNewSentencesForNode(node: MessageNode, fullText: String, expectGenId: String?): Boolean {
         val fedLen = fedLengthPerNode[node.id] ?: 0
-        if (fedLen >= fullText.length) return
+        if (fedLen >= fullText.length) return false
         var newPart = fullText.substring(fedLen)
         val sentenceEnd = Regex("[。！？!?；;\n]")
         var lastCut = 0
+        var actuallySpokenAny = false
         var match: MatchResult? = sentenceEnd.find(newPart)
         while (match != null) {
             val end = match.range.last + 1
@@ -812,6 +834,7 @@ class VoiceCallManager(
                 if (expectGenId == null || identity.generationId == expectGenId) {
                     ttsController.speak(sentence, flush = false)
                     lastTtsPlayingAtMs = System.currentTimeMillis()
+                    actuallySpokenAny = true
                     // spokenPartsPerNode: 记录该节点已播报长度（用于总 spokenTextLen 计算）
                     val nodeSpokenEnd = (fedLen + end).coerceAtMost(fullText.length)
                     spokenPartsPerNode[node.id] = nodeSpokenEnd
@@ -822,6 +845,7 @@ class VoiceCallManager(
             match = sentenceEnd.find(newPart, end)
         }
         fedLengthPerNode[node.id] = fedLen + lastCut
+        return actuallySpokenAny
     }
 
     /** AI 回答结束后回到监听状态 */
@@ -1390,14 +1414,40 @@ class VoiceCallManager(
     /**
      * 立刻播放「听话提示语」(flush=true，会把之前还没播完的 THINKING_CUE 之类顶掉)，
      * 用于用户刚刚说完、我们正在调 LLM 的这一小段空档，让用户知道我们"听到了"。
+     *
+     * 【重要】调用方会挂起等待 cue 实际播完，再启动 waitingCue 计时。
+     * cue 本身很短（嗯/啊/哦 ≈ 200-400ms），所以不用等太久；但必须等播完，
+     * 否则 waitingCue 的 1s 计时从 sendMessage 瞬间开始，而 cue 还在 TTS 排队合成，
+     * 相当于给 LLM 留的时间被砍掉一大截，waiting cue 每次都响。
+     *
+     * @return true = cue 正常播完（或超时被保护中断），false = 播放失败或不在活动状态
      */
-    private fun playListenerCueNow(ttsSetting: me.rerere.tts.provider.TTSProviderSetting?) {
+    private suspend fun playListenerCueNow(ttsSetting: me.rerere.tts.provider.TTSProviderSetting?): Boolean {
+        if (!_isActive.value) return false
         val cue = generateListenerCue(ttsSetting)
-        Log.i(TAG, "playListenerCueNow: \"$cue\"")
-        runCatching {
+        Log.i(TAG, "playListenerCueNow: \"$cue\" start (will await completion)")
+        val cueStartMs = System.currentTimeMillis()
+        val ok = runCatching {
             // cue 是我们自己构造的短文本，不走 stripMarkdownForTts，确保 (xxx) 标签完整透传。
             ttsController.speak(cue, flush = true)
-        }.onFailure { Log.w(TAG, "listener cue play failed", it) }
+            var waited = 0L
+            // 等 TTS 真正开始 speaking 或超时（合成可能需要 100-200ms）
+            var startGuard = 0
+            while (_isActive.value && !ttsController.isSpeaking.value && startGuard < 20) {
+                delay(50); waited += 50; startGuard++
+            }
+            // 等说话结束或总时长超过 2.5s（极端保护）
+            while (_isActive.value && ttsController.isSpeaking.value && waited < 2500L) {
+                delay(50); waited += 50
+            }
+            true
+        }.getOrElse {
+            Log.w(TAG, "listener cue play failed", it)
+            false
+        }
+        val dur = System.currentTimeMillis() - cueStartMs
+        Log.i(TAG, "playListenerCueNow: \"$cue\" finished (${dur}ms, ok=$ok)")
+        return ok
     }
 
     companion object {
@@ -1407,8 +1457,9 @@ class VoiceCallManager(
         private const val L1_CHECK_INTERVAL_MS = 25L * 60 * 1000
         private const val ASR_RETRY_DELAY_MS = 600L
         private const val THINKING_CUE_DELAY_MS = 120L // 等 120ms，首句出来就不播 cue
-        // 等待提示延迟：ListenerCue 播完后等 1s，LLM 还没返回可朗读内容就播"等等/我想想"
-        private const val WAITING_CUE_DELAY_MS = 1000L
+        // 等待提示延迟：ListenerCue 播完后再等 800ms，LLM 仍无可朗读内容就播"等等/我想想"
+        // cue 本身 ≈ 200-400ms，加上这 800ms ≈ 给 LLM 留了 1-1.2s（刚好是大多数模型 TTFT 时间）。
+        private const val WAITING_CUE_DELAY_MS = 800L
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
