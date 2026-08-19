@@ -59,6 +59,7 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
+import kotlin.uuid.Uuid
 
 @Composable
 fun SettingModelPage(vm: SettingVM = koinViewModel()) {
@@ -358,7 +359,7 @@ private fun DefaultSuggestionModelSetting(
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
-                                suggestionModelId = it.id
+                                suggestionModelId = if (it.id == Uuid.NIL) null else it.id
                             )
                         )
                     },
@@ -527,6 +528,36 @@ private fun DefaultEmbeddingModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
+    var showChangeConfirm by remember { mutableStateOf(false) }
+    var pendingNewModelId by remember { mutableStateOf(Uuid.NIL) }
+
+    if (showChangeConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showChangeConfirm = false },
+            title = { Text("更换嵌入模型") },
+            text = {
+                Text(
+                    "更换嵌入模型后，已有的核心记忆和对话片段在新模型下将无法被语义检索命中。\n\n" +
+                    "更换完成后，请前往每个智能体的详情页，点击「重新生成嵌入」为所有记忆和片段重新生成嵌入向量。\n\n" +
+                    "是否确认更换？"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.updateSettings(
+                        settings.copy(
+                            embeddingModelId = pendingNewModelId
+                        )
+                    )
+                    showChangeConfirm = false
+                }) { Text("确认更换") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showChangeConfirm = false }) { Text("取消") }
+            }
+        )
+    }
+
     ModelFeatureCard(
         title = {
             Text(
@@ -545,15 +576,21 @@ private fun DefaultEmbeddingModelSetting(
                 ModelSelector(
                     modelId = settings.embeddingModelId,
                     type = ModelType.EMBEDDING,
-                    onSelect = {
-                        vm.updateSettings(
-                            settings.copy(
-                                embeddingModelId = it.id
+                    onSelect = { newModel ->
+                        // 相同模型直接应用（首次配置场景），不同模型弹确认
+                        if (settings.embeddingModelId == Uuid.NIL || newModel.id == settings.embeddingModelId) {
+                            vm.updateSettings(
+                                settings.copy(
+                                    embeddingModelId = newModel.id
+                                )
                             )
-                        )
+                        } else {
+                            pendingNewModelId = newModel.id
+                            showChangeConfirm = true
+                        }
                     },
                     providers = settings.providers,
-                    allowClear = true,
+                    allowClear = false,
                     modifier = Modifier.wrapContentWidth()
                 )
             }
@@ -587,7 +624,7 @@ private fun DefaultRerankModelSetting(
                     onSelect = {
                         vm.updateSettings(
                             settings.copy(
-                                rerankModelId = it.id
+                                rerankModelId = if (it.id == Uuid.NIL) null else it.id
                             )
                         )
                     },

@@ -124,7 +124,7 @@ fun ModelSelector(
 ) {
     var popup by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val model = providers.findModelById(modelId ?: Uuid.random())
+    val model = modelId?.let { providers.findModelById(it) }
 
     if (!onlyIcon) {
         Row(
@@ -156,7 +156,7 @@ fun ModelSelector(
             if (allowClear && model != null) {
                 IconButton(
                     onClick = {
-                        onSelect(Model())
+                        onSelect(Model(id = Uuid.NIL))
                     }
                 ) {
                     Icon(

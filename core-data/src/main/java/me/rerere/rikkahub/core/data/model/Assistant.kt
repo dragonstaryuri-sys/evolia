@@ -40,7 +40,6 @@ data class Assistant(
     val backgroundModelId: Uuid? = null,
     val searchMode: AssistantSearchMode = AssistantSearchMode.Off,
     val preferBuiltInSearch: Boolean = false,
-    val embeddingModelId: Uuid? = null,
     val name: String = "",
     val avatar: Avatar = Avatar.Dummy,
     val useAssistantAvatar: Boolean = false,

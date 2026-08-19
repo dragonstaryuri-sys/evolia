@@ -137,23 +137,19 @@ class SettingsStore(
                 favoriteModels = preferences[FAVORITE_MODELS]?.let {
                     JsonInstant.decodeFromString(it)
                 } ?: emptyList(),
-                chatModelId = preferences[SELECT_MODEL].toUuidOrNull()
-                    ?: GEMINI_2_5_FLASH_ID,
-                backgroundModelId = preferences[BACKGROUND_MODEL].toUuidOrNull()
-                    ?: GEMINI_2_5_FLASH_ID,
-                summarizerModelId = preferences[SUMMARIZER_MODEL].toUuidOrNull()
-                    ?: GEMINI_2_5_FLASH_ID,
-                suggestionModelId = preferences[SUGGESTION_MODEL].toUuidOrNull()
-                    ?: GEMINI_2_5_FLASH_ID,
-                imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL].toUuidOrNull() ?: Uuid.random(),
+                chatModelId = preferences[SELECT_MODEL].toUuidOrNull() ?: Uuid.NIL,
+                backgroundModelId = preferences[BACKGROUND_MODEL].toUuidOrNull() ?: Uuid.NIL,
+                summarizerModelId = preferences[SUMMARIZER_MODEL].toUuidOrNull() ?: Uuid.NIL,
+                suggestionModelId = preferences[SUGGESTION_MODEL].toUuidOrNull(),
+                imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL].toUuidOrNull() ?: Uuid.NIL,
                 suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
                 learningModePrompt = preferences[LEARNING_MODE_PROMPT] ?: DEFAULT_LEARNING_MODE_PROMPT,
-                ocrModelId = preferences[OCR_MODEL].toUuidOrNull() ?: Uuid.random(),
+                ocrModelId = preferences[OCR_MODEL].toUuidOrNull() ?: Uuid.NIL,
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
-                embeddingModelId = preferences[EMBEDDING_MODEL].toUuidOrNull() ?: Uuid.random(),
+                embeddingModelId = preferences[EMBEDDING_MODEL].toUuidOrNull() ?: Uuid.NIL,
                 rerankModelId = preferences[RERANK_MODEL].toUuidOrNull(),
-                memoryModelId = preferences[MEMORY_MODEL].toUuidOrNull() ?: GEMINI_2_5_FLASH_ID,
-                diaryModelId = preferences[DIARY_MODEL].toUuidOrNull() ?: GEMINI_2_5_FLASH_ID,
+                memoryModelId = preferences[MEMORY_MODEL].toUuidOrNull() ?: Uuid.NIL,
+                diaryModelId = preferences[DIARY_MODEL].toUuidOrNull() ?: Uuid.NIL,
                 diaryPrompt = preferences[DIARY_PROMPT] ?: DEFAULT_DIARY_PROMPT,
                 assistantId = preferences[SELECT_ASSISTANT].toUuidOrNull()
                     ?: DEFAULT_ASSISTANT_ID,
@@ -287,25 +283,34 @@ class SettingsStore(
                 }
             }
             val allModels = dedupedProviders.flatMap { it.models }
-            val firstChatModel = allModels.firstOrNull { it.type == ModelType.CHAT }?.id ?: GEMINI_2_5_FLASH_ID
             val firstEmbeddingModel = allModels.firstOrNull { it.type == ModelType.EMBEDDING }?.id
-            val firstRerankModel = allModels.firstOrNull { it.type == ModelType.RERANK }?.id
-            val firstImageModel = allModels.firstOrNull { it.type == ModelType.IMAGE }?.id
 
-            fun resolveModelId(configured: Uuid, fallbackType: ModelType, defaultFallback: Uuid = GEMINI_2_5_FLASH_ID): Uuid {
-                return if (allModels.any { it.id == configured }) configured
-                else allModels.firstOrNull { it.type == fallbackType }?.id ?: defaultFallback
+            fun resolveModelId(configured: Uuid, fallbackType: ModelType): Uuid {
+                // configured 必须是有效模型 ID，不再做自动兜底
+                // 找不到时抛错，让调用方/用户知道必须显式配置
+                return if (configured != Uuid.NIL && allModels.any { it.id == configured }) configured
+                else allModels.firstOrNull { it.type == fallbackType }?.id
+                    ?: throw IllegalStateException(
+                        "未配置 ${fallbackType.name} 类型的全局模型，请在模型设置中选择一个可用模型。"
+                    )
             }
 
             fun resolveNullableModelId(configured: Uuid?, fallbackType: ModelType): Uuid? {
-                return if (configured != null && allModels.any { it.id == configured }) configured
+                // configured == null 表示用户明确想要清除，不应自动兜底
+                // configured != null 但找不到时，才尝试用同类型第一个模型兜底
+                return if (configured == null) null
+                else if (allModels.any { it.id == configured }) configured
                 else allModels.firstOrNull { it.type == fallbackType }?.id
             }
 
             val resolvedChatModelId = resolveModelId(settings.chatModelId, ModelType.CHAT)
-            val resolvedEmbeddingModelId = firstEmbeddingModel ?: settings.embeddingModelId.let {
-                if (allModels.any { m -> m.id == it }) it else null
-            } ?: Uuid.random()
+            val resolvedEmbeddingModelId =
+                if (settings.embeddingModelId != Uuid.NIL && allModels.any { m -> m.id == settings.embeddingModelId }) {
+                    settings.embeddingModelId
+                } else firstEmbeddingModel
+                    ?: throw IllegalStateException(
+                        "未配置 EMBEDDING 类型的全局模型，请在模型设置中选择一个可用的嵌入模型。"
+                    )
             settings.copy(
                 providers = dedupedProviders,
                 assistants = settings.assistants.distinctBy { it.id }.map { assistant ->
@@ -329,8 +334,6 @@ class SettingsStore(
                         diaryModelId = assistant.diaryModelId?.let { id ->
                             if (allModels.any { m -> m.id == id }) id else null
                         },
-                        // Embedding model is a global-only setting — no per-assistant override.
-                        embeddingModelId = null,
                     )
                 },
                 ttsProviders = settings.ttsProviders.distinctBy { it.id },
@@ -341,11 +344,15 @@ class SettingsStore(
                 chatModelId = resolvedChatModelId,
                 backgroundModelId = resolveModelId(settings.backgroundModelId, ModelType.CHAT),
                 summarizerModelId = resolveModelId(settings.summarizerModelId, ModelType.CHAT),
-                suggestionModelId = resolveModelId(settings.suggestionModelId, ModelType.CHAT),
+                suggestionModelId = settings.suggestionModelId?.let { id ->
+                    if (allModels.any { m -> m.id == id }) id else null
+                },
                 memoryModelId = resolveModelId(settings.memoryModelId, ModelType.CHAT),
                 diaryModelId = resolveModelId(settings.diaryModelId, ModelType.CHAT),
-                imageGenerationModelId = resolveNullableModelId(settings.imageGenerationModelId, ModelType.IMAGE)
-                    ?: settings.imageGenerationModelId,
+                imageGenerationModelId =
+                    if (settings.imageGenerationModelId == Uuid.NIL) Uuid.NIL
+                    else resolveNullableModelId(settings.imageGenerationModelId, ModelType.IMAGE)
+                        ?: Uuid.NIL,
                 ocrModelId = resolveModelId(settings.ocrModelId, ModelType.CHAT),
                 embeddingModelId = resolvedEmbeddingModelId,
                 rerankModelId = resolveNullableModelId(settings.rerankModelId, ModelType.RERANK)
@@ -404,7 +411,7 @@ class SettingsStore(
             preferences[SELECT_MODEL] = settingsToSave.chatModelId.toString()
             preferences[BACKGROUND_MODEL] = settingsToSave.backgroundModelId.toString()
             preferences[SUMMARIZER_MODEL] = settingsToSave.summarizerModelId.toString()
-            preferences[SUGGESTION_MODEL] = settingsToSave.suggestionModelId.toString()
+            preferences[SUGGESTION_MODEL] = settingsToSave.suggestionModelId?.toString() ?: ""
             preferences[IMAGE_GENERATION_MODEL] = settingsToSave.imageGenerationModelId.toString()
             preferences[SUGGESTION_PROMPT] = settingsToSave.suggestionPrompt
             preferences[LEARNING_MODE_PROMPT] = settingsToSave.learningModePrompt
@@ -494,20 +501,20 @@ data class Settings(
     val displaySetting: DisplaySetting = DisplaySetting(),
     val enableWebSearch: Boolean = false,
     val favoriteModels: List<Uuid> = emptyList(),
-    val chatModelId: Uuid = Uuid.random(),
-    val backgroundModelId: Uuid = Uuid.random(),
-    val summarizerModelId: Uuid = Uuid.random(),
-    val imageGenerationModelId: Uuid = Uuid.random(),
-    val suggestionModelId: Uuid = Uuid.random(),
+    val chatModelId: Uuid = Uuid.NIL,
+    val backgroundModelId: Uuid = Uuid.NIL,
+    val summarizerModelId: Uuid = Uuid.NIL,
+    val imageGenerationModelId: Uuid = Uuid.NIL,
+    val suggestionModelId: Uuid? = null,
     val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
     val learningModePrompt: String = DEFAULT_LEARNING_MODE_PROMPT,
-    val ocrModelId: Uuid = Uuid.random(),
+    val ocrModelId: Uuid = Uuid.NIL,
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,
-    val embeddingModelId: Uuid = Uuid.random(),
+    val embeddingModelId: Uuid = Uuid.NIL,
     val rerankModelId: Uuid? = null,
-    val memoryModelId: Uuid = Uuid.random(),
+    val memoryModelId: Uuid = Uuid.NIL,
     val memoryModelPrompt: String = "",
-    val diaryModelId: Uuid = Uuid.random(),
+    val diaryModelId: Uuid = Uuid.NIL,
     val diaryPrompt: String = DEFAULT_DIARY_PROMPT,
     val assistantId: Uuid = DEFAULT_ASSISTANT_ID,
     val providers: List<ProviderSetting> = emptyList(),
@@ -711,7 +718,6 @@ fun Model.findProvider(providers: List<ProviderSetting>, checkOverwrite: Boolean
     return provider
 }
 
-internal val GEMINI_2_5_FLASH_ID = Uuid.parse("cd2cba9a-3f92-4148-b4c6-4d7a86f7b9c2")
 internal val DEFAULT_ASSISTANT_ID = Uuid.parse("0950e2dc-9bd5-4801-afa3-aa887aa36b4e")
 internal val DEFAULT_ASSISTANTS = listOf(
     Assistant(

@@ -1551,17 +1551,37 @@ private fun MemoryItem(
                             }
                         }
 
-                        if (useRagMemoryRetrieval && !memory.hasEmbedding) {
-                            Surface(
-                                color = Color(0xFFC62828),
-                                shape = MaterialTheme.shapes.extraSmall
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.no_embedding),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                    color = Color.White
-                                )
+                        if (useRagMemoryRetrieval) {
+                            when {
+                                !memory.hasEmbedding -> {
+                                    // 完全没有向量 → 无嵌入（红色）
+                                    Surface(
+                                        color = Color(0xFFC62828),
+                                        shape = MaterialTheme.shapes.extraSmall
+                                    ) {
+                                        Text(
+                                            text = stringResource(R.string.no_embedding),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                                memory.embeddingModelId != null
+                                        && memory.embeddingModelId != currentEmbeddingModelId -> {
+                                    // 有向量但生成模型≠当前嵌入模型 → 待重新嵌入（橙色）
+                                    Surface(
+                                        color = Color(0xFFEF6C00),
+                                        shape = MaterialTheme.shapes.extraSmall
+                                    ) {
+                                        Text(
+                                            text = "待重新嵌入",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                            color = Color.White
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

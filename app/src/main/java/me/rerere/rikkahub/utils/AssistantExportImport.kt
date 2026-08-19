@@ -646,8 +646,6 @@ object AssistantExportImport : KoinComponent {
         return assistant.copy(
             chatModelId = checkAndClear(assistant.chatModelId),
             backgroundModelId = checkAndClear(assistant.backgroundModelId),
-            // Embedding model is a global-only setting — always clear per-assistant value.
-            embeddingModelId = null,
             summarizerModelId = checkAndClear(assistant.summarizerModelId),
             memoryModelId = checkAndClear(assistant.memoryModelId),
             diaryModelId = checkAndClear(assistant.diaryModelId),
