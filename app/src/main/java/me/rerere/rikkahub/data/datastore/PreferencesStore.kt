@@ -285,19 +285,14 @@ class SettingsStore(
             val allModels = dedupedProviders.flatMap { it.models }
             val firstEmbeddingModel = allModels.firstOrNull { it.type == ModelType.EMBEDDING }?.id
 
+            // 【构建阶段不抛异常】返回 Uuid.NIL 表示"没有可用的该类型模型"
+            // 真实的异常在具体功能使用时（如 getCurrentChatModel 返回 null）抛出，避免 App 刚安装 DataStore 空时 settingsFlow 直接炸掉导致白屏
             fun resolveModelId(configured: Uuid, fallbackType: ModelType): Uuid {
-                // configured 必须是有效模型 ID，不再做自动兜底
-                // 找不到时抛错，让调用方/用户知道必须显式配置
                 return if (configured != Uuid.NIL && allModels.any { it.id == configured }) configured
-                else allModels.firstOrNull { it.type == fallbackType }?.id
-                    ?: throw IllegalStateException(
-                        "未配置 ${fallbackType.name} 类型的全局模型，请在模型设置中选择一个可用模型。"
-                    )
+                else allModels.firstOrNull { it.type == fallbackType }?.id ?: Uuid.NIL
             }
 
             fun resolveNullableModelId(configured: Uuid?, fallbackType: ModelType): Uuid? {
-                // configured == null 表示用户明确想要清除，不应自动兜底
-                // configured != null 但找不到时，才尝试用同类型第一个模型兜底
                 return if (configured == null) null
                 else if (allModels.any { it.id == configured }) configured
                 else allModels.firstOrNull { it.type == fallbackType }?.id
@@ -307,10 +302,7 @@ class SettingsStore(
             val resolvedEmbeddingModelId =
                 if (settings.embeddingModelId != Uuid.NIL && allModels.any { m -> m.id == settings.embeddingModelId }) {
                     settings.embeddingModelId
-                } else firstEmbeddingModel
-                    ?: throw IllegalStateException(
-                        "未配置 EMBEDDING 类型的全局模型，请在模型设置中选择一个可用的嵌入模型。"
-                    )
+                } else firstEmbeddingModel ?: Uuid.NIL
             settings.copy(
                 providers = dedupedProviders,
                 assistants = settings.assistants.distinctBy { it.id }.map { assistant ->
@@ -326,7 +318,9 @@ class SettingsStore(
                             if (allModels.any { m -> m.id == id }) id else null
                         },
                         suggestionModelId = assistant.suggestionModelId?.let { id ->
-                            if (allModels.any { m -> m.id == id }) id else null
+                            // Uuid.NIL 作为 sentinel：该智能体明确禁用聊天建议，原样保留
+                            if (id == Uuid.NIL) Uuid.NIL
+                            else if (allModels.any { m -> m.id == id }) id else null
                         },
                         memoryModelId = assistant.memoryModelId?.let { id ->
                             if (allModels.any { m -> m.id == id }) id else null
