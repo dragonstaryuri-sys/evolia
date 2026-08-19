@@ -52,4 +52,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("image_generation")
     data object ImageGeneration : LocalToolOption()
+
+    @Serializable
+    @SerialName("call_control")
+    data object CallControl : LocalToolOption()
 }

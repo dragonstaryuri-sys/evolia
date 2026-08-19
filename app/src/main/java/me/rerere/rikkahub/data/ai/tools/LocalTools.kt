@@ -18,12 +18,17 @@ import me.rerere.rikkahub.core.data.model.LocalToolOption
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
 import me.rerere.rikkahub.core.data.db.entity.MilestoneEntity
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.service.AgentTaskScheduler
 import org.koin.compose.koinInject
 import java.util.Properties
@@ -39,7 +44,6 @@ import java.util.Locale
 import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 import me.rerere.rikkahub.core.data.repository.UserDeviceStateRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
-import kotlinx.coroutines.flow.MutableSharedFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -64,6 +68,40 @@ import me.rerere.ai.provider.Modality
 // 用于在 Tool 和 AccessibilityService 之间传递即时控制指令
 object DeviceCommandHub {
     val commands = MutableSharedFlow<String>(extraBufferCapacity = 10)
+}
+
+/**
+ * AI 工具调用 ↔ VoiceCallManager 之间的通话控制命令总线。
+ *
+ * 为什么不直接注入 VoiceCallManager / ChatService 到 LocalTools？
+ * 因为 ChatService 构造时已经依赖了 LocalTools，直接注入会形成构造器循环依赖。
+ * 使用 object 单例 + Flow 可以优雅地解耦：
+ *   工具侧 (AI)       → emit command / 读取 isCallActive
+ *   VoiceCallManager  → collect command / 更新 isCallActive
+ */
+object CallCommandHub {
+    data class CallCommand(val action: String, val conversationId: Uuid)
+
+    private val _commands = MutableSharedFlow<CallCommand>(extraBufferCapacity = 10)
+    val commands = _commands.asSharedFlow()
+
+    private val _isCallActive = MutableStateFlow(false)
+    val isCallActive = _isCallActive.asStateFlow()
+
+    /** 由 VoiceCallManager.startCall / hangup 更新，不要在工具侧写。 */
+    internal fun setCallActive(active: Boolean) {
+        _isCallActive.value = active
+    }
+
+    /** 工具侧发送 call 命令（带 conversationId）。 */
+    suspend fun sendCall(conversationId: Uuid) {
+        _commands.emit(CallCommand(action = "call", conversationId = conversationId))
+    }
+
+    /** 工具侧发送 hangup 命令。conversationId 仅用于日志校验，不必严格匹配。 */
+    suspend fun sendHangup(conversationId: Uuid) {
+        _commands.emit(CallCommand(action = "hangup", conversationId = conversationId))
+    }
 }
 
 @Composable
@@ -1938,6 +1976,104 @@ class LocalTools(
         )
     }
 
+    fun getCallControlTools(assistantId: Uuid, conversationId: Uuid): List<Tool> {
+        return listOf(
+            Tool(
+                name = "call_control",
+                description = "控制与用户的语音通话。当你想主动和用户语音聊天（或者在聊天中用户说想打电话）时使用 call 发起通话；觉得该结束通话时（如用户说拜拜/挂了/不聊了/自然结束对话）使用 hangup 挂断。",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("action", buildJsonObject {
+                                put("type", "string")
+                                put("description", "要执行的操作：call（拨打/接通当前会话的语音通话）, hangup（挂断当前通话）")
+                                put(
+                                    "enum", JsonArray(
+                                        listOf(
+                                            JsonPrimitive("call"),
+                                            JsonPrimitive("hangup")
+                                        )
+                                    )
+                                )
+                            })
+                        },
+                        required = listOf("action")
+                    )
+                },
+                execute = {
+                    val args = it.jsonObject
+                    val action = args["action"]?.jsonPrimitive?.contentOrNull ?: ""
+                    when (action) {
+                        "call" -> {
+                            if (CallCommandHub.isCallActive.value) {
+                                return@Tool buildJsonObject {
+                                    put("success", false)
+                                    put("error", "已经在通话中，无需重复拨打")
+                                }
+                            }
+                            withContext(Dispatchers.IO) {
+                                // ==== 关键：如果是微信模式，自动切换到普通模式 ====
+                                val settings = settingsStore.settingsFlow.first()
+                                val assistant = settings.assistants.find { it.id == assistantId }
+                                var switchedFromWechat = false
+                                if (assistant != null) {
+                                    val isWechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+                                    if (isWechatMode) {
+                                        val updatedAssistant = assistant.copy(
+                                            uiSettings = assistant.uiSettings.copy(wechatMode = false)
+                                        )
+                                        settingsStore.update(
+                                            settings.copy(
+                                                assistants = settings.assistants.map { a ->
+                                                    if (a.id == updatedAssistant.id) updatedAssistant else a
+                                                }
+                                            )
+                                        )
+                                        switchedFromWechat = true
+                                        android.util.Log.i(
+                                            "LocalTools",
+                                            "call_control: call start, switched assistant $assistantId from wechatMode→normal"
+                                        )
+                                    }
+                                }
+                                // 通过 CallCommandHub 异步通知 VoiceCallManager 发起通话
+                                CallCommandHub.sendCall(conversationId)
+                                buildJsonObject {
+                                    put("success", true)
+                                    put("action", "call")
+                                    put("switched_from_wechat_mode", switchedFromWechat)
+                                    put("note", if (switchedFromWechat) "已自动从微信模式切换为普通模式，保证通话体验。通话将立即接通。" else "通话已发起，正在接通。")
+                                }
+                            }
+                        }
+                        "hangup" -> {
+                            if (!CallCommandHub.isCallActive.value) {
+                                return@Tool buildJsonObject {
+                                    put("success", false)
+                                    put("error", "当前没有正在进行的通话")
+                                }
+                            }
+                            withContext(Dispatchers.IO) {
+                                CallCommandHub.sendHangup(conversationId)
+                                buildJsonObject {
+                                    put("success", true)
+                                    put("action", "hangup")
+                                    put("note", "挂断指令已发出，通话将立即结束。")
+                                }
+                            }
+                        }
+                        else -> {
+                            buildJsonObject {
+                                put("success", false)
+                                put("error", "未知 action: $action，仅支持 call 或 hangup")
+                            }
+                        }
+                    }
+                }
+            )
+        )
+    }
+
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
@@ -1958,6 +2094,9 @@ class LocalTools(
         if (options.contains(LocalToolOption.PeekUser)) tools.addAll(getPeekUserTools(assistantId))
         if (options.contains(LocalToolOption.WebPageReader)) tools.addAll(getWebPageReaderTools())
         if (options.contains(LocalToolOption.ImageGeneration)) tools.addAll(getImageGenerationTools())
+        if (options.contains(LocalToolOption.CallControl)) {
+            tools.addAll(getCallControlTools(assistantId, conversationId))
+        }
         return tools
     }
 }

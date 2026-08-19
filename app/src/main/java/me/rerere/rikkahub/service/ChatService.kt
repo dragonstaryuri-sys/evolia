@@ -1800,49 +1800,6 @@ class ChatService(
         }
     }
 
-    /**
-     * 用后台模型判断用户是否有挂断通话的意图（不影响对话模型）。
-     * 异步调用，返回 true 表示用户想结束通话。
-     */
-    suspend fun checkCallHangupIntent(
-        conversationId: Uuid,
-        userText: String,
-        aiReplyText: String
-    ): Boolean {
-        return runCatching {
-            val settings = settingsStore.settingsFlow.first()
-            val conv = getConversationFlow(conversationId).value
-            val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
-            val modelId = assistant.backgroundModelId ?: settings.backgroundModelId
-            val model = settings.findModelById(modelId) ?: return false
-            val provider = model.findProvider(settings.providers) ?: return false
-            val handler = providerManager.getProviderByType(provider) as? Provider<ProviderSetting> ?: return false
-            Log.i(TAG, "HangupCheck: bgModel=${model.modelId} ")
-
-            val prompt = buildString {
-                appendLine("你是通话结束检测助手。下面是用户和AI在通话中最后一轮的对话：")
-                appendLine("用户说：\"$userText\"")
-                appendLine("AI回复：\"$aiReplyText\"")
-                appendLine()
-                appendLine("判断用户是否在表达结束通话/挂断的意图（如再见/拜拜/挂了/不聊了/回头说等）。")
-                appendLine("只回复 YES 或 NO，不要回复其他任何内容。")
-            }
-
-            val result = handler.generateText(
-                provider,
-                listOf(UIMessage.user(prompt)),
-                TextGenerationParams(model, temperature = 0.0f, thinkingBudget = 0)
-            )
-            val rawResponse = result.choices.firstOrNull()?.message?.toContentText()?.trim()
-            val responseText = rawResponse?.uppercase()
-            val shouldHangup = responseText?.startsWith("YES") == true
-            Log.i(TAG, "HangupCheck: modelRawReply=\"$rawResponse\" -> parsed=$shouldHangup")
-            shouldHangup
-        }.onFailure {
-            Log.w("ChatService", "checkCallHangupIntent failed", it)
-        }.getOrDefault(false)
-    }
-
     /** Apply a field/node mutation to the latest in-memory value, then persist it. */
     suspend fun mutateConversationAndSave(
         id: Uuid,

@@ -320,6 +320,43 @@ fun AssistantToolsSubPage(
                 }
             )
 
+            // Call Control（语音通话控制：拨打/挂断）
+            val callControlPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { granted ->
+                if (granted) {
+                    val newLocalTools = assistant.localTools + LocalToolOption.CallControl
+                    onUpdate(assistant.copy(localTools = newLocalTools))
+                }
+            }
+            val callControlEnabled = assistant.localTools.contains(LocalToolOption.CallControl)
+            SettingGroupItem(
+                title = "语音通话控制",
+                subtitle = "允许 AI 主动拨打或挂断与你的语音通话。挂断和拨打都由 AI 通过工具调用控制，不再额外消耗背景模型调用。",
+                trailing = {
+                    HapticSwitch(
+                        checked = callControlEnabled,
+                        onCheckedChange = { enabled ->
+                            if (enabled) {
+                                callControlPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            } else {
+                                val newLocalTools = assistant.localTools - LocalToolOption.CallControl
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        }
+                    )
+                },
+                onClick = {
+                    val enabled = !assistant.localTools.contains(LocalToolOption.CallControl)
+                    if (enabled) {
+                        callControlPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    } else {
+                        val newLocalTools = assistant.localTools - LocalToolOption.CallControl
+                        onUpdate(assistant.copy(localTools = newLocalTools))
+                    }
+                }
+            )
+
             // Update Profile (资料维护)
             // 改造：只有主智能体显示，且默认开启（业务上主智能体通常自带此工具）。
             // 其他智能体仅在 Debug 模式下显示，Release 版不显示。
