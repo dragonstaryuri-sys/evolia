@@ -1937,7 +1937,12 @@ class ChatService(
             val responseAnchorId = conversation.currentMessages.lastOrNull()?.id ?: return
             val settings = settingsStore.settingsFlow.first()
             val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
-            val modelId = assistant.suggestionModelId ?: settings.suggestionModelId
+            // Uuid.NIL 作为 sentinel：该智能体明确禁用聊天建议，不回退全局
+            val modelId: Uuid = when {
+                assistant.suggestionModelId == Uuid.NIL -> return
+                assistant.suggestionModelId != null -> assistant.suggestionModelId!!
+                else -> settings.suggestionModelId ?: return
+            }
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
             val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(
