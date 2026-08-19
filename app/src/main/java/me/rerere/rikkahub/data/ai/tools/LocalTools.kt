@@ -339,7 +339,7 @@ class LocalTools(
                         val python = com.chaquo.python.Python.getInstance()
                         val executor = python.getModule("executor")
                         val resultJson = executor.callAttr("read_file", path, workingDir).toString()
-                        kotlinx.serialization.json.Json.parseToJsonElement(resultJson).jsonObject
+                        Json.parseToJsonElement(resultJson).jsonObject
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "读取文件失败") }
                     }
