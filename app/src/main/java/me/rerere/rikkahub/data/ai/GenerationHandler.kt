@@ -161,8 +161,6 @@ class GenerationHandler(
                                 query = content,
                                 limit = 1,
                                 similarityThreshold = 0.8f,
-                                includeCore = true,
-                                includeEpisodes = false,
                                 mode = assistant.memoryRetrievalMode
                             )
 
