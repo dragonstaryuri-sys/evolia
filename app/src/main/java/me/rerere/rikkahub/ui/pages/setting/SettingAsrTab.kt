@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
@@ -28,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -99,38 +103,78 @@ fun AsrTab(
 
         ModalBottomSheet(
             onDismissRequest = { editingProvider = null },
-            sheetState = sheetState
+            sheetState = sheetState,
+            sheetGesturesEnabled = false,
+            dragHandle = {
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            sheetState.hide()
+                            editingProvider = null
+                        }
+                    }
+                ) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, null)
+                }
+            }
         ) {
+            @Suppress("RemoveExplicitTypeArguments")
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(16.dp)
+                    .fillMaxHeight(0.8f),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // 标题栏
+                val providerTypeName = when (provider) {
+                    is ASRProviderSetting.SystemASR -> "System ASR"
+                    is ASRProviderSetting.EvoliaASR -> "Evolia ASR"
+                    is ASRProviderSetting.OnlineASR -> "Online ASR"
+                    is ASRProviderSetting.LocalSenseVoiceASR -> "Local SenseVoice ASR"
+                }
                 Text(
-                    text = localProvider.name.ifBlank { stringResource(R.string.setting_asr_page_title) },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    text = providerTypeName,
+                    style = MaterialTheme.typography.headlineSmall
                 )
+
+                // 配置内容区（占据剩余空间，支持滚动）
                 me.rerere.rikkahub.ui.pages.setting.components.ASRProviderConfigure(
                     setting = localProvider,
-                    onValueChange = { localProvider = it }
+                    providers = settings.providers,
+                    onValueChange = { localProvider = it },
+                    modifier = Modifier.weight(1f)
                 )
-                androidx.compose.material3.Button(
-                    onClick = {
-                        vm.updateSettings(
-                            settings.copy(
-                                asrProviders = settings.asrProviders.map {
-                                    if (it.id == localProvider.id) localProvider else it
-                                }
-                            )
-                        )
-                        scope.launch { sheetState.hide() }
-                        editingProvider = null
-                    },
-                    modifier = Modifier.fillMaxWidth()
+
+                // 取消 / 保存行（对齐 TTS 风格）
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(stringResource(R.string.save))
+                    TextButton(
+                        onClick = {
+                            editingProvider = null
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+
+                    TextButton(
+                        onClick = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    asrProviders = settings.asrProviders.map {
+                                        if (it.id == localProvider.id) localProvider else it
+                                    }
+                                )
+                            )
+                            editingProvider = null
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.chat_page_save))
+                    }
                 }
             }
         }
@@ -201,6 +245,7 @@ private fun ASRProviderItem(
                     is ASRProviderSetting.SystemASR -> Icons.Rounded.PhoneAndroid
                     is ASRProviderSetting.EvoliaASR -> Icons.Rounded.AutoAwesome
                     is ASRProviderSetting.OnlineASR -> Icons.Rounded.Cloud
+                    is ASRProviderSetting.LocalSenseVoiceASR -> Icons.Rounded.GraphicEq
                 },
                 contentDescription = null,
                 modifier = Modifier.size(24.dp)
@@ -256,4 +301,5 @@ private fun providerDisplayName(provider: ASRProviderSetting): String = when (pr
     is ASRProviderSetting.SystemASR -> "System ASR"
     is ASRProviderSetting.OnlineASR -> "Online ASR (Whisper API)"
     is ASRProviderSetting.EvoliaASR -> "Evolia 提供的 ASR 模型"
+    is ASRProviderSetting.LocalSenseVoiceASR -> "本地 ASR (SenseVoice)"
 }

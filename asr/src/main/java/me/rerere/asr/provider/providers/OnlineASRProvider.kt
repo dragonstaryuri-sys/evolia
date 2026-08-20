@@ -27,10 +27,15 @@ import me.rerere.asr.model.ASRResult
 import me.rerere.asr.provider.ASRProvider
 import me.rerere.asr.provider.ASRProviderSetting
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -493,9 +498,16 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
     }
 
     /**
-     * 上传音频字节到云端转录 API（兼容 OpenAI Whisper 接口格式）。
+     * 上传音频字节到云端转录 API。
+     *
+     * 根据 URL 自动选择请求模式：
+     *  - 若 URL 路径包含 `/chat/completions`（例如 DashScope /compatible-mode/v1/chat/completions）：
+     *    使用 Chat Completions 的 `input_audio` content 格式，音频以 Data URI（Base64）嵌入 JSON body 发送。
+     *  - 其他情况（标准 `/audio/transcriptions` 等 Whisper 兼容端点）：
+     *    使用 multipart/form-data 上传音频文件。
+     *
      * [prompt] 用于上下文续接（可选）：把之前切片的识别结果作为 prompt 传给 Whisper，
-     * 让后续切片的识别有上下文。仅在非空时添加到 multipart 表单。
+     * 让后续切片的识别有上下文。仅在非空时添加到请求。
      */
     private suspend fun transcribeBytes(
         bytes: ByteArray,
@@ -503,6 +515,27 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         mime: String,
         setting: ASRProviderSetting.OnlineASR,
         prompt: String = ""
+    ): String {
+        val url = setting.apiUrl.trimEnd('/')
+        val useChatCompletionsMode = url.endsWith("/chat/completions", ignoreCase = true)
+
+        return if (useChatCompletionsMode) {
+            transcribeChatCompletions(bytes, filename, mime, setting, url, prompt)
+        } else {
+            transcribeWhisperMultipart(bytes, filename, mime, setting, url, prompt)
+        }
+    }
+
+    /**
+     * 标准 Whisper 兼容模式：multipart/form-data 上传（适用于 OpenAI / SiliconFlow / Groq 等）。
+     */
+    private fun transcribeWhisperMultipart(
+        bytes: ByteArray,
+        filename: String,
+        mime: String,
+        setting: ASRProviderSetting.OnlineASR,
+        url: String,
+        prompt: String
     ): String {
         val audioBody = bytes.toRequestBody(mime.toMediaType())
 
@@ -513,33 +546,204 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             .addFormDataPart("language", setting.language)
             .addFormDataPart("response_format", "json")
 
-        // prompt 参数：Whisper 官方文档推荐的上下文续接方式
-        // 把前一段的识别结果作为 prompt，Whisper 会据此调整识别方向
         if (prompt.isNotBlank()) {
-            // Whisper prompt 上限约 224 tokens，这里取最后 200 字符做简单截断
             val truncatedPrompt = prompt.takeLast(200)
             builder.addFormDataPart("prompt", truncatedPrompt)
         }
 
         val requestBody = builder.build()
-
         val request = Request.Builder()
-            .url(setting.apiUrl)
+            .url(url)
             .addHeader("Authorization", "Bearer ${setting.apiKey}")
             .post(requestBody)
             .build()
 
-        Log.d(TAG, "transcribeBytes: POST ${setting.apiUrl} file=$filename mime=$mime bytes=${bytes.size} model=${setting.model} promptLen=${prompt.length}")
+        Log.d(TAG, "transcribeWhisperMultipart: POST $url file=$filename mime=$mime bytes=${bytes.size} model=${setting.model} promptLen=${prompt.length}")
         val response = client.newCall(request).execute()
         response.use { resp ->
             if (!resp.isSuccessful) {
                 val errBody = resp.body?.string() ?: ""
                 val headersDump = resp.headers.toMultimap().entries.joinToString(";") { (k, v) -> "$k=${v.firstOrNull()}" }
-                Log.e(TAG, "transcribeBytes: FAILED code=${resp.code} headers=$headersDump errBody=$errBody")
+                Log.e(TAG, "transcribeWhisperMultipart: FAILED code=${resp.code} headers=$headersDump errBody=$errBody")
                 throw RuntimeException("ASR API ${resp.code}: ${errBody.take(200)}")
             }
             val body = resp.body?.string() ?: ""
             return json.decodeFromString<TranscriptionResponse>(body).text
+        }
+    }
+
+    /**
+     * DashScope 兼容模式：通过 Chat Completions 的 `input_audio` content 类型发送音频。
+     * 音频编码为 Data URI（data:<mime>;base64,<data>），作为 user message 的 content 发送。
+     *
+     * 参考：DashScope / Alibaba QwenCloud ASR OpenAI Compatible 文档
+     *  - POST /compatible-mode/v1/chat/completions
+     *  - messages[0].content[0].type = "input_audio"
+     *  - messages[0].content[0].input_audio.data = "<Data URI>"
+     *  - 响应：choices[0].message.content 即为识别文本
+     */
+    private fun transcribeChatCompletions(
+        bytes: ByteArray,
+        filename: String,
+        mime: String,
+        setting: ASRProviderSetting.OnlineASR,
+        url: String,
+        prompt: String
+    ): String {
+        val base64 = Base64.getEncoder().encodeToString(bytes)
+        val dataUri = "data:$mime;base64,$base64"
+        // 从 mime 推导音频格式标识（DashScope input_audio.format 必填）
+        // DashScope 文档支持的格式: wav, mp3, aac, flac, opus, ogg, amr, webm, pcm
+        val audioFormat = deriveAudioFormat(mime, filename)
+
+        // 构造消息结构
+        val inputAudioObj = JSONObject().apply {
+            put("data", dataUri)
+            put("format", audioFormat)
+            // input_audio.language 也可以在文档里放这里，和 asr_options.language 二选一就行
+            if (setting.language.isNotBlank()) {
+                put("language", setting.language)
+            }
+        }
+        val contentItem = JSONObject().apply {
+            put("type", "input_audio")
+            put("input_audio", inputAudioObj)
+        }
+        // 如果有 prompt（上下文续接），作为第二条 text content 项一起传入（多模态并行支持）
+        val contentArray = JSONArray().apply {
+            put(contentItem)
+            if (prompt.isNotBlank()) {
+                put(JSONObject().apply {
+                    put("type", "text")
+                    put("text", "上下文（上一段识别结果前缀）：${prompt.takeLast(200)}")
+                })
+            }
+        }
+        val message = JSONObject().apply {
+            put("role", "user")
+            put("content", contentArray)
+        }
+
+        // asr_options：语言 + ITN 配置（非标准参数，DashScope 兼容模式下通过外层键透传）
+        val asrOptions = JSONObject().apply {
+            if (setting.language.isNotBlank()) put("language", setting.language)
+            // prompt 参数在兼容模式下也可以放入 asr_options
+            if (prompt.isNotBlank()) {
+                // 注意：asr_options 一般没有 prompt 字段，这里还是用 content 里的 text 做上下文更稳妥
+            }
+        }
+
+        val payload = JSONObject().apply {
+            put("model", setting.model)
+            put("stream", false)
+            put("messages", JSONArray().put(message))
+            if (asrOptions.length() > 0) {
+                put("asr_options", asrOptions)
+            }
+        }
+
+        val jsonMediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
+            ?: "application/json".toMediaType()
+        val requestBody: RequestBody = payload.toString().toRequestBody(jsonMediaType)
+
+        val request = Request.Builder()
+            .url(url)
+            .addHeader("Authorization", "Bearer ${setting.apiKey}")
+            .addHeader("Content-Type", "application/json")
+            .post(requestBody)
+            .build()
+
+        Log.d(TAG, "transcribeChatCompletions: POST $url mime=$mime format=$audioFormat bytes=${bytes.size} base64Len=${base64.length} model=${setting.model} lang=${setting.language}")
+        val response = client.newCall(request).execute()
+        response.use { resp ->
+            if (!resp.isSuccessful) {
+                val errBody = resp.body?.string() ?: ""
+                val headersDump = resp.headers.toMultimap().entries.joinToString(";") { (k, v) -> "$k=${v.firstOrNull()}" }
+                Log.e(TAG, "transcribeChatCompletions: FAILED code=${resp.code} headers=$headersDump errBody=$errBody")
+                throw RuntimeException("ASR API ${resp.code}: ${errBody.take(200)}")
+            }
+            val body = resp.body?.string() ?: ""
+            return parseChatCompletionsText(body)
+        }
+    }
+
+    /**
+     * 从 Chat Completions 响应 JSON 中提取识别文本。
+     * 标准路径: `choices[0].message.content`
+     * 兼容 DashScope 的附加路径: `output.text` / `output.output.sentence.text`
+     */
+    private fun parseChatCompletionsText(body: String): String {
+        if (body.isBlank()) return ""
+        return try {
+            val root = JSONObject(body)
+            // 1) 标准 OpenAI Chat Completions
+            val choices = root.optJSONArray("choices")
+            if (choices != null && choices.length() > 0) {
+                val firstChoice = choices.optJSONObject(0) ?: return ""
+                val msg = firstChoice.optJSONObject("message") ?: return ""
+                return msg.optString("content", "").trim()
+            }
+            // 2) DashScope 同步多模态响应: output.text
+            val output = root.optJSONObject("output")
+            if (output != null) {
+                val topText = output.optString("text", "").trim()
+                if (topText.isNotBlank()) return topText
+                // 3) output.output.sentence.text
+                val innerOutput = output.optJSONObject("output")
+                if (innerOutput != null) {
+                    val sentence = innerOutput.optJSONObject("sentence")
+                    if (sentence != null) {
+                        val s = sentence.optString("text", "").trim()
+                        if (s.isNotBlank()) return s
+                    }
+                }
+            }
+            // 4) 回退顶层 text 字段
+            root.optString("text", "").trim()
+        } catch (e: Exception) {
+            Log.w(TAG, "parseChatCompletionsText error: ${e.message}, body=${body.take(200)}")
+            ""
+        }
+    }
+
+    /**
+     * 根据 mime type + 文件名推导 DashScope 要求的 input_audio.format 标识。
+     * DashScope 文档支持的格式: wav, mp3, aac, flac, opus, ogg, amr, webm, pcm, m4a
+     */
+    private fun deriveAudioFormat(mime: String, filename: String): String {
+        val lowerMime = mime.lowercase()
+        // 先按 mime 匹配
+        return when {
+            lowerMime.contains("wav") || lowerMime.contains("wave") -> "wav"
+            lowerMime.contains("mpeg") || lowerMime.contains("mp3") -> "mp3"
+            lowerMime.contains("x-m4a") || lowerMime.contains("mp4") && lowerMime.contains("audio") -> "m4a"
+            lowerMime.contains("aac") -> "aac"
+            lowerMime.contains("flac") -> "flac"
+            lowerMime.contains("opus") -> "opus"
+            lowerMime.contains("ogg") || lowerMime.contains("vorbis") -> "ogg"
+            lowerMime.contains("amr") -> "amr"
+            lowerMime.contains("webm") -> "webm"
+            lowerMime.contains("pcm") || lowerMime.contains("l16") -> "pcm"
+            else -> {
+                // mime 匹配不上，按文件名后缀兜底
+                val ext = filename.substringAfterLast('.', "").lowercase()
+                when (ext) {
+                    "wav" -> "wav"
+                    "mp3" -> "mp3"
+                    "m4a" -> "m4a"
+                    "aac" -> "aac"
+                    "flac" -> "flac"
+                    "opus" -> "opus"
+                    "ogg", "oga" -> "ogg"
+                    "amr" -> "amr"
+                    "webm" -> "webm"
+                    "pcm" -> "pcm"
+                    else -> {
+                        Log.w(TAG, "deriveAudioFormat: unrecognized mime=$mime filename=$filename, fallback to wav")
+                        "wav"
+                    }
+                }
+            }
         }
     }
 
