@@ -43,7 +43,6 @@ import me.rerere.rikkahub.service.VoiceCallForegroundService
 import me.rerere.rikkahub.data.ai.tools.CallCommandHub
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
-import me.rerere.tts.controller.AudioPlayer
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.model.PlaybackStatus
 import kotlin.uuid.Uuid
@@ -359,7 +358,7 @@ class VoiceCallManager(
             // 接通问候属于 call 级别的 listener cue，单独占一个 turn/generation，绝不写入 chat messages
             identity = identity.newTurn().newGeneration()
             // 关键：ASR 忽略期从问候开始的瞬间开始算，不再等问候播完再加
-            //       800ms 足够覆盖"喂？"的播放 + 尾音回声（之前 2500ms 太长了）
+            //       500ms 足够覆盖"喂？"的播放 + 尾音回声（之前 2500ms 太长了）
             asrIgnoreUntil = greetingStartMs + ASR_IGNORE_PERIOD_MS
 
             runCatching {
@@ -369,7 +368,7 @@ class VoiceCallManager(
                 while (_isActive.value && ttsController.isSpeaking.value) {
                     delay(100)
                     silent += 100
-                    if (silent > 4000L) break // 保护：问候最多等 4s
+                    if (silent > 2000L) break // 保护：问候最多等 2s
                 }
             }.onFailure { Log.w(TAG, "Greeting play failed", it) }
 
@@ -914,7 +913,7 @@ class VoiceCallManager(
                 lastTtsPlayingAtMs = System.currentTimeMillis()
                 silentSince = 0L
             }
-            kotlinx.coroutines.delay(100)
+            delay(100)
         }
         stopInterruptionDetection()
         resetStreamingState()
@@ -1490,10 +1489,9 @@ class VoiceCallManager(
 
         private const val L1_CHECK_INTERVAL_MS = 25L * 60 * 1000
         private const val ASR_RETRY_DELAY_MS = 600L
-        private const val THINKING_CUE_DELAY_MS = 120L // 等 120ms，首句出来就不播 cue
         // 等待提示延迟：ListenerCue 播完后再等 800ms，LLM 仍无可朗读内容就播"等等/我想想"
-        // cue 本身 ≈ 200-400ms，加上这 800ms ≈ 给 LLM 留了 1-1.2s（刚好是大多数模型 TTFT 时间）。
-        private const val WAITING_CUE_DELAY_MS = 800L
+        // cue 本身 ≈ 200-400ms，加上这 1000ms ≈ 给 LLM 留了 1-1.2s（刚好是大多数模型 TTFT 时间）。
+        private const val WAITING_CUE_DELAY_MS = 1000L
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
@@ -1503,29 +1501,30 @@ class VoiceCallManager(
         private const val DUCK_DURATION_MS = 240L
         private const val BASELINE_LEARN_FRAMES = 20
         private const val SLIDING_WINDOW_FRAMES = 30
-        // RMS 超过 baseline 多少倍视为抢话。1.8→1.4，确保正常音量就能过
-        private const val BARGE_IN_RMS_MULTIPLIER = 1.4
-        // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"
-        private const val ECHO_TAIL_WINDOW_MS = 220L
+        // RMS 超过 baseline 多少倍视为抢话。1.8→1.4→1.5（误升）→1.3，降低门槛让正常音量就能打断
+        private const val BARGE_IN_RMS_MULTIPLIER = 1.3
+        // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"。220→150，缩短避免吞掉用户开头字
+        private const val ECHO_TAIL_WINDOW_MS = 50L
         // 尾窗门限倍数：轻微抬高即可
         private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
-        // ASR 忽略期：从接通问候「开始播放」的瞬间开始计时，800ms 足够覆盖"喂？"的播+回声尾音
-        private const val ASR_IGNORE_PERIOD_MS = 800L
+        // ASR 忽略期：从接通问候「开始播放」的瞬间开始计时，500ms 足够覆盖"喂？"的播+回声尾音
+        private const val ASR_IGNORE_PERIOD_MS = 500L
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
         private val LISTENER_CUE_BASE = listOf(
             "嗯！" to 5,
-            "嗯..." to 30,
-            "啊.." to 25,
-            "哦..." to 20,
-            "哦哦" to 10,
+            "嗯？" to 5,
+            "嗯..." to 25,
+            "啊，" to 25,
+            "哦。" to 20,
+            "哦哦。" to 10,
             "嗯嗯~" to 10
         )
         //   LLM 超过 1s 还没返回可朗读内容时的"等待提示"（带概率权重）：
         private val WAITING_CUE_BASE = listOf(
-            "等等——" to 20,
-            "哦。" to 20,
+            "等一等——" to 20,
+            "哦——" to 20,
             "我想想..." to 5,
             "等一下.." to 20,
             "啊。。" to 25,
@@ -1533,9 +1532,9 @@ class VoiceCallManager(
         )
         //   Minimax speech-2.8 系列支持的官方语气词标签列表
         private val MINIMAX_TTS_SPONTANEOUS_TAGS = listOf(
-            "(laughs)", "(chuckle)", "(coughs)", "(clear-throat)",
+            "(laughs)", "(chuckle)", "(clear-throat)",
             "(breath)", "(pant)", "(inhale)", "(exhale)", "(gasps)",
-            "(sniffs)", "(sighs)", "(snorts)", "(lip-smacking)",
+            "(sniffs)", "(sighs)", "(snorts)",
             "(humming)", "(hissing)", "(emm)", "(sneezes)"
         )
     }

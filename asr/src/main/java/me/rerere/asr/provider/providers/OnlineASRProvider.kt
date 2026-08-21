@@ -83,7 +83,8 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
     @SuppressLint("MissingPermission")
     override fun startRecognition(
         context: Context,
-        providerSetting: ASRProviderSetting.OnlineASR
+        providerSetting: ASRProviderSetting.OnlineASR,
+        preRollPcm: List<ShortArray>?
     ) = channelFlow @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO) {
         // 校验配置
         if (providerSetting.apiKey.isBlank()) {
@@ -183,6 +184,33 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
 
             // ★ 连续空结果计数：连续 N 次切片返回空文本 → 判定为纯噪声，停止上传
             var consecutiveEmptyCount = 0
+
+            // === 预卷喂入：打断场景下，把上一轮打断检测收集的用户开头音频喂给 VAD + slicePcm ===
+            // 关键：必须在 read 循环开始前完成，否则用户抢话的开头字会被新开 AudioRecord 丢失
+            if (!preRollPcm.isNullOrEmpty()) {
+                val preRollStartNs = System.nanoTime()
+                var preRollFrames = 0
+                var preRollSamples = 0
+                for (frame in preRollPcm) {
+                    if (frame.isEmpty()) continue
+                    val samples = FloatArray(frame.size) { frame[it] / 32768.0f }
+                    vad.acceptWaveform(samples)
+                    slicePcm.addAll(samples.asList())
+                    preRollFrames++
+                    preRollSamples += frame.size
+
+                    var sumSq = 0.0
+                    for (s in samples) sumSq += (s * s).toDouble()
+                    val rms = sqrt(sumSq / samples.size).toFloat()
+                    if (rms > RMS_SPEECH_THRESHOLD) {
+                        if (!inSpeechAux) sliceStartMs = System.currentTimeMillis()
+                        inSpeechAux = true
+                        lastSpeechEnergyAtMs = System.currentTimeMillis()
+                    }
+                }
+                val preRollMs = preRollSamples * 1000 / SAMPLE_RATE
+                Log.i(TAG, "[PreRoll] 喂入 ${preRollFrames} 帧 / ${preRollMs}ms, inSpeech=$inSpeechAux, cost=${(System.nanoTime() - preRollStartNs) / 1_000_000}ms")
+            }
 
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, WINDOW_SIZE)

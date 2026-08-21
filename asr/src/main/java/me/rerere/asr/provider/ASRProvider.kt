@@ -12,10 +12,16 @@ interface ASRProvider<T : ASRProviderSetting> {
      *
      * 该接口面向"实时监听式"ASR（System SpeechRecognizer / 后续 Zipformer 流式），
      * 由 provider 自行管理麦克风采集。整段式 ASR（如 OpenAI Whisper）后续以扩展方式接入。
+     *
+     * @param preRollPcm 打断场景下从上一轮打断检测 AudioRecord 里 drain 出来的预卷 PCM（16kHz / 16-bit / mono）。
+     *                  Provider 应在 AudioRecord 初始化后、正常 read 循环开始前，先将这些预卷帧喂给 VAD，
+     *                  以避免用户抢话的开头字被 ASR 丢失。不支持预卷的 Provider（如 SystemASR）可以忽略。
+     *                  null 表示非打断场景（普通启动），无需预卷。
      */
     fun startRecognition(
         context: Context,
-        providerSetting: T
+        providerSetting: T,
+        preRollPcm: List<ShortArray>? = null
     ): Flow<ASRResult>
 
     /**

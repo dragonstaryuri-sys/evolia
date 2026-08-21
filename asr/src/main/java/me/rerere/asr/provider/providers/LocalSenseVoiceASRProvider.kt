@@ -76,7 +76,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
     @SuppressLint("MissingPermission")
     override fun startRecognition(
         context: Context,
-        providerSetting: ASRProviderSetting.LocalSenseVoiceASR
+        providerSetting: ASRProviderSetting.LocalSenseVoiceASR,
+        preRollPcm: List<ShortArray>?
     ) = channelFlow @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO) {
         // 校验模型是否就绪
         val modelFile = File(context.filesDir, "$MODEL_DIR/$MODEL_FILE_NAME")
@@ -172,6 +173,60 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             var listeningHintSent = false
             // Final 后静默期，防止回声/环境噪声触发空识别
             var finalGracePeriodUntil = 0L
+
+            // === 预卷喂入：打断场景下，把上一轮打断检测收集的用户开头音频喂给 VAD ===
+            // 关键：这一步必须在 read 循环开始前完成，否则用户抢话的开头字会被新开 AudioRecord 丢失
+            if (!preRollPcm.isNullOrEmpty()) {
+                val preRollStartNs = System.nanoTime()
+                var preRollFrames = 0
+                var preRollSamples = 0
+                for (frame in preRollPcm) {
+                    if (frame.isEmpty()) continue
+                    val samples = FloatArray(frame.size) { frame[it] / 32768.0f }
+                    // 喂给 VAD（让 VAD 看到这段音频的语音/静音结构）
+                    vad.acceptWaveform(samples)
+                    // 同时累积到 accumulatedPcm（这样 VAD 产出 segment 时能拿到完整音频）
+                    accumulatedPcm.addAll(samples.asList())
+                    preRollFrames++
+                    preRollSamples += frame.size
+
+                    // 同步更新 RMS 状态：如果预卷里就有语音能量，把 inSpeech 置 true
+                    var sumSq = 0.0
+                    for (s in samples) sumSq += (s * s).toDouble()
+                    val rms = sqrt(sumSq / samples.size).toFloat()
+                    if (rms > RMS_SPEECH_THRESHOLD) {
+                        inSpeech = true
+                        lastSpeechEnergyAtMs = System.currentTimeMillis()
+                        if (!listeningHintSent && isActive) {
+                            listeningHintSent = true
+                            send(ASRResult(text = "", isFinal = false))
+                        }
+                    }
+                }
+                val preRollMs = preRollSamples * 1000 / SAMPLE_RATE
+                Log.i(TAG, "[PreRoll] 喂入 ${preRollFrames} 帧 / ${preRollMs}ms, inSpeech=$inSpeech, cost=${(System.nanoTime() - preRollStartNs) / 1_000_000}ms")
+
+                // 立即尝试消费 VAD 已产出的 segment（用户可能预卷里就说完一句）
+                while (!vad.empty() && isActive) {
+                    val segment = vad.front()
+                    vad.pop()
+                    if (segment.samples.isNotEmpty()) {
+                        val finalSamples = accumulatedPcm.toFloatArray()
+                        accumulatedPcm.clear()
+                        val decodeStartNs = System.nanoTime()
+                        val finalText = decodeSamples(recognizer, finalSamples)
+                        val decodeCostMs = (System.nanoTime() - decodeStartNs) / 1_000_000
+                        if (finalText.isNotBlank() && isActive) {
+                            Log.i(TAG, "[PreRoll Final] 预卷内已产出句子 cost=${decodeCostMs}ms 结果=\"$finalText\"")
+                            send(ASRResult(text = finalText, isFinal = true))
+                        }
+                        inSpeech = false
+                        listeningHintSent = false
+                        finalGracePeriodUntil = System.currentTimeMillis() + FINAL_GRACE_PERIOD_MS
+                        vad.reset()
+                    }
+                }
+            }
 
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, WINDOW_SIZE)
@@ -498,14 +553,14 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         // VAD final 句子端点：800ms 静音才判定用户说完了
         private const val MIN_SILENCE_DURATION_SEC = 0.8F
         private const val MIN_SPEECH_DURATION_SEC = 0.3F
-        private const val MAX_SPEECH_DURATION_SEC = 30F
+        private const val MAX_SPEECH_DURATION_SEC = 120F
 
         // RMS 能量阈值（适配通话场景：近距离拿手机说话音量偏小、可能经 AEC 处理，阈值低于普通录音）
         //  注：transcribeFile 不走 RMS，降低此阈值不影响语音消息的文件转录准确性
         private const val RMS_SPEECH_THRESHOLD = 0.005F
 
         // Final 后静默期：1.0s（Final 后立刻开始下一句时的回声/噪声保护）
-        private const val FINAL_GRACE_PERIOD_MS = 1000L
+        private const val FINAL_GRACE_PERIOD_MS = 800L
 
         // 模型文件路径常量（与 SenseVoiceModelManager 保持一致）
         const val MODEL_DIR = "sensevoice"
