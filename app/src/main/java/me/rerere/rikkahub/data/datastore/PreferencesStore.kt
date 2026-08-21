@@ -28,6 +28,7 @@ import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_DIARY_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_LEARNING_MODE_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_GUIDELINES
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -80,6 +81,7 @@ class SettingsStore(
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
         val IMAGE_GENERATION_MODEL = stringPreferencesKey("image_generation_model")
         val SUGGESTION_PROMPT = stringPreferencesKey("suggestion_prompt")
+        val TEMP_SUMMARY_GUIDELINES = stringPreferencesKey("temp_summary_guidelines")
         val LEARNING_MODE_PROMPT = stringPreferencesKey("learning_mode_prompt")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
         val OCR_PROMPT = stringPreferencesKey("ocr_prompt")
@@ -143,6 +145,7 @@ class SettingsStore(
                 suggestionModelId = preferences[SUGGESTION_MODEL].toUuidOrNull(),
                 imageGenerationModelId = preferences[IMAGE_GENERATION_MODEL].toUuidOrNull() ?: Uuid.NIL,
                 suggestionPrompt = preferences[SUGGESTION_PROMPT] ?: DEFAULT_SUGGESTION_PROMPT,
+                tempSummaryGuidelines = preferences[TEMP_SUMMARY_GUIDELINES] ?: DEFAULT_TEMP_SUMMARY_GUIDELINES,
                 learningModePrompt = preferences[LEARNING_MODE_PROMPT] ?: DEFAULT_LEARNING_MODE_PROMPT,
                 ocrModelId = preferences[OCR_MODEL].toUuidOrNull() ?: Uuid.NIL,
                 ocrPrompt = preferences[OCR_PROMPT] ?: DEFAULT_OCR_PROMPT,
@@ -408,6 +411,7 @@ class SettingsStore(
             preferences[SUGGESTION_MODEL] = settingsToSave.suggestionModelId?.toString() ?: ""
             preferences[IMAGE_GENERATION_MODEL] = settingsToSave.imageGenerationModelId.toString()
             preferences[SUGGESTION_PROMPT] = settingsToSave.suggestionPrompt
+            preferences[TEMP_SUMMARY_GUIDELINES] = settingsToSave.tempSummaryGuidelines
             preferences[LEARNING_MODE_PROMPT] = settingsToSave.learningModePrompt
             preferences[OCR_MODEL] = settingsToSave.ocrModelId.toString()
             preferences[OCR_PROMPT] = settingsToSave.ocrPrompt
@@ -501,6 +505,7 @@ data class Settings(
     val imageGenerationModelId: Uuid = Uuid.NIL,
     val suggestionModelId: Uuid? = null,
     val suggestionPrompt: String = DEFAULT_SUGGESTION_PROMPT,
+    val tempSummaryGuidelines: String = DEFAULT_TEMP_SUMMARY_GUIDELINES,
     val learningModePrompt: String = DEFAULT_LEARNING_MODE_PROMPT,
     val ocrModelId: Uuid = Uuid.NIL,
     val ocrPrompt: String = DEFAULT_OCR_PROMPT,

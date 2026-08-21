@@ -79,7 +79,7 @@ import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
@@ -1721,7 +1721,8 @@ class ChatService(
                 }
                 val locale = Locale.getDefault().displayName
                 val tempPrompt = fillPrompt(
-                    DEFAULT_TEMP_SUMMARY_PROMPT, mapOf(
+                    DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE, mapOf(
+                        "guidelines" to settings.tempSummaryGuidelines,
                         "new_messages" to text,
                         "locale" to locale,
                         "char" to assistant.name

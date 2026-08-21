@@ -52,6 +52,7 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_OCR_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_SUGGESTION_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_GUIDELINES
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -197,6 +198,7 @@ private fun DefaultSummarizerModelSetting(
     settings: Settings,
     vm: SettingVM
 ) {
+    var showModal by remember { mutableStateOf(false) }
     ModelFeatureCard(
         title = {
             Text(stringResource(R.string.assistant_model_summarizer_model), maxLines = 1)
@@ -223,8 +225,64 @@ private fun DefaultSummarizerModelSetting(
                     modifier = Modifier.wrapContentWidth()
                 )
             }
+            IconButton(
+                onClick = {
+                    showModal = true
+                }
+            ) {
+                Icon(Icons.Rounded.Settings, null)
+            }
         }
     )
+
+    if (showModal) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showModal = false
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FormItem(
+                    label = {
+                        Text(stringResource(R.string.setting_model_page_summarizer_guidelines))
+                    },
+                    description = {
+                        Text(stringResource(R.string.setting_model_page_summarizer_prompt_vars))
+                    }
+                ) {
+                    OutlinedTextField(
+                        value = settings.tempSummaryGuidelines,
+                        onValueChange = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    tempSummaryGuidelines = it
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 10
+                    )
+                    TextButton(
+                        onClick = {
+                            vm.updateSettings(
+                                settings.copy(
+                                    tempSummaryGuidelines = DEFAULT_TEMP_SUMMARY_GUIDELINES
+                                )
+                            )
+                        }
+                    ) {
+                        Text(stringResource(R.string.setting_model_page_reset_to_default))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
