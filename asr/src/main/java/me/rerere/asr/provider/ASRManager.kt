@@ -4,12 +4,14 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.flow.Flow
 import me.rerere.asr.model.ASRResult
+import me.rerere.asr.provider.providers.LocalSenseVoiceASRProvider
 import me.rerere.asr.provider.providers.OnlineASRProvider
 import me.rerere.asr.provider.providers.SystemASRProvider
 
 class ASRManager {
     private val systemProvider = SystemASRProvider()
     private val onlineProvider = OnlineASRProvider()
+    private val localSenseVoiceProvider = LocalSenseVoiceASRProvider()
 
     fun startRecognition(
         providerSetting: ASRProviderSetting,
@@ -19,6 +21,7 @@ class ASRManager {
             is ASRProviderSetting.SystemASR -> systemProvider.startRecognition(context, providerSetting)
             is ASRProviderSetting.OnlineASR -> onlineProvider.startRecognition(context, providerSetting)
             is ASRProviderSetting.EvoliaASR -> onlineProvider.startRecognition(context, providerSetting.toOnlineASR())
+            is ASRProviderSetting.LocalSenseVoiceASR -> localSenseVoiceProvider.startRecognition(context, providerSetting)
         }
     }
 
@@ -44,6 +47,7 @@ class ASRManager {
             }
             is ASRProviderSetting.OnlineASR -> onlineProvider.transcribeFile(context, uri, providerSetting)
             is ASRProviderSetting.EvoliaASR -> onlineProvider.transcribeFile(context, uri, providerSetting.toOnlineASR())
+            is ASRProviderSetting.LocalSenseVoiceASR -> localSenseVoiceProvider.transcribeFile(context, uri, providerSetting)
         }
     }
 }

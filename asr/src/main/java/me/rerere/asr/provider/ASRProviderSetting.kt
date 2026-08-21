@@ -114,12 +114,46 @@ sealed class ASRProviderSetting {
         )
     }
 
+    /**
+     * 本地 ASR：基于 sherpa-onnx OfflineRecognizer + SenseVoice INT8 模型。
+     *
+     * 完全端侧推理，无需联网，延迟约 70-110ms/10s 音频。
+     * 模型文件存储在 context.filesDir/sensevoice/ 下（model.int8.onnx + tokens.txt），
+     * 由 SenseVoiceModelManager 负责下载管理。
+     *
+     * 与 OnlineASR 的区别：
+     * - 无 API URL / API Key 配置
+     * - 需要 ModelManager 预先下载模型（约 228MB）
+     * - 推理在本地 CPU 上进行，使用 VAD 分段 + OfflineRecognizer 一次性转录
+     */
+    @Serializable
+    @SerialName("local_sensevoice")
+    data class LocalSenseVoiceASR(
+        override var id: Uuid = Uuid.random(),
+        override var name: String = "Local SenseVoice",
+        override val builtIn: Boolean = true,
+        val language: String = "auto",
+        val useItn: Boolean = true,
+        val numThreads: Int = 2
+    ) : ASRProviderSetting() {
+        override fun copyProvider(
+            id: Uuid,
+            name: String,
+            builtIn: Boolean
+        ): ASRProviderSetting = copy(
+            id = id,
+            name = name,
+            builtIn = builtIn
+        )
+    }
+
     companion object {
         val Types by lazy {
             listOf(
                 SystemASR::class,
                 OnlineASR::class,
                 EvoliaASR::class,
+                LocalSenseVoiceASR::class,
             )
         }
     }
