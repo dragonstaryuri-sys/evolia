@@ -730,10 +730,12 @@ private val DEFAULT_TTS_PROVIDERS = listOf(TTSProviderSetting.SystemTTS(id = DEF
 val DEFAULT_SYSTEM_ASR_ID = Uuid.parse("7a8b9c0d-1e2f-3a4b-8c9d-0e1f2a3b4c5d")
 val DEFAULT_EVOLIA_ASR_ID = Uuid.parse("9c0d1e2f-3a4b-5c6d-0e1f-2a3b4c5d6e7f")
 val DEFAULT_ONLINE_ASR_ID = Uuid.parse("8b9c0d1e-2f3a-4b5c-9d0e-1f2a3b4c5d6e")
+val DEFAULT_LOCAL_SENSEVOICE_ASR_ID = Uuid.parse("a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d")
 private val DEFAULT_ASR_PROVIDERS = listOf(
     ASRProviderSetting.SystemASR(id = DEFAULT_SYSTEM_ASR_ID, name = ""),
     ASRProviderSetting.EvoliaASR(id = DEFAULT_EVOLIA_ASR_ID, name = ""),
-    ASRProviderSetting.OnlineASR(id = DEFAULT_ONLINE_ASR_ID, name = "")
+    ASRProviderSetting.OnlineASR(id = DEFAULT_ONLINE_ASR_ID, name = ""),
+    ASRProviderSetting.LocalSenseVoiceASR(id = DEFAULT_LOCAL_SENSEVOICE_ASR_ID, name = "")
 )
 
 // 默认唤醒词：你好艾芙 (n i h a o a i f u)

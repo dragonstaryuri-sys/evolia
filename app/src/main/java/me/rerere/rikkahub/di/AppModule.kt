@@ -115,6 +115,14 @@ val appModule = module {
         )
     }
 
+    // SenseVoice 本地 ASR 模型管理器（model.int8.onnx + tokens.txt 下载与管理）
+    single {
+        me.rerere.rikkahub.service.voice.SenseVoiceModelManager(
+            context = get(),
+            okHttpClient = get()
+        )
+    }
+
     single {
         me.rerere.rikkahub.service.voice.VoiceMessagePlayer(get())
     }

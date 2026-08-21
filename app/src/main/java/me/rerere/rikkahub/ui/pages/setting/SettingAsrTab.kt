@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
@@ -114,6 +115,7 @@ fun AsrTab(
                 )
                 me.rerere.rikkahub.ui.pages.setting.components.ASRProviderConfigure(
                     setting = localProvider,
+                    providers = settings.providers,
                     onValueChange = { localProvider = it }
                 )
                 androidx.compose.material3.Button(
@@ -201,6 +203,7 @@ private fun ASRProviderItem(
                     is ASRProviderSetting.SystemASR -> Icons.Rounded.PhoneAndroid
                     is ASRProviderSetting.EvoliaASR -> Icons.Rounded.AutoAwesome
                     is ASRProviderSetting.OnlineASR -> Icons.Rounded.Cloud
+                    is ASRProviderSetting.LocalSenseVoiceASR -> Icons.Rounded.GraphicEq
                 },
                 contentDescription = null,
                 modifier = Modifier.size(24.dp)
@@ -256,4 +259,5 @@ private fun providerDisplayName(provider: ASRProviderSetting): String = when (pr
     is ASRProviderSetting.SystemASR -> "System ASR"
     is ASRProviderSetting.OnlineASR -> "Online ASR (Whisper API)"
     is ASRProviderSetting.EvoliaASR -> "Evolia 提供的 ASR 模型"
+    is ASRProviderSetting.LocalSenseVoiceASR -> "本地 SenseVoice（离线推理）"
 }
