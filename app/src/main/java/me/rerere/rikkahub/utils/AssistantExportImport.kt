@@ -616,10 +616,9 @@ object AssistantExportImport : KoinComponent {
         val settings = settingsStore.settingsFlow.value
         val missing = mutableListOf<String>()
         fun check(id: Uuid?, name: String) {
-            if (id != null) {
-                val exists = settings.findModelById(id) != null
-                if (!exists) missing.add(name)
-            }
+            if (id == null || id == Uuid.NIL) return  // Uuid.NIL 是 sentinel（明确禁用），不算缺失
+            val exists = settings.findModelById(id) != null
+            if (!exists) missing.add(name)
         }
         check(assistant.chatModelId, "Chat Model")
         check(assistant.backgroundModelId, "Background Model")
@@ -636,18 +635,16 @@ object AssistantExportImport : KoinComponent {
         val settings = settingsStore.settingsFlow.value
 
         fun checkAndClear(id: Uuid?): Uuid? {
-            if (id != null) {
-                val exists = settings.findModelById(id) != null
-                return if (exists) id else null
-            }
-            return null
+            if (id == null) return null
+            // Uuid.NIL 作为 sentinel（明确禁用），保留原值不做"找不到就清空"处理
+            if (id == Uuid.NIL) return Uuid.NIL
+            val exists = settings.findModelById(id) != null
+            return if (exists) id else null
         }
 
         return assistant.copy(
             chatModelId = checkAndClear(assistant.chatModelId),
             backgroundModelId = checkAndClear(assistant.backgroundModelId),
-            // Embedding model is a global-only setting — always clear per-assistant value.
-            embeddingModelId = null,
             summarizerModelId = checkAndClear(assistant.summarizerModelId),
             memoryModelId = checkAndClear(assistant.memoryModelId),
             diaryModelId = checkAndClear(assistant.diaryModelId),

@@ -214,10 +214,18 @@ chaquopy {
     defaultConfig {
         version = "3.11"
 
+        val localProperties = Properties().apply {
+            val localPropsFile = rootProject.file("local.properties")
+            if (localPropsFile.exists()) {
+                FileInputStream(localPropsFile).use { load(it) }
+            }
+        }
+
         val configuredBuildPython = providers.gradleProperty("chaquopy.buildPython").orNull
             ?: System.getenv("CHAQUOPY_BUILD_PYTHON")
             ?: System.getenv("PYTHON")
             ?: System.getenv("PYTHON3")
+            ?: localProperties.getProperty("chaquopy.buildPython")
         if (!configuredBuildPython.isNullOrBlank()) {
             buildPython(configuredBuildPython)
         }

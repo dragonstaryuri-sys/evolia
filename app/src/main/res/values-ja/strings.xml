@@ -412,6 +412,8 @@
   <string name="setting_model_page_suggestion_model">チャット提案モデル</string>
   <string name="setting_model_page_suggestion_model_desc">会話の提案を生成するためのモデル、高速で安価なモデルを推奨</string>
   <string name="setting_model_page_suggestion_prompt_vars">変数: 会話内容: {content}, 言語: {locale}</string>
+  <string name="setting_model_page_summarizer_guidelines">コアガイドライン</string>
+  <string name="setting_model_page_summarizer_prompt_vars">コアガイドラインのみ編集可能。出力フォーマット・例・変数はシステムが自動結合します。</string>
   <string name="setting_model_page_title">モデル設定</string>
   <string name="setting_model_page_title_model">タイトル要約モデル</string>
   <string name="setting_model_page_title_model_desc">会話タイトルを要約するためのモデル、高速で安価なモデルを推奨</string>

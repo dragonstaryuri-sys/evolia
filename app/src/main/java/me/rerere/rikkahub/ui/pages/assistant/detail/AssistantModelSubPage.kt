@@ -91,8 +91,8 @@ fun AssistantModelSubPage(
                         modelId = assistant.chatModelId ?: globalSettings.chatModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(chatModelId = if (it.id == Uuid.NIL) null else it.id)) },
-                        allowClear = assistant.chatModelId != null,
+                        onSelect = { onUpdate(assistant.copy(chatModelId = it.id)) },
+                        allowClear = false,
                     )
                 }
             }
@@ -124,8 +124,8 @@ fun AssistantModelSubPage(
                         modelId = assistant.backgroundModelId ?: globalSettings.backgroundModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(backgroundModelId = if (it.id == Uuid.NIL) null else it.id)) },
-                        allowClear = assistant.backgroundModelId != null,
+                        onSelect = { onUpdate(assistant.copy(backgroundModelId = it.id)) },
+                        allowClear = false,
                     )
                 }
             }
@@ -157,8 +157,8 @@ fun AssistantModelSubPage(
                         modelId = assistant.summarizerModelId ?: globalSettings.summarizerModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(summarizerModelId = if (it.id == Uuid.NIL) null else it.id)) },
-                        allowClear = assistant.summarizerModelId != null,
+                        onSelect = { onUpdate(assistant.copy(summarizerModelId = it.id)) },
+                        allowClear = false,
                     )
                 }
             }
@@ -190,8 +190,8 @@ fun AssistantModelSubPage(
                         modelId = assistant.memoryModelId ?: globalSettings.memoryModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(memoryModelId = if (it.id == Uuid.NIL) null else it.id)) },
-                        allowClear = assistant.memoryModelId != null,
+                        onSelect = { onUpdate(assistant.copy(memoryModelId = it.id)) },
+                        allowClear = false,
                     )
                 }
             }
@@ -223,8 +223,8 @@ fun AssistantModelSubPage(
                         modelId = assistant.diaryModelId ?: globalSettings.diaryModelId,
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(diaryModelId = if (it.id == Uuid.NIL) null else it.id)) },
-                        allowClear = assistant.diaryModelId != null,
+                        onSelect = { onUpdate(assistant.copy(diaryModelId = it.id)) },
+                        allowClear = false,
                     )
                 }
             }
@@ -253,11 +253,25 @@ fun AssistantModelSubPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ModelSelector(
-                        modelId = assistant.suggestionModelId ?: globalSettings.suggestionModelId,
+                        modelId = when {
+                            // 该智能体明确禁用聊天建议（sentinel = Uuid.NIL），ModelSelector 显示空态，等待用户选一个或点×
+                            assistant.suggestionModelId == Uuid.NIL -> null
+                            // 智能体自定义 → 显示自定义值
+                            assistant.suggestionModelId != null -> assistant.suggestionModelId
+                            // 智能体未配置 → 显示全局值（展示目的，实际不保存全局值到该智能体）
+                            else -> globalSettings.suggestionModelId
+                        },
                         providers = providers,
                         type = ModelType.CHAT,
-                        onSelect = { onUpdate(assistant.copy(suggestionModelId = if (it.id == Uuid.NIL) null else it.id)) },
-                        allowClear = assistant.suggestionModelId != null,
+                        onSelect = {
+                            if (it.id == Uuid.NIL) {
+                                // × = 用 Uuid.NIL 作为 sentinel，表示"该智能体明确禁用聊天建议"（不回退全局）
+                                onUpdate(assistant.copy(suggestionModelId = Uuid.NIL))
+                            } else {
+                                onUpdate(assistant.copy(suggestionModelId = it.id))
+                            }
+                        },
+                        allowClear = true,
                     )
                 }
             }

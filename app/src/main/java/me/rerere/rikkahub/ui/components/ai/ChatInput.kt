@@ -567,12 +567,12 @@ fun ChatInput(
                                                     targetState = showSendButton,
                                                     transitionSpec = {
                                                         androidx.compose.animation.fadeIn(
-                                                            animationSpec = androidx.compose.animation.core.spring(
+                                                            animationSpec = spring(
                                                                 dampingRatio = 0.6f,
                                                                 stiffness = 400f
                                                             )
                                                         ) togetherWith androidx.compose.animation.fadeOut(
-                                                            animationSpec = androidx.compose.animation.core.spring(
+                                                            animationSpec = spring(
                                                                 dampingRatio = 0.6f,
                                                                 stiffness = 400f
                                                             )
@@ -2103,12 +2103,12 @@ private fun BigIconTextButtonPreview() {
 
 @Composable
 internal fun ModesPickerSheet(
-    settings: me.rerere.rikkahub.data.datastore.Settings,
+    settings: Settings,
     conversation: Conversation,
     onUpdateConversation: (Conversation) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    val haptics = rememberPremiumHaptics()
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
     val cornerRadius = 28.dp
@@ -2117,10 +2117,8 @@ internal fun ModesPickerSheet(
     // Use local state for immediate UI feedback
     var localEnabledIds by remember(conversation.id) {
         mutableStateOf(
-            if (conversation.enabledModeIds.isEmpty()) {
+            conversation.enabledModeIds.ifEmpty {
                 settings.modes.filter { it.defaultEnabled }.map { it.id }.toSet()
-            } else {
-                conversation.enabledModeIds
             }
         )
     }
@@ -2248,13 +2246,13 @@ internal fun ModesPickerSheet(
 
 @Composable
 internal fun LorebooksPickerSheet(
-    settings: me.rerere.rikkahub.data.datastore.Settings,
+    settings: Settings,
     assistant: Assistant,
     onUpdateAssistant: (Assistant) -> Unit,
     onNavigateToLorebook: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
+    val haptics = rememberPremiumHaptics()
     val amoledMode by rememberAmoledDarkMode()
     val isDarkMode = LocalDarkMode.current
 
@@ -2425,7 +2423,7 @@ internal fun LorebooksPickerSheet(
                                 }
 
                                 // Toggle
-                                me.rerere.rikkahub.ui.components.ui.HapticSwitch(
+                                HapticSwitch(
                                     checked = isEnabled,
                                     onCheckedChange = { newEnabled ->
                                         val newIds = if (newEnabled) {

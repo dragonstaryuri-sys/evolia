@@ -48,7 +48,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MEMORY_OPTIMIZATION_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
 import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import me.rerere.rikkahub.core.data.utils.VectorUtils
@@ -477,7 +477,8 @@ class AssistantDetailVM(
                     }.joinToString("\n")
 
                     val locale = Locale.getDefault().displayName
-                    val prompt = DEFAULT_TEMP_SUMMARY_PROMPT
+                    val prompt = DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
+                        .replace("{{guidelines}}", currentSettings.tempSummaryGuidelines)
                         .replace("{{new_messages}}", text)
                         .replace("{{locale}}", locale)
                         .replace("{{char}}", currentAssistant.name)
@@ -734,9 +735,7 @@ class AssistantDetailVM(
                 assistantId = assistantId.toString(),
                 query = memory.content,
                 limit = assistant.value.ragLimit,
-                similarityThreshold = 0.6f,
-                includeCore = isCore,
-                includeEpisodes = !isCore
+                similarityThreshold = 0.6f
             ).map { it.first }.filter { m ->
                 val idMatch = if (isCore) m.id > 0 else m.id < 0
                 idMatch && !processedIds.contains(m.id)
@@ -954,7 +953,9 @@ class AssistantDetailVM(
     }
 
     val needsEmbeddingRegeneration: StateFlow<Boolean> =
-        memories.map { list -> list.any { !it.hasEmbedding } }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+        combine(memories, currentEmbeddingModelId) { list, modelId ->
+            list.any { !it.hasEmbedding || (it.embeddingModelId != null && it.embeddingModelId != modelId) }
+        }.stateIn(viewModelScope, SharingStarted.Lazily, false)
     private val _retrievalResults = MutableStateFlow<List<Pair<AssistantMemory, Float>>>(emptyList())
     val retrievalResults = _retrievalResults.asStateFlow()
 

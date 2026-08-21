@@ -442,8 +442,6 @@ class MemoryRepository(
         query: String,
         limit: Int = 5,
         similarityThreshold: Float = 0.5f,
-        includeCore: Boolean = true,
-        includeEpisodes: Boolean = true,
         mode: MemoryRetrievalMode = MemoryRetrievalMode.HYBRID,
         excludeConversationId: String? = null,
         onEmbeddingFailure: (suspend (Exception) -> Unit)? = null
@@ -468,11 +466,10 @@ class MemoryRepository(
         val retrievalLimit = limit * 3
         val currentModelId = embeddingService.getEmbeddingModelId(assistantId)
         val startTime = System.currentTimeMillis()
-        val memoryProjections = if (includeCore) memoryDAO.getMemoryProjections(assistantId) else emptyList()
-        val segmentProjections = if (includeEpisodes) {
-            chatSegmentDAO.getSegmentProjections(assistantId)
-                .filter { it.conversationId != excludeConversationId }
-        } else emptyList()
+        // 检索范围固定为核心记忆(MemoryEntity) + 片段记忆(ChatSegmentEntity)，不可配置
+        val memoryProjections = memoryDAO.getMemoryProjections(assistantId)
+        val segmentProjections = chatSegmentDAO.getSegmentProjections(assistantId)
+            .filter { it.conversationId != excludeConversationId }
 
         val projectionTime = System.currentTimeMillis() - startTime
         Log.d(TAG, "⏱️ [RAG-Perf] 加载 ${memoryProjections.size + segmentProjections.size} 条投影耗时: ${projectionTime}ms")

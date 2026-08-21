@@ -79,7 +79,7 @@ import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
 import me.rerere.rikkahub.data.ai.tools.LocalTools
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
@@ -1019,6 +1019,7 @@ class ChatService(
             var wechatStoredSentenceCount = 0
             var wechatFirstNodeNonTextParts: List<UIMessagePart>? = null
             var wechatLastSentenceLength = 0 // 上一句的长度，用于计算下一句的 delay 节奏（与原 UI 打字动画一致）
+            var wechatOriginalAISnapshot: UIMessage? = null // 微信模式下保存原始 AI 消息快照（用于迁移 usage 和上下文来源到分句节点）
 
             runCatching {
                 currentConversation = currentConversation.copy(chatSuggestions = emptyList())
@@ -1274,7 +1275,14 @@ class ChatService(
                             val newMessages = finalMessages.drop(finalContextMessages.size).mapIndexed { index, msg ->
                                 msg.copy(id = processMessageIds.getOrPut(index) { msg.id })
                             }
-                            if (newMessages.isEmpty()) return@collect
+                            if (newMessages.isEmpty()) {
+                                // 流结束后 GenerationHandler 会再 emit 一次以附加 usedMemories 等上下文来源
+                                // 此时无新消息但 lastAI 已更新，需同步到快照，否则上下文来源会丢失
+                                finalMessages.lastOrNull { it.role == MessageRole.ASSISTANT }?.let {
+                                    wechatOriginalAISnapshot = it
+                                }
+                                return@collect
+                            }
                             val nodesBeingGenerated = conversationSnapshot.messageNodes
                                 .filter { n -> newMessages.any { m -> n.messages.any { nm -> nm.id == m.id } } }
                                 .map { it.id }.toSet()
@@ -1301,11 +1309,14 @@ class ChatService(
                                 wechatProcessedTextLen = 0
                                 wechatStoredSentenceCount = 0
                                 wechatFirstNodeNonTextParts = null
-                                wechatLastSentenceLength = 0
-                            }
+                                    wechatLastSentenceLength = 0
+                                    wechatOriginalAISnapshot = null
+                                }
 
                             // 4. 微信模式 + 有最终文本：按标点分句，逐句存为独立节点（含标点，非文本 parts 放第一个节点）
                             if (wechatMode && lastAI != null && fullText.isNotBlank()) {
+                                // 保存原始 AI 消息快照，用于流结束后把 usage/上下文来源迁移到最后一个分句节点
+                                wechatOriginalAISnapshot = lastAI
                                 // 4a. 同步非最终 AI 的消息（工具调用、工具结果等）
                                 // 微信模式下去重：含 Text 的 ASSISTANT 已被分句存储，只保留 nonTextParts
                                 val otherMessages = newMessages
@@ -1438,6 +1449,46 @@ class ChatService(
                             wechatStoredSentenceCount++
                         }
                         wechatSentenceBuffer.clear()
+                    }
+
+                    // 微信模式：把原始 AI 消息的 usage 和上下文来源元数据迁移到最后一个分句节点
+                    // 分句存储时新建了 UIMessage 节点，未继承原始 AI 消息的 usage/usedMemories 等字段
+                    // 这里补齐，使切换回普通模式后能正常显示 token 消耗和上下文来源
+                    if (wechatMode) {
+                        wechatOriginalAISnapshot?.let { snapshot ->
+                            val reasonUsageMissing = snapshot.usage != null
+                            val reasonContextSourcesMissing = snapshot.usedLorebookEntries != null ||
+                                snapshot.usedModes != null ||
+                                snapshot.usedMemories != null
+                            val hasMetadata = reasonUsageMissing || reasonContextSourcesMissing
+                            if (hasMetadata) {
+                                val nodes = currentConversation.messageNodes
+                                val lastAssistantIdx = nodes.indexOfLast { node ->
+                                    node.messages.any { it.role == MessageRole.ASSISTANT }
+                                }
+                                if (lastAssistantIdx >= 0) {
+                                    currentConversation = currentConversation.copy(
+                                        messageNodes = nodes.mapIndexed { idx, node ->
+                                            if (idx == lastAssistantIdx) {
+                                                node.copy(messages = node.messages.map { msg ->
+                                                    if (msg.role == MessageRole.ASSISTANT) {
+                                                        msg.copy(
+                                                            usage = snapshot.usage,
+                                                            usedLorebookEntries = snapshot.usedLorebookEntries,
+                                                            usedModes = snapshot.usedModes,
+                                                            usedMemories = snapshot.usedMemories,
+                                                            modelId = snapshot.modelId
+                                                        )
+                                                    } else msg
+                                                })
+                                            } else node
+                                        }
+                                    )
+                                    updateConversation(conversationId) { currentConversation }
+                                    mutateConversationAndSave(conversationId) { current -> current }
+                                }
+                            }
+                        }
                     }
 
             }.onFailure { e ->
@@ -1670,7 +1721,8 @@ class ChatService(
                 }
                 val locale = Locale.getDefault().displayName
                 val tempPrompt = fillPrompt(
-                    DEFAULT_TEMP_SUMMARY_PROMPT, mapOf(
+                    DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE, mapOf(
+                        "guidelines" to settings.tempSummaryGuidelines,
                         "new_messages" to text,
                         "locale" to locale,
                         "char" to assistant.name
@@ -1937,7 +1989,12 @@ class ChatService(
             val responseAnchorId = conversation.currentMessages.lastOrNull()?.id ?: return
             val settings = settingsStore.settingsFlow.first()
             val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
-            val modelId = assistant.suggestionModelId ?: settings.suggestionModelId
+            // Uuid.NIL 作为 sentinel：该智能体明确禁用聊天建议，不回退全局
+            val modelId: Uuid = when {
+                assistant.suggestionModelId == Uuid.NIL -> return
+                assistant.suggestionModelId != null -> assistant.suggestionModelId!!
+                else -> settings.suggestionModelId ?: return
+            }
             val model = settings.findModelById(modelId) ?: return
             val provider = model.findProvider(settings.providers) ?: return
             val result = (providerManager.getProviderByType(provider) as Provider<ProviderSetting>).generateText(

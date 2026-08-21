@@ -35,6 +35,7 @@ import me.rerere.asr.provider.ASRManager
 import me.rerere.rikkahub.common.utils.WebRtcAudioProcessor
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.service.ChatService
@@ -288,6 +289,9 @@ class VoiceCallManager(
         // ===== 音频路由：进入通话模式，切到 VoIP 路径 =====
         enterCallAudioMode()
 
+        // 如果当前是微信模式，自动切换为普通模式（微信模式会分句存储 AI 回复，不适合通话场景）
+        scope.launch { ensureNormalUiModeForCall(conversationId) }
+
         // 预热 & 模式
         chatService.setCallMode(conversationId, active = true)
         startL1Timer(conversationId)
@@ -305,6 +309,29 @@ class VoiceCallManager(
 
         // 接通问候（PDF §3.3 call greeting）：先打个招呼，再进入监听
         playCallGreetingThenListen()
+    }
+
+    /**
+     * 确保通话会话对应的智能体处于普通 UI 模式。
+     * 微信模式会按标点分句存储 AI 回复，导致通话中消息碎片化。
+     * 检测到微信模式时自动切换为普通模式并持久化。
+     */
+    private suspend fun ensureNormalUiModeForCall(convId: Uuid) {
+        val s = settingsStore.settingsFlow.value
+        val conv = chatService.getConversationFlow(convId).value
+        val assistant = s.assistants.find { it.id == conv.assistantId } ?: return
+        val isWechatMode = s.getEffectiveDisplaySetting(assistant).wechatMode
+        if (!isWechatMode) return
+
+        val updatedAssistant = assistant.copy(
+            uiSettings = assistant.uiSettings.copy(wechatMode = false)
+        )
+        settingsStore.update(
+            s.copy(
+                assistants = s.assistants.map { if (it.id == updatedAssistant.id) updatedAssistant else it }
+            )
+        )
+        Log.i(TAG, "startCall: switched assistant ${conv.assistantId} from wechatMode → normal")
     }
 
     private fun playCallGreetingThenListen() {

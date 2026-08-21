@@ -443,6 +443,8 @@
   <string name="setting_model_page_suggestion_model">제안 모델</string>
   <string name="setting_model_page_suggestion_model_desc">채팅 제안 생성용 모델. 빠르고 저렴한 모델을 권장합니다.</string>
   <string name="setting_model_page_suggestion_prompt_vars">변수: 내용: {content}, 로케일: {locale}</string>
+  <string name="setting_model_page_summarizer_guidelines">핵심 가이드라인</string>
+  <string name="setting_model_page_summarizer_prompt_vars">핵심 가이드라인만 편집 가능. 출력 형식, 예시 및 변수는 시스템이 자동으로 조립합니다.</string>
   <string name="setting_model_page_title">기본 모델</string>
   <string name="setting_model_page_title_model">제목 모델</string>
   <string name="setting_model_page_title_model_desc">채팅 제목 요약용 모델. 빠르고 저렴한 모델을 권장합니다.</string>
