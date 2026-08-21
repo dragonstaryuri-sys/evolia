@@ -42,24 +42,36 @@ private const val TAG = "LocalSenseVoiceProvider"
 /**
  * 本地 ASR Provider：基于 sherpa-onnx OfflineRecognizer + SenseVoice INT8 模型。
  *
+ * 设计原则（与 OnlineASRProvider 的伪流式明确切割）：
+ *  SenseVoice 模型本身**不支持 prompt / 跨段上下文续接**，因此**放弃伪流式**，
+ *  只在 VAD 判定一句话完整结束后再做一次整段推理。
+ *
+ * 优势：
+ *  - 推理一次就出最终结果，没有中间态跳变 → "拼接问题"彻底消失
+ *  - CPU 消耗固定（一句话只推理一次），长句不会越说越慢
+ *  - SenseVoice 17x 实时推理速度（10s 音频 ≈100ms），用户说完 800ms + 100ms ≈ 900ms 出字，
+ *    体感与 OnlineASR 流式无异
+ * 劣势：
+ *  - 说话期间 UI 无 partial 文字反馈（用"正在听…"占位 partial 驱动 UI 动画即可）
+ *
  * 工作原理：
- *  1. AudioRecord 持续采集 16kHz PCM（与 OnlineASRProvider 一致）
- *  2. Silero VAD 做端点检测（与 OnlineASRProvider 一致）
- *  3. Partial 触发：每累积 1.5s 音频，用 OfflineRecognizer 解码一次累积 PCM
- *     → SenseVoice 推理速度 17x 实时，10s 音频仅需 70-110ms，足够实时
- *  4. Final 触发：VAD 检测到 800ms 静音（用户说完），解码整段 PCM
+ *  1. AudioRecord 持续采集 16kHz PCM（VOICE_COMMUNICATION 源，与打断检测链路一致）
+ *  2. Silero VAD 做端点检测（minSilence=800ms 才算一句说完）
+ *  3. 期间只做 PCM 累积，不触发任何推理
+ *  4. VAD segment 产出（用户说完）→ 整段推理 → 发 final
  *
  * 与 OnlineASRProvider 的核心区别：
- *  - 无 HTTP 上传，无 API Key，无网络依赖
- *  - 无 prompt 续接（SenseVoice 不支持跨段上下文）
- *  - 推理在本地 CPU 上进行，使用 OfflineRecognizer.decode()
+ *  - 无 HTTP 上传 / 无 API Key / 无网络依赖
+ *  - 无 Slice + Prompt 切片续接（SenseVoice 不支持）
+ *  - 无 Partial 中间态推理（取消伪流式，避免跳变体验）
  *  - transcribeFile 直接本地解码，无需上传
  */
 class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoiceASR> {
 
     /**
-     * 实时识别：VAD 分段 + OfflineRecognizer 本地推理。
-     * 复用 OnlineASRProvider 的 AudioRecord + VAD 框架，替换 transcribe 方法。
+     * 实时识别：VAD 分段 → 只在句子结束时做一次整段本地推理。
+     * 说明：复用 OnlineASRProvider 的 AudioRecord + VAD 框架，
+     * 但去掉切片/Partial 伪流式逻辑，只用 VAD segment 触发 final。
      */
     @SuppressLint("MissingPermission")
     override fun startRecognition(
@@ -83,7 +95,7 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             return@channelFlow
         }
 
-        // 初始化 VAD（与 OnlineASRProvider 配置一致）
+        // 初始化 VAD（与 OnlineASRProvider 框架一致）
         val vad = Vad(
             assetManager = context.assets,
             config = VadModelConfig(
@@ -102,7 +114,7 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             )
         )
 
-        // 权限检查
+        // 权限检查：确保调用方已授予 RECORD_AUDIO
         val hasRecordPermission = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
@@ -122,7 +134,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         )
         val audioRecord = try {
             AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                // 使用 VOICE_COMMUNICATION 与打断检测链路一致，避免 HAL 层模式切换造成的音量畸变
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
@@ -143,7 +156,7 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             return@channelFlow
         }
 
-        Log.i(TAG, "startRecognition: lang=${providerSetting.language}, useItn=${providerSetting.useItn}, threads=${providerSetting.numThreads}")
+        Log.i(TAG, "startRecognition (non-streaming): lang=${providerSetting.language}, useItn=${providerSetting.useItn}, threads=${providerSetting.numThreads}")
 
         try {
             audioRecord.startRecording()
@@ -151,11 +164,12 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
 
             // 累积 PCM 缓冲区（Float，-1..1）
             val accumulatedPcm = ArrayList<Float>(SAMPLE_RATE * 4)
-            // 上一次 partial 发送的时间戳
-            var lastPartialSentMs = 0L
-            // 轻量 RMS 能量检测，判断是否有语音
+            // 轻量 RMS 能量检测：判断是否有语音
             var inSpeech = false
             var lastSpeechEnergyAtMs = 0L
+            // 开始说话后给 UI 发一次占位 partial（isFinal=false, text 空），
+            // 用于通话界面的"正在听…"提示和波形动画驱动
+            var listeningHintSent = false
             // Final 后静默期，防止回声/环境噪声触发空识别
             var finalGracePeriodUntil = 0L
 
@@ -179,6 +193,12 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     }
                     inSpeech = true
                     lastSpeechEnergyAtMs = now
+                    // 首次检测到语音 → 发一个空的占位 partial，
+                    // 让通话 UI 知道"听到声音了"，可以点亮波形动画/显示"正在听…"
+                    if (!listeningHintSent && isActive) {
+                        listeningHintSent = true
+                        send(ASRResult(text = "", isFinal = false))
+                    }
                 } else if (inSpeech && now - lastSpeechEnergyAtMs > 600L) {
                     inSpeech = false
                 }
@@ -188,46 +208,35 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     accumulatedPcm.addAll(samples.asList())
                 }
 
-                // --- 3. Partial 触发：每 1.5s 解码一次累积 PCM ---
-                // SenseVoice 推理速度 17x 实时，10s 音频仅需 ~100ms
-                // 与 OnlineASR 不同：无 prompt 续接，每次重新解码整段累积音频
-                val accumulatedMs = accumulatedPcm.size * 1000 / SAMPLE_RATE
-                val partialIntervalOk = now - lastPartialSentMs >= PARTIAL_INTERVAL_MS
-                if (accumulatedMs >= PARTIAL_MIN_MS && partialIntervalOk && accumulatedPcm.isNotEmpty()) {
-                    val partialSamples = accumulatedPcm.toFloatArray()
-                    val partialText = decodeSamples(recognizer, partialSamples)
-                    if (partialText.isNotBlank() && isActive) {
-                        send(ASRResult(text = partialText, isFinal = false))
-                    }
-                    lastPartialSentMs = now
-                }
-
-                // --- 4. VAD 产出完整 segment：Final ---
+                // --- 3. VAD 产出完整 segment：唯一一次整段推理 + 发 Final ---
+                //    不再做 Partial 伪流式推理：只等 VAD 判定用户说完，才解码整段。
+                //    SenseVoice 推理速度 17x 实时（10s 音频 ~100ms），体感延迟可接受。
                 while (!vad.empty() && isActive) {
                     val segment = vad.front()
                     vad.pop()
 
                     if (segment.samples.isEmpty() && accumulatedPcm.isEmpty()) continue
 
-                    // 解码整段累积 PCM（包含 partial 后新增的音频）
                     val finalSamples = accumulatedPcm.toFloatArray()
                     accumulatedPcm.clear()
 
                     val finalMs = finalSamples.size * 1000 / SAMPLE_RATE
-                    Log.i(TAG, "[Final] 句子结束, 音频=${finalMs}ms")
+                    Log.i(TAG, "[Final] 句子结束, 音频=${finalMs}ms, 开始本地推理...")
+                    val decodeStartNs = System.nanoTime()
 
                     val finalText = decodeSamples(recognizer, finalSamples)
+                    val decodeCostMs = (System.nanoTime() - decodeStartNs) / 1_000_000
+
                     if (finalText.isNotBlank() && isActive) {
-                        Log.i(TAG, "[Final] 识别结果: \"$finalText\"")
+                        Log.i(TAG, "[Final] 推理完成 cost=${decodeCostMs}ms 结果=\"$finalText\"")
                         send(ASRResult(text = finalText, isFinal = true))
                     } else if (finalMs > 500) {
-                        // 有音频但识别为空，可能是噪声，记录日志
-                        Log.d(TAG, "[Final] 音频 ${finalMs}ms 但识别为空，可能是噪声")
+                        Log.d(TAG, "[Final] 音频 ${finalMs}ms 但识别为空，可能是噪声（cost=${decodeCostMs}ms）")
                     }
 
                     // 重置状态
                     inSpeech = false
-                    lastPartialSentMs = 0L
+                    listeningHintSent = false
                     finalGracePeriodUntil = System.currentTimeMillis() + FINAL_GRACE_PERIOD_MS
                     vad.reset()
                 }
@@ -273,8 +282,6 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
 
     /**
      * 创建 OfflineRecognizer 实例。
-     * 注意：sherpa-onnx 1.13.4 的类名为 OfflineSenseVoiceModelConfig，
-     * 参数名为 useInverseTextNormalization（非 useItn）。
      */
     private fun createRecognizer(
         modelFile: File,
@@ -434,7 +441,6 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
 
         // 转换为 FloatArray [-1, 1]，并处理多声道 → mono
         val monoSamples = if (srcChannelCount > 1) {
-            // 多声道混合为 mono：每 srcChannelCount 个样本取平均
             val monoLen = pcmSamples.size / srcChannelCount
             FloatArray(monoLen) { i ->
                 var sum = 0
@@ -494,16 +500,12 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         private const val MIN_SPEECH_DURATION_SEC = 0.3F
         private const val MAX_SPEECH_DURATION_SEC = 30F
 
-        // RMS 能量阈值（与 OnlineASRProvider 一致）
-        private const val RMS_SPEECH_THRESHOLD = 0.012F
+        // RMS 能量阈值（适配通话场景：近距离拿手机说话音量偏小、可能经 AEC 处理，阈值低于普通录音）
+        //  注：transcribeFile 不走 RMS，降低此阈值不影响语音消息的文件转录准确性
+        private const val RMS_SPEECH_THRESHOLD = 0.005F
 
-        // Partial 触发间隔：每 1.5s 解码一次
-        private const val PARTIAL_INTERVAL_MS = 1500L
-        // Partial 最小累积时长：至少 500ms 才触发 partial
-        private const val PARTIAL_MIN_MS = 500
-
-        // Final 后静默期：1.5s 内忽略噪声
-        private const val FINAL_GRACE_PERIOD_MS = 1500L
+        // Final 后静默期：1.0s（Final 后立刻开始下一句时的回声/噪声保护）
+        private const val FINAL_GRACE_PERIOD_MS = 1000L
 
         // 模型文件路径常量（与 SenseVoiceModelManager 保持一致）
         const val MODEL_DIR = "sensevoice"
