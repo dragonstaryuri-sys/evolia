@@ -565,7 +565,9 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 val errBody = resp.body?.string() ?: ""
                 val headersDump = resp.headers.toMultimap().entries.joinToString(";") { (k, v) -> "$k=${v.firstOrNull()}" }
                 Log.e(TAG, "transcribeWhisperMultipart: FAILED code=${resp.code} headers=$headersDump errBody=$errBody")
-                throw RuntimeException("ASR API ${resp.code}: ${errBody.take(200)}")
+                val hint = buildModelCompatibilityHint(setting.model, errBody)
+                val msgPrefix = "ASR API ${resp.code}: ${errBody.take(200)}"
+                throw RuntimeException(if (hint.isNotBlank()) "$msgPrefix\n$hint" else msgPrefix)
             }
             val body = resp.body?.string() ?: ""
             return json.decodeFromString<TranscriptionResponse>(body).text
@@ -660,7 +662,9 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 val errBody = resp.body?.string() ?: ""
                 val headersDump = resp.headers.toMultimap().entries.joinToString(";") { (k, v) -> "$k=${v.firstOrNull()}" }
                 Log.e(TAG, "transcribeChatCompletions: FAILED code=${resp.code} headers=$headersDump errBody=$errBody")
-                throw RuntimeException("ASR API ${resp.code}: ${errBody.take(200)}")
+                val hint = buildModelCompatibilityHint(setting.model, errBody)
+                val msgPrefix = "ASR API ${resp.code}: ${errBody.take(200)}"
+                throw RuntimeException(if (hint.isNotBlank()) "$msgPrefix\n$hint" else msgPrefix)
             }
             val body = resp.body?.string() ?: ""
             return parseChatCompletionsText(body)
@@ -704,6 +708,63 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             Log.w(TAG, "parseChatCompletionsText error: ${e.message}, body=${body.take(200)}")
             ""
         }
+    }
+
+    /**
+     * 根据当前所选模型名 + 错误体，给出更友好的兼容性提示（用于 ASR 报错时）。
+     *
+     * DashScope 的 ASR 模型按调用方式分四类：
+     *  1. OpenAI 兼容 chat/completions（本地 DataURL 上传）—— 仅 qwen3-asr-flash 非 realtime 系列 ✅
+     *  2. DashScope 原生 multimodal-generation 同步 —— qwen-audio-3.0-asr-flash / fun-asr-flash-* ❌
+     *  3. WebSocket 实时流式 —— *-realtime 系列 ❌
+     *  4. 异步任务轮询 —— *-filetrans / fun-asr / paraformer-* 系列 ❌
+     *
+     * 只有第 1 类在本实现下可用。其他类别会报 400/500，需切换到 qwen3-asr-flash。
+     */
+    private fun buildModelCompatibilityHint(model: String, errBody: String): String {
+        val lowerModel = model.lowercase()
+        val lowerErr = errBody.lowercase()
+        val hints = mutableListOf<String>()
+
+        // 模型级建议（按 DashScope 文档分类给出具体原因）
+        when {
+            lowerModel.contains("realtime") -> hints.add(
+                "提示：realtime 系列（如 qwen3-asr-flash-realtime）必须用 WebSocket 流式接口（wss://dashscope.aliyuncs.com/api-ws/v1/realtime），不支持 HTTP POST 本地文件上传。请改用 qwen3-asr-flash（非 realtime 版本）。"
+            )
+            lowerModel.contains("fun-asr") -> hints.add(
+                "提示：fun-asr 系列仅支持 DashScope 原生 multimodal-generation 同步接口（/api/v1/services/aigc/multimodal-generation/generation），响应结构非标准，本应用暂未适配。请改用 qwen3-asr-flash。"
+            )
+            lowerModel.contains("qwen-audio-3.0-asr-flash") && !lowerModel.contains("filetrans") -> hints.add(
+                "提示：qwen-audio-3.0-asr-flash 仅支持 DashScope 原生 multimodal-generation 同步接口，响应结构非标准（无 choices 字段），本应用暂未适配。请改用 qwen3-asr-flash。"
+            )
+            lowerModel.contains("filetrans") -> hints.add(
+                "提示：*-filetrans 是异步长音频转写模型，仅支持公网 URL + 任务轮询，不能本地传文件。请改用 qwen3-asr-flash。"
+            )
+            lowerModel.contains("paraformer") -> hints.add(
+                "提示：paraformer 系列仅支持 DashScope 原生 /services/audio/asr/recognition 接口，需公网音频 URL，不兼容本地文件上传。请改用 qwen3-asr-flash。"
+            )
+        }
+
+        // 错误关键字级建议
+        when {
+            lowerErr.contains("unsupported_format") || lowerErr.contains("format is empty") -> hints.add(
+                "排查：部分旧版 ASR 模型强制要求 `input_audio.format` 字段（wav/mp3 等）。请升级到最新版 qwen3-asr-flash 或确认音频格式。"
+            )
+            lowerErr.contains("model_not_found") || lowerErr.contains("model not found") -> hints.add(
+                "排查：该 Provider 侧不存在此模型 ID。请检查模型名是否正确，或从下拉里选一个。"
+            )
+            lowerErr.contains("invalid_api_key") || lowerErr.contains("incorrect_api_key") || lowerErr.contains("invalid authentication") || lowerErr.contains("unauthorized") -> hints.add(
+                "排查：API Key 错误或无权限，请检查是否填了对应 Provider 的 Key（注意 DashScope 和其他 Provider Key 不通用）。"
+            )
+            lowerErr.contains("quota") || lowerErr.contains("too many") || lowerErr.contains("rate limit") -> hints.add(
+                "排查：触发调用频率限制或余额不足，稍后重试或检查账户额度。"
+            )
+            lowerErr.contains("internal_error") || errBody.contains("An internal error") -> hints.add(
+                "排查：服务端内部错误（500）。通常意味着该模型与当前调用方式不兼容（如 realtime 需 WebSocket、fun-asr 需 multimodal-generation 端点）。请切换到 qwen3-asr-flash 再试。"
+            )
+        }
+
+        return hints.joinToString("\n")
     }
 
     /**
