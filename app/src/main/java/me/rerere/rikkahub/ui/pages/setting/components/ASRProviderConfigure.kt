@@ -916,17 +916,20 @@ private fun LocalSenseVoiceASRConfiguration(
             }
         }
     }
+
+    // ===== 连接测试 =====
+    AsrConnectionTestButton(setting = setting)
 }
 
 /**
- * ASR 连接测试按钮（仅用于 OnlineASR / Whisper 兼容 provider）.
+ * ASR 连接测试按钮（支持 OnlineASR / LocalSenseVoiceASR）.
  *
  * 按住按钮录制一段测试音频，松开后自动发送到 ASR 服务进行识别。
  * 识别成功时在按钮下方展示识别结果；失败时通过顶部 Toast 提示错误信息。
  */
 @Composable
 private fun AsrConnectionTestButton(
-    setting: ASRProviderSetting.OnlineASR
+    setting: ASRProviderSetting
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
