@@ -356,7 +356,16 @@ class EvoliaMonitorService : AccessibilityService() {
 
         val wifiConnectedCondition = (conditions["is_wifi_connected"] as? JsonPrimitive)?.booleanOrNull
         if (wifiConnectedCondition != null && state.isWifiConnected != wifiConnectedCondition) return false
-
+        val timePeriods = conditions["time_periods"] as? JsonArray
+        if (timePeriods != null && timePeriods.isNotEmpty()) {
+            val isAnyMatched = timePeriods.any { period ->
+                val p = period as? JsonObject ?: return@any false
+                val start = (p["start"] as? JsonPrimitive)?.content ?: ""
+                val end = (p["end"] as? JsonPrimitive)?.content ?: ""
+                isCurrentTimeInRange(start, end)
+            }
+            if (!isAnyMatched) return false // 如果设置了时间段但当前不在任何一个时间段内，则不触发
+        }
         val timeRange = conditions["time_range"] as? JsonObject
         if (timeRange != null) {
             val start = (timeRange["start"] as? JsonPrimitive)?.content ?: ""
@@ -438,9 +447,12 @@ class EvoliaMonitorService : AccessibilityService() {
     }
 
     private fun isCurrentTimeInRange(start: String, end: String): Boolean {
+        if (start.isBlank() || end.isBlank()) return true
         val now = Calendar.getInstance()
         val current = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        fun parse(s: String) = s.split(":").let { it[0].toInt() * 60 + it[1].toInt() }
+        fun parse(s: String) = try {
+            s.split(":").let { it[0].toInt() * 60 + it[1].toInt() }
+        } catch (e: Exception) { -1 }
         val s = parse(start);
         val e = parse(end)
         return if (s <= e) current in s..e else current >= s || current <= e

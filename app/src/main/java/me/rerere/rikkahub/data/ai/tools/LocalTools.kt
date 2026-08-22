@@ -1676,7 +1676,10 @@ class LocalTools(
                                 put("type", "object")
                                 put(
                                     "description",
-                                    "设置触发逻辑。支持：'time_range' (HH:mm 范围), 'screen_status' (ON/OFF), 'foreground_app' (特定包名), 'usage_duration_minutes' (使用时长限额), 'continuous_usage_minutes' (单次应用限额), 'total_continuous_minutes' (单次持续使用时间限额), 'content_contains' (屏幕内容包含关键词), 'location_name' (抵达/留在某地), 'cooldown_minutes' (触发后静默时长，默认 5)。"
+                                    "设置触发逻辑。支持：'time_periods' (时间段数组，例如 [{\"start\":\"12:00\", \"end\":\"17:00\"}, {\"start\":\"17:30\", \"end\":\"18:00\"}]), " +
+                                        "'screen_status' (ON/OFF), 'foreground_app' (特定包名), 'usage_duration_minutes' (使用时长限额), " +
+                                        "'continuous_usage_minutes' (单次应用限额), 'total_continuous_minutes' (单次持续使用时间限额), " +
+                                        "'content_contains' (屏幕内容包含关键词), 'location_name' (抵达/留在某地), 'cooldown_minutes' (触发后静默时长，默认 5)。"
                                 )
                             })
                             put("trigger_message", buildJsonObject {
