@@ -229,9 +229,9 @@ class GenerationHandler(
                                 when {
                                     startTimeStr != null && endTimeStr != null -> {
                                         try {
-                                            val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                                            val start = LocalDateTime.parse(startTimeStr, formatter)
-                                            val end = LocalDateTime.parse(endTimeStr, formatter)
+                                            val start = parseFlexibleDate(startTimeStr)
+                                            val end = parseFlexibleDate(endTimeStr)
+                                            Log.d(TAG, "DEBUG: start=$start, end=$end")
 
                                             val duration = Duration.between(start, end)
                                             if (duration.toHours() > 24 * 7) {
@@ -253,7 +253,8 @@ class GenerationHandler(
                                                 put("results", JsonArray(segments.map { seg ->
                                                     buildJsonObject {
                                                         put("segment_id", JsonPrimitive(seg.id))
-                                                        put("time", JsonPrimitive(formatMemoryDate(seg.timestamp)))
+                                                        val timeRangeStr = "${formatMemoryDate(seg.startTime)} ~ ${formatMemoryDate(seg.endTime)}"
+                                                        put("time_range", JsonPrimitive(timeRangeStr))
                                                         put("content", JsonPrimitive(seg.content))
                                                     }
                                                 }))
@@ -1440,11 +1441,25 @@ class GenerationHandler(
 
     private fun formatMemoryDate(timestamp: Long): String {
         if (timestamp <= 0) return "未知时间"
-        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
             .withZone(ZoneId.systemDefault())
         return formatter.format(Instant.ofEpochMilli(timestamp))
     }
+    fun parseFlexibleDate(dateStr: String): LocalDateTime {
+        // 1. 先尝试处理常见的“空格丢失”：如果长度是18位且中间没空格，强行在第10位补个空格
+        var sanitized = dateStr.trim()
+        if (sanitized.length == 19 && sanitized[10].isDigit()) {
+            // 比如 2023-10-2710:00:00 -> 2023-10-27 10:00:00
+            sanitized = sanitized.substring(0, 10) + " " + sanitized.substring(10)
+        }
 
+        // 2. 兼容 ISO 格式中的 'T'
+        sanitized = sanitized.replace("T", " ")
+
+        // 3. 使用通用的 formatter
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        return LocalDateTime.parse(sanitized, formatter)
+    }
     private fun buildMemoryPrompt(memories: List<AssistantMemory>): String {
         Log.d(TAG, "buildMemoryPrompt: Injecting ${memories.size} memories into prompt")
         if (memories.isEmpty()) {
