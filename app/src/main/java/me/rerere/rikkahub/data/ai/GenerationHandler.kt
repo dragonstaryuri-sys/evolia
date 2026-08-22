@@ -1448,7 +1448,7 @@ class GenerationHandler(
     fun parseFlexibleDate(dateStr: String): LocalDateTime {
         // 1. 先尝试处理常见的“空格丢失”：如果长度是18位且中间没空格，强行在第10位补个空格
         var sanitized = dateStr.trim()
-        if (sanitized.length == 19 && sanitized[10].isDigit()) {
+        if (sanitized.length == 18 && sanitized[10].isDigit()) {
             // 比如 2023-10-2710:00:00 -> 2023-10-27 10:00:00
             sanitized = sanitized.substring(0, 10) + " " + sanitized.substring(10)
         }
