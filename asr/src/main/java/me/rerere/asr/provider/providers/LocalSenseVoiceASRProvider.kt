@@ -170,6 +170,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             var lastSpeechEnergyAtMs = 0L
             // 连续帧计数：用于 onset 判定（防敲桌子等冲击声触发 inSpeech）
             var consecutiveOnsetFrames = 0
+            // RMS 诊断日志节流
+            var lastDiagLogMs = 0L
             // 开始说话后给 UI 发一次占位 partial（isFinal=false, text 空），
             // 用于通话界面的"正在听…"提示和波形动画驱动
             var listeningHintSent = false
@@ -256,6 +258,15 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                 var sumSq = 0.0
                 for (s in samples) sumSq += (s * s).toDouble()
                 val rms = sqrt(sumSq / samples.size).toFloat()
+                // RMS 诊断日志（每 ~1.3s 输出一次，与 OnlineASR 切片诊断对齐）
+                if (now - lastDiagLogMs > 1300) {
+                    lastDiagLogMs = now
+                    val accMs = accumulatedPcm.size * 1000 / SAMPLE_RATE
+                    val silenceMs = if (inSpeech) now - lastSpeechEnergyAtMs else 0L
+                    Log.d(TAG, "[RMS 诊断] 已累积=${accMs}ms 静音=${silenceMs}ms" +
+                        " RMS=${"%.4f".format(rms)} inSpeech=$inSpeech" +
+                        " 阈值RMS=$RMS_SPEECH_THRESHOLD 静默期=${if (inGracePeriod) "是" else "否"}")
+                }
                 if (!inGracePeriod && rms > RMS_SPEECH_THRESHOLD) {
                     consecutiveOnsetFrames++
                     if (!inSpeech && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
@@ -579,10 +590,11 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         private const val MIN_SPEECH_DURATION_SEC = 0.3F
         private const val MAX_SPEECH_DURATION_SEC = 120F
 
-        // RMS 能量阈值（双阈值迟滞，与 OnlineASR 对齐）
-        // onset 0.012, offset 0.006, 连续 4 帧判定
-        private const val RMS_SPEECH_THRESHOLD = 0.012F
-        private const val RMS_SPEECH_OFFSET_THRESHOLD = 0.006F
+        // RMS 能量阈值（双阈值迟滞）
+        // LocalASR 使用 VOICE_COMMUNICATION 音频源，系统 AEC/NS 会衰减信号 → RMS 偏低
+        // onset 0.001, offset 0.0005, 连续 4 帧判定
+        private const val RMS_SPEECH_THRESHOLD = 0.001F
+        private const val RMS_SPEECH_OFFSET_THRESHOLD = 0.0005F
         private const val SPEECH_ONSET_FRAMES = 4
 
         // Final 后静默期：3s 内忽略 RMS 能量，防止噪声触发新识别（与 OnlineASR 对齐）

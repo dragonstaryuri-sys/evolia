@@ -1707,7 +1707,7 @@ class VoiceCallManager(
         private const val ASR_RETRY_DELAY_MS = 600L
         // 等待提示延迟：ListenerCue 播完后再等 800ms，LLM 仍无可朗读内容就播"等等/我想想"
         // cue 本身 ≈ 200-400ms，加上这 1000ms ≈ 给 LLM 留了 1-1.2s（刚好是大多数模型 TTFT 时间）。
-        private const val WAITING_CUE_DELAY_MS = 1000L
+        private const val WAITING_CUE_DELAY_MS = 1500L
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
@@ -1730,7 +1730,7 @@ class VoiceCallManager(
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
         // ASR 忽略期：从 TTS 播完后开始计时，800ms 覆盖大音量扬声器的尾音回声
         // （500ms 不够：大音量扬声器物理振铃需要 300-500ms 衰减）
-        private const val ASR_IGNORE_PERIOD_MS = 800L
+        private const val ASR_IGNORE_PERIOD_MS = 1000L
         // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.012）
         private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.012f
 
