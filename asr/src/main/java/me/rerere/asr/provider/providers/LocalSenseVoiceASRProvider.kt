@@ -168,6 +168,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             // 轻量 RMS 能量检测：判断是否有语音
             var inSpeech = false
             var lastSpeechEnergyAtMs = 0L
+            // 连续帧计数：用于 onset 判定（防敲桌子等冲击声触发 inSpeech）
+            var consecutiveOnsetFrames = 0
             // 开始说话后给 UI 发一次占位 partial（isFinal=false, text 空），
             // 用于通话界面的"正在听…"提示和波形动画驱动
             var listeningHintSent = false
@@ -190,17 +192,29 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     preRollFrames++
                     preRollSamples += frame.size
 
-                    // 同步更新 RMS 状态：如果预卷里就有语音能量，把 inSpeech 置 true
+                    // 同步更新 RMS 状态（双阈值迟滞：onset 刷新能量，offset 维持不刷新）
                     var sumSq = 0.0
                     for (s in samples) sumSq += (s * s).toDouble()
                     val rms = sqrt(sumSq / samples.size).toFloat()
                     if (rms > RMS_SPEECH_THRESHOLD) {
-                        inSpeech = true
-                        lastSpeechEnergyAtMs = System.currentTimeMillis()
-                        if (!listeningHintSent && isActive) {
-                            listeningHintSent = true
-                            send(ASRResult(text = "", isFinal = false))
+                        consecutiveOnsetFrames++
+                        if (!inSpeech && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
+                            inSpeech = true
                         }
+                        if (inSpeech) {
+                            lastSpeechEnergyAtMs = System.currentTimeMillis()
+                            if (!listeningHintSent && isActive) {
+                                listeningHintSent = true
+                                send(ASRResult(text = "", isFinal = false))
+                            }
+                        }
+                    } else if (rms > RMS_SPEECH_OFFSET_THRESHOLD) {
+                        // offset 区间：维持 inSpeech 但不刷新 lastSpeechEnergyAtMs
+                        if (inSpeech && System.currentTimeMillis() - lastSpeechEnergyAtMs > 600L) {
+                            inSpeech = false
+                        }
+                    } else {
+                        consecutiveOnsetFrames = 0
                     }
                 }
                 val preRollMs = preRollSamples * 1000 / SAMPLE_RATE
@@ -237,25 +251,34 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
 
                 val now = System.currentTimeMillis()
 
-                // --- 1. 轻量 RMS 能量检测 ---
+                // --- 1. 轻量 RMS 能量检测（双阈值迟滞：onset 刷新能量，offset 维持不刷新） ---
                 val inGracePeriod = now < finalGracePeriodUntil
                 var sumSq = 0.0
                 for (s in samples) sumSq += (s * s).toDouble()
                 val rms = sqrt(sumSq / samples.size).toFloat()
                 if (!inGracePeriod && rms > RMS_SPEECH_THRESHOLD) {
-                    if (!inSpeech) {
+                    consecutiveOnsetFrames++
+                    if (!inSpeech && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
                         Log.d(TAG, "Speech started at ${accumulatedPcm.size * 1000 / SAMPLE_RATE}ms")
+                        inSpeech = true
                     }
-                    inSpeech = true
-                    lastSpeechEnergyAtMs = now
-                    // 首次检测到语音 → 发一个空的占位 partial，
-                    // 让通话 UI 知道"听到声音了"，可以点亮波形动画/显示"正在听…"
-                    if (!listeningHintSent && isActive) {
-                        listeningHintSent = true
-                        send(ASRResult(text = "", isFinal = false))
+                    if (inSpeech) {
+                        lastSpeechEnergyAtMs = now
+                        if (!listeningHintSent && isActive) {
+                            listeningHintSent = true
+                            send(ASRResult(text = "", isFinal = false))
+                        }
                     }
-                } else if (inSpeech && now - lastSpeechEnergyAtMs > 600L) {
-                    inSpeech = false
+                } else if (!inGracePeriod && inSpeech && rms > RMS_SPEECH_OFFSET_THRESHOLD) {
+                    // offset 区间：维持 inSpeech 但不刷新 lastSpeechEnergyAtMs → 停顿能被检测到
+                    if (now - lastSpeechEnergyAtMs > 600L) {
+                        inSpeech = false
+                    }
+                } else {
+                    consecutiveOnsetFrames = 0
+                    if (inSpeech && now - lastSpeechEnergyAtMs > 600L) {
+                        inSpeech = false
+                    }
                 }
 
                 // --- 2. 累积 PCM（仅在语音期间或已有累积时） ---
@@ -550,17 +573,20 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         private const val FEATURE_DIM = 80
         private const val VAD_THRESHOLD = 0.5F
 
-        // VAD final 句子端点：800ms 静音才判定用户说完了
-        private const val MIN_SILENCE_DURATION_SEC = 0.8F
+        // VAD final 句子端点：1.0s 静音才判定用户说完了
+        // （与 OnlineASR 对齐，0.8s 会把思考停顿误判为说完）
+        private const val MIN_SILENCE_DURATION_SEC = 1.0F
         private const val MIN_SPEECH_DURATION_SEC = 0.3F
         private const val MAX_SPEECH_DURATION_SEC = 120F
 
-        // RMS 能量阈值（适配通话场景：近距离拿手机说话音量偏小、可能经 AEC 处理，阈值低于普通录音）
-        //  注：transcribeFile 不走 RMS，降低此阈值不影响语音消息的文件转录准确性
-        private const val RMS_SPEECH_THRESHOLD = 0.005F
+        // RMS 能量阈值（双阈值迟滞，与 OnlineASR 对齐）
+        // onset 0.012, offset 0.006, 连续 4 帧判定
+        private const val RMS_SPEECH_THRESHOLD = 0.012F
+        private const val RMS_SPEECH_OFFSET_THRESHOLD = 0.006F
+        private const val SPEECH_ONSET_FRAMES = 4
 
-        // Final 后静默期：1.0s（Final 后立刻开始下一句时的回声/噪声保护）
-        private const val FINAL_GRACE_PERIOD_MS = 800L
+        // Final 后静默期：3s 内忽略 RMS 能量，防止噪声触发新识别（与 OnlineASR 对齐）
+        private const val FINAL_GRACE_PERIOD_MS = 3000L
 
         // 模型文件路径常量（与 SenseVoiceModelManager 保持一致）
         const val MODEL_DIR = "sensevoice"

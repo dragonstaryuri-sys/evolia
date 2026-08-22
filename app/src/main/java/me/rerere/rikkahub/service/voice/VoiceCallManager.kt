@@ -225,6 +225,8 @@ class VoiceCallManager(
     private var asrJob: Job? = null
     private var responseJob: Job? = null
     private var interruptionJob: Job? = null
+    // LISTENING 模式下持续填 preRollFrames 的轻量录音 Job（避免 AI 回复完→用户开口的空窗漏首字）
+    private var listeningPreRollJob: Job? = null
     private var l1TimerJob: Job? = null
     // 240ms duck → 520ms interrupt 的确认计时 Job；若中途用户闭嘴则取消、回弹音量
     private var duckConfirmJob: Job? = null
@@ -308,6 +310,11 @@ class VoiceCallManager(
 
         // 接通问候（PDF §3.3 call greeting）：先打个招呼，再进入监听
         playCallGreetingThenListen()
+
+        // 注意：拨通时不启 listeningPreRoll。
+        // 原因：问候语播放期间，AI 扬声器的"喂？"回声会被 listeningPreRoll 录下来，
+        // 传给 ASR 后被识别成用户说话。问候期间 warmUpAsrAndListening 已在录音，
+        // 且有 greeting substring match 过滤，不需要额外预卷。
     }
 
     /**
@@ -350,16 +357,12 @@ class VoiceCallManager(
                 }
             }
 
-            // 2. 接通问候："喂？"。忽略期从这一刻起算，不念完也允许用户抢话
+            // 2. 接通问候："喂？"
             val greetingText = "喂？"
-            val greetingStartMs = System.currentTimeMillis()
             Log.i(TAG, "Call greeting: \"$greetingText\" start")
             lastGreetingText = greetingText
             // 接通问候属于 call 级别的 listener cue，单独占一个 turn/generation，绝不写入 chat messages
             identity = identity.newTurn().newGeneration()
-            // 关键：ASR 忽略期从问候开始的瞬间开始算，不再等问候播完再加
-            //       500ms 足够覆盖"喂？"的播放 + 尾音回声（之前 2500ms 太长了）
-            asrIgnoreUntil = greetingStartMs + ASR_IGNORE_PERIOD_MS
 
             runCatching {
                 ttsController.setVolume(1f)
@@ -372,12 +375,15 @@ class VoiceCallManager(
                 }
             }.onFailure { Log.w(TAG, "Greeting play failed", it) }
 
-            // 3. 等到忽略期结束（如果问候太短，忽略期还没过）
-            val waitMs = asrIgnoreUntil - System.currentTimeMillis()
-            if (waitMs > 0) {
-                Log.i(TAG, "Greeting done, waiting ignore remainder ${waitMs}ms before accepting ASR")
-                delay(waitMs)
-            }
+            // 3. ★ ASR 忽略期从 TTS 播完开始算，而不是从 TTS 开始播放算。
+            //   之前从 greetingStartMs + 500ms → TTS 播 "喂？" 就要 500-800ms，
+            //   忽略期在问候语还没播完就结束了 → 尾音回声被 ASR 录到 → 识别成 "喂"
+            val greetingEndMs = System.currentTimeMillis()
+            asrIgnoreUntil = greetingEndMs + ASR_IGNORE_PERIOD_MS
+            Log.i(TAG, "Greeting done, ignore period ${ASR_IGNORE_PERIOD_MS}ms starts NOW")
+
+            // 4. 正式进入监听：忽略期结束后才接受 ASR 结果
+            //    （warmUpAsrAndListening 已经在录音，但 asrIgnoreUntil 会丢弃此期间的所有 final）
 
             // 4. 正式进入监听：如果上面的 warmUpAsrAndListening 被用户取消/打断了，这里兜底再启
             if (_isActive.value) {
@@ -416,7 +422,9 @@ class VoiceCallManager(
                             val asrText = result.text.trim()
                             val normalizedGreeting = greeting.replace("[？?！!,.，。 ]".toRegex(), "")
                             val normalizedAsr = asrText.replace("[？?！!,.，。 ]".toRegex(), "")
-                            if (normalizedGreeting.contains(normalizedAsr) || normalizedAsr.contains(normalizedGreeting)) {
+                            val isGreetingEcho = normalizedAsr.length <= normalizedGreeting.length + 2 &&
+                                (normalizedGreeting.contains(normalizedAsr) || normalizedAsr.contains(normalizedGreeting))
+                            if (isGreetingEcho) {
                                 Log.w(TAG, "Warmup ASR final dropped (matches greeting echo): '$asrText'")
                                 return@collect
                             }
@@ -489,7 +497,7 @@ class VoiceCallManager(
     //  LISTENING（ASR 实时识别）
     // ========================================================================
 
-    private fun startListening() {
+    private fun startListening(fromInterrupt: Boolean = false) {
         val convId = conversationId ?: return
         if (!_isActive.value) return
         // 确保音量回弹（上一轮 duck 状态残留兜底）
@@ -509,6 +517,93 @@ class VoiceCallManager(
             return
         }
 
+        // === 预卷 drain：停止 LISTENING 模式的轻量预卷录音，并把 preRollFrames 传给 ASR ===
+        // 先 drain 再做能量过滤，过滤掉纯 AI 尾音回声 / 环境噪声的预卷（容易误识别为"嗯/啊"）
+        stopListeningPreRoll()
+        val drainedList = synchronized(preRollFrames) {
+            val list = preRollFrames.toList()
+            preRollFrames.clear()
+            list
+        }
+
+        // ===== 预卷能量过滤 =====
+        // 过滤逻辑：
+        //   Step 1. 时间过滤（AI说话尾窗）：回溯每一帧的"录制时刻"，如果落在 lastTtsPlayingAtMs + ECHO_TAIL_WINDOW_MS 之前，
+        //           说明这一帧录的时候 AI 扬声器还在响（或刚响完振铃） → 就算能量高也**不计入语音帧**（且不破坏连续计数，视为非语音）。
+        //           这是大音量手机"AI自己录自己"的核心兜底：stopInterruptionDetection 即使 delay + clear，
+        //           极端情况（delay期间又触发listener cue / TTS hardware flush延迟）仍可能漏。
+        //   Step 2. 能量过滤：剩余帧中，至少 20% 含有语音能量（> RMS 阈值），且存在连续 ≥4 帧语音 → 才算真正有人说话。
+        // 否则判定为 AI 尾音回声/环境噪声，直接丢弃（OnlineASR 对尾音敏感，容易误识别"嗯/啊"）。
+        val preRollFiltered: List<ShortArray>? = if (drainedList.isNotEmpty()) {
+            val drainNowMs = System.currentTimeMillis()
+            // 回溯：按每帧 512samples ≈ 32ms 估算每帧的录制时刻。环形 preRoll 的最后一帧就是 drainNowMs 附近。
+            // AI 尾窗结束时刻：lastTtsPlayingAtMs + 尾窗。在这之前录的帧都算"AI回声帧"。
+            val aiEchoWindowEndMs = lastTtsPlayingAtMs + ECHO_TAIL_WINDOW_MS
+            // 如果整个 preRoll 窗口都在尾窗结束之前（drainNowMs < aiEchoWindowEndMs），
+            // 且 preRoll 总时长不够覆盖到尾窗之后，直接丢弃，避免计算偏差。
+            val preRollTotalMs = drainedList.sumOf { it.size } * 1000 / 16000
+            val preRollEarliestPossibleMs = drainNowMs - preRollTotalMs
+            val allFramesInEcho = preRollEarliestPossibleMs >= 0 && drainNowMs < aiEchoWindowEndMs
+            if (allFramesInEcho && lastTtsPlayingAtMs > 0L) {
+                // 整个预卷都在 AI 回声尾窗内，没有意义 —— 直接丢弃
+                Log.i(TAG, "startListening: preRoll DROPPED entirely within TTS echo window " +
+                    "(drainNow - lastTts=${drainNowMs - lastTtsPlayingAtMs}ms < window=${ECHO_TAIL_WINDOW_MS}ms) fromInterrupt=$fromInterrupt")
+                null
+            } else {
+                val speechThreshold = RMS_SPEECH_THRESHOLD_PRE_ROLL
+                var speechFrames = 0
+                var maxConsecutiveSpeech = 0
+                var currentConsecutive = 0
+                var totalRmsAccum = 0.0
+                var accFramesBeforeThis = 0
+                var aiEchoSkipped = 0
+                for (frame in drainedList) {
+                    // 回溯估算这一帧的"录制时刻"：
+                    //   这一帧之前累积了 accFramesBeforeThis samples → 距最后一帧 accSamples*1000/16000 ms 前
+                    val msBeforeNow = accFramesBeforeThis * 1000 / 16000
+                    val thisFrameRecordedAtMs = drainNowMs - preRollTotalMs + msBeforeNow
+                    val isAiEchoFrame = thisFrameRecordedAtMs < aiEchoWindowEndMs && lastTtsPlayingAtMs > 0L
+                    var sumSq = 0.0
+                    for (i in 0 until frame.size) {
+                        val s = frame[i] / 32768.0f
+                        sumSq += (s * s).toDouble()
+                    }
+                    val rms = kotlin.math.sqrt(sumSq / frame.size).toFloat()
+                    totalRmsAccum += rms
+                    if (isAiEchoFrame) {
+                        // AI 回声尾窗内的帧：就算 rms 高也**不算语音**，并打断连续计数
+                        aiEchoSkipped++
+                        currentConsecutive = 0
+                    } else if (rms > speechThreshold) {
+                        speechFrames++
+                        currentConsecutive++
+                        if (currentConsecutive > maxConsecutiveSpeech) maxConsecutiveSpeech = currentConsecutive
+                    } else {
+                        currentConsecutive = 0
+                    }
+                    accFramesBeforeThis += frame.size
+                }
+                val totalFrames = drainedList.size
+                val speechRatio = if (totalFrames > 0) speechFrames.toDouble() / totalFrames else 0.0
+                val avgRms = if (totalFrames > 0) (totalRmsAccum / totalFrames).toFloat() else 0f
+                // 至少 30% 帧含语音 OR 连续 6 帧语音（≈192ms）才算"真正有人说话"
+                // 0.20/4 → 0.30/6：收紧条件，防止零星噪音帧累计误判为语音
+                val hasRealSpeech = (speechRatio >= 0.30) || (maxConsecutiveSpeech >= 6)
+                if (hasRealSpeech) {
+                    Log.i(TAG, "startListening: preRoll PASSED filter ${totalFrames}frames/${preRollTotalMs}ms " +
+                        "speech=${(speechRatio*100).toInt()}% maxConsec=${maxConsecutiveSpeech} avgRms=${"%.4f".format(avgRms)} " +
+                        "aiEchoSkipped=${aiEchoSkipped} fromInterrupt=$fromInterrupt")
+                    drainedList
+                } else {
+                    Log.i(TAG, "startListening: preRoll DROPPED (noise/echo) ${totalFrames}frames/${preRollTotalMs}ms " +
+                        "speech=${(speechRatio*100).toInt()}% maxConsec=${maxConsecutiveSpeech} avgRms=${"%.4f".format(avgRms)} " +
+                        "threshold=${speechThreshold} aiEchoSkipped=${aiEchoSkipped}")
+                    null
+                }
+            }
+        } else null
+        val preRollPcm = preRollFiltered
+
         // 新 turn：记录身份（ASR final 后会再 newGeneration）
         identity = identity.newTurn()
 
@@ -517,7 +612,7 @@ class VoiceCallManager(
         val snapshotSessionId = identity.callSessionId
         asrJob = scope.launch {
             try {
-                asrManager.startRecognition(asrSetting, context).collect { result ->
+                asrManager.startRecognition(asrSetting, context, preRollPcm).collect { result ->
                     // 关键：先验身份。如果 turn/session 变了，这个结果就过期
                     if (identity.callSessionId != snapshotSessionId || identity.turnId != snapshotTurnId) {
                         Log.d(TAG, "ASR result stale: turn changed, drop '${result.text}'")
@@ -537,14 +632,17 @@ class VoiceCallManager(
                             Log.w(TAG, "ASR final dropped (ignore period): '${result.text}'")
                             return@collect
                         }
-                        // 内容匹配过滤：如果 ASR 结果是问候文本的子串，或问候文本是 ASR 结果的子串，
-                        // 说明是扬声器回声被识别了，直接丢弃
+                        // 问候语回声过滤：防止 AI 的 "喂？" 被扬声器回声识别成用户输入
+                        // ★ 只在 ASR 文本长度接近问候语时才过滤（≤ 问候语长度 + 2 字符）
+                        //   否则用户说的第一句话以 "喂" 开头（如 "喂？又来喽..."）也会被误杀
                         val greeting = lastGreetingText
                         if (greeting != null) {
                             val asrText = result.text.trim()
                             val normalizedGreeting = greeting.replace("[？?！!,.，。 ]".toRegex(), "")
                             val normalizedAsr = asrText.replace("[？?！!,.，。 ]".toRegex(), "")
-                            if (normalizedGreeting.contains(normalizedAsr) || normalizedAsr.contains(normalizedGreeting)) {
+                            val isGreetingEcho = normalizedAsr.length <= normalizedGreeting.length + 2 &&
+                                (normalizedGreeting.contains(normalizedAsr) || normalizedAsr.contains(normalizedGreeting))
+                            if (isGreetingEcho) {
                                 Log.w(TAG, "ASR final dropped (matches greeting echo): '$asrText' vs greeting='$greeting'")
                                 return@collect
                             }
@@ -936,6 +1034,8 @@ class VoiceCallManager(
      */
     @SuppressLint("MissingPermission")
     private fun startInterruptionDetection(convId: Uuid, expectGenId: String?) {
+        // 先停 LISTENING 模式的轻量预卷录音，避免两个 AudioRecord 抢设备
+        stopListeningPreRoll()
         if (vadDetector == null) return
         val vad = vadDetector ?: return
         vad.reset()
@@ -1240,7 +1340,120 @@ class VoiceCallManager(
         runCatching { ttsController.setOnFarPcmListener(null) }
         runCatching { apm?.close() }
         apm = null
-        Log.d(TAG, "Interruption detection stopped (WebRTC APM released)")
+        // ===== 条件性 preRoll 清理 + 延迟启动 listeningPreRoll =====
+        // stopInterruptionDetection 有两种触发场景：
+        //   a) AI 自然说完（awaitTtsCompleteThenHandle 等 TTS 静默 1.5s 后调用）：
+        //      此时 TTS 已停了 >1.5s，preRoll 里是 1.5s 的干净静音/用户开头音频 → **保留不清**
+        //      不需要 delay，立刻启 listeningPreRoll
+        //   b) 用户打断（interrupt → stopInterruptionDetection）：
+        //      TTS 刚停，preRoll 里可能有 AI 大音量回声 → **清空**
+        //      需等 ECHO_TAIL_WINDOW_MS 让扬声器振铃衰减后再启 listeningPreRoll
+        val timeSinceLastTts = System.currentTimeMillis() - lastTtsPlayingAtMs
+        val isInterruptCase = timeSinceLastTts < ECHO_TAIL_WINDOW_MS
+        if (isInterruptCase) {
+            // 打断场景：清空 preRoll 防 AI 回声，delay 后再启 listeningPreRoll
+            synchronized(preRollFrames) { preRollFrames.clear() }
+            val needDelayMs = ECHO_TAIL_WINDOW_MS - timeSinceLastTts
+            Log.d(TAG, "stopInterruptionDetection: interrupt case, preRoll cleared, delay ${needDelayMs}ms before listeningPreRoll")
+            scope.launch(Dispatchers.IO) {
+                delay(needDelayMs)
+                synchronized(preRollFrames) { preRollFrames.clear() }
+                startListeningPreRollIfNeeded()
+            }
+        } else {
+            // 自然完成场景：preRoll 是干净的（TTS 已静默很久），保留！
+            // 这样 startListening drain 时能拿到打断检测期间收集的干净预卷 → LocalASR 不再吞开头字
+            Log.d(TAG, "stopInterruptionDetection: natural completion, preRoll preserved (${preRollFrames.size} frames), starting listeningPreRoll immediately")
+            startListeningPreRollIfNeeded()
+        }
+    }
+
+    /**
+     * LISTENING 模式下的轻量预卷录音：只填 preRollFrames，不做打断判断。
+     * 覆盖：问候 warmup→startListening 交接空窗、AI 回复完→startListening 空窗、用户停顿期间
+     * 不启 WebRTC APM/AEC（TTS 不播时不需要），避免额外 CPU 开销。
+     *
+     * 源头级防 AI 自录：本循环内的每一帧都会做两道门控 ——
+     *   1. TTS 状态门：AI 正在播放 / 停后 ECHO_TAIL_WINDOW_MS 内 → 直接丢，不进预卷
+     *   2. RMS 能量门：低于 RMS_SPEECH_THRESHOLD_PRE_ROLL（纯环境噪声） → 丢，不占预卷
+     * 这样 preRollFrames 里从源头就没有 AI 尾音，下游的能量过滤 + ASR 就不会"看见"AI 的话。
+     */
+    @SuppressLint("MissingPermission", "SetWorldReadable")
+    private fun startListeningPreRollIfNeeded() {
+        if (listeningPreRollJob != null) return
+        if (interruptionJob != null) return // 打断检测已在运行，防 AudioRecord 冲突
+        if (_isMuted.value) return
+        val ctx = context.applicationContext
+        val hasPerm = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (!hasPerm) return
+        val minBuf = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT).coerceAtLeast(1024)
+        val frameSize = 512 // 32ms @16kHz mono，与打断检测帧大小一致
+        val rec = try {
+            AudioRecord(
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                16000,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(minBuf, frameSize * 4)
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "startListeningPreRollIfNeeded: AudioRecord init failed", e)
+            return
+        }
+        if (rec.state != AudioRecord.STATE_INITIALIZED) {
+            runCatching { rec.release() }
+            return
+        }
+        listeningPreRollJob = scope.launch(Dispatchers.IO) {
+            try {
+                rec.startRecording()
+                val buf = ShortArray(frameSize)
+                val noiseGate = RMS_SPEECH_THRESHOLD_PRE_ROLL
+                var skippedTtsTail = 0
+                var skippedNoise = 0
+                Log.d(TAG, "ListeningPreRoll: started (filling preRollFrames, with TTS tail + RMS gating)")
+                while (isActive) {
+                    val read = rec.read(buf, 0, frameSize)
+                    if (read <= 0) continue
+                    val now = System.currentTimeMillis()
+                    // ===== Gate 1: TTS 状态门（核心防 AI 自录） =====
+                    // AI 正在播放 → 这帧大概率是扬声器回声，丢
+                    val ttsPlaying = ttsController.playbackState.value.status == PlaybackStatus.Playing
+                    // AI 停了但尾窗没过 → 扬声器物理振铃仍可能很大声，丢
+                    val inTtsTail = now - lastTtsPlayingAtMs < ECHO_TAIL_WINDOW_MS && lastTtsPlayingAtMs > 0L
+                    if (ttsPlaying || inTtsTail) {
+                        skippedTtsTail++
+                        continue
+                    }
+                    // ===== Gate 2: RMS 噪声门（节省预卷空间 + 减少下游误识别"嗯/啊"） =====
+                    var sumSq = 0.0
+                    for (i in 0 until read) {
+                        val s = buf[i] / 32768.0f
+                        sumSq += (s * s).toDouble()
+                    }
+                    val rms = kotlin.math.sqrt(sumSq / read).toFloat()
+                    if (rms < noiseGate) {
+                        skippedNoise++
+                        continue
+                    }
+                    // 通过两道门 → 深拷贝后进预卷环形缓冲
+                    val frameCopy = buf.copyOfRange(0, read)
+                    synchronized(preRollFrames) {
+                        preRollFrames.addLast(frameCopy)
+                        while (preRollFrames.size > PRE_ROLL_MAX_FRAMES) preRollFrames.removeFirst()
+                    }
+                }
+                Log.d(TAG, "ListeningPreRoll: stopped (skippedTtsTail=$skippedTtsTail skippedNoise=$skippedNoise)")
+            } finally {
+                runCatching { rec.stop() }
+                runCatching { rec.release() }
+            }
+        }
+    }
+
+    private fun stopListeningPreRoll() {
+        listeningPreRollJob?.cancel()
+        listeningPreRollJob = null
     }
 
     /**
@@ -1327,8 +1540,10 @@ class VoiceCallManager(
         Log.i(TAG, "Mute toggled: $muted")
         if (muted) {
             asrJob?.cancel()
+            stopListeningPreRoll()
         } else {
             if (_isActive.value && _callStatus.value == CallStatus.LISTENING) {
+                startListeningPreRollIfNeeded()
                 startListening()
             }
         }
@@ -1345,6 +1560,7 @@ class VoiceCallManager(
         CallCommandHub.setCallActive(false)
         _callStatus.value = CallStatus.CONNECTING
         stopInterruptionDetection()
+        stopListeningPreRoll()
         stopL1Timer()
         asrJob?.cancel()
         responseJob?.cancel()
@@ -1484,8 +1700,8 @@ class VoiceCallManager(
     }
 
     companion object {
-        // PCM 预卷帧数（每帧 32ms，31 帧 ≈ 1 秒）
-        private const val PRE_ROLL_MAX_FRAMES = 31
+        // PCM 预卷帧数（每帧 32ms，47 帧 ≈ 1.5 秒。之前 31 帧/1s，开头字偶尔漏，扩到 1.5s 兜底）
+        private const val PRE_ROLL_MAX_FRAMES = 47
 
         private const val L1_CHECK_INTERVAL_MS = 25L * 60 * 1000
         private const val ASR_RETRY_DELAY_MS = 600L
@@ -1503,13 +1719,20 @@ class VoiceCallManager(
         private const val SLIDING_WINDOW_FRAMES = 30
         // RMS 超过 baseline 多少倍视为抢话。1.8→1.4→1.5（误升）→1.3，降低门槛让正常音量就能打断
         private const val BARGE_IN_RMS_MULTIPLIER = 1.3
-        // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"。220→150，缩短避免吞掉用户开头字
-        private const val ECHO_TAIL_WINDOW_MS = 50L
+        // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"。
+        // 220→150→50 下调后大音量手机出现"AI录自己"，因为 50ms 不够扬声器物理振铃衰减（尤其低音单元）。
+        // 重新提高到 200ms：配合 stopInterruptionDetection 的 delay 启动 listeningPreRoll，
+        // 这段时间**不录音**（而非录了再挡），比用阈值过滤更彻底，且不会漏用户字——
+        // 200ms 内用户刚听完 AI 回复，极少能立刻完整地说一句话；delay 完再启预卷正好接上。
+        private const val ECHO_TAIL_WINDOW_MS = 200L
         // 尾窗门限倍数：轻微抬高即可
         private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
-        // ASR 忽略期：从接通问候「开始播放」的瞬间开始计时，500ms 足够覆盖"喂？"的播+回声尾音
-        private const val ASR_IGNORE_PERIOD_MS = 500L
+        // ASR 忽略期：从 TTS 播完后开始计时，800ms 覆盖大音量扬声器的尾音回声
+        // （500ms 不够：大音量扬声器物理振铃需要 300-500ms 衰减）
+        private const val ASR_IGNORE_PERIOD_MS = 800L
+        // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.012）
+        private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.012f
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
         private val LISTENER_CUE_BASE = listOf(
@@ -1523,8 +1746,8 @@ class VoiceCallManager(
         )
         //   LLM 超过 1s 还没返回可朗读内容时的"等待提示"（带概率权重）：
         private val WAITING_CUE_BASE = listOf(
-            "等一等——" to 20,
-            "哦——" to 20,
+            "等等——" to 10,
+            "哦——" to 30,
             "我想想..." to 5,
             "等一下.." to 20,
             "啊。。" to 25,

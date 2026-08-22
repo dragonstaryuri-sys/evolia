@@ -16,6 +16,7 @@ import com.k2fsa.sherpa.onnx.SileroVadModelConfig
 import com.k2fsa.sherpa.onnx.Vad
 import com.k2fsa.sherpa.onnx.VadModelConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
@@ -164,6 +165,8 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             // 轻量 RMS 辅助判定：当前 32ms window 是否含有语音能量
             var inSpeechAux = false
             var lastSpeechEnergyAtMs = 0L
+            // 连续帧计数：用于 onset 判定（防敲桌子等冲击声触发 inSpeechAux）
+            var consecutiveOnsetFrames = 0
             // 切片开始的毫秒时间戳（用于计算切片时长）
             var sliceStartMs = 0L
             val scope = this // channelFlow 的 ProducerScope，用于 launch 异步上传
@@ -187,29 +190,57 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
 
             // === 预卷喂入：打断场景下，把上一轮打断检测收集的用户开头音频喂给 VAD + slicePcm ===
             // 关键：必须在 read 循环开始前完成，否则用户抢话的开头字会被新开 AudioRecord 丢失
+            // ★ 与正常 read 循环保持一致：先跑 RMS 判断，只有 inSpeechAux=true 或 slicePcm 已非空时才累积
+            //   否则 AI 尾音回声虽然能量不高，但直接塞进 slicePcm → 切片上传 → Whisper 容易误识别"嗯/啊"
             if (!preRollPcm.isNullOrEmpty()) {
                 val preRollStartNs = System.nanoTime()
                 var preRollFrames = 0
                 var preRollSamples = 0
-                for (frame in preRollPcm) {
+                var accumulatedSamples = 0
+                val now0 = System.currentTimeMillis()
+                for ((idx, frame) in preRollPcm.withIndex()) {
                     if (frame.isEmpty()) continue
                     val samples = FloatArray(frame.size) { frame[it] / 32768.0f }
                     vad.acceptWaveform(samples)
-                    slicePcm.addAll(samples.asList())
                     preRollFrames++
                     preRollSamples += frame.size
 
                     var sumSq = 0.0
                     for (s in samples) sumSq += (s * s).toDouble()
                     val rms = sqrt(sumSq / samples.size).toFloat()
+                    // 帧时间戳：按帧大致平移（预卷是过去的音频，RMS 判断基于时间的逻辑不受影响，
+                    // 这里只用 now0 模拟"正在读"，不影响 inSpeechAux 的核心判断——只有 600ms 静默衰减才依赖时间，
+                    // 预卷总时长仅 1.5s，衰减窗口里不会自然超时）
+                    val fakeNow = now0 + idx * (frame.size * 1000 / SAMPLE_RATE)
+                    // 双阈值迟滞：onset 刷新 lastSpeechEnergyAtMs，offset 维持但不刷新
                     if (rms > RMS_SPEECH_THRESHOLD) {
-                        if (!inSpeechAux) sliceStartMs = System.currentTimeMillis()
-                        inSpeechAux = true
-                        lastSpeechEnergyAtMs = System.currentTimeMillis()
+                        consecutiveOnsetFrames++
+                        if (!inSpeechAux && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
+                            sliceStartMs = fakeNow
+                            inSpeechAux = true
+                        }
+                        if (inSpeechAux) lastSpeechEnergyAtMs = fakeNow
+                    } else if (rms > RMS_SPEECH_OFFSET_THRESHOLD) {
+                        if (inSpeechAux && fakeNow - lastSpeechEnergyAtMs > 600L) {
+                            inSpeechAux = false
+                        }
+                    } else {
+                        consecutiveOnsetFrames = 0
+                        if (inSpeechAux && fakeNow - lastSpeechEnergyAtMs > 600L) {
+                            inSpeechAux = false
+                        }
+                    }
+
+                    // ★ 累积规则与正常循环完全一致：inSpeechAux 或已累积过内容才喂 slicePcm
+                    if (inSpeechAux || slicePcm.isNotEmpty()) {
+                        slicePcm.addAll(samples.asList())
+                        accumulatedSamples += frame.size
                     }
                 }
                 val preRollMs = preRollSamples * 1000 / SAMPLE_RATE
-                Log.i(TAG, "[PreRoll] 喂入 ${preRollFrames} 帧 / ${preRollMs}ms, inSpeech=$inSpeechAux, cost=${(System.nanoTime() - preRollStartNs) / 1_000_000}ms")
+                val accMs = accumulatedSamples * 1000 / SAMPLE_RATE
+                Log.i(TAG, "[PreRoll] 喂入 ${preRollFrames}帧/${preRollMs}ms, 实际累积=${accMs}ms, inSpeech=$inSpeechAux, " +
+                    "cost=${(System.nanoTime() - preRollStartNs) / 1_000_000}ms")
             }
 
             while (isActive) {
@@ -221,21 +252,33 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
 
                 val now = System.currentTimeMillis()
 
-                // --- 1. 轻量 RMS 能量检测 ---
+                // --- 1. 轻量 RMS 能量检测（双阈值迟滞 + 连续帧判定） ---
                 // ★ Final 静默期内强制忽略能量，防止噪声/回声触发 inSpeechAux
                 val inGracePeriod = now < finalGracePeriodUntil
                 var sumSq = 0.0
                 for (s in samples) sumSq += (s * s).toDouble()
                 val rms = sqrt(sumSq / samples.size).toFloat()
                 if (!inGracePeriod && rms > RMS_SPEECH_THRESHOLD) {
-                    if (!inSpeechAux) {
-                        // 语音开始，记录切片起点
+                    // 高于 onset 阈值：实际语音 → 刷新 lastSpeechEnergyAtMs
+                    consecutiveOnsetFrames++
+                    if (!inSpeechAux && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
                         sliceStartMs = now
+                        inSpeechAux = true
                     }
-                    inSpeechAux = true
-                    lastSpeechEnergyAtMs = now
-                } else if (inSpeechAux && now - lastSpeechEnergyAtMs > 600L) {
-                    inSpeechAux = false
+                    if (inSpeechAux) lastSpeechEnergyAtMs = now
+                } else if (!inGracePeriod && inSpeechAux && rms > RMS_SPEECH_OFFSET_THRESHOLD) {
+                    // offset 区间（onset > rms > offset）：维持 inSpeechAux = true（不中断 PCM 累积），
+                    // 但**不刷新 lastSpeechEnergyAtMs** → silenceMs 会增长 → 停顿能被检测到 → 切片能触发。
+                    // 之前这里也刷新了 lastSpeechEnergyAtMs → 环境噪音（如 0.0107）一直刷 → silenceMs 永远=0 → 永远不切片。
+                    // 600ms 无实际语音 → 关闭 inSpeechAux（防噪音无限维持）
+                    if (now - lastSpeechEnergyAtMs > 600L) {
+                        inSpeechAux = false
+                    }
+                } else {
+                    consecutiveOnsetFrames = 0
+                    if (inSpeechAux && now - lastSpeechEnergyAtMs > 600L) {
+                        inSpeechAux = false
+                    }
                 }
 
                 // --- 2. 累积当前切片 PCM ---
@@ -260,7 +303,9 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 //   ★ 噪声保护：连续 ≥2 次空结果且没有已识别文本 → 停止无意义的空切片上传
                 //     但当用户开始新一句话（VAD 产出 segment → 重置计数器）时恢复
                 val pauseTriggered = sliceMs >= MIN_SLICE_MS && silenceMs >= SHORT_SILENCE_SLICE_MS
-                val maxLenTriggered = sliceMs >= MAX_SLICE_MS && rms <= RMS_SPEECH_THRESHOLD
+                // 超长保护：累积 ≥MAX_SLICE_MS 且当前帧低于 offset 阈值（确认不在说话了）才切
+                // 用 offset 而非 onset：避免说话中短暂低音量帧触发误切
+                val maxLenTriggered = sliceMs >= MAX_SLICE_MS && rms <= RMS_SPEECH_OFFSET_THRESHOLD
                 val inflightTimedOut = sliceInFlight.get() && (now - sliceInFlightStartMs) > SLICE_INFLIGHT_TIMEOUT_MS
                 if (inflightTimedOut) {
                     Log.w(TAG, "sliceInFlight timed out (${now - sliceInFlightStartMs}ms), force-allowing new slice")
@@ -338,16 +383,16 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                                     }
                                 }
                             } else {
-                                // 空结果：可能是噪声。递增计数器
+                                // 空结果：噪声。递增计数器
                                 consecutiveEmptyCount++
                                 Log.d(TAG, "Slice empty, consecutiveEmptyCount=$consecutiveEmptyCount")
-                                // 连续 2 次空且没有已识别文本 → 判定为噪声，清空 slicePcm
-                                // 但不永久阻止后续切片：当 VAD 检测到新语音段时会重置 consecutiveEmptyCount
-                                if (consecutiveEmptyCount >= 2 && promptText.isEmpty()) {
-                                    slicePcm.clear()
-                                    inSpeechAux = false
-                                    Log.i(TAG, "Noise detected (2x empty slices), clearing slicePcm (will resume on new VAD segment)")
-                                }
+                                // ★ 无条件清理：不管 promptText 是否为空都清。
+                                //   之前只有 promptText.isEmpty() 才清 → 用户说完一句话后，
+                                //   噪声切片返回空但不清 slicePcm → 噪声持续累积 → Whisper 把噪声识别成 "嗯""ja."
+                                slicePcm.clear()
+                                inSpeechAux = false
+                                consecutiveOnsetFrames = 0
+                                Log.i(TAG, "Empty slice, clearing slicePcm + resetting inSpeechAux (noise)")
                             }
                         } finally {
                             sliceInFlight.set(false)
@@ -365,6 +410,24 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     vad.pop()
 
                     if (segment.samples.isEmpty()) continue
+
+                    // ★ 关键修复：如果切片正在 API 请求中，等它返回再处理 Final。
+                    //   否则 in-flight slice 的文本会被 epoch drop → recognizedText 缺少这部分 → Final 丢文本。
+                    //   用户表现为"前一句已经显示出来了，再说一句后前一句消失了"。
+                    //   等待期间 AudioRecord 内部缓冲会暂存音频，不会丢失（VAD 已判定用户说完了）。
+                    if (sliceInFlight.get()) {
+                        val waitStart = System.currentTimeMillis()
+                        Log.i(TAG, "[Final] Waiting for in-flight slice before processing...")
+                        while (sliceInFlight.get() && isActive) {
+                            val elapsed = System.currentTimeMillis() - waitStart
+                            if (elapsed > SLICE_INFLIGHT_TIMEOUT_MS) {
+                                Log.w(TAG, "[Final] In-flight slice timeout (${elapsed}ms), proceeding anyway")
+                                break
+                            }
+                            delay(20)
+                        }
+                        Log.i(TAG, "[Final] In-flight slice resolved after ${System.currentTimeMillis() - waitStart}ms, recognizedText=\"${recognizedText.get().take(30)}\"")
+                    }
 
                     // ★ Final 时递增 epoch，让还在飞行中的切片返回时自动丢弃
                     val finalEpoch = sliceEpoch.incrementAndGet()
@@ -905,30 +968,38 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         private const val SAMPLE_RATE = 16000
         private const val WINDOW_SIZE = 512 // Silero VAD 固定 512 样本（≈32ms @ 16k）
         private const val VAD_THRESHOLD = 0.5F
-        // VAD final 句子端点：800ms 静音才判定用户说完了
-        // （500ms 容易把思考型停顿误判为说完了；800ms 给用户更多缓冲，反正 partial 已经出字了不卡体验）
-        private const val MIN_SILENCE_DURATION_SEC = 0.8F
+        // VAD final 句子端点：1.0s 静音才判定用户说完了
+        // （0.8s 会把思考型停顿/换气误判为说完了 → 断句奇怪；1.0s 给用户更多缓冲）
+        private const val MIN_SILENCE_DURATION_SEC = 1.0F
         private const val MIN_SPEECH_DURATION_SEC = 0.3F  // 过滤过短的噪声
         private const val MAX_SPEECH_DURATION_SEC = 30F    // 单次最长 30 秒
 
         // ===== 分段切片（Slice + Prompt 续接）参数 =====
-        // RMS 能量阈值（≈-38dBFS，-46dBFS 太灵敏了，呼吸声/底噪都算语音）
-        // 调大后只有真正说话的音量才会刷新 lastSpeechEnergyAtMs，避免静音时长一直被刷新
-        private const val RMS_SPEECH_THRESHOLD = 0.012F
+        // RMS 能量阈值（双阈值迟滞 Hysteresis）
+        // ONSET（开启语音）：0.012 ≈ -38dBFS。
+        //   大音量扬声器场景下，AEC 残余回声 + 环境噪音 RMS ≈ 0.010-0.011，
+        //   0.012 刚好高于这个噪声层，同时正常说话（0.02-0.05+）轻松通过。
+        // OFFSET（维持语音）：0.006 ≈ -44dBFS。
+        //   高于安静环境底噪（0.003-0.005），低于说话中的轻声/换气（0.008+）。
+        //   说话中音量波动不会断 inSpeechAux，但停顿时 silenceMs 能正确增长。
+        //   ★ offset 分支不刷新 lastSpeechEnergyAtMs → 停顿可被检测到 → 切片能触发。
+        private const val RMS_SPEECH_THRESHOLD = 0.012F         // onset：开启语音的阈值
+        private const val RMS_SPEECH_OFFSET_THRESHOLD = 0.006F   // offset：维持语音的阈值
+        // 连续帧计数：至少 4 帧连续超过 onset 阈值才算"真正开始说话"（4 × 32ms = 128ms）
+        private const val SPEECH_ONSET_FRAMES = 4
         // 切片最小时长：累积至少 500ms 才允许切片上传，避免过短片段浪费 API 调用
         private const val MIN_SLICE_MS = 500
         // 切片最大时长：累积 ≥3s 并且当前帧 RMS 低于阈值（换气间隙），强制切片防止长句不切
         // 这个是"安全网"，主要触发还是靠停顿；所以必须同时满足 RMS 低（至少是换气间隙）
         // 从 5s 降到 3s：减小单次上传体积，API 响应更快
         private const val MAX_SLICE_MS = 3000
-        // 切片停顿阈值：检测到 ≥250ms 的自然停顿就切片
-        // （逗号停顿 100-200ms，句号停顿 300+ms；250ms 能抓句号级停顿，不会把字间停顿误判；
-        //  之前 60ms 导致疯狂切片 → API 堆积 → 延迟爆炸。现在 RMS 已修正到 0.012，
-        //  250ms 能正常触发。阈值明显短于 VAD final 的 800ms，因此停顿时一定先 partial 后 final。）
-        private const val SHORT_SILENCE_SLICE_MS = 250
-        // Final 后静默期：Final 发送后 1.5s 内忽略 RMS 能量，防止回声/环境噪声触发空切片循环
-        // （TTS 的"嗯"提示语 + AI 回复音 都可能产生回声，1.5s 足够覆盖）
-        private const val FINAL_GRACE_PERIOD_MS = 1500L
+        // 切片停顿阈值：检测到 ≥400ms 的自然停顿就切片
+        // （250ms 会把逗号停顿/换气误判为断句 → 断句奇怪；400ms 只抓句号级停顿，
+        //  明显短于 VAD final 的 1000ms，因此停顿时一定先 partial 后 final。）
+        private const val SHORT_SILENCE_SLICE_MS = 400
+        // Final 后静默期：3s 内忽略所有 RMS 能量，防止回声/环境音触发空切片循环
+        // （1.5s 太短：用户说完后噪声仍能触发新切片 → "嗯。" "ja." 凭空出现）
+        private const val FINAL_GRACE_PERIOD_MS = 3000L
         // 切片 API 超时放行：如果前一个切片 API 卡了 >3s 还没返回，强制放行新切片
         // （旧切片返回时用 CAS 检查 recognizedText 是否已被更新，避免覆盖新结果）
         // 防止一个慢 API 请求阻塞整个识别链路，导致音频堆积成巨大 Final
