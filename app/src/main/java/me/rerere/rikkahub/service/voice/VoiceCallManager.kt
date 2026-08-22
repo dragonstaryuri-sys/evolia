@@ -557,6 +557,8 @@ class VoiceCallManager(
                 var totalRmsAccum = 0.0
                 var accFramesBeforeThis = 0
                 var aiEchoSkipped = 0
+                // 【关键修改点】：创建一个新列表只存非回声帧
+                val cleanFrames = mutableListOf<ShortArray>()
                 for (frame in drainedList) {
                     // 回溯估算这一帧的"录制时刻"：
                     //   这一帧之前累积了 accFramesBeforeThis samples → 距最后一帧 accSamples*1000/16000 ms 前
@@ -571,15 +573,20 @@ class VoiceCallManager(
                     val rms = kotlin.math.sqrt(sumSq / frame.size).toFloat()
                     totalRmsAccum += rms
                     if (isAiEchoFrame) {
-                        // AI 回声尾窗内的帧：就算 rms 高也**不算语音**，并打断连续计数
+                        // AI 回声尾窗内的帧：直接丢弃且不算语音帧，并打断连续计数
                         aiEchoSkipped++
                         currentConsecutive = 0
-                    } else if (rms > speechThreshold) {
-                        speechFrames++
-                        currentConsecutive++
-                        if (currentConsecutive > maxConsecutiveSpeech) maxConsecutiveSpeech = currentConsecutive
                     } else {
-                        currentConsecutive = 0
+                        // 【核心修改】：只有非回声帧才加入 cleanFrames 列表
+                        cleanFrames.add(frame)
+
+                        if (rms > speechThreshold) {
+                            speechFrames++
+                            currentConsecutive++
+                            if (currentConsecutive > maxConsecutiveSpeech) maxConsecutiveSpeech = currentConsecutive
+                        } else {
+                            currentConsecutive = 0
+                        }
                     }
                     accFramesBeforeThis += frame.size
                 }
@@ -593,7 +600,7 @@ class VoiceCallManager(
                     Log.i(TAG, "startListening: preRoll PASSED filter ${totalFrames}frames/${preRollTotalMs}ms " +
                         "speech=${(speechRatio*100).toInt()}% maxConsec=${maxConsecutiveSpeech} avgRms=${"%.4f".format(avgRms)} " +
                         "aiEchoSkipped=${aiEchoSkipped} fromInterrupt=$fromInterrupt")
-                    drainedList
+                    cleanFrames
                 } else {
                     Log.i(TAG, "startListening: preRoll DROPPED (noise/echo) ${totalFrames}frames/${preRollTotalMs}ms " +
                         "speech=${(speechRatio*100).toInt()}% maxConsec=${maxConsecutiveSpeech} avgRms=${"%.4f".format(avgRms)} " +
@@ -612,6 +619,11 @@ class VoiceCallManager(
         val snapshotSessionId = identity.callSessionId
         asrJob = scope.launch {
             try {
+                val remainIgnoreMs = asrIgnoreUntil - System.currentTimeMillis()
+                if (remainIgnoreMs > 0) {
+                    Log.d(TAG, "Delay ${remainIgnoreMs}ms to avoid greeting echo")
+                    delay(remainIgnoreMs)
+                }
                 asrManager.startRecognition(asrSetting, context, preRollPcm).collect { result ->
                     // 关键：先验身份。如果 turn/session 变了，这个结果就过期
                     if (identity.callSessionId != snapshotSessionId || identity.turnId != snapshotTurnId) {
@@ -1679,15 +1691,18 @@ class VoiceCallManager(
         val ok = runCatching {
             // cue 是我们自己构造的短文本，不走 stripMarkdownForTts，确保 (xxx) 标签完整透传。
             ttsController.speak(cue, flush = true)
+            lastTtsPlayingAtMs = System.currentTimeMillis()
             var waited = 0L
             // 等 TTS 真正开始 speaking 或超时（合成可能需要 100-200ms）
             var startGuard = 0
             while (_isActive.value && !ttsController.isSpeaking.value && startGuard < 20) {
                 delay(50); waited += 50; startGuard++
+                lastTtsPlayingAtMs = System.currentTimeMillis()
             }
             // 等说话结束或总时长超过 2.5s（极端保护）
             while (_isActive.value && ttsController.isSpeaking.value && waited < 2500L) {
                 delay(50); waited += 50
+                lastTtsPlayingAtMs = System.currentTimeMillis()
             }
             true
         }.getOrElse {
@@ -1717,8 +1732,8 @@ class VoiceCallManager(
         private const val DUCK_DURATION_MS = 240L
         private const val BASELINE_LEARN_FRAMES = 20
         private const val SLIDING_WINDOW_FRAMES = 30
-        // RMS 超过 baseline 多少倍视为抢话。1.8→1.4→1.5（误升）→1.3，降低门槛让正常音量就能打断
-        private const val BARGE_IN_RMS_MULTIPLIER = 1.3
+        // RMS 超过 baseline 多少倍视为抢话。1.8→1.4，降低门槛让正常音量就能打断
+        private const val BARGE_IN_RMS_MULTIPLIER = 1.4
         // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"。
         // 220→150→50 下调后大音量手机出现"AI录自己"，因为 50ms 不够扬声器物理振铃衰减（尤其低音单元）。
         // 重新提高到 200ms：配合 stopInterruptionDetection 的 delay 启动 listeningPreRoll，
