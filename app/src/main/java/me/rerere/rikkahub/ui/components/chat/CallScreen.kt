@@ -31,7 +31,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -325,8 +324,13 @@ fun CallScreen(
                     isListeningNow -> Triple(MessageRole.USER, listeningText.orEmpty(), true)
                     else -> Triple(latestMessageRole, latestMessageText.orEmpty(), false)
                 }
+
+                // 过滤掉带有“系统”标识的 User 消息（通常是定时任务或监控触发的指令）
+                val isSystemTriggered = displayRole == MessageRole.USER &&
+                    (displayText.startsWith("【系统自动化指令 - 任务触发】"))
+
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = displayText.isNotBlank(),
+                    visible = displayText.isNotBlank() && !isSystemTriggered,
                     enter = fadeIn(tween(300)),
                     exit = fadeOut(tween(200)),
                     modifier = Modifier.padding(top = 36.dp, start = 24.dp, end = 24.dp)
