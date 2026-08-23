@@ -162,7 +162,7 @@ class CustomTtsStateImpl(
 ) : CustomTtsState, KoinComponent {
 
     private val ttsManager by inject<TTSManager>()
-    private val controller by lazy { me.rerere.tts.controller.TtsController(context, ttsManager) }
+    private val controller by lazy { TtsController(context, ttsManager) }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
