@@ -406,6 +406,11 @@ class CustomTtsStateImpl(
             combine(convFlow, jobFlow, autoPlayFlow) { conv, job, autoPlay ->
                 Triple(conv, job, autoPlay)
             }.collect { (conv, job, autoPlay) ->
+                // 每次 AI 准备说下一句话之前，都先看一眼 settings 里的时间
+                if (settingsStore.settingsFlow.value.isMuteTime()) {
+                    Log.i(TAG, "[AutoRead] 当前处于静音时段，已跳过播放")
+                    return@collect // 发现是静音时间，直接 return，不执行下面的 speak
+                }
                 // 通话中：暂停自动朗读消费，但不推进 lastProcessed* 指针
                 // 挂断恢复后，从通话开始前的断点继续朗读，保证不漏读也不重复读
                 if (autoReadPaused.get()) {
