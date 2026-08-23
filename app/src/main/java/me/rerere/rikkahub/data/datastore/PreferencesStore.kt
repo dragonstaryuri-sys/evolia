@@ -645,7 +645,8 @@ data class DisplaySetting(
     val hasShownProviderGuide: Boolean = false,
     val wechatMode: Boolean = false,
     val muteTimeStart: String? = null,
-    val muteTimeEnd: String? = null
+    val muteTimeEnd: String? = null,
+    val muteTimeEnabled: Boolean = false
 )
 
 @Serializable
@@ -746,6 +747,7 @@ private val DEFAULT_ASR_PROVIDERS = listOf(
 
 // 静音时段不自动播放语音
 fun Settings.isMuteTime(): Boolean {
+    if (!displaySetting.muteTimeEnabled) return false
     val start = displaySetting.muteTimeStart
     val end = displaySetting.muteTimeEnd
     if (start.isNullOrBlank() || end.isNullOrBlank()) return false

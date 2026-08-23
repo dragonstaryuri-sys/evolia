@@ -625,49 +625,76 @@ private fun TtsTextFilterSettingsDialog(
                 ),
                 shape = AppShapes.CardLarge
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // 开始时间选择
-                    OutlinedTextField(
-                        value = displaySetting.muteTimeStart ?: "",
-                        onValueChange = {}, // 不允许手动输入
-                        label = { Text("开始时间") },
-                        modifier = Modifier.weight(1f),
-                        readOnly = true, // 只读，点击触发
-                        trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                            .also { interactionSource ->
-                                LaunchedEffect(interactionSource) {
-                                    interactionSource.interactions.collect {
-                                        if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
-                                            pickingStart = true
-                                            showTimePicker = true
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("夜间静音时段", style = MaterialTheme.typography.titleSmall)
+                        // 使用项目自带的 HapticSwitch
+                        me.rerere.rikkahub.ui.components.ui.HapticSwitch(
+                            checked = displaySetting.muteTimeEnabled,
+                            onCheckedChange = { enabled ->
+                                onUpdateSettings(displaySetting.copy(muteTimeEnabled = enabled))
+                            }
+                        )
+                    }
+
+                    Text(
+                        text = "在设定时段内，自动朗读将强制保持静默。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    androidx.compose.ui.util.lerp(1f, 0.5f, if(displaySetting.muteTimeEnabled) 0f else 1f).let { alpha ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // 开始时间选择
+                            OutlinedTextField(
+                                value = displaySetting.muteTimeStart ?: "",
+                                onValueChange = {}, // 不允许手动输入
+                                label = { Text("开始时间") },
+                                modifier = Modifier.weight(1f),
+                                readOnly = true, // 只读，点击触发
+                                trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                    .also { interactionSource ->
+                                        LaunchedEffect(interactionSource) {
+                                            interactionSource.interactions.collect {
+                                                if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                                    pickingStart = true
+                                                    showTimePicker = true
+                                                }
+                                            }
                                         }
                                     }
-                                }
-                            }
-                    )
-                    // 结束时间选择
-                    OutlinedTextField(
-                        value = displaySetting.muteTimeEnd ?: "",
-                        onValueChange = {},
-                        label = { Text("结束时间") },
-                        modifier = Modifier.weight(1f),
-                        readOnly = true,
-                        trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                            .also { interactionSource ->
-                                LaunchedEffect(interactionSource) {
-                                    interactionSource.interactions.collect {
-                                        if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
-                                            pickingStart = false
-                                            showTimePicker = true
+                            )
+                            // 结束时间选择
+                            OutlinedTextField(
+                                value = displaySetting.muteTimeEnd ?: "",
+                                onValueChange = {},
+                                label = { Text("结束时间") },
+                                modifier = Modifier.weight(1f),
+                                readOnly = true,
+                                trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                                    .also { interactionSource ->
+                                        LaunchedEffect(interactionSource) {
+                                            interactionSource.interactions.collect {
+                                                if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                                    pickingStart = false
+                                                    showTimePicker = true
+                                                }
+                                            }
                                         }
                                     }
-                                }
-                            }
-                    )
+                            )
+                        }
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
