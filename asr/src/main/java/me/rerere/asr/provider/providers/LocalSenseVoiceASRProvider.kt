@@ -171,6 +171,9 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             var consecutiveOnsetFrames = 0
             // RMS 诊断日志节流
             var lastDiagLogMs = 0L
+            // RMS 滑动窗口（最近 ~1s 的帧，周期性诊断输出 min/max/avg + 超阈值帧数）
+            val recentRms = ArrayDeque<Float>()
+            val diagWindowFrames = SAMPLE_RATE / WINDOW_SIZE // 约 1s 的帧数（16k/512 = 31）
             // 开始说话后给 UI 发一次占位 partial（isFinal=false, text 空），
             // 用于通话界面的"正在听…"提示和波形动画驱动
             var listeningHintSent = false
@@ -183,6 +186,11 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                 val preRollStartNs = System.nanoTime()
                 var preRollFrames = 0
                 var preRollSamples = 0
+                // RMS 分布统计（min/max/avg + 语音帧数），用于调参诊断
+                var preRollMinRms = Float.MAX_VALUE
+                var preRollMaxRms = 0f
+                var preRollRmsSum = 0.0
+                var preRollSpeechFrames = 0
                 for (frame in preRollPcm) {
                     if (frame.isEmpty()) continue
                     val samples = FloatArray(frame.size) { frame[it] / 32768.0f }
@@ -197,7 +205,11 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     var sumSq = 0.0
                     for (s in samples) sumSq += (s * s).toDouble()
                     val rms = sqrt(sumSq / samples.size).toFloat()
+                    if (rms < preRollMinRms) preRollMinRms = rms
+                    if (rms > preRollMaxRms) preRollMaxRms = rms
+                    preRollRmsSum += rms
                     if (rms > RMS_SPEECH_THRESHOLD) {
+                        preRollSpeechFrames++
                         consecutiveOnsetFrames++
                         if (!inSpeech && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
                             inSpeech = true
@@ -219,7 +231,13 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     }
                 }
                 val preRollMs = preRollSamples * 1000 / SAMPLE_RATE
-                Log.i(TAG, "[PreRoll] 喂入 ${preRollFrames} 帧 / ${preRollMs}ms, inSpeech=$inSpeech, cost=${(System.nanoTime() - preRollStartNs) / 1_000_000}ms")
+                val preRollAvgRms = if (preRollFrames > 0) (preRollRmsSum / preRollFrames).toFloat() else 0f
+                val safeMinRms = if (preRollFrames > 0) preRollMinRms else 0f
+                Log.i(TAG, "[ASRDiag][PreRoll] 喂入 ${preRollFrames}帧/${preRollMs}ms inSpeech=$inSpeech " +
+                    "rms[min=${"%.4f".format(safeMinRms)} max=${"%.4f".format(preRollMaxRms)} avg=${"%.4f".format(preRollAvgRms)}] " +
+                    "speechFrames=$preRollSpeechFrames " +
+                    "thr=${RMS_SPEECH_THRESHOLD} offsetThr=${RMS_SPEECH_OFFSET_THRESHOLD} onsetFrames=${SPEECH_ONSET_FRAMES} " +
+                    "consecOnset=$consecutiveOnsetFrames cost=${(System.nanoTime() - preRollStartNs) / 1_000_000}ms")
 
                 // 立即尝试消费 VAD 已产出的 segment（用户可能预卷里就说完一句）
                 while (!vad.empty() && isActive) {
@@ -257,14 +275,24 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                 var sumSq = 0.0
                 for (s in samples) sumSq += (s * s).toDouble()
                 val rms = sqrt(sumSq / samples.size).toFloat()
-                // RMS 诊断日志（每 ~1.3s 输出一次，与 OnlineASR 切片诊断对齐）
-                if (now - lastDiagLogMs > 1300) {
+                // 更新 RMS 滑动窗口（保留最近 ~1s 的帧）
+                recentRms.addLast(rms)
+                while (recentRms.size > diagWindowFrames) recentRms.removeFirst()
+                // [ASRDiag] 周期性诊断日志（每 1s 一次）
+                // logcat 搜 "ASRDiag" 可看到全部调参日志（周期诊断 + 预卷喂入 + 过滤结果 + 打断保留）
+                if (now - lastDiagLogMs > 1000) {
                     lastDiagLogMs = now
                     val accMs = accumulatedPcm.size * 1000 / SAMPLE_RATE
                     val silenceMs = if (inSpeech) now - lastSpeechEnergyAtMs else 0L
-                    Log.d(TAG, "[RMS 诊断] 已累积=${accMs}ms 静音=${silenceMs}ms" +
-                        " RMS=${"%.4f".format(rms)} inSpeech=$inSpeech" +
-                        " 阈值RMS=$RMS_SPEECH_THRESHOLD 静默期=${if (inGracePeriod) "是" else "否"}")
+                    val winMin = if (recentRms.isNotEmpty()) recentRms.min() else 0f
+                    val winMax = if (recentRms.isNotEmpty()) recentRms.max() else 0f
+                    val winAvg = if (recentRms.isNotEmpty()) recentRms.average().toFloat() else 0f
+                    val overThresh = recentRms.count { it > RMS_SPEECH_THRESHOLD }
+                    Log.i(TAG, "[ASRDiag] rms=${"%.4f".format(rms)} " +
+                        "win[min=${"%.4f".format(winMin)} max=${"%.4f".format(winMax)} avg=${"%.4f".format(winAvg)} overThr=$overThresh/${recentRms.size}] " +
+                        "thr=$RMS_SPEECH_THRESHOLD offsetThr=$RMS_SPEECH_OFFSET_THRESHOLD onsetReq=$SPEECH_ONSET_FRAMES " +
+                        "inSpeech=$inSpeech consecOnset=$consecutiveOnsetFrames " +
+                        "accum=${accMs}ms silence=${silenceMs}ms grace=${if (inGracePeriod) "Y" else "N"}")
                 }
                 if (!inGracePeriod && rms > RMS_SPEECH_THRESHOLD) {
                     consecutiveOnsetFrames++

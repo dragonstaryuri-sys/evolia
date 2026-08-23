@@ -86,7 +86,7 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         context: Context,
         providerSetting: ASRProviderSetting.OnlineASR,
         preRollPcm: List<ShortArray>?
-    ) = channelFlow @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO) {
+    ) = channelFlow @androidx.annotation.RequiresPermission(Manifest.permission.RECORD_AUDIO) {
         // 校验配置
         if (providerSetting.apiKey.isBlank()) {
             close(RuntimeException("Online ASR: API Key is empty, please configure it in ASR settings"))
@@ -189,34 +189,33 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             var consecutiveEmptyCount = 0
 
             // === 预卷喂入：打断场景下，把上一轮打断检测收集的用户开头音频喂给 VAD + slicePcm ===
-            // 关键：必须在 read 循环开始前完成，否则用户抢话的开头字会被新开 AudioRecord 丢失
-            // ★ 与正常 read 循环保持一致：先跑 RMS 判断，只有 inSpeechAux=true 或 slicePcm 已非空时才累积
-            //   否则 AI 尾音回声虽然能量不高，但直接塞进 slicePcm → 切片上传 → Whisper 容易误识别"嗯/啊"
+            // 关键：不再使用能量门控筛选，而是全量塞入，确保“话头”绝对完整。
             if (!preRollPcm.isNullOrEmpty()) {
                 val preRollStartNs = System.nanoTime()
-                var preRollFrames = 0
-                var preRollSamples = 0
-                var accumulatedSamples = 0
+                var preRollFramesCount = 0 // 计数器，用于打日志
+                var preRollSamplesCount = 0
                 val now0 = System.currentTimeMillis()
+
+                // 预置开始时间，防止首个切片时长计算为 0
+                sliceStartMs = now0
+
                 for ((idx, frame) in preRollPcm.withIndex()) {
                     if (frame.isEmpty()) continue
                     val samples = FloatArray(frame.size) { frame[it] / 32768.0f }
-                    vad.acceptWaveform(samples)
-                    preRollFrames++
-                    preRollSamples += frame.size
 
+                    // 1. 依然喂给 VAD，保持 VAD 状态机对后续音频的连贯判定
+                    vad.acceptWaveform(samples)
+
+                    // 2. 更新基础 RMS 状态，为后续的切片停顿检测做准备
                     var sumSq = 0.0
                     for (s in samples) sumSq += (s * s).toDouble()
                     val rms = sqrt(sumSq / samples.size).toFloat()
-                    // 帧时间戳：按帧大致平移（预卷是过去的音频，RMS 判断基于时间的逻辑不受影响，
-                    // 这里只用 now0 模拟"正在读"，不影响 inSpeechAux 的核心判断——只有 600ms 静默衰减才依赖时间，
-                    // 预卷总时长仅 1.5s，衰减窗口里不会自然超时）
                     val fakeNow = now0 + idx * (frame.size * 1000 / SAMPLE_RATE)
-                    // 双阈值迟滞：onset 刷新 lastSpeechEnergyAtMs，offset 维持但不刷新
+
+                    // 更新 onset/offset 状态，但不再作为累积的前提
                     if (rms > RMS_SPEECH_THRESHOLD) {
                         consecutiveOnsetFrames++
                         if (!inSpeechAux && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
-                            sliceStartMs = fakeNow
                             inSpeechAux = true
                         }
                         if (inSpeechAux) lastSpeechEnergyAtMs = fakeNow
@@ -231,16 +230,19 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                         }
                     }
 
-                    // ★ 累积规则与正常循环完全一致：inSpeechAux 或已累积过内容才喂 slicePcm
-                    if (inSpeechAux || slicePcm.isNotEmpty()) {
-                        slicePcm.addAll(samples.asList())
-                        accumulatedSamples += frame.size
-                    }
+                    // 3. 【核心修改】全量累积预卷音频，不再判断 inSpeechAux
+                    slicePcm.addAll(samples.asList())
+
+                    preRollFramesCount++
+                    preRollSamplesCount += frame.size
                 }
-                val preRollMs = preRollSamples * 1000 / SAMPLE_RATE
-                val accMs = accumulatedSamples * 1000 / SAMPLE_RATE
-                Log.i(TAG, "[PreRoll] 喂入 ${preRollFrames}帧/${preRollMs}ms, 实际累积=${accMs}ms, inSpeech=$inSpeechAux, " +
-                    "cost=${(System.nanoTime() - preRollStartNs) / 1_000_000}ms")
+
+                // 4. 强制开启说话状态：既然有预卷数据，就认为用户已经开始说话了
+                inSpeechAux = true
+                if (lastSpeechEnergyAtMs == 0L) lastSpeechEnergyAtMs = System.currentTimeMillis()
+
+                val preRollMs = preRollSamplesCount * 1000 / SAMPLE_RATE
+                Log.i(TAG, "[PreRoll] 强制喂入完成: ${preRollFramesCount}帧/${preRollMs}ms, inSpeech已激活")
             }
 
             while (isActive) {

@@ -543,11 +543,15 @@ class VoiceCallManager(
             // 且 preRoll 总时长不够覆盖到尾窗之后，直接丢弃，避免计算偏差。
             val preRollTotalMs = drainedList.sumOf { it.size } * 1000 / 16000
             val preRollEarliestPossibleMs = drainNowMs - preRollTotalMs
-            val allFramesInEcho = preRollEarliestPossibleMs >= 0 && drainNowMs < aiEchoWindowEndMs
+            // fromInterrupt=true（打断场景）：preRoll 来自 interruptionJob 的 AEC 处理后音频，
+            // 已消回声，不走时间过滤兜底（否则会误丢用户开头字）；仅 listeningPreRoll 录的才需要兜底
+            val allFramesInEcho = !fromInterrupt && preRollEarliestPossibleMs >= 0 && drainNowMs < aiEchoWindowEndMs
             if (allFramesInEcho && lastTtsPlayingAtMs > 0L) {
                 // 整个预卷都在 AI 回声尾窗内，没有意义 —— 直接丢弃
-                Log.i(TAG, "startListening: preRoll DROPPED entirely within TTS echo window " +
-                    "(drainNow - lastTts=${drainNowMs - lastTtsPlayingAtMs}ms < window=${ECHO_TAIL_WINDOW_MS}ms) fromInterrupt=$fromInterrupt")
+                Log.i(TAG, "[ASRDiag] preRoll DROPPED entirely within TTS echo window " +
+                    "ttsAgo=${drainNowMs - lastTtsPlayingAtMs}ms < window=${ECHO_TAIL_WINDOW_MS}ms " +
+                    "preRollLen=${preRollTotalMs}ms earliest=${preRollEarliestPossibleMs - lastTtsPlayingAtMs}ms(relTts) " +
+                    "echoFilter=on fromInterrupt=$fromInterrupt")
                 null
             } else {
                 val speechThreshold = RMS_SPEECH_THRESHOLD_PRE_ROLL
@@ -557,6 +561,11 @@ class VoiceCallManager(
                 var totalRmsAccum = 0.0
                 var accFramesBeforeThis = 0
                 var aiEchoSkipped = 0
+                // RMS 分布统计（min/max/avg + 阈值），用于调参诊断
+                var minRms = Float.MAX_VALUE
+                var maxRms = 0f
+                var firstFrameRecMs = 0L
+                var lastFrameRecMs = 0L
                 // 【关键修改点】：创建一个新列表只存非回声帧
                 val cleanFrames = mutableListOf<ShortArray>()
                 for (frame in drainedList) {
@@ -564,7 +573,7 @@ class VoiceCallManager(
                     //   这一帧之前累积了 accFramesBeforeThis samples → 距最后一帧 accSamples*1000/16000 ms 前
                     val msBeforeNow = accFramesBeforeThis * 1000 / 16000
                     val thisFrameRecordedAtMs = drainNowMs - preRollTotalMs + msBeforeNow
-                    val isAiEchoFrame = thisFrameRecordedAtMs < aiEchoWindowEndMs && lastTtsPlayingAtMs > 0L
+                    val isAiEchoFrame = !fromInterrupt && thisFrameRecordedAtMs < aiEchoWindowEndMs && lastTtsPlayingAtMs > 0L
                     var sumSq = 0.0
                     for (i in 0 until frame.size) {
                         val s = frame[i] / 32768.0f
@@ -572,6 +581,10 @@ class VoiceCallManager(
                     }
                     val rms = kotlin.math.sqrt(sumSq / frame.size).toFloat()
                     totalRmsAccum += rms
+                    if (rms < minRms) minRms = rms
+                    if (rms > maxRms) maxRms = rms
+                    if (accFramesBeforeThis == 0) firstFrameRecMs = thisFrameRecordedAtMs
+                    lastFrameRecMs = thisFrameRecordedAtMs
                     if (isAiEchoFrame) {
                         // AI 回声尾窗内的帧：直接丢弃且不算语音帧，并打断连续计数
                         aiEchoSkipped++
@@ -593,18 +606,13 @@ class VoiceCallManager(
                 val totalFrames = drainedList.size
                 val speechRatio = if (totalFrames > 0) speechFrames.toDouble() / totalFrames else 0.0
                 val avgRms = if (totalFrames > 0) (totalRmsAccum / totalFrames).toFloat() else 0f
-                // 至少 30% 帧含语音 OR 连续 6 帧语音（≈192ms）才算"真正有人说话"
-                // 0.20/4 → 0.30/6：收紧条件，防止零星噪音帧累计误判为语音
-                val hasRealSpeech = (speechRatio >= 0.30) || (maxConsecutiveSpeech >= 6)
+                val safeMinRms = if (totalFrames > 0) minRms else 0f
+                // 至少 20% 帧含语音 连续 4 帧语音才算"真正有人说话"
+                // 0.20/4
+                val hasRealSpeech = (speechRatio >= 0.20) || (maxConsecutiveSpeech >= 4)
                 if (hasRealSpeech) {
-                    Log.i(TAG, "startListening: preRoll PASSED filter ${totalFrames}frames/${preRollTotalMs}ms " +
-                        "speech=${(speechRatio*100).toInt()}% maxConsec=${maxConsecutiveSpeech} avgRms=${"%.4f".format(avgRms)} " +
-                        "aiEchoSkipped=${aiEchoSkipped} fromInterrupt=$fromInterrupt")
                     cleanFrames
                 } else {
-                    Log.i(TAG, "startListening: preRoll DROPPED (noise/echo) ${totalFrames}frames/${preRollTotalMs}ms " +
-                        "speech=${(speechRatio*100).toInt()}% maxConsec=${maxConsecutiveSpeech} avgRms=${"%.4f".format(avgRms)} " +
-                        "threshold=${speechThreshold} aiEchoSkipped=${aiEchoSkipped}")
                     null
                 }
             }
@@ -1147,13 +1155,14 @@ class VoiceCallManager(
             }
             if (!isVadRunning || !isActive) return@launch
             if (snapGenId != null && identity.generationId != snapGenId) return@launch
-            delay(200) // 让回声路径稳定
+            delay(50) // 让回声路径稳定,尝试50ms
             Log.i(TAG, "TTS playing; start baseline after ${waitMs}ms")
 
             val buffer = ShortArray(VadDetector.WINDOW_SIZE)
             var consecutiveSpeechFrames = 0
             var duckTriggered = false
             var frameCount = 0L  // 调试用：每 40 帧(~1.3s)采样打印一次 RMS/阈值状态
+            var lastVadDiagMs = 0L  // [ASRDiag] 周期日志节流（每 1s，AI 说话期间）
 
             val slidingWindow = ArrayDeque<Double>()
             var slidingAvg = 0.0
@@ -1235,16 +1244,19 @@ class VoiceCallManager(
                 // 注意：因为 AEC 在底层 AudioEffect 处理，应用层 read() 到的直接是"消后"的结果，
                 // 所以看不到 before 对比，只能靠 strict 状态下的绝对值判断。
                 frameCount++
-                if (frameCount % 40L == 0L) {
-                    Log.i(TAG, buildString {
-                        append("VAD frame=$frameCount read=$read strict=$strictBargeIn ")
-                        append("apm=${if (apm?.isAvailable() == true) "AEC3+NS" else "OFF"} ")
-                        append("rawMax=$rawMax floatMax=${"%.4f".format(floatMax)} ")
-                        append("rms=${"%.4f".format(rms)} thr=${"%.4f".format(rmsThreshold)} ")
-                        append("baseline=${"%.4f".format(slidingAvg)} ")
-                        append("boosts: tail=$tailBoost strict=$strictBoost mult=$BARGE_IN_RMS_MULTIPLIER ")
-                        append("vad=$vadDetected loud=$loudEnough cons=$consecutiveSpeechFrames/$duckFrames~$confirmFrames")
-                    })
+                val nowMs = System.currentTimeMillis()
+                // [ASRDiag] AI 说话期间周期性诊断（每 1s，与 LISTENING 阶段 ASR 循环同关键词，可全程对比）
+                // logcat 搜 "ASRDiag" 即可看到所有阶段的 RMS/阈值：
+                //   stage=AI_SPEAKING：AI 说话中（interruptionJob），rms 应很低（AEC 消了回声）；rms 高=AEC 没消干净
+                //   stage 缺省：LISTENING 中（ASR 循环），不说话 rms=环境噪音，说话 rms 升高
+                if (nowMs - lastVadDiagMs > 1000) {
+                    lastVadDiagMs = nowMs
+                    Log.i(TAG, "[ASRDiag] rms=${"%.4f".format(rms)} thr=${"%.4f".format(rmsThreshold)} " +
+                        "baseline=${"%.4f".format(slidingAvg)} floor=$absoluteFloor " +
+                        "boosts[tail=$tailBoost strict=$strictBoost mult=$BARGE_IN_RMS_MULTIPLIER] " +
+                        "vad=$vadDetected loud=$loudEnough cons=$consecutiveSpeechFrames/$duckFrames~$confirmFrames " +
+                        "strict=$strictBargeIn apm=${if (apm?.isAvailable() == true) "AEC3+NS" else "OFF"} " +
+                        "rawMax=$rawMax floatMax=${"%.4f".format(floatMax)} read=$read stage=AI_SPEAKING")
                 }
 
                 if (vadDetected && loudEnough) {
@@ -1352,30 +1364,32 @@ class VoiceCallManager(
         runCatching { ttsController.setOnFarPcmListener(null) }
         runCatching { apm?.close() }
         apm = null
-        // ===== 条件性 preRoll 清理 + 延迟启动 listeningPreRoll =====
+        // ===== 条件性 preRoll 处理 + 延迟启动 listeningPreRoll =====
         // stopInterruptionDetection 有两种触发场景：
         //   a) AI 自然说完（awaitTtsCompleteThenHandle 等 TTS 静默 1.5s 后调用）：
         //      此时 TTS 已停了 >1.5s，preRoll 里是 1.5s 的干净静音/用户开头音频 → **保留不清**
         //      不需要 delay，立刻启 listeningPreRoll
         //   b) 用户打断（interrupt → stopInterruptionDetection）：
-        //      TTS 刚停，preRoll 里可能有 AI 大音量回声 → **清空**
-        //      需等 ECHO_TAIL_WINDOW_MS 让扬声器振铃衰减后再启 listeningPreRoll
+        //      TTS 刚停，preRoll 是 interruptionJob 录的 —— 该 AudioRecord 通过 session 绑定了
+        //      WebRTC APM，read() 返回的已是 AEC3 消过回声的干净 PCM → **保留不清**（清空会丢用户开头字）
+        //      仅需 delay ECHO_TAIL_WINDOW_MS 后启 listeningPreRoll（避免 AudioRecord 设备冲突）
         val timeSinceLastTts = System.currentTimeMillis() - lastTtsPlayingAtMs
         val isInterruptCase = timeSinceLastTts < ECHO_TAIL_WINDOW_MS
         if (isInterruptCase) {
-            // 打断场景：清空 preRoll 防 AI 回声，delay 后再启 listeningPreRoll
-            synchronized(preRollFrames) { preRollFrames.clear() }
+            // 打断场景：不清空 preRoll —— interruptionJob 的 AudioRecord 通过 session 绑定了
+            // WebRTC APM（AEC3+NS），read() 返回的已是消过回声的干净 PCM，preRoll 里的帧是
+            // 用户语音而非 AI 回声。清空会导致用户开头字丢失（"漏了一些字"的根因）。
+            // 仅 delay 后启 listeningPreRoll（避免和刚释放的打断检测 AudioRecord 设备冲突）
             val needDelayMs = ECHO_TAIL_WINDOW_MS - timeSinceLastTts
-            Log.d(TAG, "stopInterruptionDetection: interrupt case, preRoll cleared, delay ${needDelayMs}ms before listeningPreRoll")
+            Log.i(TAG, "[ASRDiag] stopInterruptionDetection: interrupt case, preRoll preserved (${preRollFrames.size} frames), delay ${needDelayMs}ms before listeningPreRoll")
             scope.launch(Dispatchers.IO) {
                 delay(needDelayMs)
-                synchronized(preRollFrames) { preRollFrames.clear() }
                 startListeningPreRollIfNeeded()
             }
         } else {
             // 自然完成场景：preRoll 是干净的（TTS 已静默很久），保留！
             // 这样 startListening drain 时能拿到打断检测期间收集的干净预卷 → LocalASR 不再吞开头字
-            Log.d(TAG, "stopInterruptionDetection: natural completion, preRoll preserved (${preRollFrames.size} frames), starting listeningPreRoll immediately")
+            Log.i(TAG, "[ASRDiag] stopInterruptionDetection: natural completion, preRoll preserved (${preRollFrames.size} frames), starting listeningPreRoll immediately")
             startListeningPreRollIfNeeded()
         }
     }
@@ -1512,8 +1526,9 @@ class VoiceCallManager(
                 }
             }
         }
-        // 预卷已保留在 preRollFrames，等下一轮 ASR 开始后可自然衔接
-        if (_isActive.value) startListening()
+        // 预卷已保留在 preRollFrames（interruptionJob 录的 AEC 处理后干净帧），等下一轮 ASR 开始后可自然衔接
+        // fromInterrupt=true：让 startListening 跳过 AI 回声时间过滤（信任打断检测的 AEC），避免误丢用户开头字
+        if (_isActive.value) startListening(fromInterrupt = true)
     }
 
     private fun resetStreamingState() {
@@ -1715,14 +1730,14 @@ class VoiceCallManager(
     }
 
     companion object {
-        // PCM 预卷帧数（每帧 32ms，47 帧 ≈ 1.5 秒。之前 31 帧/1s，开头字偶尔漏，扩到 1.5s 兜底）
-        private const val PRE_ROLL_MAX_FRAMES = 47
+        // PCM 预卷帧数（每帧 32ms，31 帧/1s）
+        private const val PRE_ROLL_MAX_FRAMES = 31
 
         private const val L1_CHECK_INTERVAL_MS = 25L * 60 * 1000
         private const val ASR_RETRY_DELAY_MS = 600L
         // 等待提示延迟：ListenerCue 播完后再等 800ms，LLM 仍无可朗读内容就播"等等/我想想"
         // cue 本身 ≈ 200-400ms，加上这 1000ms ≈ 给 LLM 留了 1-1.2s（刚好是大多数模型 TTFT 时间）。
-        private const val WAITING_CUE_DELAY_MS = 1500L
+        private const val WAITING_CUE_DELAY_MS = 2000L
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
@@ -1739,7 +1754,7 @@ class VoiceCallManager(
         // 重新提高到 200ms：配合 stopInterruptionDetection 的 delay 启动 listeningPreRoll，
         // 这段时间**不录音**（而非录了再挡），比用阈值过滤更彻底，且不会漏用户字——
         // 200ms 内用户刚听完 AI 回复，极少能立刻完整地说一句话；delay 完再启预卷正好接上。
-        private const val ECHO_TAIL_WINDOW_MS = 200L
+        private const val ECHO_TAIL_WINDOW_MS = 100L
         // 尾窗门限倍数：轻微抬高即可
         private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
@@ -1747,7 +1762,7 @@ class VoiceCallManager(
         // （500ms 不够：大音量扬声器物理振铃需要 300-500ms 衰减）
         private const val ASR_IGNORE_PERIOD_MS = 1000L
         // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.012）
-        private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.012f
+        private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.005f
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
         private val LISTENER_CUE_BASE = listOf(
