@@ -219,9 +219,9 @@ class SettingsStore(
             )
         }
         .map {
-            var providers = it.providers.ifEmpty { me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS }.toMutableList()
+            var providers = it.providers.ifEmpty { DEFAULT_PROVIDERS }.toMutableList()
             providers = providers.map { provider ->
-                val defaultProvider = me.rerere.rikkahub.data.datastore.DEFAULT_PROVIDERS.find { it.id == provider.id }
+                val defaultProvider = DEFAULT_PROVIDERS.find { it.id == provider.id }
                 if (defaultProvider != null) {
                     provider.copyProvider(
                         builtIn = defaultProvider.builtIn,
@@ -618,7 +618,7 @@ data class DisplaySetting(
     val userAvatar: Avatar = Avatar.Dummy,
     val userNickname: String = "",
     val userEmail: String = "",
-    val chatInputStyle: me.rerere.rikkahub.data.datastore.ChatInputStyle = me.rerere.rikkahub.data.datastore.ChatInputStyle.MINIMAL,
+    val chatInputStyle: ChatInputStyle = ChatInputStyle.MINIMAL,
     val showUserAvatar: Boolean = true,
     val showModelIcon: Boolean = true,
     val showModelName: Boolean = true,
@@ -643,7 +643,9 @@ data class DisplaySetting(
     val providerViewMode: ProviderViewMode = ProviderViewMode.LIST,
     val showContextStacks: Boolean = true,
     val hasShownProviderGuide: Boolean = false,
-    val wechatMode: Boolean = false
+    val wechatMode: Boolean = false,
+    val muteTimeStart: String? = null,
+    val muteTimeEnd: String? = null
 )
 
 @Serializable
@@ -669,7 +671,6 @@ data class WebDavConfig(
 
 @Serializable
 data class EmailConfig(val account: String = "", val password: String = "", val enabled: Boolean = true)
-
 fun Settings.isNotConfigured() = providers.all { it.models.isEmpty() }
 fun Settings.findModelById(uuid: Uuid): Model? = this.providers.findModelById(uuid)
 fun List<ProviderSetting>.findModelById(uuid: Uuid): Model? {
@@ -742,6 +743,29 @@ private val DEFAULT_ASR_PROVIDERS = listOf(
     ASRProviderSetting.OnlineASR(id = DEFAULT_ONLINE_ASR_ID, name = ""),
     ASRProviderSetting.LocalSenseVoiceASR(id = DEFAULT_LOCAL_SENSEVOICE_ASR_ID, name = "")
 )
+
+// 静音时段不自动播放语音
+fun Settings.isMuteTime(): Boolean {
+    val start = displaySetting.muteTimeStart
+    val end = displaySetting.muteTimeEnd
+    if (start.isNullOrBlank() || end.isNullOrBlank()) return false
+
+    return runCatching {
+        val now = java.time.LocalTime.now()
+        // 增加格式化支持，确保解析稳健
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+        val startTime = java.time.LocalTime.parse(start, formatter)
+        val endTime = java.time.LocalTime.parse(end, formatter)
+
+        if (startTime.isBefore(endTime)) {
+            // 同一天：例如 02:00 - 05:00
+            now.isAfter(startTime) && now.isBefore(endTime)
+        } else {
+            // 跨天：例如 23:00 - 07:00
+            now.isAfter(startTime) || now.isBefore(endTime)
+        }
+    }.getOrDefault(false)
+}
 
 // 默认唤醒词：你好艾芙 (n i h a o a i f u)
 // 格式：每行一个，拼音 tokens（空格分隔）@ 显示文本

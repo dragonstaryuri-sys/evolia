@@ -35,7 +35,6 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.graphics.StrokeCap
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.service.voice.VoiceRecorderController
@@ -55,6 +54,7 @@ import me.rerere.rikkahub.data.datastore.ChatInputStyle
 import me.rerere.rikkahub.ui.components.ai.ChatInput
 import me.rerere.rikkahub.ui.components.ai.MinimalChatInput
 import me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay
+import me.rerere.rikkahub.data.datastore.isMuteTime
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -70,8 +70,6 @@ import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.ui.components.chat.CallScreen
-import me.rerere.rikkahub.ui.components.chat.CallStatus
-import me.rerere.rikkahub.ui.pages.chat.ChatUIItem
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 
 private enum class PaginationBoundary {
@@ -1073,6 +1071,7 @@ private fun TopBar(
     val currentAssistant = settings.getCurrentAssistant()
     val isEmpty = !hasUserMessages
     var animateTopPillIn by remember { mutableStateOf(false) }
+    val toaster = LocalToaster.current
 
     LaunchedEffect(conversationId) {
         animateTopPillIn = false
@@ -1114,15 +1113,31 @@ private fun TopBar(
             Spacer(Modifier.width(8.dp))
 
             Surface(
-                onClick = { onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts)) },
+                onClick = {
+                    // 这里的 logic 也要改一下：
+                    // 如果点的时候是静音时间，弹个提醒，不给切开关
+                    if (settings.isMuteTime()) {
+                        toaster.show("当前处于静音时段，自动朗读已禁用")
+                    } else {
+                        onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts))
+                    }
+                },
                 shape = buttonShape,
                 color = topContainerColor,
                 border = topContainerBorder
             ) {
                 Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
+                    // 逻辑：如果 (手动关了) 或者 (正处于静音时段)，图标就显示“关闭”
+                    val isEffectivelyOff = !settings.autoPlayTts || settings.isMuteTime()
                     Icon(
-                        if (settings.autoPlayTts) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeOff,
-                        "Auto Play TTS"
+                        imageVector = if (isEffectivelyOff) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
+                        contentDescription = "Auto Play TTS",
+                        // 可选：静音时段让图标变淡一点（0.5f 透明度）
+                        tint = if (settings.isMuteTime()) {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        } else {
+                            LocalContentColor.current
+                        }
                     )
                 }
             }

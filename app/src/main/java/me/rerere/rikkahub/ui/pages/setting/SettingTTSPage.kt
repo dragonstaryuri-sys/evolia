@@ -62,7 +62,6 @@ import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.pages.setting.components.TTSProviderConfigure
-import me.rerere.rikkahub.utils.plus
 import me.rerere.tts.provider.TTSProviderSetting
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
@@ -90,6 +89,7 @@ import androidx.compose.material.icons.rounded.Close
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.rounded.Schedule
 
 @Composable
 fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
@@ -135,7 +135,7 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
     ) { innerPadding ->
 
-        androidx.compose.foundation.layout.Column(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
@@ -361,8 +361,6 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
                 }
             }
         ) {
-
-            @Suppress("RemoveExplicitTypeArguments")
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -466,26 +464,11 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
 
     if (showFilterSettingsDialog) {
         TtsTextFilterSettingsDialog(
-            rules = settings.displaySetting.ttsTextFilterRules,
-            filterEmojis = settings.displaySetting.filterEmojis,
+            displaySetting = settings.displaySetting,
             onDismiss = { showFilterSettingsDialog = false },
-            onUpdateRules = { newRules ->
-                vm.updateSettings(
-                    settings.copy(
-                        displaySetting = settings.displaySetting.copy(
-                            ttsTextFilterRules = newRules
-                        )
-                    )
-                )
-            },
-            onUpdateFilterEmojis = { enabled ->
-                vm.updateSettings(
-                    settings.copy(
-                        displaySetting = settings.displaySetting.copy(
-                            filterEmojis = enabled
-                        )
-                    )
-                )
+            onUpdateSettings = { newDisplaySetting ->
+                // 收到新包裹，直接更新整个 displaySetting
+                vm.updateSettings(settings.copy(displaySetting = newDisplaySetting))
             }
         )
     }
@@ -493,14 +476,16 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
 
 @Composable
 private fun TtsTextFilterSettingsDialog(
-    rules: List<me.rerere.rikkahub.data.datastore.TtsTextFilterRule>,
-    filterEmojis: Boolean,
+    displaySetting: me.rerere.rikkahub.data.datastore.DisplaySetting,
     onDismiss: () -> Unit,
-    onUpdateRules: (List<me.rerere.rikkahub.data.datastore.TtsTextFilterRule>) -> Unit,
-    onUpdateFilterEmojis: (Boolean) -> Unit
+    onUpdateSettings: (me.rerere.rikkahub.data.datastore.DisplaySetting) -> Unit // 统一的回调
 ) {
+    val rules = displaySetting.ttsTextFilterRules
+    val filterEmojis = displaySetting.filterEmojis
     var showAddDialog by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<me.rerere.rikkahub.data.datastore.TtsTextFilterRule?>(null) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    var pickingStart by remember { mutableStateOf(true) } // true 为选择开始时间，false 为结束时间
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -586,7 +571,9 @@ private fun TtsTextFilterSettingsDialog(
                     trailingContent = {
                         HapticSwitch(
                             checked = filterEmojis,
-                            onCheckedChange = onUpdateFilterEmojis
+                            onCheckedChange = { enabled ->
+                                onUpdateSettings(displaySetting.copy(filterEmojis = enabled))
+                            }
                         )
                     }
                 )
@@ -620,20 +607,112 @@ private fun TtsTextFilterSettingsDialog(
                         TtsFilterRuleItem(
                             rule = rule,
                             onToggle = { enabled ->
-                                onUpdateRules(rules.map {
+                                onUpdateSettings(displaySetting.copy(ttsTextFilterRules = rules.map {
                                     if (it.id == rule.id) it.copy(enabled = enabled) else it
-                                })
+                                }))
                             },
                             onEdit = { editingRule = rule },
                             onDelete = {
-                                onUpdateRules(rules.filter { it.id != rule.id })
+                                onUpdateSettings(displaySetting.copy(ttsTextFilterRules = rules.filter { it.id != rule.id }))
                             }
                         )
                     }
                 }
             }
-
+            androidx.compose.material3.Card(
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                shape = AppShapes.CardLarge
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 开始时间选择
+                    OutlinedTextField(
+                        value = displaySetting.muteTimeStart ?: "",
+                        onValueChange = {}, // 不允许手动输入
+                        label = { Text("开始时间") },
+                        modifier = Modifier.weight(1f),
+                        readOnly = true, // 只读，点击触发
+                        trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                            .also { interactionSource ->
+                                LaunchedEffect(interactionSource) {
+                                    interactionSource.interactions.collect {
+                                        if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                            pickingStart = true
+                                            showTimePicker = true
+                                        }
+                                    }
+                                }
+                            }
+                    )
+                    // 结束时间选择
+                    OutlinedTextField(
+                        value = displaySetting.muteTimeEnd ?: "",
+                        onValueChange = {},
+                        label = { Text("结束时间") },
+                        modifier = Modifier.weight(1f),
+                        readOnly = true,
+                        trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                            .also { interactionSource ->
+                                LaunchedEffect(interactionSource) {
+                                    interactionSource.interactions.collect {
+                                        if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
+                                            pickingStart = false
+                                            showTimePicker = true
+                                        }
+                                    }
+                                }
+                            }
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
+            if (showTimePicker) {
+                val currentTime = if (pickingStart) displaySetting.muteTimeStart else displaySetting.muteTimeEnd
+                val initialHour = currentTime?.substringBefore(":")?.toIntOrNull() ?: 0
+                val initialMinute = currentTime?.substringAfter(":")?.toIntOrNull() ?: 0
+
+                val timePickerState = androidx.compose.material3.rememberTimePickerState(
+                    initialHour = initialHour,
+                    initialMinute = initialMinute,
+                    is24Hour = true
+                )
+
+                // 这里由于 M3 官方没提供标准的 TimePickerDialog 包裹类，我们写一个通用的
+                androidx.compose.material3.DatePickerDialog( // 借用 DatePickerDialog 的容器样式
+                    onDismissRequest = { showTimePicker = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val formattedTime = String.format("%02d:%02d", timePickerState.hour, timePickerState.minute)
+                            if (pickingStart) {
+                                onUpdateSettings(displaySetting.copy(muteTimeStart = formattedTime))
+                            } else {
+                                onUpdateSettings(displaySetting.copy(muteTimeEnd = formattedTime))
+                            }
+                            showTimePicker = false
+                        }) { Text(stringResource(R.string.confirm)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            // 可选：清除时间
+                            if (pickingStart) {
+                                onUpdateSettings(displaySetting.copy(muteTimeStart = null))
+                            } else {
+                                onUpdateSettings(displaySetting.copy(muteTimeEnd = null))
+                            }
+                            showTimePicker = false
+                        }) { Text("清除") }
+                    }
+                ) {
+                    Box(modifier = Modifier.padding(24.dp).align(Alignment.CenterHorizontally)) {
+                        androidx.compose.material3.TimePicker(state = timePickerState)
+                    }
+                }
+            }
         }
     }
 
@@ -645,13 +724,12 @@ private fun TtsTextFilterSettingsDialog(
                 editingRule = null
             },
             onSave = { newRule ->
-                if (editingRule != null) {
-                    onUpdateRules(rules.map {
-                        if (it.id == editingRule!!.id) newRule else it
-                    })
+                val newRules = if (editingRule != null) {
+                    rules.map { if (it.id == editingRule!!.id) newRule else it }
                 } else {
-                    onUpdateRules(rules + newRule)
+                    rules + newRule
                 }
+                onUpdateSettings(displaySetting.copy(ttsTextFilterRules = newRules))
                 showAddDialog = false
                 editingRule = null
             }
@@ -745,7 +823,7 @@ private fun TtsFilterRuleEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    androidx.compose.material3.OutlinedTextField(
+                    OutlinedTextField(
                         value = pattern,
                         onValueChange = { pattern = it },
                         label = { Text(stringResource(R.string.tts_filter_dialog_pattern_label)) },
@@ -753,7 +831,7 @@ private fun TtsFilterRuleEditDialog(
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
-                    androidx.compose.material3.OutlinedTextField(
+                    OutlinedTextField(
                         value = endPattern,
                         onValueChange = { endPattern = it },
                         label = { Text(stringResource(R.string.tts_filter_dialog_end_pattern_label)) },
@@ -897,7 +975,6 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                 }
             }
         ) {
-            @Suppress("RemoveExplicitTypeArguments")
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
