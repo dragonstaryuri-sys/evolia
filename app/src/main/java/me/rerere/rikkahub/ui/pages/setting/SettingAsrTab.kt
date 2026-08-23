@@ -142,7 +142,8 @@ fun AsrTab(
                 me.rerere.rikkahub.ui.pages.setting.components.ASRProviderConfigure(
                     setting = localProvider,
                     providers = settings.providers,
-                    onValueChange = { localProvider = it }
+                    onValueChange = { localProvider = it },
+                    modifier = Modifier.weight(1f)
                 )
 
                 // 取消 / 保存行（对齐 TTS 风格）
