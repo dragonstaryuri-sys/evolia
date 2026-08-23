@@ -51,7 +51,7 @@ import kotlin.collections.set
 private const val TAG = "VoiceCallManager"
 
 /**
- * 三层身份：避免旧异步结果串改新轮状态（遵循 PDF 的 call/turn/generation 协议）。
+ * 三层身份：避免旧异步结果串改新轮状态（遵循 call/turn/generation 协议）。
  *
  * - callSessionId : 整通电话生命周期，从 startCall 到 hangup；
  * - turnId        : 一轮（用户说 + AI答），每次 ASR final 时生成新 turn；
@@ -1155,8 +1155,8 @@ class VoiceCallManager(
             }
             if (!isVadRunning || !isActive) return@launch
             if (snapGenId != null && identity.generationId != snapGenId) return@launch
-            delay(50) // 让回声路径稳定,尝试50ms
-            Log.i(TAG, "TTS playing; start baseline after ${waitMs}ms")
+            //delay(50) // 让回声路径稳定,尝试50ms
+            //Log.i(TAG, "TTS playing; start baseline after ${waitMs}ms")
 
             val buffer = ShortArray(VadDetector.WINDOW_SIZE)
             var consecutiveSpeechFrames = 0
@@ -1381,15 +1381,11 @@ class VoiceCallManager(
             // 用户语音而非 AI 回声。清空会导致用户开头字丢失（"漏了一些字"的根因）。
             // 仅 delay 后启 listeningPreRoll（避免和刚释放的打断检测 AudioRecord 设备冲突）
             val needDelayMs = ECHO_TAIL_WINDOW_MS - timeSinceLastTts
-            Log.i(TAG, "[ASRDiag] stopInterruptionDetection: interrupt case, preRoll preserved (${preRollFrames.size} frames), delay ${needDelayMs}ms before listeningPreRoll")
             scope.launch(Dispatchers.IO) {
                 delay(needDelayMs)
                 startListeningPreRollIfNeeded()
             }
         } else {
-            // 自然完成场景：preRoll 是干净的（TTS 已静默很久），保留！
-            // 这样 startListening drain 时能拿到打断检测期间收集的干净预卷 → LocalASR 不再吞开头字
-            Log.i(TAG, "[ASRDiag] stopInterruptionDetection: natural completion, preRoll preserved (${preRollFrames.size} frames), starting listeningPreRoll immediately")
             startListeningPreRollIfNeeded()
         }
     }
@@ -1401,7 +1397,6 @@ class VoiceCallManager(
      *
      * 源头级防 AI 自录：本循环内的每一帧都会做两道门控 ——
      *   1. TTS 状态门：AI 正在播放 / 停后 ECHO_TAIL_WINDOW_MS 内 → 直接丢，不进预卷
-     *   2. RMS 能量门：低于 RMS_SPEECH_THRESHOLD_PRE_ROLL（纯环境噪声） → 丢，不占预卷
      * 这样 preRollFrames 里从源头就没有 AI 尾音，下游的能量过滤 + ASR 就不会"看见"AI 的话。
      */
     @SuppressLint("MissingPermission", "SetWorldReadable")
@@ -1737,7 +1732,7 @@ class VoiceCallManager(
         private const val ASR_RETRY_DELAY_MS = 600L
         // 等待提示延迟：ListenerCue 播完后再等 800ms，LLM 仍无可朗读内容就播"等等/我想想"
         // cue 本身 ≈ 200-400ms，加上这 1000ms ≈ 给 LLM 留了 1-1.2s（刚好是大多数模型 TTFT 时间）。
-        private const val WAITING_CUE_DELAY_MS = 2000L
+        private const val WAITING_CUE_DELAY_MS = 3000L
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
@@ -1750,10 +1745,8 @@ class VoiceCallManager(
         // RMS 超过 baseline 多少倍视为抢话。1.8→1.4，降低门槛让正常音量就能打断
         private const val BARGE_IN_RMS_MULTIPLIER = 1.4
         // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"。
-        // 220→150→50 下调后大音量手机出现"AI录自己"，因为 50ms 不够扬声器物理振铃衰减（尤其低音单元）。
-        // 重新提高到 200ms：配合 stopInterruptionDetection 的 delay 启动 listeningPreRoll，
         // 这段时间**不录音**（而非录了再挡），比用阈值过滤更彻底，且不会漏用户字——
-        // 200ms 内用户刚听完 AI 回复，极少能立刻完整地说一句话；delay 完再启预卷正好接上。
+        // 100ms 内用户刚听完 AI 回复，极少能立刻完整地说一句话；delay 完再启预卷正好接上。
         private const val ECHO_TAIL_WINDOW_MS = 100L
         // 尾窗门限倍数：轻微抬高即可
         private const val ECHO_TAIL_BOOST = 1.1
@@ -1761,7 +1754,7 @@ class VoiceCallManager(
         // ASR 忽略期：从 TTS 播完后开始计时，800ms 覆盖大音量扬声器的尾音回声
         // （500ms 不够：大音量扬声器物理振铃需要 300-500ms 衰减）
         private const val ASR_IGNORE_PERIOD_MS = 1000L
-        // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.012）
+        // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.005）
         private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.005f
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
