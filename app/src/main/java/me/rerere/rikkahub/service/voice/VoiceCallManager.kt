@@ -4,12 +4,14 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
@@ -167,6 +169,9 @@ class VoiceCallManager(
         }
         runCatching {
             am.mode = AudioManager.MODE_IN_COMMUNICATION
+            Log.e(TAG, "尝试设置模式为 MODE_IN_COMMUNICATION, 设置后结果: ${am.mode}")
+        }.onFailure {
+            Log.e(TAG, "设置音频模式失败！", it)
         }
         applySpeakerRoute(_isSpeakerOn.value)
         Log.i(TAG, "enterCallAudioMode: mode→IN_COMMUNICATION, speaker=${_isSpeakerOn.value}")
@@ -193,21 +198,46 @@ class VoiceCallManager(
      */
     private fun applySpeakerRoute(speakerOn: Boolean) {
         val am = audioManager ?: return
+        Log.i(TAG, "applySpeakerRoute: speakerOn=$speakerOn, currentMode=${am.mode}")
         runCatching {
-            am.isSpeakerphoneOn = speakerOn
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val devices = am.availableCommunicationDevices
+                Log.i(TAG, "Available devices: ${devices.map { it.type }}")
+                if (speakerOn) {
+                    // 开启扬声器：寻找扬声器设备并设置
+                    val speakerDevice = devices.find { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    if (speakerDevice != null) {
+                        val result = am.setCommunicationDevice(speakerDevice)
+                        Log.i(TAG, "setCommunicationDevice(SPEAKER) result: $result")
+                    } else {
+                        Log.w(TAG, "Warning: Speaker device NOT found in available list!")
+                        am.isSpeakerphoneOn = true // 兜底旧方法
+                    }
+                } else {
+                    // 关闭扬声器：清除之前的设备覆盖，让系统恢复默认路由（听筒或蓝牙）
+                    am.clearCommunicationDevice()
+                    Log.i(TAG, "clearCommunicationDevice() executed")
+                    am.isSpeakerphoneOn = false // 兜底旧方法
+                }
+            } else {
+                // Android 12 以下继续使用旧方法
+                am.isSpeakerphoneOn = speakerOn
+                Log.i(TAG, "Legacy switch: isSpeakerphoneOn=$speakerOn")
+            }
+            val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
             if (speakerOn) {
-                // 扬声器：恢复音量（适度，不取最大避免爆音）
-                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
                 val targetVol = (maxVol * 0.85f).toInt().coerceIn(1, maxVol)
                 am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
+                Log.e(TAG, "扬声器音量已设定为: $targetVol / $maxVol")
             } else {
-                // 听筒：使用较小音量（听筒灵敏度高，太大刺耳）
-                val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
                 val targetVol = if (savedVolume in 1..maxVol) savedVolume else (maxVol * 0.45f).toInt().coerceIn(1, maxVol)
                 am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
+                Log.e(TAG, "听筒音量已设定为: $targetVol / $maxVol")
             }
-        }.onFailure { Log.w(TAG, "applySpeakerRoute($speakerOn) failed", it) }
-        Log.i(TAG, "applySpeakerRoute: speaker=$speakerOn")
+        }.onFailure {
+            // 🔍 如果整个过程崩了，这里会抓到报错
+            Log.w(TAG, "applySpeakerRoute 发生严重错误！", it)
+        }
     }
 
     private var conversationId: Uuid? = null

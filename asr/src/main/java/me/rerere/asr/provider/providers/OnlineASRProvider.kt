@@ -242,7 +242,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 if (lastSpeechEnergyAtMs == 0L) lastSpeechEnergyAtMs = System.currentTimeMillis()
 
                 val preRollMs = preRollSamplesCount * 1000 / SAMPLE_RATE
-                Log.i(TAG, "[PreRoll] 强制喂入完成: ${preRollFramesCount}帧/${preRollMs}ms, inSpeech已激活")
             }
 
             while (isActive) {
@@ -291,10 +290,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 // --- 2.1 切片诊断日志：每累积 5s 打一行帮助排查 ---
                 val sliceMs = slicePcm.size * 1000 / SAMPLE_RATE
                 val silenceMs = now - lastSpeechEnergyAtMs
-                if (sliceMs >= 5000 && sliceMs % 5000 < 32) {
-                    Log.d(TAG, "[切片诊断] 已累积=${sliceMs}ms 静音=${silenceMs}ms RMS=${"%.4f".format(rms)}" +
-                        " inSpeech=$inSpeechAux 阈值RMS=$RMS_SPEECH_THRESHOLD 切片条件: ≥${MIN_SLICE_MS}ms且停顿≥${SHORT_SILENCE_SLICE_MS}ms")
-                }
 
                 // --- 3. 触发切片上传（Partial）：停顿触发 + 超长安全保护切片 ---
                 // 主要触发：检测到 ≥SHORT_SILENCE_SLICE_MS 的自然停顿（用户换气/断句）
@@ -310,7 +305,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 val maxLenTriggered = sliceMs >= MAX_SLICE_MS && rms <= RMS_SPEECH_OFFSET_THRESHOLD
                 val inflightTimedOut = sliceInFlight.get() && (now - sliceInFlightStartMs) > SLICE_INFLIGHT_TIMEOUT_MS
                 if (inflightTimedOut) {
-                    Log.w(TAG, "sliceInFlight timed out (${now - sliceInFlightStartMs}ms), force-allowing new slice")
                     sliceInFlight.set(false)
                 }
                 // 噪声保护：连续空切片时暂停，但只在 promptText 为空时（没有已识别内容）
@@ -321,7 +315,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     // 切片快照
                     val sliceSamples = slicePcm.toFloatArray()
                     slicePcm.clear()
-                    sliceStartMs = now
                     sliceInFlight.set(true)
                     sliceInFlightStartMs = now
                     // 当前已识别文本快照（作为 prompt 传给 Whisper）
@@ -337,11 +330,7 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                                     (sliceSamples[it] * 32767f).toInt().toShort()
                                 }
                                 val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
-                                val sliceMsValue = sliceSamples.size * 1000 / SAMPLE_RATE
-                                Log.i(TAG, "┌─[Partial 切片上传][$triggerReason] 时长=${sliceMsValue}ms 停顿=${silenceMs}ms" +
-                                    " prompt=\"${promptText.take(30)}\"")
                                 val result = transcribe(wavBytes, providerSetting, promptText)
-                                Log.i(TAG, "└─[Partial 切片返回] 识别=\"${result.trim()}\" 累积=\"${(promptText + result.trim()).trim()}\"")
                                 result
                             } catch (e: Exception) {
                                 Log.w(TAG, "Slice transcribe failed", e)
@@ -349,7 +338,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                             }
                             // ★ 竞态检查：如果 epoch 变了，说明 Final 已经执行了，丢弃该切片结果
                             if (capturedEpoch != sliceEpoch.get()) {
-                                Log.i(TAG, "Slice dropped (epoch mismatch: Final already sent)")
                                 return@launch
                             }
                             if (sliceText.isNotBlank() && isActive) {
@@ -374,7 +362,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                                     }
                                     // epoch mismatch：recognizedText 被清空或不匹配，丢弃
                                     else -> {
-                                        Log.i(TAG, "Slice prefix mismatch (recognizedText changed), dropping stale result")
                                         null
                                     }
                                 }
@@ -387,14 +374,12 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                             } else {
                                 // 空结果：噪声。递增计数器
                                 consecutiveEmptyCount++
-                                Log.d(TAG, "Slice empty, consecutiveEmptyCount=$consecutiveEmptyCount")
                                 // ★ 无条件清理：不管 promptText 是否为空都清。
                                 //   之前只有 promptText.isEmpty() 才清 → 用户说完一句话后，
                                 //   噪声切片返回空但不清 slicePcm → 噪声持续累积 → Whisper 把噪声识别成 "嗯""ja."
                                 slicePcm.clear()
                                 inSpeechAux = false
                                 consecutiveOnsetFrames = 0
-                                Log.i(TAG, "Empty slice, clearing slicePcm + resetting inSpeechAux (noise)")
                             }
                         } finally {
                             sliceInFlight.set(false)
@@ -419,7 +404,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     //   等待期间 AudioRecord 内部缓冲会暂存音频，不会丢失（VAD 已判定用户说完了）。
                     if (sliceInFlight.get()) {
                         val waitStart = System.currentTimeMillis()
-                        Log.i(TAG, "[Final] Waiting for in-flight slice before processing...")
                         while (sliceInFlight.get() && isActive) {
                             val elapsed = System.currentTimeMillis() - waitStart
                             if (elapsed > SLICE_INFLIGHT_TIMEOUT_MS) {
@@ -431,8 +415,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                         Log.i(TAG, "[Final] In-flight slice resolved after ${System.currentTimeMillis() - waitStart}ms, recognizedText=\"${recognizedText.get().take(30)}\"")
                     }
 
-                    // ★ Final 时递增 epoch，让还在飞行中的切片返回时自动丢弃
-                    val finalEpoch = sliceEpoch.incrementAndGet()
 
                     // 只用 slicePcm，不用 VAD segment 的音频
                     val finalSamples = slicePcm.toFloatArray()
@@ -484,7 +466,6 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     // 重置状态
                     recognizedText.set("")
                     inSpeechAux = false
-                    sliceStartMs = 0L
                     // ★ 重置并发标志，确保下一轮可以正常切片
                     sliceInFlight.set(false)
                     // ★ Final 后设静默期：1.5s 内忽略噪声，防止回声/环境音触发空切片循环
