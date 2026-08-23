@@ -336,8 +336,15 @@ fun CallScreen(
                     val bubbleColor = Color.White.copy(alpha = 0.12f)
                     val textColor = Color.White
                     val iconTint = if (isUser) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
-                    // 固定最大高度（≈4.5 行文字），气泡高度不超过这个值；文字超出时内部滚动
-                    val bubbleMaxHeight = 96.dp
+                    // 固定最大高度（≈5 行文字），气泡高度不超过这个值；文字超出时内部滚动
+                    val bubbleMaxHeight = 110.dp
+
+                    // 自动滚动逻辑：记录滚动状态并监听文字或最大滚动值变化
+                    val scrollState = rememberScrollState()
+                    LaunchedEffect(displayText, scrollState.maxValue) {
+                        scrollState.animateScrollTo(scrollState.maxValue)
+                    }
+
                     Row(
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -358,7 +365,7 @@ fun CallScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .verticalScroll(rememberScrollState())
+                                .verticalScroll(scrollState)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
