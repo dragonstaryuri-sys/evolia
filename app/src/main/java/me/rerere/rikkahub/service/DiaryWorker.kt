@@ -12,7 +12,11 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
@@ -28,6 +32,7 @@ import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
+import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -44,6 +49,9 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "DiaryWorker"
 private const val CHUNK_SIZE = 40_000
+
+/** 第一个有效 assistant 消息（首 token）的等待超时：仅限制"模型启动响应"，后续输出内容不受时间限制 */
+private const val FIRST_CHUNK_TIMEOUT_MS = 120_000L
 
 private const val DIARY_MARKDOWN_INSTRUCTION = """
 
@@ -69,6 +77,11 @@ class DiaryWorker(
         val assistantIdStr = inputData.getString("assistantId")
         val isManual = inputData.getBoolean("isManual", false)
 
+        // —— 生成过程中使用的共享状态（用于失败时保留已有内容） ——
+        var inProgressDiaryId: String? = null
+        var generatedContent = ""
+        var hadAnyChunkSuccess = false
+
         return try {
             val currentSettings = settingsStore.settingsFlow.first { !it.init }
             val assistantId = assistantIdStr?.let { Uuid.parse(it) }
@@ -91,6 +104,23 @@ class DiaryWorker(
                     Result.success()
                 }
             }
+
+            // ——————————————————————————————————————————————
+            // ★ 修复：提前在 DB 里占一个坑位（空内容日记 skeleton）
+            //   后续每个 chunk 成功都立刻 update 到 DB，
+            //   即使中途超时/取消，前面已经生成的内容也不会丢失。
+            // ——————————————————————————————————————————————
+            val skeletonId = Uuid.random().toString()
+            diaryRepo.insertDiary(
+                AgentDiaryEntity(
+                    id = skeletonId,
+                    assistantId = assistant.id.toString(),
+                    content = "",
+                    date = todayStr,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            inProgressDiaryId = skeletonId
 
             val lastDiary = diaryRepo.getLastDiaryOfAssistant(assistant.id.toString())
             val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
@@ -117,8 +147,6 @@ class DiaryWorker(
                 ?: currentSettings.findModelById(currentSettings.chatModelId)
                 ?: error("没有可用模型")
 
-            var generatedContent = ""
-
             if (newMessages.isEmpty()) {
                 val memories = memoryRepo.getCombinedMemoriesFlow(assistant.id.toString()).first()
                 val selectedMemories = if (memories.isNotEmpty()) {
@@ -133,7 +161,14 @@ class DiaryWorker(
                     "locale" to locale
                 ) + DIARY_MARKDOWN_INSTRUCTION
 
-                generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt, isManual)
+                generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt)
+                // 单块分支：成功就立刻写盘
+                if (generatedContent.isNotBlank()) {
+                    diaryRepo.updateDiary(
+                        diaryRepo.getDiaryById(skeletonId)!!.copy(content = generatedContent)
+                    )
+                    hadAnyChunkSuccess = true
+                }
             } else {
                 val messageGroups = mutableListOf<List<UIMessage>>()
                 var currentGroup = mutableListOf<UIMessage>()
@@ -193,54 +228,107 @@ class DiaryWorker(
                         "locale" to locale
                     ) + timeRef + (if (isFirst) DIARY_MARKDOWN_INSTRUCTION else "")
 
-                    generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt, isManual)
+                    val chunkResult = performGeneration(currentSettings, model, assistant, finalPrompt)
+
+                    // —— ★ 增量落库：每个 chunk 生成成功立刻写 DB，下次断点能续上 ——
+                    if (chunkResult.isNotBlank()) {
+                        generatedContent = chunkResult
+                        diaryRepo.updateDiary(
+                            diaryRepo.getDiaryById(skeletonId)!!.copy(content = generatedContent)
+                        )
+                        hadAnyChunkSuccess = true
+                    }
                 }
             }
 
             if (generatedContent.isNotBlank()) {
-                val diary = AgentDiaryEntity(
-                    id = Uuid.random().toString(),
-                    assistantId = assistant.id.toString(),
-                    content = generatedContent,
-                    date = todayStr,
-                    createdAt = System.currentTimeMillis()
-                )
-                diaryRepo.insertDiary(diary)
-
                 if (!isManual) {
                     showSuccessNotification(assistant.name, assistant.id.toString())
                 }
-                Result.success()
+                Result.success(workDataOf("partial" to false))
             } else {
-                // 如果没有生成任何内容，也标记为跳过
+                // 没有生成任何内容 → 清掉空壳避免占位
+                inProgressDiaryId?.let { diaryRepo.deleteDiaryById(it) }
                 Result.success(workDataOf("skipped" to true, "reason" to "no_content"))
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Diary generation failed", e)
-            if (isManual) {
-                val errorInfo = e.localizedMessage ?: e.toString()
-                val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
-                showSimpleNotification(errorMsg, assistantIdStr)
-                return Result.failure(workDataOf("error" to errorInfo))
+        } catch (ce: CancellationException) {
+            // ——————————————————————————————————————————————
+            // ★ 修复 ①：CancellationException 必须原样重抛
+            //   - WorkManager/协程取消属于正常行为（用户重复点击、切后台被杀、系统回收）
+            //   - 不弹"失败"通知，不误导用户
+            //   - 如果已有部分内容写入 DB，保留不回滚（用户仍能看到进度）
+            // ——————————————————————————————————————————————
+            Log.i(TAG, "Diary job cancelled, hadAnyChunkSuccess=$hadAnyChunkSuccess, preservedDiaryId=$inProgressDiaryId")
+            if (!hadAnyChunkSuccess) {
+                // 完全没产出：删掉 skeleton，避免留下空日记占今日位置
+                inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
             }
-            if (runAttemptCount < 3) Result.retry() else Result.failure()
+            throw ce
+        } catch (e: Exception) {
+            Log.e(TAG, "Diary generation failed, hadAnyChunkSuccess=$hadAnyChunkSuccess", e)
+            val errorInfo = e.localizedMessage ?: e.toString()
+            return when {
+                // —— 部分成功：保留已生成的内容，提示用户，不记失败不重试 ——
+                hadAnyChunkSuccess && generatedContent.isNotBlank() -> {
+                    if (isManual) {
+                        val partialMsg = applicationContext.getString(
+                            R.string.discover_page_diary_generate_partial,
+                            errorInfo
+                        )
+                        showSimpleNotification(partialMsg, assistantIdStr)
+                    }
+                    Result.success(
+                        workDataOf(
+                            "partial" to true,
+                            "reason" to "partial_on_error",
+                            "error" to errorInfo
+                        )
+                    )
+                }
+                // —— 完全失败且手动触发：直接通知失败，不重试 ——
+                isManual -> {
+                    inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
+                    val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
+                    showSimpleNotification(errorMsg, assistantIdStr)
+                    Result.failure(workDataOf("error" to errorInfo))
+                }
+                // —— 完全失败且自动触发：按现有策略最多重试 3 次 ——
+                else -> {
+                    inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
+                    if (runAttemptCount < 3) Result.retry() else Result.failure()
+                }
+            }
         }
     }
 
+    /**
+     * 执行单轮 AI 文本生成。
+     *
+     * ★ 修复 ②：超时策略由"整个生成 ≤180s/300s"改为"首 token ≤120s"
+     *   - 首 chunk（第一个 assistant 有效内容）必须在 120s 内返回，否则视为模型不响应 → 超时取消
+     *   - 一旦收到首 chunk，后续输出内容不受总时长限制（消息再多也能慢慢生成完）
+     *   - 通过 watchdog + CompletableDeferred 实现：任何一条子协程异常都会让 coroutineScope 取消另一条
+     */
     private suspend fun performGeneration(
         settings: me.rerere.rikkahub.data.datastore.Settings,
         model: me.rerere.ai.provider.Model,
         assistant: me.rerere.rikkahub.core.data.model.Assistant,
-        prompt: String,
-        isManual: Boolean
-    ): String {
+        prompt: String
+    ): String = coroutineScope {
         var result = ""
-        val timeoutMillis = if (isManual) 180_000L else 300_000L
-        withTimeout(timeoutMillis) {
+        // 首 chunk 闸门：收到第一个非空 assistant 内容后 complete
+        val firstChunkGate = CompletableDeferred<Unit>()
+
+        // Watchdog：只监控首 chunk 启动时间，收到后自动进入无限制模式
+        val watchdog = launch {
+            withTimeout(FIRST_CHUNK_TIMEOUT_MS) { firstChunkGate.await() }
+        }
+
+        try {
             generationHandler.generateText(
                 settings = settings,
                 model = model,
-                messages = listOf(me.rerere.ai.ui.UIMessage.user(prompt)),
+                messages = listOf(UIMessage.user(prompt)),
                 assistant = assistant.copy(
                     temperature = 0.8f,
                     enableMemory = false,
@@ -250,15 +338,28 @@ class DiaryWorker(
                 ),
                 enabledModeIds = emptySet()
             ).collect { chunk ->
-                if (chunk is me.rerere.rikkahub.data.ai.GenerationChunk.Messages) {
+                if (chunk is GenerationChunk.Messages) {
                     val lastMessage = chunk.messages.lastOrNull()
                     if (lastMessage?.role == MessageRole.ASSISTANT) {
-                        result = lastMessage.toContentText()
+                        val text = lastMessage.toContentText()
+                        result = text
+                        if (text.isNotBlank()) {
+                            // 解锁首 chunk 闸门 → watchdog 正常结束 → 进入无限制输出阶段
+                            firstChunkGate.complete(Unit)
+                        }
                     }
                 }
             }
+            // Flow 正常结束但 result 仍为空（模型返回空内容）→ 也把闸门打开让 watchdog 结束
+            firstChunkGate.complete(Unit)
+            // 等待 watchdog 确认完成，避免作用域提前结束
+            watchdog.join()
+        } finally {
+            // 兜底：无论成功失败/异常，确保 watchdog 不会泄漏
+            watchdog.cancel()
         }
-        return result
+
+        result
     }
 
     private fun formatTimestamp(ts: Long): String =

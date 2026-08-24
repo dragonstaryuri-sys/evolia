@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="default_assistant_name">Evolia</string>
   <string name="chat_page_title">对话</string>
@@ -801,18 +801,15 @@
   <string name="chat_message_tool_python_delete_file">删除文件: %1$s</string>
   <string name="chat_message_tool_python_import">导入附件</string>
   <string name="chat_message_tool_python_output">输出</string>
-
   <!-- UI Display -->
   <string name="setting_display_page_show_assistant_bubbles_title">显示助手对话气泡</string>
   <string name="setting_display_page_show_assistant_bubbles_desc">在助手的消息周围显示聊天气泡</string>
   <string name="setting_provider_page_add_from_list">从列表添加</string>
-
   <!-- Context Management -->
   <string name="context_search_results_title">搜索结果</string>
   <string name="context_max_search_results">保留最近 %d 次搜索</string>
   <string name="context_max_search_results_desc">限制保留的搜索结果数量 (0 = 无限制)</string>
   <string name="context_max_search_results_value">%d 次搜索</string>
-
   <!-- Message Summarization (Context Refresh) -->
   <string name="context_max_search_results_unlimited">无限制</string>
   <string name="context_refresh_desc">将对话压缩为摘要以释放上下文空间</string>
@@ -889,7 +886,6 @@
   <string name="lorebook_export_error">世界书（Lorebook）导出失败</string>
   <string name="lorebook_export_format">导出格式</string>
   <string name="reset">重置</string>
-
   <!-- Discover -->
   <string name="discover_page_title">发现</string>
   <string name="discover_page_diary">日记</string>
@@ -905,8 +901,10 @@
   <string name="discover_page_diary_delete_confirm">确定要删除这篇日记吗？</string>
   <string name="discover_page_diary_generating">正在生成日记...</string>
   <string name="discover_page_diary_generate_success">TA的日记更新啦</string>
+  <string name="discover_page_diary_generate_partial_toast">部分内容已生成，可以先看已有的内容~</string>
+  <string name="discover_page_diary_generating_already">正在努力写啦，请稍候再试，不要重复点击哦~</string>
+  <string name="discover_page_diary_generate_partial">日记部分内容已生成（最后一段出错: %s），你可以先去看看已生成的内容~</string>
   <string name="discover_page_diary_no_chat_today">没有找到今日聊天记录</string>
-
   <!-- Diary Settings -->
   <string name="setting_model_page_diary_model">日记编写模型</string>
   <string name="setting_model_page_diary_model_desc">用于生成智能体日记的模型，建议选择按次计费的模型</string>
@@ -980,7 +978,6 @@
   <string name="memory_optimizing">AI 正在深度优化记忆...</string>
   <string name="memory_optimize_success">优化成功：合并/更新了 %1$d 条，删除了 %2$d 条冗余片段，新增了 %3$d 条记忆。</string>
   <string name="memory_optimize_no_change">记忆已经非常整洁啦！</string>
-
   <!-- 模型设置 -->
   <string name="setting_model_page_memory_model">记忆模型</string>
   <string name="setting_model_page_memory_model_desc">用于记忆优化与加强的模型，建议选择有推理能力的模型</string>
@@ -1055,8 +1052,6 @@
   <string name="assistant_advanced_frequency_title">发送频率</string>
   <string name="assistant_advanced_frequency_desc">消息之间的最小间隔小时数</string>
   <string name="assistant_advanced_group_custom_request">自定义请求</string>
-
-
   <!-- Setting Display Page -->
   <string name="setting_display_fonts_title">字体</string>
   <string name="setting_display_fonts_desc">自定义标题、内容与代码的字体</string>
@@ -1066,7 +1061,6 @@
   <string name="setting_display_group_advanced">高级</string>
   <string name="setting_display_rp_optimizations_title">角色扮演优化</string>
   <string name="setting_display_rp_optimizations_desc">为角色扮演格式自定义文本样式</string>
-
   <!-- Fonts Page -->
   <string name="fonts_page_group_general">通用</string>
   <string name="fonts_page_use_same_font_title">标题与内容使用同一字体</string>
@@ -1095,7 +1089,6 @@
   <string name="fonts_page_typo_spacing">字间距</string>
   <string name="fonts_page_opentype_features">OpenType 特性</string>
   <string name="fonts_page_variable_font_info">可变字体 · %d 个参数</string>
-
   <!-- UI Customization Page -->
   <string name="ui_customization_message_jumper_title">消息快捷跳转</string>
   <string name="ui_customization_haptics_title">震动反馈</string>
@@ -1103,7 +1096,6 @@
   <string name="ui_customization_ui_haptic_feedback_desc">点击按钮与控件时触发触感反馈</string>
   <string name="ui_customization_media_title">媒体</string>
   <string name="ui_customization_code_blocks_title">代码块</string>
-
   <!-- RP Optimizations Page -->
   <string name="rp_opt_add_rule">添加规则</string>
   <string name="rp_opt_custom_text_styling">自定义文本样式</string>
@@ -1121,18 +1113,16 @@
   <string name="rp_opt_pattern_h6">六级标题</string>
   <string name="rp_opt_pattern_blockquote">引用块</string>
   <string name="rp_opt_no_rules_yet">暂无规则，点击 + 添加</string>
-
   <!-- RP Rule Dialog -->
   <string name="rp_opt_dialog_edit_rule">编辑规则</string>
   <string name="rp_opt_dialog_add_rule">添加规则</string>
   <string name="rp_opt_dialog_pattern_label">匹配格式</string>
-  <string name="rp_opt_dialog_pattern_placeholder">例如：*、**、~~、>、#、%%、||</string>
+  <string name="rp_opt_dialog_pattern_placeholder">例如：*、**、~~、&gt;、#、%%、||</string>
   <string name="rp_opt_dialog_pattern_h_level">%d 级标题</string>
   <string name="rp_opt_dialog_pattern_custom">自定义：%1$stext%2$s</string>
   <string name="rp_opt_dialog_pattern_hint">输入自定义格式</string>
   <string name="rp_opt_dialog_color_hex">颜色（十六进制）</string>
   <string name="rp_opt_dialog_presets">预设</string>
-
   <!-- TTS Page Extra (Text Filter) -->
   <string name="tts_filter_rules_title">文本过滤规则</string>
   <string name="tts_filter_rules_desc_title">配置用于语音朗读的文本匹配规则</string>
@@ -1148,7 +1138,6 @@
   <string name="tts_filter_dialog_mode_label">模式</string>
   <string name="tts_filter_dialog_desc_skip">%1$s...%2$s 内的文本将被跳过</string>
   <string name="tts_filter_dialog_desc_only_read">仅朗读 %1$s...%2$s 内的文本</string>
-
   <!-- Android Integration Page Extra -->
   <string name="android_integration_reset_desc">恢复默认操作</string>
   <string name="android_integration_reset_confirm_text">确定要恢复为默认操作吗？这会覆盖你所有的自定义操作。</string>
@@ -1157,7 +1146,6 @@
   <string name="android_integration_selected_text_preview">所选文本预览…</string>
   <string name="android_integration_input_label">输入</string>
   <string name="android_integration_none">无</string>
-
   <!-- About Page -->
   <string name="about_page_links">相关链接</string>
   <string name="about_page_source_code">源代码</string>
@@ -1167,7 +1155,6 @@
   <string name="about_page_device">设备</string>
   <string name="about_page_architecture">架构</string>
   <string name="about_page_based_on">基于Cocolalilal的LastChat项目二次开发</string>
-
   <!-- Settings Page - Support & Updates -->
   <string name="setting_page_donate_coffee">请我喝杯奶茶~</string>
   <string name="setting_page_donate_coffee_desc">支持项目开发</string>
@@ -1183,18 +1170,15 @@
   <string name="memory_sort_oldest">最早优先</string>
   <string name="memory_sort_alphabetical">字符排序</string>
   <string name="memory_sort_button_desc">排序记忆</string>
-
   <!-- 记忆操作 -->
   <string name="memory_action_regenerate_embeddings">重新生成嵌入</string>
   <string name="memory_action_add">添加记忆</string>
   <string name="assistant_prompt_variables_hint">可用变量: %s</string>
-
   <!-- 整合结果 -->
   <string name="consolidation_result_episodes">已整合 %d 个对话片段。 </string>
   <string name="consolidation_result_master_updated">关系档案已更新。 </string>
   <string name="consolidation_result_no_new_items">扫描完成，无新增内容。</string>
   <string name="consolidation_started">记忆整合已开始 (全量扫描: %b)</string>
-
   <!-- 嵌入生成 -->
   <string name="embedding_gen_completed">完成: %1$d 成功, %2$d 失败。请检查模型配置。</string>
   <string name="embedding_gen_success">成功生成 %d 条嵌入。</string>
@@ -1202,7 +1186,6 @@
   <string name="generating_embeddings">生成向量</string>
   <string name="assistant_memory_embedding_failed_with_reason">嵌入失败：%s</string>
   <string name="assistant_memory_group_consolidation">整合</string>
-
   <!-- Assistant Context Page -->
   <string name="assistant_memory_master_never_updated">从未更新</string>
   <string name="assistant_context_group_history">历史记录管理</string>
@@ -1213,7 +1196,6 @@
   <string name="assistant_context_group_summary_prompts">摘要提示词</string>
   <string name="assistant_context_full_summary_prompt_title">完整摘要提示词</string>
   <string name="assistant_context_episodic_summary_prompt_title">场景化摘要提示词</string>
-
   <string name="consolidate_success">会话记忆整合成功</string>
   <string name="consolidate_failed">归档失败：没有足够的新消息，或未配置摘要模型</string>
   <string name="consolidate_failed_no_model">未配置摘要模型，请在助理设置中检查</string>
@@ -1241,7 +1223,6 @@
   <string name="assistant_memory_rag_limit_title">记忆检索数量</string>
   <string name="assistant_memory_rag_limit_desc">每次对话时搜索并带入的相关记忆条目上限。</string>
   <string name="assistant_memory_rag_limit_value">%d 条记忆</string>
-
   <!-- 日记相关 -->
   <string name="diary_already_generated">今天已经写过日记了！</string>
   <string name="diary_generate_failed">生成日记失败: %s</string>
@@ -1274,7 +1255,6 @@
   <string name="backup_page_schedule">日程数据</string>
   <string name="schedule_add_task">新增任务</string>
   <string name="schedule_button_tip">允许智能体读取和写入你的日程。开启后，它可以查看你的今日安排并协助你创建新日程。</string>
-
   <!-- 邮件服务设置 -->
   <string name="setting_page_email_service">邮件服务</string>
   <string name="setting_page_email_service_desc">配置 QQ 邮箱以实现收发邮件功能</string>
@@ -1288,7 +1268,7 @@
   <string name="setting_email_page_testing">正在尝试连接...</string>
   <string name="setting_email_page_test_success">连接成功！收发功能均正常。</string>
   <string name="setting_email_page_test_failed">连接失败：%s</string>
-  <string name="setting_email_page_auth_code_help">如何获取授权码？\n1. 登录电脑版 QQ 邮箱\n2. 进入 设置 -> 账号\n3. 找到 POP3/IMAP/SMTP 服务并开启\n4. 点击“生成授权码”</string>
+  <string name="setting_email_page_auth_code_help">如何获取授权码？\n1. 登录电脑版 QQ 邮箱\n2. 进入 设置 -&gt; 账号\n3. 找到 POP3/IMAP/SMTP 服务并开启\n4. 点击“生成授权码”</string>
   <string name="assistant_page_local_tools_email_service_title">邮件服务</string>
   <string name="assistant_page_local_tools_email_service_desc">允许TA收发邮件</string>
   <string name="assistant_tools_email_not_configured_warning">邮件服务未配置</string>
@@ -1297,7 +1277,6 @@
   <string name="email_test_connection_success">连接成功！</string>
   <string name="email_error_protocol">协议加载失败，请检查 Release 混淆配置</string>
   <string name="email_error_auth">认证失败，请检查授权码</string>
-
   <!--定时任务 -->
   <string name="agent_task_add">新建定时任务</string>
   <string name="agent_task_presets">快捷预置</string>
@@ -1339,7 +1318,6 @@
   <string name="notification_channel_voice_call">语音通话</string>
   <string name="setting_provider_page_balance_authorize_key">余额查询授权码 (Authorize Key)</string>
   <string name="setting_provider_page_balance_user_id">用户 ID (User ID)</string>
-
   <!-- 关系档案备份提示 -->
   <string name="master_memory_backup_title">复制当前档案</string>
   <string name="master_memory_backup_message">更新关系档案可能因 AI 生成异常导致旧内容丢失。建议先将当前内容备份至剪贴板，是否继续？</string>
@@ -1355,10 +1333,8 @@
   <string name="memory_mode_keyword_desc">使用本地文本分析进行快速离线匹配。</string>
   <string name="memory_mode_semantic">语义模式 (向量 RAG)</string>
   <string name="memory_mode_semantic_desc">使用 AI 向量嵌入来理解上下文和深层含义。</string>
-
   <string name="rag_limit_title">最大检索数量 (Top K)</string>
   <string name="rag_keyword_threshold_title">匹配精度阈值</string>
-
   <!-- 异步任务提示 -->
   <string name="master_memory_update_started">已在后台开始更新关系档案...</string>
   <!-- 通知相关 -->
@@ -1386,25 +1362,20 @@
   <string name="context_sources_recent_chat">最近对话</string>
   <string name="context_sources_episodic_memory">情节记忆</string>
   <string name="context_sources_entry_default_name">条目 #%1$d</string>
-
   <string name="assistant_advanced_group_master">主智能体设置</string>
   <string name="assistant_advanced_master_title">设为evolia</string>
   <string name="assistant_advanced_master_desc">evolia拥有完整的本地工具与 MCP 权限，并在智能体列表中始终置顶。注意：全局只能有一个evolia，开启此项会自动关闭其他主智能体。</string>
   <string name="assistant_delete_master_disabled">evolia是核心陪伴 AI，不允许删除</string>
   <string name="assistant_advanced_master_locked_hint">必须保留一个evolia。如需更换，请去往另一个智能体的高级设置中将其设为evolia。</string>
   <string name="app_slogan">我们并不是生来完整,\n而是在与世界的碰撞中,\n不断成长为更好的自己。</string>
-
   <string name="context_sources_activation_reason">引用原因：%s</string>
-
   <string name="assistant_reference_variables">引用变量</string>
   <string name="assistant_reference_variables_hint">在此处编写需要引用变量的内容（如:用户当前位置为{{location}}等）</string>
-
   <string name="assistant_style_examples">语言风格示例</string>
   <string name="assistant_style_examples_tip">提供喜欢的回复供AI参考语言风格</string>
   <string name="assistant_style_examples_normal">普通模式示例</string>
   <string name="assistant_style_examples_virtual">虚拟模式示例</string>
   <string name="assistant_style_examples_add">添加示例</string>
-
   <string name="auto_play_tts">自动朗读</string>
   <!-- 发现页入口 -->
   <string name="discover_token_usage_title">Token 消耗统计</string>
@@ -1417,7 +1388,6 @@
   <string name="context_source_always_included">始终包含</string>
   <string name="context_source_rag_match">RAG 匹配 (%s)</string>
   <string name="context_source_keyword_match">关键词匹配: %s</string>
-
   <string name="setting_tts_page_voice_default">系统默认</string>
   <string name="setting_tts_page_voice_online">在线音色</string>
   <string name="setting_tts_page_voice_offline">离线音色</string>
@@ -1426,35 +1396,27 @@
   <string name="grant_permission">授予权限</string>
   <string name="permissions_required">权限申请</string>
   <string name="skip">跳过</string>
-
   <string name="setting_provider_tutorial_title">API Key 获取教程</string>
   <string name="setting_provider_tutorial_button">查看 API Key 获取教程</string>
   <string name="setting_provider_siliconflow_register_hint">没有账号？点击此处注册 SiliconFlow (赠送 2000 万 Token)</string>
   <string name="tts_filter_dialog_end_pattern_label">结束匹配符 (可选)</string>
-
   <string name="calendar_sync_title">发现新日程</string>
   <string name="calendar_sync_desc">AI 识别到具体的提醒时间，已为你准备好系统日历详情。</string>
-
-
   <!-- Azure TTS 资源 -->
   <string name="setting_tts_page_api_key_description_azure">Azure Speech Service 的订阅密钥</string>
   <string name="setting_tts_page_api_key_placeholder_azure">请输入 Azure API Key</string>
   <string name="setting_tts_page_region">区域 (Region)</string>
   <string name="setting_tts_page_region_description">服务部署的区域，例如 eastus</string>
-
   <!-- Gemini TTS 补充资源 -->
   <string name="setting_tts_page_api_key_description_gemini">您的 Gemini API Key</string>
   <string name="setting_tts_page_voice_name_placeholder_gemini">例如 Kore</string>
-
   <!-- ElevenLabs 补充资源 -->
   <string name="setting_tts_page_api_key_description_elevenlabs">您的 ElevenLabs API Key</string>
   <string name="setting_tts_page_api_key_placeholder_elevenlabs">请输入 ElevenLabs API Key</string>
   <string name="setting_tts_page_model_id">模型 ID</string>
   <string name="setting_tts_page_model_id_description">ElevenLabs 的模型标识符</string>
-
   <!-- System TTS 补充资源 -->
   <string name="setting_tts_page_voice_name_default">系统默认</string>
-
   <string name="provider_type_hint">提示：大多数提供商（包括 DeepSeek、智谱、以及各大中转站）都兼容 OpenAI 格式。只有在直接连接 Google 或 Anthropic 官方 API 时才需选择对应选项。如果是从中转站调用 Gemini/Claude，请依然选择 OpenAI。</string>
   <string name="setting_provider_zhipu_register_hint">没有账号？点击此处注册 智谱 AI (赠送2000万Token)</string>
   <!-- Azure TTS 选择器 -->
@@ -1474,17 +1436,13 @@
   <!-- MiniMax TTS 选择器 -->
   <string name="setting_tts_page_minimax_voice_picker_title">选择 MiniMax 语音</string>
   <string name="setting_tts_page_minimax_style_picker_title">选择 MiniMax 情感风格</string>
-
   <string name="detail_memory_title">细节记忆</string>
   <string name="detail_memory_desc">根据消息条数精确触发记忆归档</string>
   <string name="detail_memory_hint">控制每多少条对话消息就进行记忆切片，这个数值越小，记忆越细，片段记忆数量会越多，建议设置在20~50</string>
   <string name="detail_memory_threshold">归档触发阈值</string>
-
   <string name="tts_filter_rules_filter_emojis_title">过滤表情符号</string>
   <string name="tts_filter_rules_filter_emojis_desc">开启后，TTS 将不再念出文本中的表情符号（如 🤯）</string>
-
   <string name="syncing_context_animation_hint">会话归档中~</string>
-
   <string name="backup_permission_notification">发送通知</string>
   <string name="backup_permission_location_coarse">模糊定位 (用于 {{location}} 变量)</string>
   <string name="backup_permission_location_fine">精确定位(用于 {{location}} 变量)</string>
@@ -1502,14 +1460,11 @@
   <string name="export_options_include_lorebooks">包含关联的世界书</string>
   <string name="export_options_always_included_hint">角色设置和个人资料始终会被包含。</string>
   <string name="export_options_confirm">导出</string>
-
   <string name="about_page_introduction">项目介绍</string>
   <string name="about_page_introduction_desc">了解 Evolia 的愿景、功能与故事</string>
-
   <!-- 在文件末尾添加 -->
   <string name="warning_no_default_chat_model">请设置默认聊天模型</string>
   <string name="warning_no_embedding_model">请配置嵌入模型，否则记忆功能无法正常使用</string>
-
   <string name="assistant_import_page_title">搬家</string>
   <string name="assistant_import_page_system_prompt_label">系统提示词</string>
   <string name="assistant_import_page_agent_name_label">智能体名称</string>
@@ -1548,7 +1503,6 @@
   <!-- 扩展状态设置 -->
   <string name="assistant_advanced_extended_state_title">扩展状态与人格属性</string>
   <string name="assistant_advanced_extended_state_desc">启用后，智能体将拥有性格、外貌、偏好、互动习惯等更深层的人格属性。</string>
-
   <string name="assistant_extended_personality">性格</string>
   <string name="assistant_extended_appearance">外貌</string>
   <string name="assistant_extended_preferences">喜好</string>
@@ -1556,7 +1510,6 @@
   <string name="assistant_extended_taboos">禁忌</string>
   <string name="assistant_extended_interaction_habits">互动习惯</string>
   <string name="assistant_extended_relationships">重要人际关系</string>
-
   <string name="assistant_extended_hair_color">发色</string>
   <string name="assistant_extended_hair_curliness">头发卷曲度</string>
   <string name="assistant_extended_hair_length">头发长度</string>
@@ -1583,7 +1536,6 @@
   <string name="user_profile_taboos">禁忌</string>
   <string name="user_profile_interaction_preferences">互动喜好</string>
   <string name="user_profile_important_relationships">重要人际关系</string>
-
   <!-- 智能体记忆设置相关 -->
   <string name="assistant_memory_include_user_profile">带入用户档案</string>
   <string name="assistant_memory_include_user_profile_desc">在对话中让智能体知晓您的外貌、职业、禁忌等个人档案信息</string>
@@ -1594,7 +1546,6 @@
   <string name="user_profile_email">邮箱</string>
   <string name="user_profile_email_hint">如果让小机发邮件时没有指定收件人，则此邮箱会作为邮件功能的默认收件人。</string>
   <string name="user_profile_birthday_placeholder">选择日期</string>
-
   <string name="permission_check_usage_stats">使用情况统计</string>
   <string name="permission_check_usage_stats_desc">允许应用查看其他应用的使用频率和时长，用于更好的情境分析</string>
   <string name="permission_check_accessibility">无障碍服务</string>
@@ -1612,7 +1563,6 @@
   <string name="update_action_know">知道了</string>
   <string name="update_checking">正在检查更新...</string>
   <string name="update_is_latest">当前已是最新版本</string>
-
   <string name="manual_archive_l1">手动归档</string>
   <string name="manual_archive_l1_loading">归档中，请耐心等待</string>
   <string name="manual_archive_l1_no_messages">当前会话没有需要归档的新消息</string>
@@ -1632,7 +1582,6 @@
   <string name="action_favorite">收藏</string>
   <string name="action_share">分享</string>
   <string name="favorites_detail_title">详情</string>
-
   <string name="action_voice_call">语音通话</string>
   <string name="call_status_connecting">正在连接...</string>
   <string name="call_status_listening">正在倾听</string>
@@ -1694,11 +1643,9 @@
   <string name="tts_error_concurrency">ElevenLabs 账号并发受限，正在排队朗读...</string>
   <string name="backup_page_tts_cache">语音缓存</string>
   <string name="mimo_dct">小米 MiMo 语音合成，超真实音色</string>
-
   <string name="chat_page_regenerate_requirement_title">优化回复要求</string>
   <string name="chat_page_regenerate_requirement_placeholder">输入你对本次回复的特定要求（可选），如：简短一点...</string>
   <string name="chat_page_regenerate_requirement_label">优化要求</string>
-
   <string name="assistant_detail_search_history">查找聊天记录</string>
   <string name="chat_history_search_title">搜索聊天记录</string>
   <string name="chat_history_search_hint">搜索与 %s 的聊天内容</string>
@@ -1751,9 +1698,7 @@
   <string name="milestone_time">发生时间</string>
   <string name="milestone_time_placeholder">如：2024-05-20</string>
   <string name="milestone_content">详细内容</string>
-
   <string name="consolidate_failed_insufficient">未达到归档消息数量</string>
-
   <string name="agent_task_preset_memory_consolidation">记忆整理</string>
   <string name="agent_task_instruction_memory_consolidation">"检查是否需要更新/删除/新增用户档案/你的档案（对应工具update_profile）、里程碑（对应工具milestone_manager)、你的待办(对应工具schedule_manager)中的内容，如果需要则自行调用工具进行更新"</string>
   <string name="setting_mcp_page_add_server">添加 MCP 服务器</string>
@@ -1858,7 +1803,6 @@
   <string name="diary_search_hint">输入内容搜索日记...</string>
   <string name="diary_search_no_result">没有找到相关的日记</string>
   <string name="diary_comment_delete_confirm">确定删除该条评论吗？</string>
-
   <!-- Hour Light (小时光) -->
   <string name="hour_light_title">小时光</string>
   <string name="hour_light_developing">功能开发中…</string>
@@ -1867,7 +1811,6 @@
   <string name="diary_select_agent_to_comment">选择一个智能体来评论</string>
   <string name="diary_agent_commenting_to">正在请求 %1$s 的评论</string>
   <string name="diary_comment_switched_to_normal_mode">已自动切换至普通模式以完整接收评论</string>
-
   <!-- 手写日记 / OCR -->
   <string name="diary_handwrite_section_title">手写日记</string>
   <string name="diary_handwrite_camera">拍照</string>
@@ -1890,21 +1833,17 @@
   <string name="diary_ocr_failed_banner">OCR 解析失败，%1$d 张图片未成功解析</string>
   <string name="diary_ocr_failed_view_detail">查看原因</string>
   <string name="diary_ocr_failed_dismiss">关闭</string>
-
   <string name="diary_add_author_title">为谁新建日记</string>
   <string name="diary_add_type_title">选择日记类型</string>
   <string name="diary_add_type_scan">文档扫描</string>
   <string name="diary_add_type_scan_desc">导入或拍摄手写页面，裁剪后自动 OCR</string>
   <string name="diary_add_type_direct">直接记录</string>
   <string name="diary_add_type_direct_desc">直接以文字形式撰写日记</string>
-
   <string name="diary_scan_entry_title">文档扫描</string>
   <string name="diary_scan_camera_desc">拍摄页面照片</string>
   <string name="diary_scan_gallery_desc">从相册导入图片</string>
-
   <string name="setting_page_feedback">反馈与建议</string>
   <string name="setting_page_feedback_desc">点击提交你的意见或建议</string>
-
   <!-- 语音唤醒 -->
   <string name="setting_page_wake_word">语音唤醒</string>
   <string name="setting_page_wake_word_desc">说唤醒词自动拨通语音通话</string>
@@ -1916,7 +1855,6 @@
   <string name="setting_wake_word_enable">启用语音唤醒</string>
   <string name="setting_wake_word_enable_on">正在监听唤醒词</string>
   <string name="setting_wake_word_enable_off">点击启用唤醒词检测</string>
-
   <!-- 唤醒接听智能体 -->
   <string name="setting_wake_word_assistant">唤醒接听智能体</string>
   <string name="setting_wake_word_assistant_fallback">未指定，使用「%1$s」（当前主智能体）</string>
@@ -1941,19 +1879,18 @@
   <string name="setting_wake_word_sensitivity_low">少误触发</string>
   <string name="setting_wake_word_sensitivity_high">易唤醒</string>
   <string name="setting_wake_word_custom">自定义唤醒词</string>
-  <string name="setting_wake_word_custom_desc">每行一个，格式：拼音 tokens @ 显示文本（拼音要用 tokens.txt 里的不带声调音节）&#10;例如：n i h a o a i f u @ 你好艾芙</string>
+  <string name="setting_wake_word_custom_desc">每行一个，格式：拼音 tokens @ 显示文本（拼音要用 tokens.txt 里的不带声调音节）
+例如：n i h a o a i f u @ 你好艾芙</string>
   <string name="setting_wake_word_reset">重置</string>
   <string name="setting_wake_word_apply">应用</string>
   <string name="setting_wake_word_help_title">使用说明</string>
   <string name="setting_wake_word_help_content">1. 下载唤醒模型（约 4MB，本地存储）\n2. 开启语音唤醒\n3. 说出唤醒词即可自动拨通通话\n\n唤醒词检测完全在设备端运行，音频不会上传网络。\n\n自定义唤醒词需使用模型词表中的拼音 token。</string>
   <string name="notification_wake_word_active">正在监听唤醒词</string>
   <string name="notification_channel_wake_word">语音唤醒</string>
-
   <!-- 唤醒服务启动失败错误提示 -->
   <string name="wake_word_model_prepare_failed">唤醒模型准备失败，请检查模型文件或在设置中重新下载</string>
   <string name="wake_word_detector_init_failed">唤醒词初始化失败，请检查唤醒词拼音格式是否正确</string>
   <string name="wake_word_audio_init_failed">录音初始化失败，请授予麦克风权限后重试</string>
-
   <!-- 唤醒测试 -->
   <string name="setting_wake_word_test_title">模拟唤醒测试</string>
   <string name="setting_wake_word_test_desc">无需麦克风，直接模拟唤醒词命中，验证通话链路是否通畅</string>
@@ -1962,5 +1899,4 @@
   <string name="setting_wake_word_test_success">模拟唤醒成功，已用「%1$s」开启通话</string>
   <string name="setting_wake_word_test_failed">模拟唤醒失败：%1$s</string>
   <string name="setting_wake_word_test_hint">如果此按钮能正常进入通话，说明通话链路没问题。剩下就是对着麦克风说唤醒词，看看 KWS 能不能命中。如果 KWS 一直没反应，尝试调高明灵敏度或换成更短、更常用的唤醒词拼音。</string>
-
 </resources>

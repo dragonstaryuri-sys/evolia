@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="default_assistant_name">Evolia</string>
   <string name="chat_page_title">Chats</string>
@@ -715,7 +715,6 @@
   <string name="delete_memory_confirmation">Are you sure you want to delete this memory? This cannot be undone.</string>
   <string name="done">Done</string>
   <string name="loading">Loading...</string>
-
   <!-- Prompt Injections -->
   <string name="setting_page_prompt_injections">Prompt Injections</string>
   <string name="setting_page_prompt_injections_desc">Modes and lorebooks</string>
@@ -724,7 +723,6 @@
   <string name="prompt_injections_page_modes_desc">Custom prompts that can be toggled on/off</string>
   <string name="prompt_injections_page_lorebooks">Lorebooks</string>
   <string name="prompt_injections_page_lorebooks_desc">Context-triggered prompt entries</string>
-
   <!-- Modes -->
   <string name="modes_page_description_title">Custom Modes</string>
   <string name="modes_page_description_text">Define custom prompts that can be toggled on/off per chat. Higher priority modes are injected first.</string>
@@ -749,14 +747,12 @@
   <string name="create">Create</string>
   <string name="import_label">Import</string>
   <string name="export_label">Export</string>
-
   <!-- Injection Positions -->
   <string name="injection_position_before_system">Before System Prompt</string>
   <string name="injection_position_after_system">After System Prompt</string>
   <string name="injection_position_top_of_chat">Top of Chat</string>
   <string name="injection_position_before_latest">Before Latest Message</string>
   <string name="injection_position_at_depth">At Specific Depth</string>
-
   <!-- Lorebooks -->
   <string name="lorebooks_page_description_title">World Lorebooks</string>
   <string name="lorebooks_page_description_text">Create organized collections of prompts that activate based on keywords or semantic similarity.</string>
@@ -773,7 +769,6 @@
   <string name="lorebooks_page_description_placeholder">Describe what this lorebook contains...</string>
   <string name="lorebooks_page_cover">Cover Image</string>
   <string name="lorebooks_page_cover_hint">Tap to select an image or emoji</string>
-
   <!-- Lorebook Detail -->
   <string name="lorebook_detail_not_found">Lorebook not found</string>
   <string name="lorebook_detail_no_entries">No entries yet</string>
@@ -794,13 +789,11 @@
   <string name="lorebook_entry_scan_depth">Scan Depth</string>
   <string name="lorebook_entry_injection_position">Injection Position</string>
   <string name="lorebook_search_entries_placeholder">Search entries...</string>
-
   <!-- Activation Types -->
   <string name="activation_always">Always Active</string>
   <string name="activation_keywords">Keywords</string>
   <string name="activation_keywords_with_count">Keywords (%d)</string>
   <string name="activation_rag">RAG (Semantic)</string>
-
   <!-- Modes Picker -->
   <string name="modes_page_default_on">On by default</string>
   <string name="modes_page_default_off">Off by default</string>
@@ -810,7 +803,6 @@
   <string name="modes_page_default_enabled">Enable by default</string>
   <string name="modes_page_default_enabled_desc">Automatically enable for new chats</string>
   <string name="lorebook_entry_deleted">Entry %s deleted</string>
-
   <!-- Lorebooks Picker -->
   <string name="lorebooks_picker_title">Lorebooks</string>
   <string name="lorebooks_picker_none">No lorebooks</string>
@@ -818,14 +810,12 @@
   <string name="export_success">Export successful</string>
   <string name="lorebook_toggle_assistants">Toggle Characters</string>
   <string name="lorebook_select_to_toggle">Select a lorebook to toggle</string>
-
   <!-- Character Lorebooks Selection -->
   <string name="assistant_lorebooks_title">Lorebooks</string>
   <string name="assistant_lorebooks_desc">Select which lorebooks to use with this character</string>
   <string name="assistant_lorebooks_empty">No lorebooks configured</string>
   <string name="assistant_lorebooks_empty_hint">Create lorebooks in Settings → Prompt Injections → Lorebooks</string>
   <string name="assistant_lorebooks_enabled">%d enabled</string>
-
   <!-- Context Management -->
   <string name="context_management_title">Context Management</string>
   <string name="context_management_desc">Lorebooks, message history, search results</string>
@@ -843,8 +833,6 @@
   <string name="context_max_search_results_desc">Limit retained search results (0 = unlimited)</string>
   <string name="context_max_search_results_value">%d searches</string>
   <string name="context_max_search_results_unlimited">Unlimited</string>
-
-
   <!-- Import/Export -->
   <string name="lorebook_import_success">Imported: %s</string>
   <string name="lorebook_export_success">Lorebook exported successfully</string>
@@ -859,7 +847,6 @@
   <string name="greeting_lunch_time">Lunch time!</string>
   <string name="greeting_late_evening">Winding down?</string>
   <string name="greeting_early_hours">Still up? Get some rest</string>
-
   <!-- New Chat Templates -->
   <string name="new_chat_template_write">Write</string>
   <string name="new_chat_template_write_prompt">Help me write </string>
@@ -869,36 +856,29 @@
   <string name="new_chat_template_brainstorm_prompt">Let\'s brainstorm about </string>
   <string name="new_chat_template_learn">Learn</string>
   <string name="new_chat_template_learn_prompt">Explain </string>
-
   <!-- New Chat Settings -->
   <string name="use_global">Use Global</string>
-
   <!-- New Chat Actions -->
   <string name="new_chat_action_create_image">Create image</string>
   <string name="new_chat_action_translate">Translate</string>
   <string name="new_chat_action_more">More</string>
-
   <!-- New Chat Stats -->
   <string name="new_chat_stat_streak">Streak</string>
   <string name="new_chat_stat_days">Days</string>
   <string name="new_chat_stat_total_chats">Chats</string>
   <string name="new_chat_stat_avg_messages">Avg/Day</string>
   <string name="new_chat_stat_most_used_model">Top Model</string>
-
   <!-- Time Labels -->
   <string name="time_label_early_bird">Early Bird</string>
   <string name="time_label_daytime_chatter">Daytime Chatter</string>
   <string name="time_label_night_owl">Night Owl</string>
-
   <!-- UI Customization -->
   <string name="setting_ui_customization_title">UI Customization</string>
-
   <!-- Chat Input Style -->
   <string name="setting_chat_input_style">Input Style</string>
   <string name="setting_chat_input_style_desc">How the message input bar looks</string>
   <string name="setting_chat_input_style_floating">Evolia</string>
   <string name="setting_chat_input_style_minimal">Minimal</string>
-
   <!-- Minimal Input Picker -->
   <string name="minimal_input_camera">Camera</string>
   <string name="minimal_input_photos">Photos</string>
@@ -913,7 +893,6 @@
   <string name="minimal_input_lorebooks_desc">Add context from your lorebooks</string>
   <string name="minimal_input_summarize">Summarize</string>
   <string name="minimal_input_summarize_desc">Summarize the conversation</string>
-
   <!-- Discover -->
   <string name="discover_page_title">Discover</string>
   <string name="discover_page_diary">Diary</string>
@@ -929,14 +908,15 @@
   <string name="discover_page_diary_delete_confirm">Are you sure you want to delete this diary entry?</string>
   <string name="discover_page_diary_generating">Generating diary...</string>
   <string name="discover_page_diary_generate_success">Diary generated successfully</string>
+  <string name="discover_page_diary_generate_partial_toast">Partial content generated and saved!</string>
+  <string name="discover_page_diary_generating_already">The diary is being generated. Please wait and don\'t click again!</string>
+  <string name="discover_page_diary_generate_partial">Partial diary saved (last chunk failed: %s). You can view what has been generated already!</string>
   <string name="discover_page_diary_no_chat_today">No chat records found for today</string>
-
   <!-- Diary Settings -->
   <string name="setting_model_page_diary_model">Diary Model</string>
   <string name="setting_model_page_diary_model_desc">Model for generating agent diaries.It is recommended to choose the model that charges by the time.</string>
   <string name="setting_model_page_diary_prompt">Diary Prompt</string>
   <string name="setting_model_page_diary_prompt_desc">Prompt for diary generation. Vars: {content}</string>
-
   <!-- Assistant Detail Page -->
   <string name="assistant_detail_group_configuration">Configuration</string>
   <string name="assistant_detail_group_capabilities">Capabilities</string>
@@ -981,35 +961,29 @@
   <!-- Model Settings -->
   <string name="setting_model_page_memory_model">Memory Model</string>
   <string name="setting_model_page_memory_model_desc">Model used for deep memory optimization and long-term consolidation.</string>
-
   <string name="rag_memory_retrieval">RAG Memory Retrieval</string>
   <string name="rag_memory_retrieval_desc">Smart context-based memory retrieval</string>
   <string name="advanced_memory">Advanced Memory</string>
   <string name="advanced_memory_desc">Form episodic memories from conversations</string>
-
   <string name="similarity_threshold">Retrieval Score Threshold</string>
   <string name="similarity_all">All</string>
   <string name="similarity_exact">Exact</string>
-
   <string name="consolidation_delay">Consolidation Delay</string>
   <string name="consolidation_delay_desc">Wait time after a chat ends before forming memories</string>
   <string name="consolidate_now">Consolidate All Memories Now</string>
   <string name="last_run_time">Last run: %1$s</string>
-
   <string name="memory_statistics">Memory Statistics</string>
   <string name="stat_core">Core</string>
   <string name="stat_episodic">Episodic</string>
   <string name="stat_total">Total</string>
   <string name="stat_embedded">Embedded</string>
   <string name="estimated_capacity">Estimated capacity: ~%1$d memories</string>
-
   <string name="search_memories">Search memories...</string>
   <string name="no_memories_yet">No memories yet</string>
   <string name="no_matching_memories">No matching memories</string>
   <string name="memory_type_core">CORE</string>
   <string name="memory_type_episodic">EPISODIC</string>
   <string name="no_embedding">NO EMBEDDING</string>
-
   <string name="rag_debugger_desc">Test RAG retrieval to see which memories are returned</string>
   <string name="test_query_placeholder">Enter test query...</string>
   <string name="test_button">Test</string>
@@ -1018,7 +992,6 @@
   <string name="summarizer_warning">Select a summarizer model in the Models tab</string>
   <string name="generating_embeddings">Generating Embeddings</string>
   <string name="processing_items">Processing %1$d of %2$d items...</string>
-
   <!-- Assistant Context Management Page -->
   <string name="assistant_context_refresh_title">Context Refresh / Summarization</string>
   <string name="assistant_context_refresh_desc">Incorporate existing summaries into conversations to enhance coherence; if there is no limit on the number of session history entries to include, this function does not need to be enabled.</string>
@@ -1051,7 +1024,6 @@
   <string name="context_refresh_no_summarizer">Configure a summarizer model in settings first</string>
   <string name="context_refresh_confirm_title">Summarize Messages?</string>
   <string name="context_refresh_confirm_message">This will summarize your conversation history into a compact form. The AI will remember the key points but detailed messages will be replaced with a summary.</string>
-
   <!-- Assistant Model Page -->
   <string name="assistant_model_group_models">Models</string>
   <string name="assistant_model_background_model">Background Model</string>
@@ -1094,7 +1066,6 @@
   <string name="assistant_ui_state_off">Off</string>
   <string name="assistant_ui_state_global">Global (%s)</string>
   <string name="assistant_ui_font_custom">Custom</string>
-
   <!-- Assistant Advanced SubPage -->
   <string name="assistant_advanced_group_spontaneous">Spontaneous Messaging</string>
   <string name="assistant_advanced_enable_spontaneous_title">Enable Spontaneous Messages</string>
@@ -1106,7 +1077,6 @@
   <string name="assistant_advanced_frequency_title">Frequency</string>
   <string name="assistant_advanced_frequency_desc">Minimum hours between messages</string>
   <string name="assistant_advanced_group_custom_request">Custom Request</string>
-
   <!-- Setting Display Page -->
   <string name="setting_display_fonts_title">Fonts</string>
   <string name="setting_display_fonts_desc">Customize fonts for headers, content, and code</string>
@@ -1116,7 +1086,6 @@
   <string name="setting_display_group_advanced">Advanced</string>
   <string name="setting_display_rp_optimizations_title">RP Optimizations</string>
   <string name="setting_display_rp_optimizations_desc">Custom text styling for roleplay patterns</string>
-
   <!-- Fonts Page -->
   <string name="fonts_page_group_general">General</string>
   <string name="fonts_page_use_same_font_title">Use same font for headers and content</string>
@@ -1145,7 +1114,6 @@
   <string name="fonts_page_typo_spacing">Letter Spacing</string>
   <string name="fonts_page_opentype_features">OpenType Features</string>
   <string name="fonts_page_variable_font_info">Variable font · %d axes</string>
-
   <!-- UI Customization Page -->
   <string name="ui_customization_message_jumper_title">Message Jumper</string>
   <string name="ui_customization_haptics_title">Haptics</string>
@@ -1153,7 +1121,6 @@
   <string name="ui_customization_ui_haptic_feedback_desc">Enable tactile feedback when tapping buttons and controls</string>
   <string name="ui_customization_media_title">Media</string>
   <string name="ui_customization_code_blocks_title">Code Blocks</string>
-
   <!-- RP Optimizations Page -->
   <string name="rp_opt_add_rule">Add Rule</string>
   <string name="rp_opt_custom_text_styling">Custom Text Styling</string>
@@ -1171,18 +1138,16 @@
   <string name="rp_opt_pattern_h6">Heading 6</string>
   <string name="rp_opt_pattern_blockquote">Blockquotes</string>
   <string name="rp_opt_no_rules_yet">No rules yet. Tap + to add one.</string>
-
   <!-- RP Rule Dialog -->
   <string name="rp_opt_dialog_edit_rule">Edit Rule</string>
   <string name="rp_opt_dialog_add_rule">Add Rule</string>
   <string name="rp_opt_dialog_pattern_label">Pattern</string>
-  <string name="rp_opt_dialog_pattern_placeholder">e.g., *, **, ~~, >, #, %%, ||</string>
+  <string name="rp_opt_dialog_pattern_placeholder">e.g., *, **, ~~, &gt;, #, %%, ||</string>
   <string name="rp_opt_dialog_pattern_h_level">Heading level %d</string>
   <string name="rp_opt_dialog_pattern_custom">Custom: %1$stext%2$s</string>
   <string name="rp_opt_dialog_pattern_hint">Enter any pattern</string>
   <string name="rp_opt_dialog_color_hex">Color (Hex)</string>
   <string name="rp_opt_dialog_presets">Presets</string>
-
   <!-- TTS Page Extra (Text Filter) -->
   <string name="tts_filter_rules_title">Text Filter Rules</string>
   <string name="tts_filter_rules_desc_title">Configure text patterns for TTS</string>
@@ -1198,7 +1163,6 @@
   <string name="tts_filter_dialog_mode_label">Mode</string>
   <string name="tts_filter_dialog_desc_skip">Text inside %1$s...%2$s will be skipped</string>
   <string name="tts_filter_dialog_desc_only_read">Only text inside %1$s...%2$s will be read</string>
-
   <!-- Android Integration Page Extra -->
   <string name="android_integration_reset_desc">Restore default actions</string>
   <string name="android_integration_reset_confirm_text">Are you sure you want to restore default actions? This will replace all your custom actions.</string>
@@ -1207,7 +1171,6 @@
   <string name="android_integration_selected_text_preview">Selected text preview...</string>
   <string name="android_integration_input_label">Input</string>
   <string name="android_integration_none">None</string>
-
   <!-- About Page -->
   <string name="about_page_links">Links</string>
   <string name="about_page_source_code">Source Code</string>
@@ -1217,7 +1180,6 @@
   <string name="about_page_device">Device</string>
   <string name="about_page_architecture">Architecture</string>
   <string name="about_page_based_on">Based on LastChat by Cocolalilal</string>
-
   <!-- Settings Page - Support & Updates -->
   <string name="setting_page_donate_coffee">Buy Me a Coffee</string>
   <string name="setting_page_donate_coffee_desc">Support the development</string>
@@ -1256,7 +1218,6 @@
   <string name="memory_sort_oldest">Oldest First</string>
   <string name="memory_sort_alphabetical">Alphabetical</string>
   <string name="memory_sort_button_desc">Sort memories</string>
-
   <!-- Memory Actions -->
   <string name="memory_action_regenerate_embeddings">Regenerate Embeddings</string>
   <string name="memory_action_add">Add Memory</string>
@@ -1270,19 +1231,16 @@
   <string name="assistant_memory_rag_limit_title">Memory Retrieval Limit</string>
   <string name="assistant_memory_rag_limit_desc">Maximum number of relevant memories to retrieve for each conversation.</string>
   <string name="assistant_memory_rag_limit_value">%d memories</string>
-
   <!-- Consolidation Results -->
   <string name="consolidation_result_episodes">Consolidated %d episodes. </string>
   <string name="consolidation_result_master_updated">Memory Archive updated. </string>
   <string name="consolidation_result_no_new_items">Scan complete, no new items.</string>
   <string name="consolidation_started">Memory consolidation started (Full Scan: %b)</string>
-
   <!-- Embedding Generation -->
   <string name="embedding_gen_completed">Completed: %1$d success, %2$d failed. Check your settings.</string>
   <string name="embedding_gen_success">Successfully generated %d embeddings.</string>
   <string name="embedding_gen_none">No embeddings needed regeneration.</string>
   <string name="assistant_memory_embedding_failed_with_reason">Embedding failed: %s</string>
-
   <!-- Diary Related -->
   <string name="diary_already_generated">Today\'s diary already exists</string>
   <string name="diary_generate_failed">Failed to generate diary: %s</string>
@@ -1318,10 +1276,8 @@
   <string name="discover_page_schedule">Schedule Management</string>
   <!-- Description displayed on the Discover page -->
   <string name="discover_page_schedule_desc">Manage your daily tasks and goals</string>
-
   <!-- Option name displayed on the Backup page -->
   <string name="backup_page_schedule">Schedule Data</string>
-
   <!-- Email Service Settings -->
   <string name="setting_page_email_service">Email Service</string>
   <string name="setting_page_email_service_desc">Configure QQ Mail to enable sending and receiving emails</string>
@@ -1335,7 +1291,7 @@
   <string name="setting_email_page_testing">Connecting...</string>
   <string name="setting_email_page_test_success">Connected successfully! Sending and receiving functions are working properly.</string>
   <string name="setting_email_page_test_failed">Connection failed: %s</string>
-  <string name="setting_email_page_auth_code_help">How to get the authorization code?\n1. Log in to the PC version of QQ Mail\n2. Go to Settings > Account\n3. Find and enable POP3/IMAP/SMTP service\n4. Click "Generate Authorization Code"</string>
+  <string name="setting_email_page_auth_code_help">How to get the authorization code?\n1. Log in to the PC version of QQ Mail\n2. Go to Settings &gt; Account\n3. Find and enable POP3/IMAP/SMTP service\n4. Click "Generate Authorization Code"</string>
   <string name="assistant_page_local_tools_email_service_title">Mail Service</string>
   <string name="assistant_page_local_tools_email_service_desc">Allow AI to send and receive emails</string>
   <string name="assistant_tools_email_not_configured_warning">Email Service Not Configured</string>
@@ -1394,7 +1350,6 @@
   <string name="regenerate_description">This message contains tool calls or multiple steps. Regenerating will replace the entire response and cannot be restored to the previous version. Are you sure you want to continue?</string>
   <string name="regenerate_confirm">Regenerate</string>
   <string name="error_select_model_first">Please select a model first</string>
-
   <string name="memory_retrieval_strategy_title">Retrieval Strategy</string>
   <string name="memory_retrieval_strategy_desc">How the assistant searches for relevant memories.</string>
   <string name="memory_mode_disabled">Disabled (No Memories)</string>
@@ -1404,10 +1359,8 @@
   <string name="memory_mode_keyword_desc">Fast, offline matching using local text analysis.</string>
   <string name="memory_mode_semantic">Semantic (Vector RAG)</string>
   <string name="memory_mode_semantic_desc">Uses AI embeddings to understand context and meaning.</string>
-
   <string name="rag_limit_title">Max Retrieval Results (Top K)</string>
   <string name="rag_keyword_threshold_title">Match Precision Threshold</string>
-
   <!-- Async Task Tips -->
   <string name="master_memory_update_started">Started updating memory profile in the background...</string>
   <!-- Notification Related -->
@@ -1415,7 +1368,6 @@
   <string name="master_memory_update_success">Memory profile for %s updated successfully.</string>
   <string name="master_memory_update_compressed">%s\'s memory has been updated and compressed due to excessive length.</string>
   <string name="master_memory_update_failed">Failed to update memory profile</string>
-
   <!-- Context Sources Sheet -->
   <string name="context_sources_title">Context Sources</string>
   <string name="context_sources_modes">Modes</string>
@@ -1426,7 +1378,6 @@
   <string name="context_sources_recent_chat">Recent Chat</string>
   <string name="context_sources_episodic_memory">Episodic Memory</string>
   <string name="context_sources_entry_default_name">Entry #%1$d</string>
-
   <string name="assistant_advanced_group_master">Main Agent Settings</string>
   <string name="assistant_advanced_master_title">Set as main agent</string>
   <string name="assistant_advanced_master_desc">Evolia has full access to local tools and MCP permissions, and is always pinned at the top of the agent list. Note: Only one main agent is allowed globally. Enabling this option will automatically disable other main agents.</string>
@@ -1434,9 +1385,7 @@
   <string name="assistant_advanced_master_locked_hint">One Evolia must remain active. To replace it, go to the advanced settings of another agent and set it as Evolia.</string>
   <!-- 主页底部的品牌标语 -->
   <string name="app_slogan">We are not born complete.\nWe grow through collisions with the world,\nconstantly evolving into a better self.</string>
-
   <string name="context_sources_activation_reason">Activation Reason: %s</string>
-
   <string name="assistant_reference_variables">Reference Variables</string>
   <string name="assistant_reference_variables_hint">Write content referencing variables (e.g., User is at {{location}}) here. </string>
   <string name="assistant_style_examples">Language Style Examples</string>
@@ -1445,7 +1394,6 @@
   <string name="assistant_style_examples_virtual">Virtual Mode Examples</string>
   <string name="assistant_style_examples_add">Add Example</string>
   <string name="auto_play_tts">auto read</string>
-
   <!-- 发现页入口 -->
   <string name="discover_token_usage_title">Token Usage Statistics</string>
   <string name="discover_token_usage_desc">View daily token consumption breakdown of each agent</string>
@@ -1457,7 +1405,6 @@
   <string name="context_source_always_included">Always included</string>
   <string name="context_source_rag_match">RAG Match (%s)</string>
   <string name="context_source_keyword_match">Keyword: %s</string>
-
   <string name="setting_tts_page_voice_default">System Default</string>
   <string name="setting_tts_page_voice_online">Online Voices</string>
   <string name="setting_tts_page_voice_offline">Offline Voices</string>
@@ -1466,35 +1413,28 @@
   <string name="grant_permission">Grant Permissions</string>
   <string name="permissions_required">Permissions Required</string>
   <string name="skip">Skip</string>
-
   <string name="setting_provider_tutorial_title">tutorial</string>
   <string name="setting_provider_tutorial_button">Get tutorial</string>
   <string name="setting_provider_siliconflow_register_hint">Don\'t have an account? Click here to register for SiliconFlow (20 million Tokens gifted)</string>
   <string name="tts_filter_dialog_end_pattern_label">End Pattern (Optional)</string>
-
   <string name="calendar_sync_title">New Schedule Found</string>
   <string name="calendar_sync_desc">AI has identified the exact reminder time and prepared system calendar details for you.</string>
-
   <!-- Azure TTS Resources -->
   <string name="setting_tts_page_api_key_description_azure">Subscription key for Azure Speech Service</string>
   <string name="setting_tts_page_api_key_placeholder_azure">Please enter Azure API Key</string>
   <string name="setting_tts_page_region">Region</string>
   <string name="setting_tts_page_region_description">Region where the service is deployed, e.g. eastus</string>
-
   <!-- Gemini TTS Additional Resources -->
   <string name="setting_tts_page_api_key_description_gemini">Your Gemini API Key</string>
   <string name="setting_tts_page_voice_name_placeholder_gemini">e.g. Kore</string>
-
   <!-- ElevenLabs Additional Resources -->
   <string name="setting_tts_page_api_key_description_elevenlabs">Your ElevenLabs API Key</string>
   <string name="setting_tts_page_api_key_placeholder_elevenlabs">Please enter ElevenLabs API Key</string>
   <string name="setting_tts_page_model_id">Model ID</string>
   <string name="setting_tts_page_model_id_description">Model identifier for ElevenLabs</string>
-
   <!-- System TTS Additional Resources -->
   <string name="setting_tts_page_voice_name_default">System Default</string>
   <string name="provider_type_hint">Note: Most providers (including DeepSeek, Zhipu, and various aggregators) are compatible with the OpenAI format. Select Google or Claude only when connecting directly to their official APIs. Use OpenAI format even for Gemini/Claude if using an aggregator.</string>
-
   <!-- Azure TTS Picker -->
   <string name="setting_tts_page_azure_voice_picker_title">Select Azure Voice</string>
   <string name="setting_tts_page_azure_voice_picker_search_placeholder">Search by name or ID...</string>
@@ -1511,7 +1451,6 @@
   <!-- MiniMax TTS Picker -->
   <string name="setting_tts_page_minimax_voice_picker_title">Select MiniMax Voice</string>
   <string name="setting_tts_page_minimax_style_picker_title">Select MiniMax Style</string>
-
   <string name="detail_memory_title">Detail Memory</string>
   <string name="detail_memory_desc">Precisely trigger memory archiving based on the number of messages</string>
   <string name="detail_memory_hint">Set the interval of dialogue messages for memory slicing. The smaller the value, the finer the memory division and the more memory fragments there will be. It is recommended to set it between 20~50.</string>
@@ -1520,7 +1459,6 @@
   <string name="tts_filter_rules_filter_emojis_title">Filter Emojis</string>
   <string name="tts_filter_rules_filter_emojis_desc">When enabled, emojis (e.g. 🤯) will not be read out by TTS.</string>
   <string name="syncing_context_animation_hint">Consolidating...</string>
-
   <string name="backup_permission_notification">Send notifications (for device control tools)</string>
   <string name="backup_permission_location_coarse">Coarse location (for the {{location}} variable)</string>
   <string name="backup_permission_location_fine">Precise location</string>
@@ -1586,7 +1524,6 @@
   <string name="assistant_extended_taboos">Taboos</string>
   <string name="assistant_extended_interaction_habits">Interaction Habits</string>
   <string name="assistant_extended_relationships">Important Relationships</string>
-
   <string name="assistant_extended_hair_color">Hair Color</string>
   <string name="assistant_extended_hair_curliness">Hair Curliness</string>
   <string name="assistant_extended_hair_length">Hair Length</string>
@@ -1597,7 +1534,6 @@
   <string name="assistant_extended_muscle">Muscle</string>
   <string name="assistant_extended_height">Height (cm)</string>
   <string name="assistant_extended_body_fat">Body Fat</string>
-
   <string name="assistant_extended_edit_title">Personality Details</string>
   <string name="assistant_advanced_extended_edit_entry_title">Edit Personality &amp; Appearance</string>
   <string name="assistant_advanced_extended_edit_entry_desc">Set personality, detailed appearance, habits, etc.</string>
@@ -1614,7 +1550,6 @@
   <string name="user_profile_taboos">Taboos</string>
   <string name="user_profile_interaction_preferences">Interaction Preferences</string>
   <string name="user_profile_important_relationships">Important Relationships</string>
-
   <!-- Agent Memory Settings Related -->
   <string name="assistant_memory_include_user_profile">Include User Profile</string>
   <string name="assistant_memory_include_user_profile_desc">Allow the agent to access your personal profile information including appearance, occupation and taboos during conversations</string>
@@ -1625,7 +1560,6 @@
   <string name="user_profile_email">Email</string>
   <string name="user_profile_email_hint">If no recipient is specified when the device sends emails, this email address will be used as the default recipient for the email feature.</string>
   <string name="user_profile_birthday_placeholder">Select Date</string>
-
   <string name="permission_check_usage_stats">Usage Statistics</string>
   <string name="permission_check_accessibility">Accessibility Service</string>
   <string name="permission_check_accessibility_desc">Allow the app to perform automated operations or assisted interactions via the Accessibility Service</string>
@@ -1651,7 +1585,6 @@
   <string name="manual_archive_l1_success">Successfully archived %d segments</string>
   <string name="operation_manual">Operation Manual</string>
   <string name="operation_description">Check the detailed instructions for function usage</string>
-
   <!-- Favorites related functions -->
   <string name="menu_page_favorites">Favorites</string>
   <string name="chat_page_multi_select">Multi-select</string>
@@ -1663,7 +1596,6 @@
   <string name="action_favorite">Favorite</string>
   <string name="action_share">Share</string>
   <string name="favorites_detail_title">Details</string>
-
   <string name="action_voice_call">Voice Call</string>
   <string name="call_status_connecting">Connecting...</string>
   <string name="call_status_listening">Listening</string>
@@ -1688,14 +1620,12 @@
   <string name="backup_permission_wifi">Modify the Wi-Fi connection status</string>
   <string name="permission_check_wifi">Wi-Fi permission</string>
   <string name="permission_check_wifi_desc">Allow AI to control your Wi-Fi</string>
-
   <string name="feature_desktop_pet">Desktop Pet</string>
   <string name="feature_desktop_pet_desc">Display a companion orb on the screen to explore your phone alongside you</string>
   <string name="permission_overlay_title">Display Over Other Apps Permission</string>
   <string name="permission_overlay_desc">Used to show the interactive orb and AI reply bubbles on the screen</string>
   <string name="pet_trigger_manual">Let me see what you\'re looking at...</string>
   <string name="pet_input_hint">Send a message to the pet</string>
-
   <string name="setting_display_wechat_mode">WeChat Mode</string>
   <string name="setting_display_wechat_mode_desc">Once enabled, conversations will be displayed in a layout similar to WeChat: concise replies, paragraphing by sentences, avatar display and hidden thinking process.</string>
   <string name="chat_status_typing">Typing...</string>
@@ -1781,17 +1711,14 @@
   <string name="milestone_time">Occurrence Time</string>
   <string name="milestone_time_placeholder">E.g.: 2024-05-20</string>
   <string name="milestone_content">Detailed Content</string>
-
   <string name="chat_page_regenerate_requirement_title">Requirements for Optimizing Replies</string>
   <string name="chat_page_regenerate_requirement_placeholder">Enter your specific requirements for this reply (optional), e.g., keep it brief...</string>
   <string name="chat_page_regenerate_requirement_label">Optimization Requirements</string>
-
   <string name="assistant_detail_search_history">Search Chat History</string>
   <string name="chat_history_search_title">Search Chat Records</string>
   <string name="chat_history_search_hint">Search chat content with %s</string>
   <string name="chat_history_search_empty">No matching records found</string>
   <string name="consolidate_failed_insufficient">The number of archived messages is not met</string>
-
   <string name="agent_task_preset_memory_consolidation">Memory Consolidation</string>
   <string name="agent_task_instruction_memory_consolidation">"Check whether it is necessary to update user profiles/assistant profiles (corresponding tool: update_profile), milestones (corresponding tool: milestone_manager), and assistant to-do items (corresponding tool: schedule_manager). If an update is required, call the corresponding tools to complete the update automatically."</string>
   <string name="setting_mcp_page_add_server">Add MCP Server</string>
@@ -1896,7 +1823,6 @@
   <string name="diary_search_hint">Enter content to search diaries...</string>
   <string name="diary_search_no_result">No relevant diaries found</string>
   <string name="diary_comment_delete_confirm">Are you sure you want to delete this comment?</string>
-
   <!-- Hour Light (小时光) -->
   <string name="hour_light_title">Hour Light</string>
   <string name="hour_light_developing">This feature is under development…</string>
@@ -1905,7 +1831,6 @@
   <string name="diary_select_agent_to_comment">Select an agent to comment</string>
   <string name="diary_agent_commenting_to">Commenting as %1$s</string>
   <string name="diary_comment_switched_to_normal_mode">Switched to normal mode to fully receive comments</string>
-
   <!-- Handwritten Diary / OCR -->
   <string name="diary_handwrite_section_title">Handwritten Diary</string>
   <string name="diary_handwrite_camera">Camera</string>
@@ -1928,21 +1853,17 @@
   <string name="diary_ocr_failed_banner">OCR parsing failed: %1$d image(s) could not be parsed</string>
   <string name="diary_ocr_failed_view_detail">View Details</string>
   <string name="diary_ocr_failed_dismiss">Dismiss</string>
-
   <string name="diary_add_author_title">New Diary</string>
   <string name="diary_add_type_title">Choose Entry Type</string>
   <string name="diary_add_type_scan">Scan Document</string>
   <string name="diary_add_type_scan_desc">Import/photograph pages, then crop + OCR</string>
   <string name="diary_add_type_direct">Write Directly</string>
   <string name="diary_add_type_direct_desc">Compose text diary directly</string>
-
   <string name="diary_scan_entry_title">Scan Document</string>
   <string name="diary_scan_camera_desc">Take a photo of the page</string>
   <string name="diary_scan_gallery_desc">Import from album</string>
-
   <string name="setting_page_feedback">Feedback &amp; Suggestions</string>
   <string name="setting_page_feedback_desc">Submit your feedback via Feishu</string>
-
   <!-- Wake Word -->
   <string name="setting_page_wake_word">Voice Wake Word</string>
   <string name="setting_page_wake_word_desc">Say wake word to start a voice call</string>
@@ -1954,7 +1875,6 @@
   <string name="setting_wake_word_enable">Enable Voice Wake</string>
   <string name="setting_wake_word_enable_on">Listening for wake word</string>
   <string name="setting_wake_word_enable_off">Tap to enable wake word detection</string>
-
   <string name="setting_wake_word_assistant">Wake Assistant</string>
   <string name="setting_wake_word_assistant_fallback">Not set, using current main assistant: \"%1$s\"</string>
   <string name="setting_wake_word_assistant_follow">Follow current main assistant: %1$s</string>
@@ -1985,11 +1905,9 @@
   <string name="setting_wake_word_help_content">1. Download the KWS model (about 4MB, stored locally)\n2. Enable voice wake\n3. Say your wake word to auto-start a voice call\n\nThe wake word detection runs entirely on-device. Audio is never uploaded.\n\nCustom wake words use Chinese pinyin tokens from the model\'s vocabulary.</string>
   <string name="notification_wake_word_active">Listening for wake word</string>
   <string name="notification_channel_wake_word">Voice Wake Word</string>
-
   <string name="wake_word_model_prepare_failed">Wake word model is missing. Please download it in Settings.</string>
   <string name="wake_word_detector_init_failed">Failed to initialize wake word detector. Check keyword pinyin format.</string>
   <string name="wake_word_audio_init_failed">Failed to open microphone. Grant RECORD_AUDIO permission first.</string>
-
   <string name="setting_wake_word_test_title">Simulated Wake Test</string>
   <string name="setting_wake_word_test_desc">Bypass microphone, directly simulate a wake hit to validate the call pipeline</string>
   <string name="setting_wake_word_test_trigger">Simulate wake &amp; start call</string>
@@ -1997,5 +1915,4 @@
   <string name="setting_wake_word_test_success">Simulated wake succeeded, call started with \"%1$s\"</string>
   <string name="setting_wake_word_test_failed">Simulated wake failed: %1$s</string>
   <string name="setting_wake_word_test_hint">If this button opens the call screen correctly, the overall pipeline is healthy. From there, tune sensitivity or try a more distinct/shorter pinyin sequence if KWS never fires.</string>
-
 </resources>

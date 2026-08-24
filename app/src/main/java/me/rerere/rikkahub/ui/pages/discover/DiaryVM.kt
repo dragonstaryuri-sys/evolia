@@ -915,13 +915,35 @@ class DiaryVM(
             currentSettings.assistants.find { it.isMain }
         } ?: return
 
-        val workRequest = OneTimeWorkRequestBuilder<DiaryWorker>()
-            .setInputData(workDataOf("assistantId" to assistant.id.toString(), "isManual" to true))
-            .addTag("diary_gen")
-            .build()
+        val uniqueName = "diary_gen_${assistant.id}"
+        val workManager = WorkManager.getInstance(app)
 
-        WorkManager.getInstance(app).enqueueUniqueWork("diary_gen_${assistant.id}", ExistingWorkPolicy.REPLACE, workRequest)
-        toaster?.show(app.getString(R.string.discover_page_diary_generating), type = ToastType.Info)
+        viewModelScope.launch {
+            // 先检查该角色同名任务是否已在队列/运行中：避免重复触发浪费
+            val existing = withContext(Dispatchers.IO) {
+                runCatching { workManager.getWorkInfosForUniqueWork(uniqueName).get() }
+                    .getOrNull()
+                    .orEmpty()
+            }
+            val isRunning = existing.any {
+                it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
+            }
+            if (isRunning) {
+                toaster?.show(
+                    app.getString(R.string.discover_page_diary_generating_already),
+                    type = ToastType.Info
+                )
+                return@launch
+            }
+
+            val workRequest = OneTimeWorkRequestBuilder<DiaryWorker>()
+                .setInputData(workDataOf("assistantId" to assistant.id.toString(), "isManual" to true))
+                .addTag("diary_gen")
+                .build()
+
+            workManager.enqueueUniqueWork(uniqueName, ExistingWorkPolicy.KEEP, workRequest)
+            toaster?.show(app.getString(R.string.discover_page_diary_generating), type = ToastType.Info)
+        }
     }
 
     fun deleteDiary(id: String) {
@@ -968,10 +990,24 @@ class DiaryVM(
                     if (info.state == WorkInfo.State.SUCCEEDED && !notifiedTaskIds.contains(info.id)) {
                         val isSkipped = info.outputData.getBoolean("skipped", false)
                         val reason = info.outputData.getString("reason")
-                        if (isSkipped && reason == "already_exists") {
-                            toaster.show(app.getString(R.string.diary_no_new_messages), type = ToastType.Info)
-                        } else {
-                            toaster.show(app.getString(R.string.discover_page_diary_generate_success), type = ToastType.Success)
+                        val isPartial = info.outputData.getBoolean("partial", false)
+                        when {
+                            // 部分成功：已有 chunk 落盘，后续 chunk 中断但不回滚
+                            isPartial -> {
+                                toaster.show(
+                                    app.getString(R.string.discover_page_diary_generate_partial_toast),
+                                    type = ToastType.Warning
+                                )
+                            }
+                            isSkipped && reason == "already_exists" -> {
+                                toaster.show(app.getString(R.string.diary_no_new_messages), type = ToastType.Info)
+                            }
+                            else -> {
+                                toaster.show(
+                                    app.getString(R.string.discover_page_diary_generate_success),
+                                    type = ToastType.Success
+                                )
+                            }
                         }
                         notifiedTaskIds.add(info.id)
                     } else if (info.state.isFinished) {
