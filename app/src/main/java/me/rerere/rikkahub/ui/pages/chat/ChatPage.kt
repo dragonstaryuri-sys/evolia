@@ -424,6 +424,8 @@ private fun ChatPageContent(
     val callStatus by vm.callStatus.collectAsStateWithLifecycle()
     val callLatestMessage by vm.callLatestMessage.collectAsStateWithLifecycle()
     val callListeningText by vm.callListeningText.collectAsStateWithLifecycle()
+    // 接近传感器：耳朵贴近 → true（遮罩兜底 + 禁止触摸）
+    val isProximityNear by vm.isProximityNear.collectAsStateWithLifecycle()
 
     // --- 统一返回出口逻辑 ---
     val handleBack: () -> Unit = {
@@ -477,8 +479,12 @@ private fun ChatPageContent(
     // 终止按钮完全以 isAiTyping 为准：
     //   - finally 块中立即清除 → AI 停后按钮立即消失，不依赖 invokeOnCompletion 的异步
     //   - 微信模式 5 秒 debounce 期间 isAiTyping=false → 前 5 秒不显示终止按钮
-    LaunchedEffect(isAiTyping) {
-        inputState.loading = isAiTyping
+    // 使用 SideEffect 而非 LaunchedEffect：确保每次 recomposition 都同步 loading，
+    // 不依赖 key 变化触发；避免 inputState 重建后 loading 未同步导致终止按钮消失
+    SideEffect {
+        if (inputState.loading != isAiTyping) {
+            inputState.loading = isAiTyping
+        }
     }
 
     AssistantChatTheme(assistant = currentAssistant) {
@@ -1026,6 +1032,7 @@ private fun ChatPageContent(
                     latestMessageRole = callLatestMessage?.role,
                     latestMessageText = callLatestMessage?.text,
                     listeningText = callListeningText,
+                    isNearEar = isProximityNear,
                     onMuteToggle = { vm.toggleCallMute() },
                     onSpeakerToggle = { vm.toggleCallSpeaker() },
                     onHangup = { vm.hangupCall() },

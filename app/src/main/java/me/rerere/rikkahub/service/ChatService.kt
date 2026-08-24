@@ -433,6 +433,7 @@ class ChatService(
                 mutateConversationAndSave(conversationId) { current -> current }
 
                 val job = launch {
+                    _isAiTypingMap.update { it + (conversationId to true) }
                     try {
                         handleMessageComplete(
                             conversationId = conversationId,
@@ -442,6 +443,12 @@ class ChatService(
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "自动化任务生成失败", e)
+                    } finally {
+                        // 竞态防护：同 triggerAIResponse，避免旧 job 的 finally 清除新 job 的 typing 状态
+                        val isStillActiveJob = _generationJobs.value[conversationId] == currentCoroutineContext().job
+                        if (isStillActiveJob) {
+                            _isAiTypingMap.update { it - conversationId }
+                        }
                     }
                 }
 
@@ -737,7 +744,11 @@ class ChatService(
         if (oldJob != null) {
             oldJob.cancel()
             removeGenerationJob(conversationId)
-            _isAiTypingMap.update { it - conversationId }
+            // 仅在不触发 AI 回复时清除 typing 状态（如 sendMessageWithoutAnswer）
+            // answer=true 时由 triggerAIResponse 管理状态，避免 true→false→true 闪烁
+            if (!answer) {
+                _isAiTypingMap.update { it - conversationId }
+            }
         }
         wechatDebounceJobs[conversationId]?.cancel()
         val newNode = predefinedUserNode ?: UIMessage(role = MessageRole.USER, parts = content).toMessageNode(conversationId)
@@ -782,18 +793,21 @@ class ChatService(
         // 继续持有 mutex 流式写入分句，用户发新消息时无法被打断。
         _generationJobs.value[conversationId]?.cancel()
         wechatDebounceJobs[conversationId]?.cancel()
-        _isAiTypingMap.update { it - conversationId }
 
         val settings = settingsStore.settingsFlow.value
         val wechatMode = settings.getEffectiveDisplaySetting(settings.getCurrentAssistant()).wechatMode
 
+        // 普通模式下不清除 typing 状态，避免 true→false→true 闪烁导致终止按钮短暂消失
+        // 微信模式下需要清除，因为要 5 秒延迟后才重新设置（前 5 秒不显示终止按钮）
+        if (wechatMode) {
+            _isAiTypingMap.update { it - conversationId }
+        }
+
         val debounceJob = appScope.launch {
             if (wechatMode) {
                 delay(5000)
-                _isAiTypingMap.update { it + (conversationId to true) }
-            } else {
-                _isAiTypingMap.update { it + (conversationId to true) }
             }
+            _isAiTypingMap.update { it + (conversationId to true) }
 
             val timeoutJob = launch {
                 delay(15 * 60 * 1000L)
@@ -815,7 +829,13 @@ class ChatService(
                 }
             } finally {
                 timeoutJob.cancel()
-                _isAiTypingMap.update { it - conversationId }
+                // 竞态防护：只在当前 job 仍是活跃的 generation job 时才清除 typing 状态
+                // 避免被新 job 替换后，旧 job 的 finally 异步执行清除了新 job 的 typing 状态
+                // （这是"多次工具调用时终止按钮消失"的根本原因）
+                val isStillActiveJob = _generationJobs.value[conversationId] == currentCoroutineContext().job
+                if (isStillActiveJob) {
+                    _isAiTypingMap.update { it - conversationId }
+                }
             }
         }
 
@@ -965,7 +985,11 @@ class ChatService(
                         _errorFlow.emit(translateError(e))
                     }
                 }finally {
-                    _isAiTypingMap.update { it - conversationId }
+                    // 竞态防护：同 triggerAIResponse，避免旧 job 的 finally 清除新 job 的 typing 状态
+                    val isStillActiveJob = _generationJobs.value[conversationId] == currentCoroutineContext().job
+                    if (isStillActiveJob) {
+                        _isAiTypingMap.update { it - conversationId }
+                    }
                 }
         }
         setGenerationJob(conversationId, job)
@@ -990,7 +1014,7 @@ class ChatService(
         val mutex = conversationMutexes.computeIfAbsent(conversationId) { Mutex() }
         mutex.withLock {
             checkInvalidMessages(conversationId)
-            val currentJob = coroutineContext.job
+            val currentJob = currentCoroutineContext().job
             var currentSearchCount = 0
             val settings = settingsStore.settingsFlow.first()
             var currentConversation = conversations[conversationId]?.value
@@ -1449,6 +1473,12 @@ class ChatService(
                             wechatStoredSentenceCount++
                         }
                         wechatSentenceBuffer.clear()
+                    }
+
+                    // 微信模式：所有分句已存储完毕并显示给用户，后续的 usage 迁移和数据库保存
+                    // 只是内部处理，不应让用户继续等待"正在输入"指示器
+                    if (wechatMode) {
+                        _isAiTypingMap.update { it - conversationId }
                     }
 
                     // 微信模式：把原始 AI 消息的 usage 和上下文来源元数据迁移到最后一个分句节点

@@ -88,6 +88,8 @@ class ChatVM(
     val callIsSpeakerOn: StateFlow<Boolean> = voiceCallManager.isSpeakerOn
     val isCallActive: StateFlow<Boolean> = voiceCallManager.isActive
     val callError: SharedFlow<String> = voiceCallManager.callError
+    // 贴近耳朵（接近传感器触发）→ CallScreen 盖全黑遮罩 + 禁用触摸（兜底）
+    val isProximityNear: StateFlow<Boolean> = voiceCallManager.isNearEar
 
     // --- 正在后台 ASR 转写的 USER 节点 ID 集合（允许多条并行；集合非空 = 转写中） ---
     private val pendingASRNodeIds: MutableSet<Uuid> = ConcurrentHashMap.newKeySet<Uuid>()
