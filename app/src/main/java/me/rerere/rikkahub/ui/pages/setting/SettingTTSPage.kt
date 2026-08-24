@@ -642,7 +642,7 @@ private fun TtsTextFilterSettingsDialog(
                     }
 
                     Text(
-                        text = "在设定时段内，自动朗读将强制保持静默。",
+                        text = "在设定时段内，ai朗读将强制保持静默。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
