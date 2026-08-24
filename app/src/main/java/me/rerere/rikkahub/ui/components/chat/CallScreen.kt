@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.input.pointer.pointerInput
 import coil3.compose.AsyncImage
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.R
@@ -62,6 +64,7 @@ fun CallScreen(
     latestMessageRole: MessageRole? = null,
     latestMessageText: String? = null,
     listeningText: String? = null,
+    isNearEar: Boolean = false,
     onMuteToggle: () -> Unit,
     onSpeakerToggle: () -> Unit,
     onHangup: () -> Unit,
@@ -470,6 +473,34 @@ fun CallScreen(
                     }
                 )
             }
+        }
+
+        // 3. 贴近耳朵 → 全黑遮罩（兜底息屏 + 绝对防止误触）
+        //    - 系统 proximityWakeLock 生效时这层会被"黑屏盖过"几乎看不见；
+        //    - 某些 ROM 不支持三方 proximityWakeLock 时，这层完全替代黑屏；
+        //    - 无论哪种情况，所有触摸事件都被强制 consume，避免脸颊挂断/静音。
+        androidx.compose.animation.AnimatedVisibility(
+            visible = isNearEar,
+            enter = androidx.compose.animation.fadeIn(tween(120)),
+            exit = androidx.compose.animation.fadeOut(tween(180)),
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(Float.MAX_VALUE)
+                .pointerInput(Unit) {
+                    // 拦截所有指针事件：按下、移动、抬起全部 consume，不下传到按钮
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            )
         }
     }
 }

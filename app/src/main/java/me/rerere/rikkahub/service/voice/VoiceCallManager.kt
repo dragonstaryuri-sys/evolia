@@ -4,6 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -12,6 +16,7 @@ import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
@@ -125,6 +130,10 @@ class VoiceCallManager(
     private val _callError = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val callError: SharedFlow<String> = _callError.asSharedFlow()
 
+    // 贴近耳朵（接近传感器触发）：true=贴近 → 系统黑屏 + UI遮罩兜底；false=远离 → 恢复
+    private val _isNearEar = MutableStateFlow(false)
+    val isNearEar: StateFlow<Boolean> = _isNearEar.asStateFlow()
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     init {
@@ -228,11 +237,9 @@ class VoiceCallManager(
             if (speakerOn) {
                 val targetVol = (maxVol * 0.85f).toInt().coerceIn(1, maxVol)
                 am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
-                Log.e(TAG, "扬声器音量已设定为: $targetVol / $maxVol")
             } else {
                 val targetVol = if (savedVolume in 1..maxVol) savedVolume else (maxVol * 0.45f).toInt().coerceIn(1, maxVol)
                 am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
-                Log.e(TAG, "听筒音量已设定为: $targetVol / $maxVol")
             }
         }.onFailure {
             // 🔍 如果整个过程崩了，这里会抓到报错
@@ -296,6 +303,17 @@ class VoiceCallManager(
     //      所以不用我们手动喂 far-end PCM、不用做 SRC、不用管时序对齐。
     @Volatile private var apm: WebRtcAudioProcessor? = null
 
+    // ===== 接近传感器（贴近耳朵自动息屏，类似原生电话）=====
+    // 两重策略：
+    //   1. PROXIMITY_SCREEN_OFF_WAKE_LOCK：让系统真正关闭背光（电话级，ROM 支持最自然）
+    //   2. isNearEar → CallScreen 覆盖全黑遮罩 + 禁用触摸：WakeLock 不生效的机型兜底
+    @Volatile private var sensorManager: SensorManager? = null
+    @Volatile private var proximitySensor: Sensor? = null
+    @Volatile private var proximityWakeLock: PowerManager.WakeLock? = null
+    @Volatile private var proximityListener: SensorEventListener? = null
+    // 记录用户进入通话前的扬声器状态：耳朵贴近强制听筒，耳朵离开后恢复用户原来的选择
+    @Volatile private var userSpeakerPreferenceBeforeProximity: Boolean? = null
+
     // ========================================================================
     //  startCall / hangup
     // ========================================================================
@@ -334,6 +352,9 @@ class VoiceCallManager(
         runCatching {
             vadDetector = VadDetector(context).also { Log.i(TAG, "VAD initialized") }
         }.onFailure { Log.e(TAG, "VAD init failed", it) }
+
+        // ===== 接近传感器：贴近耳朵自动息屏 =====
+        startProximitySensor()
 
         val settings = settingsStore.settingsFlow.value
         ttsController.setProvider(settings.getSelectedTTSProvider())
@@ -1185,8 +1206,6 @@ class VoiceCallManager(
             }
             if (!isVadRunning || !isActive) return@launch
             if (snapGenId != null && identity.generationId != snapGenId) return@launch
-            //delay(50) // 让回声路径稳定,尝试50ms
-            //Log.i(TAG, "TTS playing; start baseline after ${waitMs}ms")
 
             val buffer = ShortArray(VadDetector.WINDOW_SIZE)
             var consecutiveSpeechFrames = 0
@@ -1629,6 +1648,8 @@ class VoiceCallManager(
         // 停止前台 Service + 释放 WakeLock
         VoiceCallForegroundService.stop(context)
         vadDetector?.release(); vadDetector = null
+        // ===== 停止接近传感器 =====
+        stopProximitySensor()
         // ====== 兜底：hangup 时再清一次 APM / far-end 监听，防止 stopInterruptionDetection 漏调 ======
         runCatching { ttsController.setOnFarPcmListener(null) }
         runCatching { apm?.close() }
@@ -1645,6 +1666,176 @@ class VoiceCallManager(
         leaveCallAudioMode()
         // 通话结束：恢复对话页的自动朗读（从通话开始前的断点继续，不漏读）
         customTtsState.resumeAutoReadAfterCall()
+    }
+
+    // ========================================================================
+    //  接近传感器监听（贴近耳朵自动息屏，模拟原生电话效果）
+    // ========================================================================
+
+    /**
+     * 启动接近传感器监听。
+     * 硬件优先级：
+     *   - PROXIMITY_SCREEN_OFF_WAKE_LOCK：让系统直接关背光（ROM 支持时最自然，和电话一模一样）
+     *   - 否则走 UI 层全黑遮罩兜底（通过 _isNearEar StateFlow 通知 CallScreen）
+     * 扬声器联动：贴近耳朵时自动切听筒，远离时恢复用户原先的开关选择。
+     */
+    @SuppressLint("WakelockTimeout")
+    private fun startProximitySensor() {
+        // 1. SensorManager + Proximity Sensor 获取
+        val sm = context.getSystemService<SensorManager>()
+        sensorManager = sm
+        val sensor = sm?.getDefaultSensor(Sensor.TYPE_PROXIMITY)
+        proximitySensor = sensor
+        if (sensor == null) {
+            Log.w(TAG, "startProximitySensor: 设备没有接近传感器，跳过自动息屏")
+            return
+        }
+        Log.i(TAG, "startProximitySensor: name=${sensor.name} vendor=${sensor.vendor} " +
+            "maxRange=${sensor.maximumRange}cm power=${sensor.power}mA")
+
+        // 2. PROXIMITY_SCREEN_OFF_WAKE_LOCK：
+        //    这个级别的 WakeLock 是给电话应用专用的，触发时系统会真正关闭 LCD 背光
+        //    （类似接通电话贴耳朵黑屏），并过滤掉触摸事件。部分 ROM 可能不支持，
+        //    所以需要同时启动 _isNearEar 状态让 UI 层做遮罩兜底。
+        runCatching {
+            val pm = context.getSystemService<PowerManager>()
+            if (pm != null) {
+                val tag = "Evolia:ProximityWakeLock"
+                val flags = PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK
+                proximityWakeLock = pm.newWakeLock(flags, tag).apply {
+                    setReferenceCounted(false)
+                }
+                Log.i(TAG, "PROXIMITY_SCREEN_OFF_WAKE_LOCK created")
+            }
+        }.onFailure {
+            Log.w(TAG, "创建 proximityWakeLock 失败（某些 ROM 会限制三方应用），将只使用 UI 遮罩兜底", it)
+        }
+
+        // 3. 注册传感器回调
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                val values = event?.values ?: return
+                if (values.isEmpty()) return
+                val distance = values[0]
+                // 接近传感器常见两种：
+                //   - 二元型（大部分手机）：distance=0 表示贴近，maxRange 表示远离
+                //   - 距离型：返回实际厘米数；以 maxRange * 0.5 为阈值
+                val threshold = (sensor.maximumRange.coerceAtLeast(5f)) * 0.5f
+                val near = distance < threshold
+                Log.v(TAG, "Proximity: distance=$distance cm, threshold=$threshold cm, near=$near")
+                handleProximityChanged(near)
+            }
+            override fun onAccuracyChanged(s: Sensor?, accuracy: Int) = Unit
+        }
+        proximityListener = listener
+        val registered = sm?.registerListener(
+            listener,
+            sensor,
+            SensorManager.SENSOR_DELAY_NORMAL   // ~200ms，够用且省电
+        ) ?: false
+        if (!registered) {
+            Log.w(TAG, "startProximitySensor: registerListener 返回 false，传感器不可用")
+            proximityListener = null
+        } else {
+            Log.i(TAG, "startProximitySensor: 监听注册成功")
+        }
+    }
+
+    /**
+     * 处理接近/远离事件：
+     * - 贴近耳朵（near=true）：
+     *     1. 记录用户原先的扬声器开关
+     *     2. 强制切听筒（避免贴耳朵时还从外放出声）
+     *     3. acquire proximityWakeLock 让系统关背光
+     *     4. emit isNearEar=true 让 UI 盖全黑遮罩（兜底 + 动画过渡）
+     * - 远离耳朵（near=false）：反过来还原
+     */
+    @SuppressLint("WakelockTimeout")
+    private fun handleProximityChanged(near: Boolean) {
+        val prev = _isNearEar.value
+        if (prev == near) return
+        _isNearEar.value = near
+        Log.i(TAG, "handleProximityChanged: $prev → $near")
+        runCatching {
+            if (near) {
+                // 贴近耳朵
+                // 仅在用户偏好尚未记录时保存，避免来回抖动覆盖用户真选的状态
+                if (userSpeakerPreferenceBeforeProximity == null) {
+                    userSpeakerPreferenceBeforeProximity = _isSpeakerOn.value
+                }
+                // 强制听筒
+                if (_isSpeakerOn.value) {
+                    Log.i(TAG, "贴近耳朵 → 自动切换到听筒")
+                    _isSpeakerOn.value = false
+                    applySpeakerRoute(false)
+                }
+                // 让系统关背光（真正黑屏）
+                val wl = proximityWakeLock
+                if (wl != null && !wl.isHeld) {
+                    wl.acquire()
+                    Log.i(TAG, "proximityWakeLock.acquire() → 系统应已黑屏")
+                }
+            } else {
+                // 远离耳朵
+                // 还原用户原先的扬声器选择
+                val pref = userSpeakerPreferenceBeforeProximity
+                if (pref != null && pref != _isSpeakerOn.value) {
+                    Log.i(TAG, "远离耳朵 → 恢复扬声器选择=$pref")
+                    _isSpeakerOn.value = pref
+                    applySpeakerRoute(pref)
+                }
+                userSpeakerPreferenceBeforeProximity = null
+                // 释放 proximityWakeLock → 系统点亮背光
+                val wl = proximityWakeLock
+                if (wl != null && wl.isHeld) {
+                    wl.release()
+                    Log.i(TAG, "proximityWakeLock.release() → 系统应已亮屏")
+                }
+            }
+        }.onFailure {
+            Log.e(TAG, "handleProximityChanged($near) 抛异常", it)
+        }
+    }
+
+    /**
+     * 停止接近传感器监听 + 释放 proximityWakeLock + 还原扬声器状态。
+     * hangup() 必调用；WakeLock 不 release 会导致用户退出通话后屏幕一直黑。
+     */
+    private fun stopProximitySensor() {
+        runCatching {
+            // 1. 注销传感器回调（不注销会后台持续跑，耗电）
+            val sm = sensorManager
+            val listener = proximityListener
+            if (sm != null && listener != null) {
+                sm.unregisterListener(listener)
+                Log.i(TAG, "stopProximitySensor: 传感器监听已注销")
+            }
+            proximityListener = null
+            proximitySensor = null
+            sensorManager = null
+
+            // 2. 释放 proximityWakeLock（极其关键！不释放会出现"退出通话后屏幕仍然黑屏"的灵异 Bug）
+            val wl = proximityWakeLock
+            if (wl != null) {
+                if (wl.isHeld) wl.release()
+                Log.i(TAG, "stopProximitySensor: proximityWakeLock released")
+            }
+            proximityWakeLock = null
+
+            // 3. 兜底：如果贴耳朵 → 还没移开就被用户挂断了，需要把扬声器切回用户原来的选择
+            val pref = userSpeakerPreferenceBeforeProximity
+            if (pref != null && pref != _isSpeakerOn.value) {
+                Log.i(TAG, "stopProximitySensor: 兜底还原扬声器=$pref")
+                _isSpeakerOn.value = pref
+                applySpeakerRoute(pref)
+            }
+            userSpeakerPreferenceBeforeProximity = null
+
+            // 4. 保证 isNearEar 归零（否则遮罩不消失）
+            _isNearEar.value = false
+        }.onFailure {
+            Log.e(TAG, "stopProximitySensor 抛异常", it)
+        }
     }
 
     // ========================================================================
@@ -1766,8 +1957,8 @@ class VoiceCallManager(
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
-        private const val BARGE_IN_DUCK_FRAMES = 8
-        private const val BARGE_IN_CONFIRM_FRAMES = 16
+        private const val BARGE_IN_DUCK_FRAMES = 6
+        private const val BARGE_IN_CONFIRM_FRAMES = 14
         private const val DUCK_TARGET_VOLUME = 0.2f
         private const val DUCK_DURATION_MS = 240L
         private const val BASELINE_LEARN_FRAMES = 20
@@ -1777,13 +1968,13 @@ class VoiceCallManager(
         // 回声尾窗：TTS 停后多少 ms 内仍算"有回声"。
         // 这段时间**不录音**（而非录了再挡），比用阈值过滤更彻底，且不会漏用户字——
         // 100ms 内用户刚听完 AI 回复，极少能立刻完整地说一句话；delay 完再启预卷正好接上。
-        private const val ECHO_TAIL_WINDOW_MS = 100L
+        private const val ECHO_TAIL_WINDOW_MS = 0L//尝试去掉回声尾窗
         // 尾窗门限倍数：轻微抬高即可
         private const val ECHO_TAIL_BOOST = 1.1
         private const val TTS_SILENCE_TIMEOUT_MS = 1500L
         // ASR 忽略期：从 TTS 播完后开始计时，800ms 覆盖大音量扬声器的尾音回声
         // （500ms 不够：大音量扬声器物理振铃需要 300-500ms 衰减）
-        private const val ASR_IGNORE_PERIOD_MS = 1000L
+        private const val ASR_IGNORE_PERIOD_MS = 800L
         // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.005）
         private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.005f
 
@@ -1795,7 +1986,7 @@ class VoiceCallManager(
             "啊，" to 25,
             "哦。" to 20,
             "哦哦。" to 10,
-            "嗯嗯~" to 10
+            "嗯嗯." to 10
         )
         //   LLM 超过 1s 还没返回可朗读内容时的"等待提示"（带概率权重）：
         private val WAITING_CUE_BASE = listOf(
