@@ -42,7 +42,6 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 /**
  * 通话状态枚举
@@ -138,12 +137,9 @@ fun CallScreen(
     ) {
         // 1. 背景处理：复用对话背景逻辑
         if (assistant.background != null) {
+            // 通话界面始终使用深色背景（与系统深色/浅色模式无关）
             val scrimAlpha = assistant.backgroundDim.coerceIn(0f, 0.85f)
-            val scrimColor = if (LocalDarkMode.current) {
-                Color.Black.copy(alpha = scrimAlpha)
-            } else {
-                Color.White.copy(alpha = scrimAlpha)
-            }
+            val scrimColor = Color.Black.copy(alpha = scrimAlpha)
             Box(modifier = Modifier.fillMaxSize()) {
                 AsyncImage(
                     model = assistant.background,
