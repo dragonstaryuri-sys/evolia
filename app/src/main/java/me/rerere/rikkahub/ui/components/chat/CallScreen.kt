@@ -52,7 +52,8 @@ enum class CallStatus {
     LISTENING,
     THINKING,
     SPEAKING,
-    DUCKING
+    DUCKING,
+    DISCONNECTED
 }
 
 @Composable
@@ -212,6 +213,7 @@ fun CallScreen(
                             CallStatus.THINKING -> stringResource(R.string.call_status_thinking)
                             CallStatus.SPEAKING -> stringResource(R.string.call_status_speaking)
                             CallStatus.DUCKING -> stringResource(R.string.call_status_ducking)
+                            CallStatus.DISCONNECTED -> stringResource(R.string.call_status_disconnected)
                         },
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.bodyMedium,

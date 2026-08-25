@@ -54,6 +54,7 @@ import me.rerere.tts.controller.TtsController
 import me.rerere.tts.model.PlaybackStatus
 import kotlin.uuid.Uuid
 import kotlin.collections.set
+import java.util.concurrent.ConcurrentHashMap
 
 private const val TAG = "VoiceCallManager"
 
@@ -277,8 +278,8 @@ class VoiceCallManager(
     // - lastSpokenNodeId:  上一次真正喂给 TTS 的节点 ID（用于 spokenTextLen 计算）
     // - spokenTextLen:     已经"真正喂给 TTS"的总字符数（手动打断 truncate 的依据，前缀累积）
     // - spokenPartsPerNode:每个节点已播报的文本长度（用于总 spokenTextLen 计算）
-    @Volatile private var fedLengthPerNode = HashMap<Uuid, Int>()
-    @Volatile private var spokenPartsPerNode = HashMap<Uuid, Int>()
+    private val fedLengthPerNode = ConcurrentHashMap<Uuid, Int>()
+    private val spokenPartsPerNode = ConcurrentHashMap<Uuid, Int>()
     @Volatile private var spokenTextLen = 0
     @Volatile private var priorAssistantNodeId: Uuid? = null
     @Volatile private var speakingStarted = false
@@ -810,8 +811,8 @@ class VoiceCallManager(
         priorAssistantNodeId = priorConv.messageNodes.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
         Log.d(TAG, "priorAssistantNodeId=$priorAssistantNodeId")
 
-        fedLengthPerNode = HashMap()
-        spokenPartsPerNode = HashMap()
+        fedLengthPerNode.clear()
+        spokenPartsPerNode.clear()
         spokenTextLen = 0
         speakingStarted = false
 
@@ -1533,19 +1534,25 @@ class VoiceCallManager(
      */
     private fun interrupt(convId: Uuid) {
         Log.i(TAG, "interrupt turn=${identity.turnId} gen=${identity.generationId}")
+        // ===== 在推进身份之前先快照，用于异步 truncate 的会话校验（防止挂断→重拨后旧协程串改新会话） =====
+        val snapshotCallSession = identity.callSessionId
+        val snapshotGenId = identity.generationId
         // =========================================================================
-        //  1. 先做"只保留已经念过的文字"：
-        //     - ttsPlayedLen = TTS 真正播放完成的字符数（每个 chunk 播放结束后累加，最精确）
-        //     - spokenTextLen = 已经喂给 TTS 队列的字符数（作为兜底下限，避免 TTS 刚喂进去还没播就被打断时截断为0）
-        //     最终取两者中"≥兜底 且 不超过队列提交量"的值。
+        //  1. 截断策略："宁可少截断也不多截"
+        //     - ttsPlayedLen = TTS 真正播放完成的字符数（按 chunk 粒度，整个 chunk 播完才累加）
+        //     - queueFedLen = 已经喂给 TTS 队列的字符数（喂入即累加，含正在播放 + 排队中的内容）
+        //
+        //     旧逻辑取较小值（ttsPlayedLen），会导致正在播放的那句（已部分念出）被截掉。
+        //     新逻辑取较大值（queueFedLen），保留所有已提交给 TTS 的内容：
+        //       · 已播完的 → 保留 ✓
+        //       · 正在播的（用户已听到一部分）→ 保留 ✓
+        //       · 刚排队还没播的（马上要念给用户听的）→ 保留 ✓
+        //     符合用户"宁可少截断也不多截"的偏好。
         // =========================================================================
         val ttsPlayedLen = ttsController.playedTextLength.value.coerceAtLeast(0)
         val queueFedLen = spokenTextLen.coerceAtLeast(0)
-        // 兜底：实际播放长度不能超过已提交给 TTS 队列的长度（理论上不会，但防御一下）
-        val safePlayedLen = ttsPlayedLen.coerceAtMost(queueFedLen)
-        // 如果 TTS 还没开始播（played=0），但 spokenTextLen 已经有些内容被提交了，至少保留用户"马上要听到的"第一句
-        val saveSpokenLen = if (safePlayedLen > 0) safePlayedLen else queueFedLen
-        Log.i(TAG, "  → truncate: ttsPlayed=$ttsPlayedLen queueFed=$queueFedLen use=$saveSpokenLen")
+        val saveSpokenLen = maxOf(ttsPlayedLen, queueFedLen)
+        Log.i(TAG, "  → truncate: ttsPlayed=$ttsPlayedLen queueFed=$queueFedLen use=$saveSpokenLen (prefer more)")
         val wasSpeaking = speakingStarted
         // 停 TTS + 本地思考前导
         ttsController.stop()
@@ -1562,6 +1569,16 @@ class VoiceCallManager(
         // 如果 AI 真的开始说话过 (wasSpeaking)，并且还有没念到的内容 → 从表里截断
         if (wasSpeaking) {
             scope.launch(Dispatchers.IO) {
+                // ===== 关键校验：会话或 generation 被替换（挂断→重拨）则直接放弃，避免串改新会话 =====
+                if (identity.callSessionId != snapshotCallSession) {
+                    Log.w(TAG, "Interrupt: truncate skipped (callSession changed: $snapshotCallSession → ${identity.callSessionId})")
+                    return@launch
+                }
+                if (snapshotGenId != null && identity.generationId == snapshotGenId) {
+                    // 理论上不会发生：newTurn() 后 generationId 已经被清空，留作防御
+                    Log.w(TAG, "Interrupt: truncate skipped (same generation still active)")
+                    return@launch
+                }
                 runCatching {
                     chatService.truncateLastAssistantMessage(convId, saveSpokenLen)
                     Log.i(TAG, "Interrupt: truncated to spokenLen=$saveSpokenLen")
@@ -1576,8 +1593,8 @@ class VoiceCallManager(
     }
 
     private fun resetStreamingState() {
-        fedLengthPerNode = HashMap()
-        spokenPartsPerNode = HashMap()
+        fedLengthPerNode.clear()
+        spokenPartsPerNode.clear()
         spokenTextLen = 0
         speakingStarted = false
         priorAssistantNodeId = null
@@ -1629,7 +1646,7 @@ class VoiceCallManager(
         Log.i(TAG, "hangup session=${identity.callSessionId}")
         _isActive.value = false
         CallCommandHub.setCallActive(false)
-        _callStatus.value = CallStatus.CONNECTING
+        _callStatus.value = CallStatus.DISCONNECTED
         stopInterruptionDetection()
         stopListeningPreRoll()
         stopL1Timer()

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="default_assistant_name">Evolia</string>
   <string name="chat_page_title">对话</string>
@@ -1588,6 +1588,7 @@
   <string name="call_status_thinking">正在思考</string>
   <string name="call_status_speaking">正在说话</string>
   <string name="call_status_ducking">检测到你的声音...</string>
+  <string name="call_status_disconnected">通话已结束</string>
   <string name="call_action_end">挂断</string>
   <string name="call_action_mute">静音</string>
   <string name="call_action_speaker">扬声器</string>

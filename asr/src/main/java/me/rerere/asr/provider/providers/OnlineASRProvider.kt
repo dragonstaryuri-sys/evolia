@@ -181,6 +181,12 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             //   如果切片上传后 epoch 变了，说明 Final 已经执行了，丢弃该切片结果
             val sliceEpoch = AtomicInteger(0)
 
+            // ★ Final 非阻塞改造：当 VAD 产出 segment 时，read 循环不阻塞等待 in-flight slice；
+            //   而是立刻 snapshot 状态 + 换 epoch，把旧 epoch 下 in-flight slice 返回的"新增文本"
+            //   临时捕获到这里（CAS 循环追加），供异步 Final 协程拼接最终 prompt 用。
+            //   null=未在等待 Final；非 null=正在等待，值是已经捕获到的 bonus 文本（可能为空串）。
+            val pendingFinalInFlightBonus: AtomicReference<String?> = AtomicReference(null)
+
             // ★ Final 后静默期：Final 后一段时间内忽略噪声，不累积 slicePcm
             //   防止环境噪声/回声持续触发 inSpeechAux → 空切片循环
             var finalGracePeriodUntil = 0L
@@ -336,8 +342,23 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                                 Log.w(TAG, "Slice transcribe failed", e)
                                 ""
                             }
-                            // ★ 竞态检查：如果 epoch 变了，说明 Final 已经执行了，丢弃该切片结果
+                            // ★ 竞态检查：如果 epoch 变了，说明 Final 已经执行了
                             if (capturedEpoch != sliceEpoch.get()) {
+                                // --- Final 非阻塞改造：如果有 pending Final 正在等待旧 epoch 的 in-flight 结果，
+                                //     把该切片的"新增识别文本"CAS 追加到 bonus 里，供 Final 协程最后拼接。
+                                if (sliceText.isNotBlank()) {
+                                    val bonusHolder = pendingFinalInFlightBonus
+                                    var cur = bonusHolder.get()
+                                    while (cur != null) {
+                                        // cur != null 表示 Final 正在等待（有哨兵），追加新增文本
+                                        val newBonus = if (cur.isEmpty()) sliceText.trim() else (cur + sliceText.trim())
+                                        if (bonusHolder.compareAndSet(cur, newBonus)) {
+                                            Log.i(TAG, "[SliceBonus] captured bonus \"${sliceText.take(20)}\" → pendingFinal total=${newBonus.length}")
+                                            break
+                                        }
+                                        cur = bonusHolder.get() // CAS 失败，重读并重试
+                                    }
+                                }
                                 return@launch
                             }
                             if (sliceText.isNotBlank() && isActive) {
@@ -387,93 +408,119 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     }
                 }
 
-                // --- 4. VAD 产出完整 segment：Final ---
-                //    VAD segment 只作为"用户说完了"的信号，不用它的音频数据。
-                //    因为每帧 PCM 同时投喂了 VAD 和 slicePcm，两者包含的音频是重复的。
-                //    如果合并上传，Whisper 会收到两遍同样的音频，导致识别结果重复。
-                //    所以只用 slicePcm 里累积的音频（切片后的剩余部分，或没切片时的完整一句）。
+                // --- 4. VAD 产出完整 segment：Final（★ 非阻塞改造版）---
+                //    原实现缺陷：当 sliceInFlight=true 时，read 循环 while+delay(20) 阻塞最多 3s，
+                //       → AudioRecord.read() 不执行 → 缓冲溢出 → 用户音频丢帧。
+                //    新方案（三阶段）：
+                //       (1) snapshot 阶段（read 循环内，微秒级）：立刻换 epoch + 原子拷贝状态 +
+                //           清空原缓冲 → read 循环立刻继续录音，不丢帧。
+                //       (2) bonus 捕获：旧 epoch 下 in-flight slice 返回时，因 epoch mismatch
+                //           触发 bonus CAS 追加 → 新增识别文字被抢救回来，不被丢弃。
+                //       (3) 异步 Final 协程：最多等 3s 让 sliceInFlight settle（此时 read 循环
+                //           已在处理新的一轮音频，互不影响） → 拼接 bonus → 上传 Final。
                 while (!vad.empty() && isActive) {
                     val segment = vad.front()
                     vad.pop()
 
                     if (segment.samples.isEmpty()) continue
 
-                    // ★ 关键修复：如果切片正在 API 请求中，等它返回再处理 Final。
-                    //   否则 in-flight slice 的文本会被 epoch drop → recognizedText 缺少这部分 → Final 丢文本。
-                    //   用户表现为"前一句已经显示出来了，再说一句后前一句消失了"。
-                    //   等待期间 AudioRecord 内部缓冲会暂存音频，不会丢失（VAD 已判定用户说完了）。
-                    if (sliceInFlight.get()) {
-                        val waitStart = System.currentTimeMillis()
-                        while (sliceInFlight.get() && isActive) {
-                            val elapsed = System.currentTimeMillis() - waitStart
-                            if (elapsed > SLICE_INFLIGHT_TIMEOUT_MS) {
-                                Log.w(TAG, "[Final] In-flight slice timeout (${elapsed}ms), proceeding anyway")
-                                break
-                            }
-                            delay(20)
-                        }
-                        Log.i(TAG, "[Final] In-flight slice resolved after ${System.currentTimeMillis() - waitStart}ms, recognizedText=\"${recognizedText.get().take(30)}\"")
-                    }
-
-
-                    // 只用 slicePcm，不用 VAD segment 的音频
-                    val finalSamples = slicePcm.toFloatArray()
+                    // =============================================
+                    // (1) SNAPSHOT：read 循环内只做最轻量的原子拷贝，绝不阻塞
+                    // =============================================
+                    // 换 epoch：旧 in-flight slice 返回时 capturedEpoch != sliceEpoch.get() → 走 bonus 捕获分支
+                    val oldEpoch = sliceEpoch.getAndIncrement()
+                    // 原子抢出当前 prompt（之前所有已返回切片的拼接文本），同时清空留給下一轮
+                    val snapshotPrompt = recognizedText.getAndSet("")
+                    // 拷贝剩余尾巴 PCM，并清空原缓冲留給下一轮
+                    val snapshotTailSamples = slicePcm.toFloatArray()
                     slicePcm.clear()
-                    val finalMs = finalSamples.size * 1000 / SAMPLE_RATE
-                    val promptText = recognizedText.get()
-                    val hadPartial = promptText.isNotEmpty()
-                    Log.i(TAG, "┌─[Final 句子结束] 剩余切片=${finalMs}ms" +
-                        " 已有Partial=${if (hadPartial) "是" else "否"}" +
-                        " 已识别=\"${promptText.take(30)}\"")
+                    val snapshotTailMs = snapshotTailSamples.size * 1000 / SAMPLE_RATE
+                    val hadPartial = snapshotPrompt.isNotEmpty()
 
+                    // 立刻设置 pending Final 的 bonus 哨兵：in-flight slice 返回时会 CAS 追加进来
+                    // 注意：必须在换 epoch 之后、启动异步协程之前设置，避免窗口漏捕获
+                    pendingFinalInFlightBonus.set("")
+
+                    // 立刻清理 read 循环侧的状态（让下一轮录音从零开始，不依赖异步 Final 协程的时序）
+                    inSpeechAux = false
+                    consecutiveOnsetFrames = 0
+                    consecutiveEmptyCount = 0
+                    val snapshotFinalGraceMs = System.currentTimeMillis() + FINAL_GRACE_PERIOD_MS
+                    finalGracePeriodUntil = snapshotFinalGraceMs
+                    vad.reset()
+                    // NOTE：**不碰 sliceInFlight**！旧 in-flight slice 返回时会在 finally 里把它设 false；
+                    //       期间 read 循环侧 canSlice = !sliceInFlight 会自动阻止新一轮切片上传，
+                    //       既不堆积请求，也不会影响 read() 本身的执行。
+
+                    Log.i(TAG, "┌─[Final 句子结束] snapshot epoch=$oldEpoch→${sliceEpoch.get()} " +
+                        "tailMs=$snapshotTailMs prompt=\"${snapshotPrompt.take(30)}\" " +
+                        "inFlight=${sliceInFlight.get()} → 异步处理")
+
+                    // =============================================
+                    // (3) 启动异步 Final 协程（IO 线程，不阻塞 read 循环）
+                    // =============================================
                     scope.launch(Dispatchers.IO) {
-                        if (finalSamples.isEmpty()) {
-                            // slicePcm 为空（刚切片完用户就没再说话），直接用已识别文本作为 final
-                            if (promptText.isNotBlank() && isActive) {
-                                Log.i(TAG, "└─[Final 直接发送] (无剩余音频) 最终文本=\"$promptText\"")
-                                send(ASRResult(text = promptText, isFinal = true))
+                        // --- Step A. 等待 sliceInFlight settle（最多 SLICE_INFLIGHT_TIMEOUT_MS）---
+                        if (sliceInFlight.get()) {
+                            val waitStart = System.currentTimeMillis()
+                            var waited = 0L
+                            while (sliceInFlight.get() && isActive) {
+                                if (waited >= SLICE_INFLIGHT_TIMEOUT_MS) {
+                                    Log.w(TAG, "[FinalAsync] In-flight slice timeout (${waited}ms), proceeding")
+                                    break
+                                }
+                                delay(20)
+                                waited += 20
+                            }
+                            Log.i(TAG, "[FinalAsync] In-flight slice settled after ${System.currentTimeMillis() - waitStart}ms")
+                        }
+                        // 关 bonus 哨兵（取的同时置 null，避免后续 epoch 的 slice 被错误捕获）
+                        val inFlightBonus = pendingFinalInFlightBonus.getAndSet(null).orEmpty()
+
+                        // --- Step B. 组合最终 prompt：snapshot 的文本 + in-flight 抢救回来的 bonus ---
+                        val finalPrompt = when {
+                            snapshotPrompt.isEmpty() && inFlightBonus.isEmpty() -> ""
+                            snapshotPrompt.isEmpty() -> inFlightBonus
+                            inFlightBonus.isEmpty() -> snapshotPrompt
+                            else -> snapshotPrompt + inFlightBonus  // 直接拼接（都是按顺序识别的）
+                        }
+                        if (inFlightBonus.isNotEmpty()) {
+                            Log.i(TAG, "[FinalAsync] captured in-flight bonus len=${inFlightBonus.length} \"${inFlightBonus.take(20)}\"")
+                        }
+
+                        // --- Step C. 发 Final（两种情况：有尾巴音频 / 无尾巴音频直接用 prompt）---
+                        if (snapshotTailSamples.isEmpty()) {
+                            if (finalPrompt.isNotBlank() && isActive) {
+                                Log.i(TAG, "└─[Final 直接发送] (无剩余音频) hadPartial=$hadPartial final=\"$finalPrompt\"")
+                                send(ASRResult(text = finalPrompt, isFinal = true))
                             }
                             return@launch
                         }
-                        val pcm = ShortArray(finalSamples.size) {
-                            (finalSamples[it] * 32767f).toInt().toShort()
+                        val pcm = ShortArray(snapshotTailSamples.size) {
+                            (snapshotTailSamples[it] * 32767f).toInt().toShort()
                         }
                         val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
-                        val text = try {
-                            transcribe(wavBytes, providerSetting, promptText)
+                        val tailText = try {
+                            transcribe(wavBytes, providerSetting, finalPrompt)
                         } catch (e: Exception) {
                             Log.e(TAG, "Final transcribe failed", e)
                             ""
                         }
-                        // ★ Bug 修复：即使剩余切片转录返回空（噪声/太短），
-                        //   只要之前有 Partial 识别到了内容，就必须把已识别文本作为 Final 发出去
-                        //   否则用户的完整句子会被丢弃！
                         val finalText = when {
-                            text.isNotBlank() && promptText.isEmpty() -> text.trim()
-                            text.isNotBlank() && promptText.isNotEmpty() -> (promptText + text.trim())
-                            text.isBlank() && promptText.isNotEmpty() -> {
-                                Log.i(TAG, "Final transcribe returned empty, falling back to promptText")
-                                promptText
+                            tailText.isNotBlank() && finalPrompt.isEmpty() -> tailText.trim()
+                            tailText.isNotBlank() && finalPrompt.isNotEmpty() -> (finalPrompt + tailText.trim())
+                            tailText.isBlank() && finalPrompt.isNotEmpty() -> {
+                                Log.i(TAG, "Final transcribe returned empty, falling back to finalPrompt")
+                                finalPrompt
                             }
-                            else -> null  // 两个都空，什么都不发
+                            else -> null
                         }
                         if (finalText != null && isActive) {
-                            Log.i(TAG, "└─[Final 最终发送] 新增=\"${text.trim()}\" 最终文本=\"$finalText\"")
+                            Log.i(TAG, "└─[Final 最终发送] tail=\"${tailText.trim().take(20)}\" final=\"$finalText\"")
                             send(ASRResult(text = finalText, isFinal = true))
                         }
                     }
-
-                    // 重置状态
-                    recognizedText.set("")
-                    inSpeechAux = false
-                    // ★ 重置并发标志，确保下一轮可以正常切片
-                    sliceInFlight.set(false)
-                    // ★ Final 后设静默期：1.5s 内忽略噪声，防止回声/环境音触发空切片循环
-                    finalGracePeriodUntil = System.currentTimeMillis() + FINAL_GRACE_PERIOD_MS
-                    // ★ 重置空计数器：VAD 产出新 segment 说明用户开始新一句话
-                    consecutiveEmptyCount = 0
-                    vad.reset()
-                    // NOTE: 音频录制永不停止！
+                    // NOTE: read 循环立即继续，绝不等待上面的异步协程！
                 }
             }
         } finally {

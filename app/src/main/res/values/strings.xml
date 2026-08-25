@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
   <string name="default_assistant_name">Evolia</string>
   <string name="chat_page_title">Chats</string>
@@ -1602,6 +1602,7 @@
   <string name="call_status_thinking">Thinking</string>
   <string name="call_status_speaking">Speaking</string>
   <string name="call_status_ducking">Heard you...</string>
+  <string name="call_status_disconnected">Disconnected</string>
   <string name="call_action_end">Hang Up</string>
   <string name="call_action_mute">Mute</string>
   <string name="call_action_speaker">Speaker</string>
