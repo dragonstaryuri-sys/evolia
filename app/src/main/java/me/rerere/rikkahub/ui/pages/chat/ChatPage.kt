@@ -316,10 +316,9 @@ private fun ChatPageContent(
             }
             return
         }
-        if (currentChatModel == null) {
-            toaster.show(context.getString(R.string.error_select_model_first), ToastType.Error)
-            return
-        }
+        // 不再要求 currentChatModel 非空：语音消息入列不需要 chat model，
+        // ASR 转写用的是 ASR provider，AI 回复在 onASRNodeCompleted 里按需触发。
+        // 达到 59s 自动停录时也能正常发送（类似微信效果）。
         vm.sendVoiceMessage(result.uri, result.durationMs, preTranscribedText = streamedText)
     }
 
