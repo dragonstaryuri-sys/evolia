@@ -243,8 +243,9 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                 while (!vad.empty() && isActive) {
                     val segment = vad.front()
                     vad.pop()
-                    if (segment.samples.isNotEmpty()) {
-                        val finalSamples = accumulatedPcm.toFloatArray()
+                    if (segment.samples.isNotEmpty() || accumulatedPcm.isNotEmpty()) {
+                        // 优先使用 VAD segment 的音频（权威来源），避免 RMS 能量门控导致丢帧
+                        val finalSamples = if (segment.samples.isNotEmpty()) segment.samples else accumulatedPcm.toFloatArray()
                         accumulatedPcm.clear()
                         val decodeStartNs = System.nanoTime()
                         val finalText = decodeSamples(recognizer, finalSamples)
@@ -319,10 +320,11 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     }
                 }
 
-                // --- 2. 累积 PCM（仅在语音期间或已有累积时） ---
-                if (inSpeech || accumulatedPcm.isNotEmpty()) {
-                    accumulatedPcm.addAll(samples.asList())
-                }
+                // --- 2. 累积 PCM（始终累积，不依赖 RMS 能量门控） ---
+                // 旧逻辑仅在 RMS 判定为语音时累积，但 RMS 可能漏检轻声/气声，
+                // 而 VAD 已通过 acceptWaveform 收到完整音频并在 segment.samples 中返回。
+                // 这里始终累积作为 fallback，segment.samples 优先使用。
+                accumulatedPcm.addAll(samples.asList())
 
                 // --- 3. VAD 产出完整 segment：唯一一次整段推理 + 发 Final ---
                 //    不再做 Partial 伪流式推理：只等 VAD 判定用户说完，才解码整段。
@@ -333,7 +335,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
 
                     if (segment.samples.isEmpty() && accumulatedPcm.isEmpty()) continue
 
-                    val finalSamples = accumulatedPcm.toFloatArray()
+                    // 优先使用 VAD segment 的音频（权威来源），避免 RMS 能量门控导致丢帧
+                    val finalSamples = if (segment.samples.isNotEmpty()) segment.samples else accumulatedPcm.toFloatArray()
                     accumulatedPcm.clear()
 
                     val finalMs = finalSamples.size * 1000 / SAMPLE_RATE
