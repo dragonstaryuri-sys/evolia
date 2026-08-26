@@ -95,9 +95,18 @@ class DiaryWorker(
                 return Result.success()
             }
 
-            val todayStr = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
-            val todayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
-            if (todayDiary != null) {
+            // 优先使用传入的 targetDate（自动补发昨日时使用），否则用当前日期
+            val targetDateStr = inputData.getString("targetDate")
+                ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+            val targetDate = runCatching { LocalDate.parse(targetDateStr, DateTimeFormatter.ISO_LOCAL_DATE) }
+                .getOrDefault(LocalDate.now())
+
+            // —— 目标日期是否已有有效日记：空内容 diary 视为失败残留，不算"已生成" ——
+            val existingDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), targetDateStr)
+            val hasValidDiary = existingDiary != null && existingDiary.content.isNotBlank()
+            if (hasValidDiary) {
+                // 目标日期已有非空内容的日记 → 无论自动还是手动都直接跳过
+                // 手动生成只用于"自动生成失败/当日没有日记"的补漏场景
                 return if (isManual) {
                     Result.success(workDataOf("skipped" to true, "reason" to "already_exists"))
                 } else {
@@ -106,27 +115,58 @@ class DiaryWorker(
             }
 
             // ——————————————————————————————————————————————
-            // ★ 修复：提前在 DB 里占一个坑位（空内容日记 skeleton）
-            //   后续每个 chunk 成功都立刻 update 到 DB，
-            //   即使中途超时/取消，前面已经生成的内容也不会丢失。
+            // skeleton 占位 / 清理策略：
+            //   - 空壳残留（existingDiary 非空但 content 空）→ 先删掉再新建，避免占位卡住
+            //   - 无旧日记 → 新建空 skeleton
             // ——————————————————————————————————————————————
-            val skeletonId = Uuid.random().toString()
-            diaryRepo.insertDiary(
-                AgentDiaryEntity(
-                    id = skeletonId,
-                    assistantId = assistant.id.toString(),
-                    content = "",
-                    date = todayStr,
-                    createdAt = System.currentTimeMillis()
+            val skeletonId = if (existingDiary != null && existingDiary.content.isBlank()) {
+                runCatching { diaryRepo.deleteDiaryById(existingDiary.id) }
+                val newId = Uuid.random().toString()
+                diaryRepo.insertDiary(
+                    AgentDiaryEntity(
+                        id = newId,
+                        assistantId = assistant.id.toString(),
+                        content = "",
+                        date = targetDateStr,
+                        createdAt = System.currentTimeMillis()
+                    )
                 )
-            )
+                newId
+            } else {
+                val newId = Uuid.random().toString()
+                diaryRepo.insertDiary(
+                    AgentDiaryEntity(
+                        id = newId,
+                        assistantId = assistant.id.toString(),
+                        content = "",
+                        date = targetDateStr,
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+                newId
+            }
             inProgressDiaryId = skeletonId
 
-            val lastDiary = diaryRepo.getLastDiaryOfAssistant(assistant.id.toString())
-            val startTimeThreshold = lastDiary?.createdAt ?: LocalDate.now()
-                .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            // —— 消息起点：目标日期 0 点之前的"最近一篇有内容的日记"的 createdAt ——
+            //    注意：新建的 skeleton createdAt 就在现在，会排到最前，必须过滤掉
+            //    （以及任何空内容的残留日记），否则起点=当下，取不到任何新消息。
+            val allSortedDiaries = diaryRepo
+                .getDiariesByAssistant(assistant.id.toString())
+                .first()
+                .filter { it.content.isNotBlank() && it.id != skeletonId }
+                .sortedByDescending { it.createdAt }
+            val lastMeaningfulDiary = allSortedDiaries.firstOrNull()
+            val startTimeThreshold = lastMeaningfulDiary?.createdAt
+                ?: targetDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-            val conversations = conversationRepo.getConversationsOfAssistantAnyMode(assistant.id).first()
+            // —— Stage 1（SQL 层粗筛）：只取 update_at >= startTimeThreshold 的会话
+            //    避免把该智能体历史所有会话全量加载进内存
+            val conversations = conversationRepo.getConversationsOfAssistantAnyModeAfter(
+                assistant.id,
+                startTimeThreshold
+            ).first()
+            // —— Stage 2（内存层精筛）：在剩余会话里按消息 createdAt 过滤
+            //    处理"会话跨越起点"的情况（旧会话在起点之后又收到新消息）
             val allMessages = conversations.flatMap { conv ->
                 conv.messageNodes.mapNotNull { node ->
                     node.messages.getOrNull(node.selectIndex)?.takeIf {

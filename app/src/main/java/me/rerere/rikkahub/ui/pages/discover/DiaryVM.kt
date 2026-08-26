@@ -18,6 +18,7 @@ import me.rerere.rikkahub.service.DiaryWorker
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.components.ui.AppToasterState
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessage
@@ -937,7 +938,11 @@ class DiaryVM(
             }
 
             val workRequest = OneTimeWorkRequestBuilder<DiaryWorker>()
-                .setInputData(workDataOf("assistantId" to assistant.id.toString(), "isManual" to true))
+                .setInputData(workDataOf(
+                    "assistantId" to assistant.id.toString(),
+                    "isManual" to true,
+                    "targetDate" to LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                ))
                 .addTag("diary_gen")
                 .build()
 

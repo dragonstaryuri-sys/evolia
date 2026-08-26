@@ -57,18 +57,35 @@ class DiarySchedulerWorker(
                             val isMissedPrevious = yesterdayDiary == null
 
                             if (isPastScheduledTime || isMissedPrevious) {
-                                if (isMissedPrevious && !isPastScheduledTime) {
-                                    Log.i(TAG, "Gap detected: Triggering today's diary early for assistant: ${assistant.name} to cover previous days.")
-                                } else {
-                                    Log.i(TAG, "Time reached: Triggering today's diary for assistant: ${assistant.name}")
+                                // —— 命中的目标日期：漏写优先补昨天，否则今天 ——
+                                val dateToGenerate = when {
+                                    isMissedPrevious && !isPastScheduledTime -> {
+                                        Log.i(TAG, "Gap detected: Triggering YESTERDAY diary for ${assistant.name} (yesterdayStr=$yesterdayStr)")
+                                        yesterdayStr
+                                    }
+                                    isMissedPrevious -> {
+                                        // 昨天漏了 + 今天到点：先补昨天，下一轮调度再处理今天
+                                        Log.i(TAG, "Gap + time reached: Triggering YESTERDAY diary first for ${assistant.name} (yesterdayStr=$yesterdayStr)")
+                                        yesterdayStr
+                                    }
+                                    else -> {
+                                        Log.i(TAG, "Time reached: Triggering TODAY diary for ${assistant.name}")
+                                        todayStr
+                                    }
                                 }
-
-                                enqueueDiaryWork(assistant.id.toString(), todayStr)
+                                enqueueDiaryWork(assistant.id.toString(), dateToGenerate)
                             } else {
                                 Log.d(TAG, "Today's diary for ${assistant.name} is not yet due (Scheduled at $timeStr)")
                             }
                         } else {
-                            Log.d(TAG, "Today's diary for ${assistant.name} already exists.")
+                            // 今天已有日记，但如果昨天漏了也要补昨天（保证历史不缺口）
+                            val yesterdayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), yesterdayStr)
+                            if (yesterdayDiary == null) {
+                                Log.i(TAG, "Today's diary for ${assistant.name} exists, but yesterday's is missing: Triggering YESTERDAY diary catch-up")
+                                enqueueDiaryWork(assistant.id.toString(), yesterdayStr)
+                            } else {
+                                Log.d(TAG, "Today's diary for ${assistant.name} already exists.")
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to check diary for assistant ${assistant.name}", e)
