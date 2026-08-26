@@ -145,6 +145,17 @@ class ConversationRepository(
             .map { list -> fetchFullConversations(list) }
     }
 
+    // 只取最后更新时间在 startTimeThreshold 之后的会话（含全部 messageNodes）
+    // 用途：日记生成时避免把历史所有会话全量加载到内存
+    fun getConversationsOfAssistantAnyModeAfter(
+        assistantId: Uuid,
+        startTimeThreshold: Long
+    ): Flow<List<Conversation>> {
+        return conversationDAO
+            .getConversationsOfAssistantAnyModeAfter(assistantId.toString(), startTimeThreshold)
+            .map { list -> fetchFullConversations(list) }
+    }
+
 
     fun getConversationsOfAssistantPaging(assistantId: Uuid): Flow<PagingData<Conversation>> = Pager(
         config = PagingConfig(

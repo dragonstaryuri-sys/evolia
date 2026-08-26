@@ -58,6 +58,11 @@ interface ConversationDAO {
     @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfAssistantAnyMode(assistantId: String): Flow<List<ConversationEntity>>
 
+    // 按 update_at 过滤：只取最后更新时间在 startTimeThreshold 之后的会话
+    // （一个会话最后更新时间早于起点 ⇒ 所有消息都早于起点，可整段跳过）
+    @Query("SELECT * FROM conversationentity WHERE assistant_id = :assistantId AND update_at >= :startTimeThreshold ORDER BY is_pinned DESC, update_at DESC")
+    fun getConversationsOfAssistantAnyModeAfter(assistantId: String, startTimeThreshold: Long): Flow<List<ConversationEntity>>
+
     @Query("SELECT id, assistant_id as assistantId, title, is_pinned as isPinned, create_at as createAt, update_at as updateAt, is_consolidated as isConsolidated FROM conversationentity WHERE assistant_id = :assistantId ORDER BY is_pinned DESC, update_at DESC")
     fun getConversationsOfAssistantPaging(assistantId: String): PagingSource<Int, LightConversationEntity>
 
