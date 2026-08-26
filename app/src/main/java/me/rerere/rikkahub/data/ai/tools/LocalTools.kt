@@ -1669,15 +1669,15 @@ class LocalTools(
                                 put("items", buildJsonObject { put("type", "string") })
                                 put(
                                     "description",
-                                    "需获取的数据字段：foreground_app（前台应用）, screen_status（屏幕状态）, current_time（当前时间）, today_usage_duration（今日使用总计）, app_session_duration（当前应用连续使用时长）, total_continuous_duration（手机连续使用时长）, recent_actions（近期操作记录）, screen_context（屏幕文字上下文）, location（位置信息）"
+                                    "需获取的数据字段：foreground_app（前台应用）, screen_status（屏幕状态）, current_time（当前时间）, duration（今日该应用使用总时长）, app_session_duration（当前应用连续使用时长）, total_continuous_duration（手机连续使用时长）, recent_actions（近期操作记录）, screen_context（屏幕文字上下文）, location（位置信息）"
                                 )
                             })
                             put("conditions", buildJsonObject {
                                 put("type", "object")
                                 put(
                                     "description",
-                                    "设置触发逻辑。支持：'time_periods' (时间段数组，例如 [{\"start\":\"12:00\", \"end\":\"17:00\"}, {\"start\":\"17:30\", \"end\":\"18:00\"}]), " +
-                                        "'screen_status' (ON/OFF), 'foreground_app' (特定包名), 'usage_duration_minutes' (使用时长限额), " +
+                                    "设置触发逻辑。支持：'time_periods' (时间段数组或单个时间段，例如 [{\"start\":\"12:00\", \"end\":\"17:00\"}, {\"start\":\"17:30\", \"end\":\"18:00\"}]), " +
+                                        "'screen_status' (ON/OFF), 'foreground_app' (应用名称或包名，如小红书或com.xingin.xhs), 'usage_duration_minutes' (使用时长限额), " +
                                         "'continuous_usage_minutes' (单次应用限额), 'total_continuous_minutes' (单次持续使用时间限额), " +
                                         "'content_contains' (屏幕内容包含关键词), 'location_name' (抵达/留在某地), 'cooldown_minutes' (触发后静默时长，默认 5)。"
                                 )
@@ -1686,7 +1686,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "触发时发送给你的消息模板。可用变量：{app_name}, {duration}, {continuous_duration}, {total_continuous_duration}, {recent_actions}, {screen_context}, {current_time}, {location}。"
+                                    "触发时发送给你的消息模板。可用变量：{app_name}, {duration}（今日该应用使用总时长）, {continuous_duration}（当前应用连续使用时长）, {total_continuous_duration}（手机连续使用时长）, {recent_actions}（用户最近操作）, {screen_context}, {current_time}, {location}。"
                                 )
                             })
                         },
