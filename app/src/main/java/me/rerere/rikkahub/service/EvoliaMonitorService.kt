@@ -356,10 +356,15 @@ class EvoliaMonitorService : AccessibilityService() {
 
         val wifiConnectedCondition = (conditions["is_wifi_connected"] as? JsonPrimitive)?.booleanOrNull
         if (wifiConnectedCondition != null && state.isWifiConnected != wifiConnectedCondition) return false
-        val timePeriods = conditions["time_periods"] as? JsonArray
-        if (timePeriods != null && timePeriods.isNotEmpty()) {
-            val isAnyMatched = timePeriods.any { period ->
-                val p = period as? JsonObject ?: return@any false
+        // 支持 time_periods：数组（多时段）或单个对象（单时段）
+        val timePeriodsElement = conditions["time_periods"]
+        val periodsList: List<JsonObject> = when {
+            timePeriodsElement is JsonArray -> timePeriodsElement.mapNotNull { it as? JsonObject }
+            timePeriodsElement is JsonObject -> listOf(timePeriodsElement)
+            else -> emptyList()
+        }
+        if (periodsList.isNotEmpty()) {
+            val isAnyMatched = periodsList.any { p ->
                 val start = (p["start"] as? JsonPrimitive)?.content ?: ""
                 val end = (p["end"] as? JsonPrimitive)?.content ?: ""
                 isCurrentTimeInRange(start, end)
@@ -392,7 +397,12 @@ class EvoliaMonitorService : AccessibilityService() {
         }
 
         val targetApp = (conditions["foreground_app"] as? JsonPrimitive)?.content
-        if (targetApp != null && !state.foregroundAppName.contains(targetApp, ignoreCase = true)) return false
+        if (targetApp != null) {
+            // 同时支持包名(com.xingin.xhs)与应用名称(小红书)匹配
+            val isAppNameMatch = state.foregroundAppName.contains(targetApp, ignoreCase = true)
+            val isPackageNameMatch = state.foregroundApp.contains(targetApp, ignoreCase = true)
+            if (!isAppNameMatch && !isPackageNameMatch) return false
+        }
 
         val contentContains = (conditions["content_contains"] as? JsonPrimitive)?.content
         if (contentContains != null && !state.screenContext.contains(contentContains, ignoreCase = true)) return false
@@ -415,14 +425,20 @@ class EvoliaMonitorService : AccessibilityService() {
         val currentTime = SimpleDateFormat("HH:mm", Locale.US).format(Date())
 
         val finalMsg = template
-            .replace("{app_name}", state.foregroundAppName)
+            // 新命名（与 data_requirements 字段一一对应）
+            .replace("{foreground_app}", state.foregroundAppName)
+            .replace("{screen_status}", if (state.isScreenOn) "亮屏" else "熄屏")
             .replace("{duration}", "$durationMin 分钟")
-            .replace("{continuous_duration}", "$appContinuousMin 分钟")
+            .replace("{app_session_duration}", "$appContinuousMin 分钟")
             .replace("{total_continuous_duration}", "$totalContinuousMin 分钟")
             .replace("{recent_actions}", state.recentActions.ifBlank { "无近期点击" })
             .replace("{screen_context}", state.screenContext.ifBlank { "无上下文" })
             .replace("{current_time}", currentTime)
             .replace("{location}", state.locationName.ifBlank { "未知地点" })
+            // 旧命名兼容（逐步淘汰，仅为已保存模板兜底）
+            .replace("{app_name}", state.foregroundAppName)
+            .replace("{continuous_duration}", "$appContinuousMin 分钟")
+            .replace("{today_usage_duration}", "$durationMin 分钟")
             .replace("{wifi_ssid}", state.wifiSsid.ifBlank { "未连接" })
             .replace("{wifi_connected}", if (state.isWifiConnected) "已连接" else "未连接")
 
