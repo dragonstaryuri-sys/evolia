@@ -743,6 +743,10 @@ class VoiceCallManager(
                         // 此时立刻 cancel 旧的 ASR job（如果还没收尾的话），
                         // 等到 awaitTtsCompleteThenHandle → startListening 再重新开新 ASR。
                         currentAsrJob?.cancel()
+                        // THINKING 阶段启动打断检测：用户可以语音打断 AI 思考
+                        // 复用 AEC3+NS+VAD 全套逻辑，跳过 duck（无 TTS 可压低），直接 interrupt
+                        val thinkGenId = identity.generationId
+                        startInterruptionDetection(convId, thinkGenId, isThinkingPhase = true)
                         return@collect
                     }
                 }
@@ -893,6 +897,11 @@ class VoiceCallManager(
                                 Log.i(TAG, "speakingStarted = true (LLM 首句可朗读内容已喂 TTS)")
                                 lastTtsPlayingAtMs = System.currentTimeMillis()
                                 _callStatus.value = CallStatus.SPEAKING
+                                // THINKING → SPEAKING 过渡：停掉 THINKING 阶段的打断检测，
+                                // 用 SPEAKING 模式重启（启用 TTS 回声基准 + 两阶段 duck→interrupt）
+                                if (isVadRunning) {
+                                    stopInterruptionDetection(skipPreRoll = true)
+                                }
                                 startInterruptionDetection(convId, expectGenId)
                             }
                             Log.d(TAG, "TTS feed node=${aiNode.id} textLen=${aiText.length} nodeFedLen=$nodeFedLen actuallySpoken=$actuallySpoken (${aiText.take(30)}...)")
@@ -1099,13 +1108,17 @@ class VoiceCallManager(
     // ========================================================================
 
     /**
-     * SPEAKING 期间启动 VAD + AudioRecord，做：
+     * SPEAKING / THINKING 期间启动 VAD + AudioRecord，做：
      * 1. 持续写 PCM 环形预卷
      * 2. 尾窗 220ms 动态提高 RMS 门槛（PDF §15.2）
-     * 3. 240ms duck → 520ms interrupt 的两阶段确认
+     * 3. 240ms duck → 520ms interrupt 的两阶段确认（THINKING 阶段跳过 duck，直接 interrupt）
+     *
+     * @param isThinkingPhase true=THINKING 阶段（等待 LLM 回复），跳过 TTS 等待 + 跳过 duck，
+     *                        无 TTS 播放 → 无回声 → 非严格阈值，用户说话即直接 interrupt。
+     *                        false=SPEAKING 阶段（AI 正在说话），完整两阶段检测。
      */
     @SuppressLint("MissingPermission")
-    private fun startInterruptionDetection(convId: Uuid, expectGenId: String?) {
+    private fun startInterruptionDetection(convId: Uuid, expectGenId: String?, isThinkingPhase: Boolean = false) {
         // 先停 LISTENING 模式的轻量预卷录音，避免两个 AudioRecord 抢设备
         stopListeningPreRoll()
         if (vadDetector == null) return
@@ -1193,24 +1206,28 @@ class VoiceCallManager(
         interruptionJob?.cancel()
         val snapGenId = expectGenId
         interruptionJob = scope.launch(Dispatchers.IO) {
-            // 等 TTS 真的开始播放，再建立回声基准
-            var waitMs = 0
-            while (isVadRunning && isActive &&
-                (snapGenId == null || identity.generationId == snapGenId)
-            ) {
-                if (ttsController.playbackState.value.status == PlaybackStatus.Playing) break
-                delay(50); waitMs += 50
-                if (waitMs >= 5000) {
-                    Log.w(TAG, "TTS did not start within 5s, skip interruption detection")
-                    return@launch
+            // THINKING 阶段跳过 TTS 等待（LLM 还没回复，TTS 不会播放）
+            if (!isThinkingPhase) {
+                // 等 TTS 真的开始播放，再建立回声基准
+                var waitMs = 0
+                while (isVadRunning && isActive &&
+                    (snapGenId == null || identity.generationId == snapGenId)
+                ) {
+                    if (ttsController.playbackState.value.status == PlaybackStatus.Playing) break
+                    delay(50); waitMs += 50
+                    if (waitMs >= 5000) {
+                        Log.w(TAG, "TTS did not start within 5s, skip interruption detection")
+                        return@launch
+                    }
                 }
+                if (!isVadRunning || !isActive) return@launch
+                if (snapGenId != null && identity.generationId != snapGenId) return@launch
             }
-            if (!isVadRunning || !isActive) return@launch
-            if (snapGenId != null && identity.generationId != snapGenId) return@launch
 
             val buffer = ShortArray(VadDetector.WINDOW_SIZE)
             var consecutiveSpeechFrames = 0
-            var duckTriggered = false
+            // THINKING 阶段跳过 duck（无 TTS 可压低），直接到 confirm 帧数即 interrupt
+            var duckTriggered = isThinkingPhase
             var frameCount = 0L  // 调试用：每 40 帧(~1.3s)采样打印一次 RMS/阈值状态
             var lastVadDiagMs = 0L  // [ASRDiag] 周期日志节流（每 1s，AI 说话期间）
 
@@ -1266,7 +1283,8 @@ class VoiceCallManager(
                 //   2. 绝对声压下限 0.004（满幅 0.4%，只要有正常呼吸声以上就能过）
                 //   3. 连续帧完全取消倍率，直接 8/16 帧 = 256/512ms
                 val ttsNowPlaying = ttsController.playbackState.value.status == PlaybackStatus.Playing
-                val strictBargeIn = ttsNowPlaying
+                // THINKING 阶段无 TTS → 无回声 → 非严格阈值
+                val strictBargeIn = if (isThinkingPhase) false else ttsNowPlaying
                 // strictBoost 降到 1.1，几乎等于不抬高
                 val strictBoost = if (strictBargeIn) 1.1 else 1.0
                 // 回声尾窗：最近 220ms 内 TTS 在播放 → 门限 × 1.1（轻微）
@@ -1306,7 +1324,7 @@ class VoiceCallManager(
                         "boosts[tail=$tailBoost strict=$strictBoost mult=$BARGE_IN_RMS_MULTIPLIER] " +
                         "vad=$vadDetected loud=$loudEnough cons=$consecutiveSpeechFrames/$duckFrames~$confirmFrames " +
                         "strict=$strictBargeIn apm=${if (apm?.isAvailable() == true) "AEC3+NS" else "OFF"} " +
-                        "rawMax=$rawMax floatMax=${"%.4f".format(floatMax)} read=$read stage=AI_SPEAKING")
+                        "rawMax=$rawMax floatMax=${"%.4f".format(floatMax)} read=$read stage=${if (isThinkingPhase) "AI_THINKING" else "AI_SPEAKING"}")
                 }
 
                 if (vadDetected && loudEnough) {
@@ -1334,7 +1352,8 @@ class VoiceCallManager(
                         consecutiveSpeechFrames = (consecutiveSpeechFrames - 1).coerceAtLeast(0)
                     }
                     // 用户闭嘴：若已经 duck 但未到 confirm → 回弹、取消 duckConfirm、继续
-                    if (duckTriggered && consecutiveSpeechFrames == 0) {
+                    // THINKING 阶段不回弹（duckTriggered 始终 true，无 TTS 需要恢复音量）
+                    if (duckTriggered && consecutiveSpeechFrames == 0 && !isThinkingPhase) {
                         Log.i(TAG, "Speech stopped after duck; restore volume, abort interrupt")
                         cancelDuckAndRestore(snapGenId)
                         duckTriggered = false
@@ -1399,7 +1418,7 @@ class VoiceCallManager(
     private var aecEffect: AcousticEchoCanceler? = null
     private var nsEffect: NoiseSuppressor? = null
 
-    private fun stopInterruptionDetection() {
+    private fun stopInterruptionDetection(skipPreRoll: Boolean = false) {
         isVadRunning = false
         interruptionJob?.cancel(); interruptionJob = null
         duckConfirmJob?.cancel(); duckConfirmJob = null
@@ -1415,7 +1434,7 @@ class VoiceCallManager(
         runCatching { apm?.close() }
         apm = null
         // ===== 条件性 preRoll 处理 + 延迟启动 listeningPreRoll =====
-        // stopInterruptionDetection 有两种触发场景：
+        // stopInterruptionDetection 有三种触发场景：
         //   a) AI 自然说完（awaitTtsCompleteThenHandle 等 TTS 静默 1.5s 后调用）：
         //      此时 TTS 已停了 >1.5s，preRoll 里是 1.5s 的干净静音/用户开头音频 → **保留不清**
         //      不需要 delay，立刻启 listeningPreRoll
@@ -1423,20 +1442,26 @@ class VoiceCallManager(
         //      TTS 刚停，preRoll 是 interruptionJob 录的 —— 该 AudioRecord 通过 session 绑定了
         //      WebRTC APM，read() 返回的已是 AEC3 消过回声的干净 PCM → **保留不清**（清空会丢用户开头字）
         //      仅需 delay ECHO_TAIL_WINDOW_MS 后启 listeningPreRoll（避免 AudioRecord 设备冲突）
-        val timeSinceLastTts = System.currentTimeMillis() - lastTtsPlayingAtMs
-        val isInterruptCase = timeSinceLastTts < ECHO_TAIL_WINDOW_MS
-        if (isInterruptCase) {
-            // 打断场景：不清空 preRoll —— interruptionJob 的 AudioRecord 通过 session 绑定了
-            // WebRTC APM（AEC3+NS），read() 返回的已是消过回声的干净 PCM，preRoll 里的帧是
-            // 用户语音而非 AI 回声。清空会导致用户开头字丢失（"漏了一些字"的根因）。
-            // 仅 delay 后启 listeningPreRoll（避免和刚释放的打断检测 AudioRecord 设备冲突）
-            val needDelayMs = ECHO_TAIL_WINDOW_MS - timeSinceLastTts
-            scope.launch(Dispatchers.IO) {
-                delay(needDelayMs)
+        //   c) THINKING → SPEAKING 过渡（skipPreRoll=true）：
+        //      不启动 listeningPreRoll，因为马上要重启打断检测（SPEAKING 模式）
+        if (skipPreRoll) {
+            Log.d(TAG, "stopInterruptionDetection: skipPreRoll=true (THINKING→SPEAKING transition)")
+        } else {
+            val timeSinceLastTts = System.currentTimeMillis() - lastTtsPlayingAtMs
+            val isInterruptCase = timeSinceLastTts < ECHO_TAIL_WINDOW_MS
+            if (isInterruptCase) {
+                // 打断场景：不清空 preRoll —— interruptionJob 的 AudioRecord 通过 session 绑定了
+                // WebRTC APM（AEC3+NS），read() 返回的已是消过回声的干净 PCM，preRoll 里的帧是
+                // 用户语音而非 AI 回声。清空会导致用户开头字丢失（"漏了一些字"的根因）。
+                // 仅 delay 后启 listeningPreRoll（避免和刚释放的打断检测 AudioRecord 设备冲突）
+                val needDelayMs = ECHO_TAIL_WINDOW_MS - timeSinceLastTts
+                scope.launch(Dispatchers.IO) {
+                    delay(needDelayMs)
+                    startListeningPreRollIfNeeded()
+                }
+            } else {
                 startListeningPreRollIfNeeded()
             }
-        } else {
-            startListeningPreRollIfNeeded()
         }
     }
 
