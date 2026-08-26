@@ -488,7 +488,7 @@ class VoiceCallManager(
                         // 给用户即时反馈"我听到了"，并掩盖 LLM 首字延迟。
                         // ★ 等 cue 实际播完再发消息 + 启动 waiting 计时，否则 waiting cue 每次都误报
                         val ttsForCue = settingsStore.settingsFlow.value.getSelectedTTSProvider()
-                        val cuePlayed = kotlinx.coroutines.withTimeoutOrNull(3000L) {
+                        val cuePlayed = kotlinx.coroutines.withTimeoutOrNull(3500L) {
                             playListenerCueNow(ttsForCue)
                         } ?: false
                         Log.d(TAG, "Warmup: listener cue played=$cuePlayed, now sendUserMessage + scheduleWaitingCue")
@@ -728,7 +728,7 @@ class VoiceCallManager(
                         // 掩盖 LLM 首字延迟，给用户"听到了"的即时反馈。
                         // ★ 等 cue 实际播完再发消息 + 启动 waiting 计时，否则 waiting cue 每次都误报
                         val ttsForCue = settingsStore.settingsFlow.value.getSelectedTTSProvider()
-                        val cuePlayed = kotlinx.coroutines.withTimeoutOrNull(3000L) {
+                        val cuePlayed = kotlinx.coroutines.withTimeoutOrNull(3500L) {
                             playListenerCueNow(ttsForCue)
                         } ?: false
                         Log.d(TAG, "Listening: listener cue played=$cuePlayed, now sendUserMessage + scheduleWaitingCue")
@@ -1995,7 +1995,7 @@ class VoiceCallManager(
         private const val ASR_RETRY_DELAY_MS = 600L
         // 等待提示延迟：ListenerCue 播完后再等 800ms，LLM 仍无可朗读内容就播"等等/我想想"
         // cue 本身 ≈ 200-400ms，加上这 1000ms ≈ 给 LLM 留了 1-1.2s（刚好是大多数模型 TTFT 时间）。
-        private const val WAITING_CUE_DELAY_MS = 3000L
+        private const val WAITING_CUE_DELAY_MS = 3500L
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
@@ -2022,20 +2022,18 @@ class VoiceCallManager(
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
         private val LISTENER_CUE_BASE = listOf(
-            "嗯！" to 5,
+            "嗯...哈哈哈" to 5,
             "嗯？" to 5,
             "嗯..." to 25,
             "啊，" to 25,
-            "哦。" to 20,
-            "哦哦。" to 10,
-            "嗯嗯." to 10
+            "哦，嗯..." to 20,
         )
-        //   LLM 超过 1s 还没返回可朗读内容时的"等待提示"（带概率权重）：
+        //   LLM 超过 3s 还没返回可朗读内容时的"等待提示"（带概率权重）：
         private val WAITING_CUE_BASE = listOf(
-            "等等——" to 10,
+            "等等——" to 20,
             "哦——" to 30,
             "我想想..." to 5,
-            "等一下.." to 20,
+            "等一下.." to 10,
             "啊。。" to 25,
             "啊！" to 10
         )
