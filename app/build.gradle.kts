@@ -227,7 +227,15 @@ chaquopy {
             ?: System.getenv("PYTHON3")
             ?: localProperties.getProperty("chaquopy.buildPython")
         if (!configuredBuildPython.isNullOrBlank()) {
-            buildPython(configuredBuildPython)
+            val normalizedPath = configuredBuildPython.replace('/', File.separatorChar)
+            val f = rootProject.file(normalizedPath)
+            if (f.exists() && f.canExecute()) {
+                buildPython(f.absolutePath)
+            } else {
+                // 配置的 buildPython 无效（文件不存在或不可执行）→ 静默 fallback 到 Chaquopy 默认探测，
+                // 否则会直接报 "[...] does not appear to be a valid Python command" 中断构建。
+                project.logger.warn("chaquopy.buildPython 指向无效路径 '$configuredBuildPython'，跳过并使用系统默认 python 探测")
+            }
         }
 
         pip {
