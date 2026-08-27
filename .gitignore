@@ -54,3 +54,6 @@ Thumbs.db
 captures/
 .externalNativeBuild/
 .cxx/
+
+# Assets
+/app/src/main/assets/sensevoice/
