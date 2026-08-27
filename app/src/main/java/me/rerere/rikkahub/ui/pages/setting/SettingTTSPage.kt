@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +52,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -68,6 +72,7 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -191,6 +196,60 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
             state = lazyListState
         ) {
+            // ===== 通话设置：打断灵敏度 =====
+            item {
+                SettingsGroup(title = "通话设置") {
+                    SettingGroupItem(
+                        title = "打断灵敏度",
+                        subtitle = "AI 说话时，多容易被你打断。高=轻说一句就打断，低=必须大音量说久一点才会打断",
+                        icon = { Icon(Icons.Rounded.GraphicEq, null, modifier = Modifier.size(20.dp)) }
+                    )
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        var bargeSens by remember(settings.callBargeInSensitivity) {
+                            mutableFloatStateOf(settings.callBargeInSensitivity.toFloat())
+                        }
+                        Slider(
+                            value = bargeSens,
+                            onValueChange = { bargeSens = it },
+                            onValueChangeFinished = {
+                                vm.updateSettings(settings.copy(callBargeInSensitivity = bargeSens.toInt().coerceIn(0, 100)))
+                            },
+                            valueRange = 0f..100f,
+                            steps = 9,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "抗误触",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = when (bargeSens.toInt()) {
+                                    in 0..20 -> "极低"
+                                    in 21..40 -> "偏低"
+                                    in 41..60 -> "平衡"
+                                    in 61..80 -> "偏高"
+                                    else -> "极高"
+                                } + "（${bargeSens.toInt()}）",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "易打断",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
             itemsIndexed(settings.ttsProviders, key = { _, provider -> provider.id }) { index, provider ->
                 val isSelected = settings.selectedTTSProviderId == provider.id
                 val position = when {

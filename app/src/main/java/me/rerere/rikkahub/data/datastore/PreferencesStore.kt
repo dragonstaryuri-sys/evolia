@@ -543,6 +543,8 @@ data class Settings(
     val wakeWordSensitivity: Float = 0.5f,
     val customWakeWords: String = DEFAULT_WAKE_WORDS,
     val wakeWordAssistantId: Uuid? = null,
+    // 通话打断灵敏度：0-100，默认 50（平衡档）。值越高越容易被打断（灵敏度高），值越低越难被打断（抗误触强）。
+    val callBargeInSensitivity: Int = 50,
 ) {
     companion object {
         fun dummy() = Settings(init = true)
