@@ -1625,6 +1625,15 @@ class ChatService(
                 IllegalStateException(context.getString(R.string.api_error_404), e)
             }
 
+            // 智谱 GLM 等纯文本模型不支持多模态输入时, API 会返回 content.type 参数非法错误
+            // 典型错误信息: "message.content.type 参数非法，取值范围['text']"
+            message.contains("content", ignoreCase = true) &&
+                message.contains("type", ignoreCase = true) &&
+                message.contains("text", ignoreCase = true) &&
+                (message.contains("非法") || message.contains("invalid")) -> {
+                IllegalStateException("该模型只支持文字输入，请前往模型设置关闭图片/音频输入模态。", e)
+            }
+
             else -> e
         }
     }
