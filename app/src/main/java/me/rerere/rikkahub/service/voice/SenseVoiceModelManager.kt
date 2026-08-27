@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import me.rerere.asr.provider.providers.LocalSenseVoiceASRProvider
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 
@@ -68,13 +69,16 @@ class SenseVoiceModelManager(
 
     /**
      * 检查模型是否已就绪（文件存在且大小合理）。
+     * 首次调用时尝试从 assets 复制内置模型。
      */
     fun isModelReady(): Boolean {
+        // 先尝试从 assets 复制内置模型（如果 filesDir 中没有）
+        LocalSenseVoiceASRProvider.ensureBuiltinModel(context)
         val dir = modelDir
         if (!dir.exists()) return false
         val model = File(dir, MODEL_FILE)
         val tokens = File(dir, TOKENS_FILE)
-        return model.exists() && model.length() >= MIN_MODEL_SIZE &&
+        return model.exists() && model.length() > 0 &&
             tokens.exists() && tokens.length() > 0
     }
 

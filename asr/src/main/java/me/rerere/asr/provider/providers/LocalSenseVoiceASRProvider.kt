@@ -78,7 +78,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         providerSetting: ASRProviderSetting.LocalSenseVoiceASR,
         preRollPcm: List<ShortArray>?
     ) = channelFlow @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO) {
-        // 校验模型是否就绪
+        // 校验模型是否就绪（首次使用时自动从 assets 复制内置模型）
+        ensureBuiltinModel(context)
         val modelFile = File(context.filesDir, "$MODEL_DIR/$MODEL_FILE_NAME")
         val tokensFile = File(context.filesDir, "$MODEL_DIR/$TOKENS_FILE_NAME")
         if (!modelFile.exists() || !tokensFile.exists()) {
@@ -378,10 +379,12 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         uri: Uri,
         providerSetting: ASRProviderSetting.LocalSenseVoiceASR
     ): String = withContext(Dispatchers.IO) {
+        // 首次使用时自动从 assets 复制内置模型
+        ensureBuiltinModel(context)
         val modelFile = File(context.filesDir, "$MODEL_DIR/$MODEL_FILE_NAME")
         val tokensFile = File(context.filesDir, "$MODEL_DIR/$TOKENS_FILE_NAME")
         if (!modelFile.exists() || !tokensFile.exists()) {
-            throw RuntimeException("SenseVoice 模型未下载，请在 ASR 设置中点击下载模型")
+            throw RuntimeException("SenseVoice 模型未就绪，请确认知内置模型已正确打包")
         }
 
         Log.i(TAG, "transcribeFile: uri=$uri")
@@ -618,7 +621,7 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         // （与 OnlineASR 对齐，0.8s 会把思考停顿误判为说完）
         private const val MIN_SILENCE_DURATION_SEC = 1.0F
         private const val MIN_SPEECH_DURATION_SEC = 0.3F
-        private const val MAX_SPEECH_DURATION_SEC = 120F
+        private const val MAX_SPEECH_DURATION_SEC = 600F // 10min，通话模式不强制截断用户语音
 
         // RMS 能量阈值（双阈值迟滞）
         // LocalASR 使用 VOICE_COMMUNICATION 音频源，系统 AEC/NS 会衰减信号 → RMS 偏低
@@ -634,5 +637,59 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         const val MODEL_DIR = "sensevoice"
         const val MODEL_FILE_NAME = "model.int8.onnx"
         const val TOKENS_FILE_NAME = "tokens.txt"
+
+        // ===== 内置模型（打包在 assets 中）=====
+        // assets 下的内置模型路径，首次使用时自动复制到 filesDir
+        private const val ASSETS_MODEL_DIR = "sensevoice"
+        private const val ASSETS_MODEL_FILE = "model.int8.onnx"
+        private const val ASSETS_TOKENS_FILE = "tokens.txt"
+
+        /**
+         * 确保内置模型已复制到 filesDir（首次使用时自动执行）。
+         * 如果 filesDir 中模型不存在但 assets 中有，则复制过去。
+         * @return true 如果模型已就绪（filesDir 或 assets 中存在）
+         */
+        fun ensureBuiltinModel(context: Context): Boolean {
+            val modelFile = File(context.filesDir, "$MODEL_DIR/$MODEL_FILE_NAME")
+            val tokensFile = File(context.filesDir, "$MODEL_DIR/$TOKENS_FILE_NAME")
+            if (modelFile.exists() && modelFile.length() > 0 &&
+                tokensFile.exists() && tokensFile.length() > 0
+            ) {
+                return true // filesDir 已有模型
+            }
+            // 尝试从 assets 复制
+            val assets = context.assets
+            val modelDir = File(context.filesDir, MODEL_DIR)
+            modelDir.mkdirs()
+            return try {
+                // 检查 assets 中是否有模型文件
+                val files = assets.list(ASSETS_MODEL_DIR) ?: emptyArray()
+                if (files.contains(ASSETS_MODEL_FILE) && files.contains(ASSETS_TOKENS_FILE)) {
+                    Log.i(TAG, "Copying built-in model from assets to filesDir...")
+                    // 复制 tokens.txt（小文件）
+                    assets.open("$ASSETS_MODEL_DIR/$ASSETS_TOKENS_FILE").use { input ->
+                        File(modelDir, TOKENS_FILE_NAME).outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    // 复制 model.int8.onnx（大文件）
+                    assets.open("$ASSETS_MODEL_DIR/$ASSETS_MODEL_FILE").use { input ->
+                        File(modelDir, MODEL_FILE_NAME).outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    val ok = modelFile.exists() && modelFile.length() > 0 &&
+                        tokensFile.exists() && tokensFile.length() > 0
+                    Log.i(TAG, "Built-in model copied: ok=$ok, modelSize=${modelFile.length()}")
+                    ok
+                } else {
+                    Log.w(TAG, "Built-in model not found in assets: ${files.toList()}")
+                    false
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to copy built-in model from assets", e)
+                false
+            }
+        }
     }
 }

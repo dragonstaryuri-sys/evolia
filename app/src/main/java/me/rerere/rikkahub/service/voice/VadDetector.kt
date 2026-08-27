@@ -63,6 +63,6 @@ class VadDetector(context: Context) {
         private const val VAD_THRESHOLD = 0.7F // 偏高，过滤扬声器回声/环境噪声
         private const val MIN_SILENCE_DURATION_SEC = 0.25F
         private const val MIN_SPEECH_DURATION_SEC = 0.6F // 持续 600ms 才算用户开口打断
-        private const val MAX_SPEECH_DURATION_SEC = 30F
+        private const val MAX_SPEECH_DURATION_SEC = 600F // 10min，与 ASR VAD 对齐
     }
 }

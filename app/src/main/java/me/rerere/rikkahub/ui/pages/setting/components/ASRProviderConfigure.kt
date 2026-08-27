@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Mic
@@ -690,16 +691,7 @@ private fun LocalSenseVoiceASRConfiguration(
     onValueChange: (ASRProviderSetting) -> Unit
 ) {
     val modelManager = koinInject<SenseVoiceModelManager>()
-    val scope = rememberCoroutineScope()
-    val downloadState by modelManager.downloadState.collectAsState()
     var modelReady by remember { mutableStateOf(modelManager.isModelReady()) }
-
-    LaunchedEffect(downloadState) {
-        modelReady = modelManager.isModelReady()
-    }
-
-    val isDownloading = downloadState is SenseVoiceModelManager.DownloadState.DownloadingFile
-    val isError = downloadState is SenseVoiceModelManager.DownloadState.Error
 
     // 名称
     FormItem(
@@ -715,102 +707,25 @@ private fun LocalSenseVoiceASRConfiguration(
         )
     }
 
-    // ===== 模型部署状态 + 下载/删除入口 =====
+    // ===== 内置模型状态 =====
     FormItem(
-        label = { Text("模型部署") },
+        label = { Text("内置模型") },
         description = {
-            val statusText = when {
-                modelReady -> {
-                    val sizeMb = modelManager.getModelSize() / (1024 * 1024)
-                    "已部署 (${sizeMb}MB)，可离线使用"
-                }
-                isDownloading -> {
-                    val st = downloadState as SenseVoiceModelManager.DownloadState.DownloadingFile
-                    val pct = (st.progress * 100).toInt().coerceIn(0, 100)
-                    "下载中: ${st.fileName} ${pct}%"
-                }
-                isError -> {
-                    val msg = (downloadState as SenseVoiceModelManager.DownloadState.Error).message
-                    "下载失败: $msg"
-                }
-                else -> "未部署（约需 228MB 空间）"
+            val statusText = if (modelReady) {
+                val sizeMb = modelManager.getModelSize() / (1024 * 1024)
+                "已就绪 (${sizeMb}MB)，完全离线推理，无需联网"
+            } else {
+                "模型未就绪，请确认知安装包内置模型已正确打包"
             }
             Text(statusText)
         }
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 状态图标
-            Icon(
-                imageVector = when {
-                    modelReady -> Icons.Rounded.GraphicEq
-                    isDownloading -> Icons.Rounded.CloudDownload
-                    else -> Icons.Rounded.CloudDownload
-                },
-                contentDescription = null,
-                tint = when {
-                    modelReady -> MaterialTheme.colorScheme.primary
-                    isError -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(24.dp)
-            )
-
-            when {
-                isDownloading -> {
-                    val st = downloadState as SenseVoiceModelManager.DownloadState.DownloadingFile
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Text(
-                        text = "${(st.progress * 100).toInt().coerceIn(0, 100)}%",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                modelReady -> {
-                    OutlinedButton(
-                        onClick = {
-                            modelManager.deleteModel()
-                            modelReady = false
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Icon(Icons.Rounded.DeleteOutline, null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("删除模型")
-                    }
-                }
-                else -> {
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                modelManager.downloadModel()
-                                modelReady = modelManager.isModelReady()
-                            }
-                        }
-                    ) {
-                        Icon(Icons.Rounded.CloudDownload, null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("下载模型")
-                    }
-                }
-            }
-        }
-    }
-
-    // 下载进度条（仅下载中显示）
-    if (isDownloading) {
-        val st = downloadState as SenseVoiceModelManager.DownloadState.DownloadingFile
-        LinearProgressIndicator(
-            progress = { st.progress },
-            modifier = Modifier.fillMaxWidth()
+        Icon(
+            imageVector = if (modelReady) Icons.Rounded.GraphicEq else Icons.Rounded.CloudOff,
+            contentDescription = null,
+            tint = if (modelReady) MaterialTheme.colorScheme.primary
+                   else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
         )
     }
 

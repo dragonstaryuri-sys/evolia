@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.rerere.asr.model.ASRResult
@@ -288,10 +289,10 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     }
                 }
 
-                // --- 2. 累积当前切片 PCM ---
-                if (inSpeechAux || slicePcm.isNotEmpty()) {
-                    slicePcm.addAll(samples.asList())
-                }
+                // --- 2. 累积当前切片 PCM（始终累积，不依赖 RMS 门控） ---
+                // 与 LocalSenseVoiceASRProvider 对齐：VAD 已是权威语音检测器，
+                // RMS 可能漏检轻声/气声 → 切片应全量累积，避免丢帧
+                slicePcm.addAll(samples.asList())
 
                 // --- 2.1 切片诊断日志：每累积 5s 打一行帮助排查 ---
                 val sliceMs = slicePcm.size * 1000 / SAMPLE_RATE
@@ -336,7 +337,12 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                                     (sliceSamples[it] * 32767f).toInt().toShort()
                                 }
                                 val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
-                                val result = transcribe(wavBytes, providerSetting, promptText)
+                                val result = withTimeoutOrNull(SLICE_TRANSCRIBE_TIMEOUT_MS) {
+                                    transcribe(wavBytes, providerSetting, promptText)
+                                } ?: run {
+                                    Log.w(TAG, "Slice transcribe timed out (${SLICE_TRANSCRIBE_TIMEOUT_MS}ms)")
+                                    ""
+                                }
                                 result
                             } catch (e: Exception) {
                                 Log.w(TAG, "Slice transcribe failed", e)
@@ -501,7 +507,12 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                         }
                         val wavBytes = pcmToWav(pcm, SAMPLE_RATE)
                         val tailText = try {
-                            transcribe(wavBytes, providerSetting, finalPrompt)
+                            withTimeoutOrNull(FINAL_TRANSCRIBE_TIMEOUT_MS) {
+                                transcribe(wavBytes, providerSetting, finalPrompt)
+                            } ?: run {
+                                Log.w(TAG, "Final transcribe timed out (${FINAL_TRANSCRIBE_TIMEOUT_MS}ms)")
+                                ""
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "Final transcribe failed", e)
                             ""
@@ -1002,7 +1013,7 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         // （0.8s 会把思考型停顿/换气误判为说完了 → 断句奇怪；1.0s 给用户更多缓冲）
         private const val MIN_SILENCE_DURATION_SEC = 1.0F
         private const val MIN_SPEECH_DURATION_SEC = 0.3F  // 过滤过短的噪声
-        private const val MAX_SPEECH_DURATION_SEC = 30F    // 单次最长 30 秒
+        private const val MAX_SPEECH_DURATION_SEC = 600F    // 10min，通话模式不强制截断用户语音
 
         // ===== 分段切片（Slice + Prompt 续接）参数 =====
         // RMS 能量阈值（双阈值迟滞 Hysteresis）
@@ -1034,5 +1045,9 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         // （旧切片返回时用 CAS 检查 recognizedText 是否已被更新，避免覆盖新结果）
         // 防止一个慢 API 请求阻塞整个识别链路，导致音频堆积成巨大 Final
         private const val SLICE_INFLIGHT_TIMEOUT_MS = 3000L
+        // 切片转录超时：单个切片 API 调用超时阈值，超时返回空串不阻塞流程
+        private const val SLICE_TRANSCRIBE_TIMEOUT_MS = 15_000L
+        // Final 转录超时：Final 段 API 调用超时阈值（比切片宽松，Final 段更长）
+        private const val FINAL_TRANSCRIBE_TIMEOUT_MS = 20_000L
     }
 }
