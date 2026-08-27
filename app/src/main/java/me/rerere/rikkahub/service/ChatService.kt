@@ -529,6 +529,12 @@ class ChatService(
         _generationJobs.update { it - conversationId }
     }
 
+    /** 判断指定会话是否正在生成 AI 回复（用于 AI 挂断前等待流式生成结束） */
+    fun isGenerating(conversationId: Uuid): Boolean {
+        val job = _generationJobs.value[conversationId]
+        return job != null && job.isActive
+    }
+
     suspend fun initializeConversation(
         conversationId: Uuid,
         targetAssistantId: Uuid? = null,

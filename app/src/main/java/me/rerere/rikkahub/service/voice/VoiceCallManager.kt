@@ -152,7 +152,8 @@ class VoiceCallManager(
                     }
                     "hangup" -> {
                         if (_isActive.value) {
-                            hangup()
+                            // AI 主动挂断：延迟 1 分钟再挂，给 AI 留出说再见的时间
+                            scheduleDelayedAiHangup()
                         }
                     }
                 }
@@ -272,6 +273,11 @@ class VoiceCallManager(
     private var duckConfirmJob: Job? = null
     // 接通问候 + 思考前导 TTS 的 Job（取消 generation 时需要一起 cancel）
     private var listenerCueJob: Job? = null
+    // ===== 用户沉默 30 分钟自动挂断 =====
+    @Volatile private var lastUserSpeakAtMs: Long = 0L
+    private var userSilenceMonitorJob: Job? = null
+    // ===== AI 主动挂断延迟 1 分钟（等 AI 把话说完） =====
+    private var aiDelayedHangupJob: Job? = null
 
     // 流式 TTS: 按 ASSISTANT 节点粒度追踪（工具调用链路会产生多个新 ASSISTANT 节点）
     // - fedLengthPerNode:  每个节点已经"按标点切句分析过"的字符数（key = 节点 Uuid）
@@ -333,6 +339,7 @@ class VoiceCallManager(
         _listeningText.value = null
         _callStatus.value = CallStatus.CONNECTING
         resetStreamingState()
+        lastUserSpeakAtMs = System.currentTimeMillis()  // 用户沉默超时计时起点
 
         // 初始化三层身份：新的 callSession
         identity = CallIdentity(callSessionId = "call_${Uuid.random().toString().substring(0, 8)}")
@@ -347,6 +354,7 @@ class VoiceCallManager(
         // 预热 & 模式
         chatService.setCallMode(conversationId, active = true)
         startL1Timer(conversationId)
+        startUserSilenceMonitor()  // 启动 30 分钟用户沉默自动挂断监控
         warmUpRecordAudioPermission()
 
         // 启动前台 Service + WakeLock，保证后台/息屏后通话不中断
@@ -538,6 +546,91 @@ class VoiceCallManager(
     private fun stopL1Timer() {
         l1TimerJob?.cancel()
         l1TimerJob = null
+    }
+
+    // ========================================================================
+    //  用户说话标记（重置 30 分钟沉默计时器 + 取消 AI 延迟挂断）
+    // ========================================================================
+
+    private fun noteUserSpoke() {
+        lastUserSpeakAtMs = System.currentTimeMillis()
+        // 用户还在说话：取消 AI 之前安排的延迟挂断
+        if (aiDelayedHangupJob != null) {
+            Log.i(TAG, "noteUserSpoke: 用户仍在说话，取消 AI 延迟挂断")
+            aiDelayedHangupJob?.cancel()
+            aiDelayedHangupJob = null
+        }
+    }
+
+    // ========================================================================
+    //  30 分钟用户沉默自动挂断
+    // ========================================================================
+
+    private fun startUserSilenceMonitor() {
+        stopUserSilenceMonitor()
+        userSilenceMonitorJob = scope.launch {
+            while (_isActive.value) {
+                delay(USER_SILENCE_CHECK_INTERVAL_MS)
+                if (!_isActive.value) break
+                val silentMs = System.currentTimeMillis() - lastUserSpeakAtMs
+                Log.v(TAG, "silenceMonitor: silentMs=$silentMs / threshold=${USER_SILENCE_TIMEOUT_MS}")
+                if (silentMs >= USER_SILENCE_TIMEOUT_MS) {
+                    Log.i(TAG, "silenceMonitor: 用户已沉默 ${silentMs / 60000} 分钟，触发自动挂断")
+                    hangup()
+                    break
+                }
+            }
+        }
+    }
+
+    private fun stopUserSilenceMonitor() {
+        userSilenceMonitorJob?.cancel()
+        userSilenceMonitorJob = null
+    }
+
+    // ========================================================================
+    //  AI 主动挂断：延迟 1 分钟再挂，等 AI 把道别话说完
+    //  延迟期间如果用户再次说话（noteUserSpoke 被调），立即取消挂断
+    // ========================================================================
+
+    private fun scheduleDelayedAiHangup() {
+        aiDelayedHangupJob?.cancel()
+        val scheduledAt = System.currentTimeMillis()
+        val snapshotSessionId = identity.callSessionId
+        aiDelayedHangupJob = scope.launch {
+            Log.i(TAG, "scheduleDelayedAiHangup: 已安排 AI 挂断，${AI_HANGUP_DELAY_MS / 1000}s 后执行 session=$snapshotSessionId")
+            // Phase 1: 先等待 AI 完成当前流式回复 + TTS 说完（最多等 AI_HANGUP_DELAY_MS，超时直接进入下一阶段）
+            val ttsWaitDeadline = scheduledAt + AI_HANGUP_TTS_MAX_WAIT_MS
+            while (isActive && identity.callSessionId == snapshotSessionId &&
+                (ttsController.isSpeaking.value ||
+                    (conversationId != null && chatService.isGenerating(conversationId!!))) &&
+                System.currentTimeMillis() < ttsWaitDeadline
+            ) {
+                delay(200L)
+            }
+            if (!_isActive.value || identity.callSessionId != snapshotSessionId) {
+                Log.i(TAG, "scheduleDelayedAiHangup: 会话已结束或换 session，取消")
+                return@launch
+            }
+            // Phase 2: 1 分钟宽限倒计时（已经花掉的 TTS 等待时间算在这 1 分钟里，不额外累加）
+            val remainMs = (scheduledAt + AI_HANGUP_DELAY_MS - System.currentTimeMillis()).coerceAtLeast(0L)
+            if (remainMs > 0) {
+                Log.d(TAG, "scheduleDelayedAiHangup: TTS 已停，再等 ${remainMs}ms 凑够 1 分钟宽限")
+                delay(remainMs)
+            }
+            if (!_isActive.value || identity.callSessionId != snapshotSessionId) {
+                Log.i(TAG, "scheduleDelayedAiHangup: 宽限期间会话状态变化，取消")
+                return@launch
+            }
+            // Phase 3: 用户可能在此期间又开口说话了 → 再次兜底校验
+            val finalSilentMs = System.currentTimeMillis() - lastUserSpeakAtMs
+            if (finalSilentMs < 2500L) {
+                Log.i(TAG, "scheduleDelayedAiHangup: 宽限期内用户 ${finalSilentMs}ms 前还说过话，放弃挂断")
+                return@launch
+            }
+            Log.i(TAG, "scheduleDelayedAiHangup: 延迟挂断条件全部满足，正式挂断")
+            hangup()
+        }
     }
 
     // ========================================================================
@@ -815,6 +908,7 @@ class VoiceCallManager(
 
     private fun sendUserMessage(text: String, convId: Uuid, scheduleCue: Boolean = false) {
         Log.i(TAG, "sendUserMessage turn=${identity.turnId} scheduleCue=$scheduleCue: \"$text\"")
+        noteUserSpoke()  // 重置 30 分钟沉默计时器 + 取消 AI 延迟挂断（用户仍在说话，不该挂）
         val priorConv = chatService.getConversationFlow(convId).value
         priorAssistantNodeId = priorConv.messageNodes.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
         Log.d(TAG, "priorAssistantNodeId=$priorAssistantNodeId")
@@ -1295,11 +1389,25 @@ class VoiceCallManager(
                 // 之前 0.015 → 0.01 → 0.004，保证低声说话也能过
                 val absoluteFloor = if (strictBargeIn) 0.004 else 0.003
 
-                val rmsThreshold = (slidingAvg * BARGE_IN_RMS_MULTIPLIER * tailBoost * strictBoost)
-                    .coerceAtLeast(absoluteFloor)
-                // 连续帧完全取消倍率：严格/非严格都用 8/16 帧
-                val duckFrames = BARGE_IN_DUCK_FRAMES
-                val confirmFrames = BARGE_IN_CONFIRM_FRAMES
+                // 根据用户设置的 callBargeInSensitivity (0-100, default 50) 计算打断参数：
+                //   灵敏度越高 → confirmFrames 越少（容易被打断）、RMS 倍率越低（轻声也能触发）、绝对声压下限越低
+                //   灵敏度越低 → confirmFrames 越多（抗误触强）、RMS 倍率越高（需要大音量）
+                val sensitivity = settingsStore.settingsFlow.value.callBargeInSensitivity.coerceIn(0, 100)
+                val s = sensitivity / 100.0  // 0 ~ 1 (Double)
+                // confirmFrames: sens=0→22 帧 / sens=50→14 帧 / sens=100→6 帧 (线性插值)
+                val userConfirmFrames = (22.0 - 16.0 * s).toInt().coerceIn(6, 24)
+                // duckFrames: confirmFrames * 0.5 左右（但至少 3）
+                val userDuckFrames = (userConfirmFrames * 0.5).toInt().coerceAtLeast(3)
+                // RMS 倍率: sens=0→1.9（门槛高）/ sens=50→1.4 / sens=100→0.9（门槛低）
+                val userRmsMult = 1.9 - s
+                // 绝对声压下限: sens=0→0.006（严格）/ sens=50→0.004 / sens=100→0.0025（宽松）
+                val userFloorStrict = 0.006 - s * 0.0035 // range: 0.006 ~ 0.0025
+                val userFloorLoose = (userFloorStrict - 0.001).coerceAtLeast(0.0015)
+
+                val rmsThreshold = (slidingAvg * userRmsMult * tailBoost * strictBoost)
+                    .coerceAtLeast(if (strictBargeIn) userFloorStrict else userFloorLoose)
+                val duckFrames = userDuckFrames
+                val confirmFrames = userConfirmFrames
 
                 vad.acceptWaveform(samples)
                 val vadDetected = vad.isSpeechDetected()
@@ -1320,8 +1428,9 @@ class VoiceCallManager(
                 if (nowMs - lastVadDiagMs > 1000) {
                     lastVadDiagMs = nowMs
                     Log.i(TAG, "[ASRDiag] rms=${"%.4f".format(rms)} thr=${"%.4f".format(rmsThreshold)} " +
-                        "baseline=${"%.4f".format(slidingAvg)} floor=$absoluteFloor " +
-                        "boosts[tail=$tailBoost strict=$strictBoost mult=$BARGE_IN_RMS_MULTIPLIER] " +
+                        "baseline=${"%.4f".format(slidingAvg)} " +
+                        "sens=$sensitivity thrMult=${"%.2f".format(userRmsMult)} floor=[$userFloorStrict~$userFloorLoose] " +
+                        "boosts[tail=$tailBoost strict=$strictBoost] " +
                         "vad=$vadDetected loud=$loudEnough cons=$consecutiveSpeechFrames/$duckFrames~$confirmFrames " +
                         "strict=$strictBargeIn apm=${if (apm?.isAvailable() == true) "AEC3+NS" else "OFF"} " +
                         "rawMax=$rawMax floatMax=${"%.4f".format(floatMax)} read=$read stage=${if (isThinkingPhase) "AI_THINKING" else "AI_SPEAKING"}")
@@ -1646,6 +1755,7 @@ class VoiceCallManager(
         }
         val convId = conversationId ?: return
         Log.i(TAG, "Manual interrupt by user (status=$currentStatus)")
+        noteUserSpoke()  // 用户主动操作：重置沉默计时 + 取消 AI 延迟挂断
         interrupt(convId)
     }
 
@@ -1677,6 +1787,8 @@ class VoiceCallManager(
         stopInterruptionDetection()
         stopListeningPreRoll()
         stopL1Timer()
+        stopUserSilenceMonitor()
+        aiDelayedHangupJob?.cancel(); aiDelayedHangupJob = null
         asrJob?.cancel()
         responseJob?.cancel()
         listenerCueJob?.cancel(); listenerCueJob = null
@@ -1971,7 +2083,7 @@ class VoiceCallManager(
         private const val L1_CHECK_INTERVAL_MS = 25L * 60 * 1000
         private const val ASR_RETRY_DELAY_MS = 600L
         // 延迟 listenerCue：发消息后等 1s，LLM 仍无可朗读内容就播"嗯/啊/哦"
-        private const val LISTENER_CUE_DELAY_MS = 1000L
+        private const val LISTENER_CUE_DELAY_MS = 2000L
         // 打断两阶段：每帧 32ms（不再区分严格/非严格的连续帧，完全取消倍率）
         //  8 帧 ≈ 256ms → DUCK
         // 16 帧 ≈ 512ms → INTERRUPT CONFIRM
@@ -1995,6 +2107,18 @@ class VoiceCallManager(
         private const val ASR_IGNORE_PERIOD_MS = 800L
         // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.005）
         private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.005f
+
+        // ===== 用户 30 分钟沉默自动挂断 =====
+        // 超时时间：30 分钟
+        private const val USER_SILENCE_TIMEOUT_MS = 30L * 60L * 1000L
+        // 检查间隔：1 分钟（避免太频繁）
+        private const val USER_SILENCE_CHECK_INTERVAL_MS = 60L * 1000L
+
+        // ===== AI 主动挂断的 30s 延迟 =====
+        // 总宽限时间（从 AI 发出 hangup 命令算起到真正挂断）
+        private const val AI_HANGUP_DELAY_MS = 30L * 1000L
+        // 等待 AI 流式生成 + TTS 播放完的最长时间（避免卡住永远不挂）
+        private const val AI_HANGUP_TTS_MAX_WAIT_MS = AI_HANGUP_DELAY_MS
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
         private val LISTENER_CUE_BASE = listOf(
