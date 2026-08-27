@@ -12,6 +12,7 @@ fun interface ModelData<T> {
 object ModelRegistry {
     private val GPT4O = ModelMatcher.containsRegex("(?<!chat)gpt-4o")
     private val GPT_4_1 = ModelMatcher.containsRegex("gpt-4\\.1")
+    private val GPT_4_5 = ModelMatcher.containsRegex("gpt-4\\.5")
     val OPENAI_O_MODELS = ModelMatcher.containsRegex("o\\d")
     val O3_MINI = ModelMatcher.containsRegex("o3-mini")
     private val GPT_OSS = ModelMatcher.containsRegex("gpt-oss")
@@ -45,30 +46,36 @@ object ModelRegistry {
     val AUDIO_MODELS = GPT4O + GEMINI_SERIES + OMNI_SUFFIX + AUDIO_SUFFIX + GPT_5_MULTI + GPT_5_6
 
     private val THINKING_SUFFIX = ModelMatcher.containsRegex("thinking")
+    private val CLAUDE_3 = ModelMatcher.containsRegex("claude-3-(sonnet|opus|haiku)")
     private val CLAUDE_SONNET_3_5 = ModelMatcher.containsRegex("claude-3.5-sonnet")
     private val CLAUDE_SONNET_3_7 = ModelMatcher.containsRegex("claude-3.7-sonnet")
     private val CLAUDE_4 = ModelMatcher.containsRegex("claude.*-4")
     val CLAUDE_4_5 = ModelMatcher.containsRegex("claude.*-4.5")
-    val CLAUDE_SERIES = CLAUDE_SONNET_3_5 + CLAUDE_SONNET_3_7 + CLAUDE_4 + CLAUDE_4_5
+    val CLAUDE_SERIES = CLAUDE_3 + CLAUDE_SONNET_3_5 + CLAUDE_SONNET_3_7 + CLAUDE_4 + CLAUDE_4_5
 
     private val DEEPSEEK_V3 = ModelMatcher.containsRegex("deepseek-(v3|chat)")
     private val DEEPSEEK_R1 = ModelMatcher.containsRegex("deepseek-(r1|reasoner)")
     private val DEEPSEEK_V3_1 = ModelMatcher.containsRegex("deepseek-(v3\\.1)")
     private val DEEPSEEK_V3_2 = ModelMatcher.containsRegex("deepseek-(v3\\.2)")
     private val DEEPSEEK_V4 = ModelMatcher.containsRegex("deepseek-(v4)")
+    private val QWEN_2_5 = ModelMatcher.containsRegex("qwen-?2\\.5")
     private val QWEN_3 = ModelMatcher.containsRegex("qwen-?3")
     private val DOUBAO_1_6 = ModelMatcher.containsRegex("doubao.+1([-.])6")
 
     private val DOUBAO_SEED = ModelMatcher.containsRegex("doubao-seed.+")
+    private val GROK_3 = ModelMatcher.containsRegex("grok-3")
     private val GROK_4 = ModelMatcher.containsRegex("grok-4")
     private val KIMI_K2 = ModelMatcher.containsRegex("kimi-k2")
     private val STEP_3 = ModelMatcher.containsRegex("step-3")
     private val INTERN_S1 = ModelMatcher.containsRegex("intern-s1")
+    private val PIXTRAL = ModelMatcher.containsRegex("pixtral")
     private val GLM_4_5 = ModelMatcher.containsRegex("glm-4.5")
-    private val GLM_4_6V = ModelMatcher.containsRegex("glm-4\\.6v")
     private val GLM_4_6 = ModelMatcher.containsRegex("glm-4\\.6(?!v)")
     private val GLM_4_7 = ModelMatcher.containsRegex("glm-(4\\.7)")
     private val GLM_5 = ModelMatcher.containsRegex("glm-(5)")
+    private val GLM_5_3_FLASH = ModelMatcher.containsRegex("glm-5\\.3-flash")
+    // 识别带 V 的模型，如 glm-4v, glm-4v-9b，排除 v3, v4 等版本号
+    private val GLM_VISION = ModelMatcher.containsRegex("glm.*v(?!\\d)")
     private val MINIMAX_M2 = ModelMatcher.containsRegex("minimax-m2")
     val QWEN_MT = ModelMatcher.containsRegex("qwen-mt")
 
@@ -94,17 +101,17 @@ object ModelRegistry {
     private val IMAGE_GEN_MODELS_MATCH = ModelMatcher.containsRegex("cogview|glm-image|dall-e|flux|stable-diffusion|sdxl")
 
     val VISION_MODELS =
-        GPT4O + GPT_4_1 + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 +
-            GROK_4 + STEP_3 + INTERN_S1 + GLM_4_6V + DOUBAO_SEED + VISION_SUFFIX + OMNI_SUFFIX
+        GPT4O + GPT_4_1 + GPT_4_5 + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + GEMINI_SERIES + CLAUDE_SERIES + DOUBAO_1_6 +
+            GROK_3 + GROK_4 + STEP_3 + INTERN_S1 + PIXTRAL + GLM_VISION + GLM_5_3_FLASH + DOUBAO_SEED + VISION_SUFFIX + OMNI_SUFFIX
     val TOOL_MODELS =
-        GPT4O + GPT_4_1 + GPT_OSS + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + O3_MINI + GEMINI_SERIES +
-            CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 +
+        GPT4O + GPT_4_1 + GPT_4_5 + GPT_OSS + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + O3_MINI + GEMINI_SERIES +
+            CLAUDE_SERIES + QWEN_2_5 + QWEN_3 + DOUBAO_1_6 + GROK_3 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 +
             DEEPSEEK_R1 + DEEPSEEK_V3 + DEEPSEEK_V3_1 + DEEPSEEK_V3_2 + DEEPSEEK_V4 +
-            GLM_4_6 + GLM_4_6V + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED + LLAMA_3_3 + LLAMA_4
+            GLM_4_6 + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED + LLAMA_3_3 + LLAMA_4
     val REASONING_MODELS =
-        GPT_OSS + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + O3_MINI + GEMINI_2_5_FLASH + GEMINI_2_5_PRO +
-            GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_3 + DOUBAO_1_6 +
-            GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 +
+        GPT_OSS + GPT_4_5 + GPT_5 + GPT_5_MULTI + GPT_5_6 + OPENAI_O_MODELS + O3_MINI + GEMINI_2_5_FLASH + GEMINI_2_5_PRO +
+            GEMINI_3_SERIES + GEMINI_LATEST + CLAUDE_SERIES + QWEN_2_5 + QWEN_3 + DOUBAO_1_6 +
+            GROK_3 + GROK_4 + KIMI_K2 + STEP_3 + INTERN_S1 + GLM_4_5 + DEEPSEEK_R1 + DEEPSEEK_V3_1 +
             DEEPSEEK_V3_2 + DEEPSEEK_V4 + GLM_4_6 + GLM_4_7 + GLM_5 + MINIMAX_M2 + DOUBAO_SEED +
             THINKING_SUFFIX
     val CHAT_IMAGE_GEN_MODELS = GEMINI_2_5_IMAGE
