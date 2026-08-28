@@ -1676,8 +1676,8 @@ class LocalTools(
                                 put("type", "object")
                                 put(
                                     "description",
-                                    "设置触发逻辑。支持：'time_periods' (时间段数组或单个时间段，例如 [{\"start\":\"12:00\", \"end\":\"17:00\"}, {\"start\":\"17:30\", \"end\":\"18:00\"}]), " +
-                                        "'screen_status' (ON/OFF), 'foreground_app' (应用名称或包名，如小红书或com.xingin.xhs), 'usage_duration_minutes' (使用时长限额), " +
+                                    "设置触发逻辑。时间窗口支持两种写法：① 'time_periods' (推荐，时间段数组或单个时间段对象，例如 [{\"start\":\"12:00\", \"end\":\"17:00\"}])；② 直接把 'start' 和 'end' 作为 conditions 顶层字段（会被自动归一成 time_periods）。" +
+                                        "其他字段：'screen_status' (ON/OFF), 'foreground_app' (应用名称或包名，如小红书或com.xingin.xhs), 'usage_duration_minutes' (使用时长限额), " +
                                         "'continuous_usage_minutes' (单次应用限额), 'total_continuous_minutes' (单次持续使用时间限额), " +
                                         "'content_contains' (屏幕内容包含关键词), 'location_name' (抵达/留在某地), 'cooldown_minutes' (触发后静默时长，默认 5)。"
                                 )
@@ -1703,10 +1703,10 @@ class LocalTools(
                                     json["monitor_name"]?.jsonPrimitive?.contentOrNull ?: "未命名监控"
                                 val dataReq = json["data_requirements"]?.toString() ?: "[]"
 
-                                // 自动修复：如果未提供 foreground_app 但提供了 continuous_usage_minutes，
+                                // 自动修复 1：如果未提供 foreground_app 但提供了 continuous_usage_minutes，
                                 // 则将其重命名为 total_continuous_minutes。
                                 val conditionsObj = json["conditions"]?.jsonObject ?: buildJsonObject {}
-                                val processedConditions = if (conditionsObj.containsKey("continuous_usage_minutes") && !conditionsObj.containsKey("foreground_app")) {
+                                val afterRename = if (conditionsObj.containsKey("continuous_usage_minutes") && !conditionsObj.containsKey("foreground_app")) {
                                     buildJsonObject {
                                         conditionsObj.forEach { (k, v) ->
                                             if (k == "continuous_usage_minutes") {
@@ -1719,6 +1719,44 @@ class LocalTools(
                                 } else {
                                     conditionsObj
                                 }
+
+                                // 自动修复 2：如果 conditions 顶层直接写了 start/end（AI 常见错误），
+                                // 则将其归一成 time_periods 里的一个时间段，并从顶层移除 start/end。
+                                val hasFlatStart = (afterRename["start"] as? JsonPrimitive)?.contentOrNull?.isNotBlank() == true
+                                val hasFlatEnd = (afterRename["end"] as? JsonPrimitive)?.contentOrNull?.isNotBlank() == true
+                                val processedConditions: JsonObject = if (hasFlatStart || hasFlatEnd) {
+                                    val flatStart = (afterRename["start"] as? JsonPrimitive)?.contentOrNull ?: ""
+                                    val flatEnd = (afterRename["end"] as? JsonPrimitive)?.contentOrNull ?: ""
+                                    buildJsonObject {
+                                        // 先拷贝除 start/end 之外的所有字段
+                                        afterRename.forEach { (k, v) ->
+                                            if (k != "start" && k != "end") {
+                                                put(k, v)
+                                            }
+                                        }
+                                        // 合并到 time_periods
+                                        val newPeriod = buildJsonObject {
+                                            put("start", flatStart)
+                                            put("end", flatEnd)
+                                        }
+                                        val existing = afterRename["time_periods"]
+                                        val mergedPeriods: JsonElement = when {
+                                            existing is JsonArray -> buildJsonArray {
+                                                existing.forEach { add(it) }
+                                                add(newPeriod)
+                                            }
+                                            existing is JsonObject -> buildJsonArray {
+                                                add(existing)
+                                                add(newPeriod)
+                                            }
+                                            else -> buildJsonArray { add(newPeriod) }
+                                        }
+                                        put("time_periods", mergedPeriods)
+                                    }
+                                } else {
+                                    afterRename
+                                }
+
                                 val conditions = processedConditions.toString()
 
                                 val triggerMsg =

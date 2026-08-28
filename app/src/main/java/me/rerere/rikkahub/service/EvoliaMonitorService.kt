@@ -378,6 +378,14 @@ class EvoliaMonitorService : AccessibilityService() {
             if (!isCurrentTimeInRange(start, end)) return false
         }
 
+        // 兜底：兼容 AI 可能直接把 start/end 放在 conditions 顶层的格式
+        // 例如 {"start":"22:35","end":"23:30","screen_status":"ON",...}
+        val flatStart = (conditions["start"] as? JsonPrimitive)?.content
+        val flatEnd = (conditions["end"] as? JsonPrimitive)?.content
+        if (!flatStart.isNullOrBlank() || !flatEnd.isNullOrBlank()) {
+            if (!isCurrentTimeInRange(flatStart ?: "", flatEnd ?: "")) return false
+        }
+
         val screenStatus = (conditions["screen_status"] as? JsonPrimitive)?.content
         if (screenStatus != null && state.isScreenOn != (screenStatus == "ON")) return false
 
