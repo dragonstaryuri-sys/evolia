@@ -624,7 +624,7 @@ class VoiceCallManager(
             }
             // Phase 3: 用户可能在此期间又开口说话了 → 再次兜底校验
             val finalSilentMs = System.currentTimeMillis() - lastUserSpeakAtMs
-            if (finalSilentMs < 2500L) {
+            if (finalSilentMs < 5000L) {
                 Log.i(TAG, "scheduleDelayedAiHangup: 宽限期内用户 ${finalSilentMs}ms 前还说过话，放弃挂断")
                 return@launch
             }
