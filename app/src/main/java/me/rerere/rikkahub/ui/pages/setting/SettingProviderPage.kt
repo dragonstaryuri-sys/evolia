@@ -96,6 +96,7 @@ import io.github.g00fy2.quickie.QRResult
 import io.github.g00fy2.quickie.ScanQRCode
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.ProviderSetting
+import kotlin.uuid.Uuid
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.ProviderViewMode
@@ -701,7 +702,8 @@ private fun handleQRResult(
 
             is QRResult.QRSuccess -> {
                 val setting = decodeProviderSetting(result.content.rawValue ?: "")
-                onAdd(setting)
+                // 生成新 id, 避免与已存在的 provider 冲突导致 LazyColumn key 重复闪退
+                onAdd(setting.copyProvider(id = Uuid.random()))
                 toaster.show(
                     context.getString(R.string.setting_provider_page_import_success),
                     type = ToastType.Success
@@ -736,7 +738,8 @@ private fun handleImageQRCode(
         }
 
         val setting = decodeProviderSetting(qrContent)
-        onAdd(setting)
+        // 生成新 id, 避免与已存在的 provider 冲突导致 LazyColumn key 重复闪退
+        onAdd(setting.copyProvider(id = Uuid.random()))
         toaster.show(
             context.getString(R.string.setting_provider_page_import_success),
             type = ToastType.Success
