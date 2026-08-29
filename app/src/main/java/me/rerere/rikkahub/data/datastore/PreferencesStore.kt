@@ -118,6 +118,7 @@ class SettingsStore(
         val WAKE_WORD_SENSITIVITY = floatPreferencesKey("wake_word_sensitivity")
         val CUSTOM_WAKE_WORDS = stringPreferencesKey("custom_wake_words")
         val WAKE_WORD_ASSISTANT_ID = stringPreferencesKey("wake_word_assistant_id")
+        val CALL_BARGE_IN_SENSITIVITY = intPreferencesKey("call_barge_in_sensitivity")
     }
 
     private val dataStore = context.settingsStore
@@ -216,6 +217,7 @@ class SettingsStore(
                 wakeWordSensitivity = preferences[WAKE_WORD_SENSITIVITY] ?: 0.5f,
                 customWakeWords = preferences[CUSTOM_WAKE_WORDS] ?: DEFAULT_WAKE_WORDS,
                 wakeWordAssistantId = preferences[WAKE_WORD_ASSISTANT_ID].toUuidOrNull(),
+                callBargeInSensitivity = preferences[CALL_BARGE_IN_SENSITIVITY] ?: 50,
             )
         }
         .map {
@@ -450,6 +452,7 @@ class SettingsStore(
             preferences[WAKE_WORD_SENSITIVITY] = settingsToSave.wakeWordSensitivity
             preferences[CUSTOM_WAKE_WORDS] = settingsToSave.customWakeWords
             preferences[WAKE_WORD_ASSISTANT_ID] = settingsToSave.wakeWordAssistantId?.toString() ?: ""
+            preferences[CALL_BARGE_IN_SENSITIVITY] = settingsToSave.callBargeInSensitivity
         }
     }
 
