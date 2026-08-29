@@ -43,6 +43,13 @@ data class ConversationEntity(
     val contextSummaryUpToIndex: Int = -1,
     @ColumnInfo(name = "last_summarized_message_time", defaultValue = "0")
     val lastSummarizedMessageTime: Long = 0L,
+    /**
+     * 与 [lastSummarizedMessageTime] 配对使用的「消息 ID 游标」，用于复合键分页，
+     * 解决同毫秒 created_at 下因 created_at > :lastTime 造成的同时间戳组消息遗漏问题。
+     * 为空字符串时 SQL 查询退化到"仅按时间戳 > 比较"，兼容老数据。
+     */
+    @ColumnInfo(name = "last_summarized_message_id", defaultValue = "")
+    val lastSummarizedMessageId: String = "",
     @ColumnInfo(name = "last_prune_time", defaultValue = "0")
     val lastPruneTime: Long = 0L,
     @ColumnInfo(name = "last_prune_message_count", defaultValue = "0")

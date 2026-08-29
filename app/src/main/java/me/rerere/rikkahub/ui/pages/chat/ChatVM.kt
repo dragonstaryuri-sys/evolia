@@ -1008,6 +1008,7 @@ class ChatVM(
                                     current.copy(
                                         isConsolidated = updated.isConsolidated,
                                         lastSummarizedMessageTime = updated.lastSummarizedMessageTime,
+                                        lastSummarizedMessageId = updated.lastSummarizedMessageId,
                                         lastPruneTime = updated.lastPruneTime,
                                         lastPruneMessageCount = updated.lastPruneMessageCount,
                                         lastRefreshTime = updated.lastRefreshTime,

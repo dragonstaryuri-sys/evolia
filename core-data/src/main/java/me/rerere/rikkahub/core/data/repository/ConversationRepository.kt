@@ -521,6 +521,7 @@ class ConversationRepository(
             enabledModeIds = JsonInstant.encodeToString(conversation.enabledModeIds.map { it.toString() }),
             contextSummaryUpToIndex = conversation.contextSummaryUpToIndex,
             lastSummarizedMessageTime = conversation.lastSummarizedMessageTime,
+            lastSummarizedMessageId = conversation.lastSummarizedMessageId,
             lastPruneTime = conversation.lastPruneTime,
             lastPruneMessageCount = conversation.lastPruneMessageCount,
             lastRefreshTime = conversation.lastRefreshTime,
@@ -550,6 +551,7 @@ class ConversationRepository(
             enabledModeIds = enabledModeIds,
             contextSummaryUpToIndex = entity.contextSummaryUpToIndex,
             lastSummarizedMessageTime = entity.lastSummarizedMessageTime,
+            lastSummarizedMessageId = entity.lastSummarizedMessageId,
             lastPruneTime = entity.lastPruneTime,
             lastPruneMessageCount = entity.lastPruneMessageCount,
             lastRefreshTime = entity.lastRefreshTime
@@ -1090,7 +1092,29 @@ class ConversationRepository(
     }
 
     /**
-     * 获取指定时间戳之后的消息列表用于总结
+     * 【L1 Segment 核心分页查询】
+     * 使用「时间戳 + 消息 ID」复合游标拉取待总结消息，彻底修复同毫秒 created_at 的边界遗漏。
+     *
+     * @param lastSummarizedTime  上一批最后一条消息的 created_at
+     * @param lastSummarizedId    上一批最后一条消息的 id；空字符串退化为纯时间戳比较（老数据）
+     */
+    suspend fun getMessagesForSegmentSummary(
+        convId: String,
+        lastSummarizedTime: Long,
+        lastSummarizedId: String,
+        limit: Int = 100
+    ): List<ChatMessageEntity> {
+        return chatMessageDAO.getMessagesForSummary(
+            convId = convId,
+            lastTime = lastSummarizedTime,
+            lastId = lastSummarizedId,
+            limit = limit
+        )
+    }
+
+    /**
+     * 获取指定时间戳之后的消息列表用于总结。
+     * ⚠️ 纯时间窗口查询，用于 L2 归档 / 显示层；L1 Segment 生成必须使用 [getMessagesForSegmentSummary] 以避免同毫秒遗漏。
      */
     suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int = 100): List<ChatMessageEntity> {
         return chatMessageDAO.getMessagesForSummary(convId, lastTime, limit)

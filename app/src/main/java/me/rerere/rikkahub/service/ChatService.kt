@@ -61,6 +61,7 @@ import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity
+import me.rerere.rikkahub.core.data.db.entity.ChatMessageEntity
 import kotlinx.coroutines.job
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -127,6 +128,25 @@ internal fun decodeUIMessageOrNull(json: String, tagExtra: Any? = null): UIMessa
             Log.e(TAG, "decodeUIMessageOrNull: 损坏消息, 上下文=$tagExtra; 预览: ${json.take(150)}…")
             null
         }
+
+/**
+ * 【问题4 修复】解码 ChatMessageEntity 为可拼接的 summary 行。
+ * 当 contentJson 损坏时不再简单 return@forEach "跳过且不可见"，
+ * 而是输出 "[损坏消息占位] ..." 的兜底行，保证：
+ *   1. 该消息仍然被 AI 总结"看见"（至少以占位形式出现在上下文里）；
+ *   2. 它不再是"时间戳已推进、内容永久黑洞"的幽灵记录。
+ */
+internal fun summarizeContentLine(entity: ChatMessageEntity, tagExtra: Any? = null): String? {
+    val uiMsg = decodeUIMessageOrNull(entity.contentJson, tagExtra)
+    if (uiMsg != null) {
+        // ✨ 仅 user / assistant 角色的内容参与总结文本
+        if (uiMsg.role != MessageRole.USER && uiMsg.role != MessageRole.ASSISTANT) return null
+        return "${uiMsg.role}: ${uiMsg.toContentText()}"
+    }
+    // 解码失败：输出占位行，防止时间戳推进后"永久不可见"
+    val preview = entity.contentJson.take(80).replace("\n", " ")
+    return "[损坏消息占位 id=${entity.id.take(8)}…]: <无法解码 JSON> 预览=$preview"
+}
 
 
 internal fun selectMessagesForGeneration(
@@ -1706,18 +1726,41 @@ class ChatService(
         }
     }
 
+    /**
+     * 【问题2 修复】自动触发 L1 总结阈值检查。
+     * ✨ 不再受 200 条 LIMIT 的限制：使用 while 循环 + 复合游标分页持续拉取计数，
+     *    直到达到 max 条核心对话（USER/ASSISTANT）或耗尽未总结消息。
+     *    解决 tool 消息密集时"前 200 条 core 不足、阈值一直不触发"的卡滞问题。
+     */
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) (assistant.detailMemoryThreshold * 2).toInt() else assistant.detailMemoryThreshold
 
-        // 获取最近的消息（取 200 条以防 tool 消息过多），然后在内存中统计 user 和 assistant 角色
-        val newMessagesEntities = conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime, 200)
-        val coreMessageCount = newMessagesEntities.count { entity ->
-            val uiMsg = decodeUIMessageOrNull(entity.contentJson, tagExtra = "checkSummary:$id")
-                ?: return@count false
-            uiMsg.role == MessageRole.USER || uiMsg.role == MessageRole.ASSISTANT
+        // 使用复合游标分批拉取，循环统计核心消息数，直到触达阈值或数据耗尽
+        var cursorTime = conv.lastSummarizedMessageTime
+        var cursorId = conv.lastSummarizedMessageId
+        var coreMessageCount = 0
+
+        while (coreMessageCount < max) {
+            val batch = conversationRepo.getMessagesForSegmentSummary(
+                convId = id.toString(),
+                lastSummarizedTime = cursorTime,
+                lastSummarizedId = cursorId,
+                limit = 200
+            )
+            if (batch.isEmpty()) break
+            batch.forEach { entity ->
+                val uiMsg = decodeUIMessageOrNull(entity.contentJson, tagExtra = "checkSummary:$id")
+                if (uiMsg != null && (uiMsg.role == MessageRole.USER || uiMsg.role == MessageRole.ASSISTANT)) {
+                    coreMessageCount++
+                }
+            }
+            val last = batch.last()
+            cursorTime = last.createdAt
+            cursorId = last.id
+            if (batch.size < 200) break
         }
 
         if (coreMessageCount >= max) summarizeAndRefresh(id, skipArchive = true)
@@ -1735,9 +1778,17 @@ class ChatService(
                 val settings = settingsStore.settingsFlow.first()
                 val conv = conversationRepo.getConversationById(id) ?: break
                 val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
-                val toSummarizeEntities =
-                    conversationRepo.getMessagesForSummary(id.toString(), conv.lastSummarizedMessageTime,100)
+                // 【问题1 修复】使用「时间戳 + 消息 ID」复合游标分页，避免同毫秒 created_at 组边界遗漏
+                val toSummarizeEntities = conversationRepo.getMessagesForSegmentSummary(
+                    convId = id.toString(),
+                    lastSummarizedTime = conv.lastSummarizedMessageTime,
+                    lastSummarizedId = conv.lastSummarizedMessageId,
+                    limit = 100
+                )
                 if (toSummarizeEntities.size < 2) break
+                val lastMsg = toSummarizeEntities.last()
+                val lastMsgTime = lastMsg.createdAt
+                val lastMsgId = lastMsg.id
                 val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
                 val model = settings.findModelById(modelId)
                     ?: assistant.chatModelId?.let { settings.findModelById(it) }
@@ -1745,24 +1796,26 @@ class ChatService(
                     ?: return@withContext ContextRefreshResult(false, errorMessage = "没有找到可用模型")
                 val provider = model.findProvider(settings.providers) ?: return@withContext ContextRefreshResult(false)
                 val handler = providerManager.getProviderByType(provider)
+                // 【问题4 修复】使用 summarizeContentLine 解码，损坏消息输出占位兜底而不是静默跳过
                 val text = StringBuilder().apply {
                     toSummarizeEntities.forEach { entity ->
-                        val uiMsg = decodeUIMessageOrNull(entity.contentJson, tagExtra = "summarize:$id")
+                        val line = summarizeContentLine(entity, tagExtra = "summarize:$id")
                             ?: return@forEach
-                        // ✨ 仅将 user 和 assistant 的内容拼接给总结模型
-                        if (uiMsg.role == MessageRole.USER || uiMsg.role == MessageRole.ASSISTANT) {
-                            append(uiMsg.role).append(": ").append(uiMsg.toContentText()).append("\n")
-                        }
+                        append(line).append("\n")
                     }
                 }.toString()
                 if (text.isBlank()) {
-                    // 如果这一批 100 条全是 tool 消息，虽然没有核心内容可总结，
-                    // 但我们仍然需要更新 lastSummarizedMessageTime，否则会卡在这里死循环
-                    val lastMsgTime = toSummarizeEntities.last().createdAt
+                    // 如果这一批全是 tool 消息 / 空内容，虽然没有核心内容可总结，
+                    // 但我们仍然需要推进复合游标，否则会卡在这里死循环
                     mutateConversationAndSave(id) { current ->
-                        current.copy(lastSummarizedMessageTime = lastMsgTime)
+                        current.copy(
+                            lastSummarizedMessageTime = lastMsgTime,
+                            lastSummarizedMessageId = lastMsgId
+                        )
                     }
-                    continue // 跳过 AI 调用，处理下一批
+                    totalSummarized += toSummarizeEntities.size
+                    if (toSummarizeEntities.size < 100) break
+                    continue
                 }
                 val locale = Locale.getDefault().displayName
                 val tempPrompt = fillPrompt(
@@ -1810,16 +1863,16 @@ class ChatService(
                         startMessageIndex = -1,
                         endMessageIndex = -1,
                         startTime = toSummarizeEntities.first().createdAt,
-                        endTime = toSummarizeEntities.last().createdAt,
+                        endTime = lastMsgTime,
                         embedding = embeddingResult?.embeddings?.firstOrNull()?.let { VectorUtils.fromList(it) },
                         embeddingModelId = embeddingResult?.modelId
                     )
                     memoryRepository.saveSegment(segment)
                 }
-                val lastMsgTime = toSummarizeEntities.last().createdAt
                 mutateConversationAndSave(id) { current ->
                     current.copy(
                         lastSummarizedMessageTime = lastMsgTime,
+                        lastSummarizedMessageId = lastMsgId,
                         lastRefreshTime = System.currentTimeMillis()
                     )
                 }

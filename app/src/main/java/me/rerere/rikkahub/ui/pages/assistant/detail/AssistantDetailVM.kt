@@ -75,6 +75,23 @@ private fun decodeUIMessageSafe(entity: ChatMessageEntity, tagExtra: Any? = null
             null
         }
 
+/**
+ * 【问题4 修复】把 ChatMessageEntity 转成 L1 summary 的文本行。
+ * 非 USER/ASSISTANT 角色的消息（TOOL 等）返回 null。
+ * 解码失败不再静默 return@mapNotNull 丢弃 → 输出 "[损坏消息占位]" 兜底行，
+ * 避免时间戳已经推进、该消息内容却永久丢失的黑洞。
+ */
+private fun summarizeContentLineForDetail(entity: ChatMessageEntity, tagExtra: Any? = null): String? {
+    val uiMsg = decodeUIMessageSafe(entity, tagExtra)
+    if (uiMsg != null) {
+        if (uiMsg.role != me.rerere.ai.core.MessageRole.USER &&
+            uiMsg.role != me.rerere.ai.core.MessageRole.ASSISTANT) return null
+        return "${uiMsg.role}: ${uiMsg.toContentText().take(500)}"
+    }
+    val preview = entity.contentJson.take(80).replace("\n", " ")
+    return "[损坏消息占位 id=${entity.id.take(8)}…]: <无法解码 JSON> 预览=$preview"
+}
+
 
 @Serializable
 data class AssistantMemoryOp(
@@ -432,16 +449,8 @@ class AssistantDetailVM(
                     return@launch
                 }
 
-                val conversation = conversationRepository.getConversationById(Uuid.parse(lastConvId))
+                var conversation = conversationRepository.getConversationById(Uuid.parse(lastConvId))
                 if (conversation == null) {
-                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_messages))
-                    return@launch
-                }
-                val toSummarizeEntities = conversationRepository.getMessagesForSummary(
-                    lastConvId,
-                    conversation.lastSummarizedMessageTime
-                )
-                if (toSummarizeEntities.size < 2) {
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_messages))
                     return@launch
                 }
@@ -463,112 +472,154 @@ class AssistantDetailVM(
                     return@launch
                 }
 
-
                 var archiveCount = 0
-                var processedOffset = 0
 
-                while (processedOffset < toSummarizeEntities.size) {
-                    val currentBatch = toSummarizeEntities.drop(processedOffset).take(threshold)
-                    if (currentBatch.size < 2) break
-                    val text = currentBatch.mapNotNull { entity ->
-                        val uiMsg = decodeUIMessageSafe(entity, tagExtra = "detailSummary")
-                            ?: return@mapNotNull null
-                        "${uiMsg.role}: ${uiMsg.toContentText().take(500)}"
-                    }.joinToString("\n")
+                // 【问题1 + 问题3 修复】外层 while：复合游标(时间+ID)每批 100 条循环查 DB。
+                // 解决「只查一次 100 条，剩余的永久跳过」。
+                outer@ while (true) {
+                    val freshConv = conversationRepository.getConversationById(Uuid.parse(lastConvId))
+                        ?: break@outer
+                    conversation = freshConv
 
-                    val locale = Locale.getDefault().displayName
-                    val prompt = DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
-                        .replace("{{guidelines}}", currentSettings.tempSummaryGuidelines)
-                        .replace("{{new_messages}}", text)
-                        .replace("{{locale}}", locale)
-                        .replace("{{char}}", currentAssistant.name)
+                    val dbBatch = conversationRepository.getMessagesForSegmentSummary(
+                        convId = lastConvId,
+                        lastSummarizedTime = freshConv.lastSummarizedMessageTime,
+                        lastSummarizedId = freshConv.lastSummarizedMessageId,
+                        limit = 100
+                    )
+                    if (dbBatch.size < 2) break@outer
 
-                    // Correctly handle timeout vs exception to avoid misleading "timeout" message
-                    val aiResponse = try {
-                        val response = withTimeoutOrNull(15000) {
-                            handler.generateText(
-                                providerSetting,
-                                listOf(UIMessage.user(prompt)),
-                                TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f, thinkingBudget = 0)
-                            ).choices.firstOrNull()?.message?.toContentText()
-                        }
-                        if (response == null) {
-                            setSnackbarMessage(context.getString(R.string.manual_archive_l1_timeout))
-                            null
-                        } else if (response.isBlank()) {
-                            Log.w(TAG, "AI returned blank response for L1 archive")
-                            null
-                        } else {
-                            response
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "L1 Summarization error", e)
-                        setSnackbarMessage("Error: ${e.localizedMessage ?: e.message ?: "Unknown error"}")
-                        null
-                    }
-
-                    if (!aiResponse.isNullOrBlank()) {
-
-                        val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-                        val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
-
-                        val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-                        val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-
-                        val finalBackground =
-                            backgroundMatch ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
-                            ?: aiResponse
-                        val aiKeywords = keywordsMatch ?: ""
-
-                        val mergedKeywords = if (aiKeywords.isNotBlank()) {
-                            aiKeywords.split(Regex("[,，、；;]"))
-                                .map { it.trim().lowercase() }
-                                .filter { it.isNotBlank() }
-                                .distinct()
-                                .joinToString(",")
-                        } else {
-                            KeywordExtractor.extract(finalBackground)
+                    var processedInThisDbBatch = 0
+                    inner@ while (processedInThisDbBatch < dbBatch.size) {
+                        val currentBatch = dbBatch.drop(processedInThisDbBatch).take(threshold)
+                        if (currentBatch.size < 2) {
+                            // 内层不足 2 条：若 DB 已满 100，下一轮外层重新拼；否则直接推游标防死循环
+                            if (dbBatch.size < 100) {
+                                val lastMsg = dbBatch.last()
+                                val c1 = freshConv.copy(
+                                    lastSummarizedMessageTime = lastMsg.createdAt,
+                                    lastSummarizedMessageId = lastMsg.id,
+                                    lastRefreshTime = System.currentTimeMillis()
+                                )
+                                conversationRepository.updateConversation(c1)
+                            }
+                            break@inner
                         }
 
-                        val fullContextualContent = "[Background]: $finalBackground\n[Original Text]:\n$text"
-                        val embeddingResult = try {
-                            embeddingService.embedWithModelId(fullContextualContent, currentAssistant.id.toString())
+                        // 【问题4 修复】损坏消息解码失败不再跳过 → 占位行参与 summary 文本
+                        val text = currentBatch.mapNotNull { entity ->
+                            summarizeContentLineForDetail(entity, tagExtra = "detailSummary")
+                        }.joinToString("\n")
+
+                        if (text.isBlank()) {
+                            val lastMsg = currentBatch.last()
+                            val c2 = freshConv.copy(
+                                lastSummarizedMessageTime = lastMsg.createdAt,
+                                lastSummarizedMessageId = lastMsg.id,
+                                lastRefreshTime = System.currentTimeMillis()
+                            )
+                            conversationRepository.updateConversation(c2)
+                            processedInThisDbBatch += currentBatch.size
+                            continue
+                        }
+
+                        val locale = Locale.getDefault().displayName
+                        val prompt = DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
+                            .replace("{{guidelines}}", currentSettings.tempSummaryGuidelines)
+                            .replace("{{new_messages}}", text)
+                            .replace("{{locale}}", locale)
+                            .replace("{{char}}", currentAssistant.name)
+
+                        val aiResponse = try {
+                            val response = withTimeoutOrNull(15000) {
+                                handler.generateText(
+                                    providerSetting,
+                                    listOf(UIMessage.user(prompt)),
+                                    TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f, thinkingBudget = 0)
+                                ).choices.firstOrNull()?.message?.toContentText()
+                            }
+                            if (response == null) {
+                                setSnackbarMessage(context.getString(R.string.manual_archive_l1_timeout))
+                                null
+                            } else if (response.isBlank()) {
+                                Log.w(TAG, "AI returned blank response for L1 archive")
+                                null
+                            } else {
+                                response
+                            }
+                        } catch (cancel: CancellationException) {
+                            throw cancel
                         } catch (e: Exception) {
+                            Log.e(TAG, "L1 Summarization error", e)
+                            setSnackbarMessage("Error: " + (e.localizedMessage ?: e.message ?: "Unknown error"))
                             null
                         }
 
-                        val segment = ChatSegmentEntity(
-                            assistantId = currentAssistant.id.toString(),
-                            conversationId = lastConvId,
-                            content = finalBackground,
-                            keywords = mergedKeywords,
-                            startMessageIndex = -1,
-                            endMessageIndex = -1,
-                            startTime = currentBatch.first().createdAt, // 本段第一条消息的时间
-                            endTime = currentBatch.last().createdAt,
-                            embedding = embeddingResult?.embeddings?.firstOrNull()
-                                ?.let { VectorUtils.fromList(it) },
-                            embeddingModelId = embeddingResult?.modelId
-                        )
-                        memoryRepository.saveSegment(segment)
-                        val updatedConv = conversation.copy(
-                            lastSummarizedMessageTime = currentBatch.last().createdAt,
-                            lastRefreshTime = System.currentTimeMillis()
-                        )
-                        conversationRepository.updateConversation(updatedConv)
-                        archiveCount++
-                        processedOffset += currentBatch.size
-                    } else {
-                        break
+                        if (!aiResponse.isNullOrBlank()) {
+                            val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                            val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                            val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                            val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                            val finalBackground = backgroundMatch 
+                                ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
+                                ?: aiResponse
+                            val aiKeywords = keywordsMatch ?: ""
+                            val mergedKeywords = if (aiKeywords.isNotBlank()) {
+                                aiKeywords.split(Regex("[,，、；;]"))
+                                    .map { it.trim().lowercase() }
+                                    .filter { it.isNotBlank() }
+                                    .distinct()
+                                    .joinToString(",")
+                            } else {
+                                KeywordExtractor.extract(finalBackground)
+                            }
+
+                            val fullContextualContent = "[Background]: " + finalBackground + "\n[Original Text]:\n" + text
+                            val embeddingResult = try {
+                                embeddingService.embedWithModelId(fullContextualContent, currentAssistant.id.toString())
+                            } catch (e: Exception) {
+                                null
+                            }
+
+                            val segment = ChatSegmentEntity(
+                                assistantId = currentAssistant.id.toString(),
+                                conversationId = lastConvId,
+                                content = finalBackground,
+                                keywords = mergedKeywords,
+                                startMessageIndex = -1,
+                                endMessageIndex = -1,
+                                startTime = currentBatch.first().createdAt,
+                                endTime = currentBatch.last().createdAt,
+                                embedding = embeddingResult?.embeddings?.firstOrNull()
+                                    ?.let { VectorUtils.fromList(it) },
+                                embeddingModelId = embeddingResult?.modelId
+                            )
+                            memoryRepository.saveSegment(segment)
+                            val lastMsg = currentBatch.last()
+                            val updatedConv = freshConv.copy(
+                                lastSummarizedMessageTime = lastMsg.createdAt,
+                                lastSummarizedMessageId = lastMsg.id,
+                                lastRefreshTime = System.currentTimeMillis()
+                            )
+                            conversationRepository.updateConversation(updatedConv)
+                            archiveCount++
+                            processedInThisDbBatch += currentBatch.size
+                        } else {
+                            break@outer
+                        }
                     }
+
+                    if (dbBatch.size < 100) break@outer
                 }
 
                 if (archiveCount > 0) {
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_success, archiveCount))
                 }
+            } catch (cancel: CancellationException) {
+                throw cancel
             } catch (e: Exception) {
                 Log.e(TAG, "Manual L1 archive failed", e)
-                setSnackbarMessage("Error: ${e.localizedMessage ?: e.message ?: "Unknown error"}")
+                setSnackbarMessage("Error: " + (e.localizedMessage ?: e.message ?: "Unknown error"))
             } finally {
                 _isArchivingL1.value = false
             }
@@ -870,9 +921,12 @@ class AssistantDetailVM(
                     if (conversation != null && conversation.lastSummarizedMessageTime == endTime) {
                         // 回退到该片段开始时间的前 1 毫秒
                         // 这样 SQL 查询 "created_at > lastTime" 时，就会重新包含原本属于这个片段的消息
+                        // 同时清空复合游标 lastSummarizedMessageId → 退化为纯时间戳比较，
+                        // 避免「时间戳回退但 ID 仍指向末端消息」造成复合条件失效
                         val newTime = (startTime - 1).coerceAtLeast(0L)
                         val updatedConv = conversation.copy(
                             lastSummarizedMessageTime = newTime,
+                            lastSummarizedMessageId = "",
                             contextSummaryUpToIndex = -1
                         )
 

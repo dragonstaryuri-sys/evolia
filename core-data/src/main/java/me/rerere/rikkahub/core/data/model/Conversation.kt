@@ -33,6 +33,11 @@ data class Conversation(
     @Deprecated("Use lastSummarizedMessageTime instead")
     val contextSummaryUpToIndex: Int = -1,
     val lastSummarizedMessageTime: Long = 0L,
+    /**
+     * 同毫秒复合游标，见 [ConversationEntity.lastSummarizedMessageId] 注释。
+     * 空字符串表示"未设置"，SQL 查询退化为仅按时间戳比较，向后兼容老数据。
+     */
+    val lastSummarizedMessageId: String = "",
     val lastPruneTime: Long = 0L,
     val lastPruneMessageCount: Int = 0,
     val lastRefreshTime: Long = 0L,
@@ -296,7 +301,20 @@ fun Conversation.removeInvalidMessages(): Conversation {
                     )
                 }
             }
-            isBlankAssistantAtEnd -> Unit
+            isBlankAssistantAtEnd -> {
+                // 多版本场景（重新生成失败后留下空白的新版本）：
+                // 只剔除失败的空版本，回退到上一个有效版本，保留历史版本；
+                // 仅当节点是单版本占位时才丢弃整条节点。
+                val fallbackMessages = node.messages.filter { candidate ->
+                    candidate.id != message.id
+                }
+                if (fallbackMessages.isNotEmpty()) {
+                    validLoadedNodes += node.copy(
+                        messages = fallbackMessages,
+                        selectIndex = fallbackMessages.lastIndex
+                    )
+                }
+            }
             isDuplicateAssistant -> {
                 val isVisible = message.toContentText().isNotBlank() ||
                     message.parts.any { part -> part is UIMessagePart.ToolCall }

@@ -39,7 +39,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = true
 )
 @TypeConverters(
@@ -74,6 +74,21 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.v(TAG, "开始 23->24 迁移：为日记表添加手写日记图片字段（JSON 存储）")
                 db.execSQL("ALTER TABLE `AgentDiaryEntity` ADD COLUMN `images` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
+
+        /**
+         * 24 -> 25: 为 ConversationEntity 增加 last_summarized_message_id 字段，
+         * 配合「created_at + id」复合游标分页，修复 L1 Segment 在同毫秒 created_at 的消息组上
+         * 因 `created_at > :lastTime` 严格大于条件而产生的边界遗漏问题。
+         */
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 24->25 迁移：为会话表增加 L1 复合分页游标字段 last_summarized_message_id")
+                db.execSQL(
+                    "ALTER TABLE `conversationentity` " +
+                        "ADD COLUMN `last_summarized_message_id` TEXT NOT NULL DEFAULT ''"
+                )
             }
         }
 

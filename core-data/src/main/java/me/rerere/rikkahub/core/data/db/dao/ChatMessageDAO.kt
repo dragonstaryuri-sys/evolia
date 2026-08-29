@@ -88,7 +88,32 @@ interface ChatMessageDAO {
     @Query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0")
     suspend fun countNewMessages(convId: String, lastTime: Long): Int
 
-    @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC LIMIT :limit")
+    /**
+     * 按「(created_at, id)」复合游标查询待总结消息。
+     * - 当 [lastId] 为空时（老数据 / 未设置）：退化为仅按 created_at > :lastTime 比较；
+     * - 当 [lastId] 不为空时：created_at > :lastTime 或 (created_at = :lastTime AND id > :lastId)，
+     *   配合 ORDER BY created_at ASC, id ASC 彻底解决同毫秒时间戳组边界遗漏问题。
+     */
+    @Query("""
+        SELECT * FROM chat_messages
+        WHERE conversation_id = :convId
+          AND is_deleted = 0
+          AND (
+            (:lastId = '') AND created_at > :lastTime
+            OR (:lastId <> '') AND (created_at > :lastTime OR (created_at = :lastTime AND id > :lastId))
+          )
+        ORDER BY created_at ASC, id ASC
+        LIMIT :limit
+    """)
+    suspend fun getMessagesForSummary(
+        convId: String,
+        lastTime: Long,
+        lastId: String,
+        limit: Int
+    ): List<ChatMessageEntity>
+
+    @Deprecated("Use getMessagesForSummary(convId, lastTime, lastId, limit) instead. 保留用于 L2 归档等纯时间窗口场景。")
+    @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC, id ASC LIMIT :limit")
     suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
 
     // --- 滑动窗口分页查询 ---
