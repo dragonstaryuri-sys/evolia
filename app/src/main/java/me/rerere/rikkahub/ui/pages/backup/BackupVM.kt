@@ -25,6 +25,7 @@ import me.rerere.rikkahub.data.sync.WebDavBackupItem
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.service.BackupWorker
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.utils.UiState
 import java.io.File
 
@@ -42,6 +43,19 @@ class BackupVM(
     )
 
     val webDavBackupItems = MutableStateFlow<UiState<List<WebDavBackupItem>>>(UiState.Idle)
+
+    /**
+     * 页面点击「立即备份」后的前台同步状态，用于给 BackupPage 顶部 Toast 反馈。
+     * WorkManager 的 BackupWorker 继续负责后台/启动时自动备份，并走系统通知作为兜底。
+     */
+    val manualBackupStatus = MutableStateFlow<ManualBackupStatus>(ManualBackupStatus.Idle)
+
+    sealed interface ManualBackupStatus {
+        data object Idle : ManualBackupStatus
+        data object Running : ManualBackupStatus
+        data object Success : ManualBackupStatus
+        data class Failed(val reason: String) : ManualBackupStatus
+    }
 
     init {
         loadBackupFileItems()
@@ -83,6 +97,37 @@ class BackupVM(
             ExistingWorkPolicy.REPLACE,
             workRequest
         )
+    }
+
+    /**
+     * 前台用户点击「立即备份」时调用：
+     * - 在当前页面内同步执行，保证成功/失败能立刻通过 UI Toast 给出具体原因（尤其 403）。
+     * - 仍会触发一次 WorkManager（便于统一重试/通知逻辑），但最终 UI 以本函数返回为准。
+     */
+    fun backupNow(scope: kotlinx.coroutines.CoroutineScope) {
+        if (manualBackupStatus.value == ManualBackupStatus.Running) return
+        scope.launch(context = viewModelScope.coroutineContext + kotlinx.coroutines.Dispatchers.IO) {
+            manualBackupStatus.emit(ManualBackupStatus.Running)
+            // 保持与 BackupWorker 一致的调度：先把 WorkManager 也 enqueue 一份，
+            // 以防用户退出页面 / 前台协程被系统回收后仍能靠 Worker 通知兜底。
+            backup()
+            val result = runCatching {
+                val config = settings.value.webDavConfig
+                require(config.url.isNotBlank()) {
+                    context.getString(R.string.backup_page_webdav_config_empty)
+                }
+                webdavSync.backupToWebDav(config)
+            }
+            result.onSuccess {
+                manualBackupStatus.emit(ManualBackupStatus.Success)
+                runCatching { loadBackupFileItems() }
+            }.onFailure { err ->
+                Log.e(TAG, "manual backup failed", err)
+                val reason = err.message
+                    ?: context.getString(R.string.backup_page_unknown_error)
+                manualBackupStatus.emit(ManualBackupStatus.Failed(reason = reason))
+            }
+        }
     }
 
     suspend fun restore(item: WebDavBackupItem): WebdavSync.RestoreResult {

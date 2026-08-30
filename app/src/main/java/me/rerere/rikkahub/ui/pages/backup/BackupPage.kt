@@ -49,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -165,6 +166,32 @@ private fun WebDavPage(
     val toaster = LocalToaster.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val manualBackupStatus by vm.manualBackupStatus.collectAsStateWithLifecycle()
+
+    LaunchedEffect(manualBackupStatus) {
+        when (val s = manualBackupStatus) {
+            is BackupVM.ManualBackupStatus.Success -> {
+                toaster.show(
+                    context.getString(R.string.backup_page_backup_success),
+                    type = ToastType.Success
+                )
+            }
+            is BackupVM.ManualBackupStatus.Failed -> {
+                val reason = s.reason.trim().ifBlank {
+                    context.getString(R.string.backup_page_unknown_error)
+                }
+                toaster.show(
+                    message = context.getString(
+                        R.string.backup_page_backup_failed_with_reason,
+                        reason
+                    ),
+                    type = ToastType.Error
+                )
+            }
+            else -> Unit
+        }
+    }
+
     var showBackupFiles by remember { mutableStateOf(false) }
     var showRestartDialog by remember { mutableStateOf(false) }
     var restoreResult by remember { mutableStateOf<me.rerere.rikkahub.data.sync.WebdavSync.RestoreResult?>(null) }
@@ -388,16 +415,21 @@ private fun WebDavPage(
 
             Button(
                 onClick = {
-                    vm.backup()
-                    toaster.show(
-                        context.getString(R.string.backup_page_backup_started_background),
-                        type = ToastType.Success
-                    )
-                }
+                    vm.backupNow(scope)
+                },
+                enabled = manualBackupStatus != BackupVM.ManualBackupStatus.Running
             ) {
-                Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.backup_page_backup_now))
+                if (manualBackupStatus == BackupVM.ManualBackupStatus.Running) {
+                    CircularWavyProgressIndicator(
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.backup_page_backing_up))
+                } else {
+                    Icon(Icons.Rounded.CloudUpload, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.backup_page_backup_now))
+                }
             }
         }
     }

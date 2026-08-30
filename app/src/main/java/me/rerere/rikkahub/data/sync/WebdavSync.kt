@@ -2,6 +2,7 @@ package me.rerere.rikkahub.data.sync
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.util.Base64
 import me.rerere.rikkahub.common.utils.LogUtil
 import at.bitfire.dav4jvm.BasicDigestAuthHandler
 import at.bitfire.dav4jvm.DavCollection
@@ -23,12 +24,15 @@ import me.rerere.rikkahub.data.datastore.sanitize
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.Response
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -56,12 +60,7 @@ class WebdavSync(
                 }
             } catch (e: HttpException) {
                 LogUtil.e(TAG, "testWebdav HttpException: code=${e.code}, message=${e.message}", e)
-                val msg = when (e.code) {
-                    401 -> "Unauthorized: Check your WebDAV username and password."
-                    403 -> "Forbidden: Check your permissions or path. Your WebDAV provider might require specific settings for this directory."
-                    404 -> "Not Found: Check your WebDAV URL and path. Ensure the root folder exists."
-                    else -> "WebDAV Test failed with code ${e.code}: ${e.message}"
-                }
+                val msg = mapHttpCodeToMessage(e.code, operation = "Test", providerHint = webDavConfig.providerHint())
                 throw Exception(msg)
             } catch (e: Exception) {
                 LogUtil.e(TAG, "testWebdav unexpected error", e)
@@ -106,11 +105,12 @@ class WebdavSync(
             return@withContext
         }
 
-        LogUtil.i(TAG, "Prepared backup file: ${file.name} (${file.length() / 1024} KB)")
+        val fileSizeKb = file.length() / 1024
+        LogUtil.i(TAG, "Prepared backup file: ${file.name} (${fileSizeKb} KB)")
 
         val collection = webDavConfig.requireCollection() // Folder
         try {
-            collection.ensureCollectionExists()
+            collection.ensureCollectionExists(webDavConfig)
         } catch (e: Exception) {
             LogUtil.e(TAG, "Failed to ensure WebDAV collection exists: ${e.message}")
             throw e
@@ -128,13 +128,16 @@ class WebdavSync(
                 if (!response.isSuccessful) {
                     val errorBody = try { response.body?.string() } catch (e: Exception) { "could not read body" }
                     LogUtil.e(TAG, "WebDAV PUT Error Body: $errorBody")
-                    val errorMsg = when (response.code) {
-                        401 -> "Unauthorized: Invalid WebDAV credentials."
-                        403 -> "Forbidden: Permission denied. Check if your WebDAV provider allows file uploads to this path or if your storage quota is full."
-                        413 -> "Payload Too Large: The backup file might be too big for your WebDAV provider."
-                        else -> "WebDAV PUT failed with code ${response.code}: ${response.message}"
-                    }
-                    throw Exception(errorMsg)
+                    val errorMsg = mapHttpCodeToMessage(
+                        code = response.code,
+                        operation = "Upload",
+                        providerHint = webDavConfig.providerHint(),
+                        extra = mapOf(
+                            "文件大小" to "${fileSizeKb}KB",
+                            "目标文件" to file.name
+                        )
+                    )
+                    throw BackupHttpException(response.code, errorMsg)
                 }
             }
             cleanupOldBackups(webDavConfig)
@@ -210,12 +213,7 @@ class WebdavSync(
                 }
             } catch (e: HttpException) {
                 LogUtil.e(TAG, "List failed with HttpException: ${e.code}", e)
-                val msg = when (e.code) {
-                    401 -> "Unauthorized: Check your WebDAV username and password."
-                    403 -> "Forbidden: Check your permissions or path. Your WebDAV provider might require specific settings for this directory."
-                    404 -> "Not Found: Check your WebDAV URL and path. Ensure the root folder exists."
-                    else -> "WebDAV List failed with code ${e.code}: ${e.message}"
-                }
+                val msg = mapHttpCodeToMessage(e.code, operation = "List", providerHint = webDavConfig.providerHint())
                 throw Exception(msg)
             } catch (e: Exception) {
                 LogUtil.e(TAG, "List failed", e)
@@ -242,11 +240,7 @@ class WebdavSync(
                     } else {
                         val errorBody = try { response.body?.string() } catch (e: Exception) { "could not read body" }
                         LogUtil.e(TAG, "WebDAV GET failed: code=${response.code}, message=${response.message}, body=$errorBody")
-                        val msg = when (response.code) {
-                            401 -> "Unauthorized: Invalid WebDAV credentials."
-                            403 -> "Forbidden: You don't have permission to download this file."
-                            else -> "Download failed with code ${response.code}: ${response.message}"
-                        }
+                        val msg = mapHttpCodeToMessage(response.code, operation = "Download", providerHint = webDavConfig.providerHint())
                         throw Exception(msg)
                     }
                 }
@@ -505,6 +499,16 @@ private fun WebDavConfig.requireClient(): OkHttpClient {
         .followRedirects(false)
         .authenticator(auth)
         .addNetworkInterceptor(auth)
+        // 预先发送 Basic 鉴权头。
+        // 坚果云等服务商在部分路径上对无鉴权请求直接返回 403（而非标准 401+WWW-Authenticate），
+        // 导致 dav4jvm 的 Authenticator 无法触发重试。预发头能显著减少这类伪 403。
+        .apply {
+            if (username.isNotBlank() || password.isNotBlank()) {
+                addInterceptor(PreemptiveBasicAuthInterceptor(username, password))
+            }
+        }
+        // 统一记录关键 WebDAV 响应码，方便用户排查 403/429/507 等问题
+        .addInterceptor(WebdavLoggingInterceptor())
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.MINUTES)
         .writeTimeout(10, TimeUnit.MINUTES)
@@ -527,7 +531,18 @@ private fun WebDavConfig.requireCollection(path: String? = null): DavCollection 
     return DavCollection(this.requireClient(), urlStr.toHttpUrl())
 }
 
-private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatchers.IO) {
+private fun WebDavConfig.providerHint(): String = when {
+    "jianguoyun" in url || "dav.jianguoyun" in url || "nutstore" in url -> "坚果云"
+    "dav.box.com" in url -> "Box"
+    "webdav.teracloud" in url -> "TeraCloud"
+    "webdav.yandex" in url -> "Yandex"
+    "pcloud" in url -> "pCloud"
+    "nextcloud" in url || "owncloud" in url -> "Nextcloud/ownCloud"
+    "aliyun" in url || "aliyundrive" in url -> "阿里云盘/阿里云"
+    else -> ""
+}
+
+private suspend fun DavCollection.ensureCollectionExists(webDavConfig: WebDavConfig) = withContext(Dispatchers.IO) {
     try {
         propfind(depth = 0) { _, _ -> }
     } catch (e: HttpException) {
@@ -537,17 +552,112 @@ private suspend fun DavCollection.ensureCollectionExists() = withContext(Dispatc
                 if (!response.isSuccessful) {
                     val errorBody = try { response.body?.string() } catch (ex: Exception) { null }
                     LogUtil.e("DataSync", "mkCol failed: code=${response.code}, message=${response.message}, body=$errorBody")
-                    if (response.code == 403) {
-                        throw Exception("Forbidden (403): Failed to create directory. Please check if your account has permissions or if the path is valid.")
-                    }
-                    throw Exception("Failed to create WebDAV collection: ${response.code} ${response.message}")
+                    val msg = mapHttpCodeToMessage(
+                        code = response.code,
+                        operation = "CreateFolder",
+                        providerHint = webDavConfig.providerHint()
+                    )
+                    throw Exception(msg)
                 }
             }
         } else if (e.code == 403) {
             LogUtil.e("DataSync", "WebDAV Access Forbidden (403) on PROPFIND: $location")
-            throw Exception("Forbidden (403): Access denied. Check your credentials and permissions. Some providers require manual folder creation.")
+            throw Exception(
+                mapHttpCodeToMessage(
+                    code = 403,
+                    operation = "PropFind",
+                    providerHint = webDavConfig.providerHint()
+                )
+            )
         } else throw e
     }
 }
+
+/**
+ * 将常见 HTTP 错误码翻译成更有针对性、携带运营商提示的文案。
+ * 尤其针对坚果云的 403（密码是「应用专用密码」，非账号密码，且有月上传流量限制）。
+ */
+private fun mapHttpCodeToMessage(
+    code: Int,
+    operation: String,
+    providerHint: String,
+    extra: Map<String, String> = emptyMap()
+): String {
+    val provider = if (providerHint.isNotBlank()) " [$providerHint]" else ""
+    val extraInfo = if (extra.isEmpty()) "" else extra.entries.joinToString("，", prefix = "（", postfix = "）") { (k, v) -> "$k: $v" }
+    return buildString {
+        append("WebDAV $operation 失败 (HTTP $code)$provider$extraInfo: ")
+        append(
+            when (code) {
+                400 -> "请求格式错误，请检查 URL 是否包含非法字符。"
+                401 -> "账号或密码不正确。" +
+                    if ("坚果云" in provider)
+                        " 坚果云 WebDAV 需使用「设置-安全选项-第三方应用管理」里生成的【应用专用密码】，而不是登录密码。"
+                    else " 如果是新创建的授权，请确认密码已保存。"
+                403 -> "服务端拒绝访问 (Forbidden)，常见原因：① 登录账号/密码格式错（尤其是坚果云，请使用「应用专用密码」而非账号密码）；② WebDAV 根目录没有写权限；③ 坚果云免费版每月上传流量已用尽（免费用户约 1GB/月）；④ 路径拼写导致落到了无权访问的目录。"
+                404 -> "目标路径不存在。请确认 URL 与 path 正确，并已在服务商后台手动创建过根目录（部分服务商禁止自动创建根目录）。"
+                413 -> "备份文件过大，超出服务商限制。可暂时关闭 FILES/TTS_CACHE 备份项，或改用更大配额的 WebDAV 服务。"
+                422, 423 -> "目标资源被锁定或格式不被接受，请换一个备份文件名重试。"
+                429 -> "请求过于频繁，触发服务商限流。请稍后再试（坚果云短时间大量请求后常见）。"
+                500, 502, 503, 504 -> "服务端异常（$code），一般是临时故障，等待稍后重试即可。"
+                507 -> "磁盘配额不足（Insufficient Storage），请清理远端空间或升级套餐。"
+                else -> "未分类错误 code=${code}，请查看日志或联系服务商。"
+            }
+        )
+    }
+}
+
+/**
+ * 预处理 Basic 鉴权，避免先 401 再重试的往返。
+ * 对坚果云这种 "没带 Authorization 就直接 403" 的服务尤其关键。
+ */
+private class PreemptiveBasicAuthInterceptor(
+    private val username: String,
+    private val password: String
+) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val original = chain.request()
+        if (original.header("Authorization") != null) {
+            return chain.proceed(original)
+        }
+        val credentials = "$username:$password"
+        val encoded = Base64.encodeToString(
+            credentials.toByteArray(StandardCharsets.UTF_8),
+            Base64.NO_WRAP
+        )
+        val requestWithAuth = original.newBuilder()
+            .header("Authorization", "Basic $encoded")
+            .build()
+        return chain.proceed(requestWithAuth)
+    }
+}
+
+/**
+ * 轻量日志拦截器：所有 WebDAV 请求异常都会打印 method / code / url，
+ * 方便用户在日志里直接看到到底是哪一步返回了 403。
+ */
+private class WebdavLoggingInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val response = try {
+            chain.proceed(request)
+        } catch (t: Throwable) {
+            LogUtil.e(TAG, "WebDAV 请求失败: ${request.method} ${request.url} -> ${t.message}", t)
+            throw t
+        }
+        if (!response.isSuccessful) {
+            LogUtil.w(
+                TAG,
+                "WebDAV 返回非成功: method=${request.method} code=${response.code} url=${request.url}"
+            )
+        }
+        return response
+    }
+}
+
+/**
+ * 备份相关 HTTP 异常。带 code 便于 BackupWorker 判断是否值得重试。
+ */
+class BackupHttpException(val code: Int, message: String) : Exception(message)
 
 data class WebDavBackupItem(val href: String, val displayName: String, val size: Long, val lastModified: Instant)
