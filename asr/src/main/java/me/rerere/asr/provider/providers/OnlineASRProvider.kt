@@ -275,13 +275,16 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                     }
                     if (inSpeechAux) lastSpeechEnergyAtMs = now
                 } else if (!inGracePeriod && inSpeechAux && rms > RMS_SPEECH_OFFSET_THRESHOLD) {
-                    // offset 区间（onset > rms > offset）：维持 inSpeechAux = true（不中断 PCM 累积），
-                    // 但**不刷新 lastSpeechEnergyAtMs** → silenceMs 会增长 → 停顿能被检测到 → 切片能触发。
-                    // 之前这里也刷新了 lastSpeechEnergyAtMs → 环境噪音（如 0.0107）一直刷 → silenceMs 永远=0 → 永远不切片。
-                    // 600ms 无实际语音 → 关闭 inSpeechAux（防噪音无限维持）
-                    if (now - lastSpeechEnergyAtMs > 600L) {
-                        inSpeechAux = false
-                    }
+                    // offset 区间（onset > rms > offset）：也视为仍在发音并刷新 lastSpeechEnergyAtMs
+                    // 【问题】之前 offset 区间不刷新时间戳 → 轻声/气声说话（整段 RMS 都落在 0.006~0.012 区间）
+                    //         虽然每帧都高于 offset，但 silenceMs=now-lastSpeechEnergyAtMs 一直涨 →
+                    //         还没说完就被 pauseTriggered 切片 → 识别变短/缺字。
+                    // 【修复】只要处于 inSpeechAux 且 RMS > OFFSET（即没到纯静音），就刷新能量时间戳。
+                    //         真正的停顿检测由 VAD segment（MIN_SILENCE_DURATION_SEC = 1.0s）负责，
+                    //         这里 400ms 的 pause 切片只做"有明确换气断点才切片"。
+                    lastSpeechEnergyAtMs = now
+                    // onset 连续计数清零（下一次要重新从 4 帧累计），但保持 inSpeechAux=true
+                    consecutiveOnsetFrames = 0
                 } else {
                     consecutiveOnsetFrames = 0
                     if (inSpeechAux && now - lastSpeechEnergyAtMs > 600L) {

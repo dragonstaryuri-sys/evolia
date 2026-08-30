@@ -310,10 +310,13 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                         }
                     }
                 } else if (!inGracePeriod && inSpeech && rms > RMS_SPEECH_OFFSET_THRESHOLD) {
-                    // offset 区间：维持 inSpeech 但不刷新 lastSpeechEnergyAtMs → 停顿能被检测到
-                    if (now - lastSpeechEnergyAtMs > 600L) {
-                        inSpeech = false
-                    }
+                    // offset 区间：仍视为"在发音"，刷新 lastSpeechEnergyAtMs
+                    // 原逻辑不刷新 → 轻声/气声（整段 RMS 夹在 offset/onset 之间）
+                    //   会在 600ms 后被当成沉默清除 inSpeech → listeningHint 显示异常。
+                    // 虽然本地 VAD + full PCM 推理并不依赖 inSpeech，但维持状态一致性更好。
+                    // 真正的"用户说完了"靠 Silero VAD 的 minSilence(1.0s) + Final grace period。
+                    lastSpeechEnergyAtMs = now
+                    consecutiveOnsetFrames = 0
                 } else {
                     consecutiveOnsetFrames = 0
                     if (inSpeech && now - lastSpeechEnergyAtMs > 600L) {

@@ -747,9 +747,10 @@ class VoiceCallManager(
                 val speechRatio = if (totalFrames > 0) speechFrames.toDouble() / totalFrames else 0.0
                 val avgRms = if (totalFrames > 0) (totalRmsAccum / totalFrames).toFloat() else 0f
                 val safeMinRms = if (totalFrames > 0) minRms else 0f
-                // 至少 20% 帧含语音 连续 4 帧语音才算"真正有人说话"
-                // 0.20/4
-                val hasRealSpeech = (speechRatio >= 0.20) || (maxConsecutiveSpeech >= 4)
+                // 至少 10% 帧含语音 或 连续 2 帧语音才算"真正有人说话"
+                // 原阈值：0.20 / 4 → 慢开口的用户（前面一长段呼吸+低音量开头）很容易被整段丢弃。
+                // 降低到 0.10 / 2：允许用户"哼一下/轻声起头"也能通过，误识别保护交给下游 Silero VAD 兜底。
+                val hasRealSpeech = (speechRatio >= 0.10) || (maxConsecutiveSpeech >= 2)
                 if (hasRealSpeech) {
                     cleanFrames
                 } else {
@@ -2077,8 +2078,9 @@ class VoiceCallManager(
     }
 
     companion object {
-        // PCM 预卷帧数（每帧 32ms，31 帧/1s）
-        private const val PRE_ROLL_MAX_FRAMES = 31
+        // PCM 预卷帧数（每帧 32ms，47 帧≈1.5s）
+        // 从 31 帧放宽到 47 帧：更长的预卷窗口，防止慢开口用户在 AI 刚停时说话的头字丢失
+        private const val PRE_ROLL_MAX_FRAMES = 47
 
         private const val L1_CHECK_INTERVAL_MS = 25L * 60 * 1000
         private const val ASR_RETRY_DELAY_MS = 600L
@@ -2105,8 +2107,13 @@ class VoiceCallManager(
         // ASR 忽略期：从 TTS 播完后开始计时，800ms 覆盖大音量扬声器的尾音回声
         // （500ms 不够：大音量扬声器物理振铃需要 300-500ms 衰减）
         private const val ASR_IGNORE_PERIOD_MS = 800L
-        // 预卷能量过滤阈值：与 ASR 的 onset 阈值对齐（0.005）
-        private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.005f
+        // 预卷能量过滤阈值：从 0.005 → 0.0015
+        // 原 0.005 对应约 164 samples 幅度（-46dBFS 左右），
+        //   VOICE_COMMUNICATION 模式下系统 AEC/NS 会衰减信号 → 轻声说话/气声/辅音（s/sh/f 等）
+        //   的 RMS 实际可能只有 0.002~0.004 → 低于阈值被硬丢 → ASR 看不见 → 识别缺字
+        // 降到 0.0015（≈ 49 samples / -56dBFS）：仍然过滤掉纯静息底噪（0.0005~0.001），
+        //   但让正常辅音与轻声都能通过。真正的"是不是语音"交给下游 Silero VAD + ASR 模型判断。
+        private const val RMS_SPEECH_THRESHOLD_PRE_ROLL = 0.0015f
 
         // ===== 用户 30 分钟沉默自动挂断 =====
         // 超时时间：30 分钟
