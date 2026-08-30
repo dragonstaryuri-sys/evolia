@@ -29,6 +29,7 @@ import androidx.compose.material3.Surface
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -153,15 +154,15 @@ fun AssistantAdvancedSubPage(
                         subtitle = stringResource(R.string.assistant_advanced_frequency_desc),
                         trailing = {
                             OutlinedTextField(
-                                value = assistant.notificationFrequencyHours.toString(),
+                                value = assistant.notificationFrequencyMinutes.toString(),
                                 onValueChange = {
-                                    val hours = it.toIntOrNull()?.coerceAtLeast(1) ?: 4
-                                    onUpdate(assistant.copy(notificationFrequencyHours = hours))
+                                    val minutes = it.toIntOrNull()?.coerceAtLeast(10) ?: 240
+                                    onUpdate(assistant.copy(notificationFrequencyMinutes = minutes))
                                 },
-                                modifier = Modifier.width(70.dp),
+                                modifier = Modifier.width(120.dp),
                                 singleLine = true,
                                 textStyle = MaterialTheme.typography.bodySmall,
-                                suffix = { Text("h") }
+                                suffix = { Text("min") }
                             )
                         }
                     )

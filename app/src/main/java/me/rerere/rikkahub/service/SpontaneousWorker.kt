@@ -82,7 +82,7 @@ class SpontaneousWorker(
         // Check frequency
         val nowMs = System.currentTimeMillis()
         val timeSinceLastNotification = nowMs - assistant.lastNotificationTime
-        val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
+        val minIntervalMs = assistant.notificationFrequencyMinutes * 60 * 1000L
         if (timeSinceLastNotification < minIntervalMs) {
             return
         }
@@ -207,7 +207,7 @@ class SpontaneousWorker(
     private suspend fun updateAssistantState(assistant: Assistant, content: String, isHalfDelay: Boolean) {
         val settings = settingsStore.settingsFlow.first()
         val newTime = if (isHalfDelay) {
-            val minIntervalMs = assistant.notificationFrequencyHours * 60 * 60 * 1000L
+            val minIntervalMs = assistant.notificationFrequencyMinutes * 60 * 1000L
             System.currentTimeMillis() - (minIntervalMs / 2)
         } else {
             System.currentTimeMillis()

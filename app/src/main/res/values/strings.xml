@@ -1075,7 +1075,7 @@
   <string name="assistant_advanced_start_label">Start</string>
   <string name="assistant_advanced_end_label">End</string>
   <string name="assistant_advanced_frequency_title">Frequency</string>
-  <string name="assistant_advanced_frequency_desc">Minimum hours between messages</string>
+  <string name="assistant_advanced_frequency_desc">Minimum minutes between messages (minimum 10)</string>
   <string name="assistant_advanced_group_custom_request">Custom Request</string>
   <!-- Setting Display Page -->
   <string name="setting_display_fonts_title">Fonts</string>
@@ -1258,11 +1258,14 @@
   <string name="backup_page_auto_backup_on_start">Auto Backup on Launch</string>
   <string name="backup_page_auto_backup_on_start_desc">Automatically back up via WebDAV when the app is launched for the first time each day.</string>
   <string name="backup_page_backup_started_background">Backup task started in background</string>
+  <string name="backup_page_webdav_config_empty">Please fill in the WebDAV server address before backing up</string>
+  <string name="backup_page_backup_failed_with_reason">Backup failed: %s</string>
   <string name="notification_channel_backup">Data Backup</string>
   <string name="backup_notification_success_title">Backup Successful</string>
   <string name="backup_notification_success_desc">Data has been successfully synced to WebDAV server</string>
   <string name="backup_notification_error_title">Backup Failed</string>
   <string name="backup_notification_error_desc">An error occurred in the background backup task, retry will be attempted later</string>
+  <string name="backup_notification_error_desc_final">Background backup failed and retries stopped. Please check your WebDAV settings or see the reason below</string>
   <string name="backup_page_max_backup_files">Max Backups to Keep</string>
   <string name="backup_page_max_backup_files_suffix">pcs</string>
   <string name="schedule_title">Smart Schedule</string>

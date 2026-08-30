@@ -84,7 +84,7 @@ data class Assistant(
 
     val notificationStartHour: Int = 7,
     val notificationEndHour: Int = 22,
-    val notificationFrequencyHours: Int = 4,
+    val notificationFrequencyMinutes: Int = 240,
     val lastNotificationTime: Long = 0L,
     val lastNotificationContent: String = "",
 
