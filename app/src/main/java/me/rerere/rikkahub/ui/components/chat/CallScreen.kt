@@ -134,6 +134,16 @@ fun CallScreen(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
+            .pointerInput(Unit) {
+                // 消费所有未被内部按钮处理的指针事件，
+                // 防止点击/长按穿透到下层的消息气泡（触发操作框等）
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            }
     ) {
         // 1. 背景处理：复用对话背景逻辑
         if (assistant.background != null) {

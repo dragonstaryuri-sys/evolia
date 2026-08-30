@@ -166,6 +166,11 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             // 轻量 RMS 辅助判定：当前 32ms window 是否含有语音能量
             var inSpeechAux = false
             var lastSpeechEnergyAtMs = 0L
+            // 最近一次 RMS 超过 onset 阈值（0.012）的时间戳。
+            // 用于区分"轻声说话"和"环境噪音"：
+            //   轻声说话时偶尔会有帧超过 onset → lastOnsetEnergyAtMs 经常更新
+            //   环境噪音稳定在 offset 区间（0.006~0.012）从不超 onset → lastOnsetEnergyAtMs 过期
+            var lastOnsetEnergyAtMs = 0L
             // 连续帧计数：用于 onset 判定（防敲桌子等冲击声触发 inSpeechAux）
             var consecutiveOnsetFrames = 0
             // 切片开始的毫秒时间戳（用于计算切片时长）
@@ -225,9 +230,16 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                         if (!inSpeechAux && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
                             inSpeechAux = true
                         }
-                        if (inSpeechAux) lastSpeechEnergyAtMs = fakeNow
+                        if (inSpeechAux) {
+                            lastSpeechEnergyAtMs = fakeNow
+                            lastOnsetEnergyAtMs = fakeNow
+                        }
                     } else if (rms > RMS_SPEECH_OFFSET_THRESHOLD) {
-                        if (inSpeechAux && fakeNow - lastSpeechEnergyAtMs > 600L) {
+                        // offset 区间：只有最近 ONSET_RECENT_WINDOW_MS 内有过 onset 级语音才刷新
+                        // （区分轻声说话 vs 环境噪音：噪音从不超 onset → 窗口过期 → 不刷新 → 能触发切片）
+                        if (inSpeechAux && fakeNow - lastOnsetEnergyAtMs < ONSET_RECENT_WINDOW_MS) {
+                            lastSpeechEnergyAtMs = fakeNow
+                        } else if (inSpeechAux && fakeNow - lastSpeechEnergyAtMs > 600L) {
                             inSpeechAux = false
                         }
                     } else {
@@ -267,23 +279,25 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 for (s in samples) sumSq += (s * s).toDouble()
                 val rms = sqrt(sumSq / samples.size).toFloat()
                 if (!inGracePeriod && rms > RMS_SPEECH_THRESHOLD) {
-                    // 高于 onset 阈值：实际语音 → 刷新 lastSpeechEnergyAtMs
+                    // 高于 onset 阈值：实际语音 → 刷新 lastSpeechEnergyAtMs + lastOnsetEnergyAtMs
                     consecutiveOnsetFrames++
                     if (!inSpeechAux && consecutiveOnsetFrames >= SPEECH_ONSET_FRAMES) {
                         sliceStartMs = now
                         inSpeechAux = true
                     }
-                    if (inSpeechAux) lastSpeechEnergyAtMs = now
+                    if (inSpeechAux) {
+                        lastSpeechEnergyAtMs = now
+                        lastOnsetEnergyAtMs = now
+                    }
                 } else if (!inGracePeriod && inSpeechAux && rms > RMS_SPEECH_OFFSET_THRESHOLD) {
-                    // offset 区间（onset > rms > offset）：也视为仍在发音并刷新 lastSpeechEnergyAtMs
-                    // 【问题】之前 offset 区间不刷新时间戳 → 轻声/气声说话（整段 RMS 都落在 0.006~0.012 区间）
-                    //         虽然每帧都高于 offset，但 silenceMs=now-lastSpeechEnergyAtMs 一直涨 →
-                    //         还没说完就被 pauseTriggered 切片 → 识别变短/缺字。
-                    // 【修复】只要处于 inSpeechAux 且 RMS > OFFSET（即没到纯静音），就刷新能量时间戳。
-                    //         真正的停顿检测由 VAD segment（MIN_SILENCE_DURATION_SEC = 1.0s）负责，
-                    //         这里 400ms 的 pause 切片只做"有明确换气断点才切片"。
-                    lastSpeechEnergyAtMs = now
-                    // onset 连续计数清零（下一次要重新从 4 帧累计），但保持 inSpeechAux=true
+                    // offset 区间（onset > rms > offset）：
+                    //   【轻声说话】说话中偶尔有帧超过 onset → lastOnsetEnergyAtMs 经常更新
+                    //     → 窗口内 → 刷新 lastSpeechEnergyAtMs → silenceMs 不涨 → 不早切片 ✓
+                    //   【环境噪音】噪音稳定在 0.006~0.012 从不超 onset → lastOnsetEnergyAtMs 过期
+                    //     → 窗口外 → 不刷新 → silenceMs 增长 → 能触发 400ms 切片 ✓
+                    if (now - lastOnsetEnergyAtMs < ONSET_RECENT_WINDOW_MS) {
+                        lastSpeechEnergyAtMs = now
+                    }
                     consecutiveOnsetFrames = 0
                 } else {
                     consecutiveOnsetFrames = 0
@@ -1031,12 +1045,14 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         private const val RMS_SPEECH_OFFSET_THRESHOLD = 0.006F   // offset：维持语音的阈值
         // 连续帧计数：至少 4 帧连续超过 onset 阈值才算"真正开始说话"（4 × 32ms = 128ms）
         private const val SPEECH_ONSET_FRAMES = 4
+        // onset 最近窗口：最近 2s 内有过 onset 级语音（RMS > 0.012），offset 区间才刷新时间戳。
+        // 用于区分轻声说话（偶尔超 onset → 窗口内 → 不早切片）和环境噪音（从不超 onset → 窗口过期 → 能切片）
+        private const val ONSET_RECENT_WINDOW_MS = 2000L
         // 切片最小时长：累积至少 500ms 才允许切片上传，避免过短片段浪费 API 调用
         private const val MIN_SLICE_MS = 500
-        // 切片最大时长：累积 ≥3s 并且当前帧 RMS 低于阈值（换气间隙），强制切片防止长句不切
+        // 切片最大时长：累积 ≥5s 并且当前帧 RMS 低于阈值（换气间隙），强制切片防止长句不切
         // 这个是"安全网"，主要触发还是靠停顿；所以必须同时满足 RMS 低（至少是换气间隙）
-        // 从 5s 降到 3s：减小单次上传体积，API 响应更快
-        private const val MAX_SLICE_MS = 3000
+        private const val MAX_SLICE_MS = 5000
         // 切片停顿阈值：检测到 ≥400ms 的自然停顿就切片
         // （250ms 会把逗号停顿/换气误判为断句 → 断句奇怪；400ms 只抓句号级停顿，
         //  明显短于 VAD final 的 1000ms，因此停顿时一定先 partial 后 final。）

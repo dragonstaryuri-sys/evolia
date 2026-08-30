@@ -168,6 +168,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             // 轻量 RMS 能量检测：判断是否有语音
             var inSpeech = false
             var lastSpeechEnergyAtMs = 0L
+            // 最近一次 RMS 超过 onset 的时刻（区分轻声说话 vs 环境噪音，同 OnlineASR）
+            var lastOnsetEnergyAtMs = 0L
             // 连续帧计数：用于 onset 判定（防敲桌子等冲击声触发 inSpeech）
             var consecutiveOnsetFrames = 0
             // RMS 诊断日志节流
@@ -209,6 +211,7 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     if (rms < preRollMinRms) preRollMinRms = rms
                     if (rms > preRollMaxRms) preRollMaxRms = rms
                     preRollRmsSum += rms
+                    val preRollNow = System.currentTimeMillis()
                     if (rms > RMS_SPEECH_THRESHOLD) {
                         preRollSpeechFrames++
                         consecutiveOnsetFrames++
@@ -216,15 +219,18 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                             inSpeech = true
                         }
                         if (inSpeech) {
-                            lastSpeechEnergyAtMs = System.currentTimeMillis()
+                            lastSpeechEnergyAtMs = preRollNow
+                            lastOnsetEnergyAtMs = preRollNow
                             if (!listeningHintSent && isActive) {
                                 listeningHintSent = true
                                 send(ASRResult(text = "", isFinal = false))
                             }
                         }
                     } else if (rms > RMS_SPEECH_OFFSET_THRESHOLD) {
-                        // offset 区间：维持 inSpeech 但不刷新 lastSpeechEnergyAtMs
-                        if (inSpeech && System.currentTimeMillis() - lastSpeechEnergyAtMs > 600L) {
+                        // offset 区间：最近 ONSET_RECENT_WINDOW_MS 内有过 onset 才刷新
+                        if (inSpeech && preRollNow - lastOnsetEnergyAtMs < ONSET_RECENT_WINDOW_MS) {
+                            lastSpeechEnergyAtMs = preRollNow
+                        } else if (inSpeech && preRollNow - lastSpeechEnergyAtMs > 600L) {
                             inSpeech = false
                         }
                     } else {
@@ -304,18 +310,18 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     }
                     if (inSpeech) {
                         lastSpeechEnergyAtMs = now
+                        lastOnsetEnergyAtMs = now
                         if (!listeningHintSent && isActive) {
                             listeningHintSent = true
                             send(ASRResult(text = "", isFinal = false))
                         }
                     }
                 } else if (!inGracePeriod && inSpeech && rms > RMS_SPEECH_OFFSET_THRESHOLD) {
-                    // offset 区间：仍视为"在发音"，刷新 lastSpeechEnergyAtMs
-                    // 原逻辑不刷新 → 轻声/气声（整段 RMS 夹在 offset/onset 之间）
-                    //   会在 600ms 后被当成沉默清除 inSpeech → listeningHint 显示异常。
-                    // 虽然本地 VAD + full PCM 推理并不依赖 inSpeech，但维持状态一致性更好。
-                    // 真正的"用户说完了"靠 Silero VAD 的 minSilence(1.0s) + Final grace period。
-                    lastSpeechEnergyAtMs = now
+                    // offset 区间：最近 ONSET_RECENT_WINDOW_MS 内有过 onset 才刷新（区分轻声说话 vs 环境噪音）
+                    // 轻声说话偶尔有帧超 onset → 窗口内 → 刷新；环境噪音从不超 onset → 窗口过期 → 不刷新
+                    if (now - lastOnsetEnergyAtMs < ONSET_RECENT_WINDOW_MS) {
+                        lastSpeechEnergyAtMs = now
+                    }
                     consecutiveOnsetFrames = 0
                 } else {
                     consecutiveOnsetFrames = 0
@@ -632,6 +638,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         private const val RMS_SPEECH_THRESHOLD = 0.001F
         private const val RMS_SPEECH_OFFSET_THRESHOLD = 0.0005F
         private const val SPEECH_ONSET_FRAMES = 4
+        // onset 最近窗口：最近 2s 内有过 onset 级语音，offset 区间才刷新时间戳（区分轻声说话 vs 环境噪音）
+        private const val ONSET_RECENT_WINDOW_MS = 2000L
 
         // Final 后静默期：3s 内忽略 RMS 能量，防止噪声触发新识别（与 OnlineASR 对齐）
         private const val FINAL_GRACE_PERIOD_MS = 3000L
