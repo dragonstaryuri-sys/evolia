@@ -104,6 +104,42 @@ private fun isStrictSchemaModel(modelId: String): Boolean {
 private fun isMcpTool(toolName: String): Boolean = toolName.startsWith("mcp_")
 
 /**
+ * Model-ID substrings (case-insensitive) that identify reasoning-enabled deployments
+ * on aggregator providers (currently SiliconFlow). Aggregators host many models and
+ * only the explicitly-marked reasoning variants accept `enable_thinking` / `thinking_*`
+ * parameters; standard chat variants (e.g. `Qwen/Qwen2.5-72B-Instruct`) reject the
+ * parameter outright with `ValueError: current model does not support parameter enable thinking`.
+ *
+ * We conservatively gate thinking-parameter emission on these vendors by requiring a
+ * known reasoning marker in the model ID, rather than trusting only the model-family
+ * `REASONING_MODELS` registry (which is designed for first-party / vendor-native APIs).
+ */
+private val SILICONFLOW_REASONING_MODEL_MARKERS = listOf(
+    "-thinking",          // Qwen / Qwen2.5 / Qwen3 官方推理变体，如 Qwen/Qwen2.5-72B-Instruct-Thinking
+    "deepseek",        // DeepSeek系列
+    "deepseek-reasoner",  // DeepSeek-Reasoner 别名
+    "intern-s1",          // 书生浦语 Intern-S1 推理模型
+    "kimi",            // 月之暗面 Kimi K2
+    "step-3",             // 阶跃星辰 Step-3
+    "glm",
+    "minimax"
+)
+
+/**
+ * Returns true only when the modelId contains a known reasoning-deployment marker for
+ * aggregator platforms (SiliconFlow). A `REASONING` ability at the model-family level is
+ * necessary but NOT sufficient on SiliconFlow — only specific model deployments accept
+ * the `enable_thinking` parameter, and sending it to standard chat models triggers a
+ * server-side ValueError.
+ */
+private fun isSiliconFlowReasoningDeployment(modelId: String): Boolean {
+    val lowerId = modelId.lowercase()
+    return SILICONFLOW_REASONING_MODEL_MARKERS.any { marker ->
+        marker in lowerId
+    }
+}
+
+/**
  * Adds `additionalProperties: true` to an MCP tool's JSON schema,
  * signaling both the model and the intermediate layers that extra properties
  * are allowed. Returns the parameters object unchanged when it's an MCP tool
@@ -457,8 +493,15 @@ class ChatCompletionsAPI(
 
                     "api.siliconflow.cn" -> {
                         // https://docs.siliconflow.cn/cn/userguide/capabilities/reasoning#3-1-api-%E5%8F%82%E6%95%B0
-                        put("enable_thinking", level.isEnabled)
-                        if (level.isEnabled && level != ReasoningLevel.AUTO) {
+                        // 注意：SiliconFlow 是聚合平台，并非所有被家族级 REASONING 标签命中的模型部署
+                        // 都实际接受 enable_thinking 参数。典型反例：Qwen/Qwen2.5-72B-Instruct
+                        // （普通聊天版）会抛 ValueError: current model does not support parameter enable thinking。
+                        // 因此除了家族级标签外，必须再检查 modelId 里是否有推理部署专属标识，
+                        // 并且仅在用户显式开启（LOW/MEDIUM/HIGH，非 AUTO/OFF）时才发送参数。
+                        val reasoningDeployment = isSiliconFlowReasoningDeployment(params.model.modelId)
+                        val explicitlyEnabled = level.isEnabled && level != ReasoningLevel.AUTO
+                        if (reasoningDeployment && explicitlyEnabled) {
+                            put("enable_thinking", true)
                             put("thinking_budget", params.thinkingBudget ?: 0)
                         }
                     }
