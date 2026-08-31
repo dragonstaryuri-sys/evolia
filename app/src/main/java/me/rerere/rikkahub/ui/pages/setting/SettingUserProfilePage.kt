@@ -12,10 +12,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.pages.setting.components.FieldHistorySection
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.pages.setting.components.groupByField
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -25,14 +29,18 @@ import java.util.*
 fun SettingUserProfilePage() {
     val vm: SettingVM = koinViewModel()
     val settings by vm.settings.collectAsState()
+    val userProfileHistory by vm.userProfileHistory.collectAsStateWithLifecycle()
 
-    // 使用本地状态暂存修改，实现“退出自动保存”
+    // 使用本地状态暂存修改，实现"退出自动保存"
     var localSettings by remember(settings.init) { mutableStateOf(settings) }
 
     val profile = localSettings.userProfile
     val displaySetting = localSettings.displaySetting
 
     var showDatePicker by remember { mutableStateOf(false) }
+
+    // 把扁平的历史记录按 fieldKey 分组，便于每个字段下方独立渲染
+    val historyByField = remember(userProfileHistory) { groupByField(userProfileHistory) }
 
     // 关键逻辑：退出页面（Composable 销毁）时自动保存
     val currentLocalSettings by rememberUpdatedState(localSettings)
@@ -108,7 +116,8 @@ fun SettingUserProfilePage() {
                 BirthdayItem(
                     label = stringResource(R.string.user_profile_birthday),
                     value = profile.birthday,
-                    onClick = { showDatePicker = true }
+                    onClick = { showDatePicker = true },
+                    history = historyByField["birthday"].orEmpty()
                 )
 
                 // 3. 邮箱
@@ -127,7 +136,8 @@ fun SettingUserProfilePage() {
                     value = profile.appearance,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(appearance = newValue))
-                    }
+                    },
+                    history = historyByField["appearance"].orEmpty()
                 )
 
                 // 其他项...
@@ -136,49 +146,56 @@ fun SettingUserProfilePage() {
                     value = profile.occupation,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(occupation = newValue))
-                    }
+                    },
+                    history = historyByField["occupation"].orEmpty()
                 )
                 ProfileItem(
                     label = stringResource(R.string.user_profile_preferences),
                     value = profile.preferences,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(preferences = newValue))
-                    }
+                    },
+                    history = historyByField["preferences"].orEmpty()
                 )
                 ProfileItem(
                     label = stringResource(R.string.user_profile_diet),
                     value = profile.diet,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(diet = newValue))
-                    }
+                    },
+                    history = historyByField["diet"].orEmpty()
                 )
                 ProfileItem(
                     label = stringResource(R.string.user_profile_health),
                     value = profile.health,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(health = newValue))
-                    }
+                    },
+                    history = historyByField["health"].orEmpty()
                 )
                 ProfileItem(
                     label = stringResource(R.string.user_profile_taboos),
                     value = profile.taboos,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(taboos = newValue))
-                    }
+                    },
+                    history = historyByField["taboos"].orEmpty()
                 )
                 ProfileItem(
                     label = stringResource(R.string.user_profile_interaction_preferences),
                     value = profile.interactionPreferences,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(interactionPreferences = newValue))
-                    }
+                    },
+                    history = historyByField["interaction_preferences"].orEmpty()
                 )
                 ProfileItem(
                     label = stringResource(R.string.user_profile_important_relationships),
                     value = profile.importantRelationships,
                     onValueChange = { newValue ->
                         localSettings = localSettings.copy(userProfile = profile.copy(importantRelationships = newValue))
-                    }
+                    },
+                    history = historyByField["important_relationships"].orEmpty()
                 )
             }
 
@@ -224,7 +241,8 @@ fun SettingUserProfilePage() {
 private fun BirthdayItem(
     label: String,
     value: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    history: List<ProfileHistoryEntity> = emptyList()
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(
@@ -252,6 +270,8 @@ private fun BirthdayItem(
                     .clickable(onClick = onClick)
             )
         }
+        // 该字段的历史版本（默认收起，可展开复制旧值）
+        FieldHistorySection(records = history)
     }
 }
 
@@ -260,7 +280,8 @@ private fun ProfileItem(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    supportingText: String? = null
+    supportingText: String? = null,
+    history: List<ProfileHistoryEntity> = emptyList()
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(
@@ -287,5 +308,7 @@ private fun ProfileItem(
                 }
             }
         )
+        // 该字段的历史版本（默认收起，可展开复制旧值）
+        FieldHistorySection(records = history)
     }
 }

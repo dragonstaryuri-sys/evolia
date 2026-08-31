@@ -49,6 +49,7 @@ val appModule = module {
             okHttpClient = get(),
             providerManager = get(),
             genMediaRepository = get(),
+            profileHistoryRepo = get(),
         )
     }
 

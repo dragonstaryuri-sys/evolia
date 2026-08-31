@@ -39,9 +39,11 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
+import me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
 import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
+import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
@@ -111,7 +113,8 @@ class AssistantDetailVM(
     private val agentTaskRepository: AgentTaskRepository,
     private val extendedStateRepository: AssistantExtendedStateRepository,
     private val agentMonitorTaskRepository: AgentMonitorTaskRepository,
-    private val embeddingService: EmbeddingService
+    private val embeddingService: EmbeddingService,
+    private val profileHistoryRepository: ProfileHistoryRepository
 ) : ViewModel() {
     private val assistantId = try {
         Uuid.parse(id)
@@ -134,6 +137,18 @@ class AssistantDetailVM(
         .getStateByIdFlow(assistantId.toString())
         .map { it ?: AssistantExtendedStateEntity(assistantId.toString()) }
         .stateIn(viewModelScope, SharingStarted.Lazily, AssistantExtendedStateEntity(assistantId.toString()))
+
+    /**
+     * 当前助手档案的历史版本流（按时间倒序）。一次 update_profile 调用算一个版本，
+     * 仅保留最近 3 个版本（清理逻辑在仓库层 saveSnapshotBeforeUpdate 时触发）。
+     */
+    val assistantProfileHistory: StateFlow<List<ProfileHistoryEntity>> =
+        profileHistoryRepository
+            .getHistoryFlow(
+                targetType = ProfileHistoryEntity.TARGET_ASSISTANT,
+                targetId = assistantId.toString()
+            )
+            .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateExtendedState(state: AssistantExtendedStateEntity) {
         viewModelScope.launch {

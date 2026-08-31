@@ -92,7 +92,9 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_21_22, // 👈 核心修复：在此处注册迁移路径
                 AppDatabase.MIGRATION_22_23,
                 AppDatabase.MIGRATION_23_24,
-                AppDatabase.MIGRATION_24_25
+                AppDatabase.MIGRATION_24_25,
+                AppDatabase.MIGRATION_25_26,
+                AppDatabase.MIGRATION_26_27
             )
             .build()
     }
@@ -122,8 +124,10 @@ val dataSourceModule = module {
     single { get<AppDatabase>().userDeviceStateDao() }
     single { get<AppDatabase>().agentMonitorTaskDao() }
     single { get<AppDatabase>().favoriteDao() }
+    single { get<AppDatabase>().profileHistoryDao() }
 
     single { MilestoneRepository(milestoneDAO = get()) }
+    single { me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository(profileHistoryDAO = get()) }
     single { DiaryRepository(agentDiaryDao = get()) }
     single { DiaryOcrService(settingsStore = get(), providerManager = get(), diaryRepo = get(), appScope = get()) }
     single { McpManager(settingsStore = get(), appScope = get()) }

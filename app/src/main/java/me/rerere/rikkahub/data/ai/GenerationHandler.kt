@@ -702,24 +702,7 @@ class GenerationHandler(
             if (extendedState != null) {
                 val agentExtendedLines = buildList {
                     if (extendedState.personality.isNotBlank()) add("性格: ${extendedState.personality}")
-
-                    val appearance = extendedState.appearance
-                    val appearanceDetails = buildList {
-                        if (appearance.hairColor.isNotBlank()) add("发色: ${appearance.hairColor}")
-                        if (appearance.hairCurliness.isNotBlank()) add("头发卷度: ${appearance.hairCurliness}")
-                        if (appearance.hairLength.isNotBlank()) add("头发长度: ${appearance.hairLength}")
-                        if (appearance.eyeColor.isNotBlank()) add("瞳色: ${appearance.eyeColor}")
-                        if (appearance.eyelidType.isNotBlank()) add("眼皮: ${appearance.eyelidType}")
-                        if (appearance.eyelashLength.isNotBlank()) add("睫毛长度: ${appearance.eyelashLength}")
-                        if (appearance.skinTone.isNotBlank()) add("肤色: ${appearance.skinTone}")
-                        if (appearance.height > 0) add("身高: ${appearance.height}cm")
-                        if (appearance.muscle > 0) add("肌肉量: ${appearance.muscle}%")
-                        if (appearance.bodyFat > 0) add("体脂率: ${appearance.bodyFat}%")
-                    }
-                    if (appearanceDetails.isNotEmpty()) {
-                        add("外貌细节: ${appearanceDetails.joinToString(", ")}")
-                    }
-
+                    if (extendedState.appearance.isNotBlank()) add("外貌: ${extendedState.appearance}")
                     if (extendedState.preferences.isNotBlank()) add("喜好: ${extendedState.preferences}")
                     if (extendedState.diet.isNotBlank()) add("饮食: ${extendedState.diet}")
                     if (extendedState.taboos.isNotBlank()) add("禁忌: ${extendedState.taboos}")

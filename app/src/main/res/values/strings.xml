@@ -1561,6 +1561,12 @@
   <string name="user_profile_nickname">Nickname</string>
   <string name="user_profile_birthday">Birthday</string>
   <string name="user_profile_email">Email</string>
+  <!-- Profile History Related -->
+  <string name="profile_history_title">Version History</string>
+  <string name="profile_history_desc">Each profile update by the agent saves the previous version automatically, keeping the latest 3 versions per field. Tap "Copy" to copy the old value to clipboard.</string>
+  <string name="profile_history_empty">No version history yet</string>
+  <string name="profile_history_field_title">History (%1$d)</string>
+  <string name="profile_history_restore_done">Copied to clipboard</string>
   <string name="user_profile_email_hint">If no recipient is specified when the device sends emails, this email address will be used as the default recipient for the email feature.</string>
   <string name="user_profile_birthday_placeholder">Select Date</string>
   <string name="permission_check_usage_stats">Usage Statistics</string>

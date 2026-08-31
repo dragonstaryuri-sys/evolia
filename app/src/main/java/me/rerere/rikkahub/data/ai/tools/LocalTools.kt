@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
+import me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository
+import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
 import me.rerere.rikkahub.core.data.db.entity.MilestoneEntity
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -119,6 +121,7 @@ fun rememberLocalTools(): LocalTools {
     val okHttpClient = koinInject<OkHttpClient>()
     val providerManager = koinInject<ProviderManager>()
     val genMediaRepository = koinInject<GenMediaRepository>()
+    val profileHistoryRepo = koinInject<ProfileHistoryRepository>()
 
     return remember {
         LocalTools(
@@ -134,7 +137,8 @@ fun rememberLocalTools(): LocalTools {
             userDeviceStateRepo,
             okHttpClient,
             providerManager,
-            genMediaRepository
+            genMediaRepository,
+            profileHistoryRepo
         )
     }
 }
@@ -152,7 +156,8 @@ class LocalTools(
     private val userDeviceStateRepo: UserDeviceStateRepository,
     private val okHttpClient: OkHttpClient,
     private val providerManager: ProviderManager,
-    private val genMediaRepository: GenMediaRepository
+    private val genMediaRepository: GenMediaRepository,
+    private val profileHistoryRepo: ProfileHistoryRepository
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -1388,7 +1393,7 @@ class LocalTools(
                 name = "update_profile",
                 description = "当获知新信息时，更新用户或你自己的的档案。必须提供 'target' ('user' 或 'assistant') 和 'updates' 对象。" +
                     "重要：更新档案时，必须在现有信息的基础上进行增量更新，严禁直接覆盖导致旧信息丢失。" +
-                    "如果某个字段已有内容，请将新信息与旧信息合理整合后再提交。例如：若用户原有偏好为'喜欢苹果'，新得知其也喜欢橘子，则应更新为'喜欢苹果和橘子'。",
+                    "如果某个字段已有内容，请将新信息与旧信息合理整合后再提交。例如：若用户原有偏好为'喜欢苹果'，新得知其也喜欢橘子，则应更新为'喜欢苹果和橘子'。" ,
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -1400,9 +1405,9 @@ class LocalTools(
                             put("updates", buildJsonObject {
                                 put("type", "object")
                                 put(
-                                    "description", "要更新的字段映射键值对。" +
+                                    "description", "要更新的字段映射键值对，可在同一次调用中同时传入多个字段，无需为每个字段单独发起调用。" +
                                         "'user' 可选字段：appearance（外貌）, occupation（职业）, preferences（偏好）, diet（饮食）, health（健康）, taboos（禁忌）, interaction_preferences（交互偏好）, important_relationships（重要人际关系）, birthday（生日）。" +
-                                        "'assistant' 可选字段：personality（性格）, preferences（偏好）, diet（饮食）, taboos（禁忌）, interaction_habits（交互习惯）, relationships（关系描述）。"
+                                        "'assistant' 可选字段：personality（性格）, appearance（外貌）, preferences（偏好）, diet（饮食）, taboos（禁忌）, interaction_habits（互动习惯）, relationships（重要人际关系）。"
                                 )
                                 // 3. 即使解析是动态的，定义一些属性占位符能引导 AI 理解这是一个键值对对象
                                 put("additionalProperties", buildJsonObject {
@@ -1441,12 +1446,30 @@ class LocalTools(
                                 val profile = currentSettings.userProfile
                                 var updatedProfile = profile
 
+                                // 收集"覆盖前"的字段级旧值，用于历史版本回溯
+                                val changes = mutableMapOf<String, Pair<String, String>>()
+
                                 updates.forEach { (field, value) ->
                                     val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
                                     android.util.Log.d(
                                         "LocalTools",
                                         "update_profile: [user] updating '$field' to '$newValue'"
                                     )
+                                    val oldValue = when (field) {
+                                        "appearance" -> updatedProfile.appearance
+                                        "occupation" -> updatedProfile.occupation
+                                        "preferences" -> updatedProfile.preferences
+                                        "diet" -> updatedProfile.diet
+                                        "health" -> updatedProfile.health
+                                        "taboos" -> updatedProfile.taboos
+                                        "interaction_preferences" -> updatedProfile.interactionPreferences
+                                        "important_relationships" -> updatedProfile.importantRelationships
+                                        "birthday" -> updatedProfile.birthday
+                                        else -> null
+                                    }
+                                    if (oldValue != null && oldValue != newValue) {
+                                        changes[field] = oldValue to newValue
+                                    }
                                     updatedProfile = when (field) {
                                         "appearance" -> updatedProfile.copy(appearance = newValue)
                                         "occupation" -> updatedProfile.copy(occupation = newValue)
@@ -1460,6 +1483,22 @@ class LocalTools(
                                         else -> updatedProfile
                                     }
                                 }
+
+                                // 真正覆盖前，先把旧值快照写入历史表（保留最近 3 个版本）
+                                if (changes.isNotEmpty()) {
+                                    val batchId = System.currentTimeMillis()
+                                    try {
+                                        profileHistoryRepo.saveSnapshotBeforeUpdate(
+                                            targetType = ProfileHistoryEntity.TARGET_USER,
+                                            targetId = ProfileHistoryEntity.TARGET_USER,
+                                            changes = changes,
+                                            batchId = batchId
+                                        )
+                                    } catch (e: Exception) {
+                                        android.util.Log.w("LocalTools", "update_profile: 保存历史版本失败", e)
+                                    }
+                                }
+
                                 settingsStore.update(currentSettings.copy(userProfile = updatedProfile))
                                 buildJsonObject { put("success", true); put("message", "用户档案已完成增量更新。") }
                             }
@@ -1469,14 +1508,31 @@ class LocalTools(
                                     ?: AssistantExtendedStateEntity(assistantId = assistantId.toString())
                                 var updatedState = state
 
+                                // 收集"覆盖前"的字段级旧值，用于历史版本回溯
+                                val changes = mutableMapOf<String, Pair<String, String>>()
+
                                 updates.forEach { (field, value) ->
                                     val newValue = value.jsonPrimitive.contentOrNull ?: value.toString()
                                     android.util.Log.d(
                                         "LocalTools",
                                         "update_profile: [assistant] updating '$field' to '$newValue'"
                                     )
+                                    val oldValue = when (field) {
+                                        "personality" -> updatedState.personality
+                                        "appearance" -> updatedState.appearance
+                                        "preferences" -> updatedState.preferences
+                                        "diet" -> updatedState.diet
+                                        "taboos" -> updatedState.taboos
+                                        "interaction_habits" -> updatedState.interactionHabits
+                                        "relationships" -> updatedState.relationships
+                                        else -> null
+                                    }
+                                    if (oldValue != null && oldValue != newValue) {
+                                        changes[field] = oldValue to newValue
+                                    }
                                     updatedState = when (field) {
                                         "personality" -> updatedState.copy(personality = newValue)
+                                        "appearance" -> updatedState.copy(appearance = newValue)
                                         "preferences" -> updatedState.copy(preferences = newValue)
                                         "diet" -> updatedState.copy(diet = newValue)
                                         "taboos" -> updatedState.copy(taboos = newValue)
@@ -1485,6 +1541,21 @@ class LocalTools(
                                         else -> updatedState
                                     }
                                 }
+
+                                if (changes.isNotEmpty()) {
+                                    val batchId = System.currentTimeMillis()
+                                    try {
+                                        profileHistoryRepo.saveSnapshotBeforeUpdate(
+                                            targetType = ProfileHistoryEntity.TARGET_ASSISTANT,
+                                            targetId = assistantId.toString(),
+                                            changes = changes,
+                                            batchId = batchId
+                                        )
+                                    } catch (e: Exception) {
+                                        android.util.Log.w("LocalTools", "update_profile: 保存历史版本失败", e)
+                                    }
+                                }
+
                                 extendedStateRepo.updateState(updatedState)
                                 buildJsonObject { put("success", true); put("message", "小机档案已完成增量更新。") }
                             }

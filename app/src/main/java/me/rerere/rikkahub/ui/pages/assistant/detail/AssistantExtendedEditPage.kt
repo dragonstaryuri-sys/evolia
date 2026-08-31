@@ -10,17 +10,24 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
+import me.rerere.rikkahub.ui.pages.setting.components.FieldHistorySection
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.pages.setting.components.groupByField
 
 @Composable
 fun AssistantExtendedEditPage(
     vm: AssistantDetailVM
 ) {
     val extendedState by vm.extendedState.collectAsStateWithLifecycle()
+    val assistantProfileHistory by vm.assistantProfileHistory.collectAsStateWithLifecycle()
 
     // 使用本地状态暂存修改
     var localState by remember(extendedState) { mutableStateOf(extendedState) }
     val scrollState = rememberScrollState()
+
+    // 把扁平的历史记录按 fieldKey 分组，便于每个字段下方独立渲染
+    val historyByField = remember(assistantProfileHistory) { groupByField(assistantProfileHistory) }
 
     // 关键逻辑：退出页面（Composable 被销毁）时自动保存
     val currentState by rememberUpdatedState(localState)
@@ -47,101 +54,34 @@ fun AssistantExtendedEditPage(
                 EditField(
                     label = stringResource(R.string.assistant_extended_personality),
                     value = localState.personality,
-                    onValueChange = { localState = localState.copy(personality = it) }
+                    onValueChange = { localState = localState.copy(personality = it) },
+                    history = historyByField["personality"].orEmpty()
                 )
                 EditField(
                     label = stringResource(R.string.assistant_extended_interaction_habits),
                     value = localState.interactionHabits,
-                    onValueChange = { localState = localState.copy(interactionHabits = it) }
+                    onValueChange = { localState = localState.copy(interactionHabits = it) },
+                    history = historyByField["interaction_habits"].orEmpty()
                 )
                 EditField(
                     label = stringResource(R.string.assistant_extended_relationships),
                     value = localState.relationships,
-                    onValueChange = { localState = localState.copy(relationships = it) }
+                    onValueChange = { localState = localState.copy(relationships = it) },
+                    history = historyByField["relationships"].orEmpty()
                 )
             }
 
             // ═══════════════════════════════════════════════════════════════════
-            // 外貌细节
+            // 外貌（自由文本，整合成一个字段便于 AI 更新）
             // ═══════════════════════════════════════════════════════════════════
             SettingsGroup(
                 title = stringResource(R.string.assistant_extended_appearance)
             ) {
-                val app = localState.appearance
-
-                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = app.hairColor,
-                        onValueChange = { localState = localState.copy(appearance = app.copy(hairColor = it)) },
-                        label = { Text(stringResource(R.string.assistant_extended_hair_color)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = app.hairCurliness,
-                        onValueChange = { localState = localState.copy(appearance = app.copy(hairCurliness = it)) },
-                        label = { Text(stringResource(R.string.assistant_extended_hair_curliness)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = app.hairLength,
-                        onValueChange = { localState = localState.copy(appearance = app.copy(hairLength = it)) },
-                        label = { Text(stringResource(R.string.assistant_extended_hair_length)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = app.eyeColor,
-                        onValueChange = { localState = localState.copy(appearance = app.copy(eyeColor = it)) },
-                        label = { Text(stringResource(R.string.assistant_extended_eye_color)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = app.eyelidType,
-                        onValueChange = { localState = localState.copy(appearance = app.copy(eyelidType = it)) },
-                        label = { Text(stringResource(R.string.assistant_extended_eyelid_type)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = app.eyelashLength,
-                        onValueChange = { localState = localState.copy(appearance = app.copy(eyelashLength = it)) },
-                        label = { Text(stringResource(R.string.assistant_extended_eyelash_length)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = app.skinTone,
-                        onValueChange = { localState = localState.copy(appearance = app.copy(skinTone = it)) },
-                        label = { Text(stringResource(R.string.assistant_extended_skin_tone)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = if (app.height == 0) "" else app.height.toString(),
-                        onValueChange = {
-                            val h = it.toIntOrNull() ?: 0
-                            localState = localState.copy(appearance = app.copy(height = h))
-                        },
-                        label = { Text(stringResource(R.string.assistant_extended_height)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                SliderField(
-                    label = stringResource(R.string.assistant_extended_muscle),
-                    value = app.muscle,
-                    onValueChange = { localState = localState.copy(appearance = app.copy(muscle = it)) }
-                )
-
-                SliderField(
-                    label = stringResource(R.string.assistant_extended_body_fat),
-                    value = app.bodyFat,
-                    onValueChange = { localState = localState.copy(appearance = app.copy(bodyFat = it)) }
+                EditField(
+                    label = stringResource(R.string.assistant_extended_appearance),
+                    value = localState.appearance,
+                    onValueChange = { localState = localState.copy(appearance = it) },
+                    history = historyByField["appearance"].orEmpty()
                 )
             }
 
@@ -154,17 +94,20 @@ fun AssistantExtendedEditPage(
                 EditField(
                     label = stringResource(R.string.assistant_extended_preferences),
                     value = localState.preferences,
-                    onValueChange = { localState = localState.copy(preferences = it) }
+                    onValueChange = { localState = localState.copy(preferences = it) },
+                    history = historyByField["preferences"].orEmpty()
                 )
                 EditField(
                     label = stringResource(R.string.assistant_extended_diet),
                     value = localState.diet,
-                    onValueChange = { localState = localState.copy(diet = it) }
+                    onValueChange = { localState = localState.copy(diet = it) },
+                    history = historyByField["diet"].orEmpty()
                 )
                 EditField(
                     label = stringResource(R.string.assistant_extended_taboos),
                     value = localState.taboos,
-                    onValueChange = { localState = localState.copy(taboos = it) }
+                    onValueChange = { localState = localState.copy(taboos = it) },
+                    history = historyByField["taboos"].orEmpty()
                 )
             }
 
@@ -174,7 +117,12 @@ fun AssistantExtendedEditPage(
 }
 
 @Composable
-private fun EditField(label: String, value: String, onValueChange: (String) -> Unit) {
+private fun EditField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    history: List<ProfileHistoryEntity> = emptyList()
+) {
     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         OutlinedTextField(
             value = value,
@@ -183,6 +131,8 @@ private fun EditField(label: String, value: String, onValueChange: (String) -> U
             modifier = Modifier.fillMaxWidth(),
             minLines = 2
         )
+        // 该字段的历史版本（默认收起，可展开复制旧值）
+        FieldHistorySection(records = history)
     }
 }
 

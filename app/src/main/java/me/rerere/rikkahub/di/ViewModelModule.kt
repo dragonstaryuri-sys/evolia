@@ -51,7 +51,8 @@ val viewModelModule = module {
             settingsStore = get(),
             mcpManager = get(),
             context = get(),
-            okHttpClient = get()
+            okHttpClient = get(),
+            profileHistoryRepository = get()
         )
     }
     viewModelOf(::ChatListVM)
@@ -83,7 +84,8 @@ val viewModelModule = module {
             agentTaskRepository = get(),
             extendedStateRepository = get(),
             agentMonitorTaskRepository = get(),
-            embeddingService = get()
+            embeddingService = get(),
+            profileHistoryRepository = get()
         )
     }
     viewModel<ChatHistorySearchVM> { params ->

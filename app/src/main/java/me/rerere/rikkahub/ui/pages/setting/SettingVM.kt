@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
+import me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
@@ -20,11 +22,24 @@ class SettingVM(
     private val settingsStore: SettingsStore,
     private val mcpManager: McpManager,
     private val context: Context,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val profileHistoryRepository: ProfileHistoryRepository
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, Settings(init = true, providers = emptyList()))
+
+    /**
+     * 用户档案的历史版本流（按时间倒序）。一次 update_profile 调用算一个版本，
+     * 仅保留最近 3 个版本（清理逻辑在仓库层 saveSnapshotBeforeUpdate 时触发）。
+     */
+    val userProfileHistory: StateFlow<List<ProfileHistoryEntity>> =
+        profileHistoryRepository
+            .getHistoryFlow(
+                targetType = ProfileHistoryEntity.TARGET_USER,
+                targetId = ProfileHistoryEntity.TARGET_USER
+            )
+            .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateSettings(newSettings: Settings) {
         viewModelScope.launch {

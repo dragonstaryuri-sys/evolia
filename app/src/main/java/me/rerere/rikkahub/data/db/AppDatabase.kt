@@ -37,14 +37,14 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         AgentMonitorTaskEntity::class,
         FavoriteEntity::class,
         ChatMessageNodeEntity::class,
-        ChatMessageEntity::class
+        ChatMessageEntity::class,
+        ProfileHistoryEntity::class
     ],
-    version = 25,
+    version = 27,
     exportSchema = true
 )
 @TypeConverters(
     TokenUsageConverter::class,
-    AssistantExtendedStateConverter::class,
     DiaryImageConverter::class
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -66,9 +66,60 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDeviceStateDao(): UserDeviceStateDAO
     abstract fun agentMonitorTaskDao(): AgentMonitorTaskDAO
     abstract fun favoriteDao(): FavoriteDAO
+    abstract fun profileHistoryDao(): ProfileHistoryDAO
 
     companion object {
         const val TAG = "AppDatabase"
+
+        /**
+         * 25 -> 26: 新建 profile_history 表
+         *
+         * 用于在 AI 调用 update_profile 工具覆盖档案字段之前，按字段级别
+         * 保存旧值快照。每个 target 仅保留最近 3 个版本（batchId），
+         * 超出的更早版本会由 ProfileHistoryRepository.trimOldVersions 清理。
+         */
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 25->26 迁移：新建 profile_history 表（档案历史版本）")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `profile_history` (
+                        `id`        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `targetType` TEXT NOT NULL,
+                        `targetId`  TEXT NOT NULL,
+                        `fieldKey` TEXT NOT NULL,
+                        `oldValue`  TEXT NOT NULL,
+                        `newValue`  TEXT NOT NULL,
+                        `batchId`   INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_profile_history_targetType_targetId_batchId` " +
+                        "ON `profile_history` (`targetType`, `targetId`, `batchId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_profile_history_targetType_targetId_createdAt` " +
+                        "ON `profile_history` (`targetType`, `targetId`, `createdAt`)"
+                )
+            }
+        }
+
+        /**
+         * 26 -> 27: 将 AssistantExtendedStateEntity.appearance 从结构化对象
+         * AssistantAppearance 简化为纯文本 String。
+         *
+         * 存储层列类型仍然是 TEXT，因此表结构本身不需要变更。旧记录里如果是
+         * AssistantAppearance 的 JSON 序列化串，仍会以字符串形式保留在 appearance
+         * 列里，用户下次打开编辑页看到旧值后可自行修改/清空。这里只声明一个空迁移
+         * 触发版本号前进即可。
+         */
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 26->27 迁移：助手档案 appearance 结构化 → 纯文本（表结构无变化）")
+            }
+        }
 
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -431,13 +482,6 @@ object TokenUsageConverter {
     fun fromTokenUsage(usage: TokenUsage?): String = JsonInstant.encodeToString(usage)
     @TypeConverter
     fun toTokenUsage(usage: String): TokenUsage? = JsonInstant.decodeFromString(usage)
-}
-
-object AssistantExtendedStateConverter {
-    @TypeConverter
-    fun fromAppearance(appearance: AssistantAppearance): String = JsonInstant.encodeToString(appearance)
-    @TypeConverter
-    fun toAppearance(json: String): AssistantAppearance = JsonInstant.decodeFromString(json)
 }
 
 object DiaryImageConverter {
