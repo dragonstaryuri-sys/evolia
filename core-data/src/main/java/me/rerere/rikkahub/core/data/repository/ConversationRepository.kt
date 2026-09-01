@@ -1121,6 +1121,19 @@ class ConversationRepository(
     }
 
     /**
+     * 按 [startTime, endTime] 闭区间拉取指定会话的消息（按创建时间升序）。
+     * 用于根据某个片段的 startTime/endTime 重新拉取其对应的原始聊天记录，
+     * 以便重新生成该片段的 content/keywords。
+     */
+    suspend fun getMessagesByTimeRange(
+        convId: String,
+        startTime: Long,
+        endTime: Long
+    ): List<ChatMessageEntity> {
+        return chatMessageDAO.getMessagesByTimeRange(convId, startTime, endTime)
+    }
+
+    /**
      * ✨ 强力校准：重新计算消息节点的创建时间。
      * 自动修正那些被误更新为当前时间的节点，并输出详细受影响信息。
      * @param conversationId 如果传入，则仅校准指定会话；否则跑全局校准。

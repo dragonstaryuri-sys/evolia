@@ -1731,6 +1731,11 @@
   <string name="segment_regenerate_success">Memory regenerated. Please re-embed via the top-right button.</string>
   <string name="segment_regenerate_no_segment">Segment record not found</string>
   <string name="segment_regenerate_no_messages">No messages found for this segment</string>
+  <string name="segment_regenerating_hint">Regenerating memory, please wait…</string>
+  <string name="segment_regenerate_timeout_first_token">AI first-token response timed out (30s). Check your network or switch models.</string>
+  <string name="segment_regenerate_timeout_overall">AI overall response timed out (2 min). Please try again later.</string>
+  <string name="segment_regenerate_error">AI call failed. Please check your network and try again.</string>
+  <string name="segment_regenerate_cancelled">Regeneration cancelled.</string>
   <string name="assistant_detail_search_history">Search Chat History</string>
   <string name="chat_history_search_title">Search Chat Records</string>
   <string name="chat_history_search_hint">Search chat content with %s</string>

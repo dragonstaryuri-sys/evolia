@@ -16,10 +16,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderSetting
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -278,10 +281,19 @@ class AssistantDetailVM(
     private val _isArchivingL1 = MutableStateFlow(false)
     val isArchivingL1 = _isArchivingL1.asStateFlow()
 
+    private val _isRegeneratingSegment = MutableStateFlow(false)
+    val isRegeneratingSegment = _isRegeneratingSegment.asStateFlow()
+
     private val _embeddingProgress = MutableStateFlow<EmbeddingProgress?>(null)
     val embeddingProgress = _embeddingProgress.asStateFlow()
 
     private var consolidationJob: Job? = null
+
+    private var segmentRegenJob: Job? = null
+
+    fun cancelSegmentRegeneration() {
+        segmentRegenJob?.cancel()
+    }
 
     fun runManualConsolidation(
         consolidateEpisodes: Boolean = true,
@@ -575,9 +587,12 @@ class AssistantDetailVM(
                             val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
                             val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
                             val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
-                            val finalBackground = backgroundMatch 
+                            // content 仅存背景：剔除可能混入的 [Keywords]/[关键词] 标签及其同行的内容
+                            val finalBackground = (backgroundMatch
                                 ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
-                                ?: aiResponse
+                                ?: aiResponse)
+                                .replace(keywordsRegex, "")
+                                .trim()
                             val aiKeywords = keywordsMatch ?: ""
                             val mergedKeywords = if (aiKeywords.isNotBlank()) {
                                 aiKeywords.split(Regex("[,，、；;]"))
@@ -1009,6 +1024,188 @@ class AssistantDetailVM(
 
     fun deleteMemory(memory: AssistantMemory) {
         viewModelScope.launch { deleteMemoryById(memory.id) }
+    }
+
+    /**
+     * 重新生成某个片段记忆 (L1 Segment) 的 content 与 keywords。
+     * 取该片段 startTime~endTime 之间的原始聊天记录，调用摘要模型重新生成。
+     * 不做嵌入：用户可自行点击右上角“重新嵌入”按钮完成嵌入。
+     *
+     * @param memory 目标片段记忆（id 为负，内部会取绝对值定位 segment）
+     * @param requirement 用户对本段记忆的优化要求，可为空
+     */
+    fun regenerateSegment(memory: AssistantMemory, requirement: String?) {
+        if (_isRegeneratingSegment.value) return
+        segmentRegenJob = viewModelScope.launch {
+            _isRegeneratingSegment.value = true
+            try {
+                val segmentId = kotlin.math.abs(memory.id)
+                val segment = memoryRepository.getSegmentById(segmentId)
+                if (segment == null) {
+                    setSnackbarMessage(context.getString(R.string.segment_regenerate_no_segment))
+                    return@launch
+                }
+                val convId = segment.conversationId
+                if (convId.isNullOrBlank()) {
+                    setSnackbarMessage(context.getString(R.string.segment_regenerate_no_segment))
+                    return@launch
+                }
+
+                val messageEntities = conversationRepository.getMessagesByTimeRange(
+                    convId = convId,
+                    startTime = segment.startTime,
+                    endTime = segment.endTime
+                )
+                if (messageEntities.size < 2) {
+                    setSnackbarMessage(context.getString(R.string.segment_regenerate_no_messages))
+                    return@launch
+                }
+
+                val text = messageEntities.mapNotNull { entity ->
+                    summarizeContentLineForDetail(entity, tagExtra = "regenSegment:$segmentId")
+                }.joinToString("\n")
+                if (text.isBlank()) {
+                    setSnackbarMessage(context.getString(R.string.segment_regenerate_no_messages))
+                    return@launch
+                }
+
+                val currentAssistant = assistant.value
+                val currentSettings = settings.value
+                val modelId = currentAssistant.summarizerModelId ?: currentSettings.summarizerModelId
+                val model = currentSettings.findModelById(modelId)
+                if (model == null) {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
+                    return@launch
+                }
+                val providerSetting = model.findProvider(currentSettings.providers) ?: run {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
+                    return@launch
+                }
+                val handler = providerManager.getProviderByType(providerSetting) as? Provider<ProviderSetting> ?: run {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_no_model))
+                    return@launch
+                }
+
+                val locale = Locale.getDefault().displayName
+                var prompt = DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
+                    .replace("{{guidelines}}", currentSettings.tempSummaryGuidelines)
+                    .replace("{{new_messages}}", text)
+                    .replace("{{locale}}", locale)
+                    .replace("{{char}}", currentAssistant.name)
+                if (!requirement.isNullOrBlank()) {
+                    prompt += "\n\n**用户对本段记忆的额外优化要求（请严格遵循）**：\n$requirement"
+                }
+
+                // 改为流式调用：首字超时 30s + 整体请求兜底超时 2min
+                // 适配首字很快但整体加载缓慢的海外中转模型，避免误判取消
+                val firstTokenTimeoutMs = 30_000L
+                val overallTimeoutMs = 120_000L
+                var firstTokenTimedOut = false
+                var streamError: Exception? = null
+
+                val aiResponse: String? = try {
+                    val stream = handler.streamText(
+                        providerSetting,
+                        listOf(UIMessage.user(prompt)),
+                        TextGenerationParams(model = model, temperature = 0.3f, topP = 1.0f, thinkingBudget = 0)
+                    )
+                    coroutineScope {
+                        val channel = Channel<MessageChunk>(Channel.UNLIMITED)
+                        val producer = launch {
+                            try {
+                                stream.collect { channel.send(it) }
+                            } finally {
+                                channel.close()
+                            }
+                        }
+                        try {
+                            withTimeoutOrNull(overallTimeoutMs) {
+                                // 首字超时：30s 内未收到任何 chunk 即判超时
+                                val firstResult = withTimeoutOrNull(firstTokenTimeoutMs) {
+                                    channel.receiveCatching()
+                                }
+                                if (firstResult == null) {
+                                    firstTokenTimedOut = true
+                                    return@withTimeoutOrNull null
+                                }
+                                val firstChunk = firstResult.getOrNull()
+                                if (firstChunk == null) {
+                                    // 流在首字到达前就关闭了（空响应），交由外层判为整体超时
+                                    return@withTimeoutOrNull null
+                                }
+                                val sb = StringBuilder()
+                                sb.append(firstChunk.choices.firstOrNull()?.delta?.toContentText() ?: "")
+                                while (true) {
+                                    val chunk = channel.receiveCatching().getOrNull() ?: break
+                                    sb.append(chunk.choices.firstOrNull()?.delta?.toContentText() ?: "")
+                                }
+                                sb.toString()
+                            }
+                        } finally {
+                            producer.cancel()
+                        }
+                    }
+                } catch (cancel: CancellationException) {
+                    setSnackbarMessage(context.getString(R.string.segment_regenerate_cancelled))
+                    throw cancel
+                } catch (e: Exception) {
+                    Log.e(TAG, "Regenerate segment streaming failed", e)
+                    streamError = e
+                    null
+                }
+
+                if (aiResponse.isNullOrBlank()) {
+                    val msgRes = when {
+                        // 网络错误等异常优先于超时提示
+                        streamError != null -> R.string.segment_regenerate_error
+                        firstTokenTimedOut -> R.string.segment_regenerate_timeout_first_token
+                        else -> R.string.segment_regenerate_timeout_overall
+                    }
+                    setSnackbarMessage(context.getString(msgRes))
+                    return@launch
+                }
+
+                val backgroundRegex = Regex("""\[(?:Background|背景)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                val keywordsRegex = Regex("""\[(?:Keywords|关键词)\][:：]?\s*(.*)""", RegexOption.IGNORE_CASE)
+                val backgroundMatch = backgroundRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                val keywordsMatch = keywordsRegex.find(aiResponse)?.groupValues?.get(1)?.trim()
+                // content 仅存背景：剔除可能混入的 [Keywords]/[关键词] 标签及其同行的内容
+                val finalBackground = (backgroundMatch
+                    ?: aiResponse.lines().firstOrNull { it.isNotBlank() && !it.startsWith("[") }
+                    ?: aiResponse)
+                    .replace(keywordsRegex, "")
+                    .trim()
+                val aiKeywords = keywordsMatch ?: ""
+                val mergedKeywords = if (aiKeywords.isNotBlank()) {
+                    aiKeywords.split(Regex("[,，、；;]"))
+                        .map { it.trim().lowercase() }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .joinToString(",")
+                } else {
+                    KeywordExtractor.extract(finalBackground)
+                }
+
+                // 不嵌入：清空 embedding/embeddingModelId，让 UI 显示“无嵌入”徽章，
+                // 用户自行点击右上角“重新嵌入”按钮完成嵌入
+                val updatedSegment = segment.copy(
+                    content = finalBackground,
+                    keywords = mergedKeywords,
+                    embedding = null,
+                    embeddingModelId = null
+                )
+                memoryRepository.saveSegment(updatedSegment)
+                setSnackbarMessage(context.getString(R.string.segment_regenerate_success))
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (e: Exception) {
+                Log.e(TAG, "Regenerate segment failed", e)
+                setSnackbarMessage("Error: " + (e.localizedMessage ?: e.message ?: "Unknown error"))
+            } finally {
+                _isRegeneratingSegment.value = false
+                segmentRegenJob = null
+            }
+        }
     }
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)

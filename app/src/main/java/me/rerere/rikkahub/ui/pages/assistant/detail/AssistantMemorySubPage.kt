@@ -15,6 +15,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +65,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -92,6 +94,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.common.FeatureConfig
+import me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
@@ -153,6 +156,7 @@ fun AssistantMemorySettings(
     onAddMemory: (AssistantMemory) -> Unit,
     onUpdateMemory: (AssistantMemory) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit,
+    onRegenerateSegment: (AssistantMemory, String?) -> Unit,
     onRegenerateEmbeddings: (() -> Unit)? = null,
     embeddingProgress: EmbeddingProgress? = null,
     onTestRetrieval: ((String) -> Unit)? = null,
@@ -175,6 +179,7 @@ fun AssistantMemorySettings(
     val isOptimizing by assistantDetailVM.isOptimizing.collectAsStateWithLifecycle()
     val isConsolidating by assistantDetailVM.isConsolidating.collectAsStateWithLifecycle()
     val isArchivingL1 by assistantDetailVM.isArchivingL1.collectAsStateWithLifecycle()
+    val isRegeneratingSegment by assistantDetailVM.isRegeneratingSegment.collectAsStateWithLifecycle()
     val haptics = rememberPremiumHaptics()
 
     // Detail Memory Local State
@@ -298,13 +303,20 @@ fun AssistantMemorySettings(
     val currentEmbeddingModelId by assistantDetailVM.currentEmbeddingModelId.collectAsState()
     val currentMode = getMemoryMode(assistant)
     val settings by assistantDetailVM.settings.collectAsStateWithLifecycle()
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        // 重新生成片段记忆时拦截返回键：改为触发取消，而非离开页面
+        BackHandler(enabled = isRegeneratingSegment) {
+            assistantDetailVM.cancelSegmentRegeneration()
+        }
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         item {
             val hasEmbeddingModel = settings.findModelById(settings.embeddingModelId) != null
             if (assistant.enableMemory && !hasEmbeddingModel) {
@@ -616,6 +628,8 @@ fun AssistantMemorySettings(
                     onEditMemory = { memoryDialogState.open(it) },
                     onSearchQueryChange = { assistantDetailVM.updateMemorySearchQuery(it) },
                     onDeleteMemory = onDeleteMemory,
+                    onRegenerateSegment = onRegenerateSegment,
+                    isRegeneratingSegment = isRegeneratingSegment,
                     onRegenerateEmbeddings = onRegenerateEmbeddings,
                     onOptimizeMemories = { assistantDetailVM.optimizeMemories() },
                     needsEmbeddingRegeneration = needsEmbeddingRegeneration,
@@ -640,6 +654,26 @@ fun AssistantMemorySettings(
                         MemoryDebugger(onTestRetrieval = onTestRetrieval, retrievalResults = retrievalResults)
                     }
                 }
+            }
+        }
+    }
+        // 重新生成片段记忆时阻塞式加载蒙板，避免用户中途离开导致请求异常
+        FullscreenLoadingOverlay(
+            visible = isRegeneratingSegment,
+            icon = Icons.Rounded.Refresh,
+            hint = stringResource(R.string.segment_regenerating_hint)
+        )
+        // 取消按钮：叠在加载蒙板之上，允许用户手动终止生成
+        AnimatedVisibility(
+            visible = isRegeneratingSegment,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 48.dp)
+        ) {
+            TextButton(onClick = { assistantDetailVM.cancelSegmentRegeneration() }) {
+                Text(stringResource(R.string.assistant_page_cancel))
             }
         }
     }
@@ -1191,6 +1225,8 @@ private fun ManageMemoriesSection(
     onEditMemory: (AssistantMemory) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit,
+    onRegenerateSegment: (AssistantMemory, String?) -> Unit,
+    isRegeneratingSegment: Boolean,
     onRegenerateEmbeddings: (() -> Unit)?,
     onOptimizeMemories: () -> Unit,
     needsEmbeddingRegeneration: Boolean,
@@ -1379,6 +1415,8 @@ private fun ManageMemoriesSection(
                         memory = memory,
                         onEditMemory = onEditMemory,
                         onDeleteMemory = onDeleteMemory,
+                        onRegenerateSegment = onRegenerateSegment,
+                        isRegeneratingSegment = isRegeneratingSegment,
                         useRagMemoryRetrieval = assistant.useRagMemoryRetrieval,
                         currentEmbeddingModelId = currentEmbeddingModelId,
                         showType = showMemoryTypes,
@@ -1439,12 +1477,16 @@ private fun MemoryItem(
     memory: AssistantMemory,
     onEditMemory: (AssistantMemory) -> Unit,
     onDeleteMemory: (AssistantMemory) -> Unit,
+    onRegenerateSegment: (AssistantMemory, String?) -> Unit,
+    isRegeneratingSegment: Boolean,
     useRagMemoryRetrieval: Boolean = false,
     currentEmbeddingModelId: String = "",
     showType: Boolean = false,
     position: String = "MIDDLE"
 ) {
     var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var showRegenerateDialog by remember { mutableStateOf(false) }
+    var regenerateRequirement by remember { mutableStateOf("") }
     val haptics = rememberPremiumHaptics()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -1486,6 +1528,39 @@ private fun MemoryItem(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
+        )
+    }
+
+    // 重新生成片段记忆的“优化记忆要求”对话框（仅片段记忆显示入口）
+    // 确认后即关闭对话框，由 AssistantMemorySettings 顶层的 FullscreenLoadingOverlay 承担加载提示
+    if (showRegenerateDialog) {
+        AlertDialog(
+            onDismissRequest = { showRegenerateDialog = false },
+            title = { Text(stringResource(R.string.memory_regenerate_requirement_title)) },
+            text = {
+                OutlinedTextField(
+                    value = regenerateRequirement,
+                    onValueChange = { regenerateRequirement = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.memory_regenerate_requirement_placeholder)) },
+                    label = { Text(stringResource(R.string.memory_regenerate_requirement_label)) }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val req = regenerateRequirement.ifBlank { null }
+                        showRegenerateDialog = false
+                        onRegenerateSegment(memory, req)
+                    },
+                    enabled = !isRegeneratingSegment
+                ) { Text(stringResource(R.string.regenerate_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRegenerateDialog = false }) {
                     Text(stringResource(R.string.assistant_page_cancel))
                 }
             }
@@ -1606,13 +1681,34 @@ private fun MemoryItem(
                 )
             }
 
-            // 允许删除 L1 (type 3) 和 Core (type 0)
-            if (memory.type == 0 || memory.type == MemoryType.SEGMENT) {
-                IconButton(onClick = {
-                    haptics.perform(HapticPattern.Pop)
-                    showDeleteConfirmation = true
-                }) {
-                    Icon(Icons.Rounded.Delete, stringResource(R.string.assistant_page_delete))
+            // 片段记忆：显示刷新（重新生成）按钮；核心记忆：仅删除
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (memory.type == MemoryType.SEGMENT) {
+                    IconButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            regenerateRequirement = ""
+                            showRegenerateDialog = true
+                        },
+                        enabled = !isRegeneratingSegment
+                    ) {
+                        Icon(
+                            Icons.Rounded.Refresh,
+                            stringResource(R.string.memory_action_regenerate_segment)
+                        )
+                    }
+                }
+                // 允许删除 L1 (type 3) 和 Core (type 0)
+                if (memory.type == 0 || memory.type == MemoryType.SEGMENT) {
+                    IconButton(onClick = {
+                        haptics.perform(HapticPattern.Pop)
+                        showDeleteConfirmation = true
+                    }) {
+                        Icon(Icons.Rounded.Delete, stringResource(R.string.assistant_page_delete))
+                    }
                 }
             }
         }

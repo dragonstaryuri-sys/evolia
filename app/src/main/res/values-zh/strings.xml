@@ -1663,6 +1663,11 @@
   <string name="segment_regenerate_success">记忆已重新生成，请点击右上角重新嵌入</string>
   <string name="segment_regenerate_no_segment">找不到该片段记录</string>
   <string name="segment_regenerate_no_messages">该片段对应的消息记录为空</string>
+  <string name="segment_regenerating_hint">正在重新生成记忆，请稍候…</string>
+  <string name="segment_regenerate_timeout_first_token">AI 首字响应超时（30秒），请检查网络或更换模型</string>
+  <string name="segment_regenerate_timeout_overall">AI 响应整体超时（2分钟），请稍后重试</string>
+  <string name="segment_regenerate_error">AI 调用失败，请检查网络后重试</string>
+  <string name="segment_regenerate_cancelled">已取消重新生成</string>
   <string name="assistant_detail_search_history">查找聊天记录</string>
   <string name="chat_history_search_title">搜索聊天记录</string>
   <string name="chat_history_search_hint">搜索与 %s 的聊天内容</string>

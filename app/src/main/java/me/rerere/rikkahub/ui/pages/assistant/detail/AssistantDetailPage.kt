@@ -446,6 +446,7 @@ fun AssistantDetailPage(
                     onDeleteMemory = { vm.deleteMemory(it) },
                     onAddMemory = { vm.addMemory(it) },
                     onUpdateMemory = { vm.updateMemory(it) },
+                    onRegenerateSegment = { memory, requirement -> vm.regenerateSegment(memory, requirement) },
                     onRegenerateEmbeddings = { vm.regenerateEmbeddings() },
                     embeddingProgress = embeddingProgress,
                     onTestRetrieval = { vm.testRetrieval(it) },
