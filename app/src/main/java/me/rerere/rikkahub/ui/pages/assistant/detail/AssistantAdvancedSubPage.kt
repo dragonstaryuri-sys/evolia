@@ -156,7 +156,7 @@ fun AssistantAdvancedSubPage(
                             OutlinedTextField(
                                 value = assistant.notificationFrequencyMinutes.toString(),
                                 onValueChange = {
-                                    val minutes = it.toIntOrNull()?.coerceAtLeast(10) ?: 240
+                                    val minutes = it.toIntOrNull()?.coerceAtLeast(15) ?: 240
                                     onUpdate(assistant.copy(notificationFrequencyMinutes = minutes))
                                 },
                                 modifier = Modifier.width(120.dp),

@@ -22,7 +22,7 @@ class PreferenceStoreV3Migration : DataMigration<Preferences> {
         val prefs = currentData.toMutablePreferences()
 
         // 迁移逻辑：将旧的 notificationFrequencyHours (小时) 转换为
-        // 新的 notificationFrequencyMinutes (分钟)，最低 10 分钟
+        // 新的 notificationFrequencyMinutes (分钟)，最低 15 分钟
         prefs[SettingsStore.ASSISTANTS] = prefs[SettingsStore.ASSISTANTS]?.let { json ->
             try {
                 val assistants: List<JsonElement> =
@@ -36,7 +36,7 @@ class PreferenceStoreV3Migration : DataMigration<Preferences> {
                         val newMinutesExists = jsonObj.containsKey("notificationFrequencyMinutes")
 
                         if (oldHours != null && !newMinutesExists) {
-                            val minutes = (oldHours * 60).coerceAtLeast(10)
+                            val minutes = (oldHours * 60).coerceAtLeast(15)
                             jsonObj["notificationFrequencyMinutes"] = JsonPrimitive(minutes)
                             // 移除旧字段，避免冗余
                             jsonObj.remove("notificationFrequencyHours")

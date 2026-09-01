@@ -96,7 +96,7 @@ class EvoliaApp : Application() {
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "spontaneous_notification",
             ExistingPeriodicWorkPolicy.UPDATE,
-            PeriodicWorkRequestBuilder<SpontaneousWorker>(10, TimeUnit.MINUTES)
+            PeriodicWorkRequestBuilder<SpontaneousWorker>(15, TimeUnit.MINUTES)
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.CONNECTED)

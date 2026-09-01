@@ -1046,11 +1046,11 @@
   <string name="assistant_advanced_enable_spontaneous_title">允许主动发送消息</string>
   <string name="assistant_advanced_enable_spontaneous_desc">角色可在无触发情况下主动给你发消息</string>
   <string name="assistant_advanced_active_hours_title">活跃时段</string>
-  <string name="assistant_advanced_active_hours_desc">允许发送消息的时间段</string>
+  <string name="assistant_advanced_active_hours_desc">允许发送消息的时间段（仅支持白天，开始时间需早于结束时间）</string>
   <string name="assistant_advanced_start_label">开始</string>
   <string name="assistant_advanced_end_label">结束</string>
   <string name="assistant_advanced_frequency_title">发送频率</string>
-  <string name="assistant_advanced_frequency_desc">消息之间的最小间隔分钟数（最低 10 分钟）</string>
+  <string name="assistant_advanced_frequency_desc">消息之间的最小间隔分钟数（最低 15 分钟）</string>
   <string name="assistant_advanced_group_custom_request">自定义请求</string>
   <!-- Setting Display Page -->
   <string name="setting_display_fonts_title">字体</string>
@@ -1656,6 +1656,13 @@
   <string name="chat_page_regenerate_requirement_title">优化回复要求</string>
   <string name="chat_page_regenerate_requirement_placeholder">输入你对本次回复的特定要求（可选），如：简短一点...</string>
   <string name="chat_page_regenerate_requirement_label">优化要求</string>
+  <string name="memory_regenerate_requirement_title">优化记忆要求</string>
+  <string name="memory_regenerate_requirement_placeholder">输入对这段记忆的优化要求（可选），如：更详细一点、侧重情感...</string>
+  <string name="memory_regenerate_requirement_label">优化要求</string>
+  <string name="memory_action_regenerate_segment">重新生成该片段</string>
+  <string name="segment_regenerate_success">记忆已重新生成，请点击右上角重新嵌入</string>
+  <string name="segment_regenerate_no_segment">找不到该片段记录</string>
+  <string name="segment_regenerate_no_messages">该片段对应的消息记录为空</string>
   <string name="assistant_detail_search_history">查找聊天记录</string>
   <string name="chat_history_search_title">搜索聊天记录</string>
   <string name="chat_history_search_hint">搜索与 %s 的聊天内容</string>

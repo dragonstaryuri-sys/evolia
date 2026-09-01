@@ -1071,11 +1071,11 @@
   <string name="assistant_advanced_enable_spontaneous_title">Enable Spontaneous Messages</string>
   <string name="assistant_advanced_enable_spontaneous_desc">Character can message you without prompting</string>
   <string name="assistant_advanced_active_hours_title">Active Hours</string>
-  <string name="assistant_advanced_active_hours_desc">Time window for messages</string>
+  <string name="assistant_advanced_active_hours_desc">Time window for messages (daytime only, start must be earlier than end)</string>
   <string name="assistant_advanced_start_label">Start</string>
   <string name="assistant_advanced_end_label">End</string>
   <string name="assistant_advanced_frequency_title">Frequency</string>
-  <string name="assistant_advanced_frequency_desc">Minimum minutes between messages (minimum 10)</string>
+  <string name="assistant_advanced_frequency_desc">Minimum minutes between messages (minimum 15)</string>
   <string name="assistant_advanced_group_custom_request">Custom Request</string>
   <!-- Setting Display Page -->
   <string name="setting_display_fonts_title">Fonts</string>
@@ -1724,6 +1724,13 @@
   <string name="chat_page_regenerate_requirement_title">Requirements for Optimizing Replies</string>
   <string name="chat_page_regenerate_requirement_placeholder">Enter your specific requirements for this reply (optional), e.g., keep it brief...</string>
   <string name="chat_page_regenerate_requirement_label">Optimization Requirements</string>
+  <string name="memory_regenerate_requirement_title">Optimize Memory Requirement</string>
+  <string name="memory_regenerate_requirement_placeholder">Enter your requirements for this memory (optional), e.g., more detailed, focus on emotion...</string>
+  <string name="memory_regenerate_requirement_label">Optimization Requirements</string>
+  <string name="memory_action_regenerate_segment">Regenerate this segment</string>
+  <string name="segment_regenerate_success">Memory regenerated. Please re-embed via the top-right button.</string>
+  <string name="segment_regenerate_no_segment">Segment record not found</string>
+  <string name="segment_regenerate_no_messages">No messages found for this segment</string>
   <string name="assistant_detail_search_history">Search Chat History</string>
   <string name="chat_history_search_title">Search Chat Records</string>
   <string name="chat_history_search_hint">Search chat content with %s</string>
