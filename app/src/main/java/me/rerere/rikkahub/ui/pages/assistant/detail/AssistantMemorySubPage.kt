@@ -1584,108 +1584,80 @@ private fun MemoryItem(
                 scaleY = scale
             }
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            // 顶部行：类型/嵌入徽章（左）+ 刷新/删除按钮（右上角）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (showType) {
-                            Surface(
-                                color = if (memory.type == 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                                shape = MaterialTheme.shapes.extraSmall
-                            ) {
-                                Text(
-                                    text = if (memory.type == 0) {
-                                        stringResource(R.string.memory_type_core)
-                                    } else if (memory.type == MemoryType.SEGMENT) {
-                                        val label = stringResource(R.string.memory_type_episodic)
-                                        if (BuildConfig.DEBUG) "$label${memory.id}" else label
-                                    } else {
-                                        // 兜底显示
-                                        "L${memory.type}"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                    color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
-
-                        if (useRagMemoryRetrieval) {
-                            when {
-                                !memory.hasEmbedding -> {
-                                    // 完全没有向量 → 无嵌入（红色）
-                                    Surface(
-                                        color = Color(0xFFC62828),
-                                        shape = MaterialTheme.shapes.extraSmall
-                                    ) {
-                                        Text(
-                                            text = stringResource(R.string.no_embedding),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                            color = Color.White
-                                        )
-                                    }
-                                }
-                                memory.embeddingModelId != null
-                                        && memory.embeddingModelId != currentEmbeddingModelId -> {
-                                    // 有向量但生成模型≠当前嵌入模型 → 待重新嵌入（橙色）
-                                    Surface(
-                                        color = Color(0xFFEF6C00),
-                                        shape = MaterialTheme.shapes.extraSmall
-                                    ) {
-                                        Text(
-                                            text = "待重新嵌入",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                            color = Color.White
-                                        )
-                                    }
-                                }
-                            }
+                    if (showType) {
+                        Surface(
+                            color = if (memory.type == 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                            shape = MaterialTheme.shapes.extraSmall
+                        ) {
+                            Text(
+                                text = if (memory.type == 0) {
+                                    stringResource(R.string.memory_type_core)
+                                } else if (memory.type == MemoryType.SEGMENT) {
+                                    val label = stringResource(R.string.memory_type_episodic)
+                                    if (BuildConfig.DEBUG) "$label${memory.id}" else label
+                                } else {
+                                    // 兜底显示
+                                    "L${memory.type}"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                color = if (memory.type == 0) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                            )
                         }
                     }
 
-                    if (memory.timestamp > 0) {
-                        Text(
-                            text = java.time.Instant.ofEpochMilli(memory.timestamp)
-                                .atZone(java.time.ZoneId.systemDefault())
-                                .toLocalDateTime()
-                                .toLocalString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                        )
+                    if (useRagMemoryRetrieval) {
+                        when {
+                            !memory.hasEmbedding -> {
+                                // 完全没有向量 → 无嵌入（红色）
+                                Surface(
+                                    color = Color(0xFFC62828),
+                                    shape = MaterialTheme.shapes.extraSmall
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.no_embedding),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                            memory.embeddingModelId != null
+                                && memory.embeddingModelId != currentEmbeddingModelId -> {
+                                // 有向量但生成模型≠当前嵌入模型 → 待重新嵌入（橙色）
+                                Surface(
+                                    color = Color(0xFFEF6C00),
+                                    shape = MaterialTheme.shapes.extraSmall
+                                ) {
+                                    Text(
+                                        text = "待重新嵌入",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
-                Text(
-                    text = memory.content,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            // 片段记忆：显示刷新（重新生成）按钮；核心记忆：仅删除
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                // 刷新按钮（仅片段记忆），缩小尺寸以贴合日记卡片风格
                 if (memory.type == MemoryType.SEGMENT) {
                     IconButton(
                         onClick = {
@@ -1693,22 +1665,57 @@ private fun MemoryItem(
                             regenerateRequirement = ""
                             showRegenerateDialog = true
                         },
-                        enabled = !isRegeneratingSegment
+                        enabled = !isRegeneratingSegment,
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             Icons.Rounded.Refresh,
-                            stringResource(R.string.memory_action_regenerate_segment)
+                            stringResource(R.string.memory_action_regenerate_segment),
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-                // 允许删除 L1 (type 3) 和 Core (type 0)
+                // 删除按钮（红色），仅 L1 片段与 Core 记忆可删
                 if (memory.type == 0 || memory.type == MemoryType.SEGMENT) {
-                    IconButton(onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        showDeleteConfirmation = true
-                    }) {
-                        Icon(Icons.Rounded.Delete, stringResource(R.string.assistant_page_delete))
+                    IconButton(
+                        onClick = {
+                            haptics.perform(HapticPattern.Pop)
+                            showDeleteConfirmation = true
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Delete,
+                            stringResource(R.string.assistant_page_delete),
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
+                        )
                     }
+                }
+            }
+
+            Text(
+                text = memory.content,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            // 底部右下角：该片段/核心记忆的生成时间
+            if (memory.timestamp > 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = java.time.Instant.ofEpochMilli(memory.timestamp)
+                            .atZone(java.time.ZoneId.systemDefault())
+                            .toLocalDateTime()
+                            .toLocalString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
                 }
             }
         }
