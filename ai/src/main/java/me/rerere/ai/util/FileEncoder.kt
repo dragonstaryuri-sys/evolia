@@ -2,6 +2,7 @@ package me.rerere.ai.util
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.util.Base64
 import androidx.core.net.toUri
 import me.rerere.ai.ui.UIMessagePart
@@ -15,6 +16,18 @@ private val supportedTypes = setOf(
     "image/webp",
 )
 
+/**
+ * 图片长边阈值（像素）。超过此尺寸的图片会被等比缩放后再编码，
+ * 避免超大原图吃掉过多 token 和请求体积。
+ */
+private const val MAX_LONGER_EDGE_PX = 2048
+
+/**
+ * 超过此字节数的图片会触发强制重新压缩（哪怕它原本就是 webp 格式）。
+ * 目标：尽量控制发给模型的 base64 体积，节省 token。
+ */
+private const val MAX_FILE_BYTES_FORCE_RECOMPRESS = 2 * 1024 * 1024L // 2MB
+
 private const val TAG = "FileEncoder"
 
 fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<String> = runCatching {
@@ -26,22 +39,121 @@ fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<String>
             if (!file.exists()) {
                 throw IllegalArgumentException("File does not exist: ${this.url}")
             }
-            if (!file.isSupportedType()) {
-                convertToJpeg(file) // 转换为 JPEG 格式
-                println("File converted to WebP format: ${file.absolutePath}")
+
+            // 判断是否需要做归一化处理（格式转换 / 尺寸缩放 / 体积压缩）
+            val currentMime = file.guessMimeType().getOrNull()
+            val notWebp = currentMime != "image/webp"
+            val tooBigBytes = file.length() > MAX_FILE_BYTES_FORCE_RECOMPRESS
+            val needNormalize = notWebp || tooBigBytes
+
+            if (needNormalize) {
+                normalizeImageToWebp(file)
+                println(
+                    "[$TAG] Image normalized to WebP: notWebp=$notWebp, " +
+                            "tooBigBytes=$tooBigBytes(${file.length()}), path=${file.absolutePath}"
+                )
             }
-            if (file.guessMimeType().getOrNull() != "image/webp") {
-                convertToJpeg(file) // 尝试转换为 WebP 格式
-                println("File converted to WebP format: ${file.absolutePath}")
-            }
+
             val bytes = file.readBytes()
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            if (withPrefix) "data:${file.guessMimeType().getOrThrow()};base64,$encoded" else encoded
+            val mimeAfter = file.guessMimeType().getOrNull()
+                ?: throw IllegalStateException("Cannot determine MIME after normalization: $file")
+            if (withPrefix) "data:$mimeAfter;base64,$encoded" else encoded
         }
 
         this.url.startsWith("data:") -> url
-        this.url.startsWith("http:") -> url
+        this.url.startsWith("http://") || this.url.startsWith("https://") -> url
         else -> throw IllegalArgumentException("Unsupported URL format: $url")
+    }
+}
+
+/**
+ * 从 "data:{mime};base64,..." 形式的 Data URI 中抽取 mime 部分。
+ * 如果不是合法的 Data URI，则回退到 fallback 值。
+ */
+internal fun extractMimeFromDataUri(dataUri: String, fallback: String): String = runCatching {
+    require(dataUri.startsWith("data:")) { "Not a data URI: $dataUri" }
+    val afterData = dataUri.removePrefix("data:")
+    afterData.substringBefore(';').ifBlank { fallback }
+}.getOrDefault(fallback)
+
+/**
+ * 从 "data:{mime};base64,..." 形式的 Data URI 中抽取纯 base64 数据部分（不含前缀）。
+ */
+internal fun extractBase64DataFromDataUri(dataUri: String): String =
+    dataUri.substringAfter(";base64,", dataUri)
+
+/**
+ * 从 URL 路径后缀粗略推断图片 MIME 类型。
+ * 无法识别时回退到 "image/jpeg"。
+ */
+internal fun guessImageMimeFromUrl(url: String): String {
+    val lower = url.substringBefore('?').lowercase()
+    return when {
+        lower.endsWith(".png") -> "image/png"
+        lower.endsWith(".webp") -> "image/webp"
+        lower.endsWith(".gif") -> "image/gif"
+        lower.endsWith(".bmp") -> "image/bmp"
+        lower.endsWith(".heic") || lower.endsWith(".heif") -> "image/heic"
+        // jpg / jpeg / 其他一律按 jpeg 处理
+        else -> "image/jpeg"
+    }
+}
+
+/**
+ * 将图片文件归一化为 WebP(Lossy q=80) 格式：
+ * 1. 解码 Bitmap；decode 失败则直接返回，保留原文件不覆写
+ * 2. 若任意一边超过 MAX_LONGER_EDGE_PX，等比缩放到范围内
+ * 3. 以 WebP Lossy q=80 压缩后通过「临时文件 + rename」原子替换原文件，避免中途失败损坏原图
+ */
+private fun normalizeImageToWebp(file: File) {
+    // 1) 解码，失败则不改动原文件
+    val originalBitmap = BitmapFactory.decodeFile(file.absolutePath)
+    if (originalBitmap == null) {
+        println("[$TAG] normalizeImageToWebp: decodeBitmap failed, keep original file: $file")
+        return
+    }
+
+    // 2) 超尺寸等比缩放
+    val longerEdge = maxOf(originalBitmap.width, originalBitmap.height)
+    val targetBitmap: Bitmap = if (longerEdge > MAX_LONGER_EDGE_PX) {
+        val scale = MAX_LONGER_EDGE_PX.toFloat() / longerEdge.toFloat()
+        val targetW = (originalBitmap.width * scale).toInt().coerceAtLeast(1)
+        val targetH = (originalBitmap.height * scale).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(originalBitmap, targetW, targetH, true)
+        println(
+            "[$TAG] Resize image: ${originalBitmap.width}x${originalBitmap.height} " +
+                    "-> ${targetW}x${targetH}, scale=${String.format("%.3f", scale)}"
+        )
+        if (scaled !== originalBitmap) originalBitmap.recycle()
+        scaled
+    } else {
+        originalBitmap
+    }
+
+    // 3) 压 WebP 写到临时文件，再原子替换
+    val tmpFile = File(file.parentFile, "${file.name}.webp.tmp")
+    try {
+        val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+            @Suppress("DEPRECATION")
+            Bitmap.CompressFormat.WEBP
+        }
+        FileOutputStream(tmpFile).use { out ->
+            targetBitmap.compress(format, 80, out)
+        }
+        if (!tmpFile.renameTo(file)) {
+            // rename 失败（例如跨分区），fallback 为 copy+delete
+            tmpFile.copyTo(file, overwrite = true)
+            tmpFile.delete()
+        }
+    } finally {
+        if (targetBitmap !== originalBitmap) {
+            targetBitmap.recycle()
+        }
+        originalBitmap.recycle()
+        if (tmpFile.exists()) tmpFile.delete()
     }
 }
 

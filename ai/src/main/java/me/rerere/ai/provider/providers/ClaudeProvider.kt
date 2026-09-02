@@ -38,6 +38,8 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.util.configureClientWithProxy
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.encodeBase64
+import me.rerere.ai.util.extractBase64DataFromDataUri
+import me.rerere.ai.util.extractMimeFromDataUri
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.parseErrorDetail
@@ -407,25 +409,33 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
 
                                 is UIMessagePart.Image -> {
                                     add(buildJsonObject {
-                                        part.encodeBase64().onSuccess { base64Data ->
+                                        // 区分 URL 图片与本地/Data URI 图片
+                                        val isHttpUrl = part.url.startsWith("http://") || part.url.startsWith("https://")
+                                        if (isHttpUrl) {
+                                            // URL 图片：走 source.url（Claude 支持公开可访问的 http(s) URL）
                                             put("type", "image")
                                             put("source", buildJsonObject {
-                                                put("type", "base64")
-                                                put(
-                                                    "media_type",
-                                                    "image/jpeg"
-                                                ) // 默认为 jpeg，可能需要根据实际情况调整
-                                                put(
-                                                    "data",
-                                                    base64Data.substringAfter(",")
-                                                ) // 移除 data:image/jpeg;base64, 前缀
+                                                put("type", "url")
+                                                put("url", part.url)
                                             })
-                                        }.onFailure {
-                                            it.printStackTrace()
-                                            Log.w(TAG, "encode image failed: ${part.url}")
-                                            // 如果图片编码失败，添加一个空文本块
-                                            put("type", "text")
-                                            put("text", "")
+                                        } else {
+                                            // 本地/Data URI：走 source.base64
+                                            part.encodeBase64(true).onSuccess { fullDataUri ->
+                                                val mime = extractMimeFromDataUri(fullDataUri, "image/webp")
+                                                val b64 = extractBase64DataFromDataUri(fullDataUri)
+                                                put("type", "image")
+                                                put("source", buildJsonObject {
+                                                    put("type", "base64")
+                                                    put("media_type", mime)
+                                                    put("data", b64)
+                                                })
+                                            }.onFailure {
+                                                it.printStackTrace()
+                                                Log.w(TAG, "encode image failed: ${part.url}")
+                                                // 如果图片编码失败，添加一个空文本块
+                                                put("type", "text")
+                                                put("text", "")
+                                            }
                                         }
                                     })
                                 }

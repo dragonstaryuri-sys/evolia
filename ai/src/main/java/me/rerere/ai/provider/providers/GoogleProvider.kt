@@ -48,6 +48,9 @@ import me.rerere.ai.util.configureClientWithProxy
 import me.rerere.ai.util.configureReferHeaders
 import me.rerere.ai.util.audioMime
 import me.rerere.ai.util.encodeBase64
+import me.rerere.ai.util.extractBase64DataFromDataUri
+import me.rerere.ai.util.extractMimeFromDataUri
+import me.rerere.ai.util.guessImageMimeFromUrl
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomBody
 import me.rerere.ai.util.removeElements
@@ -587,13 +590,31 @@ class GoogleProvider(private val client: OkHttpClient) : Provider<ProviderSettin
                                     }
 
                                     is UIMessagePart.Image -> {
-                                        part.encodeBase64(false).onSuccess { base64Data ->
+                                        // 区分 URL 图片与本地/Data URI 图片
+                                        val isHttpUrl = part.url.startsWith("http://") || part.url.startsWith("https://")
+                                        if (isHttpUrl) {
+                                            // URL 图片：走 file_data.file_uri 字段
+                                            // 注意：Google 官方 file_uri 仅支持 gs:// 或 File API URI，
+                                            // 部分版本/部分 Gemini 模型会接受 http(s) URL，否则模型会返回错误信息
                                             add(buildJsonObject {
-                                                put("inline_data", buildJsonObject {
-                                                    put("mime_type", "image/png")
-                                                    put("data", base64Data)
+                                                put("file_data", buildJsonObject {
+                                                    put("file_uri", part.url)
+                                                    // mime_type 可选，按 URL 后缀做一个粗略推断
+                                                    put("mime_type", guessImageMimeFromUrl(part.url))
                                                 })
                                             })
+                                        } else {
+                                            // 本地/Data URI：走 inline_data，base64 内联
+                                            part.encodeBase64(true).onSuccess { fullDataUri ->
+                                                val mime = extractMimeFromDataUri(fullDataUri, "image/webp")
+                                                val b64 = extractBase64DataFromDataUri(fullDataUri)
+                                                add(buildJsonObject {
+                                                    put("inline_data", buildJsonObject {
+                                                        put("mime_type", mime)
+                                                        put("data", b64)
+                                                    })
+                                                })
+                                            }
                                         }
                                     }
 
