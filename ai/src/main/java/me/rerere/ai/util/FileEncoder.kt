@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
 import android.util.Base64
+import android.util.Log
 import androidx.core.net.toUri
 import me.rerere.ai.ui.UIMessagePart
 import java.io.File
@@ -47,18 +48,34 @@ fun UIMessagePart.Image.encodeBase64(withPrefix: Boolean = true): Result<String>
             val needNormalize = notWebp || tooBigBytes
 
             if (needNormalize) {
+                val sizeBefore = file.length()
+                val mimeBefore = currentMime ?: "unknown"
                 normalizeImageToWebp(file)
-                println(
-                    "[$TAG] Image normalized to WebP: notWebp=$notWebp, " +
-                            "tooBigBytes=$tooBigBytes(${file.length()}), path=${file.absolutePath}"
+                val sizeAfter = file.length()
+                val mimeAfter = file.guessMimeType().getOrNull() ?: "unknown"
+                val ratio = if (sizeBefore > 0) String.format("%.1f%%", sizeAfter * 100f / sizeBefore) else "N/A"
+                Log.i(
+                    TAG,
+                    "Image normalized: " +
+                            "mime[$mimeBefore -> $mimeAfter], " +
+                            "size[${sizeBefore}B -> ${sizeAfter}B ($ratio)], " +
+                            "reasons=[notWebp=$notWebp, tooBigBytes=$tooBigBytes], " +
+                            "path=${file.absolutePath}"
+                )
+            } else {
+                // 跳过归一化：已经是 webp 且体积未超阈值
+                Log.i(
+                    TAG,
+                    "Image skipped normalize (already webp & small enough): " +
+                            "mime=${currentMime}, size=${file.length()}B, path=${file.absolutePath}"
                 )
             }
 
             val bytes = file.readBytes()
             val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            val mimeAfter = file.guessMimeType().getOrNull()
+            val finalMime = file.guessMimeType().getOrNull()
                 ?: throw IllegalStateException("Cannot determine MIME after normalization: $file")
-            if (withPrefix) "data:$mimeAfter;base64,$encoded" else encoded
+            if (withPrefix) "data:$finalMime;base64,$encoded" else encoded
         }
 
         this.url.startsWith("data:") -> url
@@ -110,7 +127,7 @@ private fun normalizeImageToWebp(file: File) {
     // 1) 解码，失败则不改动原文件
     val originalBitmap = BitmapFactory.decodeFile(file.absolutePath)
     if (originalBitmap == null) {
-        println("[$TAG] normalizeImageToWebp: decodeBitmap failed, keep original file: $file")
+        Log.w(TAG, "normalizeImageToWebp: decodeBitmap failed, keep original file: $file")
         return
     }
 
@@ -121,8 +138,9 @@ private fun normalizeImageToWebp(file: File) {
         val targetW = (originalBitmap.width * scale).toInt().coerceAtLeast(1)
         val targetH = (originalBitmap.height * scale).toInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(originalBitmap, targetW, targetH, true)
-        println(
-            "[$TAG] Resize image: ${originalBitmap.width}x${originalBitmap.height} " +
+        Log.i(
+            TAG,
+            "Resize image: ${originalBitmap.width}x${originalBitmap.height} " +
                     "-> ${targetW}x${targetH}, scale=${String.format("%.3f", scale)}"
         )
         if (scaled !== originalBitmap) originalBitmap.recycle()
