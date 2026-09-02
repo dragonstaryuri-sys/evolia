@@ -119,6 +119,12 @@ import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
 
+/**
+ * L1 segment 自动总结的连续失败熔断阈值。达到后停止自动触发 summarizeAndRefresh，
+ * 等待用户手动重试（重置计数）或根本性问题解决后再次满足触发条件。
+ */
+private const val SEGMENT_FAILURE_THRESHOLD = 3
+
 // ------------------------------------------------------------------
 //  安全解码 UIMessage：损坏的消息只记日志 + 抛 null，绝不闪退
 // ------------------------------------------------------------------
@@ -835,10 +841,11 @@ class ChatService(
             }
             _isAiTypingMap.update { it + (conversationId to true) }
 
+            val timeoutMinutes = settings.chatGenerationTimeoutMinutes
             val timeoutJob = launch {
-                delay(15 * 60 * 1000L)
+                delay(timeoutMinutes * 60 * 1000L)
                 // 超时后取消整个生成任务并提示用户
-                _errorFlow.emit(java.net.SocketTimeoutException(context.getString(R.string.chat_generation_timeout)))
+                _errorFlow.emit(java.net.SocketTimeoutException(context.getString(R.string.chat_generation_timeout, timeoutMinutes)))
                 cancel()
             }
             try {
@@ -1735,6 +1742,12 @@ class ChatService(
     private suspend fun checkAndAutoSummarize(id: Uuid, conv: Conversation, settings: Settings) {
         val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
         if (!assistant.enableMemory || !assistant.enableDetailMemory) return
+        // 熔断检查：连续失败次数达到阈值后，停止自动触发，避免无限重试循环。
+        // 用户手动调用 summarizeAndRefresh 成功后会自动重置计数（在 try 块末尾）。
+        if (conv.segmentFailureCount >= SEGMENT_FAILURE_THRESHOLD) {
+            Log.w(TAG, "Segment auto-summarize skipped for $id: circuit-broken (failed ${conv.segmentFailureCount} times in a row)")
+            return
+        }
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) (assistant.detailMemoryThreshold * 2).toInt() else assistant.detailMemoryThreshold
 
@@ -1882,9 +1895,28 @@ class ChatService(
             if (!skipArchive) {
                 archiveConversation(id, force = true, skipEmbedding = true)
             }
+            // 成功完成：重置失败计数为 0，避免下次因历史失败被熔断
+            mutateConversationAndSave(id) { current ->
+                if (current.segmentFailureCount == 0) current
+                else current.copy(segmentFailureCount = 0)
+            }
             ContextRefreshResult(true, "Segments updated", totalSummarized)
         } catch (e: Exception) {
             Log.e(TAG, "summarizeAndRefresh failed for $id", e)
+            // 失败：递增失败计数。达到阈值后 checkAndAutoSummarize 会停止自动触发，
+            // 避免根本性问题（如 summarizer 模型不可用）下每次发消息都重试的循环。
+            val currentCount = runCatching {
+                conversationRepo.getConversationById(id)?.segmentFailureCount ?: 0
+            }.getOrDefault(0)
+            val newCount = currentCount + 1
+            runCatching {
+                mutateConversationAndSave(id) { current ->
+                    current.copy(segmentFailureCount = newCount)
+                }
+            }
+            if (newCount >= SEGMENT_FAILURE_THRESHOLD) {
+                Log.w(TAG, "Segment summary has failed $newCount times in a row for $id, auto-trigger is now circuit-broken")
+            }
             ContextRefreshResult(false, errorMessage = e.message)
         } finally {
             summarizingConversations.remove(id)

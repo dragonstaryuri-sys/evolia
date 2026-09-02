@@ -476,6 +476,9 @@
   <string name="setting_page_data_settings">Data Settings</string>
   <string name="setting_page_default_model">Default Models</string>
   <string name="setting_page_default_model_desc">Set default models for features</string>
+  <string name="setting_page_generation_timeout">Generation Timeout</string>
+  <string name="setting_page_generation_timeout_desc">Max duration for a single generation, including thinking, answers, and tool calls</string>
+  <string name="setting_page_generation_timeout_suffix">min</string>
   <string name="setting_page_display_setting">Display Settings</string>
   <string name="setting_page_display_setting_desc">Manage display options</string>
   <string name="setting_page_documentation">Documentation</string>
@@ -1754,7 +1757,7 @@
   <string name="chat_activity_reasoned">Reasoned</string>
   <string name="chat_activity_reasoned_duration">Reasoned for %s</string>
   <string name="chat_activity_replying">Replying</string>
-  <string name="chat_generation_timeout">Generation timed out (15 min). Please check your network or try a different model.</string>
+  <string name="chat_generation_timeout">Generation timed out (%1$d min). Please check your network or try a different model.</string>
   <string name="chat_activity_searched_web">Searched the Web</string>
   <string name="chat_activity_ran_python">Ran Python</string>
   <string name="chat_activity_used_tool">Used tool</string>

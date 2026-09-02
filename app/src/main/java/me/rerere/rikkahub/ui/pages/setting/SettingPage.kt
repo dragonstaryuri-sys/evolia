@@ -297,6 +297,28 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         onClick = { navController.navigate(Screen.SettingProvider) }
                     )
 
+                    // 对话生成超时（预设档位选择）
+                    val timeoutOptions = listOf(5, 10, 15, 20, 30, 45, 60)
+                    val currentTimeout = settings.chatGenerationTimeoutMinutes
+                    val selectedTimeout = timeoutOptions.find { it == currentTimeout } ?: 20
+                    val timeoutSuffix = stringResource(R.string.setting_page_generation_timeout_suffix)
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_generation_timeout),
+                        subtitle = stringResource(R.string.setting_page_generation_timeout_desc),
+                        icon = { Icon(Icons.Rounded.Timer, null, modifier = Modifier.size(20.dp)) },
+                        trailing = {
+                            Select(
+                                options = timeoutOptions,
+                                selectedOption = selectedTimeout,
+                                onOptionSelected = { option ->
+                                    vm.updateSettings(settings.copy(chatGenerationTimeoutMinutes = option))
+                                },
+                                optionToString = { "$it $timeoutSuffix" },
+                                modifier = Modifier.wrapContentWidth()
+                            )
+                        }
+                    )
+
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_search_service),
                         subtitle = stringResource(R.string.setting_page_search_service_desc),

@@ -449,6 +449,9 @@
   <string name="setting_page_data_settings">数据设置</string>
   <string name="setting_page_default_model">默认模型</string>
   <string name="setting_page_default_model_desc">设置各个功能的默认模型</string>
+  <string name="setting_page_generation_timeout">生成超时</string>
+  <string name="setting_page_generation_timeout_desc">单次生成最长时间，包括思考、回复和工具调用</string>
+  <string name="setting_page_generation_timeout_suffix">分钟</string>
   <string name="setting_page_display_setting">显示设置</string>
   <string name="setting_page_display_setting_desc">管理显示设置</string>
   <string name="setting_page_documentation">使用文档</string>
@@ -1734,7 +1737,7 @@
   <string name="chat_activity_reasoned">已思考</string>
   <string name="chat_activity_reasoned_duration">已思考 %s</string>
   <string name="chat_activity_replying">回复中</string>
-  <string name="chat_generation_timeout">生成超时（15 分钟），请检查网络或更换模型后重试</string>
+  <string name="chat_generation_timeout">生成超时（%1$d 分钟），请检查网络或更换模型后重试</string>
   <string name="chat_activity_searched_web">已联网搜索</string>
   <string name="chat_activity_ran_python">已运行 Python</string>
   <string name="chat_activity_used_tool">已调用工具</string>

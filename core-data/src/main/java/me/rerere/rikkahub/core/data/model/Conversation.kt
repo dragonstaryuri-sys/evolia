@@ -41,6 +41,11 @@ data class Conversation(
     val lastPruneTime: Long = 0L,
     val lastPruneMessageCount: Int = 0,
     val lastRefreshTime: Long = 0L,
+    /**
+     * L1 segment 自动总结的连续失败次数。每次 summarizeAndRefresh 因 AI 异常失败 +1，成功后重置为 0。
+     * 达到 [ChatService.SEGMENT_FAILURE_THRESHOLD] 后停止自动触发，等待用户手动重试或下次成功。
+     */
+    val segmentFailureCount: Int = 0,
 ) {
     val files: List<Uri>
         get() {

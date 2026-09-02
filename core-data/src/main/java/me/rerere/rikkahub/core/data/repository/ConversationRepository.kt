@@ -525,6 +525,7 @@ class ConversationRepository(
             lastPruneTime = conversation.lastPruneTime,
             lastPruneMessageCount = conversation.lastPruneMessageCount,
             lastRefreshTime = conversation.lastRefreshTime,
+            segmentFailureCount = conversation.segmentFailureCount,
             isVirtual = false
         )
     }
@@ -554,7 +555,8 @@ class ConversationRepository(
             lastSummarizedMessageId = entity.lastSummarizedMessageId,
             lastPruneTime = entity.lastPruneTime,
             lastPruneMessageCount = entity.lastPruneMessageCount,
-            lastRefreshTime = entity.lastRefreshTime
+            lastRefreshTime = entity.lastRefreshTime,
+            segmentFailureCount = entity.segmentFailureCount
         )
     }
 

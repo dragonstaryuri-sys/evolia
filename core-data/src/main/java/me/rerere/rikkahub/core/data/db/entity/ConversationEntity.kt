@@ -56,6 +56,11 @@ data class ConversationEntity(
     val lastPruneMessageCount: Int = 0,
     @ColumnInfo(name = "last_refresh_time", defaultValue = "0")
     val lastRefreshTime: Long = 0L,
+    /**
+     * L1 segment 自动总结的连续失败次数。失败 +1，成功重置为 0。达到阈值后熔断自动触发。
+     */
+    @ColumnInfo(name = "segment_failure_count", defaultValue = "0")
+    val segmentFailureCount: Int = 0,
 
     // 重新加回此字段以维持数据库 Schema 稳定性，防止数据被清空
     @Deprecated("VirtualWorld 模式已弃用")

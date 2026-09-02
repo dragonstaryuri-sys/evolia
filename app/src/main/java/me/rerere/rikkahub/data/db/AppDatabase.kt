@@ -40,7 +40,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageEntity::class,
         ProfileHistoryEntity::class
     ],
-    version = 27,
+    version = 28,
     exportSchema = true
 )
 @TypeConverters(
@@ -118,6 +118,19 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_26_27 = object : Migration(26, 27) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.v(TAG, "开始 26->27 迁移：助手档案 appearance 结构化 → 纯文本（表结构无变化）")
+            }
+        }
+
+        /**
+         * 27 → 28：为 ConversationEntity 新增 segment_failure_count 列，
+         * 记录 L1 自动总结连续失败次数，达到阈值后熔断自动触发。
+         */
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 27->28 迁移：conversationentity 表新增 segment_failure_count 列")
+                db.execSQL(
+                    "ALTER TABLE `conversationentity` ADD COLUMN `segment_failure_count` INTEGER NOT NULL DEFAULT 0"
+                )
             }
         }
 

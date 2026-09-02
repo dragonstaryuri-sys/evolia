@@ -121,6 +121,7 @@ class SettingsStore(
         val CUSTOM_WAKE_WORDS = stringPreferencesKey("custom_wake_words")
         val WAKE_WORD_ASSISTANT_ID = stringPreferencesKey("wake_word_assistant_id")
         val CALL_BARGE_IN_SENSITIVITY = intPreferencesKey("call_barge_in_sensitivity")
+        val CHAT_GENERATION_TIMEOUT_MINUTES = intPreferencesKey("chat_generation_timeout_minutes")
     }
 
     private val dataStore = context.settingsStore
@@ -220,6 +221,7 @@ class SettingsStore(
                 customWakeWords = preferences[CUSTOM_WAKE_WORDS] ?: DEFAULT_WAKE_WORDS,
                 wakeWordAssistantId = preferences[WAKE_WORD_ASSISTANT_ID].toUuidOrNull(),
                 callBargeInSensitivity = preferences[CALL_BARGE_IN_SENSITIVITY] ?: 50,
+                chatGenerationTimeoutMinutes = preferences[CHAT_GENERATION_TIMEOUT_MINUTES] ?: 20,
             )
         }
         .map {
@@ -455,6 +457,7 @@ class SettingsStore(
             preferences[CUSTOM_WAKE_WORDS] = settingsToSave.customWakeWords
             preferences[WAKE_WORD_ASSISTANT_ID] = settingsToSave.wakeWordAssistantId?.toString() ?: ""
             preferences[CALL_BARGE_IN_SENSITIVITY] = settingsToSave.callBargeInSensitivity
+            preferences[CHAT_GENERATION_TIMEOUT_MINUTES] = settingsToSave.chatGenerationTimeoutMinutes
         }
     }
 
@@ -550,6 +553,8 @@ data class Settings(
     val wakeWordAssistantId: Uuid? = null,
     // 通话打断灵敏度：0-100，默认 50（平衡档）。值越高越容易被打断（灵敏度高），值越低越难被打断（抗误触强）。
     val callBargeInSensitivity: Int = 50,
+    // 对话生成整体超时（分钟），覆盖思考+答案+工具调用的全过程，默认 20 分钟
+    val chatGenerationTimeoutMinutes: Int = 20,
 ) {
     companion object {
         fun dummy() = Settings(init = true)
