@@ -131,7 +131,7 @@ class GenerationHandler(
         assistant: Assistant,
         memories: List<AssistantMemory>? = null,
         tools: List<Tool> = emptyList(),
-        truncateIndex: Int = -1,
+        lastArchivedMessageTime: Long = 0L,
         maxSteps: Int = 256,
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
@@ -371,7 +371,7 @@ class GenerationHandler(
                 provider = provider,
                 tools = toolsInternal,
                 memories = memories ?: emptyList(),
-                truncateIndex = truncateIndex,
+                lastArchivedMessageTime = lastArchivedMessageTime,
                 stream = assistant.streamOutput,
                 enabledModeIds = enabledModeIds,
                 contextSummary = contextSummary,
@@ -513,7 +513,7 @@ class GenerationHandler(
         model: Model,
         tools: List<Tool>,
         memories: List<AssistantMemory>,
-        truncateIndex: Int,
+        lastArchivedMessageTime: Long,
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
         temporarySummaries: List<String> = emptyList(),
@@ -909,12 +909,14 @@ class GenerationHandler(
             messages.filter { !it.skipContext }
         }
         Log.d("ContextDebug", "--- Context Build Start ---")
-        Log.d("ContextDebug", "Incoming truncateIndex: $truncateIndex")
+        Log.d("ContextDebug", "Incoming lastArchivedMessageTime: $lastArchivedMessageTime")
         Log.d("ContextDebug", "Original candidates size: ${contextCandidates.size}")
         Log.d("ContextDebug", "first messages: ${messages.firstOrNull()?.id}.take(50)")
 
+        // selectMessagesForGeneration 已在 ChatService 层按 lastArchivedMessageTime 过滤，
+        // 这里保留二次过滤防御位但实际 no-op，避免破坏既有链路。
         val chatHistoryCandidates = contextCandidates
-            .truncate(truncateIndex)
+            .let { list -> if (lastArchivedMessageTime == 0L) list else list }
             .let { truncated ->
                 assistant.maxHistoryMessages?.let { limit ->
                     if (limit > 0) truncated.limitContext(limit) else truncated
@@ -1524,7 +1526,7 @@ class GenerationHandler(
         provider: ProviderSetting,
         tools: List<Tool>,
         memories: List<AssistantMemory>,
-        truncateIndex: Int,
+        lastArchivedMessageTime: Long,
         stream: Boolean,
         enabledModeIds: Set<Uuid> = emptySet(),
         contextSummary: String? = null,
@@ -1541,7 +1543,7 @@ class GenerationHandler(
             model = model,
             tools = tools,
             memories = memories,
-            truncateIndex = truncateIndex,
+            lastArchivedMessageTime = lastArchivedMessageTime,
             enabledModeIds = enabledModeIds,
             contextSummary = contextSummary,
             temporarySummaries = temporarySummaries,

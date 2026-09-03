@@ -245,22 +245,11 @@ class MemoryConsolidationWorker(
 
                 memoryRepository.saveEpisode(episode)
 
-                // 重点：手动归档后，更新 Conversation 的 truncateIndex 以清理后续上下文
+                // 只有立即整合（手动触发 episode 生成）才更新截断游标。
+                // 自动扫描（isManual=false）不设置：自动归档只生成 segment，
+                // 不应截断 AI 上下文。episode 与 segment 的时间戳互不影响。
                 if (isManual) {
-                    // 找到归档后的第一个消息在 messageNodes 中的索引
-                    // 即 messagesToProcess.last() 之后的消息节点
-                    var lastArchivedNodeIndex = -1
-                    conv.messageNodes.forEachIndexed { index, node ->
-                        val nodeTime = node.currentMessage.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
-                        if (nodeTime <= lastArchivedTime) {
-                            lastArchivedNodeIndex = index
-                        }
-                    }
-
-                    if (lastArchivedNodeIndex != -1) {
-                         // 下次带入上下文从 lastArchivedNodeIndex + 1 开始
-                         conversationRepository.updateTruncateIndex(conv.id, lastArchivedNodeIndex + 1)
-                    }
+                    conversationRepository.updateLastArchivedMessageTime(conv.id, lastArchivedTime)
                 }
 
                 updateLastResult(

@@ -230,9 +230,9 @@ class ConversationRepository(
             val depth = chatMessageDAO.getMessageGlobalDepth(firstAssistantId, targetMessageId)
             chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, (depth + 20).coerceAtLeast(100))
         } else {
-            // ✨ 动态加载：根据 truncateIndex 调整加载深度，确保 AI 截断逻辑有足够上下文
-            val maxTruncate = entities.maxOfOrNull { it.truncateIndex } ?: 0
-            val loadLimit = (maxTruncate + 100).coerceAtLeast(200)
+            // 时间戳方案下，加载深度不再依赖 truncateIndex；
+            // selectMessagesForGeneration 会按 lastArchivedMessageTime 过滤已归档消息。
+            val loadLimit = 200
             chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, loadLimit)
         }.toSet()
         // 3. 批量获取这些节点的实际消息内容 (contentJson)
@@ -514,7 +514,7 @@ class ConversationRepository(
             createAt = conversation.createAt.toEpochMilli(),
             updateAt = conversation.updateAt.toEpochMilli(),
             assistantId = conversation.assistantId.toString(),
-            truncateIndex = conversation.truncateIndex,
+            lastArchivedMessageTime = conversation.lastArchivedMessageTime,
             chatSuggestions = JsonInstant.encodeToString(conversation.chatSuggestions),
             isPinned = conversation.isPinned,
             isConsolidated = conversation.isConsolidated,
@@ -545,7 +545,7 @@ class ConversationRepository(
             createAt = Instant.ofEpochMilli(entity.createAt),
             updateAt = Instant.ofEpochMilli(entity.updateAt),
             assistantId = Uuid.parse(entity.assistantId),
-            truncateIndex = entity.truncateIndex,
+            lastArchivedMessageTime = entity.lastArchivedMessageTime,
             chatSuggestions = JsonInstant.decodeFromString(entity.chatSuggestions),
             isPinned = entity.isPinned,
             isConsolidated = entity.isConsolidated,
@@ -576,8 +576,16 @@ class ConversationRepository(
         conversationDAO.updateConsolidatedStatus(id = conversationId.toString(), isConsolidated = false)
     }
 
+    @Deprecated("已被 updateLastArchivedMessageTime 替代。")
     suspend fun updateTruncateIndex(conversationId: Uuid, truncateIndex: Int) {
         conversationDAO.updateTruncateIndex(id = conversationId.toString(), truncateIndex = truncateIndex)
+    }
+
+    suspend fun updateLastArchivedMessageTime(conversationId: Uuid, lastArchivedMessageTime: Long) {
+        conversationDAO.updateLastArchivedMessageTime(
+            id = conversationId.toString(),
+            lastArchivedMessageTime = lastArchivedMessageTime
+        )
     }
 
     suspend fun deleteNodes(nodeIds: List<Uuid>) = withContext(Dispatchers.IO) {

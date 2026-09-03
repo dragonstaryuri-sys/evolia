@@ -26,8 +26,15 @@ data class ConversationEntity(
     val createAt: Long,
     @ColumnInfo("update_at")
     val updateAt: Long,
+    @Deprecated("已被 lastArchivedMessageTime 替代。保留列以维持 schema 稳定，代码层不再读写。")
     @ColumnInfo("truncate_index", defaultValue = "-1")
-    val truncateIndex: Int,
+    val truncateIndex: Int = -1,
+    /**
+     * L2 归档时间戳游标。AI 上下文从此时间戳之后的消息开始加载。
+     * 0 表示未启用截断。对齐 L1 segment 的 last_summarized_message_time 机制。
+     */
+    @ColumnInfo(name = "last_archived_message_time", defaultValue = "0")
+    val lastArchivedMessageTime: Long = 0L,
     @ColumnInfo("suggestions", defaultValue = "[]")
     val chatSuggestions: String,
     @ColumnInfo("is_pinned", defaultValue = "0")

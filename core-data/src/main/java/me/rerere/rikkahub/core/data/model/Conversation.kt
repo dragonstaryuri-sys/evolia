@@ -18,7 +18,12 @@ data class Conversation(
     val assistantId: Uuid,
     val title: String = "",
     val messageNodes: List<MessageNode>,
-    val truncateIndex: Int = -1,
+    /**
+     * L2 归档时间戳游标。AI 上下文从此时间戳之后的消息开始加载。
+     * 0L 表示未启用截断（保留全部消息）。与 [lastSummarizedMessageTime] 对称：
+     * L1 segment 使用 lastSummarizedMessageTime，L2 episode 使用 lastArchivedMessageTime。
+     */
+    val lastArchivedMessageTime: Long = 0L,
     val chatSuggestions: List<String> = emptyList(),
     val isPinned: Boolean = false,
     val enabledModeIds: Set<Uuid> = emptySet(),
@@ -243,26 +248,9 @@ fun Conversation.deleteMessages(messageIds: Set<Uuid>): ConversationMessageDelet
         }
     }
 
-    // 删除节点会导致 messageNodes 收缩，truncateIndex 是位置索引，必须同步平移，
-    // 否则截断点会错位：归档区(索引 < truncateIndex)的节点被删后，截断点会向后
-    // 偏移，把本该保留的最近消息也排除出 AI 上下文；极端情况下 truncateIndex >=
-    // 新 size 会导致下次生成上下文为空。这里按"被整段删除且原位于截断点之前"
-    // 的节点数量下移 truncateIndex。truncateIndex <= 0 表示未启用截断，保持原值。
-    val newTruncateIndex = if (truncateIndex > 0) {
-        val deletedNodesBeforeTruncate = messageNodes
-            .filterIndexed { index, node ->
-                index < truncateIndex && node.id in deletedNodeIds
-            }.size
-        (truncateIndex - deletedNodesBeforeTruncate)
-            .coerceAtLeast(0)
-            .coerceAtMost(remainingNodes.size)
-    } else {
-        truncateIndex
-    }
-
+    // 时间戳游标 (lastArchivedMessageTime) 不依赖数组索引，删除节点无需平移。
     val updated = copy(
-        messageNodes = remainingNodes,
-        truncateIndex = newTruncateIndex
+        messageNodes = remainingNodes
     ).normalizeMessageNodes()
     return ConversationMessageDeletion(updated, deletedNodeIds, actuallyDeletedMessageIds)
 }

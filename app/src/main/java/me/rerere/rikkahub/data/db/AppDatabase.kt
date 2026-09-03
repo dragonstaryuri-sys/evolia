@@ -40,7 +40,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageEntity::class,
         ProfileHistoryEntity::class
     ],
-    version = 28,
+    version = 29,
     exportSchema = true
 )
 @TypeConverters(
@@ -131,6 +131,58 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE `conversationentity` ADD COLUMN `segment_failure_count` INTEGER NOT NULL DEFAULT 0"
                 )
+            }
+        }
+
+        /**
+         * 28 → 29：将 L2 归档截断游标从基于数组索引的 `truncate_index`
+         * 迁移为基于时间戳的 `last_archived_message_time`，对齐 L1 segment 的
+         * `last_summarized_message_time` 机制，修复 loadMoreHistory 前插导致索引错位的 bug。
+         *
+         * 历史数据迁移：对每条已有归档 episode 的会话，用 ChatEpisodeEntity.end_time
+         * 填充 last_archived_message_time。无 episode 的会话保持 0（未启用截断）。
+         * truncate_index 列保留不删（兼容旧 schema，避免重建表的高成本）。
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 28->29 迁移：conversationentity 表新增 last_archived_message_time 列，并从 ChatEpisodeEntity 回填历史数据")
+
+                // 1. 新增列：默认值 0（表示未启用截断）
+                db.execSQL(
+                    "ALTER TABLE `conversationentity` ADD COLUMN `last_archived_message_time` INTEGER NOT NULL DEFAULT 0"
+                )
+
+                // 2. 历史数据回填：用每个会话对应 episode 的 end_time 填充
+                //    Room 默认表名是类名本身（ChatEpisodeEntity，大写驼峰）
+                db.execSQL("""
+                    UPDATE `conversationentity`
+                    SET `last_archived_message_time` = COALESCE(
+                        (SELECT MAX(`ep`.`end_time`)
+                         FROM `ChatEpisodeEntity` AS `ep`
+                         WHERE `ep`.`conversation_id` = `conversationentity`.`id`),
+                        0
+                    )
+                    WHERE `last_archived_message_time` = 0
+                      AND `id` IN (SELECT `conversation_id` FROM `ChatEpisodeEntity` WHERE `conversation_id` IS NOT NULL AND `conversation_id` != '')
+                """.trimIndent())
+
+                // 3. truncate_index 列保留：不删除，避免重建表的高成本。
+                //    代码层不再读取该列，但 Room schema 校验仍要求 Entity 字段与表列对应，
+                //    因此 ConversationEntity 中保留 @Deprecated 的 truncateIndex 字段，
+                //    值始终透传为 -1（defaultValue）。
+
+                // 4. 自查：打印迁移后的数据规模，便于线上问题诊断
+                val cursor = db.query(
+                    "SELECT COUNT(*) AS total, " +
+                    "SUM(CASE WHEN `last_archived_message_time` > 0 THEN 1 ELSE 0 END) AS archived " +
+                    "FROM `conversationentity`"
+                )
+                if (cursor.moveToFirst()) {
+                    val total = cursor.getInt(cursor.getColumnIndexOrThrow("total"))
+                    val archived = cursor.getInt(cursor.getColumnIndexOrThrow("archived"))
+                    Log.i(TAG, "28->29 迁移完成：共 $total 个会话，其中 $archived 个已写入 last_archived_message_time")
+                }
+                cursor.close()
             }
         }
 

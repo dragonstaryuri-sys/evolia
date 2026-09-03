@@ -123,8 +123,12 @@ interface ConversationDAO {
     @Query("UPDATE conversationentity SET is_consolidated = :isConsolidated WHERE id = :id")
     suspend fun updateConsolidatedStatus(id: String, isConsolidated: Boolean)
 
+    @Deprecated("已被 updateLastArchivedMessageTime 替代，保留以维持 schema 兼容。")
     @Query("UPDATE conversationentity SET truncate_index = :truncateIndex WHERE id = :id")
     suspend fun updateTruncateIndex(id: String, truncateIndex: Int)
+
+    @Query("UPDATE conversationentity SET last_archived_message_time = :lastArchivedMessageTime WHERE id = :id")
+    suspend fun updateLastArchivedMessageTime(id: String, lastArchivedMessageTime: Long)
 
     // Stats queries for MenuVM optimization
     @Query("SELECT COUNT(*) FROM conversationentity")

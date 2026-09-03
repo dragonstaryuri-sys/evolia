@@ -115,6 +115,8 @@ import android.net.Uri
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
@@ -158,9 +160,19 @@ internal fun summarizeContentLine(entity: ChatMessageEntity, tagExtra: Any? = nu
 internal fun selectMessagesForGeneration(
     messageNodes: List<MessageNode>,
     contextEndNodeId: Uuid?,
-    truncateIndex: Int
+    lastArchivedMessageTime: Long
 ): List<UIMessage> {
-    val rangeStart = truncateIndex.coerceAtLeast(0).coerceAtMost(messageNodes.size)
+    // 时间戳游标方案：找第一个 timelineCreatedAt 严格大于 lastArchivedMessageTime 的节点作为起点。
+    // 与原 truncateIndex（数组索引）方案相比，不受 loadMoreHistory 前插节点影响。
+    val rangeStart = if (lastArchivedMessageTime <= 0L) {
+        0
+    } else {
+        val firstUnarchivedIndex = messageNodes.indexOfFirst { node ->
+            node.timelineCreatedAt > lastArchivedMessageTime
+        }
+        if (firstUnarchivedIndex < 0) return emptyList()
+        firstUnarchivedIndex
+    }
     val rangeEndExclusive = if (contextEndNodeId == null) {
         messageNodes.size
     } else {
@@ -604,15 +616,29 @@ class ChatService(
                                                 )
                                             }
                                         }
-                                        archiveConversation(oldId, force = true)
+                                        // 新建会话等同于手动开启新话题：episode 归档成功后
+                                        // 需同步更新截断游标，避免用户切回旧会话时 AI 仍能看到已归档消息
+                                        val episodeEndTime = archiveConversation(oldId, force = true)
+                                        if (episodeEndTime != null) {
+                                            conversationRepo.updateLastArchivedMessageTime(oldId, episodeEndTime)
+                                        }
                                     } finally {
                                         _syncingConversationIds.update { it - conversationId }
                                     }
                                 } else {
                                     if (assistant.enableDetailMemory) {
-                                        summarizeAndRefresh(oldId, onlySegments = true)
+                                        // skipArchive=true：避免 summarizeAndRefresh 结束时自动调 archiveConversation，
+                                        // 与下方显式调用的 archiveConversation 重复
+                                        summarizeAndRefresh(oldId, onlySegments = true, skipArchive = true)
+                                        val episodeEndTime = archiveConversation(oldId, force = true)
+                                        if (episodeEndTime != null) {
+                                            conversationRepo.updateLastArchivedMessageTime(oldId, episodeEndTime)
+                                        }
                                     } else if (assistant.enableMemoryConsolidation) {
-                                        archiveConversation(oldId, force = true)
+                                        val episodeEndTime = archiveConversation(oldId, force = true)
+                                        if (episodeEndTime != null) {
+                                            conversationRepo.updateLastArchivedMessageTime(oldId, episodeEndTime)
+                                        }
                                     }
                                 }
                             }
@@ -649,27 +675,28 @@ class ChatService(
     @Suppress("UNCHECKED_CAST")
     suspend fun archiveConversation(
         conversationId: Uuid, force: Boolean = false, skipEmbedding: Boolean = false
-    ) {
-        if (!archivingConversations.add(conversationId)) return
+    ): Long? {
+        if (!archivingConversations.add(conversationId)) return null
 
+        var archivedEndTime: Long? = null
         try {
-            val conv = conversationRepo.getConversationById(conversationId) ?: return
+            val conv = conversationRepo.getConversationById(conversationId) ?: return null
             val messages = conv.currentMessages
             val existingEpisode = chatEpisodeDAO.getEpisodeByConversationId(conversationId.toString())
             val episodeSignificance = existingEpisode?.significance ?: 0
             val increment = conversationRepo.countNewMessages(conversationId.toString(), existingEpisode?.endTime ?: 0L)
             if (!force) {
                 if (existingEpisode != null) {
-                    if (!force && increment < 4) return
+                    if (!force && increment < 4) return null
                 } else if (messages.size < 4) {
-                    return
+                    return null
                 }
             }
 
             val settings = settingsStore.settingsFlow.first()
             val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
 
-            if (!assistant.enableMemoryConsolidation && !force) return
+            if (!assistant.enableMemoryConsolidation && !force) return null
 
             val baseSummary = existingEpisode?.content
             val newMessagesEntities = conversationRepo.getMessagesForSummary(
@@ -682,15 +709,15 @@ class ChatService(
             }
 
             if (newMessages.isEmpty() && baseSummary != null && !force) {
-                return
+                return null
             }
 
             val modelId = assistant.summarizerModelId ?: settings.summarizerModelId
             val model = settings.findModelById(modelId)
                 ?: assistant.chatModelId?.let { settings.findModelById(it) }
                 ?: settings.getCurrentChatModel()
-                ?: return
-            val provider = model.findProvider(settings.providers) ?: return
+                ?: return null
+            val provider = model.findProvider(settings.providers) ?: return null
             val handler = providerManager.getProviderByType(provider)
 
             val backgroundModelId = assistant.backgroundModelId ?: settings.backgroundModelId
@@ -746,13 +773,15 @@ class ChatService(
                     lastAccessedAt = System.currentTimeMillis()
                 )
                 memoryRepository.saveEpisode(episode)
-                Log.i(TAG, "Archived L2 memory for $conversationId. force=$force")
+                archivedEndTime = episode.endTime
+                Log.i(TAG, "Archived L2 memory for $conversationId. force=$force, endTime=$archivedEndTime")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to archive conversation $conversationId", e)
         } finally {
             archivingConversations.remove(conversationId)
         }
+        return archivedEndTime
     }
 
     fun sendMessage(
@@ -1145,7 +1174,7 @@ class ChatService(
                 val baseMessages = selectMessagesForGeneration(
                     messageNodes = currentConversation.messageNodes,
                     contextEndNodeId = contextEndNodeId,
-                    truncateIndex = currentConversation.truncateIndex
+                    lastArchivedMessageTime = currentConversation.lastArchivedMessageTime
                 )
                     .filter { msg ->
                         msg.role != MessageRole.ASSISTANT ||
@@ -1289,7 +1318,7 @@ class ChatService(
                             }
 
                         },
-                        truncateIndex = 0,
+                        lastArchivedMessageTime = 0L,
                         enabledModeIds = currentConversation.enabledModeIds,
                         contextSummary = currentEpisode?.content?.removePrefix("虚拟世界："),
                         temporarySummaries = emptyList(),
@@ -2132,7 +2161,9 @@ class ChatService(
                     UIMessage.user(
                         settings.suggestionPrompt.applyPlaceholders(
                             "locale" to Locale.getDefault().displayName,
-                            "content" to conversation.currentMessages.truncate(conversation.truncateIndex).takeLast(8)
+                            "content" to conversation.currentMessages
+                                .filter { it.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() > conversation.lastArchivedMessageTime }
+                                .takeLast(8)
                                 .joinToString("\n") { it.summaryAsText() })
                     )
                 ), TextGenerationParams(model, 1.0f, 1.0f, thinkingBudget = 0)

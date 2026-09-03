@@ -155,17 +155,22 @@ class ConversationMessageMutationTest {
             UIMessage.user("latest user"),
             UIMessage.assistant("placeholder")
         )
-        val nodes = messages.mapIndexed { index, message -> node(message, orderIndex = index) }
+        // 节点 0..3 的 timelineCreatedAt = 1..4，模拟真实时间顺序
+        val nodes = messages.mapIndexed { index, message ->
+            node(message, orderIndex = index, timelineCreatedAt = (index + 1).toLong())
+        }
 
+        // lastArchivedMessageTime = 2L：节点 0,1 已归档（timelineCreatedAt <= 2L）
         val context = selectMessagesForGeneration(
             messageNodes = nodes,
             contextEndNodeId = nodes[2].id,
-            truncateIndex = 2
+            lastArchivedMessageTime = 2L
         )
+        // lastArchivedMessageTime = 3L：节点 0,1,2 已归档；rangeStart=3 >= rangeEndExclusive=2 → 空
         val fullyTruncatedRange = selectMessagesForGeneration(
             messageNodes = nodes,
             contextEndNodeId = nodes[1].id,
-            truncateIndex = 3
+            lastArchivedMessageTime = 3L
         )
 
         assertEquals(listOf(messages[2]), context)
@@ -193,7 +198,7 @@ class ConversationMessageMutationTest {
         val context = selectMessagesForGeneration(
             messageNodes = nodes,
             contextEndNodeId = targetUser.id,
-            truncateIndex = 0
+            lastArchivedMessageTime = 0L
         ).filter { message ->
             message.role != MessageRole.ASSISTANT || message.parts.isNotEmpty()
         }
@@ -211,7 +216,7 @@ class ConversationMessageMutationTest {
         val context = selectMessagesForGeneration(
             messageNodes = nodes,
             contextEndNodeId = Uuid.random(),
-            truncateIndex = 0
+            lastArchivedMessageTime = 0L
         )
 
         assertTrue(context.isEmpty())
@@ -229,10 +234,11 @@ class ConversationMessageMutationTest {
         versionTag = versionTag
     )
 
-    private fun node(message: UIMessage, orderIndex: Int): MessageNode = MessageNode(
+    private fun node(message: UIMessage, orderIndex: Int, timelineCreatedAt: Long = 0L): MessageNode = MessageNode(
         messages = listOf(message),
         conversationId = conversationId,
-        orderIndex = orderIndex
+        orderIndex = orderIndex,
+        timelineCreatedAt = timelineCreatedAt
     )
 
     private fun conversation(nodes: List<MessageNode>): Conversation = Conversation(
