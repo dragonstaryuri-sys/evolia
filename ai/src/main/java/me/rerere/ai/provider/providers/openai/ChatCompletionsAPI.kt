@@ -461,8 +461,26 @@ class ChatCompletionsAPI(
                         }
                     }
 
-                    "ark.cn-beijing.volces.com", "open.bigmodel.cn", "api.deepseek.com", "api.moonshot.cn" -> {
-                        // 豆包 (火山) / 智谱 (GLM) / DeepSeek / Kimi
+                    "open.bigmodel.cn" -> {
+                        // 智谱 (GLM)：部分"始终思考"模型强制开启推理，拒绝 type=disabled (错误码 1210)
+                        // 错误提示："该模型始终思考，不支持关闭思考；请使用 low、high 或 max。"
+                        // 因此统一发送 type=enabled，将 OFF 级别降级为 reasoning_effort=low
+                        put("thinking", buildJsonObject {
+                            put("type", "enabled")
+                        })
+                        val effort = when (level) {
+                            ReasoningLevel.OFF, ReasoningLevel.LOW -> "low"
+                            ReasoningLevel.MEDIUM -> "medium"
+                            ReasoningLevel.HIGH -> "high"
+                            ReasoningLevel.AUTO -> null
+                        }
+                        if (effort != null) {
+                            put("reasoning_effort", effort)
+                        }
+                    }
+
+                    "ark.cn-beijing.volces.com", "api.deepseek.com", "api.moonshot.cn" -> {
+                        // 豆包 (火山) / DeepSeek / Kimi
                         put("thinking", buildJsonObject {
                             put("type", if (!level.isEnabled) "disabled" else "enabled")
                         })

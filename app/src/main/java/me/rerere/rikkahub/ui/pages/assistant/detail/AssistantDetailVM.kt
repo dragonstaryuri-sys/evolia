@@ -570,6 +570,7 @@ class AssistantDetailVM(
                                 null
                             } else if (response.isBlank()) {
                                 Log.w(TAG, "AI returned blank response for L1 archive")
+                                setSnackbarMessage(context.getString(R.string.manual_archive_l1_empty_summary))
                                 null
                             } else {
                                 response
@@ -644,6 +645,8 @@ class AssistantDetailVM(
 
                 if (archiveCount > 0) {
                     setSnackbarMessage(context.getString(R.string.manual_archive_l1_success, archiveCount))
+                } else {
+                    setSnackbarMessage(context.getString(R.string.manual_archive_l1_nothing_to_archive))
                 }
             } catch (cancel: CancellationException) {
                 throw cancel

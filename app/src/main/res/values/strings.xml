@@ -1595,6 +1595,8 @@
   <string name="manual_archive_l1_no_model">No summary model configured, please go to Model Settings first</string>
   <string name="manual_archive_l1_timeout">Summary model response timed out, please try again later</string>
   <string name="manual_archive_l1_success">Successfully archived %d segments</string>
+  <string name="manual_archive_l1_nothing_to_archive">No messages to archive (messages fewer than threshold or all archived already)</string>
+  <string name="manual_archive_l1_empty_summary">Summarization model returned empty content, please try again later</string>
   <string name="operation_manual">Operation Manual</string>
   <string name="operation_description">Check the detailed instructions for function usage</string>
   <!-- Favorites related functions -->
