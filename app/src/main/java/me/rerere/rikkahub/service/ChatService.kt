@@ -1577,20 +1577,83 @@ class ChatService(
                                         }
                                     )
                                     updateConversation(conversationId) { currentConversation }
-                                    mutateConversationAndSave(conversationId) { current -> current }
                                 }
                             }
                         }
                     }
 
             }.onFailure { e ->
-                if (e is kotlinx.coroutines.CancellationException) {
-                    return@onFailure
+                val isCancellation = e is kotlinx.coroutines.CancellationException
+
+                // ===== 取消（用户点打断/停止生成 / 微信模式用户抢发新消息）时的兜底 =====
+                // 根因：runCatching 主体在 `.collect { ... }` 抛出 CancellationException 后，
+                // collect 之后的"微信 flush + usage 迁移 + mutateConversationAndSave 入库"
+                // 都不会执行。修复前 onFailure 对 CancellationException 直接 return，
+                // 导致普通模式下已流式显示给用户的 partial text 没写进 DB，UI 刷新就丢消息。
+                //
+                // 这里做两件事，**并且严格保留微信模式原有的"未打字文本丢弃"语义**：
+                //   A) 刷新 currentConversation 为 Flow 的最新内存态（保证拿到 onCompletion
+                //      中 finishReasoning() 写回的"已结束生成"状态）。
+                //      注意：微信模式下不主动 flush wechatSentenceBuffer，保留原作者注释
+                //      "collect 抛 CancellationException，未存的不继续" 的语义——
+                //      用户在打字动画还没打完时抢先发下一条，"还没打出来的后半句"直接丢弃。
+                //   B) 统一调用 mutateConversationAndSave 把内存快照入库。
+                //      对普通模式 = 修复丢消息。
+                //      对微信模式 = 只入库已经"逐句存过的完整句"，缓冲区尾巴丢弃（与修改前一致）。
+                if (isCancellation) {
+                    val latestSettings = settingsStore.settingsFlow.value
+                    val latestConvSnapshot = getConversationFlow(conversationId).value
+                        .takeIf { it.id == conversationId } ?: currentConversation
+                    currentConversation = latestConvSnapshot
+                    val latestAssistant = assistantOverride
+                        ?: latestSettings.getAssistantById(currentConversation.assistantId)
+                        ?: latestSettings.getCurrentAssistant()
+                    val wechatModeNow = latestSettings.getEffectiveDisplaySetting(latestAssistant).wechatMode
+
+                    // 微信模式：usage / 上下文来源迁移（若 generateText 的 onCompletion 已在
+                    // wechatOriginalAISnapshot 里回传了这些元数据）。
+                    // 这一步只更新"已经逐句存为节点的那些分句"的元信息，不触碰分句缓冲，
+                    // 也不改变"丢弃未打字文本"的用户可见行为。
+                    if (wechatModeNow) {
+                        wechatOriginalAISnapshot?.let { snapshot ->
+                            val hasUsage = snapshot.usage != null
+                            val hasContextSources = snapshot.usedLorebookEntries != null ||
+                                snapshot.usedModes != null ||
+                                snapshot.usedMemories != null
+                            if (hasUsage || hasContextSources) {
+                                val nodes = currentConversation.messageNodes
+                                val lastAssistantIdx = nodes.indexOfLast { node ->
+                                    node.messages.any { it.role == MessageRole.ASSISTANT }
+                                }
+                                if (lastAssistantIdx >= 0) {
+                                    currentConversation = currentConversation.copy(
+                                        messageNodes = nodes.mapIndexed { idx, node ->
+                                            if (idx == lastAssistantIdx) {
+                                                node.copy(messages = node.messages.map { msg ->
+                                                    if (msg.role == MessageRole.ASSISTANT) {
+                                                        msg.copy(
+                                                            usage = snapshot.usage,
+                                                            usedLorebookEntries = snapshot.usedLorebookEntries,
+                                                            usedModes = snapshot.usedModes,
+                                                            usedMemories = snapshot.usedMemories,
+                                                            modelId = snapshot.modelId
+                                                        )
+                                                    } else msg
+                                                })
+                                            } else node
+                                        }
+                                    )
+                                    updateConversation(conversationId) { currentConversation }
+                                }
+                            }
+                        }
+                    }
                 }
+
+                // 统一持久化当前内存快照到 DB（取消/异常两种出口都走这里）。
+                // 使用 appScope + persistenceMutex 串行，防止打断后用户立即发新消息造成旧覆盖新。
                 val finalConv = currentConversation
                 appScope.launch {
-                    // Persist whatever is current when this job gets the write lock. The
-                    // user may already have sent another message after the failure.
                     mutateConversationAndSave(conversationId) { current -> current }
                     if (!temporaryConversations.contains(conversationId)) {
                         val currentSettings = settingsStore.settingsFlow.value
@@ -1600,7 +1663,7 @@ class ChatService(
                         settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                     }
                 }
-                if (e !is kotlinx.coroutines.CancellationException) {
+                if (!isCancellation) {
                     val friendlyError = translateError(e)
                     _errorFlow.emit(friendlyError)
                     Logging.log(TAG, "handleMessageComplete: $friendlyError")
