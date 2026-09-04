@@ -303,7 +303,11 @@ class ChatVM(
                     }
                 )
             }
-            paginationManager?.loadInitial()
+            // 不调用 paginationManager.loadInitial()：
+            // mutateConversationAndSave 会通过 conversation StateFlow → syncConversationNodes
+            // 直接按 nodeId 替换 pagination 缓存里的那一条节点并 publish，不会重置整个窗口，
+            // 避免"列表短暂清空再重建"导致的闪屏。shownTranscriptions 是 mutableStateSetOf，
+            // 自身就能驱动 Bubble 的转写文本展开显示。
             // 转写成功后自动显示在 UI 上（用户既然主动点"转文字"，就直接展示文本）
             shownTranscriptions.add(audioUrl)
         }
@@ -805,7 +809,10 @@ class ChatVM(
                         }
                     )
                 }
-                paginationManager?.loadInitial()
+                // 不调用 paginationManager.loadInitial()：
+                // 理由同 manualTranscribeAudio——mutation 会走 conversation StateFlow，
+                // 由 syncConversationNodes 按 nodeId 局部替换并 publish，避免整页
+                // Loading→空→回显 导致的闪屏（用户松手发送语音后肉眼明显能看到）。
             }
 
             // 5. 移除 pending；若已清空且有待触发消息，则**同步**触发一次 AI
