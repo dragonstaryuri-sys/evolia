@@ -2170,7 +2170,7 @@ class LocalTools(
                                 buildJsonObject {
                                     put("success", true)
                                     put("action", "hangup")
-                                    put("note", "挂断指令已发出，通话将立即结束。")
+                                    put("note", "挂断指令已发出，通话将在60s内结束。")
                                 }
                             }
                         }

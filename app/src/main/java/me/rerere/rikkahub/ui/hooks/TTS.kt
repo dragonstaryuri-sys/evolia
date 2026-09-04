@@ -171,6 +171,10 @@ class CustomTtsStateImpl(
     private val autoReadMutex = Mutex()
     private var lastProcessedMessageId: Uuid? = null
     private var lastProcessedIndex = 0
+    // 记录最后一次检测到生成任务活跃的时间戳。
+    // 用于区分"打开已有会话时的历史 assistant 消息"（应跳过）和
+    // "新生成但 collect 时 job 已恰好变 null 的 assistant 消息"（应朗读）。
+    private var lastJobActiveTimeMs: Long = 0L
     // 通话期间挂起自动朗读消费（true 时 startAutoRead 不推进指针、不调用 speak）
     private val autoReadPaused = AtomicBoolean(false)
 
@@ -397,6 +401,7 @@ class CustomTtsStateImpl(
         autoReadJob?.cancel()
         lastProcessedMessageId = null
         lastProcessedIndex = 0
+        lastJobActiveTimeMs = 0L
 
         val convFlow = chatService.getConversationFlow(conversationId)
         val jobFlow = chatService.getGenerationJobStateFlow(conversationId)
@@ -415,6 +420,11 @@ class CustomTtsStateImpl(
                 // 挂断恢复后，从通话开始前的断点继续朗读，保证不漏读也不重复读
                 if (autoReadPaused.get()) {
                     return@collect
+                }
+
+                // 记录生成任务活跃时间，用于后续判断 assistant 消息是否为新生成的
+                if (job != null) {
+                    lastJobActiveTimeMs = System.currentTimeMillis()
                 }
 
                 if (!autoPlay) {
@@ -438,7 +448,11 @@ class CustomTtsStateImpl(
                         .joinToString("\n") { it.text }
 
                     if (lastProcessedMessageId != lastMsg.id) {
-                        if (lastProcessedMessageId == null && job == null) {
+                        // 10 秒内有生成活动则认为这条 assistant 消息是新生成的，
+                        // 即使 collect 时 job 已恰好变 null（Flow 异步时序竞争）也不跳过。
+                        val recentlyGenerating = lastJobActiveTimeMs > 0L &&
+                            System.currentTimeMillis() - lastJobActiveTimeMs < 10_000
+                        if (lastProcessedMessageId == null && job == null && !recentlyGenerating) {
                             lastProcessedMessageId = lastMsg.id
                             lastProcessedIndex = rawContent.length
                         } else {
@@ -487,6 +501,7 @@ class CustomTtsStateImpl(
         autoReadJob = null
         lastProcessedMessageId = null
         lastProcessedIndex = 0
+        lastJobActiveTimeMs = 0L
     }
 
     override fun pauseAutoReadForCall() {

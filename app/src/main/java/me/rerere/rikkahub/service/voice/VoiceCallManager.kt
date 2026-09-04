@@ -302,6 +302,8 @@ class VoiceCallManager(
     @Volatile private var asrIgnoreUntil: Long = 0L
     // 最近播过的问候文本，用于 ASR 内容匹配过滤（防止回声被识别成 user 消息）
     @Volatile private var lastGreetingText: String? = null
+    // 标记本次通话是否为 Agent 主动拨打（startCall 时 AI 正在生成开场白）
+    @Volatile private var isAgentInitiatedCall: Boolean = false
 
     // ===== WebRTC APM：AEC3 + NS 全双工回声消除（session 绑定，Android MediaServer 自动路由 far-end） =====
     // 原理：WebRtcAudioEffects 是 android.media.AudioEffect 的子类，绑定到 AudioRecord.audioSessionId 后，
@@ -340,6 +342,8 @@ class VoiceCallManager(
         _callStatus.value = CallStatus.CONNECTING
         resetStreamingState()
         lastUserSpeakAtMs = System.currentTimeMillis()  // 用户沉默超时计时起点
+        // 记录是否为 Agent 主动拨打（startCall 时 AI 正在生成开场白）
+        isAgentInitiatedCall = chatService.isGenerating(conversationId)
 
         // 初始化三层身份：新的 callSession
         identity = CallIdentity(callSessionId = "call_${Uuid.random().toString().substring(0, 8)}")
@@ -406,54 +410,115 @@ class VoiceCallManager(
         val convId = conversationId ?: return
         listenerCueJob?.cancel()
         listenerCueJob = scope.launch {
-            // 1. 【并行优化】立刻启动 ASR 录音初始化（但还不接受 final 结果，由 asrIgnoreUntil 控制）
-            //    这样问候语播完时，AudioRecord + ASR engine 已经就绪，用户一开口就能被识别
-            if (!_isMuted.value) {
-                _callStatus.value = CallStatus.LISTENING
-                val settings = settingsStore.settingsFlow.value
-                val asrSetting = settings.getSelectedASRProvider()
-                if (asrSetting != null) {
-                    // 先启动一次监听（内部会初始化 AudioRecord + ASR engine），
-                    // 下面的 asrIgnoreUntil 会保证问候期间的结果被丢弃
-                    warmUpAsrAndListening(asrSetting)
+            val settings = settingsStore.settingsFlow.value
+            val asrSetting = settings.getSelectedASRProvider()
+
+            if (isAgentInitiatedCall) {
+                // ===== Agent 主动拨打电话：等待 AI 生成完成后朗读开场白 =====
+                // 播放期间不启动 ASR（与 AI 回复期间一致），避免长文本回声被识别成用户输入
+                if (chatService.isGenerating(convId)) {
+                    Log.i(TAG, "Waiting for AI generation to complete before playing opening...")
+                    val waitDeadline = System.currentTimeMillis() + 10_000
+                    while (chatService.isGenerating(convId) && _isActive.value && System.currentTimeMillis() < waitDeadline) {
+                        delay(200)
+                    }
                 }
+                val openingText = getCallOpeningText(convId)
+                identity = identity.newTurn().newGeneration()
+                if (openingText != null) {
+                    Log.i(TAG, "Call opening (agent-initiated): \"${openingText.take(50)}...\" start")
+                    _callStatus.value = CallStatus.SPEAKING
+                    runCatching {
+                        ttsController.setVolume(1f)
+                        ttsController.speak(openingText, flush = true)
+                        // 先等 TTS 真正开始播放（speak 是异步的，isSpeaking 要等音频到达才变 true）
+                        var startGuard = 0
+                        while (_isActive.value && !ttsController.isSpeaking.value && startGuard < 20) {
+                            delay(50); startGuard++
+                        }
+                        // 等开场白播放结束
+                        while (_isActive.value && ttsController.isSpeaking.value) {
+                            delay(100)
+                        }
+                    }.onFailure { Log.w(TAG, "Opening play failed", it) }
+                } else {
+                    // 极端情况：等不到开场白，退化为问候语
+                    Log.w(TAG, "Agent-initiated call but no opening text found, fallback to greeting")
+                    playGreetingAndWarmUp(asrSetting)
+                }
+            } else {
+                // ===== 用户主动拨打电话：播放 "喂？" 问候语 =====
+                playGreetingAndWarmUp(asrSetting)
             }
 
-            // 2. 接通问候："喂？"
-            val greetingText = "喂？"
-            Log.i(TAG, "Call greeting: \"$greetingText\" start")
-            lastGreetingText = greetingText
-            // 接通问候属于 call 级别的 listener cue，单独占一个 turn/generation，绝不写入 chat messages
-            identity = identity.newTurn().newGeneration()
+            // ★ ASR 忽略期从 TTS 播完开始算，覆盖尾音回声
+            //   开场白场景此前未启动 ASR，此处忽略期只兜 startListening 启动后的尾音残余；
+            //   问候语场景 warmUp ASR 已在录音，忽略期丢弃问候尾音回声
+            val audioEndMs = System.currentTimeMillis()
+            asrIgnoreUntil = audioEndMs + ASR_IGNORE_PERIOD_MS
+            Log.i(TAG, "Opening/Greeting done, ignore period ${ASR_IGNORE_PERIOD_MS}ms starts NOW")
 
-            runCatching {
-                ttsController.setVolume(1f)
-                ttsController.speak(greetingText, flush = true)
-                var silent = 0L
-                while (_isActive.value && ttsController.isSpeaking.value) {
-                    delay(100)
-                    silent += 100
-                    if (silent > 2000L) break // 保护：问候最多等 2s
-                }
-            }.onFailure { Log.w(TAG, "Greeting play failed", it) }
-
-            // 3. ★ ASR 忽略期从 TTS 播完开始算，而不是从 TTS 开始播放算。
-            //   之前从 greetingStartMs + 500ms → TTS 播 "喂？" 就要 500-800ms，
-            //   忽略期在问候语还没播完就结束了 → 尾音回声被 ASR 录到 → 识别成 "喂"
-            val greetingEndMs = System.currentTimeMillis()
-            asrIgnoreUntil = greetingEndMs + ASR_IGNORE_PERIOD_MS
-            Log.i(TAG, "Greeting done, ignore period ${ASR_IGNORE_PERIOD_MS}ms starts NOW")
-
-            // 4. 正式进入监听：忽略期结束后才接受 ASR 结果
-            //    （warmUpAsrAndListening 已经在录音，但 asrIgnoreUntil 会丢弃此期间的所有 final）
-
-            // 4. 正式进入监听：如果上面的 warmUpAsrAndListening 被用户取消/打断了，这里兜底再启
+            // 正式进入监听
+            //   开场白场景：此前未启动 ASR，此处首次启动；
+            //   问候语场景：warmUp 已启动，startListening 会先 cancel 再重启，安全
             if (_isActive.value) {
-                Log.i(TAG, "Now accepting user voice input (greeting ignore period ended)")
-                // 如果 warmUpAsrAndListening 已经启动了一次监听且仍在运行，startListening 会先 cancel 再重启，安全
+                Log.i(TAG, "Now accepting user voice input (ignore period ended)")
                 startListening()
             }
         }
+    }
+
+    /**
+     * 用户主动拨打场景：播放 "喂？" 问候语，并并行 warmUp ASR 录音。
+     * 问候语很短（几百毫秒），ASR 来不及出 final，可以并行 warmUp 让用户早开口。
+     */
+    private suspend fun playGreetingAndWarmUp(asrSetting: me.rerere.asr.provider.ASRProviderSetting?) {
+        val greetingText = "喂？"
+        Log.i(TAG, "Call greeting: \"$greetingText\" start")
+        lastGreetingText = greetingText
+        if (!_isMuted.value && asrSetting != null) {
+            _callStatus.value = CallStatus.LISTENING
+            warmUpAsrAndListening(asrSetting)
+        }
+        runCatching {
+            ttsController.setVolume(1f)
+            ttsController.speak(greetingText, flush = true)
+            // 先等 TTS 真正开始播放（speak 是异步的，isSpeaking 要等音频到达才变 true）
+            var startGuard = 0
+            while (_isActive.value && !ttsController.isSpeaking.value && startGuard < 20) {
+                delay(50); startGuard++
+            }
+            // 等问候语播放结束
+            var silent = 0L
+            while (_isActive.value && ttsController.isSpeaking.value) {
+                delay(100)
+                silent += 100
+                if (silent > 2000L) break // 保护：问候最多等 2s
+            }
+        }.onFailure { Log.w(TAG, "Greeting play failed", it) }
+    }
+
+    /**
+     * 获取 Agent 主动拨打电话场景下的开场白文本。
+     * 取会话最后一条 assistant 消息（通话刚接通时，最后一条 assistant 消息即为开场白），
+     * 不依赖时间戳过滤（开场白消息的 createdAt 可能与 callStartTimeMs 过于接近甚至略早，
+     * 用 timelineCreatedAt >= callStartMs 过滤会误判为空）。
+     * 返回净化后的纯文本，如果不存在则返回 null。
+     */
+    private fun getCallOpeningText(convId: Uuid): String? {
+        val conv = chatService.getConversationFlow(convId).value
+        val openingNode = conv.messageNodes
+            .filter { it.role == MessageRole.ASSISTANT }
+            .maxByOrNull { it.timelineCreatedAt }
+            ?: return null
+        val text = openingNode.currentMessage.parts
+            .filterIsInstance<UIMessagePart.Text>()
+            .joinToString("") { it.text }
+            .trim()
+            .replace(Regex("```[\\s\\S]*?```"), "")
+            .replace(Regex("[#*_>`]+"), "")
+            .replace(Regex("\\[[^\\]]+\\]\\([^)]+\\)"), "")
+        return if (text.isNotBlank()) text else null
     }
 
     /**
@@ -1816,6 +1881,7 @@ class VoiceCallManager(
         _isMuted.value = false
         asrPermissionRetryUsed = false
         asrFallbackUsed = false
+        isAgentInitiatedCall = false
         identity = CallIdentity(callSessionId = "none")
         _callStartTimeMs.value = 0L
         _listeningText.value = null
