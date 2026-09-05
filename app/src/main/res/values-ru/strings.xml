@@ -377,6 +377,7 @@
   <string name="setting_mcp_page_basic_settings">Основные настройки</string>
   <string name="setting_mcp_page_custom_headers">Пользовательские заголовки</string>
   <string name="setting_mcp_page_custom_headers_desc">Добавьте пользовательские заголовки HTTP для запросов к серверу MCP</string>
+  <string name="setting_mcp_page_get_authorization_guide">Перейти на официальный сайт для получения Authorization</string>
   <string name="setting_mcp_page_delete_header">Удалить заголовок</string>
   <string name="setting_mcp_page_enable">Включить</string>
   <string name="setting_mcp_page_enable_desc">Включить ли этот MCP-сервер</string>

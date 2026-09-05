@@ -377,6 +377,7 @@
   <string name="setting_mcp_page_basic_settings">基本設定</string>
   <string name="setting_mcp_page_custom_headers">カスタムヘッダー</string>
   <string name="setting_mcp_page_custom_headers_desc">MCPサーバーリクエストにカスタムHTTPヘッダーを追加</string>
+  <string name="setting_mcp_page_get_authorization_guide">公式サイトで Authorization を取得</string>
   <string name="setting_mcp_page_delete_header">ヘッダーを削除</string>
   <string name="setting_mcp_page_enable">有効</string>
   <string name="setting_mcp_page_enable_desc">このMCPサーバーを有効にするかどうか</string>

@@ -383,6 +383,7 @@
   <string name="setting_mcp_page_basic_settings">基础设置</string>
   <string name="setting_mcp_page_custom_headers">自定义请求头</string>
   <string name="setting_mcp_page_custom_headers_desc">为MCP服务器请求添加自定义HTTP头</string>
+  <string name="setting_mcp_page_get_authorization_guide">点击前往官网获取 Authorization</string>
   <string name="setting_mcp_page_delete_header">删除请求头</string>
   <string name="setting_mcp_page_enable">启用</string>
   <string name="setting_mcp_page_enable_desc">是否启用此MCP服务器</string>

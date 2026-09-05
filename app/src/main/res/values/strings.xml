@@ -410,6 +410,7 @@
   <string name="setting_mcp_page_basic_settings">Basic Settings</string>
   <string name="setting_mcp_page_custom_headers">Custom Headers</string>
   <string name="setting_mcp_page_custom_headers_desc">Add custom HTTP headers for MCP server requests</string>
+  <string name="setting_mcp_page_get_authorization_guide">Click to get Authorization from official website</string>
   <string name="setting_mcp_page_delete_header">Delete Header</string>
   <string name="setting_mcp_page_enable">Enable</string>
   <string name="setting_mcp_page_enable_desc">Enable this MCP server</string>

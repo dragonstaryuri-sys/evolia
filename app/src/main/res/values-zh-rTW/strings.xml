@@ -378,6 +378,7 @@
   <string name="setting_mcp_page_basic_settings">基本設定</string>
   <string name="setting_mcp_page_custom_headers">自定義請求頭</string>
   <string name="setting_mcp_page_custom_headers_desc">為MCP伺服器請求添加自定義HTTP頭</string>
+  <string name="setting_mcp_page_get_authorization_guide">點擊前往官網獲取 Authorization</string>
   <string name="setting_mcp_page_delete_header">刪除請求頭</string>
   <string name="setting_mcp_page_enable">啟用</string>
   <string name="setting_mcp_page_enable_desc">是否啟用此MCP伺服器</string>
