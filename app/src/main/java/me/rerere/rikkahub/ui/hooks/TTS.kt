@@ -427,9 +427,16 @@ class CustomTtsStateImpl(
                     lastJobActiveTimeMs = System.currentTimeMillis()
                 }
 
+                val lastMsg = conv.currentMessages.lastOrNull()
+                Log.d(
+                    TAG,
+                    "[AutoRead] collect: job=${job != null}, autoPlay=$autoPlay, " +
+                        "lastRole=${lastMsg?.role}, lastProcessedId=$lastProcessedMessageId, " +
+                        "lastProcessedIndex=$lastProcessedIndex, jobActiveMs=$lastJobActiveTimeMs"
+                )
+
                 if (!autoPlay) {
                     controller.stop()
-                    val lastMsg = conv.currentMessages.lastOrNull()
                     if (lastMsg?.role == MessageRole.ASSISTANT) {
                         val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
                             .joinToString("\n") { it.text }
@@ -442,7 +449,6 @@ class CustomTtsStateImpl(
                     return@collect
                 }
 
-                val lastMsg = conv.currentMessages.lastOrNull()
                 if (lastMsg?.role == MessageRole.ASSISTANT) {
                     val rawContent = lastMsg.parts.filterIsInstance<UIMessagePart.Text>()
                         .joinToString("\n") { it.text }
@@ -453,9 +459,11 @@ class CustomTtsStateImpl(
                         val recentlyGenerating = lastJobActiveTimeMs > 0L &&
                             System.currentTimeMillis() - lastJobActiveTimeMs < 10_000
                         if (lastProcessedMessageId == null && job == null && !recentlyGenerating) {
+                            Log.i(TAG, "[AutoRead] SKIP opening message (treated as history): id=${lastMsg.id}")
                             lastProcessedMessageId = lastMsg.id
                             lastProcessedIndex = rawContent.length
                         } else {
+                            Log.i(TAG, "[AutoRead] NEW message detected: id=${lastMsg.id}, recentlyGenerating=$recentlyGenerating")
                             lastProcessedMessageId = lastMsg.id
                             lastProcessedIndex = 0
                         }
@@ -466,6 +474,7 @@ class CustomTtsStateImpl(
                         if (rawContent[i] in terminators) {
                             val sentence = rawContent.substring(lastProcessedIndex, i + 1).trim()
                             if (sentence.isNotEmpty()) {
+                                Log.d(TAG, "[AutoRead] SPEAK sentence: \"${sentence.take(30)}\"")
                                 scope.launch {
                                     autoReadMutex.withLock {
                                         speak(sentence, flushCalled = false)
@@ -480,6 +489,7 @@ class CustomTtsStateImpl(
                     if (job == null && lastProcessedIndex < rawContent.length) {
                         val remaining = rawContent.substring(lastProcessedIndex).trim()
                         if (remaining.isNotEmpty()) {
+                            Log.d(TAG, "[AutoRead] SPEAK remaining: \"${remaining.take(30)}\"")
                             scope.launch {
                                 autoReadMutex.withLock {
                                     speak(remaining, flushCalled = false)

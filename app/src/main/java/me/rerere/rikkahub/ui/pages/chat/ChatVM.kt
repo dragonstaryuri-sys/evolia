@@ -374,8 +374,18 @@ class ChatVM(
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
 
     // 启动自动朗读监听（在 CustomTtsState 单例作用域中运行，不随 VM 销毁而停止）
+    // 必须跟随 _currentActiveId 变化重新订阅：新建话题/切换会话时会话 id 会变，
+    // 若不重新调用 startAutoRead，autoReadJob 仍订阅旧会话的 flow，新消息不会触发朗读。
     init {
         customTtsState.startAutoRead(anchorConversationId, chatService)
+        viewModelScope.launch {
+            _currentActiveId.collect { convId ->
+                if (convId != anchorConversationId) {
+                    Log.i(TAG, "Switching autoRead to conversation: $convId")
+                    customTtsState.startAutoRead(convId, chatService)
+                }
+            }
+        }
     }
 
     val isAiTyping: StateFlow<Boolean> = _currentActiveId
