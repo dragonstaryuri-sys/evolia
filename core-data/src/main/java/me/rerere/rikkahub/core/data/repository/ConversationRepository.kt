@@ -684,6 +684,10 @@ class ConversationRepository(
         // ✨ 新增：对外暴露的只读流
         val state: StateFlow<ChatPaginationState> = _state.asStateFlow()
 
+        // 搜索跳转时记录目标消息 id，避免 syncConversationNodes 用持久化 selectIndex 覆盖
+        // 目标消息的选中态，导致显示成别的版本甚至被 skipContext 过滤掉。
+        private var jumpTargetMessageId: String? = null
+
         private fun publish(
             loadingDirection: PageLoadDirection? = null,
             errorDirection: PageLoadDirection? = null,
@@ -710,6 +714,7 @@ class ConversationRepository(
                 }
                 hasOlder = nodeEntities.size > BATCH_SIZE
                 hasNewer = false
+                jumpTargetMessageId = null
 
                 val nodesToLoad = nodeEntities.take(BATCH_SIZE)
                 val messagesByNodeId = withContext(Dispatchers.IO) { loadMessagesForNodes(nodesToLoad) }
@@ -740,7 +745,11 @@ class ConversationRepository(
                 val sideSize = BATCH_SIZE / 2
                 val target = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodeContainingMessage(assistantIdValue, messageId)
-                } ?: return@withLock loadInitialLocked()
+                }
+                if (target == null) {
+                    Log.d("ChatJump", "loadAroundMessage: target node NOT FOUND for message=$messageId, fallback to loadInitial")
+                    return@withLock loadInitialLocked()
+                }
 
                 val olderResults = withContext(Dispatchers.IO) {
                     chatMessageDAO.getNodesOlderThan(
@@ -782,11 +791,19 @@ class ConversationRepository(
                 _currentNodes.addAll(newerNodes)
                 hasOlder = olderResults.size > sideSize
                 hasNewer = newerResults.size > sideSize
+                jumpTargetMessageId = messageId
 
                 Log.d(
                     TAG,
                     "pagination target: message=$messageId, node=${target.id}, " +
                         "window=${_currentNodes.size}, hasOlder=$hasOlder, hasNewer=$hasNewer"
+                )
+                Log.d(
+                    "ChatJump",
+                    "loadAroundMessage: targetMsg=$messageId node=${target.id} " +
+                        "nodeMsgCount=${(messagesByNodeId[target.id] ?: emptyList()).size} " +
+                        "targetNodeSelectIndex=${targetNode.selectIndex} " +
+                        "targetInNodeMsgs=${targetNode.messages.any { it.id.toString() == messageId }}"
                 )
                 publish()
             } catch (e: Exception) {
@@ -807,6 +824,7 @@ class ConversationRepository(
                 }
                 hasOlder = nodeEntities.size > BATCH_SIZE
                 hasNewer = false
+                jumpTargetMessageId = null
                 val nodesToLoad = nodeEntities.take(BATCH_SIZE)
                 val messagesByNodeId = withContext(Dispatchers.IO) { loadMessagesForNodes(nodesToLoad) }
                 val nodes = nodesToLoad.map { node ->
@@ -977,8 +995,38 @@ class ConversationRepository(
                 if (cached.conversationId != conversationId) continue
                 val replacement = incomingById[cached.id] ?: continue
                 if (cached != replacement) {
-                    _currentNodes[index] = replacement
-                    changed = true
+                    val isEmptyReplacement = replacement.messages.isEmpty() && cached.messages.isNotEmpty()
+                    val isTargetNode = jumpTargetMessageId != null &&
+                        (cached.messages.any { it.id.toString() == jumpTargetMessageId } ||
+                            replacement.messages.any { it.id.toString() == jumpTargetMessageId })
+                    if (isEmptyReplacement || isTargetNode) {
+                        Log.d("ChatJump", "syncConversationNodes: node=${cached.id} " +
+                            "cachedMsgCount=${cached.messages.size} newMsgCount=${replacement.messages.size} " +
+                            "isEmptyReplacement=$isEmptyReplacement isTargetNode=$isTargetNode")
+                    }
+
+                    // 会话对象对老节点只加载了元数据（messages 为空），
+                    // 不能用空壳覆盖分页窗口里已加载好消息的节点（例如 loadAroundMessage 的目标节点）。
+                    val merged = if (replacement.messages.isEmpty() && cached.messages.isNotEmpty()) {
+                        replacement.copy(
+                            messages = cached.messages,
+                            selectIndex = cached.selectIndex
+                        )
+                    } else replacement
+
+                    // 搜索跳转场景：若被替换的节点正是目标消息所在节点，
+                    // 保留 selectIndex 指向目标消息，避免持久化值把显示切到别的版本。
+                    val finalReplacement = if (jumpTargetMessageId != null &&
+                        merged.messages.any { it.id.toString() == jumpTargetMessageId }) {
+                        val targetIdx = merged.messages.indexOfFirst {
+                            it.id.toString() == jumpTargetMessageId
+                        }
+                        merged.copy(selectIndex = targetIdx)
+                    } else merged
+                    if (finalReplacement != cached) {
+                        _currentNodes[index] = finalReplacement
+                        changed = true
+                    }
                 }
             }
 
@@ -1004,7 +1052,12 @@ class ConversationRepository(
                 }
             }
 
-            if (changed) publish()
+            if (changed) {
+                Log.d("ChatJump", "syncConversationNodes: done conv=$conversationId " +
+                    "incomingCount=${normalizedNodes.size} windowSize=${_currentNodes.size} " +
+                    "hasNewer=$hasNewer hasOlder=$hasOlder")
+                publish()
+            }
         }
 
         /**
@@ -1014,6 +1067,7 @@ class ConversationRepository(
             _currentNodes.clear()
             hasOlder = false
             hasNewer = false
+            jumpTargetMessageId = null
             _state.value = ChatPaginationState.Idle
         }
     }

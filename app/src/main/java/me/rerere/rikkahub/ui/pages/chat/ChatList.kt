@@ -136,6 +136,13 @@ fun ChatList(
                 instantScroll = true
                 scrollToNodeId = targetNode.id
                 hasScrolledToTarget = true // 标记已经定位过目标节点，后续 items 刷新不再干扰
+                android.util.Log.d("ChatJump", "findTarget: found node=${targetNode.id} " +
+                    "selectIndex=${targetNode.selectIndex} msgCount=${targetNode.messages.size} " +
+                    "currentMsgId=${targetNode.currentMessage.id} currentSkip=${targetNode.currentMessage.skipContext} " +
+                    "itemsSize=${items.size}")
+            } else {
+                android.util.Log.d("ChatJump", "findTarget: NOT FOUND in items. targetMessageId=$targetMessageId " +
+                    "itemsSize=${items.size} turns=${items.count { it is ChatUIItem.Turn }}")
             }
         }
     }
@@ -332,10 +339,16 @@ private fun SharedTransitionScope.ChatListNormal(
         val index = items.indexOfFirst { item ->
             item is ChatUIItem.Turn && item.group.nodes.any { it.id == targetId }
         }
+        android.util.Log.d("ChatJump", "scrollToNode: targetId=$targetId index=$index itemsSize=${items.size}")
         if (index >= 0) {
-            if (instantScroll) state.scrollToItem(index + 1)
-            else state.animateScrollToItem(index + 1)
+            // reverseLayout=true 时 index 0 在底部（最新消息），
+            // scrollToItem(index) 会把目标项对齐到视口底部，确保目标消息可见。
+            // 若用 index+1 会把更旧的下一条放到视口底部，导致目标消息被推出屏幕外
+            // （旧消息 index 大时尤其明显，表现为"无法跳转"）。
+            if (instantScroll) state.scrollToItem(index)
+            else state.animateScrollToItem(index)
             onScrolledToNode()
+            android.util.Log.d("ChatJump", "scrollToNode: scrolled to index=$index")
         }
     }
 
