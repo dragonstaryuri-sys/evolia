@@ -1158,22 +1158,37 @@ class ConversationRepository(
     /**
      * 【L1 Segment 核心分页查询】
      * 使用「时间戳 + 消息 ID」复合游标拉取待总结消息，彻底修复同毫秒 created_at 的边界遗漏。
+     * 仅返回每个节点的当前选中版本（order_index = select_index），避免历史版本污染 segment 摘要。
      *
      * @param lastSummarizedTime  上一批最后一条消息的 created_at
      * @param lastSummarizedId    上一批最后一条消息的 id；空字符串退化为纯时间戳比较（老数据）
+     * @param upperTime           上界时间戳，0 表示不设上界；非 0 时排除 >= 上界的消息（用于自动触发排除最后一条）
+     * @param upperId             上界消息 id，空字符串表示不设上界；非空时排除 (created_at = upperTime AND id >= upperId)
      */
     suspend fun getMessagesForSegmentSummary(
         convId: String,
         lastSummarizedTime: Long,
         lastSummarizedId: String,
-        limit: Int = 100
+        limit: Int = 100,
+        upperTime: Long = 0L,
+        upperId: String = ""
     ): List<ChatMessageEntity> {
         return chatMessageDAO.getMessagesForSummary(
             convId = convId,
             lastTime = lastSummarizedTime,
             lastId = lastSummarizedId,
-            limit = limit
+            limit = limit,
+            upperTime = upperTime,
+            upperId = upperId
         )
+    }
+
+    /**
+     * 获取会话内最后一条"当前选中版本"消息的游标，用作自动归档的上界。
+     * 返回 null 表示会话无可见消息。
+     */
+    suspend fun getLatestSelectedMessageCursor(convId: String): me.rerere.rikkahub.core.data.db.entity.MessageCursor? {
+        return chatMessageDAO.getLatestSelectedMessageCursor(convId)
     }
 
     /**

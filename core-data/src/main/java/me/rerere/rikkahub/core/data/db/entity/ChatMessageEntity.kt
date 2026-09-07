@@ -71,3 +71,13 @@ data class ChatMessageEntity(
     @ColumnInfo(name = "is_deleted", defaultValue = "0")
     val isDeleted: Boolean = false
 )
+
+/**
+ * 消息游标 POJO：用于 segment 归档范围上界。
+ * 仅承载 (created_at, id) 两个字段，供 Room 查询结果映射。
+ * 空会话或全删除时 DAO 返回 null。
+ */
+data class MessageCursor(
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "id") val id: String
+)

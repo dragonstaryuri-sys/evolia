@@ -89,32 +89,65 @@ interface ChatMessageDAO {
     suspend fun countNewMessages(convId: String, lastTime: Long): Int
 
     /**
-     * 按「(created_at, id)」复合游标查询待总结消息。
+     * 按「(created_at, id)」复合游标查询待总结消息，并仅取每个节点的当前选中版本。
+     *
      * - 当 [lastId] 为空时（老数据 / 未设置）：退化为仅按 created_at > :lastTime 比较；
      * - 当 [lastId] 不为空时：created_at > :lastTime 或 (created_at = :lastTime AND id > :lastId)，
      *   配合 ORDER BY created_at ASC, id ASC 彻底解决同毫秒时间戳组边界遗漏问题。
+     * - JOIN chat_message_nodes 后按 m.order_index = n.select_index 过滤，确保同一节点下
+     *   多个版本消息（刷新追加版本场景）只返回当前选中版本，避免历史版本污染 segment 摘要。
+     *
+     * @param upperTime 上界时间戳，0 表示不设上界；非 0 时排除 >= 上界的消息
+     * @param upperId 上界消息 id，空字符串表示不设上界；非空时排除 (created_at = upperTime AND id >= upperId)
      */
     @Query("""
-        SELECT * FROM chat_messages
-        WHERE conversation_id = :convId
-          AND is_deleted = 0
+        SELECT m.* FROM chat_messages m
+        INNER JOIN chat_message_nodes n ON m.node_id = n.id
+        WHERE m.conversation_id = :convId
+          AND m.is_deleted = 0
+          AND m.order_index = n.select_index
           AND (
-            (:lastId = '') AND created_at > :lastTime
-            OR (:lastId <> '') AND (created_at > :lastTime OR (created_at = :lastTime AND id > :lastId))
+            (:lastId = '') AND m.created_at > :lastTime
+            OR (:lastId <> '') AND (m.created_at > :lastTime OR (m.created_at = :lastTime AND m.id > :lastId))
           )
-        ORDER BY created_at ASC, id ASC
+          AND (
+            :upperTime = 0
+            OR m.created_at < :upperTime
+            OR (m.created_at = :upperTime AND m.id < :upperId)
+          )
+        ORDER BY m.created_at ASC, m.id ASC
         LIMIT :limit
     """)
     suspend fun getMessagesForSummary(
         convId: String,
         lastTime: Long,
         lastId: String,
-        limit: Int
+        limit: Int,
+        upperTime: Long = 0L,
+        upperId: String = ""
     ): List<ChatMessageEntity>
 
     @Deprecated("Use getMessagesForSummary(convId, lastTime, lastId, limit) instead. 保留用于 L2 归档等纯时间窗口场景。")
     @Query("SELECT * FROM chat_messages WHERE conversation_id = :convId AND created_at > :lastTime AND is_deleted = 0 ORDER BY created_at ASC, id ASC LIMIT :limit")
     suspend fun getMessagesForSummary(convId: String, lastTime: Long, limit: Int): List<ChatMessageEntity>
+
+    /**
+     * 获取会话内最后一条"当前选中版本"消息的 (created_at, id) 游标。
+     * 同样 JOIN 节点表按 order_index = select_index 过滤，确保拿到的是用户实际看到
+     * 的最新版本而非被刷新抛弃的旧版本。
+     *
+     * 返回 null 表示会话无可见消息。
+     */
+    @Query("""
+        SELECT m.created_at, m.id FROM chat_messages m
+        INNER JOIN chat_message_nodes n ON m.node_id = n.id
+        WHERE m.conversation_id = :convId
+          AND m.is_deleted = 0
+          AND m.order_index = n.select_index
+        ORDER BY m.created_at DESC, m.id DESC
+        LIMIT 1
+    """)
+    suspend fun getLatestSelectedMessageCursor(convId: String): me.rerere.rikkahub.core.data.db.entity.MessageCursor?
 
     // --- 滑动窗口分页查询 ---
     // 注意: 这些查询仅返回节点实体 (ChatMessageNodeEntity)，不再使用 @Relation 加载消息。

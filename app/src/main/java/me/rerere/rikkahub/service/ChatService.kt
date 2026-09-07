@@ -1843,6 +1843,12 @@ class ChatService(
         val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
         val max = if (wechatMode) (assistant.detailMemoryThreshold * 2).toInt() else assistant.detailMemoryThreshold
 
+        // 自动触发时排除"最后一条可刷新消息"：先用游标确定上界，避免统计时把最后一条算进去
+        val upperCursor = conversationRepo.getLatestSelectedMessageCursor(id.toString())
+        if (upperCursor == null) return
+        val upperTime = upperCursor.createdAt
+        val upperId = upperCursor.id
+
         // 使用复合游标分批拉取，循环统计核心消息数，直到触达阈值或数据耗尽
         var cursorTime = conv.lastSummarizedMessageTime
         var cursorId = conv.lastSummarizedMessageId
@@ -1853,7 +1859,9 @@ class ChatService(
                 convId = id.toString(),
                 lastSummarizedTime = cursorTime,
                 lastSummarizedId = cursorId,
-                limit = 200
+                limit = 200,
+                upperTime = upperTime,
+                upperId = upperId
             )
             if (batch.isEmpty()) break
             batch.forEach { entity ->
@@ -1868,27 +1876,41 @@ class ChatService(
             if (batch.size < 200) break
         }
 
-        if (coreMessageCount >= max) summarizeAndRefresh(id, skipArchive = true)
+        if (coreMessageCount >= max) summarizeAndRefresh(id, skipArchive = true, excludeLatestMessage = true)
     }
     @SuppressLint("SuspiciousIndentation")
     suspend fun summarizeAndRefresh(
-        id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false
+        id: Uuid, onlySegments: Boolean = false, skipArchive: Boolean = false,
+        excludeLatestMessage: Boolean = false
     ): ContextRefreshResult = withContext(Dispatchers.IO) {
         if (!summarizingConversations.add(id)) {
             return@withContext ContextRefreshResult(false, errorMessage = "正在总结中...请勿重复操作")
         }
         var totalSummarized = 0
         try {
+            // 自动触发（excludeLatestMessage=true）时，计算最后一条选中版本消息的游标作为上界，
+            // 留出"可刷新的最后一条"给下一轮归档，避免 segment 已包含旧版本却已越过时间锚点。
+            val upperCursor = if (excludeLatestMessage) {
+                conversationRepo.getLatestSelectedMessageCursor(id.toString())
+            } else null
+            // 游标为空说明会话无可见消息，直接结束
+            if (excludeLatestMessage && upperCursor == null) {
+                return@withContext ContextRefreshResult(true, "No messages to summarize")
+            }
             while (true) {
                 val settings = settingsStore.settingsFlow.first()
                 val conv = conversationRepo.getConversationById(id) ?: break
                 val assistant = settings.getAssistantById(conv.assistantId) ?: settings.getCurrentAssistant()
                 // 【问题1 修复】使用「时间戳 + 消息 ID」复合游标分页，避免同毫秒 created_at 组边界遗漏
+                // 【版本污染修复】DAO 层 JOIN 节点表按 order_index = select_index 只取当前选中版本
+                // 【归档范围修复】excludeLatestMessage=true 时传入 upperTime/upperId 排除最后一条
                 val toSummarizeEntities = conversationRepo.getMessagesForSegmentSummary(
                     convId = id.toString(),
                     lastSummarizedTime = conv.lastSummarizedMessageTime,
                     lastSummarizedId = conv.lastSummarizedMessageId,
-                    limit = 100
+                    limit = 100,
+                    upperTime = upperCursor?.createdAt ?: 0L,
+                    upperId = upperCursor?.id ?: ""
                 )
                 if (toSummarizeEntities.size < 2) break
                 val lastMsg = toSummarizeEntities.last()
