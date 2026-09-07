@@ -638,7 +638,9 @@ class LocalTools(
         )
     }
 
-    fun getScheduleTools(): List<Tool> {
+    fun getScheduleTools(
+        assistantId: Uuid
+    ): List<Tool> {
         return listOf(
             Tool(
                 name = "schedule_manager",
@@ -749,7 +751,7 @@ class LocalTools(
                                         }
                                 } else null
 
-                                scheduleRepository.addSchedule(
+                                val scheduleId = scheduleRepository.addSchedule(
                                     ScheduleEntity(
                                         title = title,
                                         content = "",
@@ -771,6 +773,41 @@ class LocalTools(
                                         endTime = endTime,
                                         description = "由你的小机创建"
                                     )
+                                }
+
+                                // 如果有截止时间，自动创建 agent_task 用于到期提醒
+                                if (endTime != null) {
+                                    try {
+                                        val instruction = if (category == "assistant") {
+                                            "你的待办${title}到了截止时间，若未完成请即时完成后更新日程状态哦"
+                                        } else {
+                                            "user的待办${title}到了截止时间，若未完成请督促她即时完成并帮她更新日程状态哦"
+                                        }
+                                        val taskData = buildJsonObject {
+                                            put("task_name", title)
+                                            put("instruction", instruction)
+                                            put("title", title)
+                                        }.toString()
+
+                                        val taskEntity = AgentTaskEntity(
+                                            assistantId = assistantId.toString(),
+                                            taskType = "NOTIFICATION",
+                                            taskData = taskData,
+                                            scheduledTime = endTime,
+                                            repeatInterval = 0L
+                                        )
+                                        val newTaskId = agentTaskRepository.addTask(taskEntity)
+                                        agentTaskScheduler.scheduleTask(taskEntity.copy(id = newTaskId))
+
+                                        // 回写 agentTaskId 到 schedule
+                                        scheduleRepository.getScheduleById(scheduleId)?.let { saved ->
+                                            scheduleRepository.updateSchedule(
+                                                saved.copy(agentTaskId = newTaskId)
+                                            )
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.w("LocalTools", "自动创建 agent_task 失败，日程已保留: ${e.message}", e)
+                                    }
                                 }
 
                                 buildJsonObject { put("success", true) }
@@ -840,6 +877,63 @@ class LocalTools(
                                             }
                                     } else schedule.reminderTime
 
+                                    // 同步处理关联的 agent_task
+                                    val finalAgentTaskId = when {
+                                        // 日程已完成：不创建/更新 task
+                                        schedule.isCompleted -> schedule.agentTaskId
+                                        // 有截止时间：创建或更新 task
+                                        newEndTime != null -> {
+                                            val instruction = if (newCategory == "assistant") {
+                                                "你的待办${newTitle}到了截止时间，若未完成请即时完成后更新日程状态哦"
+                                            } else {
+                                                "user的待办${newTitle}到了截止时间，若未完成请督促她即时完成并帮她更新日程状态哦"
+                                            }
+                                            val taskData = buildJsonObject {
+                                                put("task_name", newTitle)
+                                                put("instruction", instruction)
+                                                put("title", newTitle)
+                                            }.toString()
+
+                                            val existingTask = schedule.agentTaskId?.let {
+                                                agentTaskRepository.getTaskById(it)
+                                            }
+                                            if (existingTask != null) {
+                                                // 更新现有 task
+                                                val updatedTask = existingTask.copy(
+                                                    taskData = taskData,
+                                                    scheduledTime = newEndTime
+                                                )
+                                                agentTaskRepository.updateTask(updatedTask)
+                                                agentTaskScheduler.scheduleTask(updatedTask)
+                                                existingTask.id
+                                            } else {
+                                                // 创建新 task
+                                                val newEntity = AgentTaskEntity(
+                                                    assistantId = assistantId.toString(),
+                                                    taskType = "NOTIFICATION",
+                                                    taskData = taskData,
+                                                    scheduledTime = newEndTime,
+                                                    repeatInterval = 0L
+                                                )
+                                                val newId = agentTaskRepository.addTask(newEntity)
+                                                agentTaskScheduler.scheduleTask(newEntity.copy(id = newId))
+                                                newId
+                                            }
+                                        }
+                                        // 无截止时间：删除关联 task（如果有）
+                                        else -> {
+                                            val existingTaskId = schedule.agentTaskId
+                                            if (existingTaskId != null) {
+                                                val existingTask = agentTaskRepository.getTaskById(existingTaskId)
+                                                if (existingTask != null) {
+                                                    agentTaskRepository.deleteTask(existingTask)
+                                                }
+                                                agentTaskScheduler.cancelTask(existingTaskId)
+                                            }
+                                            null
+                                        }
+                                    }
+
                                     scheduleRepository.updateSchedule(
                                         schedule.copy(
                                             title = newTitle,
@@ -849,6 +943,7 @@ class LocalTools(
                                             endTime = newEndTime,
                                             reminderTime = newReminderTime,
                                             category = newCategory,
+                                            agentTaskId = finalAgentTaskId,
                                             updatedAt = System.currentTimeMillis()
                                         )
                                     )
@@ -874,7 +969,28 @@ class LocalTools(
                                 val schedules = scheduleRepository.getAllSchedules().first()
                                 val schedule = schedules.find { s -> s.id == id }
                                 if (schedule != null) {
-                                    scheduleRepository.toggleComplete(schedule)
+                                    val nowCompleted = !schedule.isCompleted
+                                    // 标记完成时删除关联 task 并清空 agentTaskId；取消完成时不重建
+                                    val finalAgentTaskId = if (nowCompleted) {
+                                        val existingTaskId = schedule.agentTaskId
+                                        if (existingTaskId != null) {
+                                            val existingTask = agentTaskRepository.getTaskById(existingTaskId)
+                                            if (existingTask != null) {
+                                                agentTaskRepository.deleteTask(existingTask)
+                                            }
+                                            agentTaskScheduler.cancelTask(existingTaskId)
+                                        }
+                                        null
+                                    } else {
+                                        schedule.agentTaskId
+                                    }
+                                    scheduleRepository.updateSchedule(
+                                        schedule.copy(
+                                            isCompleted = nowCompleted,
+                                            agentTaskId = finalAgentTaskId,
+                                            updatedAt = System.currentTimeMillis()
+                                        )
+                                    )
                                     buildJsonObject { put("success", true) }
                                 } else {
                                     buildJsonObject { put("error", "未找到日程") }
@@ -883,6 +999,16 @@ class LocalTools(
 
                             "delete" -> {
                                 val id = json["id"]?.jsonPrimitive?.longOrNull ?: -1L
+                                // 删除关联的 agent_task
+                                val schedule = scheduleRepository.getScheduleById(id)
+                                val existingTaskId = schedule?.agentTaskId
+                                if (existingTaskId != null) {
+                                    val existingTask = agentTaskRepository.getTaskById(existingTaskId)
+                                    if (existingTask != null) {
+                                        agentTaskRepository.deleteTask(existingTask)
+                                    }
+                                    agentTaskScheduler.cancelTask(existingTaskId)
+                                }
                                 scheduleRepository.deleteSchedule(id)
                                 buildJsonObject { put("success", true) }
                             }
@@ -2198,7 +2324,7 @@ class LocalTools(
             tools.addAll(getDeviceControlTools(assistantId, conversationId))
         }
         if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
-        if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools())
+        if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools(assistantId))
         if (options.contains(LocalToolOption.AgentAutomation)) tools.addAll(getAgentTaskTools(assistantId))
         if (options.contains(LocalToolOption.EmailService)) tools.addAll(getEmailTools())
         if (options.contains(LocalToolOption.UpdateProfile)) tools.addAll(getUpdateProfileTools(assistantId))

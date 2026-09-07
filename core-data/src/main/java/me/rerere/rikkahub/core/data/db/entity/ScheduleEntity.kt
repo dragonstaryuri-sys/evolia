@@ -30,6 +30,8 @@ data class ScheduleEntity(
     val isCompleted: Boolean = false,
     @ColumnInfo(name = "category")
     val category: String = "user",
+    @ColumnInfo(name = "agent_task_id")
+    val agentTaskId: Long? = null,
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "updated_at")

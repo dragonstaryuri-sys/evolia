@@ -40,7 +40,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageEntity::class,
         ProfileHistoryEntity::class
     ],
-    version = 29,
+    version = 30,
     exportSchema = true
 )
 @TypeConverters(
@@ -183,6 +183,21 @@ abstract class AppDatabase : RoomDatabase() {
                     Log.i(TAG, "28->29 迁移完成：共 $total 个会话，其中 $archived 个已写入 last_archived_message_time")
                 }
                 cursor.close()
+            }
+        }
+
+        /**
+         * 29 → 30：为 schedules 表新增 agent_task_id 列，
+         * 记录基于该日程截止时间自动生成的 agent_task 的 ID。
+         * 该字段可为空（无截止时间的日程不会生成 task）。
+         * 删除/完成日程时，通过此字段联动删除关联的 agent_task。
+         */
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 29->30 迁移：schedules 表新增 agent_task_id 列")
+                db.execSQL(
+                    "ALTER TABLE `schedules` ADD COLUMN `agent_task_id` INTEGER"
+                )
             }
         }
 
