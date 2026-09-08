@@ -485,13 +485,21 @@ class EvoliaMonitorService : AccessibilityService() {
     private fun scanScreenContext(): String {
         val rootNode = rootInActiveWindow ?: return ""
         val texts = mutableListOf<String>()
-        fun traverse(node: AccessibilityNodeInfo?) {
-            if (node == null || !node.isVisibleToUser) return
+        val maxDepth = 60
+        val stack = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+        stack.addLast(rootNode to 0)
+        while (stack.isNotEmpty()) {
+            val (node, depth) = stack.removeLast()
+            if (!node.isVisibleToUser) continue
             val text = node.text?.toString() ?: node.contentDescription?.toString()
             if (!text.isNullOrBlank() && text.length > 1) texts.add(text.trim())
-            for (i in 0 until node.childCount) traverse(node.getChild(i))
+            if (depth >= maxDepth) continue
+            val childCount = node.childCount
+            for (i in childCount - 1 downTo 0) {
+                val child = node.getChild(i) ?: continue
+                stack.addLast(child to depth + 1)
+            }
         }
-        traverse(rootNode)
         return texts.distinct().take(30).joinToString(" | ")
     }
 }
