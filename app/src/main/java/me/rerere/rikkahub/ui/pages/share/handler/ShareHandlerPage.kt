@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.share.handler
+﻿package me.rerere.rikkahub.ui.pages.share.handler
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +29,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.context.LocalNavController
-import me.rerere.rikkahub.utils.base64Encode
+import me.rerere.rikkahub.utils.base64UrlEncode
 import me.rerere.rikkahub.utils.navigateToChatPage
 import me.rerere.rikkahub.utils.plus
 import org.koin.androidx.compose.koinViewModel
@@ -87,7 +87,7 @@ fun ShareHandlerPage(text: String, image: String?) {
                             vm.updateAssistant(assistant.id)
                             navigateToChatPage(
                                 navController = navController,
-                                initText = vm.shareText.base64Encode(),
+                                initText = vm.shareText.base64UrlEncode(),
                                 initFiles = image?.let { listOf(it.toUri()) } ?: emptyList()
                             )
                         }

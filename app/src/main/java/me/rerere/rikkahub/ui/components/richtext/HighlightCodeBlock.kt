@@ -95,7 +95,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.AtomOneDarkPalette
 import me.rerere.rikkahub.ui.theme.AtomOneLightPalette
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
-import me.rerere.rikkahub.utils.base64Encode
+import me.rerere.rikkahub.utils.base64UrlEncode
 import kotlin.time.Clock
 
 private const val PREVIEW_MAX_HEIGHT = 200
@@ -302,7 +302,7 @@ fun HighlightCodeBlock(
                 if (language.lowercase() == "html") {
                     IconButton(
                         onClick = {
-                            navController.navigate(Screen.WebView(content = code.base64Encode()))
+                            navController.navigate(Screen.WebView(content = code.base64UrlEncode()))
                         },
                         modifier = Modifier.size(32.dp)
                     ) {

@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.ui.pages.chat
+﻿package me.rerere.rikkahub.ui.pages.chat
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -62,7 +62,7 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.QuotedMessage
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
-import me.rerere.rikkahub.utils.base64Decode
+import me.rerere.rikkahub.utils.base64UrlDecode
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileMimeType
 import me.rerere.rikkahub.utils.navigateToChatPage
@@ -150,7 +150,7 @@ fun ChatPage(
     val inputState = rememberChatInputState(
         message = emptyList(),
         textContent = remember(text) {
-            text?.base64Decode() ?: ""
+            text?.base64UrlDecode() ?: ""
         }
     )
 

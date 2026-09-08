@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
-import me.rerere.rikkahub.utils.base64Decode
+import me.rerere.rikkahub.utils.base64UrlDecode
 import me.rerere.rikkahub.utils.saveToDownloads
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,7 +59,7 @@ fun WebViewPage(url: String, content: String, title: String? = null) {
             })
     } else {
         rememberWebViewState(
-            data = content.base64Decode(),
+            data = content.base64UrlDecode(),
             settings = {
                 builtInZoomControls = true
                 displayZoomControls = false

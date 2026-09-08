@@ -1,4 +1,4 @@
-package me.rerere.rikkahub.utils
+﻿package me.rerere.rikkahub.utils
 
 import org.apache.commons.text.StringEscapeUtils
 import java.net.URLDecoder
@@ -22,6 +22,23 @@ fun String.base64Encode(): String {
 @OptIn(ExperimentalEncodingApi::class)
 fun String.base64Decode(): String {
     return String(Base64.decode(this))
+}
+
+/**
+ * URL-safe Base64 编码（使用 '-' 和 '_' 替代 '+' 和 '/'）。
+ * 用于 Navigation 路由参数，避免 '/' 破坏路由匹配。
+ */
+@OptIn(ExperimentalEncodingApi::class)
+fun String.base64UrlEncode(): String {
+    return Base64.UrlSafe.encode(this.toByteArray())
+}
+
+/**
+ * URL-safe Base64 解码，与 [base64UrlEncode] 配对使用。
+ */
+@OptIn(ExperimentalEncodingApi::class)
+fun String.base64UrlDecode(): String {
+    return String(Base64.UrlSafe.decode(this))
 }
 
 fun String.escapeHtml(): String {
