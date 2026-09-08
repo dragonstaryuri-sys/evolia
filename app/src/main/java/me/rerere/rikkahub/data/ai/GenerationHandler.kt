@@ -190,7 +190,7 @@ class GenerationHandler(
                     add(
                         Tool(
                             name = "retrieve_memory",
-                            description = "通过关键词同时检索核心记忆(core)与片段记忆(segment)。返回结果中 type=core 的条目内容已完整，无需再调取；type=segment 的条目可传入其 id 作为 segment_id 调取完整消息历史记录。也可通过时间范围查询该智能体下一段时间内的所有片段记忆（一次最多返回一周，建议返回一天）。",
+                            description = "通过关键词同时检索核心记忆(core)与片段记忆(segment)。返回结果中 type=core 的条目内容已完整，无需再调取；type=segment 的条目可传入其 id 作为 segment_id 调取完整消息历史记录。也可通过时间范围查询该智能体下一段时间内的所有片段记忆（一次最多返回一周，建议返回一天）。支持组合查询：同时传入 start_time/end_time 与 key_words 时，会先按时间范围圈定 segment，再用关键词对结果做本地过滤，仅返回时间范围内命中关键词的片段。",
                             parameters = {
                                 InputSchema.Obj(
                                     properties = buildJsonObject {
@@ -227,6 +227,67 @@ class GenerationHandler(
                                 val endTimeStr = args["end_time"]?.jsonPrimitive?.contentOrNull
 
                                 when {
+                                    // 组合检索:时间范围 + 关键词,先按时间范围取 segment,再用关键词对结果做本地过滤
+                                    startTimeStr != null && endTimeStr != null && keyWords != null -> {
+                                        try {
+                                            val start = parseFlexibleDate(startTimeStr)
+                                            val end = parseFlexibleDate(endTimeStr)
+                                            Log.d(TAG, "DEBUG: start=$start, end=$end, keywords=$keyWords")
+
+                                            val duration = Duration.between(start, end)
+                                            if (duration.toHours() > 24 * 7) {
+                                                return@Tool buildJsonObject {
+                                                    put("error", JsonPrimitive("一次最多只能查询一周的记忆片段"))
+                                                }
+                                            }
+
+                                            val startTimeLong = start.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                            val endTimeLong = end.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+                                            val segments = memoryRepo.getSegmentsByAssistantAndTimeRange(
+                                                assistantId = assistant.id.toString(),
+                                                startTime = startTimeLong,
+                                                endTime = endTimeLong
+                                            )
+
+                                            // 拆分关键词,与 calculateKeywordScore 一致使用同一分隔符集
+                                            val keywordsList = keyWords
+                                                .split(Regex("[,，、\\s]"))
+                                                .map { it.trim().lowercase() }
+                                                .filter { it.isNotBlank() }
+
+                                            // 本地过滤:对 segment 的 content 和 keywords 字段做双向 contains 匹配(OR 命中即保留)
+                                            val filtered = if (keywordsList.isEmpty()) {
+                                                segments
+                                            } else {
+                                                segments.filter { seg ->
+                                                    val contentLower = seg.content.lowercase()
+                                                    val keywordsFieldLower = seg.keywords?.lowercase().orEmpty()
+                                                    keywordsList.any { kw ->
+                                                        contentLower.contains(kw) || keywordsFieldLower.contains(kw)
+                                                    }
+                                                }
+                                            }
+
+                                            buildJsonObject {
+                                                put("results", JsonArray(filtered.map { seg ->
+                                                    buildJsonObject {
+                                                        put("segment_id", JsonPrimitive(seg.id))
+                                                        val timeRangeStr = "${formatMemoryDate(seg.startTime)} ~ ${formatMemoryDate(seg.endTime)}"
+                                                        put("time_range", JsonPrimitive(timeRangeStr))
+                                                        put("content", JsonPrimitive(seg.content))
+                                                    }
+                                                }))
+                                                put("total_before_filter", JsonPrimitive(segments.size))
+                                                put("total_after_filter", JsonPrimitive(filtered.size))
+                                            }
+                                        } catch (e: Exception) {
+                                            buildJsonObject {
+                                                put("error", JsonPrimitive("时间格式错误或查询失败: ${e.message}"))
+                                            }
+                                        }
+                                    }
+
                                     startTimeStr != null && endTimeStr != null -> {
                                         try {
                                             val start = parseFlexibleDate(startTimeStr)
