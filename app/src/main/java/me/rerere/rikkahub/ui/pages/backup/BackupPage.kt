@@ -354,25 +354,23 @@ private fun WebDavPage(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 // 增加选择保留的备份个数功能
-                if (settings.autoBackupOnStart) {
-                    FormItem(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        label = { Text(stringResource(R.string.backup_page_max_backup_files)) }
-                    ) {
-                        OutlinedTextField(
-                            modifier = Modifier.fillMaxWidth(),
-                            value = webDavConfig.maxBackupFiles.toString(),
-                            onValueChange = { value ->
-                                val newValue = value.filter { it.isDigit() }.toIntOrNull() ?: 1
-                                updateWebDavConfig(webDavConfig.copy(maxBackupFiles = newValue.coerceAtLeast(1)))
-                            },
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
-                            ),
-                            suffix = { Text(stringResource(R.string.backup_page_max_backup_files_suffix)) },
-                            singleLine = true
-                        )
-                    }
+                FormItem(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    label = { Text(stringResource(R.string.backup_page_max_backup_files)) }
+                ) {
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = webDavConfig.maxBackupFiles.toString(),
+                        onValueChange = { value ->
+                            val newValue = value.filter { it.isDigit() }.toIntOrNull() ?: 1
+                            updateWebDavConfig(webDavConfig.copy(maxBackupFiles = newValue.coerceAtLeast(1)))
+                        },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        ),
+                        suffix = { Text(stringResource(R.string.backup_page_max_backup_files_suffix)) },
+                        singleLine = true
+                    )
                 }
 
             }
