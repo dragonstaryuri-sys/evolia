@@ -6,6 +6,7 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
+import me.rerere.rikkahub.service.WECHAT_VOICE_MESSAGE_MARKER
 
 private const val TAG = "AudioToTextTransformer"
 
@@ -50,12 +51,15 @@ object AudioToTextTransformer : InputMessageTransformer {
                         ?.jsonPrimitiveOrNull
                         ?.content
                         ?.takeIf { it.isNotBlank() }
-                    // 有转写结果：拼前缀让 AI 明确知道是语音消息内容
+                    // 有转写结果：ASSISTANT 语音消息的 transcription 已带 (语音消息) 标记，AI 能识别
+                    // USER 语音消息用 "语音消息：" 前缀让 AI 知道是用户发的语音
                     // 无转写结果：占位文本（避免上下文空洞）
-                    val text = if (transcription != null) {
-                        "语音消息：$transcription"
-                    } else {
-                        "系统提示：语音消息识别失败了，请提醒用户检查语音合成模型的配置，也有可能是网络原因，让她过一会儿再尝试"
+                    val text = when {
+                        transcription == null ->
+                            "系统提示：语音消息识别失败了，请提醒用户检查语音合成模型的配置，也有可能是网络原因，让她过一会儿再尝试"
+                        message.role == MessageRole.ASSISTANT -> transcription
+                        else ->
+                            "语音消息：$transcription"
                     }
                     UIMessagePart.Text(text = text)
                 }
@@ -68,6 +72,16 @@ object AudioToTextTransformer : InputMessageTransformer {
                     "supportsAudio=$supportsAudio; lastUserIndex=$lastUserIndex; " +
                     "lastUserKeptAudio=${supportsAudio && lastUserIndex >= 0}"
             )
+            // 调试：打印 ASSISTANT 语音消息转换后的实际上下文文本
+            result.forEach { msg ->
+                msg.parts.forEach { part ->
+                    if (part is UIMessagePart.Text && msg.role == MessageRole.ASSISTANT &&
+                        part.text.contains(WECHAT_VOICE_MESSAGE_MARKER)
+                    ) {
+                        Log.d(TAG, "ASSISTANT voice context: ${part.text.take(80)}")
+                    }
+                }
+            }
         }
         return result
     }

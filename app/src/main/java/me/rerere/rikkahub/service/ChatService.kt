@@ -100,18 +100,29 @@ import me.rerere.rikkahub.utils.applyPlaceholders
 import me.rerere.rikkahub.utils.deleteChatFiles
 import me.rerere.search.SearchService
 import me.rerere.search.SearchServiceOptions
+import me.rerere.tts.model.AudioFormat
+import me.rerere.tts.model.TTSRequest
+import me.rerere.tts.model.TTSResponse
+import me.rerere.tts.provider.TTSManager
+import me.rerere.tts.provider.TTSProviderSetting
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.random.Random
 import kotlin.uuid.Uuid
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.rikkahub.core.data.utils.KeywordExtractor
 import me.rerere.rikkahub.core.data.utils.VectorUtils
+import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.coroutineContext
 import android.net.Uri
+import android.media.MediaPlayer
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.cancelAndJoin
@@ -120,6 +131,51 @@ import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.BuildConfig
 
 private const val TAG = "ChatService"
+
+/**
+ * 微信模式下每个分句转为语音消息的触发概率（20%）。
+ * 每个分句独立判定：命中概率 或 分句带 [WECHAT_VOICE_MESSAGE_MARKER] 标记时，
+ * 该分句会被 TTS 合成为语音条发送，其余分句仍为文字。
+ */
+internal const val WECHAT_VOICE_MESSAGE_PROBABILITY = 0.2f
+
+/**
+ * 微信模式下 agent 主动触发语音消息的标记。写在某个分句开头时，
+ * 系统会移除标记并将该分句转为语音条发送。也是存储时拼接在转文字内容前的前缀。
+ * 支持半角 () 和全角 （） 括号，AI 可能使用任一形式。
+ */
+internal const val WECHAT_VOICE_MESSAGE_MARKER = "(语音消息)"
+internal const val WECHAT_VOICE_MESSAGE_MARKER_FULLWIDTH = "（语音消息）"
+
+/**
+ * 标记检测：兼容半角 () 和全角 （） 括号的 (语音消息) 标记。
+ * 返回去除标记后的文本，若不含标记则返回 null。
+ */
+private fun stripVoiceMessageMarker(sentence: String): String? {
+    val s = sentence.trim()
+    if (s.startsWith(WECHAT_VOICE_MESSAGE_MARKER)) {
+        return s.removePrefix(WECHAT_VOICE_MESSAGE_MARKER).trim().ifBlank { null }
+    }
+    if (s.startsWith(WECHAT_VOICE_MESSAGE_MARKER_FULLWIDTH)) {
+        return s.removePrefix(WECHAT_VOICE_MESSAGE_MARKER_FULLWIDTH).trim().ifBlank { null }
+    }
+    return null
+}
+
+/**
+ * UI 显示用：移除 (语音消息) / （语音消息） 前缀（半角/全角兼容）。
+ * 不含标记时原样返回。
+ */
+internal fun removeVoiceMessageMarkerForDisplay(text: String): String {
+    val s = text.trimStart()
+    return when {
+        s.startsWith(WECHAT_VOICE_MESSAGE_MARKER) ->
+            s.removePrefix(WECHAT_VOICE_MESSAGE_MARKER).trimStart()
+        s.startsWith(WECHAT_VOICE_MESSAGE_MARKER_FULLWIDTH) ->
+            s.removePrefix(WECHAT_VOICE_MESSAGE_MARKER_FULLWIDTH).trimStart()
+        else -> text
+    }
+}
 
 /**
  * L1 segment 自动总结的连续失败熔断阈值。达到后停止自动触发 summarizeAndRefresh，
@@ -222,7 +278,7 @@ class ChatService(
     val mcpManager: McpManager,
     private val chatEpisodeDAO: ChatEpisodeDAO,
     private val embeddingService: EmbeddingService,
-
+    private val ttsManager: TTSManager,
     ) {
     data class ContextRefreshResult(
         val success: Boolean,
@@ -1107,6 +1163,11 @@ class ChatService(
             var wechatLastSentenceLength = 0 // 上一句的长度，用于计算下一句的 delay 节奏（与原 UI 打字动画一致）
             var wechatOriginalAISnapshot: UIMessage? = null // 微信模式下保存原始 AI 消息快照（用于迁移 usage 和上下文来源到分句节点）
 
+            // 微信模式标记触发语音：AI 主动在回复开头加 (语音消息) 标记时，
+            // 整条回复合成一个语音条发送，不分句（概率触发仍逐句判定）
+            var wechatMarkerTriggered = false
+            val wechatFullReplyBuffer = StringBuilder() // 标记触发时累积整条回复文本
+
             runCatching {
                 currentConversation = currentConversation.copy(chatSuggestions = emptyList())
                 updateConversation(conversationId) { old ->
@@ -1179,7 +1240,8 @@ class ChatService(
                     .filter { msg ->
                         msg.role != MessageRole.ASSISTANT ||
                             msg.toContentText().isNotBlank() ||
-                            msg.parts.any { it is UIMessagePart.ToolCall }
+                            msg.parts.any { it is UIMessagePart.ToolCall } ||
+                            msg.parts.any { it is UIMessagePart.Audio }
                     }
 
                 // 临时处理优化要求：仅针对发送给 AI 的上下文做拼接，不修改 baseMessages (用于 UI 同步)
@@ -1395,9 +1457,11 @@ class ChatService(
                                 wechatProcessedTextLen = 0
                                 wechatStoredSentenceCount = 0
                                 wechatFirstNodeNonTextParts = null
-                                    wechatLastSentenceLength = 0
-                                    wechatOriginalAISnapshot = null
-                                }
+                                wechatLastSentenceLength = 0
+                                wechatOriginalAISnapshot = null
+                                wechatMarkerTriggered = false
+                                wechatFullReplyBuffer.clear()
+                            }
 
                             // 4. 微信模式 + 有最终文本：按标点分句，逐句存为独立节点（含标点，非文本 parts 放第一个节点）
                             if (wechatMode && lastAI != null && fullText.isNotBlank()) {
@@ -1427,8 +1491,27 @@ class ChatService(
                                     wechatFirstNodeNonTextParts = nonTextParts
                                 }
 
-                                // 4c. 文本增量累积 + 按标点切分完整句子（保留标点在句末）
-                                if (fullText.length > wechatProcessedTextLen) {
+                                // 4c. 标记触发检测：回复以 (语音消息) / （语音消息） 开头时，
+                                // 整条回复作为一个语音条发送，跳过分句（概率触发仍逐句判定）
+                                if (!wechatMarkerTriggered && wechatStoredSentenceCount == 0) {
+                                    val markerText = stripVoiceMessageMarker(fullText)
+                                    // 只有当标记后已有实际内容时才确认触发，避免误判
+                                    if (markerText != null && markerText.isNotBlank()) {
+                                        wechatMarkerTriggered = true
+                                        Log.d(TAG, "WeChat voice marker triggered (full reply): '${markerText.take(30)}...'")
+                                    }
+                                }
+
+                                if (wechatMarkerTriggered) {
+                                    // 标记触发模式：累积全部文本，不分句，留到流结束合成整条语音
+                                    wechatProcessedTextLen = fullText.length
+                                    wechatFullReplyBuffer.apply {
+                                        clear()
+                                        val cleaned = stripVoiceMessageMarker(fullText) ?: fullText
+                                        append(cleaned)
+                                    }
+                                } else if (fullText.length > wechatProcessedTextLen) {
+                                    // 4d. 概率触发模式：逐句判定（20% 概率转语音，其余文字）
                                     val increment = fullText.substring(wechatProcessedTextLen)
                                     wechatSentenceBuffer.append(increment)
                                     wechatProcessedTextLen = fullText.length
@@ -1455,28 +1538,85 @@ class ChatService(
                                             .trim()
                                         if (sentence.isBlank()) continue
 
+                                        // 概率触发：逐句独立判定 20%（标记触发已走 4c 分支，这里不检查标记）
+                                        val cleanSentence = sentence
+                                        if (cleanSentence.isBlank()) continue
+
+                                        val voiceRoll = Random.nextFloat()
+                                        val toVoice = voiceRoll < WECHAT_VOICE_MESSAGE_PROBABILITY
+                                        Log.d(TAG, "WeChat voice check: hasMarker=false, roll=$voiceRoll, toVoice=$toVoice, sentence='${cleanSentence.take(30)}'")
+
                                         // delay 节奏控制：基于上一句长度（与原 UI 延迟打字公式一致，第一句默认 500ms）
                                         val delayTime = (wechatLastSentenceLength * 200L + 100L).coerceIn(500L, 3000L)
                                         delay(delayTime)
 
-                                        // 创建新节点：第一句带非文本 parts
-                                        val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
-                                            wechatFirstNodeNonTextParts!! + UIMessagePart.Text(sentence)
+                                        if (toVoice) {
+                                            // 语音条：TTS 合成 → Audio 节点；失败回退文本
+                                            val ttsSetting = settings.getSelectedTTSProvider()
+                                            val response = ttsSetting?.let { synthesizeTextToResponse(cleanSentence, it) }
+                                            val saved = response?.let { resp ->
+                                                if (resp.audioData.isNotEmpty()) {
+                                                    saveVoiceMessageAudio(resp.audioData, resp.format, resp.sampleRate)
+                                                } else null
+                                            }
+                                            if (saved != null) {
+                                                val (fileUri, durationMs) = saved
+                                                val audioPart = UIMessagePart.Audio(
+                                                    url = fileUri.toString(),
+                                                    metadata = buildJsonObject {
+                                                        put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                                                        put(AudioToTextTransformer.METADATA_TRANSCRIPTION,
+                                                            "$WECHAT_VOICE_MESSAGE_MARKER$cleanSentence")
+                                                    }
+                                                )
+                                                val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                                    wechatFirstNodeNonTextParts!! + audioPart
+                                                } else listOf(audioPart)
+                                                val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                                val newNode = newMsg.toMessageNode(conversationId)
+                                                currentConversation = currentConversation.copy(
+                                                    messageNodes = currentConversation.messageNodes + newNode
+                                                )
+                                                updateConversation(conversationId, normalizeNodes = true) { currentConversation }
+                                                mutateConversationAndSave(conversationId) { current -> current }
+                                                wechatStoredSentenceCount++
+                                                wechatLastSentenceLength = cleanSentence.length
+                                                Log.d(TAG, "WeChat voice sentence: ${cleanSentence.take(30)}... duration=${durationMs}ms")
+                                            } else {
+                                                // TTS 失败回退文本
+                                                Log.w(TAG, "WeChat voice TTS failed, fallback to text")
+                                                val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                                    wechatFirstNodeNonTextParts!! + UIMessagePart.Text(cleanSentence)
+                                                } else listOf(UIMessagePart.Text(cleanSentence))
+                                                val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                                val newNode = newMsg.toMessageNode(conversationId)
+                                                currentConversation = currentConversation.copy(
+                                                    messageNodes = currentConversation.messageNodes + newNode
+                                                )
+                                                updateConversation(conversationId, normalizeNodes = true) { currentConversation }
+                                                mutateConversationAndSave(conversationId) { current -> current }
+                                                wechatStoredSentenceCount++
+                                                wechatLastSentenceLength = cleanSentence.length
+                                            }
                                         } else {
-                                            listOf(UIMessagePart.Text(sentence))
+                                            // 文本节点（原有逻辑）
+                                            val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                                wechatFirstNodeNonTextParts!! + UIMessagePart.Text(cleanSentence)
+                                            } else {
+                                                listOf(UIMessagePart.Text(cleanSentence))
+                                            }
+                                            val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                            val newNode = newMsg.toMessageNode(conversationId)
+                                            currentConversation = currentConversation.copy(
+                                                messageNodes = currentConversation.messageNodes + newNode
+                                            )
+                                            updateConversation(conversationId, normalizeNodes = true) {
+                                                currentConversation
+                                            }
+                                            mutateConversationAndSave(conversationId) { current -> current }
+                                            wechatStoredSentenceCount++
+                                            wechatLastSentenceLength = cleanSentence.length
                                         }
-                                        val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
-                                        val newNode = newMsg.toMessageNode(conversationId)
-
-                                        currentConversation = currentConversation.copy(
-                                            messageNodes = currentConversation.messageNodes + newNode
-                                        )
-                                        updateConversation(conversationId, normalizeNodes = true) {
-                                            currentConversation
-                                        }
-                                        mutateConversationAndSave(conversationId) { current -> current }
-                                        wechatStoredSentenceCount++
-                                        wechatLastSentenceLength = sentence.length
                                     }
                                 }
                             } else {
@@ -1504,9 +1644,62 @@ class ChatService(
                         }
                     }
 
+                    // 微信模式标记触发：流式结束后，整条回复合成 TTS 存为语音条
+                    // 注意：用户打断时 collect 抛 CancellationException，不会执行到这里
+                    if (wechatMode && wechatMarkerTriggered && wechatFullReplyBuffer.isNotBlank()) {
+                        val fullReplyText = wechatFullReplyBuffer.toString().trim()
+                        if (fullReplyText.isNotBlank()) {
+                            // 模拟打字延迟
+                            val delayTime = (wechatLastSentenceLength * 200L + 100L).coerceIn(500L, 3000L)
+                            delay(delayTime)
+
+                            val ttsSetting = settings.getSelectedTTSProvider()
+                            val response = ttsSetting?.let { synthesizeTextToResponse(fullReplyText, it) }
+                            val saved = response?.let { resp ->
+                                if (resp.audioData.isNotEmpty()) {
+                                    saveVoiceMessageAudio(resp.audioData, resp.format, resp.sampleRate)
+                                } else null
+                            }
+
+                            if (saved != null) {
+                                val (fileUri, durationMs) = saved
+                                val audioPart = UIMessagePart.Audio(
+                                    url = fileUri.toString(),
+                                    metadata = buildJsonObject {
+                                        put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                                        put(AudioToTextTransformer.METADATA_TRANSCRIPTION,
+                                            "$WECHAT_VOICE_MESSAGE_MARKER$fullReplyText")
+                                    }
+                                )
+                                val parts = (wechatFirstNodeNonTextParts ?: emptyList()) + audioPart
+                                val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                val newNode = newMsg.toMessageNode(conversationId)
+                                currentConversation = currentConversation.copy(
+                                    messageNodes = currentConversation.messageNodes + newNode
+                                )
+                                updateConversation(conversationId, normalizeNodes = true) { currentConversation }
+                                mutateConversationAndSave(conversationId) { current -> current }
+                                wechatStoredSentenceCount++
+                                Log.d(TAG, "WeChat voice full reply: ${fullReplyText.take(30)}... duration=${durationMs}ms")
+                            } else {
+                                // TTS 失败回退文本
+                                Log.w(TAG, "WeChat voice TTS failed (full reply), fallback to text")
+                                val parts = (wechatFirstNodeNonTextParts ?: emptyList()) +
+                                    UIMessagePart.Text(fullReplyText)
+                                val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                val newNode = newMsg.toMessageNode(conversationId)
+                                currentConversation = currentConversation.copy(
+                                    messageNodes = currentConversation.messageNodes + newNode
+                                )
+                                updateConversation(conversationId, normalizeNodes = true) { currentConversation }
+                                mutateConversationAndSave(conversationId) { current -> current }
+                                wechatStoredSentenceCount++
+                            }
+                        }
+                        wechatFullReplyBuffer.clear()
+                    } else if (wechatMode && wechatSentenceBuffer.isNotEmpty()) {
                     // 微信模式：流式结束后处理缓冲区中剩余的未成句文本（作为最后一句存入）
                     // 注意：用户打断时 collect 抛 CancellationException，不会执行到这里，符合"未存的不继续"
-                    if (wechatMode && wechatSentenceBuffer.isNotEmpty()) {
                         // 去掉中英文逗号和中文句号
                         val lastSentence = wechatSentenceBuffer.toString()
                             .replace("，", "")
@@ -1514,25 +1707,78 @@ class ChatService(
                             .replace("。", "")
                             .trim()
                         if (lastSentence.isNotBlank()) {
+                            // 概率触发模式：只检查概率，不检查标记（标记已走上面 full reply 分支）
+                            val cleanSentence = lastSentence
+
                             val delayTime = (wechatLastSentenceLength * 200L + 100L).coerceIn(500L, 3000L)
                             delay(delayTime)
 
-                            val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
-                                wechatFirstNodeNonTextParts!! + UIMessagePart.Text(lastSentence)
-                            } else {
-                                listOf(UIMessagePart.Text(lastSentence))
+                            if (cleanSentence.isNotBlank()) {
+                                val voiceRoll = Random.nextFloat()
+                                val toVoice = voiceRoll < WECHAT_VOICE_MESSAGE_PROBABILITY
+                                Log.d(TAG, "WeChat voice check (flush): hasMarker=false, roll=$voiceRoll, toVoice=$toVoice, sentence='${cleanSentence.take(30)}'")
+                                if (toVoice) {
+                                    val ttsSetting = settings.getSelectedTTSProvider()
+                                    val response = ttsSetting?.let { synthesizeTextToResponse(cleanSentence, it) }
+                                    val saved = response?.let { resp ->
+                                        if (resp.audioData.isNotEmpty()) {
+                                            saveVoiceMessageAudio(resp.audioData, resp.format, resp.sampleRate)
+                                        } else null
+                                    }
+                                    if (saved != null) {
+                                        val (fileUri, durationMs) = saved
+                                        val audioPart = UIMessagePart.Audio(
+                                            url = fileUri.toString(),
+                                            metadata = buildJsonObject {
+                                                put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
+                                                put(AudioToTextTransformer.METADATA_TRANSCRIPTION,
+                                                    "$WECHAT_VOICE_MESSAGE_MARKER$cleanSentence")
+                                            }
+                                        )
+                                        val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                            wechatFirstNodeNonTextParts!! + audioPart
+                                        } else listOf(audioPart)
+                                        val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                        val newNode = newMsg.toMessageNode(conversationId)
+                                        currentConversation = currentConversation.copy(
+                                            messageNodes = currentConversation.messageNodes + newNode
+                                        )
+                                        updateConversation(conversationId, normalizeNodes = true) { currentConversation }
+                                        mutateConversationAndSave(conversationId) { current -> current }
+                                        wechatStoredSentenceCount++
+                                        Log.d(TAG, "WeChat voice sentence (flush): ${cleanSentence.take(30)}... duration=${durationMs}ms")
+                                    } else {
+                                        Log.w(TAG, "WeChat voice TTS failed (flush), fallback to text")
+                                        val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                            wechatFirstNodeNonTextParts!! + UIMessagePart.Text(cleanSentence)
+                                        } else listOf(UIMessagePart.Text(cleanSentence))
+                                        val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                        val newNode = newMsg.toMessageNode(conversationId)
+                                        currentConversation = currentConversation.copy(
+                                            messageNodes = currentConversation.messageNodes + newNode
+                                        )
+                                        updateConversation(conversationId, normalizeNodes = true) { currentConversation }
+                                        mutateConversationAndSave(conversationId) { current -> current }
+                                        wechatStoredSentenceCount++
+                                    }
+                                } else {
+                                    val parts = if (wechatStoredSentenceCount == 0 && wechatFirstNodeNonTextParts != null) {
+                                        wechatFirstNodeNonTextParts!! + UIMessagePart.Text(cleanSentence)
+                                    } else {
+                                        listOf(UIMessagePart.Text(cleanSentence))
+                                    }
+                                    val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
+                                    val newNode = newMsg.toMessageNode(conversationId)
+                                    currentConversation = currentConversation.copy(
+                                        messageNodes = currentConversation.messageNodes + newNode
+                                    )
+                                    updateConversation(conversationId, normalizeNodes = true) {
+                                        currentConversation
+                                    }
+                                    mutateConversationAndSave(conversationId) { current -> current }
+                                    wechatStoredSentenceCount++
+                                }
                             }
-                            val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
-                            val newNode = newMsg.toMessageNode(conversationId)
-
-                            currentConversation = currentConversation.copy(
-                                messageNodes = currentConversation.messageNodes + newNode
-                            )
-                            updateConversation(conversationId, normalizeNodes = true) {
-                                currentConversation
-                            }
-                            mutateConversationAndSave(conversationId) { current -> current }
-                            wechatStoredSentenceCount++
                         }
                         wechatSentenceBuffer.clear()
                     }
@@ -1698,6 +1944,114 @@ class ChatService(
             }
         }
     }
+
+    /**
+     * 将文本通过 TTS 合成为音频 [TTSResponse]。
+     * 供微信模式语音消息功能使用：整条回复合成后存为语音条。
+     */
+    private suspend fun synthesizeTextToResponse(
+        text: String,
+        setting: TTSProviderSetting
+    ): TTSResponse? = withContext(Dispatchers.IO) {
+        runCatching {
+            val flow = ttsManager.generateSpeech(setting, TTSRequest(text = text))
+            var format: AudioFormat? = null
+            var sampleRate: Int? = null
+            val output = ByteArrayOutputStream()
+            flow.collect { chunk ->
+                if (format == null) format = chunk.format
+                if (sampleRate == null) sampleRate = chunk.sampleRate
+                output.write(chunk.data)
+            }
+            TTSResponse(
+                audioData = output.toByteArray(),
+                format = format ?: AudioFormat.MP3,
+                sampleRate = sampleRate
+            )
+        }.getOrNull()
+    }
+
+    /**
+     * 将 TTS 合成的音频字节保存为语音消息文件，返回 (fileUri, durationMs)。
+     * PCM 格式会被包装为 WAV 容器以保证 ExoPlayer 兼容性。
+     */
+    private suspend fun saveVoiceMessageAudio(
+        audioData: ByteArray,
+        format: AudioFormat,
+        sampleRate: Int?
+    ): Pair<Uri, Long>? = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "voice_messages").apply { if (!exists()) mkdirs() }
+
+        val (ext, finalData) = when (format) {
+            AudioFormat.PCM -> {
+                val sr = sampleRate ?: 24000
+                "wav" to wrapPcmInWav(audioData, sr)
+            }
+            AudioFormat.WAV -> "wav" to audioData
+            AudioFormat.MP3 -> "mp3" to audioData
+            AudioFormat.OGG -> "ogg" to audioData
+            AudioFormat.AAC -> "aac" to audioData
+            AudioFormat.OPUS -> "opus" to audioData
+        }
+
+        val file = File(dir, "tts_${Uuid.random()}.$ext")
+        file.writeBytes(finalData)
+
+        val durationMs = runCatching {
+            val mp = MediaPlayer()
+            mp.setDataSource(file.absolutePath)
+            mp.prepare()
+            val dur = mp.duration.toLong()
+            mp.release()
+            dur
+        }.getOrDefault(0L)
+
+        Pair(Uri.fromFile(file), durationMs)
+    }
+
+    /**
+     * 将裸 PCM 16-bit mono 数据包装为标准 WAV 文件（44 字节 header + PCM data）。
+     */
+    private fun wrapPcmInWav(pcmData: ByteArray, sampleRate: Int): ByteArray {
+        val numChannels = 1
+        val bitsPerSample = 16
+        val byteRate = sampleRate * numChannels * bitsPerSample / 8
+        val blockAlign = numChannels * bitsPerSample / 8
+        val dataLength = pcmData.size
+        val chunkSize = 36 + dataLength
+
+        val header = ByteArrayOutputStream(44)
+        header.write("RIFF".toByteArray())
+        header.write(intToLittleEndian(chunkSize))
+        header.write("WAVE".toByteArray())
+        header.write("fmt ".toByteArray())
+        header.write(intToLittleEndian(16))
+        header.write(shortToLittleEndian(1))
+        header.write(shortToLittleEndian(numChannels))
+        header.write(intToLittleEndian(sampleRate))
+        header.write(intToLittleEndian(byteRate))
+        header.write(shortToLittleEndian(blockAlign))
+        header.write(shortToLittleEndian(bitsPerSample))
+        header.write("data".toByteArray())
+        header.write(intToLittleEndian(dataLength))
+
+        val result = ByteArrayOutputStream(44 + dataLength)
+        result.write(header.toByteArray())
+        result.write(pcmData)
+        return result.toByteArray()
+    }
+
+    private fun intToLittleEndian(value: Int): ByteArray = byteArrayOf(
+        (value and 0xFF).toByte(),
+        ((value shr 8) and 0xFF).toByte(),
+        ((value shr 16) and 0xFF).toByte(),
+        ((value shr 24) and 0xFF).toByte()
+    )
+
+    private fun shortToLittleEndian(value: Int): ByteArray = byteArrayOf(
+        (value and 0xFF).toByte(),
+        ((value shr 8) and 0xFF).toByte()
+    )
 
     /**
      * 微信模式下同步消息到会话时的去重处理。

@@ -92,6 +92,7 @@ import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
+import me.rerere.rikkahub.service.removeVoiceMessageMarkerForDisplay
 import me.rerere.rikkahub.ui.components.message.ChatMessageCopySheet
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
@@ -935,6 +936,7 @@ private fun UserMessageTurn(
                                 ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
                             val transcription = audio.metadata?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
                                 ?.jsonPrimitiveOrNull?.contentOrNull
+                               ?.let { removeVoiceMessageMarkerForDisplay(it) }
                                 ?.takeIf { it.isNotBlank() }
                             VoiceMessageBubble(
                                 audioUrl = audio.url,
@@ -1300,6 +1302,7 @@ private fun AssistantMessageTurn(
                             ?.jsonPrimitiveOrNull?.longOrNull ?: 0L
                         val transcription = audio.metadata?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
                             ?.jsonPrimitiveOrNull?.contentOrNull
+                            ?.let { removeVoiceMessageMarkerForDisplay(it) }
                             ?.takeIf { it.isNotBlank() }
                         VoiceMessageBubble(
                             audioUrl = audio.url,

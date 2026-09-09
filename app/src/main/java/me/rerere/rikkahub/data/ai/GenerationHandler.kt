@@ -938,7 +938,8 @@ class GenerationHandler(
                 summaryPromptBuilder.appendLine("\n## 回复规范 (最高优先级 - 必须执行)")
                 summaryPromptBuilder.appendLine("- 说话口语化、有活人感，回复简短直接，不超过5句话，禁止冷漠无情")
                 summaryPromptBuilder.appendLine("- 请不要使用任何动作或神态描写（如 *微笑*、(叹气) 等），而是像在直接与用户对话或发消息，直接说出你的回答或想法")
-                summaryPromptBuilder.appendLine("- 严禁使用任何形式的括号。")
+                summaryPromptBuilder.appendLine("- 严禁使用任何形式的括号（唯一例外见下条语音消息）。")
+                summaryPromptBuilder.appendLine("- 你可以把回复以语音消息形式发给用户（不是每条回复都要用）。在回复最开头加上(语音消息)标记即可，这是唯一允许的括号用法。除此之外不要使用括号。")
             }
         }
 
