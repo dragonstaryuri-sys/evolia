@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import me.rerere.ai.core.MessageRole
+import me.rerere.common.http.jsonPrimitiveOrNull
 import me.rerere.ai.core.TokenUsage
 import me.rerere.ai.provider.Model
 import me.rerere.ai.util.json
@@ -228,10 +229,27 @@ data class UIMessage(
     /**
      * Extract only text content, excluding reasoning/thinking parts.
      * Use this for background tasks where reasoning output should not be included.
+     *
+     * Note: Audio parts are rendered as a placeholder like "[语音]2''" (with duration in
+     * seconds) so notifications and conversation-list previews show a meaningful label
+     * instead of an empty string for voice-only messages.
      */
-    fun toContentText() = parts.filterIsInstance<UIMessagePart.Text>()
-        .joinToString(separator = "\n") { it.text }
-        .trim()
+    fun toContentText() = parts.mapNotNull { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text
+            is UIMessagePart.Audio -> {
+                val durationMs = part.metadata?.get("durationMs")
+                    ?.jsonPrimitiveOrNull?.content?.toIntOrNull()
+                if (durationMs != null && durationMs > 0) {
+                    val seconds = (durationMs + 500) / 1000
+                    "[语音]${seconds}''"
+                } else {
+                    "[语音]"
+                }
+            }
+            else -> null
+        }
+    }.joinToString(separator = "\n").trim()
 
     fun getToolCalls() = parts.filterIsInstance<UIMessagePart.ToolCall>()
 

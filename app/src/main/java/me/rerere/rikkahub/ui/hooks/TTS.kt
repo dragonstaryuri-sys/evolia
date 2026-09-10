@@ -17,6 +17,8 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.tts.model.PlaybackState
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getAssistantById
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.datastore.getSelectedTTSProvider
 import me.rerere.rikkahub.data.datastore.isMuteTime
 import java.util.concurrent.atomic.AtomicBoolean
@@ -405,7 +407,12 @@ class CustomTtsStateImpl(
 
         val convFlow = chatService.getConversationFlow(conversationId)
         val jobFlow = chatService.getGenerationJobStateFlow(conversationId)
-        val autoPlayFlow = settingsStore.settingsFlow.map { it.autoPlayTts }
+        // 微信模式下强制不自动朗读（不管 autoPlayTts 开关状态）
+        val autoPlayFlow = combine(settingsStore.settingsFlow, convFlow) { settings, conv ->
+            val assistant = settings.getAssistantById(conv.assistantId)
+            val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+            settings.autoPlayTts && !wechatMode
+        }
 
         autoReadJob = scope.launch {
             combine(convFlow, jobFlow, autoPlayFlow) { conv, job, autoPlay ->

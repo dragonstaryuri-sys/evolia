@@ -71,6 +71,8 @@ import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
+import me.rerere.rikkahub.data.ai.tools.CameraCaptureHub
+import me.rerere.rikkahub.ui.components.camera.CameraCaptureOverlay
 
 private enum class PaginationBoundary {
     Older,
@@ -287,6 +289,41 @@ private fun ChatPageContent(
     val voiceTranscribing by vm.voiceTranscribing.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         vm.voiceEvents.collect { msg -> toaster.show(msg, ToastType.Error) }
+    }
+
+    // --- AI 摄像头拍照工具：collect 请求 + 权限 + overlay ---
+    var pendingCapture by remember { mutableStateOf<CameraCaptureHub.CaptureRequest?>(null) }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val req = pendingCapture
+        if (granted && req != null) {
+            // 权限已授予，overlay 自然会渲染（pendingCapture 未变）
+        } else if (req != null) {
+            CameraCaptureHub.deliverResult(
+                CameraCaptureHub.CaptureResult(
+                    requestId = req.requestId,
+                    success = false,
+                    error = "缺少摄像头权限，无法拍照"
+                )
+            )
+            pendingCapture = null
+            toaster.show("需要摄像头权限才能拍照", ToastType.Error)
+        }
+    }
+    LaunchedEffect(Unit) {
+        CameraCaptureHub.requests.collect { req ->
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                pendingCapture = req
+            } else {
+                pendingCapture = req // 先设值，让 launcher 回调能找到 req
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
     }
 
     // 监听录音状态：按下录音（进入 Recording）时启动并行流式 SystemASR 实时识别
@@ -1039,6 +1076,20 @@ private fun ChatPageContent(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+
+            // AI 摄像头拍照 Overlay：盖在 Scaffold 之上，全屏相机预览 + 倒计时
+            val activeCapture = pendingCapture
+            if (activeCapture != null &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.CAMERA
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                CameraCaptureOverlay(
+                    request = activeCapture,
+                    onDismiss = { pendingCapture = null }
+                )
+            }
         }
     }
 }
@@ -1098,6 +1149,28 @@ private fun TopBar(
                 )
         )
 
+        // 标题：叠层居中，相对于整个屏幕宽度居中显示
+        val wechatMode = settings.getEffectiveDisplaySetting(currentAssistant).wechatMode
+        val titleText = when {
+            isReadOnly -> stringResource(R.string.chat_page_search_result_title)
+            isLoading && wechatMode -> stringResource(R.string.chat_status_typing)
+            else -> currentAssistant.name
+        }
+        Text(
+            text = titleText,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(vertical = 8.dp)
+                .height(topPillSize)
+                .wrapContentHeight(Alignment.CenterVertically)
+                .padding(horizontal = 80.dp)
+                .clickable {
+                    navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
+                }
+        )
+
         Row(
             modifier = Modifier
                 .statusBarsPadding()
@@ -1116,56 +1189,40 @@ private fun TopBar(
                 }
             }
 
-            Spacer(Modifier.width(8.dp))
+            // 微信模式下隐藏自动朗读按钮
+            if (!wechatMode) {
+                Spacer(Modifier.width(8.dp))
 
-            Surface(
-                onClick = {
-                    // 这里的 logic 也要改一下：
-                    // 如果点的时候是静音时间，弹个提醒，不给切开关
-                    if (settings.isMuteTime()) {
-                        toaster.show("当前处于静音时段，自动朗读已禁用")
-                    } else {
-                        onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts))
-                    }
-                },
-                shape = buttonShape,
-                color = topContainerColor,
-                border = topContainerBorder
-            ) {
-                Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
-                    // 逻辑：如果 (手动关了) 或者 (正处于静音时段)，图标就显示“关闭”
-                    val isEffectivelyOff = !settings.autoPlayTts || settings.isMuteTime()
-                    Icon(
-                        imageVector = if (isEffectivelyOff) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
-                        contentDescription = "Auto Play TTS",
-                        // 可选：静音时段让图标变淡一点（0.5f 透明度）
-                        tint = if (settings.isMuteTime()) {
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                Surface(
+                    onClick = {
+                        // 这里的 logic 也要改一下：
+                        // 如果点的时候是静音时间，弹个提醒，不给切开关
+                        if (settings.isMuteTime()) {
+                            toaster.show("当前处于静音时段，自动朗读已禁用")
                         } else {
-                            LocalContentColor.current
+                            onUpdateSettings(settings.copy(autoPlayTts = !settings.autoPlayTts))
                         }
-                    )
+                    },
+                    shape = buttonShape,
+                    color = topContainerColor,
+                    border = topContainerBorder
+                ) {
+                    Box(modifier = Modifier.size(topPillSize), contentAlignment = Alignment.Center) {
+                        // 逻辑：如果 (手动关了) 或者 (正处于静音时段)，图标就显示“关闭”
+                        val isEffectivelyOff = !settings.autoPlayTts || settings.isMuteTime()
+                        Icon(
+                            imageVector = if (isEffectivelyOff) Icons.AutoMirrored.Rounded.VolumeOff else Icons.AutoMirrored.Rounded.VolumeUp,
+                            contentDescription = "Auto Play TTS",
+                            // 可选：静音时段让图标变淡一点（0.5f 透明度）
+                            tint = if (settings.isMuteTime()) {
+                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            } else {
+                                LocalContentColor.current
+                            }
+                        )
+                    }
                 }
             }
-
-            Spacer(Modifier.weight(1f))
-
-            val wechatMode = settings.getEffectiveDisplaySetting(currentAssistant).wechatMode
-            val titleText = when {
-                isReadOnly -> stringResource(R.string.chat_page_search_result_title)
-                isLoading && wechatMode -> stringResource(R.string.chat_status_typing)
-                else -> currentAssistant.name
-            }
-
-            Text(
-                text = titleText,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
-                modifier = Modifier
-                    .align(Alignment.CenterVertically)
-                    .clickable {
-                        navController.navigate(Screen.AssistantDetail(id = currentAssistant.id.toString()))
-                    }
-            )
 
             Spacer(Modifier.weight(1f))
 
