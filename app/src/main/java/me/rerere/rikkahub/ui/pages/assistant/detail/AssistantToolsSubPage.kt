@@ -126,6 +126,14 @@ fun AssistantToolsSubPage(
             onUpdate(assistant.copy(localTools = newLocalTools))
         }
 
+        // 摄像头拍照工具单独的权限 launcher（只需要 CAMERA）
+        val cameraCapturePermissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) {
+            val newLocalTools = assistant.localTools + LocalToolOption.CameraCapture
+            onUpdate(assistant.copy(localTools = newLocalTools))
+        }
+
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
             if (assistant.isMain) {
                 // Schedule Management
@@ -280,6 +288,27 @@ fun AssistantToolsSubPage(
                 )
 
             }
+
+            // Camera Capture（所有智能体可用，默认开启）
+            SettingGroupItem(
+                title = stringResource(R.string.assistant_tools_camera_capture_title),
+                subtitle = stringResource(R.string.assistant_tools_camera_capture_desc),
+                trailing = {
+                    HapticSwitch(
+                        checked = assistant.localTools.contains(LocalToolOption.CameraCapture),
+                        onCheckedChange = { enabled ->
+                            if (enabled) {
+                                cameraCapturePermissionLauncher.launch(
+                                    arrayOf(Manifest.permission.CAMERA)
+                                )
+                            } else {
+                                val newLocalTools = assistant.localTools - LocalToolOption.CameraCapture
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        }
+                    )
+                }
+            )
 
             // Email Service (Available for all assistants)
             val emailEnabled = assistant.localTools.contains(LocalToolOption.EmailService)

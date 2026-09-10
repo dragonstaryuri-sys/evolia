@@ -73,7 +73,7 @@ data class Assistant(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
-    val localTools: List<LocalToolOption> = emptyList(),
+    val localTools: List<LocalToolOption> = listOf(LocalToolOption.CameraCapture),
     val background: String? = null,
     val backgroundDim: Float = 0.6f,
     val useAssistantMaterialYouColors: Boolean = false,

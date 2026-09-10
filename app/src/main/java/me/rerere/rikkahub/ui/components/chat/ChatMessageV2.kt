@@ -535,6 +535,16 @@ fun ChatMessageTurn(
     ProvideTextStyle(textStyle) {
         when (group.role) {
             MessageRole.USER -> {
+                // camera_capture 工具注入的 user 图片消息（用于让 AI 看到照片）不在用户侧渲染，
+                // 照片会在 AI 的工具结果区域展示。
+                val isCameraCaptureInjected = group.nodes.any { node ->
+                    node.currentMessage.parts.any { part ->
+                        part is UIMessagePart.Text &&
+                            (part.metadata?.get("camera_capture_injected")?.jsonPrimitiveOrNull?.contentOrNull == "true")
+                    }
+                }
+                if (isCameraCaptureInjected) return@ProvideTextStyle
+
                 val context = androidx.compose.ui.platform.LocalContext.current
                 UserMessageTurn(
                     group = group,
@@ -1082,6 +1092,15 @@ private sealed class AssistantRenderItem {
         override val isLastInTurn: Boolean,
         override val totalInTurn: Int,
     ) : AssistantRenderItem()
+
+    /** camera_capture 工具拍摄的照片，直接在 AI 回复气泡中展示 */
+    data class CameraCaptureImageItem(
+        override val node: MessageNode,
+        val imagePath: String,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
 }
 
 /**
@@ -1168,6 +1187,21 @@ private fun AssistantMessageTurn(
                             isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
                         )
                     }
+                    is UIMessagePart.ToolResult -> {
+                        // camera_capture 工具：把拍下来的照片直接渲染在 AI 回复气泡里
+                        if (part.toolName == "camera_capture") {
+                            val contentObj = part.content as? JsonObject
+                            val success = contentObj?.get("success")?.jsonPrimitiveOrNull?.contentOrNull == "true"
+                            val imagePath = contentObj?.get("image_path")?.jsonPrimitiveOrNull?.contentOrNull
+                            if (success && !imagePath.isNullOrBlank()) {
+                                flat += AssistantRenderItem.CameraCaptureImageItem(
+                                    node = node,
+                                    imagePath = imagePath,
+                                    isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                                )
+                            }
+                        }
+                    }
                     else -> Unit
                 }
             }
@@ -1180,6 +1214,7 @@ private fun AssistantMessageTurn(
                 is AssistantRenderItem.TextItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.ReasoningItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.AudioItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
+                is AssistantRenderItem.CameraCaptureImageItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
             }
         }
     }
@@ -1324,6 +1359,39 @@ private fun AssistantMessageTurn(
                             contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.widthIn(max = maxWidth)
                         )
+                    }
+
+                    is AssistantRenderItem.CameraCaptureImageItem -> {
+                        // camera_capture 工具拍的照片：用文件路径渲染，支持点击放大
+                        if (withBubbleContainer) {
+                            GroupedMessageBubble(
+                                position = position,
+                                role = BubbleRole.ASSISTANT,
+                                modifier = Modifier.widthIn(max = maxWidth),
+                                containerColor = if (wechatMode) WeChatAiWhite else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onSurface,
+                                onClick = {
+                                    if (!selecting) onBubbleClick(node)
+                                }
+                            ) {
+                                ZoomableAsyncImage(
+                                    model = "file://${item.imagePath}",
+                                    contentDescription = "AI 拍摄的照片",
+                                    modifier = Modifier
+                                        .clip(MaterialTheme.shapes.medium)
+                                        .height(200.dp)
+                                )
+                            }
+                        } else {
+                            ZoomableAsyncImage(
+                                model = item.imagePath,
+                                contentDescription = "AI 拍摄的照片",
+                                modifier = Modifier
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .height(200.dp)
+                                    .clickable { if (!selecting) onBubbleClick(node) }
+                            )
+                        }
                     }
                 }
             }

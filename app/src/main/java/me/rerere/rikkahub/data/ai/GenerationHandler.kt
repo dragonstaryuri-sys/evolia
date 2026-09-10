@@ -553,6 +553,38 @@ class GenerationHandler(
                 skipContext = skipContextForResponse
             )
 
+            // camera_capture 工具特殊处理：把拍下的照片作为一条额外 user 图片消息注入，
+            // 因为 OpenAI provider 的 role=tool 消息 content 只输出纯字符串，无法直接携带图片。
+            // 这样下一轮 AI 生成时既能看到 tool result JSON，又能直接看到照片本身。
+            // 注意：这条消息的 Text part 带 camera_capture_injected 标记，UI 层会跳过渲染，
+            // 照片本身会在 AI 的工具结果区域（assistant 气泡）展示，避免在用户侧重复显示。
+            val cameraResult = results.firstOrNull { it.toolName == "camera_capture" }
+            if (cameraResult != null) {
+                val contentObj = cameraResult.content as? JsonObject
+                val success = contentObj?.get("success")?.jsonPrimitive?.contentOrNull == "true"
+                val imagePath = contentObj?.get("image_path")?.jsonPrimitive?.contentOrNull
+                val facing = contentObj?.get("facing")?.jsonPrimitive?.contentOrNull ?: "back"
+                if (success && !imagePath.isNullOrBlank()) {
+                    val imageFile = java.io.File(imagePath)
+                    if (imageFile.exists()) {
+                        val facingText = if (facing == "front") "前置" else "后置"
+                        currentMessages = currentMessages + UIMessage(
+                            role = CoreMessageRole.USER,
+                            parts = listOf(
+                                UIMessagePart.Text(
+                                    text = "（这是刚刚用${facingText}摄像头拍摄的照片）",
+                                    metadata = buildJsonObject { put("camera_capture_injected", true) }
+                                ),
+                                UIMessagePart.Image(url = "file://$imagePath")
+                            )
+                        )
+                        Log.i(TAG, "camera_capture: injected photo as user image message: $imagePath")
+                    } else {
+                        Log.w(TAG, "camera_capture: image file not found, skip injection: $imagePath")
+                    }
+                }
+            }
+
             emit(
                 GenerationChunk.Messages(
                     currentMessages.transforms(
@@ -939,7 +971,7 @@ class GenerationHandler(
                 summaryPromptBuilder.appendLine("- 说话口语化、有活人感，回复简短直接，不超过5句话，禁止冷漠无情")
                 summaryPromptBuilder.appendLine("- 请不要使用任何动作或神态描写（如 *微笑*、(叹气) 等），而是像在直接与用户对话或发消息，直接说出你的回答或想法")
                 summaryPromptBuilder.appendLine("- 严禁使用任何形式的括号（唯一例外见下条语音消息）。")
-                summaryPromptBuilder.appendLine("- 你可以把回复以语音消息形式发给用户（不是每条回复都要用）。在回复最开头加上(语音消息)标记即可，这是唯一允许的括号用法。除此之外不要使用括号。")
+                summaryPromptBuilder.appendLine("- 当你想给用户发语音消息时，在回复最开头加上(语音消息)标记即可，这是唯一允许的括号用法。除此之外不要使用括号。")
             }
         }
 

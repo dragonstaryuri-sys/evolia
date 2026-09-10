@@ -740,7 +740,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         temperature = 0.6f,
         systemPrompt = "你是用户创造的ai",
         isMain = true,
-        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser)
+        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser, LocalToolOption.CameraCapture)
     )
 )
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")

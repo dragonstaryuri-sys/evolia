@@ -133,11 +133,11 @@ import me.rerere.rikkahub.BuildConfig
 private const val TAG = "ChatService"
 
 /**
- * 微信模式下每个分句转为语音消息的触发概率（20%）。
+ * 微信模式下每个分句转为语音消息的触发概率（10%）。
  * 每个分句独立判定：命中概率 或 分句带 [WECHAT_VOICE_MESSAGE_MARKER] 标记时，
  * 该分句会被 TTS 合成为语音条发送，其余分句仍为文字。
  */
-internal const val WECHAT_VOICE_MESSAGE_PROBABILITY = 0.2f
+internal const val WECHAT_VOICE_MESSAGE_PROBABILITY = 0.1f
 
 /**
  * 微信模式下 agent 主动触发语音消息的标记。写在某个分句开头时，
@@ -1347,7 +1347,8 @@ class ChatService(
                                 assistant.localTools.filter {
                                     it is LocalToolOption.TimeSense ||
                                         it is LocalToolOption.EmailService ||
-                                        it is LocalToolOption.ImageGeneration
+                                        it is LocalToolOption.ImageGeneration ||
+                                        it is LocalToolOption.CameraCapture
                                 }
                             }
 

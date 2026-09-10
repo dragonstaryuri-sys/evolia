@@ -22,6 +22,9 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.ConcurrentHashMap
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.repository.AssistantExtendedStateRepository
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
@@ -103,6 +106,49 @@ object CallCommandHub {
     /** 工具侧发送 hangup 命令。conversationId 仅用于日志校验，不必严格匹配。 */
     suspend fun sendHangup(conversationId: Uuid) {
         _commands.emit(CallCommand(action = "hangup", conversationId = conversationId))
+    }
+}
+
+/**
+ * AI 工具调用 ↔ 相机拍照 UI 之间的双向通信总线。
+ *
+ * 复用 CallCommandHub 的解耦思路：工具侧 emit 请求 + 挂起等待结果，
+ * UI 侧（ChatPage）collect 请求，启动相机 overlay 拍照，拍完把结果回传。
+ * 60 秒超时保护，避免工具侧永久挂起。
+ */
+object CameraCaptureHub {
+    data class CaptureRequest(
+        val requestId: String,
+        val facing: String, // "front" / "back"
+    )
+
+    data class CaptureResult(
+        val requestId: String,
+        val success: Boolean,
+        val imagePath: String? = null,
+        val error: String? = null,
+    )
+
+    private val _requests = MutableSharedFlow<CaptureRequest>(extraBufferCapacity = 1)
+    val requests = _requests.asSharedFlow()
+
+    private val pendingResults = ConcurrentHashMap<String, CompletableDeferred<CaptureResult>>()
+
+    /** 工具侧调用：发起拍照请求并等待结果（60s 超时）。 */
+    suspend fun requestCapture(facing: String): CaptureResult {
+        val requestId = Uuid.random().toString()
+        val deferred = CompletableDeferred<CaptureResult>()
+        pendingResults[requestId] = deferred
+        _requests.emit(CaptureRequest(requestId, facing))
+        return withTimeoutOrNull(60_000) { deferred.await() }
+            ?: CaptureResult(requestId, success = false, error = "拍照超时（60s 内未收到结果）").also {
+                pendingResults.remove(requestId)
+            }
+    }
+
+    /** UI 侧调用：拍照完成后回传结果。 */
+    fun deliverResult(result: CaptureResult) {
+        pendingResults.remove(result.requestId)?.complete(result)
     }
 }
 
@@ -2312,6 +2358,57 @@ class LocalTools(
         )
     }
 
+    fun getCameraCaptureTool(): List<Tool> {
+        return listOf(
+            Tool(
+                name = "camera_capture",
+                description = "调用用户设备的摄像头自动倒计时拍摄一张照片。" +
+                    "facing=back 适合拍景物/物品/文档（后置摄像头）；facing=front 适合自拍或呈现用户视角（前置摄像头）。" +
+                    "拍摄完成后照片会作为结果返回并自动附给 AI 查看。仅在确有需要了解用户周围环境或视觉信息时调用。",
+                parameters = {
+                    InputSchema.Obj(
+                        properties = buildJsonObject {
+                            put("facing", buildJsonObject {
+                                put("type", "string")
+                                put("description", "使用哪个摄像头：back（后置，默认）或 front（前置）")
+                                put(
+                                    "enum", JsonArray(
+                                        listOf(
+                                            JsonPrimitive("back"),
+                                            JsonPrimitive("front")
+                                        )
+                                    )
+                                )
+                            })
+                        },
+                        required = listOf("facing")
+                    )
+                },
+                execute = {
+                    val facing = it.jsonObject["facing"]?.jsonPrimitive?.contentOrNull ?: "back"
+                    val normalizedFacing = if (facing == "front") "front" else "back"
+                    withContext(Dispatchers.IO) {
+                        val result = CameraCaptureHub.requestCapture(normalizedFacing)
+                        if (result.success && !result.imagePath.isNullOrBlank()) {
+                            buildJsonObject {
+                                put("success", true)
+                                put("image_path", result.imagePath)
+                                put("facing", normalizedFacing)
+                                put("note", "已拍摄，照片已附给 AI 查看")
+                            }
+                        } else {
+                            buildJsonObject {
+                                put("success", false)
+                                put("error", result.error ?: "拍照失败")
+                                put("facing", normalizedFacing)
+                            }
+                        }
+                    }
+                }
+            )
+        )
+    }
+
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
@@ -2334,6 +2431,9 @@ class LocalTools(
         if (options.contains(LocalToolOption.ImageGeneration)) tools.addAll(getImageGenerationTools())
         if (options.contains(LocalToolOption.CallControl)) {
             tools.addAll(getCallControlTools(assistantId, conversationId))
+        }
+        if (options.contains(LocalToolOption.CameraCapture)) {
+            tools.addAll(getCameraCaptureTool())
         }
         return tools
     }
