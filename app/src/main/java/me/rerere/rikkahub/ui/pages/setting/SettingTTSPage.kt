@@ -75,6 +75,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.spring
@@ -713,45 +714,93 @@ private fun TtsTextFilterSettingsDialog(
                             modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             // 开始时间选择
-                            OutlinedTextField(
-                                value = displaySetting.muteTimeStart ?: "",
-                                onValueChange = {}, // 不允许手动输入
-                                label = { Text("开始时间") },
-                                modifier = Modifier.weight(1f).height(64.dp),
-                                readOnly = true, // 只读，点击触发
-                                trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
-                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                                    .also { interactionSource ->
-                                        LaunchedEffect(interactionSource) {
-                                            interactionSource.interactions.collect {
-                                                if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
-                                                    pickingStart = true
-                                                    showTimePicker = true
-                                                }
-                                            }
-                                        }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(64.dp)
+                                    .clip(MaterialTheme.shapes.small)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        shape = MaterialTheme.shapes.small
+                                    )
+                                    .clickable {
+                                        pickingStart = true
+                                        showTimePicker = true
                                     }
-                            )
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "开始时间",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = displaySetting.muteTimeStart ?: "--:--",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = if (displaySetting.muteTimeStart != null)
+                                                MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Rounded.Schedule,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                             // 结束时间选择
-                            OutlinedTextField(
-                                value = displaySetting.muteTimeEnd ?: "",
-                                onValueChange = {},
-                                label = { Text("结束时间") },
-                                modifier = Modifier.weight(1f).height(64.dp),
-                                readOnly = true,
-                                trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
-                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                                    .also { interactionSource ->
-                                        LaunchedEffect(interactionSource) {
-                                            interactionSource.interactions.collect {
-                                                if (it is androidx.compose.foundation.interaction.PressInteraction.Release) {
-                                                    pickingStart = false
-                                                    showTimePicker = true
-                                                }
-                                            }
-                                        }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(64.dp)
+                                    .clip(MaterialTheme.shapes.small)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline,
+                                        shape = MaterialTheme.shapes.small
+                                    )
+                                    .clickable {
+                                        pickingStart = false
+                                        showTimePicker = true
                                     }
-                            )
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "结束时间",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = displaySetting.muteTimeEnd ?: "--:--",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = if (displaySetting.muteTimeEnd != null)
+                                                MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Rounded.Schedule,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
                     }
                 }
