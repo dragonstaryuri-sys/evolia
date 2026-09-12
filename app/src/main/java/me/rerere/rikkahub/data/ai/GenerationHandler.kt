@@ -572,7 +572,7 @@ class GenerationHandler(
                             role = CoreMessageRole.USER,
                             parts = listOf(
                                 UIMessagePart.Text(
-                                    text = "（这是刚刚用${facingText}摄像头拍摄的照片）",
+                                    text = "（这是你刚才调用user的${facingText}摄像头拍摄的照片）",
                                     metadata = buildJsonObject { put("camera_capture_injected", true) }
                                 ),
                                 UIMessagePart.Image(url = "file://$imagePath")
