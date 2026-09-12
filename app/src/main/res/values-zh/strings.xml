@@ -1028,7 +1028,7 @@
   <string name="assistant_tools_prefer_built_in_search">优先使用内置搜索</string>
   <string name="assistant_tools_prefer_built_in_search_desc">若模型支持，优先使用模型自带的搜索功能</string>
   <string name="assistant_tools_device_control_title">设备控制</string>
-  <string name="assistant_tools_device_control_desc">通知、应用、闹钟、提醒事项</string>
+  <string name="assistant_tools_device_control_desc">通知、应用、闹钟、提醒事项、摄像头拍照</string>
   <string name="assistant_tools_camera_capture_title">摄像头拍照</string>
   <string name="assistant_tools_camera_capture_desc">允许 AI 调用设备摄像头拍照（可指定前后摄像头）</string>
   <string name="assistant_tools_mcp_servers_title">MCP 服务器</string>

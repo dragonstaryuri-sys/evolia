@@ -2450,8 +2450,10 @@ class LocalTools(
     ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
-        if (options.contains(LocalToolOption.DeviceControl)) {
+        if (options.contains(LocalToolOption.DeviceControl) ||
+            @Suppress("DEPRECATION") options.contains(LocalToolOption.CameraCapture)) {
             tools.addAll(getDeviceControlTools(assistantId, conversationId))
+            tools.addAll(getCameraCaptureTool())
         }
         if (options.contains(LocalToolOption.PythonEngine)) tools.addAll(getPythonTools(conversationId, userImageUrls))
         if (options.contains(LocalToolOption.ScheduleManagement)) tools.addAll(getScheduleTools(assistantId))
@@ -2464,9 +2466,6 @@ class LocalTools(
         if (options.contains(LocalToolOption.ImageGeneration)) tools.addAll(getImageGenerationTools())
         if (options.contains(LocalToolOption.CallControl)) {
             tools.addAll(getCallControlTools(assistantId, conversationId))
-        }
-        if (options.contains(LocalToolOption.CameraCapture)) {
-            tools.addAll(getCameraCaptureTool())
         }
         return tools
     }

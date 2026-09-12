@@ -32,6 +32,7 @@ import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_GUIDELINES
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
+import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV4Migration
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.utils.toMutableStateFlow
@@ -57,7 +58,8 @@ private val Context.settingsStore by preferencesDataStore(
         listOf(
             PreferenceStoreV1Migration(),
             PreferenceStoreV2Migration(),
-            PreferenceStoreV3Migration()
+            PreferenceStoreV3Migration(),
+            PreferenceStoreV4Migration()
         )
     }
 )
@@ -740,7 +742,7 @@ internal val DEFAULT_ASSISTANTS = listOf(
         temperature = 0.6f,
         systemPrompt = "你是用户创造的ai",
         isMain = true,
-        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser, LocalToolOption.CameraCapture)
+        localTools = listOf(LocalToolOption.UpdateProfile, LocalToolOption.PeekUser, LocalToolOption.DeviceControl, LocalToolOption.TimeSense)
     )
 )
 val DEFAULT_SYSTEM_TTS_ID = Uuid.parse("026a01a2-c3a0-4fd5-8075-80e03bdef200")

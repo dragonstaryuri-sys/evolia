@@ -57,6 +57,12 @@ sealed class LocalToolOption {
     @SerialName("call_control")
     data object CallControl : LocalToolOption()
 
+    /**
+     * 已废弃：摄像头拍照已合并到 [DeviceControl] 开关下。
+     * 保留此枚举仅为兼容旧数据库反序列化；运行时等同于 [DeviceControl]。
+     * 新代码不应再使用此枚举。
+     */
+    @Deprecated("已合并到 DeviceControl，保留仅为旧数据兼容", ReplaceWith("DeviceControl"))
     @Serializable
     @SerialName("camera_capture")
     data object CameraCapture : LocalToolOption()

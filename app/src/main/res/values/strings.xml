@@ -1053,7 +1053,7 @@
   <string name="assistant_tools_prefer_built_in_search">Prefer Built-in Search</string>
   <string name="assistant_tools_prefer_built_in_search_desc">Use model\'s native search when available</string>
   <string name="assistant_tools_device_control_title">Device Control</string>
-  <string name="assistant_tools_device_control_desc">Notifications, apps, alarms, reminders</string>
+  <string name="assistant_tools_device_control_desc">Notifications, apps, alarms, reminders, camera capture</string>
   <string name="assistant_tools_camera_capture_title">Camera Capture</string>
   <string name="assistant_tools_camera_capture_desc">Allow AI to take photos via the device camera (front/back)</string>
   <string name="assistant_tools_mcp_servers_title">MCP Servers</string>

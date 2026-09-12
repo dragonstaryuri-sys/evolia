@@ -126,13 +126,7 @@ fun AssistantToolsSubPage(
             onUpdate(assistant.copy(localTools = newLocalTools))
         }
 
-        // 摄像头拍照工具单独的权限 launcher（只需要 CAMERA）
-        val cameraCapturePermissionLauncher = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestMultiplePermissions()
-        ) {
-            val newLocalTools = assistant.localTools + LocalToolOption.CameraCapture
-            onUpdate(assistant.copy(localTools = newLocalTools))
-        }
+        // 摄像头拍照功能已合并到 Device Control 开关下（共享 CAMERA 权限申请）
 
         SettingsGroup(title = stringResource(R.string.assistant_page_tab_local_tools)) {
             if (assistant.isMain) {
@@ -183,13 +177,16 @@ fun AssistantToolsSubPage(
                     }
                 )
 
-                // Device Control
+                // Device Control（含摄像头拍照功能，已合并）
                 SettingGroupItem(
                     title = stringResource(R.string.assistant_tools_device_control_title),
                     subtitle = stringResource(R.string.assistant_tools_device_control_desc),
                     trailing = {
                         HapticSwitch(
-                            checked = assistant.localTools.contains(LocalToolOption.DeviceControl),
+                            checked = assistant.localTools.any {
+                                it is LocalToolOption.DeviceControl ||
+                                    @Suppress("DEPRECATION") it is LocalToolOption.CameraCapture
+                            },
                             onCheckedChange = { enabled ->
                                 if (enabled) {
                                     val permissions = buildList {
@@ -202,7 +199,11 @@ fun AssistantToolsSubPage(
 
                                     deviceControlPermissionLauncher.launch(permissions.toTypedArray())
                                 } else {
-                                    val newLocalTools = assistant.localTools - LocalToolOption.DeviceControl
+                                    // 同时清理 DeviceControl 和废弃的 CameraCapture
+                                    val newLocalTools = assistant.localTools.filterNot {
+                                        it is LocalToolOption.DeviceControl ||
+                                            @Suppress("DEPRECATION") it is LocalToolOption.CameraCapture
+                                    }
                                     onUpdate(assistant.copy(localTools = newLocalTools))
                                 }
                             }
@@ -289,26 +290,7 @@ fun AssistantToolsSubPage(
 
             }
 
-            // Camera Capture（所有智能体可用，默认开启）
-            SettingGroupItem(
-                title = stringResource(R.string.assistant_tools_camera_capture_title),
-                subtitle = stringResource(R.string.assistant_tools_camera_capture_desc),
-                trailing = {
-                    HapticSwitch(
-                        checked = assistant.localTools.contains(LocalToolOption.CameraCapture),
-                        onCheckedChange = { enabled ->
-                            if (enabled) {
-                                cameraCapturePermissionLauncher.launch(
-                                    arrayOf(Manifest.permission.CAMERA)
-                                )
-                            } else {
-                                val newLocalTools = assistant.localTools - LocalToolOption.CameraCapture
-                                onUpdate(assistant.copy(localTools = newLocalTools))
-                            }
-                        }
-                    )
-                }
-            )
+            // 摄像头拍照已合并到 Device Control 开关下，不再单独显示
 
             // Email Service (Available for all assistants)
             val emailEnabled = assistant.localTools.contains(LocalToolOption.EmailService)

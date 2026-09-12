@@ -1348,7 +1348,8 @@ class ChatService(
                                     it is LocalToolOption.TimeSense ||
                                         it is LocalToolOption.EmailService ||
                                         it is LocalToolOption.ImageGeneration ||
-                                        it is LocalToolOption.CameraCapture
+                                        it is LocalToolOption.DeviceControl ||
+                                        @Suppress("DEPRECATION") it is LocalToolOption.CameraCapture
                                 }
                             }
 
