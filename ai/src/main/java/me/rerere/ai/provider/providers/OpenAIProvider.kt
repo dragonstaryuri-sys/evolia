@@ -238,11 +238,33 @@ class OpenAIProvider(
     ): ImageGenerationResult = withContext(Dispatchers.IO) {
         require(providerSetting is ProviderSetting.OpenAI) { "Expected OpenAI provider setting" }
         val key = keyRoulette.next(providerSetting.apiKey)
-        val requestBody = json.encodeToString(
-            buildJsonObject {
-                put("model", params.model.modelId)
-                put("prompt", params.prompt)
-                val isDalle3 = params.model.modelId.contains("dall-e-3", ignoreCase = true)
+        val isSiliconFlow = providerSetting.baseUrl.contains("siliconflow", ignoreCase = true)
+        val isDalle3 = params.model.modelId.contains("dall-e-3", ignoreCase = true)
+        val isQwenImageEdit = params.model.modelId.contains("Qwen-Image-Edit", ignoreCase = true)
+
+        val requestBody = buildJsonObject {
+            put("model", params.model.modelId)
+            put("prompt", params.prompt)
+
+            if (isSiliconFlow) {
+                // SiliconFlow 格式
+                // batch_size 仅对 Kolors 系列有效
+                if (params.model.modelId.contains("Kolors", ignoreCase = true)) {
+                    put("batch_size", params.numOfImages.coerceIn(1, 4))
+                }
+                // image 字段：图生图/图片编辑模型需要
+                params.image?.let { put("image", it) }
+                // image_size：Qwen-Image-Edit 系列不支持此字段
+                if (!isQwenImageEdit) {
+                    val isQwenImage = params.model.modelId.contains("Qwen-Image", ignoreCase = true)
+                    put("image_size", when (params.aspectRatio) {
+                        ImageAspectRatio.SQUARE -> if (isQwenImage) "1328x1328" else "1024x1024"
+                        ImageAspectRatio.LANDSCAPE -> if (isQwenImage) "1584x1056" else "1024x1024"
+                        ImageAspectRatio.PORTRAIT -> if (isQwenImage) "1056x1584" else "1024x1024"
+                    })
+                }
+            } else {
+                // OpenAI DALL-E 格式
                 put("n", if (isDalle3) 1 else params.numOfImages.coerceIn(1, 10))
                 put("response_format", "b64_json")
                 put(
@@ -256,23 +278,27 @@ class OpenAIProvider(
                         else -> "1024x1024"
                     }
                 )
-            }.mergeCustomBody(params.customBody)
-        )
+            }
+        }.mergeCustomBody(params.customBody)
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}/images/generations")
             .headers(params.customHeaders.toHeaders())
             .addHeader("Authorization", "Bearer $key")
             .addHeader("Content-Type", "application/json")
-            .post(requestBody.toRequestBody("application/json".toMediaType()))
+            .post(json.encodeToString(requestBody).toRequestBody("application/json".toMediaType()))
             .build()
 
         val response = client.configureClientWithProxy(providerSetting.proxy).newCall(request).await()
-        if (!response.isSuccessful) error("Failed to generate image: ${response.code}")
-
         val bodyStr = response.body?.string() ?: ""
+        if (!response.isSuccessful) {
+            error("图像生成失败 (HTTP ${response.code})。服务端返回：$bodyStr")
+        }
+
         val bodyJson = json.parseToJsonElement(bodyStr).jsonObject
-        val data = bodyJson["data"]?.jsonArray ?: error("No data in response")
+        // 兼容 OpenAI (data) 和 SiliconFlow (images) 两种响应格式
+        val data = (bodyJson["data"] ?: bodyJson["images"])?.jsonArray
+            ?: error("响应中没有 data/images 字段: $bodyStr")
 
         val items = data.map { imageJson ->
             val imageObj = imageJson.jsonObject

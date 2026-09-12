@@ -2188,14 +2188,11 @@ class LocalTools(
                             val method = model.imageGenerationMethod ?: ImageGenerationMethod.DIFFUSION
                             val modelSupportsImageInput = model.inputModalities.contains(Modality.IMAGE)
 
-                            // 如果提供了图片 URL 但模型/方法不支持图片输入，给出明确错误
-                            if (imageUrl != null && !(modelSupportsImageInput && method == ImageGenerationMethod.MULTIMODAL)) {
-                                val reason = if (method != ImageGenerationMethod.MULTIMODAL) {
-                                    "当前生图方法（${method.name}）不支持图片输入，请在设置中将生图方法切换为 MULTIMODAL。"
-                                } else {
-                                    "当前配置的生图模型未开启「支持图片输入」，请在设置中开启后再使用图片输入功能。"
+                            // 如果提供了图片 URL 但模型不支持图片输入，给出明确错误
+                            if (imageUrl != null && !modelSupportsImageInput) {
+                                return@withContext buildJsonObject {
+                                    put("error", "当前配置的生图模型未开启「支持图片输入」，请在设置中开启后再使用图片输入功能。")
                                 }
-                                return@withContext buildJsonObject { put("error", "无法使用图片输入：$reason") }
                             }
 
                             val items = when (method) {
@@ -2247,7 +2244,8 @@ class LocalTools(
                                         numOfImages = numImages,
                                         aspectRatio = aspectRatio,
                                         customHeaders = model.customHeaders,
-                                        customBody = model.customBodies
+                                        customBody = model.customBodies,
+                                        image = imageUrl
                                     )
                                     providerManager.getProviderByType(provider).generateImage(providerSetting, params).items
                                 }

@@ -79,6 +79,7 @@ data class ImageGenerationParams(
     val aspectRatio: ImageAspectRatio = ImageAspectRatio.SQUARE,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
+    val image: String? = null,
 )
 
 @Serializable
