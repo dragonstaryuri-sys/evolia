@@ -257,6 +257,27 @@ fun ToolCallItem(
                         )
                     }
                 }
+                // generate_image result preview
+                if (toolName == "generate_image" && content != null && !loading) {
+                    val contentObj = content as? JsonObject
+                    val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
+                    val generatedImages = contentObj?.get("generated_images")?.jsonArray
+                    val previewText = when {
+                        error != null -> error
+                        generatedImages != null && generatedImages.isNotEmpty() -> "已生成 ${generatedImages.size} 张图片"
+                        else -> null
+                    }
+                    if (previewText != null) {
+                        Text(
+                            text = previewText.take(100) + if (previewText.length > 100) "…" else "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (error != null) MaterialTheme.colorScheme.error
+                                   else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
@@ -662,6 +683,117 @@ private fun ToolCallPreviewSheet(
                                             }
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+
+                    // generate_image - 显示提示词、错误或生成结果
+                    "generate_image" -> {
+                        val promptArg = (arguments as? JsonObject)?.get("prompt")?.jsonPrimitiveOrNull?.contentOrNull ?: ""
+                        val imageUrlArg = (arguments as? JsonObject)?.get("image_url")?.jsonPrimitiveOrNull?.contentOrNull
+                        val contentObj = content as? JsonObject
+                        val error = contentObj?.get("error")?.jsonPrimitiveOrNull?.contentOrNull
+                        val generatedImages = contentObj?.get("generated_images")?.jsonArray
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "图像生成",
+                                style = MaterialTheme.typography.headlineSmall,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            // 提示词
+                            Text(
+                                text = "提示词",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = promptArg,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+
+                            // 参考图片 URL
+                            if (imageUrlArg != null) {
+                                Text(
+                                    text = "参考图片",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = imageUrlArg,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
+                                }
+                            }
+
+                            // 结果
+                            Text(
+                                text = stringResource(R.string.chat_message_tool_call_result),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (error != null)
+                                        MaterialTheme.colorScheme.errorContainer
+                                    else MaterialTheme.colorScheme.surfaceContainerLow
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (error != null) {
+                                    Text(
+                                        text = error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
+                                } else if (generatedImages != null && generatedImages.isNotEmpty()) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        generatedImages.forEach { img ->
+                                            val imgObj = img as? JsonObject
+                                            val markdownLink = imgObj?.get("markdown_link")?.jsonPrimitiveOrNull?.contentOrNull
+                                            if (markdownLink != null) {
+                                                Text(
+                                                    text = markdownLink,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        text = "(无结果)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        modifier = Modifier.padding(12.dp)
+                                    )
                                 }
                             }
                         }

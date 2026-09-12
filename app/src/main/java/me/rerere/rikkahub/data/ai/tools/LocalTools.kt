@@ -2125,10 +2125,21 @@ class LocalTools(
     }
 
     fun getImageGenerationTools(): List<Tool> {
+        // 检查全局配置的生图模型是否支持图片输入
+        val settings = settingsStore.settingsFlow.value
+        val imageGenModel = settings.findModelById(settings.imageGenerationModelId)
+        val supportsImageInput = imageGenModel?.inputModalities?.contains(Modality.IMAGE) == true
+
+        val description = if (supportsImageInput) {
+            "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。如果用户提供了参考图片（image_url），应基于该参考图片进行图像生成或编辑。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接。建议提示词使用详细的英文描述以获得更好效果。"
+        } else {
+            "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接。建议提示词使用详细的英文描述以获得更好效果。"
+        }
+
         return listOf(
             Tool(
                 name = "generate_image",
-                description = "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接。建议提示词使用详细的英文描述以获得更好效果。",
+                description = description,
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -2145,6 +2156,12 @@ class LocalTools(
                                 put("description", "图像纵横比：SQUARE (1:1), PORTRAIT (2:3), LANDSCAPE (3:2)")
                                 put("enum", JsonArray(listOf(JsonPrimitive("SQUARE"), JsonPrimitive("PORTRAIT"), JsonPrimitive("LANDSCAPE"))))
                             })
+                            if (supportsImageInput) {
+                                put("image_url", buildJsonObject {
+                                    put("type", "string")
+                                    put("description", "可选的参考图片 URL（http/https）。当用户希望基于已有图片进行生成或编辑时提供。")
+                                })
+                            }
                         },
                         required = listOf("prompt")
                     )
@@ -2154,6 +2171,7 @@ class LocalTools(
                     val numImages = (args.jsonObject["num_images"]?.jsonPrimitive?.intOrNull ?: 1).coerceIn(1, 4)
                     val aspectRatioStr = args.jsonObject["aspect_ratio"]?.jsonPrimitive?.contentOrNull ?: "SQUARE"
                     val aspectRatio = try { ImageAspectRatio.valueOf(aspectRatioStr) } catch (e: Exception) { ImageAspectRatio.SQUARE }
+                    val imageUrl = args.jsonObject["image_url"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
                     withContext(Dispatchers.IO) {
                         try {
@@ -2168,6 +2186,17 @@ class LocalTools(
                                 ?: return@withContext buildJsonObject { put("error", "找不到 Provider 设置。") }
 
                             val method = model.imageGenerationMethod ?: ImageGenerationMethod.DIFFUSION
+                            val modelSupportsImageInput = model.inputModalities.contains(Modality.IMAGE)
+
+                            // 如果提供了图片 URL 但模型/方法不支持图片输入，给出明确错误
+                            if (imageUrl != null && !(modelSupportsImageInput && method == ImageGenerationMethod.MULTIMODAL)) {
+                                val reason = if (method != ImageGenerationMethod.MULTIMODAL) {
+                                    "当前生图方法（${method.name}）不支持图片输入，请在设置中将生图方法切换为 MULTIMODAL。"
+                                } else {
+                                    "当前配置的生图模型未开启「支持图片输入」，请在设置中开启后再使用图片输入功能。"
+                                }
+                                return@withContext buildJsonObject { put("error", "无法使用图片输入：$reason") }
+                            }
 
                             val items = when (method) {
                                 ImageGenerationMethod.MULTIMODAL -> {
@@ -2184,7 +2213,13 @@ class LocalTools(
                                         customHeaders = model.customHeaders,
                                         customBody = model.customBodies
                                     )
-                                    val messages = listOf(UIMessage(role = MessageRole.USER, parts = listOf(UIMessagePart.Text(prompt))))
+                                    val parts = mutableListOf<UIMessagePart>()
+                                    // 参考图片放在提示词之前，便于模型理解
+                                    if (imageUrl != null) {
+                                        parts.add(UIMessagePart.Image(url = imageUrl))
+                                    }
+                                    parts.add(UIMessagePart.Text(prompt))
+                                    val messages = listOf(UIMessage(role = MessageRole.USER, parts = parts))
                                     val result = providerManager.getProviderByType(provider).generateText(providerSetting, messages, textParams)
                                     val images = mutableListOf<ImageGenerationItem>()
                                     val textResponse = mutableListOf<String>()
