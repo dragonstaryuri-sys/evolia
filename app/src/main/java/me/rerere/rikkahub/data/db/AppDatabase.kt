@@ -40,7 +40,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageEntity::class,
         ProfileHistoryEntity::class
     ],
-    version = 30,
+    version = 31,
     exportSchema = true
 )
 @TypeConverters(
@@ -192,6 +192,27 @@ abstract class AppDatabase : RoomDatabase() {
          * 该字段可为空（无截止时间的日程不会生成 task）。
          * 删除/完成日程时，通过此字段联动删除关联的 agent_task。
          */
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 30->31 迁移：AgentDiaryEntity 新增 last_message_at 列")
+                db.execSQL(
+                    "ALTER TABLE `AgentDiaryEntity` ADD COLUMN `last_message_at` INTEGER"
+                )
+                // 历史日记回填锚点：直接用 created_at（日记记录创建时间）。
+                // 补生成场景下 createdAt 可能偏离日记 date（9/11 日记在 9/12 凌晨补生成 → createdAt=9/12），
+                // 但此时 9/11 当天没有任何日记存在（DiarySchedulerWorker 仅在"今天+昨天都没有"时补昨天），
+                // 9/11 日记生成时已取完 9/10 锚点到 9/11 结束的消息，下次从 createdAt=9/12 凌晨起取不会漏。
+                db.execSQL(
+                    """
+                    UPDATE `AgentDiaryEntity`
+                    SET `last_message_at` = `created_at`
+                    WHERE `last_message_at` IS NULL
+                    """
+                )
+                Log.v(TAG, "完成 30->31 迁移：历史日记 last_message_at 回填完成")
+            }
+        }
+
         val MIGRATION_29_30 = object : Migration(29, 30) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 Log.v(TAG, "开始 29->30 迁移：schedules 表新增 agent_task_id 列")

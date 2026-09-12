@@ -118,7 +118,9 @@ class DiaryWorker(
             // skeleton 占位 / 清理策略：
             //   - 空壳残留（existingDiary 非空但 content 空）→ 先删掉再新建，避免占位卡住
             //   - 无旧日记 → 新建空 skeleton
+            // skeletonCreatedAt 同时作为无交互日记的 lastMessageAt（无消息可取时用生成时间推进游标）
             // ——————————————————————————————————————————————
+            val skeletonCreatedAt = System.currentTimeMillis()
             val skeletonId = if (existingDiary != null && existingDiary.content.isBlank()) {
                 runCatching { diaryRepo.deleteDiaryById(existingDiary.id) }
                 val newId = Uuid.random().toString()
@@ -128,7 +130,7 @@ class DiaryWorker(
                         assistantId = assistant.id.toString(),
                         content = "",
                         date = targetDateStr,
-                        createdAt = System.currentTimeMillis()
+                        createdAt = skeletonCreatedAt
                     )
                 )
                 newId
@@ -140,23 +142,25 @@ class DiaryWorker(
                         assistantId = assistant.id.toString(),
                         content = "",
                         date = targetDateStr,
-                        createdAt = System.currentTimeMillis()
+                        createdAt = skeletonCreatedAt
                     )
                 )
                 newId
             }
             inProgressDiaryId = skeletonId
 
-            // —— 消息起点：目标日期 0 点之前的"最近一篇有内容的日记"的 createdAt ——
-            //    注意：新建的 skeleton createdAt 就在现在，会排到最前，必须过滤掉
-            //    （以及任何空内容的残留日记），否则起点=当下，取不到任何新消息。
+            // —— 消息起点锚点（两级 fallback）：
+            //    1) 上一篇有内容日记的 lastMessageAt —— 上次实际取到的最后一条消息时间
+            //       （历史日记由迁移回填为 createdAt；新日记由 DiaryWorker 写入真实最后消息时间；
+            //         无交互日记写入 skeletonCreatedAt）。所有有内容日记的 lastMessageAt 都有值。
+            //    2) targetDate 当日 0 点 —— 没有上一篇日记时的回退
             val allSortedDiaries = diaryRepo
                 .getDiariesByAssistant(assistant.id.toString())
                 .first()
                 .filter { it.content.isNotBlank() && it.id != skeletonId }
-                .sortedByDescending { it.createdAt }
+                .sortedByDescending { it.date }
             val lastMeaningfulDiary = allSortedDiaries.firstOrNull()
-            val startTimeThreshold = lastMeaningfulDiary?.createdAt
+            val startTimeThreshold = lastMeaningfulDiary?.lastMessageAt
                 ?: targetDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
             // —— Stage 1（SQL 层粗筛）：只取 update_at >= startTimeThreshold 的会话
@@ -178,6 +182,14 @@ class DiaryWorker(
             val newMessages = allMessages.filter {
                 it.role != MessageRole.TOOL && it.toContentText().isNotBlank()
             }
+
+            // 本次取到的最后一条消息的 createdAt（epoch ms），写入新日记作为下次生成的起点锚点。
+            // newMessages 为空（无交互日记）时为 null，此时无交互分支用 skeletonCreatedAt 兜底推进游标。
+            // 注：partial 中断场景下，此值记的是"本应取的最后一条"而非"实际处理到的最后一条"，
+            // 下次生成可能漏掉 partial 日记未处理的部分消息——这是 partial 兜底的已知边界，可接受。
+            val lastMsgTimestamp = newMessages.lastOrNull()?.createdAt
+                ?.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault())
+                ?.toEpochMilliseconds()
 
             val triggerTime = LocalDateTime.now().format(timeFormatter)
             val locale = Locale.getDefault().toLanguageTag()
@@ -203,9 +215,13 @@ class DiaryWorker(
 
                 generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt)
                 // 单块分支：成功就立刻写盘
+                // 无交互场景没有消息可取，用 skeletonCreatedAt 推进游标，避免跨天空档时 next-run 漏消息
                 if (generatedContent.isNotBlank()) {
                     diaryRepo.updateDiary(
-                        diaryRepo.getDiaryById(skeletonId)!!.copy(content = generatedContent)
+                        diaryRepo.getDiaryById(skeletonId)!!.copy(
+                            content = generatedContent,
+                            lastMessageAt = skeletonCreatedAt
+                        )
                     )
                     hadAnyChunkSuccess = true
                 }
@@ -274,7 +290,10 @@ class DiaryWorker(
                     if (chunkResult.isNotBlank()) {
                         generatedContent = chunkResult
                         diaryRepo.updateDiary(
-                            diaryRepo.getDiaryById(skeletonId)!!.copy(content = generatedContent)
+                            diaryRepo.getDiaryById(skeletonId)!!.copy(
+                                content = generatedContent,
+                                lastMessageAt = lastMsgTimestamp
+                            )
                         )
                         hadAnyChunkSuccess = true
                     }

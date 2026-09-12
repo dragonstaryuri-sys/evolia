@@ -18,5 +18,12 @@ data class AgentDiaryEntity(
     @ColumnInfo(name = "date")
     val date: String, // yyyy-MM-dd
     @ColumnInfo(name = "created_at")
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * 生成本篇日记时取到的"最后一条消息"的 createdAt（epoch ms）。
+     * 用作下一篇日记生成时的消息起点锚点（优先级最高），替代基于 date 的推算。
+     * 老日记为 null，回退到 date 次日 0 点；无交互日记无消息可取，保持 null 不推进游标。
+     */
+    @ColumnInfo(name = "last_message_at")
+    val lastMessageAt: Long? = null
 )
