@@ -916,7 +916,9 @@ private fun UserMessageTurn(
                             GroupedMessageBubble(
                                 position = position,
                                 role = BubbleRole.USER,
-                                modifier = Modifier.widthIn(max = maxWidth),
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .widthIn(max = maxWidth),
                                 containerColor = if (wechatMode) WeChatUserGreen else null,
                                 contentColor = if (wechatMode) WeChatTextBlack else null,
                                 onClick = {
@@ -966,7 +968,9 @@ private fun UserMessageTurn(
                                 transcription = transcription,
                                 containerColor = if (wechatMode) WeChatUserGreen else MaterialTheme.colorScheme.primaryContainer,
                                 contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.widthIn(max = maxWidth)
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .widthIn(max = maxWidth)
                             )
                         }
                     }
