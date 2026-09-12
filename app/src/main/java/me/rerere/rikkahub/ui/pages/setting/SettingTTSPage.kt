@@ -717,7 +717,7 @@ private fun TtsTextFilterSettingsDialog(
                                 value = displaySetting.muteTimeStart ?: "",
                                 onValueChange = {}, // 不允许手动输入
                                 label = { Text("开始时间") },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).height(64.dp),
                                 readOnly = true, // 只读，点击触发
                                 trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
                                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -737,7 +737,7 @@ private fun TtsTextFilterSettingsDialog(
                                 value = displaySetting.muteTimeEnd ?: "",
                                 onValueChange = {},
                                 label = { Text("结束时间") },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(1f).height(64.dp),
                                 readOnly = true,
                                 trailingIcon = { Icon(Icons.Rounded.Schedule, null) },
                                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
