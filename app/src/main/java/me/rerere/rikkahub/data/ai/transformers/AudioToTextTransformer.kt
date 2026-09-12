@@ -6,7 +6,12 @@ import me.rerere.ai.provider.Modality
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.service.WECHAT_VOICE_MESSAGE_MARKER
+import me.rerere.rikkahub.service.removeVoiceMessageMarkerForDisplay
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.get
 
 private const val TAG = "AudioToTextTransformer"
 
@@ -24,14 +29,19 @@ private const val TAG = "AudioToTextTransformer"
  *
  * 转写结果来源：Audio Part metadata.transcription（ChatVM.sendVoiceMessage 发送前统一 ASR 后写入，
  * 无论模型是否支持音频都会做 ASR 并存入 chat_messages）。
+ *
+ * **微信模式标识处理**：ASSISTANT 语音消息的 transcription 存有 `(语音消息)` 前缀。
+ * 微信模式下保留前缀让 AI 识别自己发过语音；非微信模式下剥掉前缀，避免 AI 模仿输出该标记。
  */
-object AudioToTextTransformer : InputMessageTransformer {
+object AudioToTextTransformer : InputMessageTransformer, KoinComponent {
     override suspend fun transform(
         ctx: TransformerContext,
         messages: List<UIMessage>
     ): List<UIMessage> {
         val supportsAudio = ctx.model.inputModalities.contains(Modality.AUDIO)
         val lastUserIndex = messages.indexOfLast { it.role == MessageRole.USER }
+        val settings = get<SettingsStore>().settingsFlow.value
+        val wechatMode = settings.getEffectiveDisplaySetting(ctx.assistant).wechatMode
 
         var transformedCount = 0
         val result = messages.mapIndexed { index, message ->
@@ -51,13 +61,18 @@ object AudioToTextTransformer : InputMessageTransformer {
                         ?.jsonPrimitiveOrNull
                         ?.content
                         ?.takeIf { it.isNotBlank() }
-                    // 有转写结果：ASSISTANT 语音消息的 transcription 已带 (语音消息) 标记，AI 能识别
+                    // 有转写结果：ASSISTANT 语音消息的 transcription 已带 (语音消息) 标记
+                    // 微信模式下保留前缀让 AI 识别自己发过语音；普通模式下剥离前缀，
+                    // 避免 AI 在普通模式沿用该 pattern 而错误输出 (语音消息) 标记
                     // USER 语音消息用 "语音消息：" 前缀让 AI 知道是用户发的语音
                     // 无转写结果：占位文本（避免上下文空洞）
                     val text = when {
                         transcription == null ->
                             "系统提示：语音消息识别失败了，请提醒用户检查语音合成模型的配置，也有可能是网络原因，让她过一会儿再尝试"
-                        message.role == MessageRole.ASSISTANT -> transcription
+                        message.role == MessageRole.ASSISTANT -> {
+                            if (wechatMode) transcription
+                            else removeVoiceMessageMarkerForDisplay(transcription)
+                        }
                         else ->
                             "语音消息：$transcription"
                     }
