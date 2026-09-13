@@ -86,6 +86,7 @@ class ChatVM(
     val callStatus: StateFlow<CallStatus> = voiceCallManager.callStatus
     val callIsMuted: StateFlow<Boolean> = voiceCallManager.isMuted
     val callIsSpeakerOn: StateFlow<Boolean> = voiceCallManager.isSpeakerOn
+    val callIsHeadsetConnected: StateFlow<Boolean> = voiceCallManager.isHeadsetConnected
     val isCallActive: StateFlow<Boolean> = voiceCallManager.isActive
     val callError: SharedFlow<String> = voiceCallManager.callError
     // 贴近耳朵（接近传感器触发）→ CallScreen 盖全黑遮罩 + 禁用触摸（兜底）
@@ -962,13 +963,6 @@ class ChatVM(
         }
     }
 
-    fun updateTitle(title: String) {
-        viewModelScope.launch {
-            chatService.mutateConversationAndSave(_currentActiveId.value) { current ->
-                current.copy(title = title)
-            }
-        }
-    }
     fun deleteConversation(conversation: Conversation) {
         chatService.deleteConversation(conversation)
         viewModelScope.launch {
@@ -976,14 +970,6 @@ class ChatVM(
         }
     }
     fun undoDeleteConversation(conversationId: Uuid) { chatService.undoDeleteConversation(conversationId) }
-    fun updatePinnedStatus(conversation: Conversation) { viewModelScope.launch { conversationRepo.togglePinStatus(conversation.id) } }
-    fun updateConversationTitle(conversation: Conversation, title: String) {
-        viewModelScope.launch {
-            chatService.mutateConversationAndSave(conversation.id) { current ->
-                current.copy(title = title)
-            }
-        }
-    }
 
     /**
      * 针对指定会话强制执行记忆整合 (L2 Archiving)

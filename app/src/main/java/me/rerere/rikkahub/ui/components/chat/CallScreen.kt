@@ -61,6 +61,7 @@ fun CallScreen(
     status: CallStatus,
     isMuted: Boolean,
     isSpeakerOn: Boolean,
+    isHeadsetConnected: Boolean = false,
     latestMessageRole: MessageRole? = null,
     latestMessageText: String? = null,
     listeningText: String? = null,
@@ -470,11 +471,22 @@ fun CallScreen(
                     )
                 }
 
-                // 扬声器按钮
+                // 扬声器/耳机按钮
+                // 耳机连接时显示耳机图标，按钮 active 但点击无操作（防止破坏耳机路由）
+                val speakerIcon = when {
+                    isHeadsetConnected -> Icons.Rounded.Headset
+                    isSpeakerOn -> Icons.AutoMirrored.Rounded.VolumeUp
+                    else -> Icons.AutoMirrored.Rounded.VolumeDown
+                }
+                val speakerLabel = if (isHeadsetConnected) {
+                    stringResource(R.string.call_action_headset)
+                } else {
+                    stringResource(R.string.call_action_speaker)
+                }
                 CallControlButton(
-                    icon = if (isSpeakerOn) Icons.AutoMirrored.Rounded.VolumeUp else Icons.AutoMirrored.Rounded.VolumeDown,
-                    label = stringResource(R.string.call_action_speaker),
-                    active = isSpeakerOn,
+                    icon = speakerIcon,
+                    label = speakerLabel,
+                    active = isHeadsetConnected || isSpeakerOn,
                     onClick = {
                         haptics.perform(HapticPattern.Pop)
                         onSpeakerToggle()

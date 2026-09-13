@@ -1,4 +1,4 @@
-﻿package me.rerere.rikkahub.ui.pages.chat
+package me.rerere.rikkahub.ui.pages.chat
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -457,6 +457,7 @@ private fun ChatPageContent(
     val isCallActive by vm.isCallActive.collectAsStateWithLifecycle()
     val isMuted by vm.callIsMuted.collectAsStateWithLifecycle()
     val isSpeakerOn by vm.callIsSpeakerOn.collectAsStateWithLifecycle()
+    val isHeadsetConnected by vm.callIsHeadsetConnected.collectAsStateWithLifecycle()
     val callStatus by vm.callStatus.collectAsStateWithLifecycle()
     val callLatestMessage by vm.callLatestMessage.collectAsStateWithLifecycle()
     val callListeningText by vm.callListeningText.collectAsStateWithLifecycle()
@@ -1065,6 +1066,7 @@ private fun ChatPageContent(
                     status = callStatus,
                     isMuted = isMuted,
                     isSpeakerOn = isSpeakerOn,
+                    isHeadsetConnected = isHeadsetConnected,
                     latestMessageRole = callLatestMessage?.role,
                     latestMessageText = callLatestMessage?.text,
                     listeningText = callListeningText,

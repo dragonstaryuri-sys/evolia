@@ -1,7 +1,10 @@
 package me.rerere.rikkahub.service.voice
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
 import android.hardware.Sensor
@@ -115,6 +118,31 @@ class VoiceCallManager(
     private val _isSpeakerOn = MutableStateFlow(true)
     val isSpeakerOn: StateFlow<Boolean> = _isSpeakerOn.asStateFlow()
 
+    // 耳机连接状态：有线耳机/蓝牙耳机/USB 耳机任一连接即为 true。
+    // 耳机连接时强制路由到耳机设备（不外放扬声器），扬声器按钮在 UI 上显示耳机图标且禁用切换。
+    private val _isHeadsetConnected = MutableStateFlow(false)
+    val isHeadsetConnected: StateFlow<Boolean> = _isHeadsetConnected.asStateFlow()
+
+    // ===== 音频路由控制（听筒/扬声器/耳机） =====
+    // 注意: audioManager 和 headsetDeviceTypes 必须在 init 块之前声明, 因为 init 块会调用
+    // detectHeadsetConnected() 来初始化耳机状态。by lazy 的 delegate 字段在构造时按声明顺序
+    // 初始化, 若声明在 init 之后, init 访问时 Lazy 对象为 null → NPE。
+    private val audioManager by lazy { context.getSystemService<AudioManager>() }
+
+    /**
+     * 耳机设备类型集合：有线耳机、USB 耳机、BLE 耳机、SCO 蓝牙耳机、A2DP 蓝牙耳机。
+     * 注意: MODE_IN_COMMUNICATION 下系统默认走听筒，A2DP 蓝牙耳机不会自动路由，
+     * 必须主动 setCommunicationDevice() 指定设备才能让音频从蓝牙耳机输出。
+     */
+    private val headsetDeviceTypes = setOf(
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+    )
+
     private val _isActive = MutableStateFlow(false)
     val isActive: StateFlow<Boolean> = _isActive.asStateFlow()
 
@@ -159,10 +187,94 @@ class VoiceCallManager(
                 }
             }
         }
+
+        // 初始化耳机连接状态 + 注册耳机插拔广播监听
+        _isHeadsetConnected.value = detectHeadsetConnected()
+        registerHeadsetReceiver()
+        Log.i(TAG, "init: headsetConnected=${_isHeadsetConnected.value}")
+    }
+
+    // ===== 耳机检测与监听 =====
+    @Volatile private var headsetReceiver: BroadcastReceiver? = null
+
+    /**
+     * 检测当前是否有耳机连接（有线/蓝牙/USB）。
+     * Android 12+ 用 availableCommunicationDevices；低版本回退到 isWiredHeadsetOn。
+     */
+    private fun detectHeadsetConnected(): Boolean {
+        val am = audioManager ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            am.availableCommunicationDevices.any { it.type in headsetDeviceTypes }
+        } else {
+            @Suppress("DEPRECATION")
+            am.isWiredHeadsetOn
+        }
+    }
+
+    /**
+     * 从 availableCommunicationDevices 中找到已连接的耳机设备。
+     * 优先级：有线/USB > BLE > SCO > A2DP（有线延迟最低，A2DP 在通信模式下可能需要额外处理）。
+     */
+    private fun findHeadsetDevice(): AudioDeviceInfo? {
+        val am = audioManager ?: return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        val devices = am.availableCommunicationDevices
+        // 按优先级顺序查找
+        val priorityOrder = listOf(
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+        )
+        for (type in priorityOrder) {
+            val found = devices.find { it.type == type }
+            if (found != null) return found
+        }
+        return null
+    }
+
+    /**
+     * 注册耳机插拔广播接收器：
+     * - ACTION_HEADSET_PLUG：有线耳机插拔（state: 0=拔出, 1=插入）
+     * - ACTION_AUDIO_BECOMING_NOISY：任何音频输出设备断开（蓝牙耳机断连等）
+     *
+     * 通话中插拔耳机会自动重新应用音频路由。
+     */
+    private fun registerHeadsetReceiver() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                val action = intent?.action ?: return
+                val connected = detectHeadsetConnected()
+                Log.i(TAG, "Headset receiver: action=$action, detectedConnected=$connected")
+                if (connected != _isHeadsetConnected.value) {
+                    _isHeadsetConnected.value = connected
+                    // 通话中重新应用路由
+                    if (_isActive.value) {
+                        applySpeakerRoute(_isSpeakerOn.value)
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_HEADSET_PLUG)
+            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(receiver, filter)
+            }
+            headsetReceiver = receiver
+            Log.i(TAG, "Headset receiver registered")
+        }.onFailure {
+            Log.e(TAG, "Failed to register headset receiver", it)
+        }
     }
 
     // ===== 音频路由控制（听筒/扬声器） =====
-    private val audioManager by lazy { context.getSystemService<AudioManager>() }
     @Volatile private var savedAudioMode: Int = AudioManager.MODE_NORMAL
     @Volatile private var savedSpeakerOn: Boolean = false
     @Volatile private var savedVolume: Int = -1
@@ -172,6 +284,7 @@ class VoiceCallManager(
      * 1. 切到 MODE_IN_COMMUNICATION（VoIP 模式，让系统走通话路径，正确路由听筒/扬声器）
      * 2. 保存旧状态，hangup 时还原
      * 3. 按当前 _isSpeakerOn 设置扬声器路由
+     * 4. 如果耳机已连接，强制走耳机不外放
      */
     private fun enterCallAudioMode() {
         val am = audioManager ?: return
@@ -186,8 +299,13 @@ class VoiceCallManager(
         }.onFailure {
             Log.e(TAG, "设置音频模式失败！", it)
         }
+        // 刷新耳机状态（可能在应用启动后才被系统识别）
+        _isHeadsetConnected.value = detectHeadsetConnected()
+        // 不修改 _isSpeakerOn：保留用户偏好。applySpeakerRoute 内部会根据耳机连接状态
+        // 决定实际路由（耳机优先级最高），UI 根据 _isHeadsetConnected 显示耳机图标。
+        // 这样拔出耳机后会自动恢复外放（如 _isSpeakerOn=true），符合直觉。
         applySpeakerRoute(_isSpeakerOn.value)
-        Log.i(TAG, "enterCallAudioMode: mode→IN_COMMUNICATION, speaker=${_isSpeakerOn.value}")
+        Log.i(TAG, "enterCallAudioMode: mode→IN_COMMUNICATION, speaker=${_isSpeakerOn.value}, headset=${_isHeadsetConnected.value}")
     }
 
     /**
@@ -196,6 +314,10 @@ class VoiceCallManager(
     private fun leaveCallAudioMode() {
         val am = audioManager ?: return
         runCatching {
+            // 清除通话设备覆盖，让系统恢复默认路由（耳机/扬声器/听筒由系统接管）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                am.clearCommunicationDevice()
+            }
             am.isSpeakerphoneOn = savedSpeakerOn
         }
         runCatching {
@@ -205,18 +327,36 @@ class VoiceCallManager(
     }
 
     /**
-     * 实际切换扬声器/听筒路由。
-     * - 扬声器开：isSpeakerphoneOn=true，使用 STREAM_VOICE_CALL 的默认音量
-     * - 扬声器关（听筒）：isSpeakerphoneOn=false，音量降低防止听筒过载
+     * 实际切换扬声器/听筒/耳机路由。
+     * - 耳机连接：主动 setCommunicationDevice() 指定耳机设备（MODE_IN_COMMUNICATION 下
+     *   系统默认走听筒，蓝牙耳机不会自动路由，必须显式指定）
+     * - 扬声器开：setCommunicationDevice(SPEAKER) 或 isSpeakerphoneOn=true
+     * - 扬声器关（听筒）：clearCommunicationDevice()，音量降低防止听筒过载
      */
     private fun applySpeakerRoute(speakerOn: Boolean) {
         val am = audioManager ?: return
-        Log.i(TAG, "applySpeakerRoute: speakerOn=$speakerOn, currentMode=${am.mode}")
+        val headsetConnected = _isHeadsetConnected.value
+        // 耳机连接时无论用户怎么选都不外放扬声器
+        val effectiveSpeakerOn = if (headsetConnected) false else speakerOn
+        Log.i(TAG, "applySpeakerRoute: requested=$speakerOn, headset=$headsetConnected, effective=$effectiveSpeakerOn, mode=${am.mode}")
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val devices = am.availableCommunicationDevices
                 Log.i(TAG, "Available devices: ${devices.map { it.type }}")
-                if (speakerOn) {
+                if (headsetConnected) {
+                    // 耳机已连接：主动 setCommunicationDevice() 指定耳机设备。
+                    // 关键：MODE_IN_COMMUNICATION 下系统默认路由是听筒，
+                    // 蓝牙耳机（A2DP/BLE）不会自动接收通信音频，必须显式指定。
+                    val headsetDevice = findHeadsetDevice()
+                    if (headsetDevice != null) {
+                        val result = am.setCommunicationDevice(headsetDevice)
+                        Log.i(TAG, "setCommunicationDevice(headset type=${headsetDevice.type}) result: $result")
+                    } else {
+                        // 找不到耳机设备（可能蓝牙耳机尚未完全连接），回退到清除覆盖
+                        am.clearCommunicationDevice()
+                        Log.w(TAG, "Headset connected but device not found in available list, clearCommunicationDevice()")
+                    }
+                } else if (effectiveSpeakerOn) {
                     // 开启扬声器：寻找扬声器设备并设置
                     val speakerDevice = devices.find { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                     if (speakerDevice != null) {
@@ -227,18 +367,18 @@ class VoiceCallManager(
                         am.isSpeakerphoneOn = true // 兜底旧方法
                     }
                 } else {
-                    // 关闭扬声器：清除之前的设备覆盖，让系统恢复默认路由（听筒或蓝牙）
+                    // 关闭扬声器：清除之前的设备覆盖，让系统恢复默认路由（听筒）
                     am.clearCommunicationDevice()
                     Log.i(TAG, "clearCommunicationDevice() executed")
                     am.isSpeakerphoneOn = false // 兜底旧方法
                 }
             } else {
                 // Android 12 以下继续使用旧方法
-                am.isSpeakerphoneOn = speakerOn
-                Log.i(TAG, "Legacy switch: isSpeakerphoneOn=$speakerOn")
+                am.isSpeakerphoneOn = effectiveSpeakerOn
+                Log.i(TAG, "Legacy switch: isSpeakerphoneOn=$effectiveSpeakerOn")
             }
             val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
-            if (speakerOn) {
+            if (effectiveSpeakerOn) {
                 val targetVol = (maxVol * 0.85f).toInt().coerceIn(1, maxVol)
                 am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, targetVol, 0)
             } else {
@@ -1841,6 +1981,11 @@ class VoiceCallManager(
     }
 
     fun toggleSpeaker() {
+        // 耳机连接时不允许切换外放（避免破坏耳机路由）
+        if (_isHeadsetConnected.value) {
+            Log.i(TAG, "toggleSpeaker: ignored (headset connected)")
+            return
+        }
         _isSpeakerOn.update { !it }
         applySpeakerRoute(_isSpeakerOn.value)
     }
@@ -1978,10 +2123,21 @@ class VoiceCallManager(
         val prev = _isNearEar.value
         if (prev == near) return
         _isNearEar.value = near
-        Log.i(TAG, "handleProximityChanged: $prev → $near")
+        Log.i(TAG, "handleProximityChanged: $prev → $near, headset=${_isHeadsetConnected.value}")
         runCatching {
             if (near) {
                 // 贴近耳朵
+                // 让系统关背光（真正黑屏）
+                val wl = proximityWakeLock
+                if (wl != null && !wl.isHeld) {
+                    wl.acquire()
+                    Log.i(TAG, "proximityWakeLock.acquire() → 系统应已黑屏")
+                }
+                // 耳机连接时不切换扬声器（保持耳机路由，避免污染用户偏好）
+                if (_isHeadsetConnected.value) {
+                    Log.i(TAG, "贴近耳朵 + 耳机连接：保持耳道路由")
+                    return@runCatching
+                }
                 // 仅在用户偏好尚未记录时保存，避免来回抖动覆盖用户真选的状态
                 if (userSpeakerPreferenceBeforeProximity == null) {
                     userSpeakerPreferenceBeforeProximity = _isSpeakerOn.value
@@ -1992,14 +2148,19 @@ class VoiceCallManager(
                     _isSpeakerOn.value = false
                     applySpeakerRoute(false)
                 }
-                // 让系统关背光（真正黑屏）
-                val wl = proximityWakeLock
-                if (wl != null && !wl.isHeld) {
-                    wl.acquire()
-                    Log.i(TAG, "proximityWakeLock.acquire() → 系统应已黑屏")
-                }
             } else {
                 // 远离耳朵
+                // 释放 proximityWakeLock → 系统点亮背光
+                val wl = proximityWakeLock
+                if (wl != null && wl.isHeld) {
+                    wl.release()
+                    Log.i(TAG, "proximityWakeLock.release() → 系统应已亮屏")
+                }
+                // 耳机连接时不还原扬声器状态（保持耳机路由）
+                if (_isHeadsetConnected.value) {
+                    userSpeakerPreferenceBeforeProximity = null
+                    return@runCatching
+                }
                 // 还原用户原先的扬声器选择
                 val pref = userSpeakerPreferenceBeforeProximity
                 if (pref != null && pref != _isSpeakerOn.value) {
@@ -2008,12 +2169,6 @@ class VoiceCallManager(
                     applySpeakerRoute(pref)
                 }
                 userSpeakerPreferenceBeforeProximity = null
-                // 释放 proximityWakeLock → 系统点亮背光
-                val wl = proximityWakeLock
-                if (wl != null && wl.isHeld) {
-                    wl.release()
-                    Log.i(TAG, "proximityWakeLock.release() → 系统应已亮屏")
-                }
             }
         }.onFailure {
             Log.e(TAG, "handleProximityChanged($near) 抛异常", it)
