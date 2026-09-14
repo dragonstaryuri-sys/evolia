@@ -1223,7 +1223,13 @@
   <string name="assistant_memory_enable_master_title">开启关系档案</string>
   <string name="assistant_memory_enable_master_desc">让TA对你和你们的关系有总体认知</string>
   <string name="assistant_memory_master_prompt_title">关系档案生成提示词</string>
-  <string name="assistant_memory_master_prompt_desc">AI 维护档案的指令，留空使用默认。</string>
+  <string name="assistant_memory_master_prompt_desc">AI 维护档案的指令，留空使用默认；修改后将以你的版本为准。</string>
+  <string name="assistant_memory_master_prompt_main_hint">主智能体的关系档案只需记录两人的关系即可，事实、事件、约定等细节由 L1/L2 等其他记忆模块承载，避免重复记录。</string>
+  <string name="assistant_memory_master_prompt_status_default">当前使用默认提示词</string>
+  <string name="assistant_memory_master_prompt_status_custom">当前使用自定义提示词</string>
+  <string name="assistant_memory_master_prompt_reset">恢复默认</string>
+  <string name="assistant_memory_master_prompt_var_locale">输出语言</string>
+  <string name="assistant_memory_master_prompt_var_char">角色名称</string>
   <string name="assistant_memory_master_content_title">关系档案内容</string>
   <string name="assistant_memory_master_last_update">最近更新：%s</string>
   <string name="assistant_memory_rag_limit_title">记忆检索数量</string>
@@ -1349,7 +1355,6 @@
   <!-- 通知相关 -->
   <string name="master_memory_update_done">关系档案维护完成</string>
   <string name="master_memory_update_success">%s 的关系档案已成功更新。</string>
-  <string name="master_memory_update_compressed">%s 的关系档案已更新，且因内容过长执行了压缩优化。</string>
   <string name="master_memory_update_failed">关系档案更新失败</string>
   <string name="schedule_title">智能日程</string>
   <string name="schedule_today_progress">今日进度</string>

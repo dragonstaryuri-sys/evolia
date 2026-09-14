@@ -1206,7 +1206,13 @@
   <string name="assistant_memory_enable_master_title">Enable Master File</string>
   <string name="assistant_memory_enable_master_desc">Maintain a global overview of the relationship and goals</string>
   <string name="assistant_memory_master_prompt_title">Archive Prompt</string>
-  <string name="assistant_memory_master_prompt_desc">Instructions for the AI to maintain the archive. Leave blank for default.</string>
+  <string name="assistant_memory_master_prompt_desc">Instructions for the AI to maintain the archive. Leave blank for default; your version takes precedence once edited.</string>
+  <string name="assistant_memory_master_prompt_main_hint">For the main assistant, the archive only needs to capture the relationship itself; facts, events and commitments are handled by L1/L2 memory modules to avoid duplication.</string>
+  <string name="assistant_memory_master_prompt_status_default">Using default prompt</string>
+  <string name="assistant_memory_master_prompt_status_custom">Using custom prompt</string>
+  <string name="assistant_memory_master_prompt_reset">Reset to default</string>
+  <string name="assistant_memory_master_prompt_var_locale">Output Language</string>
+  <string name="assistant_memory_master_prompt_var_char">Character Name</string>
   <string name="assistant_memory_master_content_title">Master File Content</string>
   <string name="assistant_memory_master_last_update">Last updated: %s</string>
   <string name="assistant_memory_master_never_updated">Never updated</string>
@@ -1375,7 +1381,6 @@
   <!-- Notification Related -->
   <string name="master_memory_update_done">Memory maintenance completed</string>
   <string name="master_memory_update_success">Memory profile for %s updated successfully.</string>
-  <string name="master_memory_update_compressed">%s\'s memory has been updated and compressed due to excessive length.</string>
   <string name="master_memory_update_failed">Failed to update memory profile</string>
   <!-- Context Sources Sheet -->
   <string name="context_sources_title">Context Sources</string>

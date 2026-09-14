@@ -23,8 +23,10 @@ import me.rerere.rikkahub.core.data.model.toTavernCharacterBook
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
+import me.rerere.rikkahub.core.data.db.dao.AssistantExtendedStateDAO
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
+import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -47,7 +49,10 @@ data class AssistantExportV1(
     // Bundled Memories
     val memories: List<AssistantMemory> = emptyList(),
     // Bundled L1 Segments
-    val segments: List<ChatSegmentExport> = emptyList()
+    val segments: List<ChatSegmentExport> = emptyList(),
+    // Bundled Assistant Extended State (性格/外貌/喜好/饮食/禁忌/互动习惯/人际关系)
+    // 仅当 assistant.hasExtendedState 为 true 时才会有数据
+    val extendedState: AssistantExtendedStateEntity? = null
 )
 
 @Serializable
@@ -67,6 +72,7 @@ object AssistantExportImport : KoinComponent {
     private val memoryRepository: MemoryRepository by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
     private val chatSegmentDAO: ChatSegmentDAO by inject()
+    private val assistantExtendedStateDAO: AssistantExtendedStateDAO by inject()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -165,13 +171,22 @@ object AssistantExportImport : KoinComponent {
             }
         }
 
+        // 4. Process Extended State (性格/外貌/喜好/饮食/禁忌/互动习惯/人际关系)
+        // 只在 assistant 开启了扩展状态时才导出，避免无意义空对象
+        val bundledExtendedState = if (assistant.hasExtendedState) {
+            assistantExtendedStateDAO.getStateById(assistant.id.toString())
+        } else {
+            null
+        }
+
         val export = AssistantExportV1(
             assistant = assistant,
             avatarContent = avatarContent,
             avatarMimeType = avatarMime,
             lorebooks = bundledLorebooks,
             memories = bundledMemories,
-            segments = bundledSegments
+            segments = bundledSegments,
+            extendedState = bundledExtendedState
         )
 
         return json.encodeToString(AssistantExportV1.serializer(), export)
@@ -299,6 +314,14 @@ object AssistantExportImport : KoinComponent {
                     )
                 )
             }
+        }
+
+        // 4. Restore Extended State (性格/外貌/喜好/饮食/禁忌/互动习惯/人际关系)
+        // 将 assistantId 重映射到新导入的 Assistant.id
+        export.extendedState?.let { state ->
+            assistantExtendedStateDAO.insertOrUpdate(
+                state.copy(assistantId = assistant.id.toString())
+            )
         }
 
         return assistant

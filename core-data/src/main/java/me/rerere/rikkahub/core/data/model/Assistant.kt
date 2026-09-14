@@ -102,6 +102,7 @@ data class Assistant(
 
     val enableMasterMemory: Boolean = true,
     val masterMemoryContent: String = "",
+    val masterMemoryPrompt: String = "",
     val lastMasterMemoryUpdate: Long = 0L,
 
     val enableAutoDiary: Boolean = false,
