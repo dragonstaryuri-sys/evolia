@@ -15,6 +15,16 @@
   <string name="assistant_importer_import_tavern_json">Import Tavern Card (JSON)</string>
   <string name="assistant_importer_import_tavern_png">Import Tavern Card (PNG)</string>
   <string name="assistant_importer_importing">Importing...</string>
+  <string name="assistant_importer_exporting">Exporting character, please wait…</string>
+  <string name="assistant_importer_imported_successfully">Character imported successfully</string>
+  <string name="assistant_importer_import_failed_with_message">Import failed: %1$s</string>
+  <string name="assistant_importer_import_error_with_message">Error: %1$s</string>
+  <string name="assistant_importer_error_read_file">Failed to read file</string>
+  <string name="assistant_importer_error_no_png_data">No character data found in PNG</string>
+  <string name="assistant_importer_error_unknown_format">Unknown file format</string>
+  <string name="assistant_importer_error_unsupported_json">Unsupported JSON format</string>
+  <string name="assistant_importer_error_json_parse">JSON parse error: %1$s</string>
+  <string name="assistant_importer_error_unknown_parse">Unknown parsing error</string>
   <string name="assistant_importer_missing_data_field">Missing data field</string>
   <string name="assistant_importer_missing_name_field">Missing name field</string>
   <string name="assistant_importer_missing_spec_field">Missing spec field</string>
@@ -1951,4 +1961,16 @@
   <string name="setting_wake_word_test_success">Simulated wake succeeded, call started with \"%1$s\"</string>
   <string name="setting_wake_word_test_failed">Simulated wake failed: %1$s</string>
   <string name="setting_wake_word_test_hint">If this button opens the call screen correctly, the overall pipeline is healthy. From there, tune sensitivity or try a more distinct/shorter pinyin sequence if KWS never fires.</string>
+  <!-- Import Config Dialog -->
+  <string name="import_config_dialog_title">Import Character</string>
+  <string name="import_config_missing_models">Missing Models</string>
+  <string name="import_config_missing_models_desc">This character uses the following models which are not configured in your settings. They will be unselected:</string>
+  <string name="import_config_reconfigure_after">You can re-configure them after import.</string>
+  <string name="import_config_include_components">Include Components</string>
+  <string name="import_config_lorebooks">Lorebooks</string>
+  <string name="import_config_lorebooks_desc">Import and link associated lorebooks</string>
+  <string name="import_config_memories">Memories</string>
+  <string name="import_config_memories_desc">Import core and episodic memories</string>
+  <string name="import_config_ready">Ready to import this character.</string>
+  <string name="import_config_importing">Importing character, please wait…</string>
 </resources>

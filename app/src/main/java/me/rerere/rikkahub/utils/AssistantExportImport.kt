@@ -3,11 +3,14 @@ package me.rerere.rikkahub.utils
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import me.rerere.rikkahub.R
 import android.util.Base64
+import android.util.Log
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.encodeToStream
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -23,11 +26,11 @@ import me.rerere.rikkahub.core.data.model.toTavernCharacterBook
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
-import me.rerere.rikkahub.core.data.db.dao.AssistantExtendedStateDAO
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.db.dao.ChatSegmentDAO
-import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
+import me.rerere.rikkahub.core.data.db.dao.MemoryDAO
 import me.rerere.rikkahub.core.data.db.entity.ChatSegmentEntity
+import me.rerere.rikkahub.core.data.db.entity.MemoryEntity
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.io.ByteArrayOutputStream
@@ -35,6 +38,8 @@ import java.io.File
 import java.util.zip.Inflater
 import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.model.AssistantMemory
+
+private const val TAG = "AssistantExportImport"
 
 @Serializable
 data class AssistantExportV1(
@@ -46,13 +51,10 @@ data class AssistantExportV1(
     val avatarMimeType: String? = null,
     // Bundled Lorebooks
     val lorebooks: List<LorebookExportV2> = emptyList(),
-    // Bundled Memories
+    // Bundled Memories (L3 Core + L2 Episodic)
     val memories: List<AssistantMemory> = emptyList(),
     // Bundled L1 Segments
-    val segments: List<ChatSegmentExport> = emptyList(),
-    // Bundled Assistant Extended State (性格/外貌/喜好/饮食/禁忌/互动习惯/人际关系)
-    // 仅当 assistant.hasExtendedState 为 true 时才会有数据
-    val extendedState: AssistantExtendedStateEntity? = null
+    val segments: List<ChatSegmentExport> = emptyList()
 )
 
 @Serializable
@@ -70,14 +72,22 @@ data class ChatSegmentExport(
 object AssistantExportImport : KoinComponent {
     private val settingsStore: SettingsStore by inject()
     private val memoryRepository: MemoryRepository by inject()
+    private val memoryDAO: MemoryDAO by inject()
     private val chatEpisodeDAO: ChatEpisodeDAO by inject()
     private val chatSegmentDAO: ChatSegmentDAO by inject()
-    private val assistantExtendedStateDAO: AssistantExtendedStateDAO by inject()
 
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
         prettyPrint = true
+        encodeDefaults = true
+    }
+
+    // 导出专用：关闭 prettyPrint 以减小体积，避免大量 embedding base64 时 OOM
+    private val exportJson = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        prettyPrint = false
         encodeDefaults = true
     }
 
@@ -89,7 +99,7 @@ object AssistantExportImport : KoinComponent {
         context: Context,
         includeMemories: Boolean,
         includeLorebooks: Boolean
-    ): String {
+    ): ByteArray {
         // 1. Process Avatar
         var avatarContent: String? = null
         var avatarMime: String? = null
@@ -140,24 +150,33 @@ object AssistantExportImport : KoinComponent {
         var bundledSegments: List<ChatSegmentExport> = emptyList()
 
         if (includeMemories) {
-            // L3 & L2
-            val coreConfigured = memoryRepository.getMemoriesOfAssistant(assistant.id.toString())
-            val episodes = memoryRepository.getEpisodeEntitiesOfAssistant(assistant.id.toString())
+            val assistantIdStr = assistant.id.toString()
+            Log.i(TAG, "exportToEvoliaBundle: includeMemories=true, assistantId=$assistantIdStr")
+
+            // L3 Core memories — 不导出 embedding，导入后由用户手动触发嵌入
+            val coreConfigured = memoryRepository.getMemoriesOfAssistant(assistantIdStr)
+            Log.i(TAG, "exportToEvoliaBundle: L3 core memories count=${coreConfigured.size}")
+
+            // L2 Episodic memories
+            val episodes = memoryRepository.getEpisodeEntitiesOfAssistant(assistantIdStr)
+            Log.i(TAG, "exportToEvoliaBundle: L2 episodes count=${episodes.size}")
             val episodicConfigured = episodes.map {
                 AssistantMemory(
                     id = -it.id,
                     content = it.content,
                     type = 1, // EPISODIC
-                    hasEmbedding = it.embedding != null,
-                    embeddingModelId = it.embeddingModelId,
+                    hasEmbedding = false,
+                    embeddingModelId = null,
                     timestamp = it.startTime,
                     significance = it.significance
                 )
             }
             bundledMemories = coreConfigured + episodicConfigured
 
-            // L1 Segments
-            bundledSegments = chatSegmentDAO.getSegmentsByAssistant(assistant.id.toString()).map {
+            // L1 Segments — 不导出 embedding
+            val rawSegments = chatSegmentDAO.getSegmentsByAssistant(assistantIdStr)
+            Log.i(TAG, "exportToEvoliaBundle: L1 segments count=${rawSegments.size}")
+            bundledSegments = rawSegments.map {
                 ChatSegmentExport(
                     conversationId = it.conversationId,
                     content = it.content,
@@ -169,14 +188,8 @@ object AssistantExportImport : KoinComponent {
                     endTime = it.endTime
                 )
             }
-        }
-
-        // 4. Process Extended State (性格/外貌/喜好/饮食/禁忌/互动习惯/人际关系)
-        // 只在 assistant 开启了扩展状态时才导出，避免无意义空对象
-        val bundledExtendedState = if (assistant.hasExtendedState) {
-            assistantExtendedStateDAO.getStateById(assistant.id.toString())
         } else {
-            null
+            Log.i(TAG, "exportToEvoliaBundle: includeMemories=false, skip memories & segments")
         }
 
         val export = AssistantExportV1(
@@ -185,11 +198,14 @@ object AssistantExportImport : KoinComponent {
             avatarMimeType = avatarMime,
             lorebooks = bundledLorebooks,
             memories = bundledMemories,
-            segments = bundledSegments,
-            extendedState = bundledExtendedState
+            segments = bundledSegments
         )
 
-        return json.encodeToString(AssistantExportV1.serializer(), export)
+        Log.i(TAG, "exportToEvoliaBundle: final memories=${bundledMemories.size}, segments=${bundledSegments.size}, lorebooks=${bundledLorebooks.size}")
+        // 使用流式输出避免 encodeToString 在内存中构建巨大字符串导致 OOM
+        val baos = ByteArrayOutputStream()
+        exportJson.encodeToStream(AssistantExportV1.serializer(), export, baos)
+        return baos.toByteArray()
     }
 
     /**
@@ -274,17 +290,33 @@ object AssistantExportImport : KoinComponent {
 
         // 3. Restore Memories (L1-L3)
         if (importMemories) {
-            // Restore L3 & L2
+            val newAssistantId = assistant.id.toString()
+            Log.i(TAG, "finalizeEvoliaImport: importMemories=true, newAssistantId=$newAssistantId")
+            Log.i(TAG, "finalizeEvoliaImport: export.memories.size=${export.memories.size}, export.segments.size=${export.segments.size}")
+
+            // Restore L3 & L2 — 直接插入不带 embedding 的记录，由用户手动触发嵌入
+            var coreCount = 0
+            var episodicCount = 0
             export.memories.forEach { memory ->
                 if (memory.type == 0) { // Core
-                    memoryRepository.addMemory(
-                        assistantId = assistant.id.toString(),
-                        content = memory.content
-                    )
+                    runCatching {
+                        val entity = MemoryEntity(
+                            assistantId = newAssistantId,
+                            content = memory.content,
+                            keywords = memory.keywords,
+                            embedding = null,
+                            embeddingModelId = null,
+                            type = memory.type,
+                            createdAt = memory.timestamp,
+                            lastAccessedAt = System.currentTimeMillis()
+                        )
+                        memoryDAO.insertMemory(entity)
+                    }.onSuccess { coreCount++ }
+                        .onFailure { Log.e(TAG, "finalizeEvoliaImport: insertMemory failed", it) }
                 } else if (memory.type == 1) { // Episodic
                     val entity = me.rerere.rikkahub.core.data.db.entity.ChatEpisodeEntity(
                         id = 0,
-                        assistantId = assistant.id.toString(),
+                        assistantId = newAssistantId,
                         startTime = memory.timestamp,
                         endTime = memory.timestamp,
                         content = memory.content,
@@ -293,35 +325,38 @@ object AssistantExportImport : KoinComponent {
                         embedding = null,
                         embeddingModelId = null
                     )
-                    chatEpisodeDAO.insertEpisode(entity)
+                    runCatching { chatEpisodeDAO.insertEpisode(entity) }
+                        .onSuccess { episodicCount++ }
+                        .onFailure { Log.e(TAG, "finalizeEvoliaImport: insertEpisode failed", it) }
                 }
             }
+            Log.i(TAG, "finalizeEvoliaImport: restored L3 core=$coreCount, L2 episodic=$episodicCount")
 
-            // Restore L1 Segments
+            // Restore L1 Segments — 不带 embedding，由用户手动触发嵌入
+            var segmentCount = 0
             export.segments.forEach { seg ->
-                chatSegmentDAO.insertSegment(
-                    ChatSegmentEntity(
-                        assistantId = assistant.id.toString(),
-                        conversationId = seg.conversationId,
-                        content = seg.content,
-                        keywords = seg.keywords,
-                        startMessageIndex = -1,
-                        endMessageIndex = -1,
-                        startTime = if (seg.startTime != 0L) seg.startTime else seg.timestamp,
-                        endTime = if (seg.endTime != 0L) seg.endTime else seg.timestamp,
-                        timestamp = seg.timestamp,
-                        embedding = null
+                runCatching {
+                    chatSegmentDAO.insertSegment(
+                        ChatSegmentEntity(
+                            assistantId = newAssistantId,
+                            conversationId = seg.conversationId,
+                            content = seg.content,
+                            keywords = seg.keywords,
+                            startMessageIndex = -1,
+                            endMessageIndex = -1,
+                            startTime = if (seg.startTime != 0L) seg.startTime else seg.timestamp,
+                            endTime = if (seg.endTime != 0L) seg.endTime else seg.timestamp,
+                            timestamp = seg.timestamp,
+                            embedding = null,
+                            embeddingModelId = null
+                        )
                     )
-                )
+                }.onSuccess { segmentCount++ }
+                    .onFailure { Log.e(TAG, "finalizeEvoliaImport: insertSegment failed", it) }
             }
-        }
-
-        // 4. Restore Extended State (性格/外貌/喜好/饮食/禁忌/互动习惯/人际关系)
-        // 将 assistantId 重映射到新导入的 Assistant.id
-        export.extendedState?.let { state ->
-            assistantExtendedStateDAO.insertOrUpdate(
-                state.copy(assistantId = assistant.id.toString())
-            )
+            Log.i(TAG, "finalizeEvoliaImport: restored L1 segments=$segmentCount")
+        } else {
+            Log.i(TAG, "finalizeEvoliaImport: importMemories=false, skip memories & segments")
         }
 
         return assistant
@@ -582,7 +617,7 @@ object AssistantExportImport : KoinComponent {
     suspend fun parseImport(uri: Uri, context: Context): ImportResult {
         return try {
             val contentBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: return ImportResult.Error("Failed to read file")
+                ?: return ImportResult.Error(context.getString(R.string.assistant_importer_error_read_file))
             val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
             val isPng = mimeType == "image/png" || contentBytes.take(8).toByteArray().contentEquals(PNG_HEADER)
             var jsonContent: String? = null
@@ -594,17 +629,18 @@ object AssistantExportImport : KoinComponent {
                     jsonContent = String(Base64.decode(characterData, Base64.NO_WRAP))
                     avatarBytes = contentBytes
                 } else {
-                    return ImportResult.Error("No character data found in PNG")
+                    return ImportResult.Error(context.getString(R.string.assistant_importer_error_no_png_data))
                 }
             } else {
                 jsonContent = String(contentBytes)
             }
-            if (jsonContent == null) return ImportResult.Error("Unknown file format")
+            if (jsonContent == null) return ImportResult.Error(context.getString(R.string.assistant_importer_error_unknown_format))
             try {
                 if (jsonContent.contains("\"format\": \"Evolia_assistant\"") || jsonContent.contains("\"format\":\"Evolia_assistant\"") ||
                     jsonContent.contains("\"format\": \"lastchat_assistant\"") || jsonContent.contains("\"format\":\"lastchat_assistant\"")
                 ) {
                     val export = json.decodeFromString<AssistantExportV1>(jsonContent)
+                    Log.i(TAG, "parseImport: parsed Evolia bundle, memories=${export.memories.size}, segments=${export.segments.size}, lorebooks=${export.lorebooks.size}")
                     return ImportResult.Configurable(
                         assistant = export.assistant,
                         exportV1 = export,
@@ -623,15 +659,15 @@ object AssistantExportImport : KoinComponent {
                             missingModels = checkMissingModels(assistant)
                         )
                     } else {
-                        return ImportResult.Error("Unsupported JSON format")
+                        return ImportResult.Error(context.getString(R.string.assistant_importer_error_unsupported_json))
                     }
                 }
             } catch (e: Exception) {
-                return ImportResult.Error("JSON Parse Error: ${e.message}")
+                return ImportResult.Error(context.getString(R.string.assistant_importer_error_json_parse, e.message ?: ""))
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            ImportResult.Error(e.message ?: "Unknown Parsing Error")
+            ImportResult.Error(e.message ?: context.getString(R.string.assistant_importer_error_unknown_parse))
         }
     }
 

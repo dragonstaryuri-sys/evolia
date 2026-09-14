@@ -69,6 +69,7 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.material.icons.rounded.FileOpen
+import androidx.compose.material.icons.rounded.PersonAdd
 import androidx.compose.material.icons.rounded.PowerOff
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
@@ -128,7 +129,9 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
 
     // Import state
     var pendingImportResult by remember { mutableStateOf<AssistantExportImport.ImportResult.Configurable?>(null) }
+    var isImporting by remember { mutableStateOf(false) }
 
+    val msgImported = stringResource(R.string.assistant_importer_imported_successfully)
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -139,7 +142,7 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
                      is AssistantExportImport.ImportResult.Error -> toaster.show(res.message)
                      is AssistantExportImport.ImportResult.Success -> {
                          vm.addAssistant(res.assistant)
-                         toaster.show("Character Imported")
+                         toaster.show(msgImported)
                      }
                      is AssistantExportImport.ImportResult.Configurable -> {
                          pendingImportResult = res
@@ -403,22 +406,33 @@ fun AssistantPage(vm: AssistantVM = koinViewModel()) {
             hasLorebooks = res.hasLorebooks,
             missingModels = res.missingModels,
             onConfirm = { m, l ->
+                 pendingImportResult = null
                  scope.launch {
-                     val assistant = if (res.exportV1 != null) {
-                         AssistantExportImport.finalizeEvoliaImport(res.exportV1, context, m, l)
-                     } else {
-                         res.assistant
-                     }
-                     // Clear missing models
-                     val finalAssistant = AssistantExportImport.clearMissingModels(assistant)
+                     isImporting = true
+                     try {
+                         val assistant = if (res.exportV1 != null) {
+                             AssistantExportImport.finalizeEvoliaImport(res.exportV1, context, m, l)
+                         } else {
+                             res.assistant
+                         }
+                         // Clear missing models
+                         val finalAssistant = AssistantExportImport.clearMissingModels(assistant)
 
-                     vm.addAssistant(finalAssistant)
-                     toaster.show("Character Imported")
-                     pendingImportResult = null
+                         vm.addAssistant(finalAssistant)
+                         toaster.show(msgImported)
+                     } finally {
+                         isImporting = false
+                     }
                  }
             }
         )
     }
+
+    me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay(
+        visible = isImporting,
+        icon = Icons.Rounded.PersonAdd,
+        hint = stringResource(R.string.import_config_importing)
+    )
 
     AssistantCreationSheet(
         state = createState,

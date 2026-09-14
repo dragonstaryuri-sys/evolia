@@ -5,6 +5,9 @@ import androidx.room.PrimaryKey
 
 /**
  * 助手扩展状态实体（用于主智能体或开启了扩展状态的智能体）
+ *
+ * 注意：只有主智能体会开启扩展状态，而导入角色卡时一定是非主智能体，
+ * 因此扩展状态不跟随角色卡导出/导入，仅由 WebDAV 数据库备份覆盖。
  */
 @Entity(tableName = "assistant_extended_state")
 data class AssistantExtendedStateEntity(

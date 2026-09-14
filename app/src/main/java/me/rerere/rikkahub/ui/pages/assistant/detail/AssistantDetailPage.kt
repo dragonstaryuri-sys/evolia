@@ -134,16 +134,22 @@ fun AssistantDetailPage(
     var showExportOptionsDialog by remember { androidx.compose.runtime.mutableStateOf(false) }
     var pendingExportContent by remember { androidx.compose.runtime.mutableStateOf("") }
     var pendingExportBytes by remember { androidx.compose.runtime.mutableStateOf<ByteArray?>(null) }
+    var isExporting by remember { androidx.compose.runtime.mutableStateOf(false) }
 
     // Export file launcher (JSON)
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        if (uri != null && pendingExportContent.isNotEmpty()) {
+        if (uri != null) {
             scope.launch {
                 try {
                     context.contentResolver.openOutputStream(uri)?.use {
-                        it.write(pendingExportContent.toByteArray())
+                        // 优先使用 ByteArray（Evolia Bundle 带 embedding，避免 String OOM）
+                        if (pendingExportBytes != null) {
+                            it.write(pendingExportBytes!!)
+                        } else if (pendingExportContent.isNotEmpty()) {
+                            it.write(pendingExportContent.toByteArray())
+                        }
                     }
                     toaster.show(context.getString(R.string.export_success))
                 } catch (e: Exception) {
@@ -151,6 +157,7 @@ fun AssistantDetailPage(
                     toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
                 }
                 pendingExportContent = ""
+                pendingExportBytes = null
             }
         }
     }
@@ -252,19 +259,22 @@ fun AssistantDetailPage(
                                                 showExportOptionsDialog = true
                                             } else {
                                                 scope.launch {
+                                                    isExporting = true
                                                     try {
-                                                        val content = AssistantExportImport.exportToEvoliaBundle(
+                                                        val bytes = AssistantExportImport.exportToEvoliaBundle(
                                                             assistant = assistant,
                                                             context = context,
                                                             includeMemories = false,
                                                             includeLorebooks = false
                                                         )
-                                                        pendingExportContent = content
+                                                        pendingExportBytes = bytes
                                                         val fileName = AssistantExportImport.getSuggestedFileName(assistant, "evolia")
                                                         exportLauncher.launch(fileName)
                                                     } catch (e: Exception) {
                                                         e.printStackTrace()
                                                         toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
+                                                    } finally {
+                                                        isExporting = false
                                                     }
                                                 }
                                             }
@@ -275,6 +285,7 @@ fun AssistantDetailPage(
                                         onClick = {
                                             showExportMenu = false
                                             scope.launch {
+                                                isExporting = true
                                                 try {
                                                     val content = AssistantExportImport.exportToCharacterCardV2(assistant, context)
                                                     pendingExportContent = content
@@ -283,6 +294,8 @@ fun AssistantDetailPage(
                                                 } catch (e: Exception) {
                                                     e.printStackTrace()
                                                     toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
+                                                } finally {
+                                                    isExporting = false
                                                 }
                                             }
                                         }
@@ -292,6 +305,7 @@ fun AssistantDetailPage(
                                         onClick = {
                                             showExportMenu = false
                                             scope.launch {
+                                                isExporting = true
                                                 try {
                                                     val bytes = AssistantExportImport.exportToCharacterCardPng(assistant, context)
                                                     if (bytes != null) {
@@ -304,6 +318,8 @@ fun AssistantDetailPage(
                                                 } catch (e: Exception) {
                                                     e.printStackTrace()
                                                     toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
+                                                } finally {
+                                                    isExporting = false
                                                 }
                                             }
                                         }
@@ -513,24 +529,33 @@ fun AssistantDetailPage(
             onConfirm = { includeMemories, includeLorebooks ->
                 showExportOptionsDialog = false
                 scope.launch {
+                    isExporting = true
                     try {
-                        val content = AssistantExportImport.exportToEvoliaBundle(
+                        val bytes = AssistantExportImport.exportToEvoliaBundle(
                             assistant = assistant,
                             context = context,
                             includeMemories = includeMemories,
                             includeLorebooks = includeLorebooks
                         )
-                        pendingExportContent = content
+                        pendingExportBytes = bytes
                         val fileName = AssistantExportImport.getSuggestedFileName(assistant, "evolia")
                         exportLauncher.launch(fileName)
                     } catch (e: Exception) {
                         e.printStackTrace()
                         toaster.show(context.getString(R.string.assistant_detail_export_failed, e.message ?: ""))
+                    } finally {
+                        isExporting = false
                     }
                 }
             }
         )
     }
+
+    me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay(
+        visible = isExporting,
+        icon = Icons.Rounded.Upload,
+        hint = stringResource(R.string.assistant_importer_exporting)
+    )
 }
 
 /**

@@ -125,10 +125,17 @@ fun AgentListPage() {
     val repo = org.koin.compose.koinInject<me.rerere.rikkahub.core.data.repository.ConversationRepository>()
     val haptics = rememberPremiumHaptics(enabled = settings.displaySetting.enableUIHaptics)
 
+    // Import state
+    var pendingImportResult by remember { mutableStateOf<me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Configurable?>(null) }
+    var isImporting by remember { mutableStateOf(false) }
+
     val createState = useEditState<Assistant> {
         assistantVm.addAssistant(it)
     }
     val context = LocalContext.current
+    val msgImported = stringResource(R.string.assistant_importer_imported_successfully)
+    val msgImportFailed = stringResource(R.string.assistant_importer_import_failed_with_message)
+    val msgImportError = stringResource(R.string.assistant_importer_import_error_with_message)
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -139,21 +146,20 @@ fun AgentListPage() {
                     when (res) {
                         is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Success -> {
                             assistantVm.addAssistant(res.assistant)
-                            toaster.show("Character Imported")
+                            toaster.show(msgImported)
                         }
 
                         is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Configurable -> {
-                            assistantVm.addAssistant(res.assistant)
-                            toaster.show("Character Imported (${res.assistant.name})")
+                            pendingImportResult = res
                         }
 
                         is me.rerere.rikkahub.utils.AssistantExportImport.ImportResult.Error -> {
-                            toaster.show("Import Failed: ${res.message}")
+                            toaster.show(String.format(msgImportFailed, res.message))
                         }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    toaster.show("Error: ${e.localizedMessage}")
+                    toaster.show(String.format(msgImportError, e.localizedMessage ?: ""))
                 }
             }
         }
@@ -376,6 +382,40 @@ fun AgentListPage() {
             createState.dismiss()
             navController.navigate(Screen.AssistantImportDoubao)
         }
+    )
+
+    if (pendingImportResult != null) {
+        val res = pendingImportResult!!
+        me.rerere.rikkahub.ui.pages.assistant.ImportConfigDialog(
+            onDismissRequest = { pendingImportResult = null },
+            hasMemories = res.hasMemories,
+            hasLorebooks = res.hasLorebooks,
+            missingModels = res.missingModels,
+            onConfirm = { m, l ->
+                pendingImportResult = null
+                scope.launch {
+                    isImporting = true
+                    try {
+                        val assistant = if (res.exportV1 != null) {
+                            me.rerere.rikkahub.utils.AssistantExportImport.finalizeEvoliaImport(res.exportV1, context, m, l)
+                        } else {
+                            res.assistant
+                        }
+                        val finalAssistant = me.rerere.rikkahub.utils.AssistantExportImport.clearMissingModels(assistant)
+                        assistantVm.addAssistant(finalAssistant)
+                        toaster.show(msgImported)
+                    } finally {
+                        isImporting = false
+                    }
+                }
+            }
+        )
+    }
+
+    me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay(
+        visible = isImporting,
+        icon = Icons.Rounded.PersonAdd,
+        hint = stringResource(R.string.import_config_importing)
     )
 }
 
