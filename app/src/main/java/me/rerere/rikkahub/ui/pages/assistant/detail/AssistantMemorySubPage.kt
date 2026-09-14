@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,6 +34,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -39,16 +43,20 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.HistoryEdu
 import androidx.compose.material.icons.rounded.CleanHands
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -102,14 +110,17 @@ import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.EmbeddingModelWarningBanner
+import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.utils.insertAtCursor
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.core.data.ai.prompts.getDefaultMasterMemoryPrompt
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 /**
  * Memory mode based on current settings
@@ -948,6 +959,7 @@ private fun MasterMemoryCard(
     onConsolidate: () -> Unit
 ) {
     var showBackupDialog by remember { mutableStateOf(false) }
+    var showPromptEditor by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
@@ -981,6 +993,14 @@ private fun MasterMemoryCard(
                     Text(stringResource(R.string.assistant_page_cancel))
                 }
             }
+        )
+    }
+
+    if (showPromptEditor) {
+        MasterMemoryPromptEditorDialog(
+            assistant = assistant,
+            onDismiss = { showPromptEditor = false },
+            onUpdateAssistant = onUpdateAssistant
         )
     }
 
@@ -1027,6 +1047,20 @@ private fun MasterMemoryCard(
                             )
                         }
                     }
+                    // 关系档案生成提示词设置入口
+                    if (assistant.enableMasterMemory) {
+                        IconButton(
+                            onClick = { showPromptEditor = true },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Tune,
+                                contentDescription = stringResource(R.string.assistant_memory_master_prompt_title),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     HapticSwitch(
                         checked = assistant.enableMasterMemory,
                         onCheckedChange = { onUpdateAssistant(assistant.copy(enableMasterMemory = it)) }
@@ -1037,29 +1071,45 @@ private fun MasterMemoryCard(
 
         AnimatedVisibility(visible = assistant.enableMasterMemory) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
-                    Surface(
-                        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                var contentExpanded by remember { mutableStateOf(false) }
+
+                Surface(
+                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.HistoryEdu,
+                                null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.tertiary
+                            )
+                            Text(
+                                stringResource(R.string.assistant_memory_master_content_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { contentExpanded = !contentExpanded },
+                                modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
-                                    Icons.Rounded.HistoryEdu,
-                                    null,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.tertiary
-                                )
-                                Text(
-                                    stringResource(R.string.assistant_memory_master_content_title),
-                                    style = MaterialTheme.typography.titleSmall
+                                    if (contentExpanded) Icons.Rounded.ExpandLess
+                                    else Icons.Rounded.ExpandMore,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                        }
 
-                            if (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing) {
+                        AnimatedVisibility(visible = contentExpanded) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 DebouncedTextField(
                                     value = assistant.masterMemoryContent,
                                     onValueChange = { onUpdateAssistant(assistant.copy(masterMemoryContent = it)) },
@@ -1068,23 +1118,14 @@ private fun MasterMemoryCard(
                                     maxLines = 10,
                                     stateKey = "master_content_${assistant.id}"
                                 )
-                            } else {
-                                Text(
-                                    text = assistant.masterMemoryContent.ifBlank { stringResource(R.string.assistant_memory_master_never_updated) },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp)
-                                )
-                            }
 
-                            if (assistant.lastMasterMemoryUpdate <= 0 && (BuildConfig.DEBUG || FeatureConfig.enableMasterMemoryEditing)) {
-                                Text(
-                                    text = stringResource(R.string.assistant_memory_master_never_updated),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                if (assistant.lastMasterMemoryUpdate <= 0) {
+                                    Text(
+                                        text = stringResource(R.string.assistant_memory_master_never_updated),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -1102,7 +1143,7 @@ private fun MasterMemoryCard(
                     Box(modifier = Modifier.padding(16.dp)) {
                         Button(
                             onClick = {
-                                if (BuildConfig.DEBUG && assistant.masterMemoryContent.isNotBlank()) {
+                                if (assistant.masterMemoryContent.isNotBlank()) {
                                     showBackupDialog = true
                                 } else {
                                     onConsolidate()
@@ -1119,6 +1160,142 @@ private fun MasterMemoryCard(
             }
         }
     }
+}
+
+@Composable
+private fun MasterMemoryPromptEditorDialog(
+    assistant: Assistant,
+    onDismiss: () -> Unit,
+    onUpdateAssistant: (Assistant) -> Unit
+) {
+    // 提示词编辑本地态：以 assistant.masterMemoryPrompt 为初值
+    // 若为空，则用当前智能体对应的默认提示词预填，便于用户在默认基础上修改
+    val defaultPrompt = remember(assistant.isMain) {
+        getDefaultMasterMemoryPrompt(assistant.isMain)
+    }
+    val promptState = androidx.compose.runtime.key(assistant.id) {
+        rememberTextFieldState(
+            initialText = assistant.masterMemoryPrompt.ifBlank { defaultPrompt }
+        )
+    }
+    // 状态徽标基于本地编辑态与默认值比较，便于用户实时感知
+    val currentText = promptState.text.toString()
+    val isUsingDefault = currentText == defaultPrompt
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(R.string.assistant_memory_master_prompt_title))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.assistant_memory_master_prompt_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // 主智能体专属提示：关系档案只记录关系，事实由其他模块承载
+                if (assistant.isMain) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Rounded.Info,
+                                null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = stringResource(R.string.assistant_memory_master_prompt_main_hint),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+
+                // 默认/自定义状态指示（基于本地编辑态）
+                Text(
+                    text = if (isUsingDefault)
+                        stringResource(R.string.assistant_memory_master_prompt_status_default)
+                    else
+                        stringResource(R.string.assistant_memory_master_prompt_status_custom),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isUsingDefault)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.tertiary
+                )
+
+                OutlinedTextField(
+                    state = promptState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 240.dp),
+                    lineLimits = TextFieldLineLimits.MultiLine(
+                        minHeightInLines = 8,
+                        maxHeightInLines = 20
+                    ),
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+
+                // 可用变量快捷插入
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.assistant_page_available_variables),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Tag(
+                            onClick = { promptState.insertAtCursor("{{locale}}") }
+                        ) {
+                            Text(stringResource(R.string.assistant_memory_master_prompt_var_locale))
+                            Text(": {{locale}}")
+                        }
+                        Tag(
+                            onClick = { promptState.insertAtCursor("{{char}}") }
+                        ) {
+                            Text(stringResource(R.string.assistant_memory_master_prompt_var_char))
+                            Text(": {{char}}")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                // 如果编辑后内容与默认提示词一致，则保存为空字符串，复用默认逻辑
+                val toSave = if (currentText == defaultPrompt) "" else currentText
+                onUpdateAssistant(assistant.copy(masterMemoryPrompt = toSave))
+                onDismiss()
+            }) {
+                Text(stringResource(R.string.assistant_page_save))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 恢复默认：仅重置本地编辑态，不立即写入；待用户点"保存"统一持久化
+                TextButton(onClick = {
+                    promptState.edit { replace(0, length, defaultPrompt) }
+                }) {
+                    Text(stringResource(R.string.assistant_memory_master_prompt_reset))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.assistant_page_cancel))
+                }
+            }
+        }
+    )
 }
 
 @Composable
