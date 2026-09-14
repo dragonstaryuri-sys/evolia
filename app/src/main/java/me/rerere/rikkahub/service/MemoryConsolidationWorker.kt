@@ -21,8 +21,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
-import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT
-import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_MASTER_MEMORY_PROMPT
+import me.rerere.rikkahub.core.data.ai.prompts.getDefaultMasterMemoryPrompt
 import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
@@ -375,7 +374,6 @@ class MemoryConsolidationWorker(
 
         // --- Process Master Memory (L3) ---
         var updatedMasterContent: String? = null
-        var wasCompressed = false
         var masterError: String? = null
         // 仅在明确传入指令且开启了功能时更新
         if ((forceMaster || incrementalMaster) && currentAssistant.enableMasterMemory) {
@@ -415,20 +413,11 @@ class MemoryConsolidationWorker(
                         assistantName = currentAssistant.name,
                         existingArchive = currentAssistant.masterMemoryContent,
                         newContext = recentContext.ifBlank { "No new recent conversations." },
-                        systemPrompt = DEFAULT_MASTER_MEMORY_PROMPT,
+                        systemPrompt = currentAssistant.masterMemoryPrompt.ifBlank {
+                            getDefaultMasterMemoryPrompt(currentAssistant.isMain)
+                        },
                         thinkingBudget = 2048
                     )
-
-                    if (updatedMasterContent.length > 1500) {
-                        updatedMasterContent = compressMasterMemory(
-                            handler = memory.handler,
-                            providerSetting = memory.provider,
-                            model = memory.model,
-                            archiveToCompress = updatedMasterContent,
-                            thinkingBudget = 2048
-                        )
-                        wasCompressed = true
-                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Master Memory", e)
                     masterError = e.message ?: "Unknown error"
@@ -465,11 +454,7 @@ class MemoryConsolidationWorker(
 
         // 发送通知
         if (updatedMasterContent != null) {
-            val content = if (wasCompressed) {
-                applicationContext.getString(R.string.master_memory_update_compressed, currentAssistant.name)
-            } else {
-                applicationContext.getString(R.string.master_memory_update_success, currentAssistant.name)
-            }
+            val content = applicationContext.getString(R.string.master_memory_update_success, currentAssistant.name)
             sendNotification(
                 title = applicationContext.getString(R.string.master_memory_update_done),
                 content = content
@@ -618,34 +603,6 @@ class MemoryConsolidationWorker(
             )
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private suspend fun compressMasterMemory(
-        handler: me.rerere.ai.provider.Provider<*>,
-        providerSetting: me.rerere.ai.provider.ProviderSetting,
-        model: me.rerere.ai.provider.Model,
-        archiveToCompress: String,
-        thinkingBudget: Int?
-    ): String {
-        val locale = Locale.getDefault().displayName
-        val sysPrompt = DEFAULT_MASTER_MEMORY_COMPRESSION_PROMPT.applyPlaceholders("locale" to locale)
-        val userPrompt = "Memory Archive to Compress:\n$archiveToCompress"
-        val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = retryIO(times = 2, initialDelay = 30000) {
-            h.generateText(
-                providerSetting = providerSetting,
-                messages = listOf(UIMessage.system(sysPrompt), UIMessage.user(userPrompt)),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
-                    topP = 0.5f,
-                    maxTokens = 6000,
-                    thinkingBudget = thinkingBudget
-                )
-            )
-        }
-        return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: archiveToCompress
     }
 
     private fun sendNotification(title: String, content: String) {
