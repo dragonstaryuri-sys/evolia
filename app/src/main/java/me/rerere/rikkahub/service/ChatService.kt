@@ -454,6 +454,17 @@ class ChatService(
         val originalAssistantId = Uuid.parse(task.assistantId)
         val originalAssistant = settings.getAssistantById(originalAssistantId) ?: return
 
+        // 任务模型覆盖：若 task.model 非空且能解析为有效 Uuid，则用该模型执行此次定时任务；
+        // 否则沿用 assistant 当前对话模型。仅影响这一条定时任务消息，不污染正常对话。
+        val overrideAssistant = runCatching {
+            task.model
+                ?.takeIf { it.isNotBlank() }
+                ?.let { modelIdStr ->
+                    val modelId = Uuid.parse(modelIdStr)
+                    settings.findModelById(modelId)?.let { originalAssistant.copy(chatModelId = modelId) }
+                }
+        }.getOrNull() ?: originalAssistant
+
         val activeConvId = conversationReferences.keys
             .mapNotNull { id -> conversations[id]?.value }
             .filter { it.assistantId == originalAssistantId }
@@ -531,7 +542,7 @@ class ChatService(
                     try {
                         handleMessageComplete(
                             conversationId = conversationId,
-                            assistantOverride = originalAssistant,
+                            assistantOverride = overrideAssistant,
                             skipContextForResponse = false,
                             includeSkipContextMessages = true
                         )

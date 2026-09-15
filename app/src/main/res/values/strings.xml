@@ -1332,7 +1332,7 @@
   <string name="agent_task_preset_good_morning">Morning Greeting</string>
   <string name="agent_task_preset_weekly_report">Weekly Report</string>
   <string name="agent_task_name">Task Name (Scenario)</string>
-  <string name="agent_task_scheduled_time">First Execution Time</string>
+  <string name="agent_task_scheduled_time">Next Execution Time</string>
   <string name="agent_task_repeat_interval">Repeat Interval</string>
   <string name="agent_task_repeat_never">Never</string>
   <string name="agent_task_repeat_daily">Daily</string>
@@ -1351,6 +1351,8 @@
   <string name="agent_task_delete_confirm">Are you sure you want to cancel and delete this scheduled task?</string>
   <string name="agent_task_model">Task Model</string>
   <string name="agent_task_model_dialog_title">Select Task Model</string>
+  <string name="agent_task_edit_title">Edit Task</string>
+  <string name="agent_task_repeat_hour_unit">hours</string>
   <string name="agent_automation_title">Agent Automation</string>
   <string name="agent_automation_desc">Allow the assistant to set scheduled tasks (such as sending emails and keeping diaries).</string>
   <string name="agent_task_manager_desc">All Scheduled Tasks</string>

@@ -25,5 +25,7 @@ data class AgentTaskEntity(
     @ColumnInfo(name = "is_executed", defaultValue = "0")
     val isExecuted: Boolean = false,
     @ColumnInfo(name = "created_at")
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(name = "model")
+    val model: String? = null // 用户手动指定的任务执行模型；为空则使用 assistant 当前对话模型
 )

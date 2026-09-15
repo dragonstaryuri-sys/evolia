@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.assistant.detail
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,21 +14,28 @@ import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Event
+import androidx.compose.material.icons.rounded.ViewModule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 import java.text.SimpleDateFormat
 import java.util.*
@@ -37,6 +45,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +54,7 @@ fun AssistantAgentTaskPage(assistantId: String) {
     val tasks by vm.agentTasks.collectAsStateWithLifecycle()
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showEditModelTask by remember { mutableStateOf<AgentTaskEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -80,7 +90,11 @@ fun AssistantAgentTaskPage(assistantId: String) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(tasks, key = { it.id }) { task ->
-                    AgentTaskItem(task = task, onDelete = { vm.deleteAgentTask(task) })
+                    AgentTaskItem(
+                        task = task,
+                        onDelete = { vm.deleteAgentTask(task) },
+                        onClick = { showEditModelTask = task }
+                    )
                 }
             }
         }
@@ -94,6 +108,17 @@ fun AssistantAgentTaskPage(assistantId: String) {
             onConfirm = { task ->
                 vm.addAgentTask(task)
                 showCreateDialog = false
+            }
+        )
+    }
+
+    showEditModelTask?.let { task ->
+        EditTaskDialog(
+            task = task,
+            onDismiss = { showEditModelTask = null },
+            onSave = { model ->
+                vm.updateAgentTaskModel(task, model)
+                showEditModelTask = null
             }
         )
     }
@@ -111,6 +136,10 @@ private fun CreateTaskDialog(
     var instruction by remember { mutableStateOf("") }
     var scheduledTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var repeatInterval by remember { mutableLongStateOf(0L) }
+    var selectedModelId by remember { mutableStateOf<Uuid?>(null) }
+
+    val settingsStore = koinInject<SettingsStore>()
+    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
 
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -241,6 +270,38 @@ private fun CreateTaskDialog(
                     minLines = 3,
                     shape = MaterialTheme.shapes.medium
                 )
+
+                // 任务模型选择（非必选，为空时使用 assistant 当前对话模型）
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.ViewModule, contentDescription = null)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.agent_task_model),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            ModelSelector(
+                                modelId = selectedModelId,
+                                providers = settings.providers,
+                                type = ModelType.CHAT,
+                                allowClear = true,
+                                onSelect = { model ->
+                                    selectedModelId = if (model.id == Uuid.NIL) null else model.id
+                                }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -257,7 +318,8 @@ private fun CreateTaskDialog(
                             taskType = "NOTIFICATION",
                             taskData = taskData,
                             scheduledTime = scheduledTime,
-                            repeatInterval = repeatInterval
+                            repeatInterval = repeatInterval,
+                            model = selectedModelId?.toString()
                         )
                     )
                 }
@@ -335,7 +397,11 @@ private fun CreateTaskDialog(
 }
 
 @Composable
-private fun AgentTaskItem(task: AgentTaskEntity, onDelete: (AgentTaskEntity) -> Unit) {
+private fun AgentTaskItem(
+    task: AgentTaskEntity,
+    onDelete: (AgentTaskEntity) -> Unit,
+    onClick: () -> Unit
+) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -365,7 +431,9 @@ private fun AgentTaskItem(task: AgentTaskEntity, onDelete: (AgentTaskEntity) -> 
     val displayTitle = if (!taskName.isNullOrBlank()) taskName else typeText
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
         shape = MaterialTheme.shapes.medium
     ) {
         Row(
@@ -440,5 +508,189 @@ private fun AgentTaskItem(task: AgentTaskEntity, onDelete: (AgentTaskEntity) -> 
                 }
             }
         )
+    }
+}
+
+/**
+ * 编辑已有定时任务的弹窗：展示任务全部信息（场景名称、执行时间、重复频率、描述），
+ * 仅允许修改「任务模型」字段，其他字段只读。
+ * 模型为空时使用 assistant 当前对话模型。
+ */
+@Composable
+private fun EditTaskDialog(
+    task: AgentTaskEntity,
+    onDismiss: () -> Unit,
+    onSave: (String?) -> Unit
+) {
+    val settingsStore = koinInject<SettingsStore>()
+    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
+
+    val taskData = remember(task.taskData) {
+        runCatching { JsonInstant.parseToJsonElement(task.taskData).jsonObject }.getOrNull()
+    }
+    val taskName = remember(taskData) {
+        taskData?.get("task_name")?.jsonPrimitive?.contentOrNull
+    }
+    val instruction = remember(taskData) {
+        taskData?.get("instruction")?.jsonPrimitive?.contentOrNull
+    }
+
+    val initialModelId = remember(task.model) {
+        task.model
+            ?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { Uuid.parse(it) }.getOrNull() }
+    }
+    var selectedModelId by remember { mutableStateOf(initialModelId) }
+
+    // 重复频率转小时展示（仅显示，不改存储）
+    val hourUnit = stringResource(R.string.agent_task_repeat_hour_unit)
+    val neverText = stringResource(R.string.agent_task_repeat_never)
+    val repeatText = remember(task.repeatInterval, hourUnit, neverText) {
+        if (task.repeatInterval <= 0L) {
+            neverText
+        } else {
+            val hours = task.repeatInterval / 3_600_000.0
+            if (hours % 1.0 == 0.0) {
+                "${hours.toLong()} $hourUnit"
+            } else {
+                String.format(Locale.getDefault(), "%.1f %s", hours, hourUnit)
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.agent_task_edit_title),
+                textAlign = TextAlign.Start
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // 场景名称（只读）
+                ReadOnlyTaskField(
+                    icon = Icons.Rounded.Book,
+                    label = stringResource(R.string.agent_task_name),
+                    value = taskName ?: ""
+                )
+
+                // 首次任务执行时间（只读）
+                ReadOnlyTaskField(
+                    icon = Icons.Rounded.Event,
+                    label = stringResource(R.string.agent_task_scheduled_time),
+                    value = dateFormat.format(Date(task.scheduledTime))
+                )
+
+                // 重复频率（只读，小时）
+                ReadOnlyTaskField(
+                    icon = Icons.Rounded.Event,
+                    label = stringResource(R.string.agent_task_repeat_interval),
+                    value = repeatText
+                )
+
+                // 任务描述（只读）
+                ReadOnlyTaskField(
+                    icon = Icons.Rounded.Book,
+                    label = stringResource(R.string.agent_task_instruction),
+                    value = instruction ?: ""
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+
+                // 任务模型（可编辑）—— 用 OutlinedCard 卡片样式，与新建页一致
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.ViewModule, contentDescription = null)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.agent_task_model),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            ModelSelector(
+                                modelId = selectedModelId,
+                                providers = settings.providers,
+                                type = ModelType.CHAT,
+                                allowClear = true,
+                                onSelect = { model ->
+                                    selectedModelId = if (model.id == Uuid.NIL) null else model.id
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(selectedModelId?.toString()) }) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+/**
+ * 只读任务信息行：左图标 + 右列（标题 + 值），灰色置灰样式，
+ * 用于编辑弹窗展示不可修改的字段。
+ */
+@Composable
+private fun ReadOnlyTaskField(
+    icon: ImageVector,
+    label: String,
+    value: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

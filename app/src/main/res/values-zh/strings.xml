@@ -1309,7 +1309,7 @@
   <string name="agent_task_preset_good_morning">每日早安问候</string>
   <string name="agent_task_preset_weekly_report">每周报告</string>
   <string name="agent_task_name">场景名称</string>
-  <string name="agent_task_scheduled_time">首次任务执行时间</string>
+  <string name="agent_task_scheduled_time">下次任务执行时间</string>
   <string name="agent_task_repeat_interval">重复频率</string>
   <string name="agent_task_repeat_never">从不</string>
   <string name="agent_task_repeat_daily">每天</string>
@@ -1328,6 +1328,8 @@
   <string name="agent_task_delete_confirm">确定要取消并删除这个定时任务吗？</string>
   <string name="agent_task_model">任务模型</string>
   <string name="agent_task_model_dialog_title">选择任务模型</string>
+  <string name="agent_task_edit_title">编辑已有任务</string>
+  <string name="agent_task_repeat_hour_unit">小时</string>
   <string name="agent_automation_title">智能体自动化</string>
   <string name="agent_automation_desc">允许助手设置定时任务（如发邮件、记日记）</string>
   <string name="agent_task_manager_desc">所有定时任务</string>

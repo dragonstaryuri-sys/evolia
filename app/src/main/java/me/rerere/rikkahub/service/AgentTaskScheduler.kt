@@ -149,7 +149,7 @@ class AgentTaskScheduler(private val context: Context) : KoinComponent {
             PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         )
 
-        val interval = 30 * 60 * 1000L
+        val interval = 10 * 60 * 1000L
         val triggerAt = System.currentTimeMillis() + interval
 
         try {

@@ -40,7 +40,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageEntity::class,
         ProfileHistoryEntity::class
     ],
-    version = 31,
+    version = 32,
     exportSchema = true
 )
 @TypeConverters(
@@ -210,6 +210,20 @@ abstract class AppDatabase : RoomDatabase() {
                     """
                 )
                 Log.v(TAG, "完成 30->31 迁移：历史日记 last_message_at 回填完成")
+            }
+        }
+
+        /**
+         * 31 → 32：为 agent_tasks 表新增 model 列，
+         * 允许用户为定时任务单独指定执行模型。
+         * 为空时使用 assistant 当前对话模型。
+         */
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 31->32 迁移：agent_tasks 表新增 model 列")
+                db.execSQL(
+                    "ALTER TABLE `agent_tasks` ADD COLUMN `model` TEXT"
+                )
             }
         }
 

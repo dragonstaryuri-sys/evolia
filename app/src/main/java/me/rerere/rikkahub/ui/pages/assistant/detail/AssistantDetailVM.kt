@@ -186,6 +186,12 @@ class AssistantDetailVM(
         }
     }
 
+    fun updateAgentTaskModel(task: AgentTaskEntity, model: String?) {
+        viewModelScope.launch {
+            agentTaskRepository.updateTask(task.copy(model = model))
+        }
+    }
+
     // 获取监视器任务
     val monitorTasks: StateFlow<List<AgentMonitorTaskEntity>> = agentMonitorTaskRepository
         .getTasksByAssistant(assistantId.toString())
