@@ -15,6 +15,16 @@
   <string name="assistant_importer_import_tavern_json">导入酒馆角色卡 (JSON)</string>
   <string name="assistant_importer_import_tavern_png">导入酒馆角色卡 (PNG)</string>
   <string name="assistant_importer_importing">导入中...</string>
+  <string name="assistant_importer_exporting">正在导出角色，请稍候…</string>
+  <string name="assistant_importer_imported_successfully">角色导入成功</string>
+  <string name="assistant_importer_import_failed_with_message">导入失败：%1$s</string>
+  <string name="assistant_importer_import_error_with_message">错误：%1$s</string>
+  <string name="assistant_importer_error_read_file">读取文件失败</string>
+  <string name="assistant_importer_error_no_png_data">PNG文件中未找到角色数据</string>
+  <string name="assistant_importer_error_unknown_format">未知文件格式</string>
+  <string name="assistant_importer_error_unsupported_json">不支持的JSON格式</string>
+  <string name="assistant_importer_error_json_parse">JSON解析错误：%1$s</string>
+  <string name="assistant_importer_error_unknown_parse">未知解析错误</string>
   <string name="assistant_importer_missing_data_field">缺少数据字段</string>
   <string name="assistant_importer_missing_name_field">缺少名称字段</string>
   <string name="assistant_importer_missing_spec_field">缺少 spec 字段</string>
@@ -1316,6 +1326,8 @@
   <string name="agent_task_executed">已执行</string>
   <string name="agent_task_pending">等待中</string>
   <string name="agent_task_delete_confirm">确定要取消并删除这个定时任务吗？</string>
+  <string name="agent_task_model">任务模型</string>
+  <string name="agent_task_model_dialog_title">选择任务模型</string>
   <string name="agent_automation_title">智能体自动化</string>
   <string name="agent_automation_desc">允许助手设置定时任务（如发邮件、记日记）</string>
   <string name="agent_task_manager_desc">所有定时任务</string>
