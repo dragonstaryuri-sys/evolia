@@ -910,11 +910,11 @@
   <!-- Discover -->
   <string name="discover_page_title">Discover</string>
   <string name="discover_page_diary">Diary</string>
-  <string name="assistant_context_include_diary_title">带入日记到上下文</string>
-  <string name="assistant_context_include_diary_desc">启用后，智能体在对话时将参考最近生成的日记内容</string>
-  <string name="assistant_context_diaries_limit_title">带入日记篇数</string>
-  <string name="assistant_context_diaries_limit_value">%d 篇日记</string>
-  <string name="assistant_context_diaries_limit_desc">设置带入对话背景的最近日记条数</string>
+  <string name="assistant_context_include_diary_title">Include diary in context</string>
+  <string name="assistant_context_include_diary_desc">When enabled, the agent will refer to recently generated diary entries during conversations</string>
+  <string name="assistant_context_diaries_limit_title">Number of diaries to include</string>
+  <string name="assistant_context_diaries_limit_value">%d diary entries</string>
+  <string name="assistant_context_diaries_limit_desc">Set the number of recent diary entries brought into the conversation context</string>
   <string name="discover_page_diary_desc">Manage agent diaries</string>
   <string name="discover_page_diary_title">Agent Diaries</string>
   <string name="discover_page_diary_generate">Generate Today\'s Diary</string>
@@ -1349,6 +1349,8 @@
   <string name="agent_task_executed">Executed</string>
   <string name="agent_task_pending">Pending</string>
   <string name="agent_task_delete_confirm">Are you sure you want to cancel and delete this scheduled task?</string>
+  <string name="agent_task_model">Task Model</string>
+  <string name="agent_task_model_dialog_title">Select Task Model</string>
   <string name="agent_automation_title">Agent Automation</string>
   <string name="agent_automation_desc">Allow the assistant to set scheduled tasks (such as sending emails and keeping diaries).</string>
   <string name="agent_task_manager_desc">All Scheduled Tasks</string>
