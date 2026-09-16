@@ -1949,4 +1949,16 @@
   <string name="setting_wake_word_test_success">模拟唤醒成功，已用「%1$s」开启通话</string>
   <string name="setting_wake_word_test_failed">模拟唤醒失败：%1$s</string>
   <string name="setting_wake_word_test_hint">如果此按钮能正常进入通话，说明通话链路没问题。剩下就是对着麦克风说唤醒词，看看 KWS 能不能命中。如果 KWS 一直没反应，尝试调高明灵敏度或换成更短、更常用的唤醒词拼音。</string>
+  <!-- 导入配置对话框 -->
+  <string name="import_config_dialog_title">导入角色</string>
+  <string name="import_config_missing_models">缺失模型</string>
+  <string name="import_config_missing_models_desc">该角色使用了以下模型，这些模型未在你的设置中配置，将取消选中：</string>
+  <string name="import_config_reconfigure_after">你可以在导入后重新配置它们。</string>
+  <string name="import_config_include_components">包含组件</string>
+  <string name="import_config_lorebooks">设定集</string>
+  <string name="import_config_lorebooks_desc">导入并关联对应的设定集</string>
+  <string name="import_config_memories">记忆</string>
+  <string name="import_config_memories_desc">导入核心记忆与情景记忆</string>
+  <string name="import_config_ready">准备导入该角色。</string>
+  <string name="import_config_importing">正在导入角色，请稍候…</string>
 </resources>
