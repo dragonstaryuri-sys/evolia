@@ -212,6 +212,7 @@ data class UIMessage(
                 is UIMessagePart.Text -> part.text
                 is UIMessagePart.Thinking -> part.thinking
                 is UIMessagePart.Reasoning -> part.reasoning
+                is UIMessagePart.Audio -> part.transcriptionForSummary()
                 else -> ""
             }
         }
@@ -222,19 +223,34 @@ data class UIMessage(
             is UIMessagePart.Text -> part.text
             is UIMessagePart.Thinking -> part.thinking
             is UIMessagePart.Reasoning -> part.reasoning
+            is UIMessagePart.Audio -> part.transcriptionForSummary()
             else -> ""
         }
     }
 
     /**
      * Extract only text content, excluding reasoning/thinking parts.
-     * Use this for background tasks where reasoning output should not be included.
+     * Use this for background tasks where reasoning output should not be included
+     * (L1/L2/L3 archiving, diary generation, search, TTS, etc.).
      *
-     * Note: Audio parts are rendered as a placeholder like "[语音]2''" (with duration in
-     * seconds) so notifications and conversation-list previews show a meaningful label
-     * instead of an empty string for voice-only messages.
+     * Audio parts: prefer the ASR transcription (so archiving/diary/search see the
+     * actual spoken content). If no transcription is available, fall back to a
+     * duration placeholder like "[语音]2''".
      */
     fun toContentText() = parts.mapNotNull { part ->
+        when (part) {
+            is UIMessagePart.Text -> part.text
+            is UIMessagePart.Audio -> part.transcriptionForDisplay()
+            else -> null
+        }
+    }.joinToString(separator = "\n").trim()
+
+    /**
+     * Lightweight preview for notifications and conversation-list previews.
+     * Always uses "[语音]X''" placeholder for audio parts (not the transcription),
+     * keeping the preview short and consistent with user expectations.
+     */
+    fun toPreviewText() = parts.mapNotNull { part ->
         when (part) {
             is UIMessagePart.Text -> part.text
             is UIMessagePart.Audio -> {
@@ -638,6 +654,52 @@ sealed class UIMessagePart {
         override var metadata: JsonObject? = null
     ) : UIMessagePart() {
         override val priority: Int = 0
+    }
+}
+
+/**
+ * 从 Audio Part 的 metadata 中提取 ASR 转写文本。
+ * ASSISTANT 语音消息的 transcription 可能带 "(语音消息)" / "（语音消息）" 前缀，
+ * 这里统一剥离，保证归档/日记/搜索等场景拿到的是纯说话内容。
+ */
+private val VOICE_MARKER_HALF = "(语音消息)"
+private val VOICE_MARKER_FULL = "（语音消息）"
+
+private fun UIMessagePart.Audio.rawTranscription(): String? =
+    metadata?.get("transcription")
+        ?.jsonPrimitiveOrNull
+        ?.content
+        ?.takeIf { it.isNotBlank() }
+
+private fun stripVoiceMarker(text: String): String {
+    val s = text.trimStart()
+    return when {
+        s.startsWith(VOICE_MARKER_HALF) -> s.removePrefix(VOICE_MARKER_HALF).trimStart()
+        s.startsWith(VOICE_MARKER_FULL) -> s.removePrefix(VOICE_MARKER_FULL).trimStart()
+        else -> text
+    }
+}
+
+/**
+ * 供 toText / summaryAsText 使用：返回剥离标记后的转写文本；无转写时返回空串。
+ */
+fun UIMessagePart.Audio.transcriptionForSummary(): String =
+    rawTranscription()?.let { stripVoiceMarker(it) } ?: ""
+
+/**
+ * 供 toContentText 使用：优先返回剥离标记后的转写文本；
+ * 无转写时回退到 "[语音]X''" 时长占位，避免纯语音消息显示为空。
+ */
+fun UIMessagePart.Audio.transcriptionForDisplay(): String {
+    val transcription = rawTranscription()
+    if (transcription != null) return stripVoiceMarker(transcription)
+    val durationMs = metadata?.get("durationMs")
+        ?.jsonPrimitiveOrNull?.content?.toIntOrNull()
+    return if (durationMs != null && durationMs > 0) {
+        val seconds = (durationMs + 500) / 1000
+        "[语音]${seconds}''"
+    } else {
+        "[语音]"
     }
 }
 

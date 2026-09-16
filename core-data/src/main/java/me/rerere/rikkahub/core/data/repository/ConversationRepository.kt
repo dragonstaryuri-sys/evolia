@@ -113,7 +113,7 @@ class ConversationRepository(
                 list.associate { result ->
                     val content = result.content?.let { json ->
                         try {
-                            JsonInstant.decodeFromString<UIMessage>(json).toContentText()
+                            JsonInstant.decodeFromString<UIMessage>(json).toPreviewText()
                         } catch (e: Exception) {
                             ""
                         }
