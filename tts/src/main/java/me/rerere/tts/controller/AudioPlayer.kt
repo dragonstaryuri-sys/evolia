@@ -3,6 +3,8 @@ package me.rerere.tts.controller
 import android.content.Context
 import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes as ExoAudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -32,8 +34,19 @@ import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class AudioPlayer(context: Context) {
-    private val player = ExoPlayer.Builder(context).build()
+class AudioPlayer(
+    context: Context,
+    audioAttributes: ExoAudioAttributes? = null
+) {
+    @OptIn(UnstableApi::class)
+    private val player = ExoPlayer.Builder(context).apply {
+        // 设置 AudioAttributes 后，ExoPlayer 的 AudioTrack 会使用对应的 usage，
+        // 系统音量键会自动跟随到正确的 stream（如 USAGE_VOICE_COMMUNICATION → STREAM_VOICE_CALL）。
+        // null 时使用 ExoPlayer 默认（USAGE_MEDIA → STREAM_MUSIC）。
+        // handleAudioFocus=false：通话模式由 AudioManager.MODE_IN_COMMUNICATION 自行管理音频焦点，
+        // 不让 ExoPlayer 干预。
+        audioAttributes?.let { setAudioAttributes(it, false) }
+    }.build()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val _playbackState = MutableStateFlow(PlaybackState())

@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.di
 
 
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import kotlinx.serialization.json.Json
 import me.rerere.asr.provider.ASRManager
 import me.rerere.highlight.Highlighter
@@ -86,10 +88,16 @@ val appModule = module {
     }
 
     // 通话专用 TTS 控制器（独立实例，避免与 UI 朗读的 TtsController 互相干扰）
+    // 使用 USAGE_VOICE_COMMUNICATION 让 ExoPlayer 走 STREAM_VOICE_CALL，
+    // 这样通话模式下系统音量键（默认调 STREAM_VOICE_CALL）与 TTS 播放流一致。
     single {
         TtsController(
             context = get(),
-            ttsManager = get()
+            ttsManager = get(),
+            audioAttributes = AudioAttributes.Builder()
+                .setUsage(C.USAGE_VOICE_COMMUNICATION)
+                .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
+                .build()
         )
     }
 

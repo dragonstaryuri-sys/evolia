@@ -2,6 +2,7 @@ package me.rerere.tts.controller
 
 import android.content.Context
 import android.util.Log
+import androidx.media3.common.AudioAttributes as ExoAudioAttributes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +34,8 @@ private const val TAG = "TtsController"
  */
 class TtsController(
     context: Context,
-    private val ttsManager: TTSManager
+    private val ttsManager: TTSManager,
+    audioAttributes: ExoAudioAttributes? = null
 ) {
     // 协程作用域
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -41,7 +43,7 @@ class TtsController(
     // 组件
     private val chunker = TextChunker(maxChunkLength = 160)
     private val synthesizer = TtsSynthesizer(context, ttsManager)
-    private val audio = AudioPlayer(context)
+    private val audio = AudioPlayer(context, audioAttributes)
 
     // Provider & 作业
     private var currentProvider: TTSProviderSetting? = null
