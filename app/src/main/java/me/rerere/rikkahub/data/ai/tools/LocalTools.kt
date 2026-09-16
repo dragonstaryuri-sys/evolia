@@ -736,14 +736,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "截止日期/结束时间，请使用 ISO 8601 格式（例如：2023-10-27T10:00:00）。注意：当该任务为你的待办或共享待办时，该字段必填。"
-                                )
-                            })
-                            put("reminder_time", buildJsonObject {
-                                put("type", "string")
-                                put(
-                                    "description",
-                                    "具体提醒时间，请使用 ISO 8601 格式（例如：2023-10-27T09:30:00）。"
+                                    "截止日期/结束时间，请使用 ISO 8601 格式（例如：2023-10-27T10:00:00）。该字段可选，仅在任务有明确截止时间时填写。"
                                 )
                             })
                             put("category", buildJsonObject {
@@ -788,15 +781,6 @@ class LocalTools(
                                         }
                                 } else null
 
-                                val reminderTimeStr = json["reminder_time"]?.jsonPrimitive?.contentOrNull
-                                val reminderTime = if (reminderTimeStr != null) {
-                                    runCatching { df.parse(reminderTimeStr)?.time }.getOrNull()
-                                        ?: return@Tool buildJsonObject {
-                                            put("success", false)
-                                            put("error", "reminder_time 格式无效。")
-                                        }
-                                } else null
-
                                 val scheduleId = scheduleRepository.addSchedule(
                                     ScheduleEntity(
                                         title = title,
@@ -806,16 +790,15 @@ class LocalTools(
                                         difficulty = difficulty,
                                         startTime = System.currentTimeMillis(),
                                         endTime = endTime,
-                                        reminderTime = reminderTime,
                                         category = category
                                     )
                                 )
 
-                                // 自动同步到系统日历 (如果包含结束时间或提醒时间，且分类为 user)
-                                if (category == "user" && (endTime != null || reminderTime != null)) {
+                                // 自动同步到系统日历 (仅限 user 分类且有结束时间)
+                                if (category == "user" && endTime != null) {
                                     openSystemCalendar(
                                         title = title,
-                                        startTime = reminderTime ?: System.currentTimeMillis(),
+                                        startTime = System.currentTimeMillis(),
                                         endTime = endTime,
                                         description = "由你的小机创建"
                                     )
@@ -884,7 +867,6 @@ class LocalTools(
                                             put("difficulty", s.difficulty)
                                             put("start_time", df.format(java.util.Date(s.startTime)))
                                             s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
-                                            s.reminderTime?.let { put("reminder_time", df.format(java.util.Date(it))) }
                                             put("is_completed", s.isCompleted)
                                             put("category", s.category)
                                         }
@@ -913,15 +895,6 @@ class LocalTools(
                                                 put("error", "end_time 格式无效。")
                                             }
                                     } else schedule.endTime
-
-                                    val newReminderTimeStr = json["reminder_time"]?.jsonPrimitive?.contentOrNull
-                                    val newReminderTime = if (newReminderTimeStr != null) {
-                                        runCatching { df.parse(newReminderTimeStr)?.time }.getOrNull()
-                                            ?: return@Tool buildJsonObject {
-                                                put("success", false)
-                                                put("error", "reminder_time 格式无效。")
-                                            }
-                                    } else schedule.reminderTime
 
                                     // 同步处理关联的 agent_task
                                     val finalAgentTaskId = when {
@@ -987,18 +960,17 @@ class LocalTools(
                                             urgency = newUrgency,
                                             difficulty = newDifficulty,
                                             endTime = newEndTime,
-                                            reminderTime = newReminderTime,
                                             category = newCategory,
                                             agentTaskId = finalAgentTaskId,
                                             updatedAt = System.currentTimeMillis()
                                         )
                                     )
 
-                                    // 自动同步到系统日历 (仅限 user 分类)
-                                    if (newCategory == "user" && (newEndTime != null || newReminderTime != null)) {
+                                    // 自动同步到系统日历 (仅限 user 分类且有结束时间)
+                                    if (newCategory == "user" && newEndTime != null) {
                                         openSystemCalendar(
                                             title = newTitle,
-                                            startTime = newReminderTime ?: System.currentTimeMillis(),
+                                            startTime = System.currentTimeMillis(),
                                             endTime = newEndTime,
                                             description = "由小机更新"
                                         )

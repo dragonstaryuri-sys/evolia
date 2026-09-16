@@ -429,7 +429,6 @@ private fun ScheduleEditDialog(
 
     var startTime by remember { mutableLongStateOf(initialSchedule?.startTime ?: System.currentTimeMillis()) }
     var endTime by remember { mutableStateOf(initialSchedule?.endTime) }
-    var reminderTime by remember { mutableStateOf(initialSchedule?.reminderTime) }
 
     val haptic = LocalHapticFeedback.current
 
@@ -448,7 +447,6 @@ private fun ScheduleEditDialog(
                 category = category,
                 startTime = startTime,
                 endTime = endTime,
-                reminderTime = reminderTime,
                 updatedAt = System.currentTimeMillis()
             )
             onSave(schedule)
@@ -578,14 +576,6 @@ private fun ScheduleEditDialog(
                     time = endTime,
                     icon = Icons.Rounded.CalendarMonth,
                     onTimeSelected = { endTime = it },
-                    allowClear = true
-                )
-
-                TimeSelector(
-                    label = stringResource(R.string.schedule_reminder_time),
-                    time = reminderTime,
-                    icon = Icons.Rounded.Notifications,
-                    onTimeSelected = { reminderTime = it },
                     allowClear = true
                 )
             }
