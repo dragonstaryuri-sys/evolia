@@ -57,3 +57,7 @@ captures/
 
 # Assets
 /app/src/main/assets/sensevoice/
+
+# 说明文件
+/.trae
+
