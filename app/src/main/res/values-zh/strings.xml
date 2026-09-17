@@ -461,7 +461,7 @@
   <string name="setting_page_default_model">默认模型</string>
   <string name="setting_page_default_model_desc">设置各个功能的默认模型</string>
   <string name="setting_page_generation_timeout">生成超时</string>
-  <string name="setting_page_generation_timeout_desc">单次生成最长时间，包括思考、回复和工具调用</string>
+  <string name="setting_page_generation_timeout_desc">单次生成最长时间，包括对话回复、记忆归档</string>
   <string name="setting_page_generation_timeout_suffix">分钟</string>
   <string name="setting_page_display_setting">显示设置</string>
   <string name="setting_page_display_setting_desc">管理显示设置</string>

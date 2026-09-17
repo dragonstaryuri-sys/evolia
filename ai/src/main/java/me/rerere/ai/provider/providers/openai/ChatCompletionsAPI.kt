@@ -140,6 +140,26 @@ private fun isSiliconFlowReasoningDeployment(modelId: String): Boolean {
 }
 
 /**
+ * 智谱 (GLM) "始终思考"模型标识。
+ * 这些模型强制开启推理，发送 type=disabled 会返回错误码 1210：
+ * "该模型始终思考，不支持关闭思考；请使用 low、high 或 max。"
+ *
+ * 对于不在此列表中的 GLM 模型（如 glm-4.5-air / glm-4.5-flash / glm-4.5-long），
+ * 当 ReasoningLevel=OFF 时可以安全发送 type=disabled 真正关闭思考，
+ * 避免总结等轻量场景被无谓的推理拖慢响应速度。
+ */
+private val GLM_ALWAYS_THINKING_MODEL_MARKERS = listOf(
+    "glm-4.6",       // GLM-4.6 系列推理模型
+)
+
+private fun isGlmAlwaysThinkingModel(modelId: String): Boolean {
+    val lowerId = modelId.lowercase()
+    return GLM_ALWAYS_THINKING_MODEL_MARKERS.any { marker ->
+        marker in lowerId
+    }
+}
+
+/**
  * Adds `additionalProperties: true` to an MCP tool's JSON schema,
  * signaling both the model and the intermediate layers that extra properties
  * are allowed. Returns the parameters object unchanged when it's an MCP tool
@@ -464,18 +484,33 @@ class ChatCompletionsAPI(
                     "open.bigmodel.cn" -> {
                         // 智谱 (GLM)：部分"始终思考"模型强制开启推理，拒绝 type=disabled (错误码 1210)
                         // 错误提示："该模型始终思考，不支持关闭思考；请使用 low、high 或 max。"
-                        // 因此统一发送 type=enabled，将 OFF 级别降级为 reasoning_effort=low
-                        put("thinking", buildJsonObject {
-                            put("type", "enabled")
-                        })
-                        val effort = when (level) {
-                            ReasoningLevel.OFF, ReasoningLevel.LOW -> "low"
-                            ReasoningLevel.MEDIUM -> "medium"
-                            ReasoningLevel.HIGH -> "high"
-                            ReasoningLevel.AUTO -> null
-                        }
-                        if (effort != null) {
-                            put("reasoning_effort", effort)
+                        val alwaysThinking = isGlmAlwaysThinkingModel(params.model.modelId)
+                        if (!level.isEnabled) {
+                            // OFF 级别：非始终思考模型真正关闭思考；始终思考模型降级为 low
+                            if (alwaysThinking) {
+                                put("thinking", buildJsonObject {
+                                    put("type", "enabled")
+                                    put("reasoning_effort", "low")
+                                })
+                            } else {
+                                put("thinking", buildJsonObject {
+                                    put("type", "disabled")
+                                })
+                            }
+                        } else {
+                            put("thinking", buildJsonObject {
+                                put("type", "enabled")
+                            })
+                            val effort = when (level) {
+                                ReasoningLevel.LOW -> "low"
+                                ReasoningLevel.MEDIUM -> "medium"
+                                ReasoningLevel.HIGH -> "high"
+                                ReasoningLevel.AUTO -> null
+                                else -> null
+                            }
+                            if (effort != null) {
+                                put("reasoning_effort", effort)
+                            }
                         }
                     }
 

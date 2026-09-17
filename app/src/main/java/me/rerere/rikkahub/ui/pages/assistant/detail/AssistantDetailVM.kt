@@ -566,7 +566,8 @@ class AssistantDetailVM(
                             .replace("{{char}}", currentAssistant.name)
 
                         val aiResponse = try {
-                            val response = withTimeoutOrNull(15000) {
+                            val timeoutMs = currentSettings.chatGenerationTimeoutMinutes * 60 * 1000L
+                            val response = withTimeoutOrNull(timeoutMs) {
                                 handler.generateText(
                                     providerSetting,
                                     listOf(UIMessage.user(prompt)),

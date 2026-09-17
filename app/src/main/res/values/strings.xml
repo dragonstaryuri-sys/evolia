@@ -488,7 +488,7 @@
   <string name="setting_page_default_model">Default Models</string>
   <string name="setting_page_default_model_desc">Set default models for features</string>
   <string name="setting_page_generation_timeout">Generation Timeout</string>
-  <string name="setting_page_generation_timeout_desc">Max duration for a single generation, including thinking, answers, and tool calls</string>
+  <string name="setting_page_generation_timeout_desc">Maximum single generation duration, including dialogue response and memory archiving</string>
   <string name="setting_page_generation_timeout_suffix">min</string>
   <string name="setting_page_display_setting">Display Settings</string>
   <string name="setting_page_display_setting_desc">Manage display options</string>

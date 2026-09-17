@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
@@ -222,7 +223,8 @@ class MemoryConsolidationWorker(
                 model = summarizer.model,
                 assistantName = assistant.name,
                 previousSummary = existingEpisode?.content,
-                messages = messagesToProcess
+                messages = messagesToProcess,
+                timeoutMs = settings.chatGenerationTimeoutMinutes * 60 * 1000L
             )
 
             if (summary.isNotBlank()) {
@@ -334,7 +336,8 @@ class MemoryConsolidationWorker(
                         model = summarizer.model,
                         assistant = currentAssistant,
                         conv = conv,
-                        existingEpisode = existingEpisode
+                        existingEpisode = existingEpisode,
+                        timeoutMs = currentSettings.chatGenerationTimeoutMinutes * 60 * 1000L
                     )
 
                     if (summary.isNotBlank()) {
@@ -483,7 +486,8 @@ class MemoryConsolidationWorker(
         model: me.rerere.ai.provider.Model,
         assistant: Assistant,
         conv: Conversation,
-        existingEpisode: ChatEpisodeEntity?
+        existingEpisode: ChatEpisodeEntity?,
+        timeoutMs: Long
     ): String {
         val anchorTime = existingEpisode?.endTime ?: 0L
         val fullConv = conversationRepository.getConversationById(conv.id) ?: conv
@@ -500,7 +504,8 @@ class MemoryConsolidationWorker(
                 model = model,
                 assistantName = assistant.name,
                 previousSummary = existingEpisode?.content,
-                messages = newMessages
+                messages = newMessages,
+                timeoutMs = timeoutMs
             )
         }
     }
@@ -530,7 +535,8 @@ class MemoryConsolidationWorker(
         model: me.rerere.ai.provider.Model,
         assistantName: String,
         previousSummary: String?,
-        messages: List<UIMessage>
+        messages: List<UIMessage>,
+        timeoutMs: Long
     ): String {
         val messagesText = messages.takeLast(100).joinToString("\n") {
             "${it.role}: ${it.toContentText().take(5000)}"
@@ -543,18 +549,24 @@ class MemoryConsolidationWorker(
             "char" to assistantName
         )
         val h = handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>
-        val resp = retryIO(times = 2) {
-            h.generateText(
-                providerSetting = providerSetting,
-                messages = listOf(UIMessage.user(prompt)),
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = 0.3f,
-                    topP = 0.5f,
-                    maxTokens = 1024,
-                    thinkingBudget = 0 // 显式关闭深度思考，防止干扰总结输出
+        val resp = withTimeoutOrNull(timeoutMs) {
+            retryIO(times = 2) {
+                h.generateText(
+                    providerSetting = providerSetting,
+                    messages = listOf(UIMessage.user(prompt)),
+                    params = TextGenerationParams(
+                        model = model,
+                        temperature = 0.3f,
+                        topP = 0.5f,
+                        maxTokens = 1024,
+                        thinkingBudget = 0 // 显式关闭深度思考，防止干扰总结输出
+                    )
                 )
-            )
+            }
+        }
+        if (resp == null) {
+            Log.w(TAG, "L2 episode summarization timed out after ${timeoutMs / 60000} minutes")
+            return ""
         }
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
     }

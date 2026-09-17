@@ -2321,11 +2321,18 @@ class ChatService(
                     )
                 )
                 val providerHandler = handler as Provider<ProviderSetting>
-                val tempResp = providerHandler.generateText(
-                    provider,
-                    listOf(UIMessage.user(tempPrompt)),
-                    TextGenerationParams(model, 0.3f, 1.0f, thinkingBudget = 0)
-                )
+                val summarizeTimeoutMs = settings.chatGenerationTimeoutMinutes * 60 * 1000L
+                val tempResp = withTimeoutOrNull(summarizeTimeoutMs) {
+                    providerHandler.generateText(
+                        provider,
+                        listOf(UIMessage.user(tempPrompt)),
+                        TextGenerationParams(model, 0.3f, 1.0f, thinkingBudget = 0)
+                    )
+                }
+                if (tempResp == null) {
+                    Log.w(TAG, "L1 segment summarization timed out after ${settings.chatGenerationTimeoutMinutes} minutes")
+                    break
+                }
                 tempResp.usage?.let { conversationRepo.recordTokenUsage(assistant.id.toString(), it) }
                 val aiResponse = tempResp.choices.firstOrNull()?.message?.toContentText() ?: ""
                 if (aiResponse.isNotBlank()) {
