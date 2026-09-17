@@ -1015,6 +1015,24 @@ class DiaryVM(
                             }
                         }
                         notifiedTaskIds.add(info.id)
+                    } else if (info.state == WorkInfo.State.FAILED && !notifiedTaskIds.contains(info.id)) {
+                        // ★ 新增：FAILED 状态处理（仅手动触发，与 DiaryWorker 系统通知策略一致）
+                        //   修复场景：DiaryWorker.Result.failure(workDataOf("error" to errorInfo))
+                        //   之前 UI 端只把 task id 加入 notifiedTaskIds 静默吃掉，
+                        //   导致用户看到 skeleton 卡片"先出现后消失"但无任何错误提示
+                        //   （如 java.net.SocketException: Connection reset 等网络异常）
+                        //   自动触发失败 3 次后 DiaryWorker 也不弹系统通知，UI 端对齐策略静默处理
+                        //   注：WorkInfo 没有 inputData 属性，用 tags 区分（diary_gen=手动, auto_diary=自动）
+                        val isManual = info.tags.contains("diary_gen")
+                        if (isManual) {
+                            val errorInfo = info.outputData.getString("error")
+                                ?: app.getString(R.string.diary_generate_failed_unknown)
+                            toaster.show(
+                                app.getString(R.string.diary_generate_failed, errorInfo),
+                                type = ToastType.Error
+                            )
+                        }
+                        notifiedTaskIds.add(info.id)
                     } else if (info.state.isFinished) {
                         notifiedTaskIds.add(info.id)
                     }

@@ -1266,6 +1266,7 @@
   <!-- Diary Related -->
   <string name="diary_already_generated">Today\'s diary already exists</string>
   <string name="diary_generate_failed">Failed to generate diary: %s</string>
+  <string name="diary_generate_failed_unknown">Unknown error</string>
   <string name="diary_select_time">Select Time</string>
   <string name="diary_auto_generate_time">Auto-generation Time</string>
   <string name="diary_assistant_title_format">%s\'s Diary</string>

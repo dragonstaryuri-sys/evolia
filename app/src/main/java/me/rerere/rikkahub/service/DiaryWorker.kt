@@ -50,8 +50,13 @@ import kotlin.uuid.Uuid
 private const val TAG = "DiaryWorker"
 private const val CHUNK_SIZE = 40_000
 
-/** 第一个有效 assistant 消息（首 token）的等待超时：仅限制"模型启动响应"，后续输出内容不受时间限制 */
-private const val FIRST_CHUNK_TIMEOUT_MS = 120_000L
+/** 第一个有效 assistant 消息（首 token）的等待超时：仅限制"模型启动响应" */
+private const val FIRST_CHUNK_TIMEOUT_MS = 360_000L
+
+/** 单个 chunk 的总生成时长上限：15 分钟。
+ *  首 token ≤360s + 后续流式输出，整体不超过 15min。
+ *  防止模型流式输出卡住（网络 half-open / 模型重复输出 token）导致任务永久挂起。 */
+private const val TOTAL_CHUNK_TIMEOUT_MS = 15 * 60 * 1000L
 
 private const val DIARY_MARKDOWN_INSTRUCTION = """
 
@@ -363,10 +368,15 @@ class DiaryWorker(
     /**
      * 执行单轮 AI 文本生成。
      *
-     * ★ 修复 ②：超时策略由"整个生成 ≤180s/300s"改为"首 token ≤120s"
-     *   - 首 chunk（第一个 assistant 有效内容）必须在 120s 内返回，否则视为模型不响应 → 超时取消
-     *   - 一旦收到首 chunk，后续输出内容不受总时长限制（消息再多也能慢慢生成完）
-     *   - 通过 watchdog + CompletableDeferred 实现：任何一条子协程异常都会让 coroutineScope 取消另一条
+     * 超时策略（两级保护）：
+     *   1. 首 token 超时（FIRST_CHUNK_TIMEOUT_MS=360s）：首 chunk 必须在 360s 内返回，
+     *      否则视为模型不响应 → watchdog 抛 TimeoutCancellationException
+     *   2. 总时长兜底（TOTAL_CHUNK_TIMEOUT_MS=15min）：单个 chunk 整体不超过 15 分钟，
+     *      防止首 token 之后的流式输出卡住（网络 half-open / 模型重复输出）导致任务永久挂起
+     *
+     * 实现：watchdog + CompletableDeferred 监控首 token；外层 withTimeout 监控总时长。
+     * 任一超时抛 TimeoutCancellationException（CancellationException 子类），
+     * 由 doWork 外层 catch(ce: CancellationException) 块统一处理（原样重抛，已有内容不回滚）。
      */
     private suspend fun performGeneration(
         settings: me.rerere.rikkahub.data.datastore.Settings,
@@ -378,41 +388,44 @@ class DiaryWorker(
         // 首 chunk 闸门：收到第一个非空 assistant 内容后 complete
         val firstChunkGate = CompletableDeferred<Unit>()
 
-        // Watchdog：只监控首 chunk 启动时间，收到后自动进入无限制模式
+        // Watchdog：只监控首 chunk 启动时间，收到后正常结束
         val watchdog = launch {
             withTimeout(FIRST_CHUNK_TIMEOUT_MS) { firstChunkGate.await() }
         }
 
         try {
-            generationHandler.generateText(
-                settings = settings,
-                model = model,
-                messages = listOf(UIMessage.user(prompt)),
-                assistant = assistant.copy(
-                    temperature = 0.8f,
-                    enableMemory = false,
-                    enabledLorebookIds = emptySet(),
-                    includeDiariesInContext = false,
-                    localTools = emptyList()
-                ),
-                enabledModeIds = emptySet()
-            ).collect { chunk ->
-                if (chunk is GenerationChunk.Messages) {
-                    val lastMessage = chunk.messages.lastOrNull()
-                    if (lastMessage?.role == MessageRole.ASSISTANT) {
-                        val text = lastMessage.toContentText()
-                        result = text
-                        if (text.isNotBlank()) {
-                            // 解锁首 chunk 闸门 → watchdog 正常结束 → 进入无限制输出阶段
-                            firstChunkGate.complete(Unit)
+            // ★ 总时长兜底：单个 chunk 整体不超过 15 分钟（含首 token + 后续输出）
+            withTimeout(TOTAL_CHUNK_TIMEOUT_MS) {
+                generationHandler.generateText(
+                    settings = settings,
+                    model = model,
+                    messages = listOf(UIMessage.user(prompt)),
+                    assistant = assistant.copy(
+                        temperature = 0.8f,
+                        enableMemory = false,
+                        enabledLorebookIds = emptySet(),
+                        includeDiariesInContext = false,
+                        localTools = emptyList()
+                    ),
+                    enabledModeIds = emptySet()
+                ).collect { chunk ->
+                    if (chunk is GenerationChunk.Messages) {
+                        val lastMessage = chunk.messages.lastOrNull()
+                        if (lastMessage?.role == MessageRole.ASSISTANT) {
+                            val text = lastMessage.toContentText()
+                            result = text
+                            if (text.isNotBlank()) {
+                                // 解锁首 chunk 闸门 → watchdog 正常结束 → 进入总时长限制的输出阶段
+                                firstChunkGate.complete(Unit)
+                            }
                         }
                     }
                 }
+                // Flow 正常结束但 result 仍为空（模型返回空内容）→ 也把闸门打开让 watchdog 结束
+                firstChunkGate.complete(Unit)
+                // 等待 watchdog 确认完成，避免作用域提前结束
+                watchdog.join()
             }
-            // Flow 正常结束但 result 仍为空（模型返回空内容）→ 也把闸门打开让 watchdog 结束
-            firstChunkGate.complete(Unit)
-            // 等待 watchdog 确认完成，避免作用域提前结束
-            watchdog.join()
         } finally {
             // 兜底：无论成功失败/异常，确保 watchdog 不会泄漏
             watchdog.cancel()
