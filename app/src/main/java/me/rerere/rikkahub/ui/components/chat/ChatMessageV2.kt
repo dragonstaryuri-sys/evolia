@@ -757,6 +757,7 @@ private sealed class UserRenderItem {
     data class AudioItem(
         override val node: MessageNode,
         val part: UIMessagePart.Audio,
+        val quoteMarkdown: String,
         override val isFirstInTurn: Boolean,
         override val isLastInTurn: Boolean,
         override val totalInTurn: Int,
@@ -831,12 +832,12 @@ private fun UserMessageTurn(
                     val quotePart = node.currentMessage.parts
                         .filterIsInstance<UIMessagePart.Quote>()
                         .firstOrNull()
-                    var firstTextInNode = true
+                    var firstPartInNode = true
                     node.currentMessage.parts.forEach { part ->
                         when (part) {
                             is UIMessagePart.Text -> {
-                                // 每个 node 的首个 text 前显示该 node 自己的引用块
-                                val quote = if (firstTextInNode && quotePart != null) {
+                                // 每个 node 的首个渲染项前显示该 node 自己的引用块
+                                val quote = if (firstPartInNode && quotePart != null) {
                                     buildString {
                                         append("> ")
                                         append(quotePart.senderName)
@@ -845,7 +846,7 @@ private fun UserMessageTurn(
                                         append("\n\n")
                                     }
                                 } else ""
-                                firstTextInNode = false
+                                firstPartInNode = false
                                 flat += UserRenderItem.TextItem(
                                     node = node,
                                     part = part,
@@ -856,9 +857,21 @@ private fun UserMessageTurn(
                                 )
                             }
                             is UIMessagePart.Audio -> {
+                                // 语音消息同样支持引用块显示
+                                val quote = if (firstPartInNode && quotePart != null) {
+                                    buildString {
+                                        append("> ")
+                                        append(quotePart.senderName)
+                                        append(": ")
+                                        append((quotePart.displayContent ?: quotePart.content).replace("\n", "\n> "))
+                                        append("\n\n")
+                                    }
+                                } else ""
+                                firstPartInNode = false
                                 flat += UserRenderItem.AudioItem(
                                     node = node,
                                     part = part,
+                                    quoteMarkdown = quote,
                                     isFirstInTurn = false,
                                     isLastInTurn = false,
                                     totalInTurn = 0
@@ -952,28 +965,44 @@ private fun UserMessageTurn(
                                 ?.jsonPrimitiveOrNull?.contentOrNull
                                ?.let { removeVoiceMessageMarkerForDisplay(it) }
                                 ?.takeIf { it.isNotBlank() }
-                            VoiceMessageBubble(
-                                audioUrl = audio.url,
-                                durationMs = durationMs,
-                                isUser = true,
-                                selecting = selecting,
-                                onClick = {
-                                    if (selecting) {
-                                        if (node.id in selectedItems) selectedItems.remove(node.id)
-                                        else selectedItems.add(node.id)
-                                    }
-                                },
-                                onLongClick = {
-                                    onAudioLongClick(node, audio)
-                                },
-                                showTranscription = audio.url in shownTranscriptions,
-                                transcription = transcription,
-                                containerColor = if (wechatMode) WeChatUserGreen else MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .widthIn(max = maxWidth)
-                            )
+                            val audioBubble = @Composable {
+                                VoiceMessageBubble(
+                                    audioUrl = audio.url,
+                                    durationMs = durationMs,
+                                    isUser = true,
+                                    selecting = selecting,
+                                    onClick = {
+                                        if (selecting) {
+                                            if (node.id in selectedItems) selectedItems.remove(node.id)
+                                            else selectedItems.add(node.id)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        onAudioLongClick(node, audio)
+                                    },
+                                    showTranscription = audio.url in shownTranscriptions,
+                                    transcription = transcription,
+                                    containerColor = if (wechatMode) WeChatUserGreen else MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier
+                                        .widthIn(max = maxWidth)
+                                )
+                            }
+                            if (item.quoteMarkdown.isNotEmpty()) {
+                                Column(
+                                    modifier = Modifier.weight(1f, fill = false),
+                                    horizontalAlignment = Alignment.End
+                                ) {
+                                    MarkdownBlock(
+                                        content = item.quoteMarkdown,
+                                        onClickCitation = {},
+                                        modifier = Modifier.widthIn(max = maxWidth)
+                                    )
+                                    audioBubble()
+                                }
+                            } else {
+                                audioBubble()
+                            }
                         }
                     }
 

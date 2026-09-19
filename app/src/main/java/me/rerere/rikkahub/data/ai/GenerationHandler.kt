@@ -80,6 +80,7 @@ import java.time.format.TextStyle
 import kotlin.text.appendLine
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import kotlinx.coroutines.flow.first
+import me.rerere.rikkahub.data.ai.transformers.AudioToTextTransformer
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 
 /**
@@ -971,7 +972,7 @@ class GenerationHandler(
                 summaryPromptBuilder.appendLine("- 说话口语化、有活人感，回复简短直接，不超过5句话，禁止冷漠无情")
                 summaryPromptBuilder.appendLine("- 请不要使用任何动作或神态描写（如 *微笑*、(叹气) 等），而是像在直接与用户对话或发消息，直接说出你的回答或想法")
                 summaryPromptBuilder.appendLine("- 严禁使用任何形式的括号（唯一例外见下条语音消息）。")
-                summaryPromptBuilder.appendLine("- 当你想给用户发语音消息时，在回复最开头加上(语音消息)标记即可，这是唯一允许的括号用法。除此之外不要使用括号。")
+                summaryPromptBuilder.appendLine("- 当你想给用户发语音消息时，在回复最开头加上(语音消息)标记即可，请不要频繁使用，这是唯一允许的括号用法。除此之外不要使用括号。")
             }
         }
 
@@ -1326,9 +1327,9 @@ class GenerationHandler(
                         }
 
                     }
-                    val otherParts = msg.parts.filter { it !is UIMessagePart.Text && it !is UIMessagePart.Quote }
-                    // 按原始顺序处理 Quote 和 Text，将每个 Quote 与紧随其后的 Text 配对
-                    // 产出格式：引用X刚才说的内容：\n\n> content\n\n用户问题：text
+                    val otherParts = msg.parts.filter { it !is UIMessagePart.Text && it !is UIMessagePart.Quote && it !is UIMessagePart.Audio }
+                    // 按原始顺序处理 Quote、Text 和 Audio，将每个 Quote 与紧随其后的 Text/Audio 配对
+                    // 产出格式：引用X刚才说的内容：\n\n> content\n\n用户回复：text
                     // 微信模式下多条消息合并后，每个引用会与其对应的用户文本配对
                     val builtText = buildString {
                         var pendingQuote: UIMessagePart.Quote? = null
@@ -1345,14 +1346,36 @@ class GenerationHandler(
                                         val referenceTarget = if (quote.isUser) "我" else "你"
                                         append("引用")
                                         append(referenceTarget)
-                                        append("刚才说的内容：\n\n> ")
+                                        append("刚才说的内容：\n> ")
                                         append(quote.content.replace("\n", "\n> "))
-                                        append("\n\n用户回复：")
+                                        append("\n用户回复：")
                                         append(part.text)
                                         pendingQuote = null
                                     } else {
                                         if (!first) append("\n")
                                         append(part.text)
+                                    }
+                                    first = false
+                                }
+                                is UIMessagePart.Audio -> {
+                                    val quote = pendingQuote
+                                    val audioTranscription = part.metadata
+                                        ?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
+                                        ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+                                    if (quote != null && audioTranscription != null) {
+                                        if (!first) append("\n")
+                                        val referenceTarget = if (quote.isUser) "我" else "你"
+                                        append("引用")
+                                        append(referenceTarget)
+                                        append("刚才说的内容：\n> ")
+                                        append(quote.content.replace("\n", "\n> "))
+                                        append("\n用户回复：")
+                                        append(audioTranscription)
+                                        pendingQuote = null
+                                    } else if (audioTranscription != null) {
+                                        // 无引用的语音消息：直接使用转写文本
+                                        if (!first) append("\n")
+                                        append(audioTranscription)
                                     }
                                     first = false
                                 }

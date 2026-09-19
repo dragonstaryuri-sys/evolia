@@ -44,6 +44,7 @@ import me.rerere.asr.provider.ASRManager
 import me.rerere.asr.provider.ASRProviderSetting
 import me.rerere.rikkahub.ui.components.chat.CallStatus
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
+import me.rerere.rikkahub.ui.hooks.QuotedMessage
 import me.rerere.rikkahub.utils.UiState
 import me.rerere.rikkahub.utils.UpdateChecker
 import me.rerere.rikkahub.utils.UpdateInfo
@@ -688,7 +689,7 @@ class ChatVM(
      * @param preTranscribedText 录音期间已通过并行流式 ASR 拿到的文本（例如 SystemASR 实时识别结果）。
      *   传非空文本时**直接跳过** transcribeFile（省去一次云端 fallback）；传 null 则走原有 ASR 转写逻辑。
      */
-    fun sendVoiceMessage(audioUri: Uri, durationMs: Long, preTranscribedText: String? = null) {
+    fun sendVoiceMessage(audioUri: Uri, durationMs: Long, preTranscribedText: String? = null, quotedMessages: List<QuotedMessage> = emptyList()) {
         viewModelScope.launch {
             val currentSettings = settingsStore.settingsFlow.value
 
@@ -704,9 +705,18 @@ class ChatVM(
                     put(AudioToTextTransformer.METADATA_DURATION_MS, durationMs)
                 }
             )
+            // 将引用消息转为 Quote parts，置于 Audio part 之前
+            val quoteParts = quotedMessages.map { quote ->
+                UIMessagePart.Quote(
+                    senderName = quote.senderName,
+                    content = quote.content,
+                    isUser = quote.isUser,
+                    displayContent = quote.displayContent
+                )
+            }
             chatService.sendMessage(
                 conversationId = targetId,
-                content = listOf(audioPart),
+                content = quoteParts + listOf(audioPart),
                 answer = false,
                 includeSkipContextMessages = true
             )
