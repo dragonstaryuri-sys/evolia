@@ -593,12 +593,13 @@ private fun ChatPageContent(
                         onEdit = {
                             inputState.editingMessage = it.id
                             inputState.setContents(it.parts)
-                            // 编辑与引用互斥：进入编辑模式时清除引用状态
-                            inputState.quotedMessage = null
+                            // 编辑与引用互斥：进入编辑模式时清除所有引用状态
+                            inputState.clearQuotedMessages()
                         },
                         onQuote = { message ->
-                            // 提取被引用消息的文本内容；若为空（纯图片/文件等），使用占位符
-                            val rawContent = message.toContentText()
+                            // 提取被引用消息的内容用于预览卡片；
+                            // 语音消息使用 [语音]X'' 占位而非转写文本，保持预览简洁
+                            val rawContent = message.toPreviewText()
                             val quoteContent = if (rawContent.isBlank()) {
                                 when {
                                     message.parts.any { it is UIMessagePart.Image } -> "[图片]"
@@ -621,10 +622,13 @@ private fun ChatPageContent(
                             } else {
                                 currentAssistant.name.ifBlank { "Assistant" }
                             }
-                            inputState.quotedMessage = QuotedMessage(
-                                senderName = senderName,
-                                content = quoteContent,
-                                isUser = message.role == MessageRole.USER
+                            // 追加引用（同一轮可引用多条），重复引用会被忽略
+                            inputState.addQuotedMessage(
+                                QuotedMessage(
+                                    senderName = senderName,
+                                    content = quoteContent,
+                                    isUser = message.role == MessageRole.USER
+                                )
                             )
                             // 清除编辑模式（引用与编辑互斥）
                             inputState.editingMessage = null

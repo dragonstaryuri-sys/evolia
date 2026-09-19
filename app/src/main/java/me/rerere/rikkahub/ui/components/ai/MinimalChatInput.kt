@@ -249,11 +249,11 @@ fun MinimalChatInput(
                 .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Quote preview (引用回复预览) - 显示在输入框上方最顶部
-            state.quotedMessage?.let { quote ->
+            // Quote preview (引用回复预览) - 显示在输入框上方最顶部，支持多条
+            state.quotedMessages.forEachIndexed { index, quote ->
                 QuotePreviewCard(
                     quotedMessage = quote,
-                    onClose = { state.quotedMessage = null }
+                    onClose = { state.removeQuotedMessageAt(index) }
                 )
             }
 

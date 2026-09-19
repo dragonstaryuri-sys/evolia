@@ -1326,21 +1326,40 @@ class GenerationHandler(
                         }
 
                     }
-                    val originalText = msg.parts.filterIsInstance<UIMessagePart.Text>().joinToString("\n") { it.text }
-                    // 提取引用标记 (UIMessagePart.Quote) 并转换为自然语言提示词前缀
-                    // 引用 AI 用"你"，引用用户自己用"我"，让对话语气更自然
-                    val quotePart = msg.parts.filterIsInstance<UIMessagePart.Quote>().firstOrNull()
-                    val quotePrefix = quotePart?.let { quote ->
-                        val referenceTarget = if (quote.isUser) "我" else "你"
-                        buildString {
-                            append("引用")
-                            append(referenceTarget)
-                            append("刚才说的内容：\n\n> ")
-                            append(quote.content.replace("\n", "\n> "))
-                            append("\n\n本轮问题：")
-                        }
-                    } ?: ""
                     val otherParts = msg.parts.filter { it !is UIMessagePart.Text && it !is UIMessagePart.Quote }
+                    // 按原始顺序处理 Quote 和 Text，将每个 Quote 与紧随其后的 Text 配对
+                    // 产出格式：引用X刚才说的内容：\n\n> content\n\n用户问题：text
+                    // 微信模式下多条消息合并后，每个引用会与其对应的用户文本配对
+                    val builtText = buildString {
+                        var pendingQuote: UIMessagePart.Quote? = null
+                        var first = true
+                        msg.parts.forEach { part ->
+                            when (part) {
+                                is UIMessagePart.Quote -> {
+                                    pendingQuote = part
+                                }
+                                is UIMessagePart.Text -> {
+                                    val quote = pendingQuote
+                                    if (quote != null) {
+                                        if (!first) append("\n")
+                                        val referenceTarget = if (quote.isUser) "我" else "你"
+                                        append("引用")
+                                        append(referenceTarget)
+                                        append("刚才说的内容：\n\n> ")
+                                        append(quote.content.replace("\n", "\n> "))
+                                        append("\n\n用户回复：")
+                                        append(part.text)
+                                        pendingQuote = null
+                                    } else {
+                                        if (!first) append("\n")
+                                        append(part.text)
+                                    }
+                                    first = false
+                                }
+                                else -> {}
+                            }
+                        }
+                    }
 
                     if (dynamicContext.isNotBlank()) {
                         val newTextPart = UIMessagePart.Text(
@@ -1348,13 +1367,12 @@ class GenerationHandler(
                                 appendLine("# 系统消息")
                                 append(dynamicContext)
                                 appendLine("# 用户问题")
-                                append(quotePrefix)
-                                append(originalText)
+                                append(builtText)
                             }
                         )
                         add(msg.copy(parts = listOf(newTextPart) + otherParts))
                     } else {
-                        val newTextPart = UIMessagePart.Text(text = quotePrefix + originalText)
+                        val newTextPart = UIMessagePart.Text(text = builtText)
                         add(msg.copy(parts = listOf(newTextPart) + otherParts))
                     }
                 } else {

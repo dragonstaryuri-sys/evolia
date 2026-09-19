@@ -60,9 +60,10 @@ class ChatInputState {
     var editingMessage by mutableStateOf<Uuid?>(null)
     var loading by mutableStateOf(false)
 
-    // 引用回复的目标消息。非 null 时输入框上方会显示引用预览卡片，
+    // 引用回复的目标消息列表。非空时输入框上方会显示引用预览卡片，
     // 发送时会以 markdown 引用块形式拼接到用户输入文本之前。
-    var quotedMessage by mutableStateOf<QuotedMessage?>(null)
+    // 支持同一轮内引用多条消息。
+    var quotedMessages by mutableStateOf<List<QuotedMessage>>(emptyList())
 
     // FocusRequester for the text field - allows external focus requests
     val focusRequester = FocusRequester()
@@ -71,7 +72,7 @@ class ChatInputState {
         textContent.setTextAndPlaceCursorAtEnd("")
         messageContent = emptyList()
         editingMessage = null
-        quotedMessage = null
+        quotedMessages = emptyList()
     }
 
     fun isEditing() = editingMessage != null
@@ -113,20 +114,47 @@ class ChatInputState {
 
     /**
      * 获取用于发送的消息内容。
-     * 如果存在引用消息 (quotedMessage)，会在内容列表最前面插入一个 UIMessagePart.Quote 标记。
+     * 如果存在引用消息 (quotedMessages)，会在内容列表最前面插入一个或多个 UIMessagePart.Quote 标记。
      * - UI 渲染时 Quote 被 toContentText/toText 忽略，用户消息气泡只显示纯用户输入。
      * - 发送给 AI 时由 GenerationHandler.buildMessages 将 Quote 转换为自然语言提示词前缀。
      * 注意：仅供发送新消息使用，编辑模式不应调用此方法。
      */
     fun getSendContents(): List<UIMessagePart> {
         val baseContents = getContents()
-        val quote = quotedMessage ?: return baseContents
-        val quotePart = UIMessagePart.Quote(
-            senderName = quote.senderName,
-            content = quote.content,
-            isUser = quote.isUser
-        )
-        return listOf(quotePart) + baseContents
+        if (quotedMessages.isEmpty()) return baseContents
+        val quoteParts = quotedMessages.map { quote ->
+            UIMessagePart.Quote(
+                senderName = quote.senderName,
+                content = quote.content,
+                isUser = quote.isUser
+            )
+        }
+        return quoteParts + baseContents
+    }
+
+    /**
+     * 追加一条引用消息。若已存在相同内容的引用则不重复添加。
+     */
+    fun addQuotedMessage(quote: QuotedMessage) {
+        if (quotedMessages.any { it.content == quote.content && it.senderName == quote.senderName }) {
+            return
+        }
+        quotedMessages = quotedMessages + quote
+    }
+
+    /**
+     * 移除指定索引的引用消息。
+     */
+    fun removeQuotedMessageAt(index: Int) {
+        if (index < 0 || index >= quotedMessages.size) return
+        quotedMessages = quotedMessages.toMutableList().apply { removeAt(index) }
+    }
+
+    /**
+     * 清空所有引用消息。
+     */
+    fun clearQuotedMessages() {
+        quotedMessages = emptyList()
     }
 
     fun isEmpty(): Boolean {
@@ -179,13 +207,18 @@ object ChatInputStateSaver : Saver<ChatInputState, String> {
             Uuid.parse(it)
         }
         val textContent = jsonObject["textContent"]?.jsonPrimitiveOrNull?.contentOrNull ?: ""
-        val quotedMessage = jsonObject["quotedMessage"]?.takeIf { it !is JsonNull }?.let {
-            JsonInstant.decodeFromJsonElement<QuotedMessage>(it)
-        }
+        // 兼容新旧两种格式：
+        // - 新格式 quotedMessages: List<QuotedMessage>
+        // - 旧格式 quotedMessage: QuotedMessage? (单值)
+        val quotedMessages = jsonObject["quotedMessages"]?.takeIf { it !is JsonNull }?.let {
+            JsonInstant.decodeFromJsonElement<List<QuotedMessage>>(it)
+        } ?: jsonObject["quotedMessage"]?.takeIf { it !is JsonNull }?.let {
+            listOf(JsonInstant.decodeFromJsonElement<QuotedMessage>(it))
+        } ?: emptyList()
         val state = ChatInputState()
         state.messageContent = messageContent ?: emptyList()
         state.editingMessage = editingMessage
-        state.quotedMessage = quotedMessage
+        state.quotedMessages = quotedMessages
         state.setMessageText(textContent)
         return state
     }
@@ -205,7 +238,7 @@ object ChatInputStateSaver : Saver<ChatInputState, String> {
             put("textContent", safeText)
             put("messageContent", JsonInstant.encodeToJsonElement(value.messageContent))
             put("editingMessage", JsonInstant.encodeToJsonElement(value.editingMessage))
-            put("quotedMessage", JsonInstant.encodeToJsonElement(value.quotedMessage))
+            put("quotedMessages", JsonInstant.encodeToJsonElement(value.quotedMessages))
         })
     }
 }

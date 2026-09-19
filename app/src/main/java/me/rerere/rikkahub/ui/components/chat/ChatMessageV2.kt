@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -691,6 +692,10 @@ fun ChatMessageTurn(
                 voiceActionTarget = null
                 onDelete(node)
             },
+            onQuote = { node ->
+                voiceActionTarget = null
+                onQuote(node)
+            },
             onToggleTranscription = {
                 if (transcription == null) {
                     // 优化1：首次 ASR 失败时（metadata 无转写）手动重新发起一次 ASR
@@ -822,7 +827,6 @@ private fun UserMessageTurn(
             // ✨ 混合渲染：按 node 顺序 + part 原始顺序，把 Text 和 Audio 展平成统一的渲染条目列表
             val renderItems = remember(group.filteredNodes, assistant) {
                 val flat = mutableListOf<UserRenderItem>()
-                var globalQuoteMarkdown: String? = null
                 group.filteredNodes.forEachIndexed { _, node ->
                     val quotePart = node.currentMessage.parts
                         .filterIsInstance<UIMessagePart.Quote>()
@@ -831,17 +835,15 @@ private fun UserMessageTurn(
                     node.currentMessage.parts.forEach { part ->
                         when (part) {
                             is UIMessagePart.Text -> {
-                                val quote = if (firstTextInNode && quotePart != null && globalQuoteMarkdown == null) {
+                                // 每个 node 的首个 text 前显示该 node 自己的引用块
+                                val quote = if (firstTextInNode && quotePart != null) {
                                     buildString {
                                         append("> ")
                                         append(quotePart.senderName)
                                         append(": ")
                                         append(quotePart.content.replace("\n", "\n> "))
                                         append("\n\n")
-                                    }.also { globalQuoteMarkdown = it }
-                                } else if (firstTextInNode && globalQuoteMarkdown != null) {
-                                    // 跨 node 的首个 text 也不再重复引用块
-                                    ""
+                                    }
                                 } else ""
                                 firstTextInNode = false
                                 flat += UserRenderItem.TextItem(
@@ -1692,6 +1694,7 @@ fun VoiceMessageActionsSheet(
     showTranscription: Boolean,
     onSelectMode: (MessageNode) -> Unit,
     onDelete: (MessageNode) -> Unit,
+    onQuote: (MessageNode) -> Unit,
     onToggleTranscription: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1712,7 +1715,38 @@ fun VoiceMessageActionsSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. 多选
+            // 1. 引用回复
+            Card(
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) androidx.compose.ui.graphics.Color.Black
+                    else MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                modifier = Modifier.fillMaxWidth().clickable {
+                    onQuote(target.node)
+                    onDismiss()
+                }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(16.dp).fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FormatQuote,
+                        contentDescription = null,
+                        modifier = Modifier.padding(4.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.quote),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            // 2. 多选
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
@@ -1743,7 +1777,7 @@ fun VoiceMessageActionsSheet(
                 }
             }
 
-            // 2. 删除
+            // 3. 删除
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
@@ -1773,7 +1807,7 @@ fun VoiceMessageActionsSheet(
                 }
             }
 
-            // 3. 转文字 / 取消转文字
+            // 4. 转文字 / 取消转文字
             val hasTranscription = (target.audio.metadata?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
                 ?.jsonPrimitiveOrNull?.contentOrNull?.isNotBlank() == true)
             if (hasTranscription) {
