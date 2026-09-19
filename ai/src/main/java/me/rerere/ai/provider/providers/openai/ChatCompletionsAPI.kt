@@ -140,16 +140,25 @@ private fun isSiliconFlowReasoningDeployment(modelId: String): Boolean {
 }
 
 /**
- * 智谱 (GLM) "始终思考"模型标识。
- * 这些模型强制开启推理，发送 type=disabled 会返回错误码 1210：
- * "该模型始终思考，不支持关闭思考；请使用 low、high 或 max。"
+ * 智谱 (GLM) "始终思考"模型标识 (强制思考，不支持 type=disabled)。
  *
- * 对于不在此列表中的 GLM 模型（如 glm-4.5-air / glm-4.5-flash / glm-4.5-long），
- * 当 ReasoningLevel=OFF 时可以安全发送 type=disabled 真正关闭思考，
- * 避免总结等轻量场景被无谓的推理拖慢响应速度。
+ * 官方文档 (https://docs.bigmodel.cn/cn/guide/capabilities/thinking) 明确:
+ * - `thinking.type=enabled` 时: GLM-5.2/5.1/5/5-Turbo/4.6/4.5 为"自动判断是否思考";
+ *   GLM-5.3/GLM-5.3-FLASH/GLM-4.7/GLM-4.5V 为"强制思考"。
+ * - `thinking.type=disabled` 时: GLM-5.3 / GLM-5.3-FLASH / GLM-5.3-FLASHX
+ *   "不再支持关闭思考"，发送 disabled 会返回错误码 1210:
+ *   "该模型始终思考，不支持关闭思考；请使用 low、high 或 max。"
+ *
+ * 注意: GLM-4.6 属于"混合/自动思考"，可安全发送 type=disabled 真正关闭思考，
+ * 避免总结等轻量场景被无谓的推理拖慢响应速度。此处不要误将其加入列表。
+ *
+ * 另注: GLM-5.3 系列仅支持 reasoning_effort = max / high / low (不支持 medium),
+ * 因此 alwaysThinking 模型在 MEDIUM 级别下需降级映射为 "high"。
  */
 private val GLM_ALWAYS_THINKING_MODEL_MARKERS = listOf(
-    "glm-4.6",       // GLM-4.6 系列推理模型
+    "glm-5.3",    // GLM-5.3 / GLM-5.3-FLASH / GLM-5.3-FLASHX 强制思考，不支持关闭
+    "glm-4.7",    // GLM-4.7 强制思考
+    "glm-4.5v",   // GLM-4.5V 强制思考 (注意: 不匹配 glm-4.5 / glm-4.5-air 等)
 )
 
 private fun isGlmAlwaysThinkingModel(modelId: String): Boolean {
@@ -501,9 +510,11 @@ class ChatCompletionsAPI(
                             put("thinking", buildJsonObject {
                                 put("type", "enabled")
                             })
+                            // GLM-5.3 系列仅支持 max/high/low，不支持 medium；
+                            // 始终思考模型在 MEDIUM 级别降级为 high，其余模型按原样映射
                             val effort = when (level) {
                                 ReasoningLevel.LOW -> "low"
-                                ReasoningLevel.MEDIUM -> "medium"
+                                ReasoningLevel.MEDIUM -> if (alwaysThinking) "high" else "medium"
                                 ReasoningLevel.HIGH -> "high"
                                 ReasoningLevel.AUTO -> null
                                 else -> null

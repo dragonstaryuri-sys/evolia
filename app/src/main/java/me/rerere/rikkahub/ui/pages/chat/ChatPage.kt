@@ -597,9 +597,8 @@ private fun ChatPageContent(
                             inputState.clearQuotedMessages()
                         },
                         onQuote = { message ->
-                            // 提取被引用消息的内容用于预览卡片；
-                            // 语音消息使用 [语音]X'' 占位而非转写文本，保持预览简洁
-                            val rawContent = message.toPreviewText()
+                            // 发送给 AI 的引用内容：语音消息使用转写文本
+                            val rawContent = message.toContentText()
                             val quoteContent = if (rawContent.isBlank()) {
                                 when {
                                     message.parts.any { it is UIMessagePart.Image } -> "[图片]"
@@ -609,12 +608,19 @@ private fun ChatPageContent(
                                     else -> "[消息]"
                                 }
                             } else {
-                                // 截断过长的引用内容，避免预览卡片和上下文过于冗长
+                                // 截断过长的引用内容，避免上下文过于冗长
                                 if (rawContent.length > 200) {
                                     rawContent.take(200) + "…"
                                 } else {
                                     rawContent
                                 }
+                            }
+                            // 预览卡片显示内容：语音消息显示 [语音]X'' 而非转写文本
+                            val rawPreview = message.toPreviewText()
+                            val displayContent = if (rawPreview.isBlank()) {
+                                quoteContent
+                            } else {
+                                if (rawPreview.length > 200) rawPreview.take(200) + "…" else rawPreview
                             }
                             // 发送者名称：用户消息用昵称，AI 消息用 assistant 名字
                             val senderName = if (message.role == MessageRole.USER) {
@@ -627,7 +633,8 @@ private fun ChatPageContent(
                                 QuotedMessage(
                                     senderName = senderName,
                                     content = quoteContent,
-                                    isUser = message.role == MessageRole.USER
+                                    isUser = message.role == MessageRole.USER,
+                                    displayContent = displayContent
                                 )
                             )
                             // 清除编辑模式（引用与编辑互斥）

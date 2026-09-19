@@ -841,7 +841,7 @@ private fun UserMessageTurn(
                                         append("> ")
                                         append(quotePart.senderName)
                                         append(": ")
-                                        append(quotePart.content.replace("\n", "\n> "))
+                                        append((quotePart.displayContent ?: quotePart.content).replace("\n", "\n> "))
                                         append("\n\n")
                                     }
                                 } else ""

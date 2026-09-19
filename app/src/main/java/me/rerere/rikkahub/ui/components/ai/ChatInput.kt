@@ -1022,7 +1022,7 @@ internal fun QuotePreviewCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = quotedMessage.content,
+                    text = quotedMessage.displayContent ?: quotedMessage.content,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

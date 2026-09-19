@@ -36,7 +36,10 @@ import kotlin.uuid.Uuid
 data class QuotedMessage(
     val senderName: String,
     val content: String,
-    val isUser: Boolean
+    val isUser: Boolean,
+    // 预览卡片显示内容，null 时回退到 content。
+    // 语音消息: content=转写文本(发给AI), displayContent=[语音]X''(预览显示)
+    val displayContent: String? = null
 )
 
 @Composable
@@ -126,7 +129,8 @@ class ChatInputState {
             UIMessagePart.Quote(
                 senderName = quote.senderName,
                 content = quote.content,
-                isUser = quote.isUser
+                isUser = quote.isUser,
+                displayContent = quote.displayContent
             )
         }
         return quoteParts + baseContents

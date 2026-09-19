@@ -510,6 +510,9 @@ sealed class UIMessagePart {
         val senderName: String,
         val content: String,
         val isUser: Boolean,
+        // UI 显示内容，null 时回退到 content。
+        // 语音消息: content=转写文本(发给AI), displayContent=[语音]X''(UI显示)
+        val displayContent: String? = null,
         override var metadata: JsonObject? = null
     ) : UIMessagePart() {
         override val priority: Int = 0
