@@ -69,6 +69,14 @@ data class TextGenerationParams(
     val thinkingBudget: Int? = null,
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
+    /**
+     * 非流式调用的整体生成超时（分钟）。
+     * 仅用于在 Provider 实现层派生 OkHttp readTimeout，使非流式调用的服务端响应时间
+     * 与应用层 chatGenerationTimeoutMinutes 对齐，避免 OkHttp 默认 60s readTimeout
+     * 在长生成场景下误触发。
+     * 注意：此字段不参与请求体构造，仅作为客户端超时配置传递。
+     */
+    val generationTimeoutMinutes: Int? = null,
 )
 
 @Serializable

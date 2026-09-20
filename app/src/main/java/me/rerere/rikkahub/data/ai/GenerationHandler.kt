@@ -1736,7 +1736,10 @@ class GenerationHandler(
             customBody = buildList {
                 addAll(assistant.customBodies)
                 addAll(model.customBodies)
-            }
+            },
+            // 非流式调用时供 Provider 层派生 OkHttp readTimeout 使用（流式不影响）；
+            // 与应用层 chatGenerationTimeoutMinutes 兜底保持对齐。
+            generationTimeoutMinutes = settings.chatGenerationTimeoutMinutes,
         )
         if (stream) {
             aiLoggingManager.addLog(

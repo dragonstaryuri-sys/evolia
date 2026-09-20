@@ -59,6 +59,7 @@ import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlin.time.Clock
 
 private const val TAG = "ChatCompletionsAPI"
@@ -199,7 +200,16 @@ class ChatCompletionsAPI(
                 providerSetting = providerSetting
             )
 
-        val proxyClient = client.configureClientWithProxy(providerSetting.proxy)
+        // 非流式调用：服务端需等整个响应生成完才一次性返回，期间不下发任何字节。
+        // 如果使用全局 OkHttpClient 默认的 60s readTimeout，长生成场景会被误触发改写超时，
+        // 此时应用层 chatGenerationTimeoutMinutes 兜底尚未生效。这里按用户配置派生一个
+        // 长读超时的临时 client，使 OkHttp 层超时与整体生成超时对齐（额外预留 60s 缓冲）。
+        val nonStreamClient = params.generationTimeoutMinutes?.let { minutes ->
+            client.newBuilder()
+                .readTimeout((minutes * 60L + 60L), TimeUnit.SECONDS)
+                .build()
+        } ?: client
+        val proxyClient = nonStreamClient.configureClientWithProxy(providerSetting.proxy)
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
