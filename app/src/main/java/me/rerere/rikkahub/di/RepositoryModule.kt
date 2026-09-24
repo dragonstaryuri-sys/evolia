@@ -86,4 +86,8 @@ val repositoryModule = module {
     single {
         FavoriteRepository(favoriteDao = get())
     }
+
+    single {
+        AppLockRepository(appLockDao = get())
+    }
 }

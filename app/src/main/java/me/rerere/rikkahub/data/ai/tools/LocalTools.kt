@@ -47,6 +47,9 @@ import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import java.text.SimpleDateFormat
 import java.util.Locale
 import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
+import me.rerere.rikkahub.core.data.repository.AppLockRepository
+import me.rerere.rikkahub.applock.AppLockOverlayGenerator
+import me.rerere.rikkahub.core.data.db.entity.AppLockEntity
 import me.rerere.rikkahub.core.data.repository.UserDeviceStateRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
 import okhttp3.OkHttpClient
@@ -168,6 +171,7 @@ fun rememberLocalTools(): LocalTools {
     val providerManager = koinInject<ProviderManager>()
     val genMediaRepository = koinInject<GenMediaRepository>()
     val profileHistoryRepo = koinInject<ProfileHistoryRepository>()
+    val appLockRepository = koinInject<AppLockRepository>()
 
     return remember {
         LocalTools(
@@ -184,7 +188,8 @@ fun rememberLocalTools(): LocalTools {
             okHttpClient,
             providerManager,
             genMediaRepository,
-            profileHistoryRepo
+            profileHistoryRepo,
+            appLockRepository
         )
     }
 }
@@ -203,7 +208,8 @@ class LocalTools(
     private val okHttpClient: OkHttpClient,
     private val providerManager: ProviderManager,
     private val genMediaRepository: GenMediaRepository,
-    private val profileHistoryRepo: ProfileHistoryRepository
+    private val profileHistoryRepo: ProfileHistoryRepository,
+    private val appLockRepository: AppLockRepository
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -614,7 +620,7 @@ class LocalTools(
             ),
             Tool(
                 name = "device_control",
-                description = "在用户的手机上执行系统级全局操作。当需要主动干预时（例如：为睡眠管理锁定屏幕、返回主屏幕以停止使用、打开特定 App）使用。部分操作需要开启无障碍服务。支持的命令：LOCK_SCREEN（锁屏）, GO_HOME（回主页）, BACK（返回）, SHOW_RECENTS（显示最近任务）, SHOW_NOTIFICATIONS（显示通知）。",
+                description = "在用户的手机上执行系统级全局操作。当需要主动干预时（例如：为睡眠管理锁定屏幕、返回主屏幕以停止使用、打开特定 App、锁定某个应用让用户暂时无法使用）使用。部分操作需要开启无障碍服务。支持的命令：LOCK_SCREEN（锁屏）, GO_HOME（回主页）, BACK（返回）, OPEN_APP（打开应用）, APP_LOCK（锁定应用，时间范围内打开会显示遮罩）, APP_UNLOCK（解锁应用）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -627,16 +633,36 @@ class LocalTools(
                                             JsonPrimitive("LOCK_SCREEN"),
                                             JsonPrimitive("GO_HOME"),
                                             JsonPrimitive("BACK"),
-                                            JsonPrimitive("SHOW_RECENTS"),
-                                            JsonPrimitive("SHOW_NOTIFICATIONS"),
-                                            JsonPrimitive("OPEN_APP")
+                                            JsonPrimitive("OPEN_APP"),
+                                            JsonPrimitive("APP_LOCK"),
+                                            JsonPrimitive("APP_UNLOCK")
                                         )
                                     )
                                 )
                             })
                             put("package_name", buildJsonObject {
                                 put("type", "string")
-                                put("description", "仅在 command=OPEN_APP 时必填，指定要打开的应用包名（可先通过 list_apps 获取）")
+                                put("description", "在 command=OPEN_APP/APP_LOCK/APP_UNLOCK 时必填，指定目标应用包名（可先通过 list_apps 获取）")
+                            })
+                            put("start_time", buildJsonObject {
+                                put("type", "string")
+                                put("description", "仅在 command=APP_LOCK 时使用。锁定开始时间，格式 HH:mm（24小时制），如 22:00。与 end_time 配对使用，支持跨夜（start > end 表示跨越零点）。")
+                            })
+                            put("end_time", buildJsonObject {
+                                put("type", "string")
+                                put("description", "仅在 command=APP_LOCK 时使用。锁定结束时间，格式 HH:mm，如 07:00。")
+                            })
+                            put("unlock_condition", buildJsonObject {
+                                put("type", "string")
+                                put("description", "仅在 command=APP_LOCK 时使用。解锁条件的文字描述（如：完成今天的深蹲训练），仅作为你判断何时调用 APP_UNLOCK 的依据，不会被程序自动判定。app_lock 时 start_time+end_time 与 unlock_condition 至少填写一个。")
+                            })
+                            put("prompt_message", buildJsonObject {
+                                put("type", "string")
+                                put("description", "仅在 command=APP_LOCK 时必填。锁定遮罩上显示的提示语，会以白色文字显示在灰绿色背景上。")
+                            })
+                            put("emoji", buildJsonObject {
+                                put("type", "string")
+                                put("description", "仅在 command=APP_LOCK 时可选。显示在遮罩上的一个 emoji 或颜文字（只能放一个）。不填则不显示。")
                             })
                         },
                         required = listOf("command")
@@ -645,6 +671,14 @@ class LocalTools(
                 execute = {
                     val command = it.jsonObject["command"]?.jsonPrimitive?.contentOrNull ?: ""
                     val packageName = it.jsonObject["package_name"]?.jsonPrimitive?.contentOrNull
+
+                    // APP_LOCK / APP_UNLOCK 直接处理，不依赖无障碍服务
+                    if (command == "APP_LOCK") {
+                        return@Tool handleAppLock(it.jsonObject)
+                    }
+                    if (command == "APP_UNLOCK") {
+                        return@Tool handleAppUnlock(packageName)
+                    }
 
                     // 对于简单的打开 App，如果不在无障碍服务中也能尝试直接执行
                     if (command == "OPEN_APP" && !packageName.isNullOrBlank()) {
@@ -682,6 +716,114 @@ class LocalTools(
                 }
             )
         )
+    }
+
+    /**
+     * 处理 APP_LOCK 命令：校验参数、生成遮罩图片、写入数据库。
+     */
+    private suspend fun handleAppLock(args: JsonObject): JsonObject {
+        val packageName = args["package_name"]?.jsonPrimitive?.contentOrNull
+        val startTime = args["start_time"]?.jsonPrimitive?.contentOrNull
+        val endTime = args["end_time"]?.jsonPrimitive?.contentOrNull
+        val unlockCondition = args["unlock_condition"]?.jsonPrimitive?.contentOrNull
+        val promptMessage = args["prompt_message"]?.jsonPrimitive?.contentOrNull
+        val emoji = args["emoji"]?.jsonPrimitive?.contentOrNull
+
+        // 校验 package_name
+        if (packageName.isNullOrBlank()) {
+            return buildJsonObject { put("error", "缺少 package_name 参数") }
+        }
+        // 排除 Evolia 自身
+        if (packageName == context.packageName) {
+            return buildJsonObject { put("error", "不能锁定 Evolia 自身应用") }
+        }
+        // 校验 prompt_message
+        if (promptMessage.isNullOrBlank()) {
+            return buildJsonObject { put("error", "缺少 prompt_message（遮罩提示语）参数") }
+        }
+        // 校验：时间窗口 与 解锁条件 至少填一个
+        val hasTimeWindow = !startTime.isNullOrBlank() && !endTime.isNullOrBlank()
+        val hasUnlockCondition = !unlockCondition.isNullOrBlank()
+        if (!hasTimeWindow && !hasUnlockCondition) {
+            return buildJsonObject {
+                put("error", "必须提供锁定时间窗口（start_time + end_time）或解锁条件（unlock_condition），至少其一")
+            }
+        }
+        // 若提供了时间窗口，则两个都必须有
+        if ((startTime.isNullOrBlank() && !endTime.isNullOrBlank()) ||
+            (!startTime.isNullOrBlank() && endTime.isNullOrBlank())
+        ) {
+            return buildJsonObject {
+                put("error", "start_time 和 end_time 必须同时提供或同时省略")
+            }
+        }
+
+        // 校验时间格式 HH:mm
+        val timeRegex = Regex("""^([01]\d|2[0-3]):([0-5]\d)$""")
+        if (hasTimeWindow) {
+            if (!timeRegex.matches(startTime!!) || !timeRegex.matches(endTime!!)) {
+                return buildJsonObject {
+                    put("error", "时间格式错误，应为 HH:mm（24小时制），如 22:00")
+                }
+            }
+        }
+
+        // 尝试获取应用名称
+        val appName = runCatching {
+            val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
+            context.packageManager.getApplicationLabel(appInfo).toString()
+        }.getOrNull()
+
+        // 生成遮罩图片
+        val overlayPath = withContext(Dispatchers.IO) {
+            AppLockOverlayGenerator.generate(
+                context = context,
+                packageName = packageName,
+                promptMessage = promptMessage,
+                emoji = emoji
+            )
+        }
+
+        // 写入数据库（同包名重复锁定会覆盖）
+        val lock = AppLockEntity(
+            packageName = packageName,
+            appName = appName,
+            startTime = startTime,
+            endTime = endTime,
+            unlockCondition = unlockCondition,
+            overlayImagePath = overlayPath,
+            emoji = emoji,
+            promptMessage = promptMessage
+        )
+        appLockRepository.upsertLock(lock)
+
+        return buildJsonObject {
+            put("success", true)
+            put("message", "已锁定应用 ${appName ?: packageName}")
+            if (hasTimeWindow) put("time_window", "$startTime ~ $endTime")
+            if (hasUnlockCondition) put("unlock_condition", unlockCondition)
+            // 遮罩检测依赖无障碍服务，若未开启则锁定不会生效
+            if (DeviceCommandHub.commands.subscriptionCount.value == 0) {
+                put("warning", "无障碍服务未开启，应用锁定的遮罩功能无法生效。请提示用户开启 Evolia 的无障碍服务。")
+            }
+        }
+    }
+
+    /**
+     * 处理 APP_UNLOCK 命令：从数据库删除锁定记录。
+     */
+    private suspend fun handleAppUnlock(packageName: String?): JsonObject {
+        if (packageName.isNullOrBlank()) {
+            return buildJsonObject { put("error", "缺少 package_name 参数") }
+        }
+        val existing = appLockRepository.getByPackageName(packageName)
+            ?: return buildJsonObject { put("error", "该应用未被锁定") }
+
+        appLockRepository.unlockByPackageName(packageName)
+        return buildJsonObject {
+            put("success", true)
+            put("message", "已解锁应用 ${existing.appName ?: packageName}")
+        }
     }
 
     fun getScheduleTools(

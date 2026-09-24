@@ -107,6 +107,15 @@
         </intent-filter>
     </activity>
 
+    <!-- 应用锁定全屏遮罩：覆盖在被锁定应用之上，阻止用户查看应用内容 -->
+    <activity
+        android:name=".applock.AppLockOverlayActivity"
+        android:exported="false"
+        android:excludeFromRecents="true"
+        android:launchMode="singleTop"
+        android:taskAffinity="${applicationId}.lockoverlay"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen" />
+
 
     <service
         android:name=".service.AssistantNotificationListener"

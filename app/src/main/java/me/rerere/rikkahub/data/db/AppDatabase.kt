@@ -38,9 +38,10 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         FavoriteEntity::class,
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class,
-        ProfileHistoryEntity::class
+        ProfileHistoryEntity::class,
+        AppLockEntity::class
     ],
-    version = 32,
+    version = 33,
     exportSchema = true
 )
 @TypeConverters(
@@ -67,6 +68,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun agentMonitorTaskDao(): AgentMonitorTaskDAO
     abstract fun favoriteDao(): FavoriteDAO
     abstract fun profileHistoryDao(): ProfileHistoryDAO
+    abstract fun appLockDao(): AppLockDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -223,6 +225,32 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 31->32 迁移：agent_tasks 表新增 model 列")
                 db.execSQL(
                     "ALTER TABLE `agent_tasks` ADD COLUMN `model` TEXT"
+                )
+            }
+        }
+
+        /**
+         * 32 → 33：新建 app_locks 表，用于应用锁定功能。
+         * 记录被锁定的应用包名、锁定时间窗口、解锁条件文案、遮罩图片路径等。
+         */
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 32->33 迁移：新建 app_locks 表")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `app_locks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `package_name` TEXT NOT NULL,
+                        `app_name` TEXT,
+                        `start_time` TEXT,
+                        `end_time` TEXT,
+                        `unlock_condition` TEXT,
+                        `overlay_image_path` TEXT,
+                        `emoji` TEXT,
+                        `prompt_message` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
                 )
             }
         }

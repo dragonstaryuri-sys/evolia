@@ -1,30 +1,48 @@
 package me.rerere.rikkahub.service
 
 import android.accessibilityservice.AccessibilityService
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.location.Geocoder
 import android.location.LocationManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.serialization.json.*
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
+import me.rerere.rikkahub.core.data.db.entity.AppLockEntity
 import me.rerere.rikkahub.core.data.db.entity.UserDeviceStateEntity
 import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 import me.rerere.rikkahub.core.data.repository.UserDeviceStateRepository
+import me.rerere.rikkahub.core.data.repository.AppLockRepository
+
 import me.rerere.rikkahub.data.ai.tools.DeviceCommandHub
 import org.koin.android.ext.android.inject
 import java.text.SimpleDateFormat
@@ -35,6 +53,7 @@ class EvoliaMonitorService : AccessibilityService() {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val userDeviceStateRepo by inject<UserDeviceStateRepository>()
     private val monitorTaskRepo by inject<AgentMonitorTaskRepository>()
+    private val appLockRepository by inject<AppLockRepository>()
     private val chatService by inject<ChatService>()
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -54,6 +73,23 @@ class EvoliaMonitorService : AccessibilityService() {
     private var pollingJob: Job? = null
     private var lastLocationCheckTime = 0L
     private var lastCellId: String? = null
+
+    // 应用锁定遮罩：用 TYPE_ACCESSIBILITY_OVERLAY 覆盖在前台应用之上
+    private var lockOverlayView: View? = null
+    private var currentLockedPackage: String? = null
+    // 延迟移除遮罩，避免被锁应用内部窗口切换导致闪烁
+    private val overlayHandler = Handler(Looper.getMainLooper())
+    private var pendingHideRunnable: Runnable? = null
+    // 保护期：遮罩添加后 2 秒内忽略所有窗口事件，避免 overlay 产生的连锁假事件导致闪烁
+    private var overlayProtectUntil = 0L
+    // AppLock 主动轮询：作为无障碍事件延迟投递的兜底，每 2 秒通过 UsageStats 主动检测前台应用变化
+    private var appLockPollingJob: Job? = null
+    // 上次轮询到的前台包名，仅在与上次不同时才触发检查，避免重复查 DB
+    private var lastPolledForegroundPackage: String? = null
+    // 遮罩字体：柚子 UI（GWMSansUI-Regular），从 assets/fonts 加载，失败回退默认
+    private val overlayTypeface: Typeface? by lazy {
+        runCatching { Typeface.createFromAsset(assets, "fonts/GWMSansUI-Regular.ttf") }.getOrNull()
+    }
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -80,12 +116,17 @@ class EvoliaMonitorService : AccessibilityService() {
             DeviceCommandHub.commands.collectLatest { handleDeviceCommand(it) }
         }
         startPolling()
+        startAppLockPolling()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(screenReceiver)
         pollingJob?.cancel()
+        appLockPollingJob?.cancel()
+        // 服务销毁时移除遮罩和待执行的回调，避免悬浮窗泄漏
+        cancelPendingHide()
+        hideLockOverlay()
     }
 
     private fun startPolling() {
@@ -99,11 +140,74 @@ class EvoliaMonitorService : AccessibilityService() {
         }
     }
 
+    /**
+     * AppLock 主动轮询：每 2 秒通过 UsageStatsManager 查询最近进入前台的应用。
+     * 无障碍事件在 MIUI/HyperOS 等系统上可能被延迟投递（例如打开小红书时事件被批量延后，
+     * 切换回 Evolia 时才补投，导致遮罩不及时），主动轮询作为兜底机制确保遮罩及时显示。
+     * 仅当轮询到的前台包名与上次不同时才触发检查，避免重复查数据库。
+     */
+    private fun startAppLockPolling() {
+        appLockPollingJob?.cancel()
+        appLockPollingJob = scope.launch {
+            while (isActive) {
+                delay(2_000)
+                val fg = getForegroundPackageByUsageStats() ?: continue
+                // 包名变化时才触发检查，避免重复查询
+                if (fg != lastPolledForegroundPackage) {
+                    lastPolledForegroundPackage = fg
+                    withContext(Dispatchers.Main) {
+                        checkAppLockAndShowOverlay(fg)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 通过 UsageStatsManager.queryEvents 获取最近 60 秒内最后一个进入前台的应用包名。
+     * MOVE_TO_FOREGROUND / ACTIVITY_RESUMED 事件代表 Activity 切换到前台。
+     * 此方法不依赖无障碍事件，避免被系统延迟投递影响。
+     * 60 秒窗口可保证用户停留在同一应用较长时间时仍能取到最近的前台事件。
+     */
+    private fun getForegroundPackageByUsageStats(): String? {
+        return try {
+            val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+                ?: return null
+            val now = System.currentTimeMillis()
+            val events = usageStatsManager.queryEvents(now - 60_000, now)
+            var lastForegroundPackage: String? = null
+            var lastForegroundTime = 0L
+            val event = UsageEvents.Event()
+            while (events.hasNextEvent()) {
+                events.getNextEvent(event)
+                val type = event.eventType
+                // MOVE_TO_FOREGROUND 在 API 29+ 被 ACTIVITY_RESUMED 取代，但值相同
+                if (type == UsageEvents.Event.MOVE_TO_FOREGROUND
+                    || type == UsageEvents.Event.ACTIVITY_RESUMED
+                ) {
+                    // 取时间戳最大的（即最近一次进入前台）
+                    if (event.timeStamp > lastForegroundTime) {
+                        lastForegroundTime = event.timeStamp
+                        lastForegroundPackage = event.packageName?.toString()
+                    }
+                }
+            }
+            // 注：原本有 15 秒时效性校验，但用户停留在同一应用超过 15 秒时会导致轮询失效，已移除
+            // 60 秒窗口内的最后一个 MOVE_TO_FOREGROUND 事件即为当前前台应用，无需额外时效性校验
+            lastForegroundPackage
+        } catch (e: Exception) {
+            Log.e(tag, "[AppLock] getForegroundPackageByUsageStats failed", e)
+            null
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val packageName = event.packageName?.toString() ?: return
                 syncDeviceState(newPackage = packageName)
+                // 检测是否为被锁定的应用，若是则显示遮罩，否则隐藏遮罩
+                checkAppLockAndShowOverlay(packageName)
             }
 
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
@@ -116,6 +220,208 @@ class EvoliaMonitorService : AccessibilityService() {
         }
     }
 
+    /**
+     * 检查指定包名的应用是否处于锁定状态。
+     * 若锁定 → 显示全屏遮罩悬浮窗（TYPE_ACCESSIBILITY_OVERLAY）
+     * 若未锁定 → 延迟移除遮罩（避免被锁应用内部窗口切换导致闪烁）
+     */
+    private fun checkAppLockAndShowOverlay(packageName: String) {
+        Log.d(tag, "[AppLock] 事件: packageName=$packageName, overlayShown=${lockOverlayView != null}, currentLocked=$currentLockedPackage")
+        // 同步轮询状态：事件路径与轮询路径共享 lastPolledForegroundPackage，避免重复检查同一应用
+        lastPolledForegroundPackage = packageName
+        // 保护期内忽略所有窗口事件，避免 overlay 添加后产生的连锁假事件（Evolia → 桌面）导致闪烁
+        val now = System.currentTimeMillis()
+        if (lockOverlayView != null && now < overlayProtectUntil) {
+            Log.d(tag, "[AppLock] 保护期内忽略: $packageName")
+            return
+        }
+        // 跳过 Evolia 自身
+        if (packageName == this.packageName) {
+            Log.d(tag, "[AppLock] 跳过 Evolia 自身，调度移除遮罩")
+            scheduleHideOverlay()
+            return
+        }
+        scope.launch {
+            val lock = appLockRepository.getByPackageName(packageName)
+            if (lock == null || !isLockedNow(lock)) {
+                Log.d(tag, "[AppLock] $packageName 未锁定 (lock=${lock != null}, locked=${lock?.let { isLockedNow(it) }})，调度移除遮罩")
+                withContext(Dispatchers.Main) { scheduleHideOverlay() }
+                return@launch
+            }
+            // 该应用被锁定，取消任何待执行的移除，确保遮罩显示
+            Log.d(tag, "[AppLock] $packageName 处于锁定状态，取消待移除并显示遮罩")
+            withContext(Dispatchers.Main) {
+                cancelPendingHide()
+                showLockOverlay(lock.overlayImagePath, packageName)
+            }
+        }
+    }
+
+    /**
+     * 延迟 1000ms 移除遮罩。
+     * 被锁应用内部窗口切换时可能产生非锁定 packageName 的事件，
+     * 延迟移除可以在 1000ms 内收到被锁应用的新事件时取消移除，避免闪烁。
+     */
+    private fun scheduleHideOverlay() {
+        pendingHideRunnable?.let { overlayHandler.removeCallbacks(it) }
+        val runnable = Runnable {
+            Log.d(tag, "[AppLock] 延迟移除到期，执行 hideLockOverlay")
+            hideLockOverlay()
+        }
+        pendingHideRunnable = runnable
+        overlayHandler.postDelayed(runnable, 1000)
+    }
+
+    private fun cancelPendingHide() {
+        pendingHideRunnable?.let { overlayHandler.removeCallbacks(it) }
+        pendingHideRunnable = null
+    }
+
+    /**
+     * 用 WindowManager 添加全屏遮罩悬浮窗。
+     * TYPE_ACCESSIBILITY_OVERLAY 是无障碍服务的特权窗口类型，
+     * 无需 SYSTEM_ALERT_WINDOW 权限，可覆盖在任何应用之上。
+     * 遮罩包含背景图 + 退出按钮，点击退出按钮回桌面。
+     */
+    private fun showLockOverlay(imagePath: String?, packageName: String) {
+        // 避免重复添加
+        if (lockOverlayView != null) {
+            if (packageName == currentLockedPackage) {
+                Log.d(tag, "[AppLock] 遮罩已显示且同一应用，跳过")
+                return
+            }
+            hideLockOverlayInternal()
+        }
+
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val density = resources.displayMetrics.density
+
+        // 根容器：全屏 FrameLayout，背景图填满
+        // 兜底色用深墨绿 HSV(140, 0.25, 0.38)，与背景图保持一致，防止图片未加载时露出灰白色
+        val container = FrameLayout(this).apply {
+            setBackgroundColor(Color.HSVToColor(floatArrayOf(140f, 0.25f, 0.38f)))
+        }
+
+        // 背景遮罩图
+        val bgImageView = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_XY
+            if (!imagePath.isNullOrBlank()) {
+                val file = java.io.File(imagePath)
+                if (file.exists()) {
+                    setImageBitmap(BitmapFactory.decodeFile(file.absolutePath))
+                }
+            }
+        }
+        val bgParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        container.addView(bgImageView, bgParams)
+
+        // 退出按钮：底部居中，半透明白底圆角
+        val exitButton = TextView(this).apply {
+            text = "退出应用"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 15f
+            typeface = overlayTypeface ?: Typeface.DEFAULT
+            gravity = Gravity.CENTER
+            setPadding((24 * density).toInt(), (10 * density).toInt(), (24 * density).toInt(), (10 * density).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 24f * density
+                setColor(0x66FFFFFF)
+            }
+            setOnClickListener {
+                Log.d(tag as String?, "[AppLock] 用户点击退出按钮，执行 GO_HOME")
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                hideLockOverlay()
+            }
+        }
+        val exitParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply {
+            bottomMargin = (48 * density).toInt()
+        }
+        container.addView(exitButton, exitParams)
+
+        // FLAG_NOT_TOUCH_MODAL: 触摸不会穿透到下面的应用
+        // 但退出按钮可以接收点击
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.RGBA_8888
+        )
+
+        try {
+            wm.addView(container, params)
+            lockOverlayView = container
+            currentLockedPackage = packageName
+            // 设置 2 秒保护期，屏蔽 overlay 添加后产生的连锁假事件
+            overlayProtectUntil = System.currentTimeMillis() + 2000
+            Log.d(tag, "[AppLock] 遮罩添加成功，packageName=$packageName，保护期 2 秒")
+        } catch (e: Exception) {
+            Log.e(tag, "[AppLock] 添加遮罩悬浮窗失败", e)
+        }
+    }
+
+    private fun hideLockOverlay() {
+        if (lockOverlayView == null) return
+        Log.d(tag, "[AppLock] hideLockOverlay: 移除遮罩，currentLocked=$currentLockedPackage")
+        hideLockOverlayInternal()
+    }
+
+    private fun hideLockOverlayInternal() {
+        val view = lockOverlayView ?: return
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        try {
+            wm.removeView(view)
+        } catch (e: Exception) {
+            Log.e(tag, "[AppLock] 移除遮罩悬浮窗失败", e)
+        }
+        lockOverlayView = null
+        currentLockedPackage = null
+    }
+
+    /**
+     * 判断锁定记录当前是否生效。
+     * - 仅有解锁条件（无时间窗口）：始终生效，直到 AI 调用 APP_UNLOCK
+     * - 仅有时间窗口：当前时间在窗口内才生效（支持跨夜）
+     * - 两者都有：时间窗口内生效
+     */
+    private fun isLockedNow(lock: AppLockEntity): Boolean {
+        val hasTimeWindow = !lock.startTime.isNullOrBlank() && !lock.endTime.isNullOrBlank()
+        if (!hasTimeWindow) {
+            // 仅有解锁条件，始终锁定
+            return true
+        }
+        val start = lock.startTime!!
+        val end = lock.endTime!!
+        val now = Calendar.getInstance()
+        val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val startMinutes = parseTimeToMinutes(start)
+        val endMinutes = parseTimeToMinutes(end)
+        return if (startMinutes <= endMinutes) {
+            // 同一天窗口
+            nowMinutes in startMinutes..endMinutes
+        } else {
+            // 跨夜窗口
+            nowMinutes >= startMinutes || nowMinutes <= endMinutes
+        }
+    }
+
+    private fun parseTimeToMinutes(time: String): Int {
+        val parts = time.split(":")
+        if (parts.size != 2) return 0
+        val hour = parts[0].toIntOrNull() ?: 0
+        val minute = parts[1].toIntOrNull() ?: 0
+        return hour * 60 + minute
+    }
+
     override fun onInterrupt() {}
 
     private fun handleDeviceCommand(command: String) {
@@ -123,8 +429,6 @@ class EvoliaMonitorService : AccessibilityService() {
             command == "LOCK_SCREEN" -> performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
             command == "GO_HOME" -> performGlobalAction(GLOBAL_ACTION_HOME)
             command == "BACK" -> performGlobalAction(GLOBAL_ACTION_BACK)
-            command == "SHOW_RECENTS" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
-            command == "SHOW_NOTIFICATIONS" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
             command == "WIFI_ON" -> setWifiEnabled(true)
             command == "WIFI_OFF" -> setWifiEnabled(false)
             command.startsWith("OPEN_APP:") -> {

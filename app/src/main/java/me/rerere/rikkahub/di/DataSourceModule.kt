@@ -99,7 +99,8 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_28_29,
                 AppDatabase.MIGRATION_29_30,
                 AppDatabase.MIGRATION_30_31,
-                AppDatabase.MIGRATION_31_32
+                AppDatabase.MIGRATION_31_32,
+                AppDatabase.MIGRATION_32_33
             )
             .build()
     }
@@ -130,6 +131,7 @@ val dataSourceModule = module {
     single { get<AppDatabase>().agentMonitorTaskDao() }
     single { get<AppDatabase>().favoriteDao() }
     single { get<AppDatabase>().profileHistoryDao() }
+    single { get<AppDatabase>().appLockDao() }
 
     single { MilestoneRepository(milestoneDAO = get()) }
     single { me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository(profileHistoryDAO = get()) }
