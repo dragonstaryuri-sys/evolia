@@ -503,6 +503,36 @@ class ChatService(
                     append("类型: 实时监控触发\n")
                     if (!monitorName.isNullOrBlank()) append("监控器名称: $monitorName\n")
                 }
+
+                "APP_LOCK_TRIGGER" -> {
+                    // 应用锁定触发：用户打开了被锁定的应用
+                    val appName = data["app_name"]?.jsonPrimitive?.contentOrNull ?: "未知应用"
+                    val unlockCondition = data["unlock_condition"]?.jsonPrimitive?.contentOrNull
+                    val startTime = data["start_time"]?.jsonPrimitive?.contentOrNull
+                    val endTime = data["end_time"]?.jsonPrimitive?.contentOrNull
+                    append("类型: 应用锁定触发\n")
+                    append("应用名称: $appName\n")
+                    // 拼接约定内容：优先使用解锁条件，没有则用时间窗口
+                    val agreement = if (!unlockCondition.isNullOrBlank()) {
+                        "你和user约定了要等条件「$unlockCondition」达成后才能解锁。"
+                    } else if (!startTime.isNullOrBlank() && !endTime.isNullOrBlank()) {
+                        "你和user约定了在 $startTime 到 $endTime 之间不能打开 $appName。"
+                    } else {
+                        "你和user约定了该应用被锁定，暂未记录具体解锁条件。"
+                    }
+                    append("约定内容: $agreement\n")
+                    // 直接注入用户要求的系统提示作为指令内容
+                    val systemHint = buildString {
+                        append("[系统提示]：user刚才打开了你锁定的应用 $appName，")
+                        append("被你设置的遮罩挡住了，")
+                        append(agreement)
+                    }
+                    append("\n指令内容：$systemHint\n")
+                    append("\n注意：这是一条由自动化引擎触发的【隐形指令】，用户不会在消息列表中看到它。")
+                    append("你可以根据上述信息决定如何回应——例如在下次对话中关心一下user的状态、")
+                    append("鼓励user遵守约定，或就当没发生（如果只是偶尔触发）。不要直接重复系统提示原文。")
+                    return@buildString
+                }
             }
             append("\n指令内容：$instruction\n\n注意：这是一条由自动化引擎触发的【隐形指令】，用户不会在消息列表中看到它。请根据上述指令要求直接采取行动或给出回应。")
         }

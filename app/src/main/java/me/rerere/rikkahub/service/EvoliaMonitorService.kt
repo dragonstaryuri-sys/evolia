@@ -86,6 +86,11 @@ class EvoliaMonitorService : AccessibilityService() {
     private var appLockPollingJob: Job? = null
     // 上次轮询到的前台包名，仅在与上次不同时才触发检查，避免重复查 DB
     private var lastPolledForegroundPackage: String? = null
+    // 应用锁定触发通知的冷却表：packageName → 上次发送系统消息的时间戳
+    // 用户在被锁应用中切来切去可能反复触发，60 秒内同一包名只发一次
+    private val appLockNotifyCooldownMap = mutableMapOf<String, Long>()
+    // 应用锁定触发的冷却时长（毫秒）
+    private val appLockNotifyCooldownMs = 60_000L
     // 遮罩字体：柚子 UI（GWMSansUI-Regular），从 assets/fonts 加载，失败回退默认
     private val overlayTypeface: Typeface? by lazy {
         runCatching { Typeface.createFromAsset(assets, "fonts/GWMSansUI-Regular.ttf") }.getOrNull()
@@ -254,6 +259,67 @@ class EvoliaMonitorService : AccessibilityService() {
                 cancelPendingHide()
                 showLockOverlay(lock.overlayImagePath, packageName)
             }
+            // 向锁定该应用的 Assistant 发送 skipContext 系统消息，让 AI 知道用户触发了锁定
+            notifyAssistantOfAppLockTrigger(lock, packageName)
+        }
+    }
+
+    /**
+     * 向锁定该应用的 Assistant 发送一条 skipContext=true 的 user 系统消息。
+     *
+     * 消息内容（由 ChatService.executeAgentTask 的 APP_LOCK_TRIGGER 分支拼接）：
+     * - 有 unlock_condition：你和user约定了要等条件「X」达成后才能解锁。
+     * - 仅有时间窗口：你和user约定了在 HH:mm 到 HH:mm 之间不能打开 应用名。
+     *
+     * 防刷屏：60 秒内同一包名只发一次。用户在被锁应用里反复切窗/桌面来回切会反复触发事件，
+     * 没有冷却会刷爆 AI 上下文。
+     *
+     * 旧锁定记录无 assistantId（空字符串）时仅显示遮罩，不发消息。
+     */
+    private suspend fun notifyAssistantOfAppLockTrigger(lock: AppLockEntity, packageName: String) {
+        // 旧记录无 assistantId：仅显示遮罩，不发消息
+        if (lock.assistantId.isBlank()) {
+            Log.d(tag, "[AppLock] 锁定记录无 assistantId，跳过发送系统消息: $packageName")
+            return
+        }
+        // 冷却期内跳过，避免刷屏
+        val now = System.currentTimeMillis()
+        val lastSent = appLockNotifyCooldownMap[packageName]
+        if (lastSent != null && now - lastSent < appLockNotifyCooldownMs) {
+            Log.d(tag, "[AppLock] 系统消息冷却中，跳过: $packageName, 距上次 ${now - lastSent}ms")
+            return
+        }
+        appLockNotifyCooldownMap[packageName] = now
+
+        // 解析应用名（DB 里有就用 DB 里的，没有就现查 PackageManager）
+        val appName = lock.appName ?: getAppName(packageName)
+        // 构造 taskData：传 app_name / unlock_condition / start_time / end_time
+        // ChatService.executeAgentTask 的 APP_LOCK_TRIGGER 分支会根据这些字段拼接消息
+        val taskData = buildJsonObject {
+            put("instruction", "") // APP_LOCK_TRIGGER 分支自己拼接系统提示，instruction 留空
+            put("app_name", appName)
+            if (!lock.unlockCondition.isNullOrBlank()) {
+                put("unlock_condition", lock.unlockCondition)
+            }
+            if (!lock.startTime.isNullOrBlank()) put("start_time", lock.startTime)
+            if (!lock.endTime.isNullOrBlank()) put("end_time", lock.endTime)
+            put("trigger_package", packageName)
+        }.toString()
+
+        // 调用 executeAgentTask（suspend）——它内部用 appScope.launch 包裹实际的消息写入和 AI 回复触发，
+        // 调用本身会快速返回。这里在 scope.launch 协程里直接调即可。
+        try {
+            chatService.executeAgentTask(
+                me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity(
+                    assistantId = lock.assistantId,
+                    taskType = "APP_LOCK_TRIGGER",
+                    taskData = taskData,
+                    scheduledTime = now
+                )
+            )
+            Log.i(tag, "[AppLock] 已发送 APP_LOCK_TRIGGER 系统消息: app=$appName, pkg=$packageName, assistantId=${lock.assistantId}")
+        } catch (e: Exception) {
+            Log.e(tag, "[AppLock] 发送 APP_LOCK_TRIGGER 系统消息失败: ${e.message}", e)
         }
     }
 

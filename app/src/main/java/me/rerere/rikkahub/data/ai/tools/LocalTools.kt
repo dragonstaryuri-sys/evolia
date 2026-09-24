@@ -719,7 +719,7 @@ class LocalTools(
 
                     // APP_LOCK / APP_UNLOCK 直接处理，不依赖无障碍服务
                     if (command == "APP_LOCK") {
-                        return@Tool handleAppLock(it.jsonObject)
+                        return@Tool handleAppLock(it.jsonObject, assistantId.toString())
                     }
                     if (command == "APP_UNLOCK") {
                         return@Tool handleAppUnlock(packageName)
@@ -765,8 +765,10 @@ class LocalTools(
 
     /**
      * 处理 APP_LOCK 命令：校验参数、生成遮罩图片、写入数据库。
+     * @param assistantId 锁定该应用的 Assistant 的 Uuid 字符串，
+     *   用于后续用户打开被锁应用时向其发送 skipContext 系统消息。
      */
-    private suspend fun handleAppLock(args: JsonObject): JsonObject {
+    private suspend fun handleAppLock(args: JsonObject, assistantId: String): JsonObject {
         val packageName = args["package_name"]?.jsonPrimitive?.contentOrNull
         val startTime = args["start_time"]?.jsonPrimitive?.contentOrNull
         val endTime = args["end_time"]?.jsonPrimitive?.contentOrNull
@@ -838,7 +840,8 @@ class LocalTools(
             unlockCondition = unlockCondition,
             overlayImagePath = overlayPath,
             emoji = emoji,
-            promptMessage = promptMessage
+            promptMessage = promptMessage,
+            assistantId = assistantId
         )
         appLockRepository.upsertLock(lock)
 

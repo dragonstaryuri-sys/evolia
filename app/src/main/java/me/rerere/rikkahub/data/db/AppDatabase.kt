@@ -41,7 +41,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ProfileHistoryEntity::class,
         AppLockEntity::class
     ],
-    version = 34,
+    version = 35,
     exportSchema = true
 )
 @TypeConverters(
@@ -306,6 +306,23 @@ abstract class AppDatabase : RoomDatabase() {
                 // 3. 删除旧表，重命名新表
                 db.execSQL("DROP TABLE IF EXISTS `app_locks`")
                 db.execSQL("ALTER TABLE `app_locks_new` RENAME TO `app_locks`")
+            }
+        }
+
+        /**
+         * 34 → 35：为 app_locks 表新增 assistant_id 列。
+         *
+         * 记录是哪个 Assistant 锁定的应用。用户打开被锁应用时，
+         * EvoliaMonitorService 会向该 Assistant 发送一条 skipContext=true 的 user
+         * 系统消息（不显示给用户但实际发送给 AI），让 AI 知道用户触发了锁定。
+         * 旧记录无此字段时默认空字符串，仅显示遮罩不发消息。
+         */
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 34->35 迁移：app_locks 表新增 assistant_id 列")
+                db.execSQL(
+                    "ALTER TABLE `app_locks` ADD COLUMN `assistant_id` TEXT NOT NULL DEFAULT ''"
+                )
             }
         }
 

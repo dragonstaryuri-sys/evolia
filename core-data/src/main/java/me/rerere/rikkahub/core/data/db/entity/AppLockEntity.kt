@@ -35,6 +35,13 @@ data class AppLockEntity(
     val emoji: String? = null,
     @ColumnInfo(name = "prompt_message")
     val promptMessage: String,
+    /**
+     * 锁定该应用的 Assistant 的 Uuid 字符串。
+     * 用户打开被锁应用时，会向该 Assistant 发送一条 skipContext 的 user 系统消息。
+     * 旧记录无此字段时为空字符串，此时仅显示遮罩不发消息。
+     */
+    @ColumnInfo(name = "assistant_id")
+    val assistantId: String = "",
     @ColumnInfo(name = "created_at")
     val createdAt: Long = System.currentTimeMillis()
 )
