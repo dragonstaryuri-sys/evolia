@@ -7,6 +7,8 @@ import androidx.room.PrimaryKey
 /**
  * 应用锁定记录。
  *
+ * 主键为 package_name：同一应用只能有一条锁定记录，重复 APP_LOCK 会覆盖旧记录。
+ *
  * 锁定生效规则：
  * - 仅设置了时间窗口（startTime/endTime）：仅在窗口内锁定，窗口外自动不显示遮罩。
  * - 仅设置了 unlockCondition：一直锁定，直到 AI 调用 app_unlock。
@@ -16,8 +18,7 @@ import androidx.room.PrimaryKey
  */
 @Entity(tableName = "app_locks")
 data class AppLockEntity(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
+    @PrimaryKey
     @ColumnInfo(name = "package_name")
     val packageName: String,
     @ColumnInfo(name = "app_name")

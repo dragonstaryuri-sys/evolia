@@ -21,6 +21,6 @@ interface AppLockDAO {
     @Query("SELECT * FROM app_locks ORDER BY created_at DESC")
     fun getAllLocks(): Flow<List<AppLockEntity>>
 
-    @Query("SELECT * FROM app_locks")
+    @Query("SELECT * FROM app_locks ORDER BY created_at DESC")
     suspend fun getAllLocksOnce(): List<AppLockEntity>
 }

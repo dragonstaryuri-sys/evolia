@@ -41,7 +41,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ProfileHistoryEntity::class,
         AppLockEntity::class
     ],
-    version = 33,
+    version = 34,
     exportSchema = true
 )
 @TypeConverters(
@@ -252,6 +252,60 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        /**
+         * 33 -> 34: app_locks 表主键从自增 id 改为 package_name。
+         *
+         * 修复 bug：原主键为自增 id，导致同一应用可有多条锁定记录，
+         * APP_LOCK 不会覆盖旧记录而是新增，APP_UNLOCK 会一次性删除所有同包名记录。
+         * 改用 package_name 做主键后，@Insert(REPLACE) 会按包名覆盖，
+         * 同一应用永远只有一条锁定记录。
+         *
+         * 迁移策略：重建表，若存在重复 package_name 则保留 created_at 最大的（最新）。
+         */
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 33->34 迁移：app_locks 主键改为 package_name")
+                // 1. 创建新表，package_name 做主键
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `app_locks_new` (
+                        `package_name` TEXT NOT NULL PRIMARY KEY,
+                        `app_name` TEXT,
+                        `start_time` TEXT,
+                        `end_time` TEXT,
+                        `unlock_condition` TEXT,
+                        `overlay_image_path` TEXT,
+                        `emoji` TEXT,
+                        `prompt_message` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                // 2. 迁移数据：若存在重复 package_name，保留 created_at 最大的（最新）
+                db.execSQL(
+                    """
+                    INSERT OR REPLACE INTO `app_locks_new` (
+                        `package_name`, `app_name`, `start_time`, `end_time`,
+                        `unlock_condition`, `overlay_image_path`, `emoji`,
+                        `prompt_message`, `created_at`
+                    )
+                    SELECT
+                        `package_name`, `app_name`, `start_time`, `end_time`,
+                        `unlock_condition`, `overlay_image_path`, `emoji`,
+                        `prompt_message`, `created_at`
+                    FROM `app_locks`
+                    WHERE `created_at` = (
+                        SELECT MAX(`created_at`) FROM `app_locks` AS sub
+                        WHERE sub.`package_name` = `app_locks`.`package_name`
+                    )
+                    """.trimIndent()
+                )
+                // 3. 删除旧表，重命名新表
+                db.execSQL("DROP TABLE IF EXISTS `app_locks`")
+                db.execSQL("ALTER TABLE `app_locks_new` RENAME TO `app_locks`")
             }
         }
 

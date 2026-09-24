@@ -45,6 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import me.rerere.rikkahub.core.data.db.entity.AssistantExtendedStateEntity
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 import me.rerere.rikkahub.core.data.repository.AgentMonitorTaskRepository
 import me.rerere.rikkahub.core.data.repository.AppLockRepository
@@ -543,6 +544,50 @@ class LocalTools(
                 }
             ),
             Tool(
+                name = "list_app_locks",
+                description = "查询当前所有应用锁定记录。返回每个被锁应用的包名、应用名、锁定时间窗口、解锁条件、提示语以及当前是否生效。使用场景：1) 新话题开始时回顾之前的锁定状态；2) 用户说自己完成了某事要解锁应用但你不记得锁定条件；3) 需要检查当前有哪些应用被锁定；4) 跟用户讨论锁定条件或修改锁定时。",
+                parameters = { InputSchema.Obj(properties = buildJsonObject {}) },
+                execute = {
+                    try {
+                        val locks = appLockRepository.getAllLocksOnce()
+                        if (locks.isEmpty()) {
+                            return@Tool buildJsonObject {
+                                put("locks", JsonArray(emptyList()))
+                                put("message", "当前没有任何应用锁定记录")
+                            }
+                        }
+                        val lockArray = locks.map { lock ->
+                            buildJsonObject {
+                                put("package_name", lock.packageName)
+                                put("app_name", lock.appName ?: lock.packageName)
+                                put("start_time", lock.startTime ?: "")
+                                put("end_time", lock.endTime ?: "")
+                                put("unlock_condition", lock.unlockCondition ?: "")
+                                put("prompt_message", lock.promptMessage)
+                                put("emoji", lock.emoji ?: "")
+                                put("is_active_now", isLockActiveNow(lock))
+                                // 锁定类型：time_window（仅时间窗口）/ unlock_condition（仅解锁条件）/ both（两者都有）
+                                val hasTimeWindow = !lock.startTime.isNullOrBlank() && !lock.endTime.isNullOrBlank()
+                                val hasUnlockCondition = !lock.unlockCondition.isNullOrBlank()
+                                val lockType = when {
+                                    hasTimeWindow && hasUnlockCondition -> "both"
+                                    hasTimeWindow -> "time_window"
+                                    else -> "unlock_condition"
+                                }
+                                put("lock_type", lockType)
+                            }
+                        }
+                        buildJsonObject {
+                            put("locks", JsonArray(lockArray))
+                            put("total", locks.size)
+                            put("active_count", locks.count { isLockActiveNow(it) })
+                        }
+                    } catch (e: Exception) {
+                        buildJsonObject { put("error", e.message ?: "查询应用锁定记录失败") }
+                    }
+                }
+            ),
+            Tool(
                 name = "device_alarm_timer_manager",
                 description = "管理设备上的闹钟 and 定时器。操作 'set_alarm' 需要 'hour' 和 'minutes'。操作 'set_timer' 需要 'seconds'。",
                 parameters = {
@@ -824,6 +869,37 @@ class LocalTools(
             put("success", true)
             put("message", "已解锁应用 ${existing.appName ?: packageName}")
         }
+    }
+
+    /**
+     * 判定锁定记录当前是否生效（与 EvoliaMonitorService.isLockedNow 逻辑保持一致）。
+     * - 仅有解锁条件（无时间窗口）→ 始终生效
+     * - 有时间窗口 → 当前时间在窗口内才生效（支持跨夜）
+     */
+    private fun isLockActiveNow(lock: AppLockEntity): Boolean {
+        val hasTimeWindow = !lock.startTime.isNullOrBlank() && !lock.endTime.isNullOrBlank()
+        if (!hasTimeWindow) return true  // 仅有解锁条件，始终锁定
+        val start = lock.startTime!!
+        val end = lock.endTime!!
+        val now = Calendar.getInstance()
+        val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val startMinutes = parseTimeToMinutes(start)
+        val endMinutes = parseTimeToMinutes(end)
+        return if (startMinutes <= endMinutes) {
+            // 同一天窗口
+            nowMinutes in startMinutes..endMinutes
+        } else {
+            // 跨夜窗口（start > end 表示跨越零点）
+            nowMinutes >= startMinutes || nowMinutes <= endMinutes
+        }
+    }
+
+    private fun parseTimeToMinutes(time: String): Int {
+        val parts = time.split(":")
+        if (parts.size != 2) return 0
+        val hour = parts[0].toIntOrNull() ?: 0
+        val minute = parts[1].toIntOrNull() ?: 0
+        return hour * 60 + minute
     }
 
     fun getScheduleTools(
