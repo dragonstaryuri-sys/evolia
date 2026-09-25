@@ -76,11 +76,11 @@ object DatabaseSanitizer {
             val whiteList = listOf(
                 "ConversationEntity", "MemoryEntity", "GenMediaEntity",
                 "ChatEpisodeEntity", "EmbeddingCacheEntity", "embedding_cache",
-                "daily_activity", "AgentDiaryEntity", "schedules", "chat_segments",
+                "daily_activity", "AgentDiaryEntity", "DiaryCommentEntity", "schedules", "chat_segments",
                 "agent_tasks", "token_usage", "books", "book_progress",
                 "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
-                "assistant_extended_state", "favorites",
-                "chat_messages", "chat_message_nodes"
+                "assistant_extended_state", "favorites", "profile_history",
+                "chat_messages", "chat_message_nodes", "app_locks"
             )
 
             for (sourceTableName in sourceTables) {

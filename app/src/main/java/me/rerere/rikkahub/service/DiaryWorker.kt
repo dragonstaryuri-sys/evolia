@@ -294,10 +294,13 @@ class DiaryWorker(
                     // —— ★ 增量落库：每个 chunk 生成成功立刻写 DB，下次断点能续上 ——
                     if (chunkResult.isNotBlank()) {
                         generatedContent = chunkResult
+                        // 兜底：若取不到真正的最后一条消息时间，则用日记 createdAt（skeletonCreatedAt）推进游标，
+                        // 避免 lastMessageAt 为 null 导致下次生成回退到 targetDate 0 点、重复处理已写日记的消息。
+                        val finalLastMessageAt = lastMsgTimestamp ?: skeletonCreatedAt
                         diaryRepo.updateDiary(
                             diaryRepo.getDiaryById(skeletonId)!!.copy(
                                 content = generatedContent,
-                                lastMessageAt = lastMsgTimestamp
+                                lastMessageAt = finalLastMessageAt
                             )
                         )
                         hadAnyChunkSuccess = true

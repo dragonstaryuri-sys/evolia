@@ -678,7 +678,8 @@ class DiaryVM(
                     content = content,
                     images = overrideImages ?: (existing?.images ?: emptyList()),
                     date = date,
-                    createdAt = existing?.createdAt ?: System.currentTimeMillis()
+                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                    lastMessageAt = existing?.lastMessageAt
                 )
                 diaryRepo.updateDiary(entity)
             } else {
@@ -781,7 +782,8 @@ class DiaryVM(
                         content = content,
                         images = mergedImages,
                         date = date,
-                        createdAt = existing?.createdAt ?: System.currentTimeMillis()
+                        createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                        lastMessageAt = existing?.lastMessageAt
                     )
                     diaryRepo.updateDiary(entity)
                     onSaved(false)

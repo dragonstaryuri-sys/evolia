@@ -335,7 +335,7 @@ class WebdavSync(
                 LogUtil.i(TAG, "Collected ${usedAvatarFiles.size} in-use avatar files")
 
                 // 备份文件目录
-                val foldersToBackup = listOf("upload", "avatars", "lorebook_attachments")
+                val foldersToBackup = listOf("upload", "avatars", "lorebook_attachments", "app_locks")
                 foldersToBackup.forEach { folderName ->
                     val folder = File(context.filesDir, folderName)
                     if (folder.exists() && folder.isDirectory) {
