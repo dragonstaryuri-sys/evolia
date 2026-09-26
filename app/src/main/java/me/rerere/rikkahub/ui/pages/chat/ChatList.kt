@@ -578,9 +578,12 @@ private fun SharedTransitionScope.ChatListNormal(
                             val allMsgNodes = items.filterIsInstance<ChatUIItem.Turn>()
                                 .flatMap { it.group.nodes }
 
+                            // items（assembledItems）按新→旧排列（index 0 最新），
+                            // 需反转为旧→新的正常聊天顺序后再收藏，保证详情页展示顺序正确
                             val messages = allMsgNodes
                                 .filter { it.id in selectedItems }
                                 .map { it.currentMessage }
+                                .reversed()
 
                             onAddFavorite(messages)
                             selecting = false
@@ -598,11 +601,13 @@ private fun SharedTransitionScope.ChatListNormal(
             }
 
             // ExportSheet 的 selectedMessages 也建议从 items 中提取
+            // items 按新→旧排列，需反转为旧→新的正常聊天顺序，保证导出内容顺序正确
             val selectedMessagesForExport = remember(selectedItems.size, items) {
                 items.filterIsInstance<ChatUIItem.Turn>()
                     .flatMap { it.group.nodes }
                     .filter { it.id in selectedItems }
                     .map { it.currentMessage }
+                    .reversed()
             }
 
             ChatExportSheet(
