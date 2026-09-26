@@ -539,7 +539,16 @@ class MemoryConsolidationWorker(
         timeoutMs: Long
     ): String {
         val messagesText = messages.takeLast(100).joinToString("\n") {
-            "${it.role}: ${it.toContentText().take(5000)}"
+            // 给每条消息附上日期时间戳，便于 AI 在跨天对话中区分事件发生的日期
+            val ts = it.createdAt
+            val dateStr = buildString {
+                append(ts.year).append('-')
+                append(ts.monthNumber.toString().padStart(2, '0')).append('-')
+                append(ts.dayOfMonth.toString().padStart(2, '0')).append(' ')
+                append(ts.hour.toString().padStart(2, '0')).append(':')
+                append(ts.minute.toString().padStart(2, '0'))
+            }
+            "[$dateStr] ${it.role}: ${it.toContentText().take(5000)}"
         }
         val locale = Locale.getDefault().displayName
         val prompt = DEFAULT_FULL_SUMMARY_PROMPT.applyPlaceholders(
