@@ -1784,6 +1784,8 @@
   <string name="chat_activity_reasoned_duration">Reasoned for %s</string>
   <string name="chat_activity_replying">Replying</string>
   <string name="chat_generation_timeout">Generation timed out (%1$d min). Please check your network or try a different model.</string>
+  <string name="regenerate_failed_placeholder">Generation failed. Please try again.</string>
+  <string name="regenerate_cancelled_placeholder">Cancelled by user</string>
   <string name="chat_activity_searched_web">Searched the Web</string>
   <string name="chat_activity_ran_python">Ran Python</string>
   <string name="chat_activity_used_tool">Used tool</string>

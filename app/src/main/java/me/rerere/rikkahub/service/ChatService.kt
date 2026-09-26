@@ -1938,6 +1938,44 @@ class ChatService(
                     }
                 }
 
+                // 生成结束（异常或用户主动取消）时，若目标占位消息仍为空，填充提示文本。
+                // 这样消息气泡与下方的操作按钮（重新生成/版本切换）才能正常显示，
+                // 用户可切换查看历史版本，或继续点击重新生成。
+                if (!isCancellation) {
+                    val friendlyError = translateError(e)
+                    _errorFlow.emit(friendlyError)
+                    Logging.log(TAG, "handleMessageComplete: $friendlyError")
+                }
+
+                placeholderId?.let { targetMsgId ->
+                    val isEmpty = currentConversation.messageNodes.any { node ->
+                        node.messages.any { msg ->
+                            msg.id == targetMsgId && msg.parts.isEmpty()
+                        }
+                    }
+                    if (isEmpty) {
+                        val placeholderText = if (isCancellation) {
+                            context.getString(R.string.regenerate_cancelled_placeholder)
+                        } else {
+                            context.getString(R.string.regenerate_failed_placeholder)
+                        }
+                        val updatedNodes = currentConversation.messageNodes.map { node ->
+                            val msgIdx = node.messages.indexOfFirst { it.id == targetMsgId }
+                            if (msgIdx == -1) return@map node
+                            val targetMsg = node.messages[msgIdx]
+                            node.copy(
+                                messages = node.messages.toMutableList().also { list ->
+                                    list[msgIdx] = targetMsg.copy(
+                                        parts = listOf(UIMessagePart.Text(placeholderText))
+                                    )
+                                }
+                            )
+                        }
+                        currentConversation = currentConversation.copy(messageNodes = updatedNodes)
+                        updateConversation(conversationId) { currentConversation }
+                    }
+                }
+
                 // 统一持久化当前内存快照到 DB（取消/异常两种出口都走这里）。
                 // 使用 appScope + persistenceMutex 串行，防止打断后用户立即发新消息造成旧覆盖新。
                 val finalConv = currentConversation
@@ -1950,11 +1988,6 @@ class ChatService(
                         }
                         settingsStore.update(currentSettings.copy(assistants = updatedAssistants))
                     }
-                }
-                if (!isCancellation) {
-                    val friendlyError = translateError(e)
-                    _errorFlow.emit(friendlyError)
-                    Logging.log(TAG, "handleMessageComplete: $friendlyError")
                 }
             }.onSuccess {
                 if (!currentJob.isActive) return@onSuccess
