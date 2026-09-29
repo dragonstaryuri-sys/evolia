@@ -73,6 +73,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.provider.Modality
+import me.rerere.rikkahub.common.JsonInstant
 
 // 用于在 Tool 和 AccessibilityService 之间传递即时控制指令
 object DeviceCommandHub {
@@ -557,17 +558,19 @@ class LocalTools(
                             }
                         }
                         val lockArray = locks.map { lock ->
+                            val periods = AppLockEntity.parseValidTimePeriods(lock.validTime)
                             buildJsonObject {
                                 put("package_name", lock.packageName)
                                 put("app_name", lock.appName ?: lock.packageName)
-                                put("start_time", lock.startTime ?: "")
-                                put("end_time", lock.endTime ?: "")
+                                // time_periods：解析 validTime 后的时段数组（空数组表示无时间窗口）
+                                put("time_periods", JsonArray(periods))
                                 put("unlock_condition", lock.unlockCondition ?: "")
                                 put("prompt_message", lock.promptMessage)
                                 put("emoji", lock.emoji ?: "")
-                                put("is_active_now", isLockActiveNow(lock))
+                                // is_active_now：当前是否处于锁定生效状态（暂停中或不在时段内 → false）
+                                put("is_active_now", AppLockEntity.isLockedNow(lock).not())
                                 // 锁定类型：time_window（仅时间窗口）/ unlock_condition（仅解锁条件）/ both（两者都有）
-                                val hasTimeWindow = !lock.startTime.isNullOrBlank() && !lock.endTime.isNullOrBlank()
+                                val hasTimeWindow = periods.isNotEmpty()
                                 val hasUnlockCondition = !lock.unlockCondition.isNullOrBlank()
                                 val lockType = when {
                                     hasTimeWindow && hasUnlockCondition -> "both"
@@ -575,12 +578,20 @@ class LocalTools(
                                     else -> "unlock_condition"
                                 }
                                 put("lock_type", lockType)
+                                // 临时暂停状态：pause_until > now 表示暂停中
+                                val nowMs = System.currentTimeMillis()
+                                if (lock.pauseUntil > 0L && nowMs < lock.pauseUntil) {
+                                    put("pause_until", lock.pauseUntil)
+                                    put("pause_remaining_minutes", ((lock.pauseUntil - nowMs) / 60_000L).toInt())
+                                } else {
+                                    put("pause_remaining_minutes", 0)
+                                }
                             }
                         }
                         buildJsonObject {
                             put("locks", JsonArray(lockArray))
                             put("total", locks.size)
-                            put("active_count", locks.count { isLockActiveNow(it) })
+                            put("active_count", locks.count { AppLockEntity.isLockedNow(it) })
                         }
                     } catch (e: Exception) {
                         buildJsonObject { put("error", e.message ?: "查询应用锁定记录失败") }
@@ -665,7 +676,7 @@ class LocalTools(
             ),
             Tool(
                 name = "device_control",
-                description = "在用户的手机上执行系统级全局操作。当需要主动干预时（例如：为睡眠管理锁定屏幕、返回主屏幕以停止使用、打开特定 App、锁定某个应用让用户暂时无法使用）使用。部分操作需要开启无障碍服务。支持的命令：LOCK_SCREEN（锁屏）, GO_HOME（回主页）, BACK（返回）, OPEN_APP（打开应用）, APP_LOCK（锁定应用，时间范围内打开会显示遮罩）, APP_UNLOCK（解锁应用）。",
+                description = "在用户的手机上执行系统级全局操作。当需要主动干预时（例如：为睡眠管理锁定屏幕、返回主屏幕以停止使用、打开特定 App、锁定某个应用让用户暂时无法使用）使用。部分操作需要开启无障碍服务。支持的命令：LOCK_SCREEN（锁屏）, GO_HOME（回主页）, BACK（返回）, OPEN_APP（打开应用）, APP_LOCK（锁定应用，时间范围内打开会显示遮罩）, APP_UNLOCK（解锁应用，删除整条锁记录）, APP_LOCK_PAUSE（临时暂停某应用的锁 N 分钟，到期自动恢复，不删除锁）, APP_LOCK_UPDATE_TIME（仅修改锁定时间窗口，不动 prompt_message/emoji/遮罩图/解锁条件）。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -680,26 +691,41 @@ class LocalTools(
                                             JsonPrimitive("BACK"),
                                             JsonPrimitive("OPEN_APP"),
                                             JsonPrimitive("APP_LOCK"),
-                                            JsonPrimitive("APP_UNLOCK")
+                                            JsonPrimitive("APP_UNLOCK"),
+                                            JsonPrimitive("APP_LOCK_PAUSE"),
+                                            JsonPrimitive("APP_LOCK_UPDATE_TIME")
                                         )
                                     )
                                 )
                             })
                             put("package_name", buildJsonObject {
                                 put("type", "string")
-                                put("description", "在 command=OPEN_APP/APP_LOCK/APP_UNLOCK 时必填，指定目标应用包名（可先通过 list_apps 获取）")
+                                put("description", "在 command=OPEN_APP/APP_LOCK/APP_UNLOCK/APP_LOCK_PAUSE/APP_LOCK_UPDATE_TIME 时必填，指定目标应用包名（可先通过 list_apps 获取）")
                             })
-                            put("start_time", buildJsonObject {
-                                put("type", "string")
-                                put("description", "仅在 command=APP_LOCK 时使用。锁定开始时间，格式 HH:mm（24小时制），如 22:00。与 end_time 配对使用，支持跨夜（start > end 表示跨越零点）。")
+                            put("time_periods", buildJsonObject {
+                                put("type", "array")
+                                put("description", "仅在 command=APP_LOCK / APP_LOCK_UPDATE_TIME 时使用。锁定时间窗口数组，每个元素形如 {\"start\":\"HH:mm\",\"end\":\"HH:mm\"}（24 小时制）。支持多个时段（如 [{\"start\":\"13:00\",\"end\":\"14:00\"},{\"start\":\"20:00\",\"end\":\"23:00\"}]），单时段也用数组传。每个时段支持跨夜（start > end 表示跨越零点，如 22:00-07:00）。APP_LOCK_UPDATE_TIME 不传此参数表示清除时间窗口（要求该锁仍保留 unlock_condition，否则拒绝）。")
+                                put("items", buildJsonObject {
+                                    put("type", "object")
+                                    put("properties", buildJsonObject {
+                                        put("start", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "时段开始时间，格式 HH:mm")
+                                        })
+                                        put("end", buildJsonObject {
+                                            put("type", "string")
+                                            put("description", "时段结束时间，格式 HH:mm")
+                                        })
+                                    })
+                                })
                             })
-                            put("end_time", buildJsonObject {
-                                put("type", "string")
-                                put("description", "仅在 command=APP_LOCK 时使用。锁定结束时间，格式 HH:mm，如 07:00。")
+                            put("duration_minutes", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "仅在 command=APP_LOCK_PAUSE 时必填。临时暂停时长（分钟），范围 1-60。超过 60 会返回错误，提示该用 APP_UNLOCK。到期后锁自动恢复生效。")
                             })
                             put("unlock_condition", buildJsonObject {
                                 put("type", "string")
-                                put("description", "仅在 command=APP_LOCK 时使用。解锁条件的文字描述（如：完成今天的深蹲训练），仅作为你判断何时调用 APP_UNLOCK 的依据，不会被程序自动判定。app_lock 时 start_time+end_time 与 unlock_condition 至少填写一个。")
+                                put("description", "仅在 command=APP_LOCK 时使用。解锁条件的文字描述（如：完成今天的深蹲训练），仅作为你判断何时调用 APP_UNLOCK 的依据，不会被程序自动判定。APP_LOCK 时 time_periods 与 unlock_condition 至少填写一个。")
                             })
                             put("prompt_message", buildJsonObject {
                                 put("type", "string")
@@ -717,12 +743,18 @@ class LocalTools(
                     val command = it.jsonObject["command"]?.jsonPrimitive?.contentOrNull ?: ""
                     val packageName = it.jsonObject["package_name"]?.jsonPrimitive?.contentOrNull
 
-                    // APP_LOCK / APP_UNLOCK 直接处理，不依赖无障碍服务
+                    // APP_LOCK / APP_UNLOCK / APP_LOCK_PAUSE / APP_LOCK_UPDATE_TIME 直接处理，不依赖无障碍服务
                     if (command == "APP_LOCK") {
                         return@Tool handleAppLock(it.jsonObject, assistantId.toString())
                     }
                     if (command == "APP_UNLOCK") {
                         return@Tool handleAppUnlock(packageName)
+                    }
+                    if (command == "APP_LOCK_PAUSE") {
+                        return@Tool handleAppLockPause(it.jsonObject)
+                    }
+                    if (command == "APP_LOCK_UPDATE_TIME") {
+                        return@Tool handleAppLockUpdateTime(it.jsonObject)
                     }
 
                     // 对于简单的打开 App，如果不在无障碍服务中也能尝试直接执行
@@ -770,8 +802,6 @@ class LocalTools(
      */
     private suspend fun handleAppLock(args: JsonObject, assistantId: String): JsonObject {
         val packageName = args["package_name"]?.jsonPrimitive?.contentOrNull
-        val startTime = args["start_time"]?.jsonPrimitive?.contentOrNull
-        val endTime = args["end_time"]?.jsonPrimitive?.contentOrNull
         val unlockCondition = args["unlock_condition"]?.jsonPrimitive?.contentOrNull
         val promptMessage = args["prompt_message"]?.jsonPrimitive?.contentOrNull
         val emoji = args["emoji"]?.jsonPrimitive?.contentOrNull
@@ -788,30 +818,24 @@ class LocalTools(
         if (promptMessage.isNullOrBlank()) {
             return buildJsonObject { put("error", "缺少 prompt_message（遮罩提示语）参数") }
         }
-        // 校验：时间窗口 与 解锁条件 至少填一个
-        val hasTimeWindow = !startTime.isNullOrBlank() && !endTime.isNullOrBlank()
+
+        // 归一化 time_periods：支持数组形式、单对象形式，兼容 AI 传顶层 start_time/end_time
+        val periods = normalizeTimePeriods(args)
+        val hasTimeWindow = periods.isNotEmpty()
         val hasUnlockCondition = !unlockCondition.isNullOrBlank()
+
+        // 校验：时间窗口 与 解锁条件 至少填一个
         if (!hasTimeWindow && !hasUnlockCondition) {
             return buildJsonObject {
-                put("error", "必须提供锁定时间窗口（start_time + end_time）或解锁条件（unlock_condition），至少其一")
-            }
-        }
-        // 若提供了时间窗口，则两个都必须有
-        if ((startTime.isNullOrBlank() && !endTime.isNullOrBlank()) ||
-            (!startTime.isNullOrBlank() && endTime.isNullOrBlank())
-        ) {
-            return buildJsonObject {
-                put("error", "start_time 和 end_time 必须同时提供或同时省略")
+                put("error", "必须提供锁定时间窗口（time_periods）或解锁条件（unlock_condition），至少其一")
             }
         }
 
-        // 校验时间格式 HH:mm
-        val timeRegex = Regex("""^([01]\d|2[0-3]):([0-5]\d)$""")
+        // 校验时段格式
         if (hasTimeWindow) {
-            if (!timeRegex.matches(startTime!!) || !timeRegex.matches(endTime!!)) {
-                return buildJsonObject {
-                    put("error", "时间格式错误，应为 HH:mm（24小时制），如 22:00")
-                }
+            val formatError = validateTimePeriods(periods)
+            if (formatError != null) {
+                return buildJsonObject { put("error", formatError) }
             }
         }
 
@@ -831,12 +855,16 @@ class LocalTools(
             )
         }
 
+        // 序列化 time_periods 为 JSON 字符串存入 validTime
+        val validTimeJson = if (hasTimeWindow) {
+            JsonInstant.encodeToString(JsonElement.serializer(), JsonArray(periods))
+        } else null
+
         // 写入数据库（同包名重复锁定会覆盖）
         val lock = AppLockEntity(
             packageName = packageName,
             appName = appName,
-            startTime = startTime,
-            endTime = endTime,
+            validTime = validTimeJson,
             unlockCondition = unlockCondition,
             overlayImagePath = overlayPath,
             emoji = emoji,
@@ -848,7 +876,7 @@ class LocalTools(
         return buildJsonObject {
             put("success", true)
             put("message", "已锁定应用 ${appName ?: packageName}")
-            if (hasTimeWindow) put("time_window", "$startTime ~ $endTime")
+            if (hasTimeWindow) put("time_periods", JsonArray(periods))
             if (hasUnlockCondition) put("unlock_condition", unlockCondition)
             // 遮罩检测依赖无障碍服务，若未开启则锁定不会生效
             if (DeviceCommandHub.commands.subscriptionCount.value == 0) {
@@ -875,34 +903,133 @@ class LocalTools(
     }
 
     /**
-     * 判定锁定记录当前是否生效（与 EvoliaMonitorService.isLockedNow 逻辑保持一致）。
-     * - 仅有解锁条件（无时间窗口）→ 始终生效
-     * - 有时间窗口 → 当前时间在窗口内才生效（支持跨夜）
+     * 处理 APP_LOCK_PAUSE 命令：临时暂停某应用的锁 N 分钟，到期自动恢复。
+     * 不删除锁记录本身，仅设置 pause_until 字段。暂停期间 isLockedNow 返回 false，
+     * 遮罩不显示也不向 AI 发 APP_LOCK_TRIGGER 消息。
      */
-    private fun isLockActiveNow(lock: AppLockEntity): Boolean {
-        val hasTimeWindow = !lock.startTime.isNullOrBlank() && !lock.endTime.isNullOrBlank()
-        if (!hasTimeWindow) return true  // 仅有解锁条件，始终锁定
-        val start = lock.startTime!!
-        val end = lock.endTime!!
-        val now = Calendar.getInstance()
-        val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val startMinutes = parseTimeToMinutes(start)
-        val endMinutes = parseTimeToMinutes(end)
-        return if (startMinutes <= endMinutes) {
-            // 同一天窗口
-            nowMinutes in startMinutes..endMinutes
-        } else {
-            // 跨夜窗口（start > end 表示跨越零点）
-            nowMinutes >= startMinutes || nowMinutes <= endMinutes
+    private suspend fun handleAppLockPause(args: JsonObject): JsonObject {
+        val packageName = args["package_name"]?.jsonPrimitive?.contentOrNull
+        val durationMinutes = args["duration_minutes"]?.jsonPrimitive?.intOrNull
+
+        if (packageName.isNullOrBlank()) {
+            return buildJsonObject { put("error", "缺少 package_name 参数") }
+        }
+        if (durationMinutes == null || durationMinutes <= 0) {
+            return buildJsonObject { put("error", "缺少或无效的 duration_minutes 参数") }
+        }
+        if (durationMinutes > 60) {
+            return buildJsonObject {
+                put("error", "暂停时长不能超过 60 分钟（当前请求 $durationMinutes 分钟），过长建议和用户重新协商，或直接调用 APP_UNLOCK 删除锁")
+            }
+        }
+
+        val pauseUntil = appLockRepository.pauseLock(packageName, durationMinutes)
+            ?: return buildJsonObject { put("error", "该应用未被锁定") }
+
+        val now = System.currentTimeMillis()
+        val remainingMinutes = ((pauseUntil - now) / 60_000L).toInt()
+        return buildJsonObject {
+            put("success", true)
+            put("message", "已临时暂停 $packageName 的锁 $durationMinutes 分钟，期间不会显示遮罩，到期后自动恢复")
+            put("pause_until", pauseUntil)
+            put("pause_remaining_minutes", remainingMinutes)
         }
     }
 
-    private fun parseTimeToMinutes(time: String): Int {
-        val parts = time.split(":")
-        if (parts.size != 2) return 0
-        val hour = parts[0].toIntOrNull() ?: 0
-        val minute = parts[1].toIntOrNull() ?: 0
-        return hour * 60 + minute
+    /**
+     * 处理 APP_LOCK_UPDATE_TIME 命令：仅修改某应用的锁定时间窗口（valid_time），
+     * 不动 prompt_message/emoji/遮罩图/解锁条件/assistant_id。
+     * 适合 AI 在不重新生成遮罩图的前提下调整时间窗口。
+     */
+    private suspend fun handleAppLockUpdateTime(args: JsonObject): JsonObject {
+        val packageName = args["package_name"]?.jsonPrimitive?.contentOrNull
+        if (packageName.isNullOrBlank()) {
+            return buildJsonObject { put("error", "缺少 package_name 参数") }
+        }
+
+        val existing = appLockRepository.getByPackageName(packageName)
+            ?: return buildJsonObject { put("error", "该应用未被锁定") }
+
+        // 归一化 time_periods：支持数组形式、单对象形式，兼容 AI 传顶层 start_time/end_time
+        val newPeriods = normalizeTimePeriods(args)
+        val hasNewTimeWindow = newPeriods.isNotEmpty()
+
+        // 关键边界：若要清除时间窗口（newPeriods 为空），现有 lock 必须有 unlock_condition
+        // 否则会生成一个既无时间窗口又无解锁条件的无效锁
+        if (!hasNewTimeWindow && existing.unlockCondition.isNullOrBlank()) {
+            return buildJsonObject {
+                put("error", "清除时间窗口后该锁将没有任何生效条件，请先调用 APP_LOCK 添加 unlock_condition，或直接 APP_UNLOCK 删除锁")
+            }
+        }
+
+        // 校验时段格式
+        if (hasNewTimeWindow) {
+            val formatError = validateTimePeriods(newPeriods)
+            if (formatError != null) {
+                return buildJsonObject { put("error", formatError) }
+            }
+        }
+
+        val newValidTime = if (hasNewTimeWindow) {
+            JsonInstant.encodeToString(JsonElement.serializer(), JsonArray(newPeriods))
+        } else null
+
+        appLockRepository.updateValidTime(packageName, newValidTime)
+
+        return buildJsonObject {
+            put("success", true)
+            put("message", "已更新 $packageName 的锁定时间窗口（其他字段保持不变）")
+            put("time_periods", JsonArray(newPeriods))
+        }
+    }
+
+    /**
+     * 归一化 time_periods 参数：
+     * - 数组形式 [{start, end}, ...]：直接取每个对象
+     * - 单对象形式 {start, end}：包成单元素列表
+     * - 兼容 AI 传顶层 start_time/end_time（旧格式）：归一成 [{start, end}]
+     *   参考与 [agent_monitor_tasks 处理逻辑] 保持一致。
+     * 空则返回空列表（表示无时间窗口）。
+     */
+    private fun normalizeTimePeriods(args: JsonObject): List<JsonObject> {
+        val timePeriodsElement = args["time_periods"]
+        val fromArray: List<JsonObject> = when {
+            timePeriodsElement is JsonArray -> timePeriodsElement.mapNotNull { it as? JsonObject }
+            timePeriodsElement is JsonObject -> listOf(timePeriodsElement)
+            else -> emptyList()
+        }
+        if (fromArray.isNotEmpty()) return fromArray
+
+        // 兼容 AI 传顶层 start_time + end_time
+        val flatStart = (args["start_time"] as? JsonPrimitive)?.contentOrNull
+        val flatEnd = (args["end_time"] as? JsonPrimitive)?.contentOrNull
+        return if (!flatStart.isNullOrBlank() && !flatEnd.isNullOrBlank()) {
+            listOf(buildJsonObject {
+                put("start", flatStart)
+                put("end", flatEnd)
+            })
+        } else {
+            emptyList()
+        }
+    }
+
+    /**
+     * 校验时段格式：每个 period 的 start/end 都必填且 HH:mm。
+     * 返回 null 表示通过；返回字符串表示错误描述。
+     */
+    private fun validateTimePeriods(periods: List<JsonObject>): String? {
+        val timeRegex = Regex("""^([01]\d|2[0-3]):([0-5]\d)$""")
+        for ((index, p) in periods.withIndex()) {
+            val start = (p["start"] as? JsonPrimitive)?.contentOrNull
+            val end = (p["end"] as? JsonPrimitive)?.contentOrNull
+            if (start.isNullOrBlank() || end.isNullOrBlank()) {
+                return "time_periods[$index] 的 start 和 end 都必须填写"
+            }
+            if (!timeRegex.matches(start) || !timeRegex.matches(end)) {
+                return "time_periods[$index] 时间格式错误，应为 HH:mm（24 小时制），如 22:00"
+            }
+        }
+        return null
     }
 
     fun getScheduleTools(

@@ -293,7 +293,7 @@ class EvoliaMonitorService : AccessibilityService() {
 
         // 解析应用名（DB 里有就用 DB 里的，没有就现查 PackageManager）
         val appName = lock.appName ?: getAppName(packageName)
-        // 构造 taskData：传 app_name / unlock_condition / start_time / end_time
+        // 构造 taskData：传 app_name / unlock_condition / time_periods
         // ChatService.executeAgentTask 的 APP_LOCK_TRIGGER 分支会根据这些字段拼接消息
         val taskData = buildJsonObject {
             put("instruction", "") // APP_LOCK_TRIGGER 分支自己拼接系统提示，instruction 留空
@@ -301,8 +301,11 @@ class EvoliaMonitorService : AccessibilityService() {
             if (!lock.unlockCondition.isNullOrBlank()) {
                 put("unlock_condition", lock.unlockCondition)
             }
-            if (!lock.startTime.isNullOrBlank()) put("start_time", lock.startTime)
-            if (!lock.endTime.isNullOrBlank()) put("end_time", lock.endTime)
+            // 解析 validTime 后传 JSON 数组；空则不传（ChatService 会走 fallback 文案）
+            val periods = AppLockEntity.parseValidTimePeriods(lock.validTime)
+            if (periods.isNotEmpty()) {
+                put("time_periods", JsonArray(periods))
+            }
             put("trigger_package", packageName)
         }.toString()
 
@@ -454,39 +457,18 @@ class EvoliaMonitorService : AccessibilityService() {
     }
 
     /**
-     * 判断锁定记录当前是否生效。
-     * - 仅有解锁条件（无时间窗口）：始终生效，直到 AI 调用 APP_UNLOCK
-     * - 仅有时间窗口：当前时间在窗口内才生效（支持跨夜）
-     * - 两者都有：时间窗口内生效
+     * 判断锁定记录当前是否生效，统一委托给 [AppLockEntity.isLockedNow]。
+     *
+     * 实现细节：
+     * - 暂停中（now < pauseUntil）：返回 false，不显示遮罩，也不向 AI 发 APP_LOCK_TRIGGER 消息
+     * - 仅有 unlockCondition（无时间窗口）：始终生效，直到 AI 调用 APP_UNLOCK
+     * - 仅有时间窗口：当前时间在任一时段内才生效（支持跨夜）
+     * - 两者都有：时段内生效
+     *
+     * 之所以放到 AppLockEntity.companion 而非本服务内，是为了让 LocalTools.list_app_locks
+     * 与本服务的判断逻辑保持一致，避免重复实现导致分叉。
      */
-    private fun isLockedNow(lock: AppLockEntity): Boolean {
-        val hasTimeWindow = !lock.startTime.isNullOrBlank() && !lock.endTime.isNullOrBlank()
-        if (!hasTimeWindow) {
-            // 仅有解锁条件，始终锁定
-            return true
-        }
-        val start = lock.startTime!!
-        val end = lock.endTime!!
-        val now = Calendar.getInstance()
-        val nowMinutes = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val startMinutes = parseTimeToMinutes(start)
-        val endMinutes = parseTimeToMinutes(end)
-        return if (startMinutes <= endMinutes) {
-            // 同一天窗口
-            nowMinutes in startMinutes..endMinutes
-        } else {
-            // 跨夜窗口
-            nowMinutes >= startMinutes || nowMinutes <= endMinutes
-        }
-    }
-
-    private fun parseTimeToMinutes(time: String): Int {
-        val parts = time.split(":")
-        if (parts.size != 2) return 0
-        val hour = parts[0].toIntOrNull() ?: 0
-        val minute = parts[1].toIntOrNull() ?: 0
-        return hour * 60 + minute
-    }
+    private fun isLockedNow(lock: AppLockEntity): Boolean = AppLockEntity.isLockedNow(lock)
 
     override fun onInterrupt() {}
 

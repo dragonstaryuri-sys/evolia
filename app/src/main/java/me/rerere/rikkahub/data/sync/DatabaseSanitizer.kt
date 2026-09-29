@@ -328,6 +328,24 @@ object DatabaseSanitizer {
                             }
                         }
 
+                        // app_locks 表 schema 迁移：旧备份使用 start_time/end_time 两个列存储单时段，
+                        // 新 schema 已合并为 valid_time（JSON 数组，支持多时段）。
+                        // copyTable 只复制源/目标都存在的列，若不做转换，旧备份的时间窗口会被静默丢弃。
+                        if (targetTableName.equals("app_locks", ignoreCase = true)) {
+                            val startTimeIdx = cursor.getColumnIndex("start_time")
+                            val endTimeIdx = cursor.getColumnIndex("end_time")
+                            if (startTimeIdx != -1 && endTimeIdx != -1) {
+                                val start = if (!cursor.isNull(startTimeIdx)) cursor.getString(startTimeIdx) else ""
+                                val end = if (!cursor.isNull(endTimeIdx)) cursor.getString(endTimeIdx) else ""
+                                if (start.isNotBlank() && end.isNotBlank()) {
+                                    values.put("valid_time", "[{\"start\":\"$start\",\"end\":\"$end\"}]")
+                                }
+                            }
+                            // pause_until 列在新 schema 中为 NOT NULL DEFAULT 0，
+                            // 旧备份无此列，copyTable 会走 "列不存在 + 有默认值" 分支不写入，
+                            // 由 SQL DEFAULT 0 兜底，无需额外处理。
+                        }
+
                         val result = target.insert(targetTableName, SQLiteDatabase.CONFLICT_REPLACE, values)
                         if (result == -1L) {
                             LogUtil.e(TAG, "[$targetTableName] 插入失败")

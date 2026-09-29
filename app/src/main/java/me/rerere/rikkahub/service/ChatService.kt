@@ -578,15 +578,28 @@ class ChatService(
                     // 应用锁定触发：用户打开了被锁定的应用
                     val appName = data["app_name"]?.jsonPrimitive?.contentOrNull ?: "未知应用"
                     val unlockCondition = data["unlock_condition"]?.jsonPrimitive?.contentOrNull
-                    val startTime = data["start_time"]?.jsonPrimitive?.contentOrNull
-                    val endTime = data["end_time"]?.jsonPrimitive?.contentOrNull
+                    // 解析 time_periods：数组（多时段）或单个对象（单时段）；
+                    // 兼容 AI 直接传 start/end 顶层字段（理论上 EvoliaMonitorService 已经归一，
+                    // 这里仍兜底处理一次，避免任何路径漏改导致消息文案错乱）
+                    val timePeriodsElement = data["time_periods"]
+                    val periodsList: List<JsonObject> = when {
+                        timePeriodsElement is JsonArray -> timePeriodsElement.mapNotNull { it as? JsonObject }
+                        timePeriodsElement is JsonObject -> listOf(timePeriodsElement)
+                        else -> emptyList()
+                    }
                     append("类型: 应用锁定触发\n")
                     append("应用名称: $appName\n")
                     // 拼接约定内容：优先使用解锁条件，没有则用时间窗口
                     val agreement = if (!unlockCondition.isNullOrBlank()) {
                         "你和user约定了要等条件「$unlockCondition」达成后才能解锁。"
-                    } else if (!startTime.isNullOrBlank() && !endTime.isNullOrBlank()) {
-                        "你和user约定了在 $startTime 到 $endTime 之间不能打开 $appName。"
+                    } else if (periodsList.isNotEmpty()) {
+                        // 多时段拼接：13:00 到 14:00、20:00 到 23:00
+                        val periodsDesc = periodsList.joinToString("、") { p ->
+                            val s = (p["start"] as? JsonPrimitive)?.contentOrNull ?: ""
+                            val e = (p["end"] as? JsonPrimitive)?.contentOrNull ?: ""
+                            "$s 到 $e"
+                        }
+                        "你和user约定了在 $periodsDesc 之间不能打开 $appName。"
                     } else {
                         "你和user约定了该应用被锁定，暂未记录具体解锁条件。"
                     }

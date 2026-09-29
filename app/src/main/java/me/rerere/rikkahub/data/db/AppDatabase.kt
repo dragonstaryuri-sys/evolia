@@ -41,7 +41,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ProfileHistoryEntity::class,
         AppLockEntity::class
     ],
-    version = 35,
+    version = 36,
     exportSchema = true
 )
 @TypeConverters(
@@ -323,6 +323,84 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "ALTER TABLE `app_locks` ADD COLUMN `assistant_id` TEXT NOT NULL DEFAULT ''"
                 )
+            }
+        }
+
+        /**
+         * 35 → 36：app_locks 表结构重构。
+         *
+         * 1. 删除 start_time / end_time 两列，合并为 valid_time（TEXT，JSON 数组字符串）
+         *    格式与 agent_monitor_tasks.conditions.time_periods 一致，支持多时段。
+         * 2. 新增 pause_until（INTEGER NOT NULL DEFAULT 0），支持 APP_LOCK_PAUSE 临时暂停功能。
+         *
+         * SQLite ALTER TABLE 不支持 DROP COLUMN（在 Room 使用的 SQLite 版本上），
+         * 且 Room schema 校验要求 entity 字段与表列一致，因此采用重建表策略
+         * （参考 MIGRATION_33_34 的写法）。
+         *
+         * 历史数据迁移：若 start_time 和 end_time 都非空，拼成
+         * `[{"start":"<start_time>","end":"<end_time>"}]` 写入 valid_time；否则置 NULL。
+         */
+        val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 35->36 迁移：app_locks 表 start_time/end_time 合并为 valid_time，新增 pause_until")
+
+                // 1. 创建新表（package_name 主键 + valid_time + pause_until + 其他原字段）
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `app_locks_new` (
+                        `package_name` TEXT NOT NULL PRIMARY KEY,
+                        `app_name` TEXT,
+                        `valid_time` TEXT,
+                        `unlock_condition` TEXT,
+                        `overlay_image_path` TEXT,
+                        `emoji` TEXT,
+                        `prompt_message` TEXT NOT NULL,
+                        `assistant_id` TEXT NOT NULL DEFAULT '',
+                        `pause_until` INTEGER NOT NULL DEFAULT 0,
+                        `created_at` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+
+                // 2. 历史数据迁移：把 start_time + end_time 拼成 JSON 数组写入 valid_time
+                db.execSQL(
+                    """
+                    INSERT INTO `app_locks_new` (
+                        `package_name`, `app_name`, `valid_time`, `unlock_condition`,
+                        `overlay_image_path`, `emoji`, `prompt_message`,
+                        `assistant_id`, `pause_until`, `created_at`
+                    )
+                    SELECT
+                        `package_name`,
+                        `app_name`,
+                        CASE
+                            WHEN `start_time` IS NOT NULL AND `end_time` IS NOT NULL
+                                 AND `start_time` != '' AND `end_time` != ''
+                                THEN '[{"start":"' || `start_time` || '","end":"' || `end_time` || '"}]'
+                            ELSE NULL
+                        END AS `valid_time`,
+                        `unlock_condition`,
+                        `overlay_image_path`,
+                        `emoji`,
+                        `prompt_message`,
+                        COALESCE(`assistant_id`, ''),
+                        0 AS `pause_until`,
+                        `created_at`
+                    FROM `app_locks`
+                    """.trimIndent()
+                )
+
+                // 3. 删除旧表，重命名新表
+                db.execSQL("DROP TABLE IF EXISTS `app_locks`")
+                db.execSQL("ALTER TABLE `app_locks_new` RENAME TO `app_locks`")
+
+                // 自查：打印迁移后的数据规模
+                val cursor = db.query("SELECT COUNT(*) AS total FROM `app_locks`")
+                if (cursor.moveToFirst()) {
+                    val total = cursor.getInt(cursor.getColumnIndexOrThrow("total"))
+                    Log.i(TAG, "35->36 迁移完成：app_locks 表共 $total 条记录已迁移到 valid_time + pause_until 结构")
+                }
+                cursor.close()
             }
         }
 
