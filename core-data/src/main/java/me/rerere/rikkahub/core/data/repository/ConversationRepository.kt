@@ -149,11 +149,12 @@ class ConversationRepository(
     // 用途：日记生成时避免把历史所有会话全量加载到内存
     fun getConversationsOfAssistantAnyModeAfter(
         assistantId: Uuid,
-        startTimeThreshold: Long
+        startTimeThreshold: Long,
+        loadAllMessages: Boolean = false
     ): Flow<List<Conversation>> {
         return conversationDAO
             .getConversationsOfAssistantAnyModeAfter(assistantId.toString(), startTimeThreshold)
-            .map { list -> fetchFullConversations(list) }
+            .map { list -> fetchFullConversations(list, loadAllMessages = loadAllMessages) }
     }
 
 
@@ -219,13 +220,23 @@ class ConversationRepository(
 
     private suspend fun fetchFullConversations(
         entities: List<ConversationEntity>,
-        targetMessageId: String? = null // ✨ 新增参数
+        targetMessageId: String? = null, // ✨ 新增参数
+        loadAllMessages: Boolean = false // 日记生成等场景：加载给定会话的全部节点消息，不做全局 200 条深度限制
     ): List<Conversation> = withContext(Dispatchers.IO) {
         if (entities.isEmpty()) return@withContext emptyList()
         // 1. 确定我们要加载哪个智能体
         val firstAssistantId = entities.first().assistantId
-        // 2. ✨ 核心变更：计算出“全局最新 N 条”或“包含目标消息”的消息 ID 集合
-        val nodeIdsToLoad = if (!targetMessageId.isNullOrBlank()) {
+        // 4. 获取所有涉及的节点占位符（用于 UI 排序和分页定位）
+        //     提前到 nodeIdsToLoad 之前，方便 loadAllMessages 分支直接取过滤后会话的全部节点 ID
+        val convIds = entities.map { it.id }
+        val allNodesRaw = convIds.chunked(900).flatMap { batch ->
+            chatMessageDAO.getNodesByConversationIds(batch)
+        }.groupBy { it.conversationId }
+        // 2. 计算出“待加载消息内容的节点 ID 集合”
+        val nodeIdsToLoad = if (loadAllMessages) {
+            // 日记生成等场景：加载给定会话的全部节点消息，不做全局深度限制
+            allNodesRaw.values.flatten().map { it.id }
+        } else if (!targetMessageId.isNullOrBlank()) {
             // 如果是搜索跳转，查出该消息的深度，确保加载范围能覆盖到它
             val depth = chatMessageDAO.getMessageGlobalDepth(firstAssistantId, targetMessageId)
             chatMessageDAO.getLatestNodeIdsOfAssistant(firstAssistantId, (depth + 20).coerceAtLeast(100))
@@ -242,11 +253,6 @@ class ConversationRepository(
                 chatMessageDAO.getMessagesByNodeIds(batch)
             }.groupBy { it.nodeId }
         } else emptyMap()
-        // 4. 获取所有涉及的节点占位符（用于 UI 排序和分页定位）
-        val convIds = entities.map { it.id }
-        val allNodesRaw = convIds.chunked(900).flatMap { batch ->
-            chatMessageDAO.getNodesByConversationIds(batch)
-        }.groupBy { it.conversationId }
         // 5. 组装数据
         entities.map { entity ->
             val nodesFromDb = allNodesRaw[entity.id] ?: emptyList()

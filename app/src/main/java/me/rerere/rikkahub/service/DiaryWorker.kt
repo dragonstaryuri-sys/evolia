@@ -172,7 +172,8 @@ class DiaryWorker(
             //    避免把该智能体历史所有会话全量加载进内存
             val conversations = conversationRepo.getConversationsOfAssistantAnyModeAfter(
                 assistant.id,
-                startTimeThreshold
+                startTimeThreshold,
+                loadAllMessages = true
             ).first()
             // —— Stage 2（内存层精筛）：在剩余会话里按消息 createdAt 过滤
             //    处理"会话跨越起点"的情况（旧会话在起点之后又收到新消息）
