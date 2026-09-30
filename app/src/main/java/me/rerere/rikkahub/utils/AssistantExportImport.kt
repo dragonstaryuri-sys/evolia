@@ -333,13 +333,20 @@ object AssistantExportImport : KoinComponent {
             Log.i(TAG, "finalizeEvoliaImport: restored L3 core=$coreCount, L2 episodic=$episodicCount")
 
             // Restore L1 Segments — 不带 embedding，由用户手动触发嵌入
+            // 注意：chat_segments 表有 (conversation_id, start_time) 的唯一索引，insertSegment 使用 REPLACE 策略。
+            // 若直接复用导出时的原始 conversationId，会与原智能体已存在的片段冲突，导致原智能体的片段被覆盖删除。
+            // 因此将原始 conversationId 映射为新的 UUID，同一原始会话的片段保持映射一致（仍归组在一起）。
+            val conversationIdMap = mutableMapOf<String, String>()
             var segmentCount = 0
             export.segments.forEach { seg ->
+                val newConversationId = conversationIdMap.getOrPut(seg.conversationId) {
+                    Uuid.random().toString()
+                }
                 runCatching {
                     chatSegmentDAO.insertSegment(
                         ChatSegmentEntity(
                             assistantId = newAssistantId,
-                            conversationId = seg.conversationId,
+                            conversationId = newConversationId,
                             content = seg.content,
                             keywords = seg.keywords,
                             startMessageIndex = -1,
