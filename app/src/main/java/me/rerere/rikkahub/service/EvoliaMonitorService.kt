@@ -179,27 +179,35 @@ class EvoliaMonitorService : AccessibilityService() {
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
                 ?: return null
             val now = System.currentTimeMillis()
+            // UsageEvents 实现了 Closeable (API 28+)，必须手动 close() 释放 native 资源，
+            // 否则每 2 秒轮询一次会累积 native 句柄泄漏
             val events = usageStatsManager.queryEvents(now - 60_000, now)
-            var lastForegroundPackage: String? = null
-            var lastForegroundTime = 0L
-            val event = UsageEvents.Event()
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                val type = event.eventType
-                // MOVE_TO_FOREGROUND 在 API 29+ 被 ACTIVITY_RESUMED 取代，但值相同
-                if (type == UsageEvents.Event.MOVE_TO_FOREGROUND
-                    || type == UsageEvents.Event.ACTIVITY_RESUMED
-                ) {
-                    // 取时间戳最大的（即最近一次进入前台）
-                    if (event.timeStamp > lastForegroundTime) {
-                        lastForegroundTime = event.timeStamp
-                        lastForegroundPackage = event.packageName?.toString()
+            try {
+                var lastForegroundPackage: String? = null
+                var lastForegroundTime = 0L
+                val event = UsageEvents.Event()
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+                    val type = event.eventType
+                    // MOVE_TO_FOREGROUND 在 API 29+ 被 ACTIVITY_RESUMED 取代，但值相同
+                    if (type == UsageEvents.Event.MOVE_TO_FOREGROUND
+                        || type == UsageEvents.Event.ACTIVITY_RESUMED
+                    ) {
+                        // 取时间戳最大的（即最近一次进入前台）
+                        if (event.timeStamp > lastForegroundTime) {
+                            lastForegroundTime = event.timeStamp
+                            lastForegroundPackage = event.packageName?.toString()
+                        }
                     }
                 }
+                // 注：原本有 15 秒时效性校验，但用户停留在同一应用超过 15 秒时会导致轮询失效，已移除
+                // 60 秒窗口内的最后一个 MOVE_TO_FOREGROUND 事件即为当前前台应用，无需额外时效性校验
+                lastForegroundPackage
+            } finally {
+                // UsageEvents 实现了 Closeable (API 28+)，但 close() 在 SDK stub 中非 public
+                // 通过 Closeable 接口调用，确保 native 资源被释放
+                runCatching { (events as java.io.Closeable).close() }
             }
-            // 注：原本有 15 秒时效性校验，但用户停留在同一应用超过 15 秒时会导致轮询失效，已移除
-            // 60 秒窗口内的最后一个 MOVE_TO_FOREGROUND 事件即为当前前台应用，无需额外时效性校验
-            lastForegroundPackage
         } catch (e: Exception) {
             Log.e(tag, "[AppLock] getForegroundPackageByUsageStats failed", e)
             null
@@ -218,6 +226,7 @@ class EvoliaMonitorService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_CLICKED -> {
                 val source = event.source
                 val text = source?.text?.toString() ?: source?.contentDescription?.toString() ?: ""
+                source?.recycle()
                 if (text.isNotBlank()) recordAction("点击了: $text")
             }
 
@@ -842,14 +851,20 @@ class EvoliaMonitorService : AccessibilityService() {
         stack.addLast(rootNode to 0)
         while (stack.isNotEmpty()) {
             val (node, depth) = stack.removeLast()
-            if (!node.isVisibleToUser) continue
-            val text = node.text?.toString() ?: node.contentDescription?.toString()
-            if (!text.isNullOrBlank() && text.length > 1) texts.add(text.trim())
-            if (depth >= maxDepth) continue
-            val childCount = node.childCount
-            for (i in childCount - 1 downTo 0) {
-                val child = node.getChild(i) ?: continue
-                stack.addLast(child to depth + 1)
+            try {
+                if (!node.isVisibleToUser) continue
+                val text = node.text?.toString() ?: node.contentDescription?.toString()
+                if (!text.isNullOrBlank() && text.length > 1) texts.add(text.trim())
+                if (depth >= maxDepth) continue
+                val childCount = node.childCount
+                for (i in childCount - 1 downTo 0) {
+                    val child = node.getChild(i) ?: continue
+                    stack.addLast(child to depth + 1)
+                }
+            } finally {
+                // 必须 recycle 所有 AccessibilityNodeInfo（包括 rootNode 和所有 child），
+                // 否则会耗尽系统节点池导致内存泄漏（AccessibilityNodeInfo 持有 native 资源）
+                node.recycle()
             }
         }
         return texts.distinct().take(30).joinToString(" | ")
