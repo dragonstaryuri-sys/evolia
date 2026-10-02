@@ -337,8 +337,17 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
                 val shouldSlice = (pauseTriggered || maxLenTriggered) && canSlice && slicePcm.isNotEmpty()
                 if (shouldSlice) {
                     // 切片快照
-                    val sliceSamples = slicePcm.toFloatArray()
+                    val rawSamples = slicePcm.toFloatArray()
                     slicePcm.clear()
+                    // ===== 前导静音裁剪 =====
+                    // 用户长时间静音后开口时，slicePcm 累积了大段静音，整段发给 ASR 会导致识别很慢。
+                    // 裁剪掉开头的连续静音（rms < 0.003），只保留语音前 6 帧（~192ms）padding。
+                    // 整段都是静音时返回 null → 跳过本次上传，避免无意义的 API 调用。
+                    val sliceSamples = trimLeadingSilence(rawSamples)
+                    if (sliceSamples == null) {
+                        Log.d(TAG, "Slice skipped: all silence (rms < $LEADING_SILENCE_RMS_THRESHOLD)")
+                        continue
+                    }
                     sliceInFlight.set(true)
                     sliceInFlightStartMs = now
                     // 当前已识别文本快照（作为 prompt 传给 Whisper）
@@ -1022,6 +1031,43 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         buf[offset + 1] = ((value shr 8) and 0xFF).toByte()
     }
 
+    /**
+     * 裁剪前导静音：扫描切片开头，找到第一段 RMS > threshold 的帧，
+     * 保留其前 paddingFrames 帧作为语音前导（防止切掉开口第一个字），
+     * 去掉更前面的连续静音。
+     *
+     * 用途：用户长时间静音后开口时，slicePcm 累积了大段静音，
+     * 整段发给 ASR 会导致识别很慢。裁剪后只发"短静音 + 语音"。
+     *
+     * @return 裁剪后的 samples；如果整段都是静音返回 null（调用方应跳过上传）
+     */
+    private fun trimLeadingSilence(
+        samples: FloatArray,
+        rmsThreshold: Float = LEADING_SILENCE_RMS_THRESHOLD,
+        paddingFrames: Int = LEADING_SILENCE_PADDING_FRAMES
+    ): FloatArray? {
+        val frameCount = samples.size / WINDOW_SIZE
+        if (frameCount == 0) return samples
+        var firstSpeechFrame = -1
+        for (i in 0 until frameCount) {
+            val start = i * WINDOW_SIZE
+            val end = minOf(start + WINDOW_SIZE, samples.size)
+            var sumSq = 0.0
+            for (j in start until end) sumSq += (samples[j] * samples[j]).toDouble()
+            val rms = kotlin.math.sqrt(sumSq / (end - start)).toFloat()
+            if (rms > rmsThreshold) {
+                firstSpeechFrame = i
+                break
+            }
+        }
+        // 整段都是静音
+        if (firstSpeechFrame == -1) return null
+        // 保留 padding 帧作为语音前导
+        val startFrame = (firstSpeechFrame - paddingFrames).coerceAtLeast(0)
+        val startSample = startFrame * WINDOW_SIZE
+        return samples.copyOfRange(startSample, samples.size)
+    }
+
     companion object {
         private const val SAMPLE_RATE = 16000
         private const val WINDOW_SIZE = 512 // Silero VAD 固定 512 样本（≈32ms @ 16k）
@@ -1068,5 +1114,11 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
         private const val SLICE_TRANSCRIBE_TIMEOUT_MS = 15_000L
         // Final 转录超时：Final 段 API 调用超时阈值（比切片宽松，Final 段更长）
         private const val FINAL_TRANSCRIBE_TIMEOUT_MS = 20_000L
+        // ===== 前导静音裁剪 =====
+        // 用户长时间静音后开口时，slicePcm 里会累积大段静音，整段发给 ASR 会导致识别很慢。
+        // 切片上传前扫描前导帧，把 RMS 低于此阈值的连续静音裁掉，只保留语音前一小段 padding。
+        private const val LEADING_SILENCE_RMS_THRESHOLD = 0.003F
+        // 语音前保留的 padding 帧数（每帧 32ms，6 帧≈192ms），防止切掉用户开口的第一个字
+        private const val LEADING_SILENCE_PADDING_FRAMES = 6
     }
 }

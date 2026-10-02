@@ -346,7 +346,14 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
                     if (segment.samples.isEmpty() && accumulatedPcm.isEmpty()) continue
 
                     // 优先使用 VAD segment 的音频（权威来源），避免 RMS 能量门控导致丢帧
-                    val finalSamples = if (segment.samples.isNotEmpty()) segment.samples else accumulatedPcm.toFloatArray()
+                    // VAD segment 已是纯语音段（无静音），无需裁剪；
+                    // fallback 到 accumulatedPcm 时裁剪前导静音，避免大段静音拖慢推理
+                    val rawSamples = if (segment.samples.isNotEmpty()) segment.samples else accumulatedPcm.toFloatArray()
+                    val finalSamples = if (segment.samples.isNotEmpty()) {
+                        rawSamples
+                    } else {
+                        trimLeadingSilence(rawSamples) ?: rawSamples
+                    }
                     accumulatedPcm.clear()
 
                     val finalMs = finalSamples.size * 1000 / SAMPLE_RATE
@@ -460,6 +467,35 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
         } finally {
             stream.release()
         }
+    }
+
+    /**
+     * 裁剪前导静音（与 OnlineASRProvider 逻辑一致，阈值适配 LocalASR 的低 RMS）。
+     * 仅在 VAD segment 为空、fallback 到 accumulatedPcm 时调用。
+     */
+    private fun trimLeadingSilence(
+        samples: FloatArray,
+        rmsThreshold: Float = LEADING_SILENCE_RMS_THRESHOLD,
+        paddingFrames: Int = LEADING_SILENCE_PADDING_FRAMES
+    ): FloatArray? {
+        val frameCount = samples.size / WINDOW_SIZE
+        if (frameCount == 0) return samples
+        var firstSpeechFrame = -1
+        for (i in 0 until frameCount) {
+            val start = i * WINDOW_SIZE
+            val end = minOf(start + WINDOW_SIZE, samples.size)
+            var sumSq = 0.0
+            for (j in start until end) sumSq += (samples[j] * samples[j]).toDouble()
+            val rms = kotlin.math.sqrt(sumSq / (end - start)).toFloat()
+            if (rms > rmsThreshold) {
+                firstSpeechFrame = i
+                break
+            }
+        }
+        if (firstSpeechFrame == -1) return null
+        val startFrame = (firstSpeechFrame - paddingFrames).coerceAtLeast(0)
+        val startSample = startFrame * WINDOW_SIZE
+        return samples.copyOfRange(startSample, samples.size)
     }
 
     /**
@@ -643,6 +679,13 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
 
         // Final 后静默期：3s 内忽略 RMS 能量，防止噪声触发新识别（与 OnlineASR 对齐）
         private const val FINAL_GRACE_PERIOD_MS = 3000L
+
+        // ===== 前导静音裁剪（仅 fallback 到 accumulatedPcm 时生效）=====
+        // VAD segment 已是过滤后的纯语音段，无需裁剪；
+        // 但 VAD 失误 fallback 到 accumulatedPcm 时，可能含大段前导静音，裁剪后推理更快。
+        // LocalASR 用 VOICE_COMMUNICATION 源，RMS 偏低，阈值用 0.001（与 onset 一致）。
+        private const val LEADING_SILENCE_RMS_THRESHOLD = 0.001F
+        private const val LEADING_SILENCE_PADDING_FRAMES = 6
 
         // 模型文件路径常量（与 SenseVoiceModelManager 保持一致）
         const val MODEL_DIR = "sensevoice"
