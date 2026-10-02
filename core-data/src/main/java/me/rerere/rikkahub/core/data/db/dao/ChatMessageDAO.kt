@@ -64,6 +64,26 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_messages WHERE conversation_id = :conversationId AND created_at >= :startTime AND created_at <= :endTime AND is_deleted = 0 ORDER BY created_at ASC")
     suspend fun getMessagesByTimeRange(conversationId: String, startTime: Long, endTime: Long): List<ChatMessageEntity>
 
+    /**
+     * 按 [startTime, endTime] 闭区间拉取指定会话的消息（按创建时间升序），
+     * 仅取每个节点的当前选中版本（JOIN 节点表按 m.order_index = n.select_index 过滤）。
+     *
+     * 用于手动重新生成片段记忆 / 查看 segment 原始消息，避免同一节点下多个版本
+     * （刷新追加版本场景）污染 segment 摘要，与 [getMessagesForSegmentSummary] 的
+     * 版本过滤策略保持一致。
+     */
+    @Query("""
+        SELECT m.* FROM chat_messages m
+        INNER JOIN chat_message_nodes n ON m.node_id = n.id
+        WHERE m.conversation_id = :conversationId
+          AND m.is_deleted = 0
+          AND m.order_index = n.select_index
+          AND m.created_at >= :startTime
+          AND m.created_at <= :endTime
+        ORDER BY m.created_at ASC
+    """)
+    suspend fun getMessagesByTimeRangeForSegment(conversationId: String, startTime: Long, endTime: Long): List<ChatMessageEntity>
+
     @Query("SELECT n.order_index FROM chat_message_nodes n JOIN chat_messages m ON n.id = m.node_id WHERE m.id = :messageId")
     suspend fun getNodeOrderIndexByMessageId(messageId: String): Int?
 

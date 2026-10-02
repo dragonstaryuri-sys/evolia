@@ -357,8 +357,13 @@ class GenerationHandler(
                                                 put("error", JsonPrimitive("Segment not found or access denied."))
                                             }
                                         }
-                                        val messageEntities = conversationRepo.chatMessageDAO.getMessagesByTimeRange(
-                                            conversationId = chatSegment.conversationId,
+                                        // 【版本污染修复】改用 getMessagesByTimeRangeForSegment，
+                                        // JOIN 节点表按 order_index = select_index 只取当前选中版本，
+                                        // 避免同一节点多个版本污染 segment 详情展示，与
+                                        // AssistantDetailVM.regenerateSegment 及 ChatService 自动
+                                        // summarize 的版本过滤策略保持一致。
+                                        val messageEntities = conversationRepo.getMessagesByTimeRangeForSegment(
+                                            convId = chatSegment.conversationId,
                                             startTime = chatSegment.startTime,
                                             endTime = chatSegment.endTime
                                         )

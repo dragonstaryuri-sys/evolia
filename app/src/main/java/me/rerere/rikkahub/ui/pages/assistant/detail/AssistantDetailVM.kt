@@ -1063,7 +1063,11 @@ class AssistantDetailVM(
                     return@launch
                 }
 
-                val messageEntities = conversationRepository.getMessagesByTimeRange(
+                // 【版本污染修复】改用 getMessagesByTimeRangeForSegment，JOIN 节点表按
+                // order_index = select_index 只取当前选中版本，避免同一节点多个版本
+                // （刷新追加版本场景）污染 segment 摘要，与 ChatService 自动 summarize
+                // 的版本过滤策略保持一致。
+                val messageEntities = conversationRepository.getMessagesByTimeRangeForSegment(
                     convId = convId,
                     startTime = segment.startTime,
                     endTime = segment.endTime

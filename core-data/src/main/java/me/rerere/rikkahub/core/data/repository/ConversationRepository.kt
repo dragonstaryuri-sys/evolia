@@ -1219,6 +1219,21 @@ class ConversationRepository(
     }
 
     /**
+     * 按 [startTime, endTime] 闭区间拉取指定会话的消息（按创建时间升序），
+     * 仅取每个节点的当前选中版本（DAO 层 JOIN 节点表按 order_index = select_index 过滤）。
+     *
+     * 用于手动重新生成片段记忆 / 查看 segment 原始消息，避免同一节点下多个版本
+     * 污染 segment 摘要，与 [getMessagesForSegmentSummary] 的版本过滤策略保持一致。
+     */
+    suspend fun getMessagesByTimeRangeForSegment(
+        convId: String,
+        startTime: Long,
+        endTime: Long
+    ): List<ChatMessageEntity> {
+        return chatMessageDAO.getMessagesByTimeRangeForSegment(convId, startTime, endTime)
+    }
+
+    /**
      * ✨ 强力校准：重新计算消息节点的创建时间。
      * 自动修正那些被误更新为当前时间的节点，并输出详细受影响信息。
      * @param conversationId 如果传入，则仅校准指定会话；否则跑全局校准。
