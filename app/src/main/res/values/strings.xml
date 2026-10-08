@@ -1487,6 +1487,12 @@
   <string name="setting_provider_zhipu_register_hint">Don\'t have an account? Click here to register for Zhipu AI (20 million Tokens gifted)</string>
   <string name="tts_filter_rules_filter_emojis_title">Filter Emojis</string>
   <string name="tts_filter_rules_filter_emojis_desc">When enabled, emojis (e.g. 🤯) will not be read out by TTS.</string>
+  <string name="tts_voice_synthesis_service_title">Voice Synthesis Service</string>
+  <string name="tts_voice_synthesis_service_desc">When disabled, AI will not send voice messages in WeChat mode</string>
+  <string name="tts_mute_time_title">Nighttime Mute Period</string>
+  <string name="tts_mute_time_desc">During the set period, AI reading will be forced to stay silent.</string>
+  <string name="tts_mute_time_start">Start Time</string>
+  <string name="tts_mute_time_end">End Time</string>
   <string name="syncing_context_animation_hint">Consolidating...</string>
   <string name="backup_permission_notification">Send notifications (for device control tools)</string>
   <string name="backup_permission_location_coarse">Coarse location (for the {{location}} variable)</string>

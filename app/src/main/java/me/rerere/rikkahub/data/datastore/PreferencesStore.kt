@@ -658,6 +658,7 @@ data class DisplaySetting(
     val showContextStacks: Boolean = true,
     val hasShownProviderGuide: Boolean = false,
     val wechatMode: Boolean = false,
+    val aiVoiceMessageEnabled: Boolean = true,  // 微信模式下 AI 主动发送语音消息
     val muteTimeStart: String? = null,
     val muteTimeEnd: String? = null,
     val muteTimeEnabled: Boolean = false

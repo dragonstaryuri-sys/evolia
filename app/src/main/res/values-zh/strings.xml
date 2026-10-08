@@ -1471,6 +1471,12 @@
   <string name="detail_memory_threshold">归档触发阈值</string>
   <string name="tts_filter_rules_filter_emojis_title">过滤表情符号</string>
   <string name="tts_filter_rules_filter_emojis_desc">开启后，TTS 将不再念出文本中的表情符号（如 🤯）</string>
+  <string name="tts_voice_synthesis_service_title">语音合成服务</string>
+  <string name="tts_voice_synthesis_service_desc">关闭后微信模式下ai将不会发送语音消息</string>
+  <string name="tts_mute_time_title">夜间静音时段</string>
+  <string name="tts_mute_time_desc">在设定时段内，ai朗读将强制保持静默。</string>
+  <string name="tts_mute_time_start">开始时间</string>
+  <string name="tts_mute_time_end">结束时间</string>
   <string name="syncing_context_animation_hint">会话归档中~</string>
   <string name="backup_permission_notification">发送通知</string>
   <string name="backup_permission_location_coarse">模糊定位 (用于 {{location}} 变量)</string>

@@ -610,6 +610,36 @@ private fun TtsTextFilterSettingsDialog(
                 }
             }
 
+            // 语音合成服务开关（位于文本过滤规则上方）
+            // 关闭后微信模式下 AI 将不会主动发送语音消息（不执行 TTS 合成与随机语音转换）
+            androidx.compose.material3.Card(
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                shape = AppShapes.CardLarge
+            ) {
+                androidx.compose.material3.ListItem(
+                    colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
+                    headlineContent = {
+                        Text(stringResource(R.string.tts_voice_synthesis_service_title))
+                    },
+                    supportingContent = {
+                        Text(
+                            text = stringResource(R.string.tts_voice_synthesis_service_desc),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    trailingContent = {
+                        HapticSwitch(
+                            checked = displaySetting.aiVoiceMessageEnabled,
+                            onCheckedChange = { enabled ->
+                                onUpdateSettings(displaySetting.copy(aiVoiceMessageEnabled = enabled))
+                            }
+                        )
+                    }
+                )
+            }
+
             // Global Emoji Filter Switch
             androidx.compose.material3.Card(
                 colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -691,7 +721,7 @@ private fun TtsTextFilterSettingsDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("夜间静音时段", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.tts_mute_time_title), style = MaterialTheme.typography.titleSmall)
                         // 使用项目自带的 HapticSwitch
                         me.rerere.rikkahub.ui.components.ui.HapticSwitch(
                             checked = displaySetting.muteTimeEnabled,
@@ -702,7 +732,7 @@ private fun TtsTextFilterSettingsDialog(
                     }
 
                     Text(
-                        text = "在设定时段内，ai朗读将强制保持静默。",
+                        text = stringResource(R.string.tts_mute_time_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -738,7 +768,7 @@ private fun TtsTextFilterSettingsDialog(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "开始时间",
+                                            text = stringResource(R.string.tts_mute_time_start),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -782,7 +812,7 @@ private fun TtsTextFilterSettingsDialog(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "结束时间",
+                                            text = stringResource(R.string.tts_mute_time_end),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )

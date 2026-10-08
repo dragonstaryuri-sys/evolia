@@ -1319,6 +1319,7 @@ class ChatService(
                     if (hasExternalTools) _errorFlow.emit(IllegalStateException(context.getString(R.string.tools_warning)))
                 }
                 val wechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
+                val wechatVoiceEnabled = wechatMode && settings.getEffectiveDisplaySetting(assistant).aiVoiceMessageEnabled
 
                 checkInvalidMessages(conversationId)
                 currentConversation = getConversationFlow(conversationId).value
@@ -1684,7 +1685,10 @@ class ChatService(
                                             if (segment.text.isBlank()) continue
 
                                             // 标记强制转语音；否则按概率独立判定
-                                            val toVoice = if (segment.forcedVoice) {
+                                            // 当语音合成服务关闭时，强制 toVoice=false，不执行 TTS
+                                            val toVoice = if (!wechatVoiceEnabled) {
+                                                false
+                                            } else if (segment.forcedVoice) {
                                                 true
                                             } else {
                                                 val voiceRoll = Random.nextFloat()
@@ -1748,13 +1752,16 @@ class ChatService(
                             val delayTime = (wechatLastSentenceLength * 200L + 100L).coerceIn(500L, 3000L)
                             delay(delayTime)
 
+                            // 语音合成服务关闭时跳过 TTS 合成，直接以文本存储
                             val ttsSetting = settings.getSelectedTTSProvider()
-                            val response = ttsSetting?.let { synthesizeTextToResponse(fullReplyText, it) }
-                            val saved = response?.let { resp ->
-                                if (resp.audioData.isNotEmpty()) {
-                                    saveVoiceMessageAudio(resp.audioData, resp.format, resp.sampleRate)
-                                } else null
-                            }
+                            val saved = if (wechatVoiceEnabled) {
+                                val response = ttsSetting?.let { synthesizeTextToResponse(fullReplyText, it) }
+                                response?.let { resp ->
+                                    if (resp.audioData.isNotEmpty()) {
+                                        saveVoiceMessageAudio(resp.audioData, resp.format, resp.sampleRate)
+                                    } else null
+                                }
+                            } else null
 
                             if (saved != null) {
                                 val (fileUri, durationMs) = saved
@@ -1777,8 +1784,12 @@ class ChatService(
                                 wechatStoredSentenceCount++
                                 Log.d(TAG, "WeChat voice full reply: ${fullReplyText.take(30)}... duration=${durationMs}ms")
                             } else {
-                                // TTS 失败回退文本
-                                Log.w(TAG, "WeChat voice TTS failed (full reply), fallback to text")
+                                // TTS 失败回退文本 / 语音合成服务已关闭
+                                if (!wechatVoiceEnabled) {
+                                    Log.d(TAG, "WeChat voice disabled, store full reply as text")
+                                } else {
+                                    Log.w(TAG, "WeChat voice TTS failed (full reply), fallback to text")
+                                }
                                 val parts = (wechatFirstNodeNonTextParts ?: emptyList()) +
                                     UIMessagePart.Text(fullReplyText)
                                 val newMsg = UIMessage(role = MessageRole.ASSISTANT, parts = parts)
@@ -1807,7 +1818,9 @@ class ChatService(
                             for (segment in segments) {
                                 if (segment.text.isBlank()) continue
 
-                                val toVoice = if (segment.forcedVoice) {
+                                val toVoice = if (!wechatVoiceEnabled) {
+                                    false
+                                } else if (segment.forcedVoice) {
                                     true
                                 } else {
                                     val voiceRoll = Random.nextFloat()
