@@ -1549,7 +1549,8 @@ class ChatService(
                             currentConversation = finalUpdated
                             finalUpdated
                         }
-                        if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) {
+                        // 微信模式：改为逐分句通知（见 storeWechatSentenceNode / 标记触发存储点），此处不再统一发送
+                        if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration && !wechatMode) {
                             sendGenerationDoneNotification(conversationId)
                         }
                     }.collect { chunk ->
@@ -1781,6 +1782,7 @@ class ChatService(
                                 )
                                 updateConversation(conversationId, normalizeNodes = true) { currentConversation }
                                 mutateConversationAndSave(conversationId) { current -> current }
+                                sendWechatSentenceNotification(conversationId)
                                 wechatStoredSentenceCount++
                                 Log.d(TAG, "WeChat voice full reply: ${fullReplyText.take(30)}... duration=${durationMs}ms")
                             } else {
@@ -1799,6 +1801,7 @@ class ChatService(
                                 )
                                 updateConversation(conversationId, normalizeNodes = true) { currentConversation }
                                 mutateConversationAndSave(conversationId) { current -> current }
+                                sendWechatSentenceNotification(conversationId)
                                 wechatStoredSentenceCount++
                             }
                         }
@@ -2209,6 +2212,7 @@ class ChatService(
         )
         updateConversation(conversationId, normalizeNodes = true) { updated }
         mutateConversationAndSave(conversationId) { it }
+        sendWechatSentenceNotification(conversationId)
         return updated
     }
 
@@ -2835,6 +2839,17 @@ class ChatService(
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             NotificationManagerCompat.from(context).notify(1, notification.build())
+        }
+    }
+
+    /**
+     * 微信模式：单个分句（语音条/文字句）存储完成后发送通知。
+     * 复用 sendGenerationDoneNotification，每次取会话最后一条消息作为正文。
+     */
+    private fun sendWechatSentenceNotification(conversationId: Uuid) {
+        val settings = settingsStore.settingsFlow.value
+        if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) {
+            sendGenerationDoneNotification(conversationId)
         }
     }
 
