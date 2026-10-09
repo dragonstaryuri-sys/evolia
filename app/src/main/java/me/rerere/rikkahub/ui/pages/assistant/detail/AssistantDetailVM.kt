@@ -281,6 +281,10 @@ class AssistantDetailVM(
     private val _isOptimizing = MutableStateFlow(false)
     val isOptimizing = _isOptimizing.asStateFlow()
 
+    // 记忆优化进度：current=当前处理的分组序号(从1开始)；total=总分组数；为 null 表示未在优化或进入后续 embedding 阶段
+    private val _optimizeProgress = MutableStateFlow<OptimizeProgress?>(null)
+    val optimizeProgress = _optimizeProgress.asStateFlow()
+
     private val _isConsolidating = MutableStateFlow(false)
     val isConsolidating = _isConsolidating.asStateFlow()
 
@@ -695,7 +699,10 @@ class AssistantDetailVM(
 
                 if (coreMemories.isNotEmpty()) {
                     val coreGroups = findSimilarGroups(coreMemories, true)
-                    for (group in coreGroups) {
+                    val totalGroups = coreGroups.size
+                    _optimizeProgress.value = OptimizeProgress(0, totalGroups)
+                    for ((index, group) in coreGroups.withIndex()) {
+                        _optimizeProgress.value = OptimizeProgress(index + 1, totalGroups)
                         val result = processOptimizationGroup(
                             handler as me.rerere.ai.provider.Provider<me.rerere.ai.provider.ProviderSetting>,
                             providerSetting,
@@ -707,6 +714,8 @@ class AssistantDetailVM(
                         totalDeleted += result.deleted
                         totalAdded += result.added
                     }
+                    // 进入 embedding 重新生成阶段，交由 embeddingProgress 接管进度展示
+                    _optimizeProgress.value = null
                 }
 
                 setSnackbarMessage(
@@ -741,6 +750,7 @@ class AssistantDetailVM(
                 setSnackbarMessage("Error: ${e.message}")
             } finally {
                 _isOptimizing.value = false
+                _optimizeProgress.value = null
                 _embeddingProgress.value = null
             }
         }
@@ -1310,4 +1320,5 @@ class AssistantDetailVM(
 
 
 data class EmbeddingProgress(val current: Int, val total: Int, val isRunning: Boolean)
+data class OptimizeProgress(val current: Int, val total: Int)
 data class EpisodeStats(val totalEpisodes: Int, val averageSignificance: Double, val coreMemoryCount: Int)

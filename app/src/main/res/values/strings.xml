@@ -970,6 +970,7 @@
   <string name="memory_mode_advanced_desc">Forms episodic memories with automatic consolidation</string>
   <string name="memory_action_optimize">Optimize &amp; Merge</string>
   <string name="memory_optimizing">AI is optimizing memories...</string>
+  <string name="memory_optimizing_progress">Optimizing memories %1$d / %2$d</string>
   <string name="memory_optimize_success">Optimization completed: %1$d entries merged/updated, %2$d redundant fragments deleted, and %3$d new memories added.</string>
   <string name="memory_optimize_no_change">Memories are already clean!</string>
   <!-- Model Settings -->

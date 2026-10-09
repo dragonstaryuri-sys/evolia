@@ -188,6 +188,7 @@ fun AssistantMemorySettings(
     }
 
     val isOptimizing by assistantDetailVM.isOptimizing.collectAsStateWithLifecycle()
+    val optimizeProgress by assistantDetailVM.optimizeProgress.collectAsStateWithLifecycle()
     val isConsolidating by assistantDetailVM.isConsolidating.collectAsStateWithLifecycle()
     val isArchivingL1 by assistantDetailVM.isArchivingL1.collectAsStateWithLifecycle()
     val isRegeneratingSegment by assistantDetailVM.isRegeneratingSegment.collectAsStateWithLifecycle()
@@ -243,23 +244,24 @@ fun AssistantMemorySettings(
         )
     }
 
-    if (isOptimizing) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text(stringResource(R.string.memory_optimizing)) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator()
-                    Text(stringResource(R.string.memory_optimizing), style = MaterialTheme.typography.bodyMedium)
-                }
-            },
-            confirmButton = { }
+    // 记忆优化（分组处理阶段）：阻塞式加载蒙板，使用 common 模块统一加载样式，并展示分组处理进度。
+    // 进入 embedding 重新生成阶段后 optimizeProgress 被置空，交由下方 embeddingProgress Dialog 接管展示。
+    val optimizingDefaultHint = stringResource(R.string.memory_optimizing)
+    val progressSnapshot = optimizeProgress
+    val optimizeHint = if (progressSnapshot != null && progressSnapshot.total > 0) {
+        stringResource(
+            R.string.memory_optimizing_progress,
+            progressSnapshot.current,
+            progressSnapshot.total
         )
+    } else {
+        optimizingDefaultHint
     }
+    FullscreenLoadingOverlay(
+        visible = isOptimizing && progressSnapshot != null,
+        icon = Icons.Rounded.CleanHands,
+        hint = optimizeHint
+    )
 
     if (isConsolidating) {
         AlertDialog(

@@ -990,6 +990,7 @@
   <string name="assistant_memory_consolidation_insufficient_data">数据不足</string>
   <string name="memory_action_optimize">合并与优化</string>
   <string name="memory_optimizing">AI 正在深度优化记忆...</string>
+  <string name="memory_optimizing_progress">正在优化记忆 %1$d / %2$d</string>
   <string name="memory_optimize_success">优化成功：合并/更新了 %1$d 条，删除了 %2$d 条冗余片段，新增了 %3$d 条记忆。</string>
   <string name="memory_optimize_no_change">记忆已经非常整洁啦！</string>
   <!-- 模型设置 -->
