@@ -688,6 +688,9 @@ class AssistantDetailVM(
                     return@launch
                 }
 
+                // 在耗时的 findSimilarGroups（向量检索）之前先设置初始进度，让加载遮罩立即显示
+                _optimizeProgress.value = OptimizeProgress(0, 0)
+
                 val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
                 val model = currentSettings.findModelById(modelId) ?: error("No model")
                 val providerSetting = model.findProvider(currentSettings.providers) ?: error("No provider")

@@ -244,10 +244,11 @@ fun AssistantMemorySettings(
         )
     }
 
-    // 记忆优化（分组处理阶段）：阻塞式加载蒙板，使用 common 模块统一加载样式，并展示分组处理进度。
+    // 记忆优化（分组处理阶段）的加载提示状态提前计算，供根 Box 内的遮罩使用。
     // 进入 embedding 重新生成阶段后 optimizeProgress 被置空，交由下方 embeddingProgress Dialog 接管展示。
     val optimizingDefaultHint = stringResource(R.string.memory_optimizing)
     val progressSnapshot = optimizeProgress
+    val showOptimizeOverlay = isOptimizing && progressSnapshot != null
     val optimizeHint = if (progressSnapshot != null && progressSnapshot.total > 0) {
         stringResource(
             R.string.memory_optimizing_progress,
@@ -257,11 +258,6 @@ fun AssistantMemorySettings(
     } else {
         optimizingDefaultHint
     }
-    FullscreenLoadingOverlay(
-        visible = isOptimizing && progressSnapshot != null,
-        icon = Icons.Rounded.CleanHands,
-        hint = optimizeHint
-    )
 
     if (isConsolidating) {
         AlertDialog(
@@ -670,6 +666,12 @@ fun AssistantMemorySettings(
             }
         }
     }
+        // 记忆优化（分组处理阶段）：阻塞式加载蒙板，使用 common 模块统一加载样式，并展示分组处理进度
+        FullscreenLoadingOverlay(
+            visible = showOptimizeOverlay,
+            icon = Icons.Rounded.CleanHands,
+            hint = optimizeHint
+        )
         // 重新生成片段记忆时阻塞式加载蒙板，避免用户中途离开导致请求异常
         FullscreenLoadingOverlay(
             visible = isRegeneratingSegment,
