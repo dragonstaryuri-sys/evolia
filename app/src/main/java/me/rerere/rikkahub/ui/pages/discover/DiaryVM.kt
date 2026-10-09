@@ -551,11 +551,13 @@ class DiaryVM(
 
             val rawText = lastMsg.toContentText()
 
-            if (isJsonDecision) {
-                // 逻辑：解析 JSON 并执行条件入库（带 replyToCommentId 关联）
+            // 计算 AI 回复的"纯净内容"：剥掉 JSON 外壳，仅保留 content 字段，
+            // 避免回到对话页后 AI 沿用前面的 JSON 格式回复。
+            val cleanContent = if (isJsonDecision) {
+                // 解析 JSON 并执行条件入库（带 replyToCommentId 关联），返回 content 纯文本
                 handleJsonReplyAndInsert(rawText, senderIdToSave, diaryId, replyToCommentId, toaster)
             } else {
-                // 逻辑：直接评价，全文入库
+                // 直接评价，全文入库
                 diaryRepo.insertComment(DiaryCommentEntity(
                     diaryId = diaryId,
                     senderId = senderIdToSave,
@@ -563,6 +565,44 @@ class DiaryVM(
                     content = rawText
                 ))
                 toaster?.show(app.getString(R.string.diary_comment_success))
+                rawText
+            }
+
+            // 找到对应的 USER 指令消息（日记评论来源），用于清理其中的 JSON 格式要求
+            val userMsg = finalConv.currentMessages.lastOrNull {
+                it.role == MessageRole.USER && it.skipContext && it.messageSource == MessageSource.DIARY_COMMENT
+            }
+            val userRawText = userMsg?.toContentText() ?: ""
+            val cleanUserContent = cleanDiaryCommentUserMessage(userRawText)
+
+            val aiNeedsUpdate = cleanContent != rawText
+            val userNeedsUpdate = userMsg != null && cleanUserContent != userRawText
+
+            // 一次性更新 AI 回复消息和 USER 指令消息，避免 JSON 污染后续对话上下文
+            if (aiNeedsUpdate || userNeedsUpdate) {
+                chatService.mutateConversationAndSave(convId) { conv ->
+                    conv.copy(
+                        messageNodes = conv.messageNodes.map { node ->
+                            node.copy(
+                                messages = node.messages.map { msg ->
+                                    when {
+                                        aiNeedsUpdate && msg.id == lastMsg.id -> {
+                                            // AI 回复：将所有 Text 部件合并替换为单一纯净文本，保留非文本部件
+                                            val nonTextParts = msg.parts.filter { it !is UIMessagePart.Text }
+                                            msg.copy(parts = nonTextParts + UIMessagePart.Text(cleanContent))
+                                        }
+                                        userNeedsUpdate && userMsg != null && msg.id == userMsg.id -> {
+                                            // USER 指令：去掉"任务："及之后的 JSON 格式要求，保留用户评论+日记内容上下文
+                                            val nonTextParts = msg.parts.filter { it !is UIMessagePart.Text }
+                                            msg.copy(parts = nonTextParts + UIMessagePart.Text(cleanUserContent))
+                                        }
+                                        else -> msg
+                                    }
+                                }
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -608,6 +648,9 @@ class DiaryVM(
 
     /**
      * 解析 AI 的决策回复并存入数据库
+     *
+     * @return 从 JSON 中解析出的 content 纯文本（reply=0 或解析失败时返回空串）。
+     *         调用方需用此值覆盖会话中存储的 AI 回复消息，避免 JSON 外壳污染后续对话上下文。
      * @param replyToCommentId 回复目标的评论 ID；非回复时传 null
      */
     private suspend fun handleJsonReplyAndInsert(
@@ -616,7 +659,7 @@ class DiaryVM(
         diaryId: String,
         replyToCommentId: String?,
         toaster: AppToasterState?
-    ) {
+    ): String {
         try {
             // 提取 JSON，增强对 Markdown 回复的容错
             val jsonStr = if (rawText.contains("{")) {
@@ -639,10 +682,31 @@ class DiaryVM(
             } else {
                 toaster?.show(app.getString(R.string.diary_agent_no_reply))
             }
+            return replyContent
         } catch (e: Exception) {
             e.printStackTrace()
             toaster?.show(app.getString(R.string.diary_agent_no_reply))
+            return ""
         }
+    }
+
+    /**
+     * 清理日记评论场景下存储的 USER 指令消息：
+     * 1. 去掉"【系统指令】"前缀，使消息更像正常用户对话
+     * 2. 去掉"任务："及之后的 JSON 格式要求部分，仅保留用户评论 + 日记内容上下文
+     * 这样回到对话页后 AI 能看到完整的用户提问，同时不会因残留的 JSON 指令继续输出 JSON。
+     */
+    private fun cleanDiaryCommentUserMessage(rawPrompt: String): String {
+        if (rawPrompt.isBlank()) return rawPrompt
+        var cleaned = rawPrompt
+        // 去掉"【系统指令】"前缀（兼容前后空白和换行）
+        cleaned = cleaned.removePrefix("【系统指令】").trim()
+        // 所有日记评论 prompt 均以"任务："分隔上下文与决策指令
+        val taskIndex = cleaned.indexOf("任务：")
+        if (taskIndex >= 0) {
+            cleaned = cleaned.substring(0, taskIndex)
+        }
+        return cleaned.trim()
     }
 
     // --- 日记基础维护逻辑 ---

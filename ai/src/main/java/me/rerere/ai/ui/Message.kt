@@ -20,8 +20,8 @@ import kotlin.uuid.Uuid
 
 /**
  * 消息来源标识：用于区分不同来源的 skipContext 消息在上下文中的处理策略。
- * - NORMAL: 普通对话消息
- * - DIARY_COMMENT: 日记评论指令（历史消息截断到前100字，当前消息完整）
+ * - NORMAL: 普通对话消息（历史消息截断到前100字，当前消息完整）
+ * - DIARY_COMMENT: 日记评论指令（完整带入，不截断；存储前已剥离 JSON 决策外壳）
  * - AGENT_TASK: 自动化任务触发指令（完整带入，不截断）
  */
 @Serializable

@@ -997,11 +997,13 @@ class GenerationHandler(
         val contextCandidates = if (includeSkipContextMessages) {
             // 包含 skipContext 消息，根据消息来源决定截断策略：
             // - AGENT_TASK: 完整带入，不截断
-            // - DIARY_COMMENT / NORMAL: 历史消息截断到前 100 字，保留最后一条 user 消息完整
+            // - DIARY_COMMENT: 完整带入，不截断（用户评论+日记内容是后续对话的重要上下文）
+            // - NORMAL: 历史消息截断到前 100 字，保留最后一条 user 消息完整
             val lastUserMsgIndex = messages.indexOfLast { it.role == CoreMessageRole.USER }
             messages.mapIndexed { index, msg ->
                 val shouldTruncate = msg.skipContext
                     && msg.messageSource != MessageSource.AGENT_TASK
+                    && msg.messageSource != MessageSource.DIARY_COMMENT
                     && index != lastUserMsgIndex
                 if (shouldTruncate) {
                     msg.copy(parts = msg.parts.map { part ->
