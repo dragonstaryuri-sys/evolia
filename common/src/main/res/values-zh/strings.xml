@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 豆包导入管理器日志 / 状态消息 -->
+    <string name="doubao_import_log_parse_failed">文件解析失败，可能格式不正确: %1$s</string>
+    <string name="doubao_import_log_start">开始导入流程，目标智能体: %1$s</string>
+    <string name="doubao_import_log_valid_count">经过滤后有效消息总数: %1$d</string>
+    <string name="doubao_import_log_no_valid">数据源中未检测到有效对话，导入终止。</string>
+    <string name="doubao_import_log_chunk_count">计划切分为 %1$d 个会话片段。</string>
+    <string name="doubao_import_log_preview_waiting">正在展示第一个会话预览，等待确认...</string>
+    <string name="doubao_import_log_preview_cancelled">用户在预览阶段选择了终止导入。</string>
+    <string name="doubao_import_log_preview_confirmed">预览确认通过，开始批量入库...</string>
+    <string name="doubao_import_log_progress">已入库: %1$d 消息 (进度 %2$d/%3$d)</string>
+    <string name="doubao_import_log_complete">导入同步已圆满完成！</string>
+    <string name="doubao_import_log_exception">导入发生异常: %1$s</string>
+
+    <!-- 豆包导入模板 -->
+    <string name="doubao_import_template_bot_name">示例智能体</string>
+    <string name="doubao_import_template_bot_desc">这是一个导入模板，你可以根据这个格式修改自己的聊天记录进行导入。</string>
+    <string name="doubao_import_session_title">%1$s历史导入 (%2$d)</string>
+</resources>

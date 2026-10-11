@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Doubao Import Manager log / status messages -->
+    <string name="doubao_import_log_parse_failed">Failed to parse file, possibly incorrect format: %1$s</string>
+    <string name="doubao_import_log_start">Starting import process, target agent: %1$s</string>
+    <string name="doubao_import_log_valid_count">Total valid messages after filtering: %1$d</string>
+    <string name="doubao_import_log_no_valid">No valid conversations found in data source, import terminated.</string>
+    <string name="doubao_import_log_chunk_count">Planned to split into %1$d session segments.</string>
+    <string name="doubao_import_log_preview_waiting">Showing first session preview, waiting for confirmation...</string>
+    <string name="doubao_import_log_preview_cancelled">User chose to abort import during preview.</string>
+    <string name="doubao_import_log_preview_confirmed">Preview confirmed, starting batch storage...</string>
+    <string name="doubao_import_log_progress">Stored: %1$d messages (progress %2$d/%3$d)</string>
+    <string name="doubao_import_log_complete">Import synchronization completed successfully!</string>
+    <string name="doubao_import_log_exception">Import exception: %1$s</string>
+
+    <!-- Doubao Import template -->
+    <string name="doubao_import_template_bot_name">Example Agent</string>
+    <string name="doubao_import_template_bot_desc">This is an import template. You can modify your chat records according to this format for import.</string>
+    <string name="doubao_import_session_title">%1$s History Import (%2$d)</string>
+</resources>
