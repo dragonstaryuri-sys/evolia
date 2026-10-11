@@ -54,6 +54,7 @@ import okhttp3.Response
 import okhttp3.sse.EventSource
 import okhttp3.sse.EventSourceListener
 import okhttp3.sse.EventSources
+import java.util.concurrent.TimeUnit
 import kotlin.time.Clock
 
 private const val TAG = "ClaudeProvider"
@@ -198,6 +199,14 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
             Log.i(TAG, "streamText: $it")
         }
 
+        // 流式调用：SSE 连接在模型思考阶段可能长时间不下发任何字节，
+        // 沿用全局 60s readTimeout 会在深度思考场景误断连接。
+        val streamClient = params.generationTimeoutMinutes?.let { minutes ->
+            client.newBuilder()
+                .readTimeout((minutes * 60L), TimeUnit.SECONDS)
+                .build()
+        } ?: client
+
         val listener = object : EventSourceListener() {
             override fun onEvent(
                 eventSource: EventSource,
@@ -278,7 +287,7 @@ class ClaudeProvider(private val client: OkHttpClient) : Provider<ProviderSettin
         }
 
         val eventSource =
-            EventSources.createFactory(client.configureClientWithProxy(providerSetting.proxy))
+            EventSources.createFactory(streamClient.configureClientWithProxy(providerSetting.proxy))
                 .newEventSource(request, listener)
 
         awaitClose {

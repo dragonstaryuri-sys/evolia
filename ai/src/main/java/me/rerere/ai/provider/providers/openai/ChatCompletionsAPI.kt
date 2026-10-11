@@ -272,7 +272,16 @@ class ChatCompletionsAPI(
             stream = true,
         )
 
-        val proxyClient = client.configureClientWithProxy(providerSetting.proxy)
+        // 流式调用：SSE 连接在模型思考阶段可能长时间不下发任何字节。
+        // 如果沿用全局 OkHttpClient 默认的 60s readTimeout，深度思考（reasoning）场景
+        // 会被误触发读写超时而断开连接。这里按用户配置派生一个长读超时的临时 client，
+        // 使 OkHttp 层的"两次数据间隔"容忍度与整体生成超时对齐。
+        val streamClient = params.generationTimeoutMinutes?.let { minutes ->
+            client.newBuilder()
+                .readTimeout((minutes * 60L), TimeUnit.SECONDS)
+                .build()
+        } ?: client
+        val proxyClient = streamClient.configureClientWithProxy(providerSetting.proxy)
 
         val request = Request.Builder()
             .url("${providerSetting.baseUrl}${providerSetting.chatCompletionsPath}")
