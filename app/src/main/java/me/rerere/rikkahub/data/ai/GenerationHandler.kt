@@ -209,6 +209,13 @@ class GenerationHandler(
                                                 "需在历史记忆库（RAG检索）中检索的关键词，将同时匹配核心记忆与片段记忆。"
                                             )
                                         })
+                                        put("key_words_only", buildJsonObject {
+                                            put("type", "string")
+                                            put(
+                                                "description",
+                                                "纯关键词匹配检索（不走向量/语义/Rerank）：提供需要检索的关键词，多个关键词用英文逗号分隔。只要记忆的 content 或 keywords 字段包含其中任一关键词即视为命中（OR 逻辑）。可与 start_time/end_time 组合使用，检索某时间段内包含关键词的记忆片段。当只需简单关键词命中而无需语义召回时，优先使用本参数而非 key_words。"
+                                            )
+                                        })
                                         put("start_time", buildJsonObject {
                                             put("type", "string")
                                             put("description", "查询范围的开始时间 (yyyy-MM-dd HH:mm:ss)")
@@ -224,10 +231,60 @@ class GenerationHandler(
                                 val args = params.jsonObject
                                 val segmentId = args["segment_id"]?.jsonPrimitive?.intOrNull
                                 val keyWords = args["key_words"]?.jsonPrimitive?.contentOrNull
+                                val keyWordsOnly = args["key_words_only"]?.jsonPrimitive?.contentOrNull
                                 val startTimeStr = args["start_time"]?.jsonPrimitive?.contentOrNull
                                 val endTimeStr = args["end_time"]?.jsonPrimitive?.contentOrNull
 
                                 when {
+                                    // 纯关键词匹配检索（可选叠加时间范围）：不走 RAG，仅做 contains 命中
+                                    keyWordsOnly != null -> {
+                                        try {
+                                            val start: LocalDateTime? = startTimeStr?.let { parseFlexibleDate(it) }
+                                            val end: LocalDateTime? = endTimeStr?.let { parseFlexibleDate(it) }
+
+                                            // 校验：若提供时间则必须成对，且跨度不超过一周
+                                            if (start != null && end != null) {
+                                                val duration = Duration.between(start, end)
+                                                if (duration.toHours() > 24 * 7) {
+                                                    return@Tool buildJsonObject {
+                                                        put("error", JsonPrimitive("一次最多只能查询一周的记忆片段"))
+                                                    }
+                                                }
+                                            } else if (start != null || end != null) {
+                                                return@Tool buildJsonObject {
+                                                    put("error", JsonPrimitive("使用时间范围时必须同时提供 start_time 和 end_time"))
+                                                }
+                                            }
+
+                                            val startTimeLong = start?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+                                            val endTimeLong = end?.atZone(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
+
+                                            val relevant = memoryRepo.retrieveMemoriesByKeywordsOnly(
+                                                assistantId = assistant.id.toString(),
+                                                keyWords = keyWordsOnly,
+                                                limit = assistant.ragLimit,
+                                                startTime = startTimeLong,
+                                                endTime = endTimeLong
+                                            )
+                                            buildJsonObject {
+                                                put("results", JsonArray(relevant.map { mem ->
+                                                    val isCore = mem.type == MemoryType.CORE
+                                                    buildJsonObject {
+                                                        put("type", JsonPrimitive(if (isCore) "core" else "segment"))
+                                                        put("id", JsonPrimitive(mem.id))
+                                                        put("time", JsonPrimitive(formatMemoryDate(mem.timestamp)))
+                                                        put("content", JsonPrimitive(mem.content))
+                                                    }
+                                                }))
+                                                put("total", JsonPrimitive(relevant.size))
+                                            }
+                                        } catch (e: Exception) {
+                                            buildJsonObject {
+                                                put("error", JsonPrimitive("纯关键词检索失败: ${e.message}"))
+                                            }
+                                        }
+                                    }
+
                                     // 组合检索:时间范围 + 关键词,先按时间范围取 segment,再用关键词对结果做本地过滤
                                     startTimeStr != null && endTimeStr != null && keyWords != null -> {
                                         try {
@@ -389,7 +446,7 @@ class GenerationHandler(
                                     else -> buildJsonObject {
                                         put(
                                             "error",
-                                            JsonPrimitive("必须传入`segment_id`、`key_words`或`start_time/end_time`其中一个参数")
+                                            JsonPrimitive("必须传入`segment_id`、`key_words`、`key_words_only`或`start_time/end_time`其中一个参数")
                                         )
                                     }
                                 }
