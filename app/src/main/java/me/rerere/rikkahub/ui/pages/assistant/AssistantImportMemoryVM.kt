@@ -1,11 +1,13 @@
 package me.rerere.rikkahub.ui.pages.assistant
 
+import android.app.Application
 import androidx.compose.runtime.*
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.db.entity.MilestoneEntity
 import me.rerere.rikkahub.core.data.model.Conversation
@@ -17,6 +19,7 @@ import me.rerere.rikkahub.service.ChatService
 import kotlin.uuid.Uuid
 
 class AssistantImportMemoryVM(
+    application: Application,
     private val assistantId: String,
     val isMain: Boolean,
     val totalSessions: Int,
@@ -25,7 +28,7 @@ class AssistantImportMemoryVM(
     private val milestoneRepo: MilestoneRepository,
     private val conversationRepo: ConversationRepository,
     private val chatService: ChatService
-) : ViewModel() {
+) : AndroidViewModel(application) {
 
     // 1. 关系档案 (L3)
     var relationshipProfile by mutableStateOf("")
@@ -87,7 +90,7 @@ class AssistantImportMemoryVM(
                         MilestoneEntity(
                             assistantId = assistantId,
                             time = item.date,
-                            label = item.label.ifBlank { "重要里程碑" },
+                            label = item.label.ifBlank { getApplication<Application>().getString(R.string.import_memory_default_milestone_label) },
                             description = item.content
                         )
                     )

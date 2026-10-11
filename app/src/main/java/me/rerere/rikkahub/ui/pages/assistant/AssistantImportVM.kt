@@ -1,12 +1,13 @@
 package me.rerere.rikkahub.ui.pages.assistant
 
+import android.app.Application
 import android.content.Context
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.StateFlow
@@ -18,14 +19,16 @@ import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.DoubaoImportData
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.DoubaoImportManager
+import me.rerere.rikkahub.R
 import java.io.File
 import kotlin.uuid.Uuid
 
 class AssistantImportVM(
+    application: Application,
     private val settingsStore: SettingsStore,
     private val importManager: DoubaoImportManager,
     private val conversationRepo: ConversationRepository
-) : ViewModel() {
+) : AndroidViewModel(application) {
     val progress: StateFlow<Float> = importManager.progress
     val progressText: StateFlow<String> = importManager.progressText
     val status: StateFlow<String> = importManager.status
@@ -54,13 +57,13 @@ class AssistantImportVM(
         viewModelScope.launch {
             val data = importManager.parseData(uri)
             if (data == null) {
-                onError("文件解析失败，请确保导入的是标准豆包 JSON 格式文档")
+                onError(getApplication<Application>().getString(R.string.import_doubao_parse_failed))
                 return@launch
             }
 
             val validCount = importManager.getValidMessageCount(data)
             if (validCount == 0) {
-                onError("该文档中未检测到有效的对话记录，请检查文档内容")
+                onError(getApplication<Application>().getString(R.string.import_doubao_no_valid_messages))
                 return@launch
             }
 

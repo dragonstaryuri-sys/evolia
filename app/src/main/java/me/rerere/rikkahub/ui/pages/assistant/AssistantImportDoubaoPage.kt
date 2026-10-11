@@ -144,7 +144,7 @@ fun AssistantImportDoubaoPage(
                             if (path != null) {
                                 toaster.show(context.getString(R.string.import_doubao_log_saved))
                             } else {
-                                toaster.show("Error saving log")
+                                toaster.show(context.getString(R.string.import_doubao_log_save_error))
                             }
                         }) {
                             Icon(Icons.Rounded.Download, contentDescription = "Download Log")
@@ -270,7 +270,7 @@ fun AssistantImportDoubaoPage(
                                                 popUpTo(Screen.AssistantImportDoubao) { inclusive = true }
                                             }
                                         } else if (!success) {
-                                            toaster.show("导入失败或被用户终止")
+                                            toaster.show(context.getString(R.string.import_doubao_failed))
                                         }
                                     }
                                 },
@@ -393,7 +393,7 @@ fun PreviewDialog(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                Text("会话预览 (第一个片段)", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.import_doubao_preview_first_segment), style = MaterialTheme.typography.labelLarge)
 
                 LazyColumn(
                     modifier = Modifier

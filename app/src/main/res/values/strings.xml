@@ -1741,6 +1741,10 @@
   <string name="import_doubao_download_template">Download Import Template</string>
   <string name="import_doubao_template_saved">Template Saved</string>
   <string name="import_doubao_template_save_failed">Failed to Save Template</string>
+  <string name="import_doubao_parse_failed">Failed to parse file, please ensure that the imported document is in the required JSON format.</string>
+  <string name="import_doubao_no_valid_messages">No valid conversation records found in this document, please check the document content</string>
+  <string name="import_doubao_log_save_error">Failed to save log</string>
+  <string name="import_doubao_preview_first_segment">Conversation Preview (first segment)</string>
   <string name="assistant_importer_import_other_platform">Import Agents from Other Platforms</string>
   <string name="import_memory_title">Improve Agent Memory</string>
   <string name="import_memory_l3_title">Relationship Profile (L3)</string>
@@ -1758,6 +1762,7 @@
   <string name="import_memory_l1_stop">Stop Generation</string>
   <string name="import_memory_submit_button">Save and Finish Import</string>
   <string name="import_memory_success_toast">Memory Synchronization Completed</string>
+  <string name="import_memory_default_milestone_label">Important Milestone</string>
   <string name="milestone_label">Event Tag</string>
   <string name="milestone_label_placeholder">E.g.: First trip / Established relationship</string>
   <string name="milestone_time">Occurrence Time</string>

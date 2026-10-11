@@ -33,12 +33,13 @@ fun AssistantImportMemoryPage(
 ) {
     val navController = LocalNavController.current
     val toaster = LocalToaster.current
+    val successMessage = stringResource(R.string.import_memory_success_toast)
 
     Scaffold(
         modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
             TopAppBar(
-                title = { Text("完善智能体记忆") },
+                title = { Text(stringResource(R.string.import_memory_title)) },
                 navigationIcon = { BackButton() }
             )
         },
@@ -47,7 +48,7 @@ fun AssistantImportMemoryPage(
                 Button(
                     onClick = {
                         vm.submitAll {
-                            toaster.show("记忆同步完成")
+                            toaster.show(successMessage)
                             navController.popBackStack()
                         }
                     },
@@ -61,7 +62,7 @@ fun AssistantImportMemoryPage(
                     if (vm.isGeneratingL1) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                     } else {
-                        Text("保存并完成导入", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.import_memory_submit_button), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -76,12 +77,12 @@ fun AssistantImportMemoryPage(
         ) {
             // 1. 关系档案 (L3)
             item {
-                MemorySectionHeader(title = "关系档案 (L3)", icon = Icons.Rounded.AutoStories)
+                MemorySectionHeader(title = stringResource(R.string.import_memory_l3_title), icon = Icons.Rounded.AutoStories)
                 OutlinedTextField(
                     value = vm.relationshipProfile,
                     onValueChange = { vm.relationshipProfile = it },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
-                    placeholder = { Text("描述你们之间的羁绊、约定和核心身份标识...") },
+                    placeholder = { Text(stringResource(R.string.import_memory_l3_placeholder)) },
                     shape = RoundedCornerShape(16.dp)
                 )
             }
@@ -90,12 +91,12 @@ fun AssistantImportMemoryPage(
             if (isMain) {
                 item {
                     MemorySectionHeader(
-                        title = "里程碑事件及长期约定",
+                        title = stringResource(R.string.import_memory_milestone_title),
                         icon = Icons.Rounded.Star,
                         action = {
                             TextButton(onClick = { vm.addMilestone() }) {
                                 Icon(Icons.Rounded.Add, null)
-                                Text("添加")
+                                Text(stringResource(R.string.import_memory_add))
                             }
                         }
                     )
@@ -144,12 +145,12 @@ fun AssistantImportMemoryPage(
             // 3. 核心记忆 (MemoryEntity)
             item {
                 MemorySectionHeader(
-                    title = "核心记忆 (Core Memory)",
+                    title = stringResource(R.string.import_memory_core_title),
                     icon = Icons.Rounded.Memory,
                     action = {
                         TextButton(onClick = { vm.addCoreMemory() }) {
                             Icon(Icons.Rounded.Add, null)
-                            Text("添加")
+                            Text(stringResource(R.string.import_memory_add))
                         }
                     }
                 )
@@ -163,7 +164,7 @@ fun AssistantImportMemoryPage(
                             OutlinedTextField(
                                 value = item.keywords,
                                 onValueChange = { item.keywords = it },
-                                label = { Text("关键词 (选填，逗号分隔)") },
+                                label = { Text(stringResource(R.string.import_memory_core_keywords_label)) },
                                 modifier = Modifier.weight(1f),
                                 singleLine = true
                             )
@@ -174,7 +175,7 @@ fun AssistantImportMemoryPage(
                         OutlinedTextField(
                             value = item.content,
                             onValueChange = { item.content = it },
-                            label = { Text("记忆详情") },
+                            label = { Text(stringResource(R.string.import_memory_core_content_label)) },
                             modifier = Modifier.fillMaxWidth(),
                             minLines = 2
                         )
@@ -184,7 +185,7 @@ fun AssistantImportMemoryPage(
 
             // 4. 片段记忆 L1 (API 自动总结)
             item {
-                MemorySectionHeader(title = "片段记忆生成 (L1)", icon = Icons.Rounded.History)
+                MemorySectionHeader(title = stringResource(R.string.import_memory_l1_title), icon = Icons.Rounded.History)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(24.dp),
@@ -192,7 +193,7 @@ fun AssistantImportMemoryPage(
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
-                            "本次一共导入了 ${sessionCount} 个会话。选择最新的 N 个会话生成片段记忆：",
+                            stringResource(R.string.import_memory_l1_desc, sessionCount),
                             style = MaterialTheme.typography.bodyMedium
                         )
 
@@ -219,7 +220,7 @@ fun AssistantImportMemoryPage(
                                     modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
                                 )
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("正在生成: ${vm.currentL1SessionName}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    Text(stringResource(R.string.import_memory_l1_generating, vm.currentL1SessionName), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                     Text("${(vm.l1Progress * 100).toInt()}%", style = MaterialTheme.typography.labelLarge)
                                 }
                                 OutlinedButton(
@@ -228,7 +229,7 @@ fun AssistantImportMemoryPage(
                                 ) {
                                     Icon(Icons.Rounded.Stop, null)
                                     Spacer(Modifier.width(4.dp))
-                                    Text("停止生成")
+                                    Text(stringResource(R.string.import_memory_l1_stop))
                                 }
                             }
                         }

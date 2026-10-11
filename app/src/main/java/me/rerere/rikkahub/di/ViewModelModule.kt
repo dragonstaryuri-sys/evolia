@@ -57,10 +57,18 @@ val viewModelModule = module {
     }
     viewModelOf(::ChatListVM)
     viewModelOf(::AssistantVM)
-    viewModelOf(::AssistantImportVM)
+    viewModel { params ->
+        AssistantImportVM(
+            application = get(),
+            settingsStore = get(),
+            importManager = get(),
+            conversationRepo = get()
+        )
+    }
 
     viewModel<AssistantImportMemoryVM> { params ->
         AssistantImportMemoryVM(
+            application = get(),
             assistantId = params.get(),
             isMain = params.get(),
             totalSessions = params.get(),

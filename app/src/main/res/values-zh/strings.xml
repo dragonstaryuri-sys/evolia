@@ -1740,6 +1740,10 @@
   <string name="import_doubao_download_template">下载导入模板</string>
   <string name="import_doubao_template_saved">模板已保存</string>
   <string name="import_doubao_template_save_failed">模板保存失败</string>
+  <string name="import_doubao_parse_failed">文件解析失败，请确保导入的是要求的JSON 格式文档</string>
+  <string name="import_doubao_no_valid_messages">该文档中未检测到有效的对话记录，请检查文档内容</string>
+  <string name="import_doubao_log_save_error">保存日志失败</string>
+  <string name="import_doubao_preview_first_segment">会话预览 (第一个片段)</string>
   <!-- 智能体导入记忆处理页面 -->
   <string name="import_memory_title">完善智能体记忆</string>
   <string name="import_memory_l3_title">关系档案 (L3)</string>
@@ -1757,6 +1761,7 @@
   <string name="import_memory_l1_stop">停止生成</string>
   <string name="import_memory_submit_button">保存并完成导入</string>
   <string name="import_memory_success_toast">记忆同步完成</string>
+  <string name="import_memory_default_milestone_label">重要里程碑</string>
   <string name="milestone_label">事件标签</string>
   <string name="milestone_label_placeholder">如：第一次旅行 / 确立关系</string>
   <string name="milestone_time">发生时间</string>
