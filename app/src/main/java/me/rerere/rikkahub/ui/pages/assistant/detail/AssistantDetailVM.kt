@@ -688,7 +688,7 @@ class AssistantDetailVM(
                     return@launch
                 }
 
-                // 在耗时的 findSimilarGroups（向量检索）之前先设置初始进度，让加载遮罩立即显示
+                // 在耗时的相似度检索之前先设置初始进度，让加载遮罩立即显示
                 _optimizeProgress.value = OptimizeProgress(0, 0)
 
                 val modelId = currentAssistant.memoryModelId ?: currentSettings.memoryModelId
@@ -701,7 +701,7 @@ class AssistantDetailVM(
                 var totalAdded = 0
 
                 if (coreMemories.isNotEmpty()) {
-                    val coreGroups = findSimilarGroups(coreMemories, true)
+                    val coreGroups = memoryRepository.findSimilarCoreMemoryGroups(assistantId.toString(), 0.6f)
                     val totalGroups = coreGroups.size
                     _optimizeProgress.value = OptimizeProgress(0, totalGroups)
                     for ((index, group) in coreGroups.withIndex()) {
@@ -826,33 +826,6 @@ class AssistantDetailVM(
             TextGenerationParams(model = model, temperature = 0.2f, topP = 1.0f)
         )
         return resp.choices.firstOrNull()?.message?.toContentText()?.trim() ?: ""
-    }
-
-    private suspend fun findSimilarGroups(
-        memList: List<AssistantMemory>,
-        isCore: Boolean
-    ): List<List<AssistantMemory>> {
-        val groups = mutableListOf<List<AssistantMemory>>()
-        val processedIds = mutableSetOf<Int>()
-
-        for (memory in memList) {
-            if (processedIds.contains(memory.id)) continue
-            val similar = memoryRepository.retrieveRelevantMemoriesWithScores(
-                assistantId = assistantId.toString(),
-                query = memory.content,
-                limit = assistant.value.ragLimit,
-                similarityThreshold = 0.6f
-            ).map { it.first }.filter { m ->
-                val idMatch = if (isCore) m.id > 0 else m.id < 0
-                idMatch && !processedIds.contains(m.id)
-            }
-
-            if (similar.size > 1) {
-                groups.add(similar)
-                processedIds.addAll(similar.map { it.id })
-            }
-        }
-        return groups
     }
 
     private data class OptimizationResult(val updated: Int, val deleted: Int, val added: Int)

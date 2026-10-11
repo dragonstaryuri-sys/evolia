@@ -235,6 +235,65 @@ class MemoryRepository(
         return memoryDAO.getMemoriesOfAssistant(assistantId)
     }
 
+    /**
+     * 直接用数据库中已存储的向量做两两余弦相似度，找出内容相似的核心记忆分组。
+     * 相比 [retrieveRelevantMemoriesWithScores]，省去了对每条记忆 content 重新 embed 的开销。
+     *
+     * @param similarityThreshold 相似度阈值，默认 0.6
+     * @return 相似记忆分组列表，每组包含 >= 2 条相似记忆
+     */
+    suspend fun findSimilarCoreMemoryGroups(
+        assistantId: String,
+        similarityThreshold: Float = 0.6f
+    ): List<List<AssistantMemory>> {
+        val entities = memoryDAO.getMemoriesOfAssistant(assistantId)
+            .filter { it.type == MemoryType.CORE && it.embedding != null }
+
+        if (entities.size < 2) return emptyList()
+
+        // 预解析所有向量，避免重复反序列化
+        val parsed = entities.mapNotNull { entity ->
+            val vector = entity.embedding?.let { VectorUtils.fromByteArray(it) }
+            if (vector == null || vector.isEmpty()) null else entity to vector
+        }
+
+        if (parsed.size < 2) return emptyList()
+
+        val groups = mutableListOf<List<AssistantMemory>>()
+        val processedIds = mutableSetOf<Int>()
+
+        for (i in parsed.indices) {
+            val (entity, queryVec) = parsed[i]
+            if (entity.id in processedIds) continue
+
+            val similar = mutableListOf<AssistantMemory>()
+            for (j in parsed.indices) {
+                val (otherEntity, otherVec) = parsed[j]
+                if (otherEntity.id in processedIds) continue
+                // 自身或相似度达标的都纳入同组
+                val isSelf = i == j
+                val isSimilar = VectorEngine.cosineSimilarity(queryVec, otherVec) >= similarityThreshold
+                if (isSelf || isSimilar) {
+                    similar.add(
+                        AssistantMemory(
+                            otherEntity.id, otherEntity.content, otherEntity.keywords,
+                            otherEntity.type,
+                            otherEntity.embedding != null && !otherEntity.embeddingModelId.isNullOrBlank(),
+                            otherEntity.embeddingModelId, otherEntity.createdAt
+                        )
+                    )
+                }
+            }
+
+            if (similar.size > 1) {
+                groups.add(similar)
+                processedIds.addAll(similar.map { it.id })
+            }
+        }
+
+        return groups
+    }
+
     suspend fun getEpisodeEntitiesOfAssistant(assistantId: String): List<ChatEpisodeEntity> {
         return chatEpisodeDAO.getEpisodesOfAssistant(assistantId)
     }
@@ -590,6 +649,99 @@ class MemoryRepository(
         }
 
         return finalResults
+    }
+
+    /**
+     * 纯关键词匹配检索（key_words_only）：不使用向量/语义/Rerank，仅对 content 与 keywords
+     * 字段做 contains 匹配。只要记忆包含任一关键词即视为命中（OR 逻辑）。
+     *
+     * - 同时检索核心记忆(core)与片段记忆(segment)，与 [retrieveRelevantMemoriesWithScores] 的检索范围一致。
+     * - 命中数超过 [limit] 时，按时间戳降序取最近的 [limit] 条返回。
+     * - 可选时间范围：同时传入 [startTime]/[endTime] 时，仅检索该时间范围内的记忆
+     *   （segment 按 end_time 过滤，core 按 createdAt 过滤）。
+     *
+     * @param keyWords 关键词字符串，多个关键词以英文逗号分隔（兼容中文逗号/顿号/空白）
+     * @param limit 返回上限，对应记忆设置中的 topK
+     */
+    suspend fun retrieveMemoriesByKeywordsOnly(
+        assistantId: String,
+        keyWords: String,
+        limit: Int,
+        startTime: Long? = null,
+        endTime: Long? = null
+    ): List<AssistantMemory> {
+        // 拆分关键词，与 calculateKeywordScore / 时间范围分支保持同一分隔符集
+        val keywordsList = keyWords
+            .split(Regex("[,，、\\s]"))
+            .map { it.trim().lowercase() }
+            .filter { it.isNotBlank() }
+
+        if (keywordsList.isEmpty()) return emptyList()
+        Log.v(TAG, "🔎 [KeywordOnly] 纯关键词检索 | keywords=$keywordsList | limit=$limit | range=[$startTime,$endTime]")
+
+        // 本地 OR 匹配：content 或 keywords 字段包含任一关键词即命中
+        val matchKeywords: (content: String, keywordsField: String?) -> Boolean = { content, keywordsField ->
+            val contentLower = content.lowercase()
+            val keywordsFieldLower = keywordsField?.lowercase().orEmpty()
+            keywordsList.any { kw ->
+                contentLower.contains(kw) || keywordsFieldLower.contains(kw)
+            }
+        }
+
+        // 核心记忆（core 按 createdAt 做时间过滤）
+        val coreMemories = memoryDAO.getMemoriesOfAssistant(assistantId)
+            .filter { it.type == MemoryType.CORE }
+            .let { memories ->
+                if (startTime != null && endTime != null) {
+                    memories.filter { it.createdAt in startTime..endTime }
+                } else memories
+            }
+            .filter { matchKeywords(it.content, it.keywords) }
+            .map {
+                AssistantMemory(
+                    id = it.id,
+                    content = it.content,
+                    keywords = it.keywords,
+                    type = MemoryType.CORE,
+                    hasEmbedding = it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
+                    embeddingModelId = it.embeddingModelId,
+                    timestamp = it.createdAt
+                )
+            }
+
+        // 片段记忆（segment 按 end_time 做时间过滤）
+        val segments = if (startTime != null && endTime != null) {
+            chatSegmentDAO.getSegmentsByAssistantAndTimeRange(assistantId, startTime, endTime)
+        } else {
+            chatSegmentDAO.getSegmentsByAssistant(assistantId)
+        }
+
+        val segmentMemories = segments
+            .filter { s -> matchKeywords(s.content, s.keywords) }
+            .map {
+                AssistantMemory(
+                    id = it.id,
+                    content = it.content,
+                    keywords = it.keywords,
+                    type = MemoryType.SEGMENT,
+                    hasEmbedding = it.embedding != null && !it.embeddingModelId.isNullOrBlank(),
+                    embeddingModelId = it.embeddingModelId,
+                    timestamp = it.endTime
+                )
+            }
+
+        val combined = (coreMemories + segmentMemories)
+            .sortedByDescending { it.timestamp }
+            .take(limit)
+
+        // 命中召回计数
+        combined.filter { it.type == MemoryType.SEGMENT }.forEach {
+            chatSegmentDAO.incrementRecallCount(it.id)
+        }
+
+        Log.v(TAG, "🏁 [KeywordOnly] 检索结束 | 命中 core=${coreMemories.size} segment=${segmentMemories.size} 返回=${combined.size}")
+
+        return combined
     }
 
     suspend fun regenerateEmbeddings(assistantId: String, onProgress: (Int, Int) -> Unit): Pair<Int, Int> {
