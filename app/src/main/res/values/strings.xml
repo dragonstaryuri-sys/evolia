@@ -1365,6 +1365,12 @@
   <string name="assistant_context_priority_chat">Prioritize Chat History</string>
   <string name="assistant_context_priority_memory">Prioritize Memory Fragments</string>
   <string name="assistant_context_priority_balanced">Balanced Allocation (Recommended)</string>
+  <!-- Clear Conversations and Segments -->
+  <string name="clear_conversations_and_segments_group">Data Management</string>
+  <string name="clear_conversations_and_segments_title">Clear Conversations and Segment Memory</string>
+  <string name="clear_conversations_and_segments_desc">Permanently delete all chat messages and L1 segment memory for this assistant.</string>
+  <string name="clear_conversations_and_segments_confirm">This will permanently delete ALL conversations and segment memory for this assistant. This action cannot be undone. Are you sure you want to continue?</string>
+  <string name="clear_conversations_and_segments_success">Conversations and segment memory cleared.</string>
   <!-- Tips -->
   <string name="notification_chat_generating">Chat is generating...</string>
   <string name="notification_channel_chat_generation">Chat Generation</string>

@@ -512,6 +512,27 @@ class ConversationRepository(
         }
     }
 
+    /**
+     * 一键清空该智能体的所有对话及片段记忆 (L1 Segment)。
+     *
+     * 删除范围：
+     * - chat_messages / chat_message_nodes：通过删除 conversationentity 记录触发 CASCADE 删除
+     *   (ChatMessageNodeEntity 对 ConversationEntity 有 FK CASCADE，
+     *    ChatMessageEntity 对 ChatMessageNodeEntity 有 FK CASCADE)
+     * - chat_segments：直接按 assistant_id 删除
+     * - chat_episodes：同步清理 L2 归档，避免会话消失后遗留孤儿 Episode
+     *
+     * 与 [deleteConversationOfAssistant] 不同，此方法不逐条加载完整会话，
+     * 直接按 assistantId 批量删除，效率更高。
+     */
+    suspend fun clearConversationsAndSegmentMemory(assistantId: Uuid) = withContext(Dispatchers.IO) {
+        db.withTransaction {
+            conversationDAO.deleteConversationsByAssistant(assistantId.toString())
+            chatSegmentDAO.deleteSegmentsByAssistant(assistantId.toString())
+            chatEpisodeDAO.deleteEpisodesOfAssistant(assistantId.toString())
+        }
+    }
+
     private fun conversationToConversationEntity(conversation: Conversation): ConversationEntity {
         return ConversationEntity(
             id = conversation.id.toString(),

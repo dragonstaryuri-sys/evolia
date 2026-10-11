@@ -85,7 +85,8 @@ val viewModelModule = module {
             extendedStateRepository = get(),
             agentMonitorTaskRepository = get(),
             embeddingService = get(),
-            profileHistoryRepository = get()
+            profileHistoryRepository = get(),
+            chatService = get()
         )
     }
     viewModel<ChatHistorySearchVM> { params ->

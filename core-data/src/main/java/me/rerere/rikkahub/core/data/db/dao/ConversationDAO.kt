@@ -114,6 +114,9 @@ interface ConversationDAO {
     @Query("DELETE FROM conversationentity")
     suspend fun deleteAll()
 
+    @Query("DELETE FROM conversationentity WHERE assistant_id = :assistantId")
+    suspend fun deleteConversationsByAssistant(assistantId: String)
+
     @Query("SELECT * FROM conversationentity WHERE is_pinned = 1 ORDER BY update_at DESC")
     fun getPinnedConversations(): Flow<List<ConversationEntity>>
 

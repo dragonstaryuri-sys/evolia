@@ -1342,6 +1342,12 @@
   <string name="assistant_context_priority_chat">优先聊天记录</string>
   <string name="assistant_context_priority_memory">优先记忆片段</string>
   <string name="assistant_context_priority_balanced">平衡分配 (推荐)</string>
+  <!-- Clear Conversations and Segments -->
+  <string name="clear_conversations_and_segments_group">数据管理</string>
+  <string name="clear_conversations_and_segments_title">清空对话及片段记忆</string>
+  <string name="clear_conversations_and_segments_desc">永久删除该智能体的所有聊天消息和片段记忆。</string>
+  <string name="clear_conversations_and_segments_confirm">此操作将永久删除该智能体的所有对话和片段记忆，且不可撤销。确定要继续吗？</string>
+  <string name="clear_conversations_and_segments_success">对话及片段记忆已清空。</string>
   <!-- Tips -->
   <string name="notification_chat_generating">正在生成回复...</string>
   <string name="notification_channel_chat_generation">后台生成保活 (防止系统强制挂起对话)</string>

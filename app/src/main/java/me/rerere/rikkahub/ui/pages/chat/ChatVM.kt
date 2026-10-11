@@ -388,6 +388,17 @@ class ChatVM(
                 }
             }
         }
+        // 监听会话清空事件：当用户从智能体详情页清空对话时，
+        // 分页管理器的 _currentNodes 仍持有旧节点，需重新初始化以从 DB 重新加载
+        viewModelScope.launch {
+            chatService.conversationsCleared.collect { clearedAssistantId ->
+                val currentAssistantId = conversation.value.assistantId
+                if (currentAssistantId == clearedAssistantId) {
+                    Log.i(TAG, "Conversations cleared for assistant $clearedAssistantId, reloading pagination")
+                    initPaginationManager(clearedAssistantId)
+                }
+            }
+        }
     }
 
     val isAiTyping: StateFlow<Boolean> = _currentActiveId

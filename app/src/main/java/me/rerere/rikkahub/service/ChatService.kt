@@ -2714,6 +2714,43 @@ class ChatService(
     }
 
     /**
+     * 清除内存缓存中属于指定智能体的所有会话。
+     *
+     * 用于"一键清空对话及片段记忆"功能：DB 层已通过 [ConversationRepository.clearConversationsAndSegmentMemory]
+     * 删除了 conversationentity（及级联的 chat_message_nodes / chat_messages），但 ChatService 的
+     * [conversations] ConcurrentHashMap 仍持有旧的 StateFlow，导致 ChatVM 的 conversation 流继续
+     * 推送旧消息，UI 不刷新。
+     *
+     * 此方法遍历缓存，将 assistantId 匹配的会话 StateFlow 更新为空会话（清空 messageNodes），
+     * 让正在订阅的 ChatVM 立即感知到数据变更。
+     */
+    fun clearConversationsOfAssistantFromCache(assistantId: Uuid) {
+        conversations.forEach { (convId, flow) ->
+            val conv = flow.value
+            if (conv.assistantId == assistantId) {
+                // 更新 StateFlow 值为空会话，保留 id/assistantId 但清空消息
+                // currentMessages 是派生属性，messageNodes 清空后自动返回空列表
+                flow.value = conv.copy(
+                    messageNodes = emptyList(),
+                    chatSuggestions = emptyList(),
+                    lastSummarizedMessageTime = 0L,
+                    lastSummarizedMessageId = "",
+                    contextSummaryUpToIndex = -1,
+                    lastArchivedMessageTime = 0L
+                )
+                _generationJobs.value[convId]?.cancel()
+                removeGenerationJob(convId)
+            }
+        }
+        // 通知 ChatVM 重新加载分页管理器（清空 _currentNodes 并从 DB 重新加载）
+        _conversationsCleared.tryEmit(assistantId)
+    }
+
+    /** 会话被清空时发出事件，ChatVM 监听以重置分页缓存 */
+    private val _conversationsCleared = MutableSharedFlow<Uuid>(extraBufferCapacity = 4)
+    val conversationsCleared: SharedFlow<Uuid> = _conversationsCleared
+
+    /**
      * 仅停止指定会话的生成任务（不清理会话状态）。
      * 用于通话打断等场景：需要立即取消 AI 生成但保留会话上下文。
      */

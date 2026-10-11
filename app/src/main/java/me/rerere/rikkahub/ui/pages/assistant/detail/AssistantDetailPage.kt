@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DataObject
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.MoveToInbox
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -38,10 +40,12 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.material3.DropdownMenu
@@ -386,7 +390,8 @@ fun AssistantDetailPage(
                     onNavigateToTools = { navController.navigate(AssistantDetailRoutes.TOOLS) },
                     onNavigateToMemory = { navController.navigate(AssistantDetailRoutes.MEMORY) },
                     onNavigateToUI = { navController.navigate(AssistantDetailRoutes.UI) },
-                    onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) }
+                    onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) },
+                    onClearConversationsAndSegments = { vm.clearConversationsAndSegmentMemory() }
                 )
             }
 
@@ -571,7 +576,8 @@ private fun AssistantDetailHome(
     onNavigateToTools: () -> Unit,
     onNavigateToMemory: () -> Unit,
     onNavigateToUI: () -> Unit,
-    onNavigateToAdvanced: () -> Unit
+    onNavigateToAdvanced: () -> Unit,
+    onClearConversationsAndSegments: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -684,6 +690,43 @@ private fun AssistantDetailHome(
                 description = stringResource(R.string.assistant_detail_advanced_desc),
                 onClick = onNavigateToAdvanced
             )
+
+            // 清空对话及片段记忆（危险操作，需二次确认）
+            var showClearConfirmDialog by remember { mutableStateOf(false) }
+
+            SettingGroupItem(
+                title = stringResource(R.string.clear_conversations_and_segments_title),
+                subtitle = stringResource(R.string.clear_conversations_and_segments_desc),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.CleaningServices,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                onClick = { showClearConfirmDialog = true }
+            )
+
+            if (showClearConfirmDialog) {
+                AlertDialog(
+                    onDismissRequest = { showClearConfirmDialog = false },
+                    title = { Text(stringResource(R.string.clear_conversations_and_segments_title)) },
+                    text = { Text(stringResource(R.string.clear_conversations_and_segments_confirm)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            onClearConversationsAndSegments()
+                            showClearConfirmDialog = false
+                        }) {
+                            Text(stringResource(R.string.confirm))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showClearConfirmDialog = false }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    }
+                )
+            }
         }
 
         Spacer(Modifier.height(32.dp))

@@ -117,7 +117,8 @@ class AssistantDetailVM(
     private val extendedStateRepository: AssistantExtendedStateRepository,
     private val agentMonitorTaskRepository: AgentMonitorTaskRepository,
     private val embeddingService: EmbeddingService,
-    private val profileHistoryRepository: ProfileHistoryRepository
+    private val profileHistoryRepository: ProfileHistoryRepository,
+    private val chatService: me.rerere.rikkahub.service.ChatService
 ) : ViewModel() {
     private val assistantId = try {
         Uuid.parse(id)
@@ -1285,6 +1286,24 @@ class AssistantDetailVM(
         val request = androidx.work.OneTimeWorkRequestBuilder<me.rerere.rikkahub.service.MemoryConsolidationWorker>()
             .setInputData(androidx.work.workDataOf("FULL_SCAN" to isFullScan, "ASSISTANT_ID" to assistantId.toString()))
             .build(); androidx.work.WorkManager.getInstance(context).enqueue(request)
+    }
+
+    /**
+     * 一键清空该智能体的所有对话及片段记忆。
+     * 删除 chat_messages / chat_message_nodes (CASCADE) / chat_segments / chat_episodes。
+     * 同时清除 ChatService 内存缓存中该智能体的会话，让对话页面 UI 即时刷新。
+     */
+    fun clearConversationsAndSegmentMemory() {
+        viewModelScope.launch {
+            try {
+                conversationRepository.clearConversationsAndSegmentMemory(assistantId)
+                chatService.clearConversationsOfAssistantFromCache(assistantId)
+                setSnackbarMessage(context.getString(R.string.clear_conversations_and_segments_success))
+            } catch (e: Exception) {
+                Log.e(TAG, "clearConversationsAndSegmentMemory failed", e)
+                setSnackbarMessage("Error: ${e.localizedMessage ?: e.message ?: "Unknown error"}")
+            }
+        }
     }
 
     fun estimateTokens(text: String): Int = text.length / 4
