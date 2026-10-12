@@ -66,7 +66,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -209,7 +208,9 @@ fun ChatInput(
     voiceTranscribing: Boolean = false,
     hasMicPermission: Boolean = false,
     onRequestMicPermission: () -> Unit = {},
-    onVoiceMessageReady: (VoiceRecorderResult?) -> Unit = {},
+    voiceMode: Boolean = false,
+    onVoiceModeChange: (Boolean) -> Unit = {},
+    onVoiceMessageReady: (VoiceRecorderResult?, showTranscription: Boolean) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -256,14 +257,13 @@ fun ChatInput(
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
 
-    var voiceMode by rememberSaveable { mutableStateOf(false) }
     fun toggleVoiceMode() {
         if (voiceMode) {
-            voiceMode = false
+            onVoiceModeChange(false)
         } else if (hasMicPermission) {
             keyboardController?.hide()
             focusManager.clearFocus()
-            voiceMode = true
+            onVoiceModeChange(true)
         } else {
             onRequestMicPermission()
         }
@@ -433,8 +433,8 @@ fun ChatInput(
                         VoiceRecordButton(
                             controller = voiceRecorderController!!,
                             transcribing = voiceTranscribing,
-                            onRecordComplete = { result ->
-                                onVoiceMessageReady(result)
+                            onRecordComplete = { result, showTranscription ->
+                                onVoiceMessageReady(result, showTranscription)
                             },
                             onError = { msg -> toaster.show(msg, ToastType.Error) },
                             modifier = Modifier

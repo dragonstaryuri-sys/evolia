@@ -287,6 +287,8 @@ private fun ChatPageContent(
         }
     }
     val voiceTranscribing by vm.voiceTranscribing.collectAsStateWithLifecycle()
+    // 语音/键盘输入模式：由 ChatPage 统一管理，转文字完成后需切回文字模式
+    var voiceMode by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         vm.voiceEvents.collect { msg -> toaster.show(msg, ToastType.Error) }
     }
@@ -339,7 +341,22 @@ private fun ChatPageContent(
         }
     }
 
-    fun handleVoiceMessageReady(result: me.rerere.rikkahub.service.voice.VoiceRecorderResult?) {
+    /**
+     * 把转写文本填入输入框并切回文字模式，供用户编辑后手动发送。
+     * 同时删除临时录音文件（不再作为语音消息保存）。
+     */
+    fun fillTranscribedToInput(text: String, tempFile: java.io.File?) {
+        inputState.setMessageTextAndFocus(text, scope)
+        voiceMode = false
+        // 转文字模式不保留录音文件，避免堆积临时文件
+        tempFile?.let { file ->
+            scope.launch {
+                try { file.delete() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun handleVoiceMessageReady(result: me.rerere.rikkahub.service.voice.VoiceRecorderResult?, showTranscription: Boolean) {
         // 无论录音是否有效（发送/取消/过短）都必须收尾 ASR 会话，
         // 释放 SpeechRecognizer 并拿到（若有）并行流式识别结果
         val streamedText = vm.finishRecordingASRSession()
@@ -353,6 +370,26 @@ private fun ChatPageContent(
             }
             return
         }
+
+        if (showTranscription) {
+            // 右上滑"转文字"：不发送语音消息，把录音转成文本填入输入框供用户编辑
+            // 优先使用录音期间并行流式 ASR 已拿到的文本（省去一次网络请求）
+            val preText = streamedText?.takeIf { it.isNotBlank() }
+            if (preText != null) {
+                fillTranscribedToInput(preText, result.file)
+            } else {
+                vm.transcribeVoiceToInput(result.uri) { text ->
+                    if (text.isNullOrBlank()) {
+                        // 转文字失败或为空，提示用户重试
+                        toaster.show(context.getString(R.string.chat_voice_transcribe_failed), ToastType.Error)
+                    } else {
+                        fillTranscribedToInput(text, result.file)
+                    }
+                }
+            }
+            return
+        }
+
         // 不再要求 currentChatModel 非空：语音消息入列不需要 chat model，
         // ASR 转写用的是 ASR provider，AI 回复在 onASRNodeCompleted 里按需触发。
         // 达到 59s 自动停录时也能正常发送（类似微信效果）。
@@ -364,7 +401,7 @@ private fun ChatPageContent(
     LaunchedEffect(voiceRecorderController) {
         voiceRecorderController.autoStopEvents.collect {
             val result = voiceRecorderController.stop()
-            handleVoiceMessageReady(result)
+            handleVoiceMessageReady(result, showTranscription = false)
         }
     }
 
@@ -945,10 +982,12 @@ private fun ChatPageContent(
                                     onDeleteFile = { vm.deleteFile(it) },
                                     onConsolidate = { vm.consolidateConversation(conversation) },
                                     voiceRecorderController = voiceRecorderController,
-                                    voiceTranscribing = false,
+                                    voiceTranscribing = voiceTranscribing,
                                     hasMicPermission = hasMicPermission,
                                     onRequestMicPermission = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                                    onVoiceMessageReady = { handleVoiceMessageReady(it) }
+                                    voiceMode = voiceMode,
+                                    onVoiceModeChange = { voiceMode = it },
+                                    onVoiceMessageReady = { result, showTranscription -> handleVoiceMessageReady(result, showTranscription) }
                                 )
                             }
 
@@ -1049,10 +1088,12 @@ private fun ChatPageContent(
                                     onDeleteFile = { vm.deleteFile(it) },
                                     onConsolidate = { vm.consolidateConversation(conversation) },
                                     voiceRecorderController = voiceRecorderController,
-                                    voiceTranscribing = false,
+                                    voiceTranscribing = voiceTranscribing,
                                     hasMicPermission = hasMicPermission,
                                     onRequestMicPermission = { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) },
-                                    onVoiceMessageReady = { handleVoiceMessageReady(it) }
+                                    voiceMode = voiceMode,
+                                    onVoiceModeChange = { voiceMode = it },
+                                    onVoiceMessageReady = { result, showTranscription -> handleVoiceMessageReady(result, showTranscription) }
                                 )
                             }
                         }

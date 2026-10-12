@@ -181,7 +181,9 @@ fun MinimalChatInput(
     voiceTranscribing: Boolean = false,
     hasMicPermission: Boolean = false,
     onRequestMicPermission: () -> Unit = {},
-    onVoiceMessageReady: (VoiceRecorderResult?) -> Unit = {},
+    voiceMode: Boolean = false,
+    onVoiceModeChange: (Boolean) -> Unit = {},
+    onVoiceMessageReady: (VoiceRecorderResult?, showTranscription: Boolean) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
@@ -209,14 +211,13 @@ fun MinimalChatInput(
     val imeVisible = WindowInsets.isImeVisible
     val focusManager = LocalFocusManager.current
 
-    var voiceMode by rememberSaveable { mutableStateOf(false) }
     fun toggleVoiceMode() {
         if (voiceMode) {
-            voiceMode = false
+            onVoiceModeChange(false)
         } else if (hasMicPermission) {
             keyboardController?.hide()
             focusManager.clearFocus()
-            voiceMode = true
+            onVoiceModeChange(true)
         } else {
             onRequestMicPermission()
         }
@@ -354,8 +355,8 @@ fun MinimalChatInput(
                     VoiceRecordButton(
                         controller = voiceRecorderController!!,
                         transcribing = voiceTranscribing,
-                        onRecordComplete = { result ->
-                            onVoiceMessageReady(result)
+                        onRecordComplete = { result, showTranscription ->
+                            onVoiceMessageReady(result, showTranscription)
                         },
                         onError = { msg -> toaster.show(msg, ToastType.Error) },
                         modifier = Modifier

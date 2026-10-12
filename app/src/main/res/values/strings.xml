@@ -1851,6 +1851,7 @@
   <string name="chat_voice_too_short">Recording too short</string>
   <string name="chat_voice_transcribing">Transcribing…</string>
   <string name="chat_voice_asr_failed">Speech recognition failed, sending audio directly</string>
+  <string name="chat_voice_transcribe_failed">Transcription failed, please try again later</string>
   <string name="chat_voice_no_asr_configured">No speech recognition configured. Add an ASR provider in settings, or enable audio input on the model.</string>
   <string name="chat_voice_permission_required">Microphone permission is required to record voice</string>
   <string name="chat_voice_message">Voice message</string>
@@ -1861,6 +1862,8 @@
   <string name="chat_voice_no_transcription">No transcription available</string>
   <string name="chat_voice_slide_up_cancel">Slide up to cancel</string>
   <string name="chat_voice_release_to_cancel">Release to cancel</string>
+  <string name="chat_voice_slide_right_transcribe">Slide right to transcribe</string>
+  <string name="chat_voice_release_to_transcribe">Release to transcribe</string>
   <string name="setting_provider_page_audio">Audio</string>
   <!-- Diary feature upgrade -->
   <string name="diary_view_list">List</string>

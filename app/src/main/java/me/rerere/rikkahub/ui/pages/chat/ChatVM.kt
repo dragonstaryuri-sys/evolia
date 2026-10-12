@@ -102,8 +102,10 @@ class ChatVM(
     // --- 语音消息转写状态：有任一条 pending 即为 true（但**不再阻塞发送**，仅用于 UI 显示"转写中"） ---
     private val _voiceTranscribing: MutableStateFlow<Boolean> = MutableStateFlow(false)
     val voiceTranscribing: StateFlow<Boolean> = _voiceTranscribing.asStateFlow()
+    // 右上滑"转文字到输入框"时的转写标志（不涉及消息节点，单独计数）
+    private var transcribingToInput = false
     private fun refreshVoiceTranscribingState() {
-        _voiceTranscribing.value = pendingASRNodeIds.isNotEmpty()
+        _voiceTranscribing.value = pendingASRNodeIds.isNotEmpty() || transcribingToInput
     }
 
     // --- 语音消息相关错误事件（一次性，UI 用 toast 提示） ---
@@ -316,6 +318,75 @@ class ChatVM(
     }
 
     fun startCall(conversationId: Uuid) = voiceCallManager.startCall(conversationId)
+
+    /**
+     * 把指定音频文件转写成纯文本（不发送任何消息）。
+     *
+     * 用于右上滑"转文字到输入框"：录音完成后调用本方法，转写结果通过 [onResult] 回传，
+     * 由 UI 层填入输入框供用户编辑后手动发送。
+     *
+     * 转写期间 [voiceTranscribing] 为 true（按钮显示"转文字中…"）。
+     *
+     * @param audioUri 录音文件 Uri
+     * @param onResult 转写结果回调；null 表示未配置 ASR 或转写失败
+     */
+    fun transcribeVoiceToInput(audioUri: Uri, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            transcribingToInput = true
+            refreshVoiceTranscribingState()
+            val text: String? = try {
+                transcribeAudioFile(audioUri)
+            } catch (e: Exception) {
+                Log.e(TAG, "transcribeVoiceToInput: failed", e)
+                _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                null
+            } finally {
+                transcribingToInput = false
+                refreshVoiceTranscribingState()
+            }
+            onResult(text)
+        }
+    }
+
+    /**
+     * 对单个音频文件执行 ASR 转写，返回纯文本；未配置 ASR 或转写失败返回 null。
+     *
+     * 复用 [sendVoiceMessage] 中的 Provider 选择逻辑：
+     * - 若选中 SystemASR，自动 fallback 到 EvoliaASR / OnlineASR（SystemASR 不支持文件转写）。
+     * - 通过 [asrMutex] 串行执行，避免与消息转写抢占。
+     */
+    private suspend fun transcribeAudioFile(audioUri: Uri): String? {
+        val currentSettings = settingsStore.settingsFlow.value
+        val selectedAsrProvider = currentSettings.getSelectedASRProvider()
+        val effectiveAsrProvider = if (selectedAsrProvider is ASRProviderSetting.SystemASR) {
+            val evoliaFallback = currentSettings.asrProviders
+                .asSequence()
+                .filterIsInstance<ASRProviderSetting.EvoliaASR>()
+                .firstOrNull()
+            val onlineFallback = currentSettings.asrProviders
+                .asSequence()
+                .filterIsInstance<ASRProviderSetting.OnlineASR>()
+                .firstOrNull { it.apiKey.isNotBlank() }
+            evoliaFallback ?: onlineFallback
+        } else {
+            selectedAsrProvider
+        }
+        if (effectiveAsrProvider == null) {
+            _voiceEvents.emit(context.getString(R.string.chat_voice_no_asr_configured))
+            return null
+        }
+        return asrMutex.withLock {
+            try {
+                asrManager.transcribeFile(effectiveAsrProvider, context, audioUri)
+                    .takeIf { it.isNotBlank() }
+            } catch (e: Exception) {
+                Log.e(TAG, "transcribeAudioFile: failed", e)
+                _voiceEvents.emit(context.getString(R.string.chat_voice_asr_failed))
+                null
+            }
+        }
+    }
+
     fun hangupCall() = voiceCallManager.hangup()
     fun toggleCallMute() = voiceCallManager.toggleMute()
     fun toggleCallSpeaker() = voiceCallManager.toggleSpeaker()

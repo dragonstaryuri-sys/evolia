@@ -34,9 +34,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -286,22 +288,36 @@ private fun formatVoiceDuration(ms: Long): String {
 }
 
 /**
+ * 录音时手指上滑后的目标动作区。
+ * - [None]：未上滑或在中间区域，松开即发送语音。
+ * - [Cancel]：左上滑，松开取消录音。
+ * - [Transcribe]：右上滑，松开发送语音并自动展开转文字。
+ */
+private enum class RecordZone { None, Cancel, Transcribe }
+
+/**
  * 按住说话按钮（类似微信语音输入）。
  *
  * 按下时开始录音（[VoiceRecorderController.start]），松开时停止录音
  * （[VoiceRecorderController.stop]）并把结果回调给 [onRecordComplete]。
  * 过短录音返回 null，由上层提示"录音太短"。
  *
+ * 手势分区（类似微信）：
+ * - 直接松开 → 发送语音消息。
+ * - 左上滑（上滑且向左）→ 取消录音。
+ * - 右上滑（上滑且向右）→ 发送语音并自动展开转文字。
+ *
  * @param controller 录音控制器
  * @param transcribing 是否正在 ASR 转写（松开后、发送前），为 true 时禁用按钮并显示加载
- * @param onRecordComplete 录音完成回调；null 表示过短/取消
+ * @param onRecordComplete 录音完成回调；第一个参数为 null 表示过短/取消，
+ *   第二个参数表示是否需要自动展开转文字（右上滑时为 true）
  * @param onError 录音启动失败回调（如权限缺失、MediaRecorder 异常）
  */
 @Composable
 fun VoiceRecordButton(
     controller: VoiceRecorderController,
     transcribing: Boolean,
-    onRecordComplete: (VoiceRecorderResult?) -> Unit,
+    onRecordComplete: (VoiceRecorderResult?, showTranscription: Boolean) -> Unit,
     onError: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -313,13 +329,15 @@ fun VoiceRecordButton(
     val recordingText = stringResource(R.string.chat_voice_recording)
     val transcribingText = stringResource(R.string.chat_voice_transcribing)
     val slideUpCancelText = stringResource(R.string.chat_voice_slide_up_cancel)
+    val slideRightTranscribeText = stringResource(R.string.chat_voice_slide_right_transcribe)
     val releaseToCancelText = stringResource(R.string.chat_voice_release_to_cancel)
+    val releaseToTranscribeText = stringResource(R.string.chat_voice_release_to_transcribe)
 
-    // 上滑取消状态：null=未录音；false=录音中（未上滑）；true=已上滑到取消区
-    var isCancelZone by remember { mutableStateOf(false) }
-    // 录音中是否触发过上滑提示（用于区分文案显示时机）
+    // 当前上滑目标区
+    var zone by remember { mutableStateOf(RecordZone.None) }
     val density = LocalDensity.current
-    val cancelThresholdPx = with(density) { 80.dp.toPx() }
+    // 垂直方向触发阈值（上滑超过此距离才进入分区判定）
+    val verticalThresholdPx = with(density) { 80.dp.toPx() }
 
     val pulseTransition = rememberInfiniteTransition(label = "rec_pulse")
     val pulseAlpha by pulseTransition.animateFloat(
@@ -329,12 +347,15 @@ fun VoiceRecordButton(
         label = "pulse_alpha"
     )
 
+    val isCancelZone = zone == RecordZone.Cancel
+    val isTranscribeZone = zone == RecordZone.Transcribe
+
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = if (isCancelZone) {
-            MaterialTheme.colorScheme.errorContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceContainerHigh
+        color = when (zone) {
+            RecordZone.Cancel -> MaterialTheme.colorScheme.errorContainer
+            RecordZone.Transcribe -> MaterialTheme.colorScheme.primaryContainer
+            RecordZone.None -> MaterialTheme.colorScheme.surfaceContainerHigh
         },
         modifier = modifier
             .heightIn(min = 48.dp)
@@ -344,43 +365,58 @@ fun VoiceRecordButton(
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         // 按下：开始录音
-                        isCancelZone = false
-                        var startY = down.position.y
-                        var cancelled = false
+                        zone = RecordZone.None
+                        val startY = down.position.y
                         try {
                             controller.start()
                         } catch (e: Exception) {
                             onError(e.message ?: "录音启动失败")
                             return@awaitEachGesture
                         }
-                        // 持续追踪手指移动，检测上滑
+                        // 持续追踪手指移动，检测上滑方向
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull() ?: continue
                             val currentY = change.position.y
                             val deltaY = startY - currentY // 正数=上滑
-                            val wasCancelZone = isCancelZone
-                            isCancelZone = deltaY > cancelThresholdPx
-                            if (isCancelZone != wasCancelZone) {
-                                // 触觉反馈：进入/离开取消区时震动一下
-                                // (省略 haptic，避免引入额外依赖)
+
+                            if (deltaY > verticalThresholdPx) {
+                                // 已上滑超过阈值，按手指在屏幕上的绝对水平位置分区
+                                // 按钮居中在屏幕底部，左半屏 = 取消，右半屏 = 转文字
+                                // 用手指相对按钮中心的水平偏移来判定
+                                val centerPx = size.width / 2f
+                                val offsetFromCenter = change.position.x - centerPx
+                                zone = if (offsetFromCenter < 0) {
+                                    RecordZone.Cancel
+                                } else {
+                                    RecordZone.Transcribe
+                                }
+                            } else {
+                                zone = RecordZone.None
                             }
+
                             if (change.changedToUp()) {
                                 // 手指抬起
-                                if (isCancelZone) {
-                                    // 上滑取消
-                                    cancelled = true
-                                    controller.cancel()
-                                    onRecordComplete(null) // null 表示取消，上层不提示"太短"
-                                } else {
-                                    val result = controller.stop()
-                                    onRecordComplete(result)
+                                when (zone) {
+                                    RecordZone.Cancel -> {
+                                        // 左上滑取消
+                                        controller.cancel()
+                                        onRecordComplete(null, false)
+                                    }
+                                    RecordZone.Transcribe -> {
+                                        // 右上滑转文字：发送语音并自动展开转写
+                                        val result = controller.stop()
+                                        onRecordComplete(result, true)
+                                    }
+                                    RecordZone.None -> {
+                                        // 正常发送
+                                        val result = controller.stop()
+                                        onRecordComplete(result, false)
+                                    }
                                 }
                                 break
                             }
                         }
-                        // 静默 cancelled：上面已经处理过了
-                        @Suppress("UNUSED_VARIABLE") val _c = cancelled
                     }
                 }
             )
@@ -450,66 +486,59 @@ fun VoiceRecordButton(
                 durationMs = durationMs,
                 amplitude = controller.amplitude.collectAsState().value,
                 isCancelZone = isCancelZone,
+                isTranscribeZone = isTranscribeZone,
                 recordingText = recordingText,
                 slideUpCancelText = slideUpCancelText,
-                releaseToCancelText = releaseToCancelText
+                slideRightTranscribeText = slideRightTranscribeText,
+                releaseToCancelText = releaseToCancelText,
+                releaseToTranscribeText = releaseToTranscribeText
             )
         }
     }
 }
 
 /**
- * 录音中遮罩浮层（全屏半透明 + 底部波形，类似微信）。
+ * 录音中遮罩浮层（全屏半透明 + 底部操作区，类似微信）。
  *
- * 背景：半透明黑色/红色（取消区）。底部：波形动画 + 时长 + 操作提示。
+ * 布局自上而下：波形 → 计时 → 取消/转文字按钮（最靠近手指）。
+ * 按钮图案直观，不再显示文字提示；进入操作区时仅显示对应松开提示。
  */
 @Composable
 private fun RecordingOverlay(
     durationMs: Long,
     amplitude: Int,
     isCancelZone: Boolean,
+    isTranscribeZone: Boolean,
     recordingText: String,
     slideUpCancelText: String,
-    releaseToCancelText: String
+    slideRightTranscribeText: String,
+    releaseToCancelText: String,
+    releaseToTranscribeText: String
 ) {
-    val bgColor = if (isCancelZone) Color(0x99FF4D4F) else Color(0x66000000)
-    val accentColor = if (isCancelZone) Color(0xFFFF4D4F) else Color(0xFFFFFFFF)
+    val bgColor = when {
+        isCancelZone -> Color(0x99FF4D4F)
+        isTranscribeZone -> MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+        else -> Color(0x66000000)
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // 底部波形 + 提示区域
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(bottom = 120.dp),
+                .padding(bottom = 100.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // 波形 / 取消图标
-            if (isCancelZone) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color.White),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Mic,
-                        contentDescription = null,
-                        modifier = Modifier.size(28.dp),
-                        tint = accentColor
-                    )
-                }
-            } else {
-                // 波形条：根据 amplitude 动态变化
+            // 波形条：仅在未进入操作区时显示
+            if (!isCancelZone && !isTranscribeZone) {
                 WaveformBars(
                     amplitude = amplitude,
-                    color = accentColor,
+                    color = Color.White,
                     modifier = Modifier.fillMaxWidth(0.7f)
                 )
             }
@@ -521,12 +550,64 @@ private fun RecordingOverlay(
                 color = Color.White
             )
 
-            // 操作提示
-            Text(
-                text = if (isCancelZone) releaseToCancelText else "$recordingText  |  $slideUpCancelText",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.9f)
-            )
+            // 松开提示（仅进入操作区时显示）
+            val hintText = when {
+                isCancelZone -> releaseToCancelText
+                isTranscribeZone -> releaseToTranscribeText
+                else -> ""
+            }
+            if (hintText.isNotEmpty()) {
+                Text(
+                    text = hintText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.9f)
+                )
+            }
+
+            // 取消（左）/ 转文字（右）按钮 — 放在最下方，靠近手指
+            Row(
+                modifier = Modifier.fillMaxWidth(0.75f),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 取消图标（药丸形，增大滑动命中区域）
+                Box(
+                    modifier = Modifier
+                        .width(90.dp)
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(
+                            if (isCancelZone) Color.White else Color.White.copy(alpha = 0.25f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = if (isCancelZone) Color(0xFFFF4D4F) else Color.White
+                    )
+                }
+
+                // 转文字图标（药丸形，增大滑动命中区域）
+                Box(
+                    modifier = Modifier
+                        .width(90.dp)
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(
+                            if (isTranscribeZone) Color.White else Color.White.copy(alpha = 0.25f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.TextFields,
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                        tint = if (isTranscribeZone) MaterialTheme.colorScheme.primary else Color.White
+                    )
+                }
+            }
         }
     }
 }
