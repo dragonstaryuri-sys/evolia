@@ -197,28 +197,32 @@ fun VoiceMessageBubble(
         }
 
         // 下方转写内容：纯文本，不拼接前缀
+        val transcriptionText = transcription?.takeIf { it.isNotBlank() }
         AnimatedVisibility(
-            visible = showTranscription && transcription?.isNotBlank() == true,
+            visible = showTranscription && transcriptionText != null,
             enter = expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeIn(),
             exit = shrinkVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)) + fadeOut()
         ) {
-            val transcriptionBg = if (isUser) {
-                // 用户侧：浅一点的 primaryContainer 同色系半透明
-                containerColor.copy(alpha = 0.35f)
-            } else {
-                // 助手侧：surface 层级半透明
-                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f)
+            // 退出动画期间 transcription 可能被置空，这里必须做空判断，避免 NPE
+            if (transcriptionText != null) {
+                val transcriptionBg = if (isUser) {
+                    // 用户侧：浅一点的 primaryContainer 同色系半透明
+                    containerColor.copy(alpha = 0.35f)
+                } else {
+                    // 助手侧：surface 层级半透明
+                    MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f)
+                }
+                Text(
+                    text = transcriptionText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .width(bubbleWidth + 80.dp) // 文本比语音条稍宽，提升可读性
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(transcriptionBg)
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                )
             }
-            Text(
-                text = transcription!!,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .width(bubbleWidth + 80.dp) // 文本比语音条稍宽，提升可读性
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(transcriptionBg)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            )
         }
     }
 }

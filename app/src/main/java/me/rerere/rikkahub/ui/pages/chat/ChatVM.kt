@@ -99,13 +99,15 @@ class ChatVM(
     // --- ASR 串行锁：保证多条语音按发送顺序依次转写，不并发 ---
     private val asrMutex = Mutex()
 
-    // --- 语音消息转写状态：有任一条 pending 即为 true（但**不再阻塞发送**，仅用于 UI 显示"转写中"） ---
+    // --- 语音消息转写状态：仅"右上滑转文字到输入框"时为 true，用于 UI 显示"转写中"并占用输入框 ---
+    // 注意：普通语音消息发送后，后台仍会异步 ASR 转写（pendingASRNodeIds），
+    // 但**不**占用/阻塞输入框，用户可以在上一条语音还没转写完成前继续按住说话发送下一条。
     private val _voiceTranscribing: MutableStateFlow<Boolean> = MutableStateFlow(false)
     val voiceTranscribing: StateFlow<Boolean> = _voiceTranscribing.asStateFlow()
     // 右上滑"转文字到输入框"时的转写标志（不涉及消息节点，单独计数）
     private var transcribingToInput = false
     private fun refreshVoiceTranscribingState() {
-        _voiceTranscribing.value = pendingASRNodeIds.isNotEmpty() || transcribingToInput
+        _voiceTranscribing.value = transcribingToInput
     }
 
     // --- 语音消息相关错误事件（一次性，UI 用 toast 提示） ---
