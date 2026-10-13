@@ -387,6 +387,11 @@ class WebdavSync(
                     while (zipIn.nextEntry.also { entry = it } != null) {
                         entry?.let { ze ->
                             when {
+                                // 跳过目录条目（如 "upload/"）：否则 substringAfter("/") 为空，
+                                // 会把已存在的目录当作文件打开，触发 EISDIR (Is a directory)
+                                ze.isDirectory || ze.name.endsWith("/") -> {
+                                    LogUtil.d(TAG, "Skipping directory entry: ${ze.name}")
+                                }
                                 ze.name == "settings.json" -> {
                                     val content = zipIn.readBytes().toString(Charsets.UTF_8)
                                     val (cleaned, res) = json.decodeFromString<Settings>(content).sanitize()
