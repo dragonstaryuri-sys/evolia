@@ -239,6 +239,11 @@ fun SquareCropBox(
                             val maxTop = (containerHeight - originalHeight) / 2
                             val maxLeft = (containerWidth - originalWidth) / 2
                             val minSize = 80.dp.toPx() // Minimum crop size
+                            // Maximum allowed crop size is the shorter image dimension.
+                            // effectiveMinSize guarantees the coerceIn range stays valid even for
+                            // very small images where minSize could exceed maxSize.
+                            val maxSize = min(originalWidth, originalHeight)
+                            val effectiveMinSize = minSize.coerceAtMost(maxSize)
 
                             detectDragGestures(
                                 onDrag = { event, offset ->
@@ -253,9 +258,14 @@ fun SquareCropBox(
                                         (event.position.y in top + size / 3..top + size * 2 / 3 
                                             && event.position.x in left + size / 3..left + size * 2 / 3) 
                                             || selectedArea == SelectedCropArea.Whole -> {
-                                            // Move the whole box, keeping it within image bounds
-                                            val newLeft = (left + offset.x).coerceIn(maxLeft, maxLeft + originalWidth - size)
-                                            val newTop = (top + offset.y).coerceIn(maxTop, maxTop + originalHeight - size)
+                                            // Move the whole box, keeping it within image bounds.
+                                            // Guard against floating-point precision: ensure upper bound >= lower bound
+                                            // (when size is nearly equal to originalWidth/Height, the computed max may be
+                                            // microscopically smaller than the min, which makes coerceIn throw).
+                                            val leftUpperBound = (maxLeft + originalWidth - size).coerceAtLeast(maxLeft)
+                                            val topUpperBound = (maxTop + originalHeight - size).coerceAtLeast(maxTop)
+                                            val newLeft = (left + offset.x).coerceIn(maxLeft, leftUpperBound)
+                                            val newTop = (top + offset.y).coerceIn(maxTop, topUpperBound)
                                             left = newLeft
                                             top = newTop
                                             selectedArea = SelectedCropArea.Whole
@@ -268,7 +278,7 @@ fun SquareCropBox(
                                             || selectedArea == SelectedCropArea.TopLeftCorner -> {
                                             // Use the average of x and y offset for uniform scaling
                                             val delta = (offset.x + offset.y) / 2
-                                            val newSize = (size - delta).coerceIn(minSize, min(originalWidth, originalHeight))
+                                            val newSize = (size - delta).coerceIn(effectiveMinSize, maxSize)
                                             val sizeDiff = size - newSize
                                             val newLeft = left + sizeDiff
                                             val newTop = top + sizeDiff
@@ -287,7 +297,7 @@ fun SquareCropBox(
                                             && selectedArea == SelectedCropArea.None)
                                             || selectedArea == SelectedCropArea.BottomRightCorner -> {
                                             val delta = (offset.x + offset.y) / 2
-                                            val newSize = (size + delta).coerceIn(minSize, min(originalWidth, originalHeight))
+                                            val newSize = (size + delta).coerceIn(effectiveMinSize, maxSize)
                                             
                                             // Check bounds
                                             if (left + newSize <= maxLeft + originalWidth && top + newSize <= maxTop + originalHeight) {
@@ -302,7 +312,7 @@ fun SquareCropBox(
                                             && selectedArea == SelectedCropArea.None)
                                             || selectedArea == SelectedCropArea.TopRightCorner -> {
                                             val delta = (offset.x - offset.y) / 2
-                                            val newSize = (size + delta).coerceIn(minSize, min(originalWidth, originalHeight))
+                                            val newSize = (size + delta).coerceIn(effectiveMinSize, maxSize)
                                             val sizeDiff = newSize - size
                                             val newTop = top - sizeDiff
                                             
@@ -319,7 +329,7 @@ fun SquareCropBox(
                                             && selectedArea == SelectedCropArea.None)
                                             || selectedArea == SelectedCropArea.BottomLeftCorner -> {
                                             val delta = (-offset.x + offset.y) / 2
-                                            val newSize = (size + delta).coerceIn(minSize, min(originalWidth, originalHeight))
+                                            val newSize = (size + delta).coerceIn(effectiveMinSize, maxSize)
                                             val sizeDiff = newSize - size
                                             val newLeft = left - sizeDiff
                                             
