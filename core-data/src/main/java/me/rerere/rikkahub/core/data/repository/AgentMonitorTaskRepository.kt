@@ -25,4 +25,16 @@ class AgentMonitorTaskRepository(private val agentMonitorTaskDAO: AgentMonitorTa
 
     suspend fun getTaskById(id: Long): AgentMonitorTaskEntity? =
         agentMonitorTaskDAO.getTaskById(id)
+
+    /**
+     * 临时暂停某个监视器 N 分钟。返回 pauseUntil 时间戳（毫秒），
+     * 若监视器不存在则返回 null。暂停期间该监视器不会被评估触发，
+     * 到期后自动恢复，无需手动清零。
+     */
+    suspend fun pauseMonitor(id: Long, durationMinutes: Int): Long? {
+        val existing = agentMonitorTaskDAO.getTaskById(id) ?: return null
+        val pauseUntil = System.currentTimeMillis() + durationMinutes * 60_000L
+        agentMonitorTaskDAO.updatePauseUntil(id, pauseUntil)
+        return pauseUntil
+    }
 }

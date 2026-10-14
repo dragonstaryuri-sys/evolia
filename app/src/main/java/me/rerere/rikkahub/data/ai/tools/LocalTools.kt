@@ -1084,7 +1084,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "截止日期/结束时间，请使用 ISO 8601 格式（例如：2023-10-27T10:00:00）。该字段可选，仅在任务有明确截止时间时填写。"
+                                    "截止日期/结束时间。只知道日期时可只填日期（例如：2023-10-27），需要精确到点时使用 ISO 8601 格式（例如：2023-10-27T10:00:00）。该字段可选，仅在任务有明确截止时间时填写，填写该字段后，系统会自动为你创建用于提醒截止时间的agent_tasks"
                                 )
                             })
                             put("category", buildJsonObject {
@@ -1118,11 +1118,9 @@ class LocalTools(
                                 val difficulty = json["difficulty"]?.jsonPrimitive?.intOrNull ?: 0
                                 val category = json["category"]?.jsonPrimitive?.contentOrNull ?: "user"
 
-                                val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-
                                 val endTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
                                 val endTime = if (endTimeStr != null) {
-                                    runCatching { df.parse(endTimeStr)?.time }.getOrNull()
+                                    parseScheduleEndTime(endTimeStr)
                                         ?: return@Tool buildJsonObject {
                                             put("success", false)
                                             put("error", "end_time 格式无效。")
@@ -1233,11 +1231,9 @@ class LocalTools(
                                         json["difficulty"]?.jsonPrimitive?.intOrNull ?: schedule.difficulty
                                     val newCategory = json["category"]?.jsonPrimitive?.contentOrNull ?: schedule.category
 
-                                    val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
-
                                     val newEndTimeStr = json["end_time"]?.jsonPrimitive?.contentOrNull
                                     val newEndTime = if (newEndTimeStr != null) {
-                                        runCatching { df.parse(newEndTimeStr)?.time }.getOrNull()
+                                        parseScheduleEndTime(newEndTimeStr)
                                             ?: return@Tool buildJsonObject {
                                                 put("success", false)
                                                 put("error", "end_time 格式无效。")
@@ -1387,6 +1383,37 @@ class LocalTools(
                 }
             )
         )
+    }
+
+    /**
+     * 解析日程的 end_time，用于日程截止时间及自动创建的到期提醒 agent_task。
+     * - 仅提供日期（"yyyy-MM-dd"）时，归一为当天中午 12:00:00，避免提醒时间落在深夜；
+     * - 提供完整时间（"yyyy-MM-dd'T'HH:mm:ss"）时按原值使用。
+     * 返回 null 表示格式无效。
+     */
+    private fun parseScheduleEndTime(raw: String): Long? {
+        val text = raw.trim()
+        val dateOnlyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+
+        // 仅日期：按纯日期解析后归一为当天中午
+        if (text.length == 10) {
+            val day = runCatching { dateOnlyFormat.parse(text) }.getOrNull() ?: return null
+            return toNoonOf(day)
+        }
+
+        return runCatching { dateTimeFormat.parse(text)?.time }.getOrNull()
+    }
+
+    /** 将给定时间点归一为所在天的中午 12:00:00。 */
+    private fun toNoonOf(date: java.util.Date): Long {
+        return Calendar.getInstance().apply {
+            time = date
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
     }
 
     private fun openSystemCalendar(title: String, startTime: Long, endTime: Long?, description: String?) {
@@ -2197,7 +2224,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "peek_user",
-                description = "观察并监控用户的手机实时状态。通过 'add' 设置触发式监控（满足条件时系统将自动发送包含实时数据的隐藏消息给你），或使用 'get' 查看具体监控配置详情。",
+                description = "观察并监控用户的手机实时状态。通过 'add' 设置触发式监控（满足条件时系统将自动发送包含实时数据的隐藏消息给你），通过 'pause' 临时暂停某个监控一段时间（到期自动恢复），或使用 'get' 查看具体监控配置详情。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -2205,7 +2232,7 @@ class LocalTools(
                                 put("type", "string")
                                 put(
                                     "description",
-                                    "要执行的操作：add（创建新监控）, list（查看已有列表）, delete（按 ID 撤销监控）, get（按 ID 获取详细配置）"
+                                    "要执行的操作：add（创建新监控）, list（查看已有列表）, delete（按 ID 撤销监控）, get（按 ID 获取详细配置）, pause（按 ID 临时暂停该监控一段时间，到期自动恢复）"
                                 )
                                 put(
                                     "enum",
@@ -2214,14 +2241,19 @@ class LocalTools(
                                             JsonPrimitive("add"),
                                             JsonPrimitive("list"),
                                             JsonPrimitive("delete"),
-                                            JsonPrimitive("get")
+                                            JsonPrimitive("get"),
+                                            JsonPrimitive("pause")
                                         )
                                     )
                                 )
                             })
                             put("monitor_id", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "监控条目的 ID，删除或查询时必填")
+                                put("description", "监控条目的 ID，删除、查询或暂停时必填")
+                            })
+                            put("duration_minutes", buildJsonObject {
+                                put("type", "integer")
+                                put("description", "仅在 action=pause 时必填。临时暂停时长（分钟），范围 1-60。到期后该监控自动恢复；若需永久停止请用 delete。")
                             })
                             put("monitor_name", buildJsonObject {
                                 put("type", "string")
@@ -2359,6 +2391,31 @@ class LocalTools(
                                 monitorTaskRepo.deleteTaskById(id)
                                 buildJsonObject { put("success", true) }
                             }
+                            "pause" -> {
+                                val id = json["monitor_id"]?.jsonPrimitive?.longOrNull
+                                    ?: return@Tool buildJsonObject { put("error", "缺少 monitor_id 参数") }
+                                val durationMinutes = json["duration_minutes"]?.jsonPrimitive?.intOrNull
+                                if (durationMinutes == null || durationMinutes <= 0) {
+                                    return@Tool buildJsonObject { put("error", "缺少或无效的 duration_minutes 参数") }
+                                }
+                                if (durationMinutes > 60) {
+                                    return@Tool buildJsonObject {
+                                        put(
+                                            "error",
+                                            "暂停时长不能超过 60 分钟（当前请求 $durationMinutes 分钟），过长建议和用户重新协商"
+                                        )
+                                    }
+                                }
+                                val pauseUntil = monitorTaskRepo.pauseMonitor(id, durationMinutes)
+                                    ?: return@Tool buildJsonObject { put("error", "监控项不存在") }
+                                val remainingMinutes = ((pauseUntil - System.currentTimeMillis()) / 60_000L).toInt()
+                                buildJsonObject {
+                                    put("success", true)
+                                    put("message", "已临时暂停该监控 $durationMinutes 分钟，期间不会触发，到期后自动恢复")
+                                    put("pause_until", pauseUntil)
+                                    put("pause_remaining_minutes", remainingMinutes)
+                                }
+                            }
                             "get" -> {
                                 val id = json["monitor_id"]?.jsonPrimitive?.longOrNull ?: -1L
                                 val task = monitorTaskRepo.getTaskById(id)
@@ -2372,6 +2429,12 @@ class LocalTools(
                                         put("conditions", try { Json.parseToJsonElement(task.conditions) } catch (e: Exception) { JsonPrimitive(task.conditions) })
                                         put("actions", try { Json.parseToJsonElement(task.actions) } catch (e: Exception) { JsonPrimitive(task.actions) })
                                         put("is_enabled", task.isEnabled)
+                                        // 临时暂停状态：pause_until > now 表示暂停中
+                                        val nowMs = System.currentTimeMillis()
+                                        if (task.pauseUntil > 0L && nowMs < task.pauseUntil) {
+                                            put("pause_until", task.pauseUntil)
+                                            put("pause_remaining_minutes", ((task.pauseUntil - nowMs) / 60_000L).toInt())
+                                        }
                                         put("created_at", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(java.util.Date(task.createdAt)))
                                     }
                                 } else {

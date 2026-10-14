@@ -26,4 +26,11 @@ interface AgentMonitorTaskDAO {
 
     @Query("SELECT * FROM agent_monitor_tasks WHERE id = :id")
     suspend fun getTaskById(id: Long): AgentMonitorTaskEntity?
+
+    /**
+     * 仅更新 pause_until 字段。用于 peek_user 的 pause 动作，
+     * 避免覆盖 monitor_name/conditions/actions 等其他字段。
+     */
+    @Query("UPDATE agent_monitor_tasks SET pause_until = :pauseUntil WHERE id = :id")
+    suspend fun updatePauseUntil(id: Long, pauseUntil: Long)
 }

@@ -41,7 +41,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ProfileHistoryEntity::class,
         AppLockEntity::class
     ],
-    version = 36,
+    version = 37,
     exportSchema = true
 )
 @TypeConverters(
@@ -401,6 +401,22 @@ abstract class AppDatabase : RoomDatabase() {
                     Log.i(TAG, "35->36 迁移完成：app_locks 表共 $total 条记录已迁移到 valid_time + pause_until 结构")
                 }
                 cursor.close()
+            }
+        }
+
+        /**
+         * 36 → 37：agent_monitor_tasks 表新增 pause_until 列。
+         *
+         * 支持 peek_user 工具新增的 pause 动作：临时暂停某个监视器 N 分钟，
+         * 暂停期间 checkAllMonitors 跳过该监视器，到期自动恢复。
+         * 0 表示未暂停。
+         */
+        val MIGRATION_36_37 = object : Migration(36, 37) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 36->37 迁移：agent_monitor_tasks 表新增 pause_until 列")
+                db.execSQL(
+                    "ALTER TABLE `agent_monitor_tasks` ADD COLUMN `pause_until` INTEGER NOT NULL DEFAULT 0"
+                )
             }
         }
 

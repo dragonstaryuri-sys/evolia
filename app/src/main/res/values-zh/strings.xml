@@ -1606,6 +1606,10 @@
   <string name="agent_monitor_empty">暂无监视器</string>
   <string name="agent_monitor_delete_confirm">确定要删除这个监视器吗？删除后将不再监控相关状态。</string>
   <string name="agent_monitor_created_at">创建于: %s</string>
+  <string name="agent_monitor_detail_title">监视器详情</string>
+  <string name="agent_monitor_name_label">名称</string>
+  <string name="agent_monitor_time_label">监控时间</string>
+  <string name="agent_monitor_time_unset">未设置</string>
   <!-- 版本更新相关 -->
   <string name="update_action_go">去更新</string>
   <string name="update_action_know">知道了</string>

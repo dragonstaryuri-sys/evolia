@@ -689,8 +689,11 @@ class EvoliaMonitorService : AccessibilityService() {
 
     private suspend fun checkAllMonitors(state: UserDeviceStateEntity, oldState: UserDeviceStateEntity) {
         val tasks = monitorTaskRepo.getAllEnabledTasks().run { firstOrNull() } ?: return
+        val now = System.currentTimeMillis()
         tasks.forEach { task ->
             try {
+                // 暂停中（now < pause_until）：跳过评估，不触发也不发消息，到期自动恢复
+                if (task.pauseUntil > 0L && now < task.pauseUntil) return@forEach
                 val conditions = json.parseToJsonElement(task.conditions) as? JsonObject ?: return@forEach
                 if (evaluateConditions(conditions, state, oldState, task.id)) {
                     triggerMonitor(task, state)
