@@ -96,6 +96,11 @@ class EvoliaMonitorService : AccessibilityService() {
         runCatching { Typeface.createFromAsset(assets, "fonts/GWMSansUI-Regular.ttf") }.getOrNull()
     }
 
+    // 标记 screenReceiver 是否已成功注册，避免在 onServiceConnected 未调用时
+    // （例如服务被系统在连接前销毁）执行 unregisterReceiver 导致
+    // IllegalArgumentException: Receiver not registered
+    private var screenReceiverRegistered = false
+
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -117,6 +122,7 @@ class EvoliaMonitorService : AccessibilityService() {
             addAction(Intent.ACTION_USER_PRESENT)
         }
         registerReceiver(screenReceiver, filter)
+        screenReceiverRegistered = true
         scope.launch {
             DeviceCommandHub.commands.collectLatest { handleDeviceCommand(it) }
         }
@@ -125,13 +131,18 @@ class EvoliaMonitorService : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        unregisterReceiver(screenReceiver)
+        // 仅在确实注册过的情况下反注册，避免 onServiceConnected 未调用时抛出
+        // IllegalArgumentException: Receiver not registered
+        if (screenReceiverRegistered) {
+            runCatching { unregisterReceiver(screenReceiver) }
+            screenReceiverRegistered = false
+        }
         pollingJob?.cancel()
         appLockPollingJob?.cancel()
         // 服务销毁时移除遮罩和待执行的回调，避免悬浮窗泄漏
         cancelPendingHide()
         hideLockOverlay()
+        super.onDestroy()
     }
 
     private fun startPolling() {
