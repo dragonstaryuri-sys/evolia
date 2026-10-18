@@ -97,11 +97,11 @@ fun SettingNotificationPage() {
                         channelDisabled = isChannelDisabled(NotificationSoundManager.BACKUP_CHANNEL_ID),
                         onClick = { openSystemNotificationSettings() }
                     )
-                    // 语音通话：前台服务通知渠道（由 VoiceCallForegroundService 创建）
+                    // AI 通话：来电横幅与通话中前台服务通知共用同一渠道
                     NotificationChannelRow(
                         title = stringResource(R.string.notification_page_switch_call),
                         subtitle = stringResource(R.string.notification_page_switch_call_desc),
-                        channelDisabled = isChannelDisabled("voice_call_foreground"),
+                        channelDisabled = isChannelDisabled(NotificationSoundManager.INCOMING_CALL_CHANNEL_ID),
                         onClick = { openSystemNotificationSettings() }
                     )
                 }

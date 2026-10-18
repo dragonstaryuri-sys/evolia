@@ -16,7 +16,8 @@ import me.rerere.rikkahub.R
  * - [DIARY_CHANNEL_ID]：日记更新
  * - [PROFILE_CHANNEL_ID]：关系档案更新
  * - [BACKUP_CHANNEL_ID]：数据备份
- * - 语音通话渠道由 VoiceCallForegroundService 创建（ID `voice_call_foreground`），此处不重复创建。
+ * - [INCOMING_CALL_CHANNEL_ID]：AI 通话（来电横幅通知 + 通话中的前台常驻通知，两者合并为同一渠道，
+ *   避免系统通知设置里出现「AI 来电」「语音通话」两个割裂的类别）
  */
 class NotificationSoundManager(private val context: Context) {
 
@@ -25,6 +26,7 @@ class NotificationSoundManager(private val context: Context) {
         const val DIARY_CHANNEL_ID = "diary_updates"
         const val PROFILE_CHANNEL_ID = "relationship_profile_updates"
         const val BACKUP_CHANNEL_ID = "data_backup"
+        const val INCOMING_CALL_CHANNEL_ID = "incoming_call"
 
         /**
          * 需要清理的历史渠道 ID。
@@ -42,7 +44,9 @@ class NotificationSoundManager(private val context: Context) {
             "chat_completed",
             "backup_status",
             "agent_task_notification",
-            "chat_generation_foreground"
+            "chat_generation_foreground",
+            // 历史「语音通话」前台渠道：已并入 AI 通话渠道（INCOMING_CALL_CHANNEL_ID），此渠道需清理
+            "voice_call_foreground"
         )
     }
 
@@ -56,6 +60,9 @@ class NotificationSoundManager(private val context: Context) {
         createChannel(manager, PROFILE_CHANNEL_ID, R.string.notification_channel_relationship_profile,
             NotificationManagerCompat.IMPORTANCE_DEFAULT)
         createChannel(manager, BACKUP_CHANNEL_ID, R.string.notification_channel_data_backup,
+            NotificationManagerCompat.IMPORTANCE_HIGH)
+        // 来电通知：IMPORTANCE_HIGH 以启用横幅（Heads-up）展示
+        createChannel(manager, INCOMING_CALL_CHANNEL_ID, R.string.notification_channel_incoming_call,
             NotificationManagerCompat.IMPORTANCE_HIGH)
 
         // 清理历史渠道（无效 ID 调用无副作用）

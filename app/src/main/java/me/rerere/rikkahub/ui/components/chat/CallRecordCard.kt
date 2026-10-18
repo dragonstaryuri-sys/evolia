@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +20,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.core.data.db.entity.CallInitiator
 import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
@@ -36,6 +40,7 @@ import me.rerere.rikkahub.ui.theme.AppShapes
  * - 成功接通：显示「通话时长 mm:ss」，点击进入通话详情页。
  * - 未接通（拒绝 / 未接 / 失败 / 已取消）：显示「已挂断」，点击重拨。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CallRecordCard(
     record: CallRecordEntity,
@@ -44,6 +49,7 @@ fun CallRecordCard(
     wechatMode: Boolean,
     onClick: () -> Unit,
     onRedial: () -> Unit,
+    onLongPress: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isConnected = record.connectedAt != null || record.durationMs > 0L
@@ -51,6 +57,7 @@ fun CallRecordCard(
     val icon = if (isConnected) Icons.Rounded.Call else Icons.Rounded.CallEnd
     val tint = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     val isAgentInitiated = record.initiator == CallInitiator.AGENT
+    val haptic = LocalHapticFeedback.current
 
     val card = @Composable {
         Card(
@@ -58,7 +65,13 @@ fun CallRecordCard(
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
             ),
-            onClick = { if (isConnected) onClick() else onRedial() }
+            modifier = Modifier.combinedClickable(
+                onClick = { if (isConnected) onClick() else onRedial() },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongPress()
+                }
+            )
         ) {
             Row(
                 modifier = Modifier

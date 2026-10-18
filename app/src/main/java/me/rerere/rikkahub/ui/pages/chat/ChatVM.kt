@@ -335,6 +335,15 @@ class ChatVM(
 
     fun startCall(conversationId: Uuid) = voiceCallManager.startCall(conversationId)
 
+    /** 是否允许发起新通话（单通话限制）。 */
+    fun canStartCall(): Boolean = voiceCallManager.canStartCall()
+
+    /** 当前有效通话的 AI 名称，无通话时返回 null。 */
+    fun getActiveCallAssistantName(): String? = voiceCallManager.getActiveCallAssistantName()
+
+    /** 当前通话所属会话 ID，用于通话期间禁止向该 AI 发文字消息。 */
+    val activeCallConversationId: StateFlow<Uuid?> = voiceCallManager.activeCallConversationId
+
     /**
      * 把指定音频文件转写成纯文本（不发送任何消息）。
      *
@@ -759,9 +768,17 @@ class ChatVM(
     fun handleMessageSend(content: List<UIMessagePart>, answer: Boolean = true, isTemporaryChat: Boolean = false) {
         if (content.isEmptyInputMessage()) return
         viewModelScope.launch {
+            val targetId = _currentActiveId.value
+            // 通话期间禁止向当前通话 AI 发送普通文字消息
+            val activeCallConvId = voiceCallManager.activeCallConversationId.value
+            if (activeCallConvId != null && activeCallConvId == targetId) {
+                val name = voiceCallManager.getActiveCallAssistantName() ?: "AI"
+                _toastFlow.emit("正在与「$name」通话，请结束当前通话后再发送文字消息。")
+                return@launch
+            }
+
             val assistantId = settings.value.assistantId
             val assistant = settings.value.assistants.find { it.id == assistantId }
-            val targetId = _currentActiveId.value
             trackConversation(targetId)
 
             val processedContent = if (assistant != null) {
@@ -816,9 +833,16 @@ class ChatVM(
      */
     fun sendVoiceMessage(audioUri: Uri, durationMs: Long, preTranscribedText: String? = null, quotedMessages: List<QuotedMessage> = emptyList()) {
         viewModelScope.launch {
-            val currentSettings = settingsStore.settingsFlow.value
-
             val targetId = _currentActiveId.value
+            // 通话期间禁止向当前通话 AI 发送普通语音消息
+            val activeCallConvId = voiceCallManager.activeCallConversationId.value
+            if (activeCallConvId != null && activeCallConvId == targetId) {
+                val name = voiceCallManager.getActiveCallAssistantName() ?: "AI"
+                _toastFlow.emit("正在与「$name」通话，请结束当前通话后再发送消息。")
+                return@launch
+            }
+
+            val currentSettings = settingsStore.settingsFlow.value
             trackConversation(targetId)
 
             // 1. 立即入列显示语音条（answer=false，暂不触发 AI）。
@@ -1035,6 +1059,51 @@ class ChatVM(
                     }
                 }
             }
+            paginationManager?.loadInitial()
+        }
+    }
+
+    /**
+     * 删除一条通话记录及其关联的聊天消息。
+     *
+     * 流程：
+     * 1. 从 DB 直接删除所有归属该 callId 的消息节点（含触发轮兜底）。
+     * 2. 删除 call_records 表中的通话记录。
+     * 3. 同步更新内存中的会话对象，移除已删除节点。
+     * 4. 刷新分页窗口，让 UI 重新从 DB 加载。
+     */
+    fun deleteCallRecord(record: CallRecordEntity) {
+        viewModelScope.launch {
+            val conversationId = runCatching { Uuid.parse(record.conversationId) }.getOrNull()
+                ?: return@launch
+            val callId = record.id
+
+            // 1. DB 层删除通话关联消息（callId 精确匹配 + 未接通触发轮时间窗口兜底）
+            conversationRepo.deleteCallMessages(
+                conversationId = record.conversationId,
+                callId = callId,
+                callCreateTime = record.createTime
+            )
+
+            // 2. 删除通话记录
+            callRecordRepository.deleteById(callId)
+
+            // 3. 同步内存会话：移除已被删除的通话节点
+            chatService.mutateConversationAndSave(conversationId) { current ->
+                val filteredNodes = current.messageNodes.filterNot { node ->
+                    if (node.messages.isEmpty()) return@filterNot false
+                    val msg = node.currentMessage
+                    val isCallMessage = msg.callId == callId
+                    val isCallControlTrigger = msg.callId.isNullOrBlank() &&
+                        msg.parts.any { part ->
+                            part is UIMessagePart.ToolCall && part.toolName == "call_control"
+                        }
+                    isCallMessage || isCallControlTrigger
+                }
+                current.copy(messageNodes = filteredNodes)
+            }
+
+            // 4. 刷新分页
             paginationManager?.loadInitial()
         }
     }

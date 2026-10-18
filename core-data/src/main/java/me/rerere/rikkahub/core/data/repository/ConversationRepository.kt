@@ -65,6 +65,8 @@ class ConversationRepository(
         // CursorWindow 默认上限约 2MB，content_json 单条可能达数十 KB，
         // 50 个节点 × 数条消息 × 数十 KB 已接近安全边界。
         private const val MESSAGE_LOAD_CHUNK_SIZE = 50
+
+        private const val CALL_CONTROL_TOOL_NAME = "call_control"
     }
 
     // ------------------------------------------------------------------
@@ -1270,6 +1272,70 @@ class ConversationRepository(
                 .decodeMessagesSafely()
                 .filter { it.callId == callId && it.messageSource == MessageSource.CALL }
         }
+
+    /**
+     * 删除某次通话关联的所有聊天消息（触发轮 + 开场白 + 通话中转写 + 挂断工具调用）。
+     *
+     * 删除策略：
+     * 1. 按 callId 精确匹配：所有 `UIMessage.callId == callId` 的消息（接通通话的全部内容）。
+     * 2. 触发轮兜底：未接通通话的触发轮（assistant 含 call_control ToolCall）未被打 callId，
+     *    用 [callCreateTime] 附近的时间窗口捞出该 assistant 节点及其 ToolResult 节点一并删除。
+     *
+     * @return 被删除的消息条数（含多版本）。
+     */
+    suspend fun deleteCallMessages(
+        conversationId: String,
+        callId: String,
+        callCreateTime: Long
+    ): Int = withContext(Dispatchers.IO) {
+        val entitiesToDelete = mutableListOf<ChatMessageEntity>()
+
+        // 1. 按 callId 精确匹配（content_json LIKE 粗筛 → 精确过滤 callId 字段）
+        val callIdEntities = chatMessageDAO.getMessagesByCallId(conversationId, callId)
+            .filter { entity ->
+                val uiMsg = decodeUIMessageSafely(entity)
+                uiMsg.callId == callId
+            }
+        entitiesToDelete.addAll(callIdEntities)
+
+        // 2. 触发轮兜底：未接通通话的 call_control 触发轮不带 callId，按时间窗口查找
+        val windowStart = callCreateTime - 30_000L
+        val windowEnd = callCreateTime + 130_000L // 响铃超时上限 125s + 余量
+        val windowEntities = chatMessageDAO.getMessagesByTimeRange(
+            conversationId, windowStart, windowEnd
+        )
+
+        // 找到该窗口内、不含目标 callId、且携带 call_control ToolCall 的 assistant 节点
+        val triggerToolCallIds = mutableSetOf<String>()
+        for (entity in windowEntities) {
+            val uiMsg = decodeUIMessageSafely(entity)
+            if (uiMsg.callId == callId) continue // 已在第 1 步覆盖
+            val callControlCall = uiMsg.parts
+                .filterIsInstance<UIMessagePart.ToolCall>()
+                .firstOrNull { it.toolName == CALL_CONTROL_TOOL_NAME }
+            if (callControlCall != null) {
+                triggerToolCallIds.add(callControlCall.toolCallId)
+                entitiesToDelete.add(entity)
+            }
+        }
+
+        // 找到对应的 ToolResult 节点
+        for (entity in windowEntities) {
+            val uiMsg = decodeUIMessageSafely(entity)
+            if (uiMsg.callId == callId) continue
+            val matched = uiMsg.parts.any { part ->
+                part is UIMessagePart.ToolResult && part.toolCallId in triggerToolCallIds
+            }
+            if (matched) entitiesToDelete.add(entity)
+        }
+
+        // 3. 去重后按节点删除（CASCADE 自动清理 messages）
+        val nodeIds = entitiesToDelete.map { it.nodeId }.distinct()
+        if (nodeIds.isNotEmpty()) {
+            chatMessageDAO.deleteNodesAndMessages(nodeIds)
+        }
+        entitiesToDelete.size
+    }
 
     /**
      * 按 [startTime, endTime] 闭区间拉取指定会话的消息（按创建时间升序），

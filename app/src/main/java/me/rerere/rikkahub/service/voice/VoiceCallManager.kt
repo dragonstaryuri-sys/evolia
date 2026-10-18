@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service.voice
 
 import android.Manifest
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -21,8 +22,13 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.PowerManager
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import me.rerere.rikkahub.R
+import me.rerere.rikkahub.RouteActivity
+import me.rerere.rikkahub.service.notification.NotificationSoundManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -185,10 +191,22 @@ class VoiceCallManager(
     // ===== 通话生命周期阶段 =====
     // 与 CallStatus（接通后的对话状态：CONNECTING/LISTENING/THINKING/SPEAKING）分离：
     // 来电等待期处于 INCOMING_RINGING，绝不视为"已接通"，不启动正式会话/不开麦。
-    enum class CallPhase { IDLE, INCOMING_RINGING, OUTGOING_WAITING, CONNECTED }
+    // ENDING: hangup 已触发、资源正在释放，期间禁止发起新通话，清理完成后回到 IDLE。
+    enum class CallPhase { IDLE, INCOMING_RINGING, OUTGOING_WAITING, CONNECTED, ENDING }
 
     private val _callPhase = MutableStateFlow(CallPhase.IDLE)
     val callPhase: StateFlow<CallPhase> = _callPhase.asStateFlow()
+
+    // ===== 通话页面缩小状态（应用内迷你窗口）=====
+    // 仅在 CONNECTED 阶段可被 minimizeCall() 置为 true；挂断/取消时重置为 false。
+    // 语音会话由 VoiceCallManager 管理，与 UI 缩小状态完全解耦。
+    private val _isCallMinimized = MutableStateFlow(false)
+    val isCallMinimized: StateFlow<Boolean> = _isCallMinimized.asStateFlow()
+
+    // 通话时长（毫秒）：基于 connectedAtMs 每秒刷新，供迷你窗口与通话页显示。
+    private val _callDurationMs = MutableStateFlow(0L)
+    val callDurationMs: StateFlow<Long> = _callDurationMs.asStateFlow()
+    private var callDurationTickerJob: Job? = null
 
     // Agent 来电信息（UI 渲染来电覆盖页）
     data class IncomingCallInfo(
@@ -293,6 +311,7 @@ class VoiceCallManager(
             CallCommandHub.incomingDismiss.collect { callId ->
                 if (_incomingCall.value?.callId == callId) {
                     stopRingtone()
+                    cancelIncomingCallNotification()
                     _incomingCall.value = null
                     if (_callPhase.value == CallPhase.INCOMING_RINGING) {
                         _callPhase.value = CallPhase.IDLE
@@ -588,6 +607,59 @@ class VoiceCallManager(
     @Volatile private var userSpeakerPreferenceBeforeProximity: Boolean? = null
 
     // ========================================================================
+    //  单通话守卫 / 页面缩小 / 通话时长
+    // ========================================================================
+
+    /**
+     * 是否允许发起新通话。
+     * 仅在 IDLE 阶段允许；来电响铃、拨号等待、接通中、结束清理中均拒绝。
+     */
+    fun canStartCall(): Boolean = _callPhase.value == CallPhase.IDLE
+
+    /**
+     * 当前有效通话所属 AI 的名称（用于"你正在与 X 通话"提示）。
+     * 无通话时返回 null。
+     */
+    fun getActiveCallAssistantName(): String? {
+        val assistantId = _activeCallAssistantId.value ?: return null
+        return settingsStore.settingsFlow.value.assistants
+            .find { it.id == assistantId }?.name
+    }
+
+    /** 缩小通话页面为应用内迷你窗口。仅在 CONNECTED 阶段生效，不影响语音会话。 */
+    fun minimizeCall() {
+        if (_callPhase.value != CallPhase.CONNECTED) return
+        if (_isCallMinimized.value) return
+        Log.i(TAG, "minimizeCall: switch full call screen → mini window")
+        _isCallMinimized.value = true
+    }
+
+    /** 从迷你窗口恢复完整通话页面。 */
+    fun expandCall() {
+        if (!_isCallMinimized.value) return
+        Log.i(TAG, "expandCall: switch mini window → full call screen")
+        _isCallMinimized.value = false
+    }
+
+    /** 启动通话时长计时器（接通时调用），每秒刷新 _callDurationMs。 */
+    private fun startCallDurationTicker() {
+        callDurationTickerJob?.cancel()
+        callDurationTickerJob = scope.launch {
+            while (_callPhase.value == CallPhase.CONNECTED && connectedAtMs > 0L) {
+                _callDurationMs.value = System.currentTimeMillis() - connectedAtMs
+                delay(1000L)
+            }
+        }
+    }
+
+    /** 停止通话时长计时器并清零。 */
+    private fun stopCallDurationTicker() {
+        callDurationTickerJob?.cancel()
+        callDurationTickerJob = null
+        _callDurationMs.value = 0L
+    }
+
+    // ========================================================================
     //  startCall / hangup
     // ========================================================================
 
@@ -690,6 +762,9 @@ class VoiceCallManager(
             resetStreamingState()
             lastUserSpeakAtMs = System.currentTimeMillis()
             isAgentInitiatedCall = agentInitiated
+            // 接通即重置缩小状态（防止上一通残留的 minimized=true 导致新通话直接显示迷你窗）
+            _isCallMinimized.value = false
+            startCallDurationTicker()
 
             // 初始化三层身份：callSessionId 直接使用 callId，便于日志与记录关联
             identity = CallIdentity(callSessionId = callId)
@@ -808,6 +883,51 @@ class VoiceCallManager(
     //  Agent 来电（响铃 / 接听 / 拒绝 / 超时）
     // ========================================================================
 
+    private val incomingCallNotificationId = 1003
+
+    /**
+     * 显示 AI 来电系统通知（横幅 Heads-up）。
+     * 点击通知启动 RouteActivity；应用内 GlobalCallOverlay 会根据 incomingCall 状态自动显示来电页，
+     * 因此 Intent 无需携带 callId（单通话保证唯一性）。
+     */
+    private fun showIncomingCallNotification(callId: String, assistantId: Uuid) {
+        runCatching {
+            val assistantName = settingsStore.settingsFlow.value.assistants
+                .find { it.id == assistantId }?.name ?: "AI"
+            val intent = Intent(context, RouteActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("incoming_call", true)
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                incomingCallNotificationId,
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val notification = NotificationCompat.Builder(context, NotificationSoundManager.INCOMING_CALL_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle("${assistantName}向你发起了语音通话请求")
+                .setContentText("点击查看来电并接听")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .setContentIntent(pendingIntent)
+                .setFullScreenIntent(pendingIntent, false)
+                .build()
+            NotificationManagerCompat.from(context)
+                .notify(incomingCallNotificationId, notification)
+            Log.i(TAG, "showIncomingCallNotification: callId=$callId assistant=$assistantName")
+        }.onFailure { Log.w(TAG, "showIncomingCallNotification failed", it) }
+    }
+
+    /** 取消 AI 来电通知。 */
+    private fun cancelIncomingCallNotification() {
+        runCatching {
+            NotificationManagerCompat.from(context).cancel(incomingCallNotificationId)
+        }.onFailure { Log.w(TAG, "cancelIncomingCallNotification failed", it) }
+    }
+
     private fun handleIncomingCallRequest(req: CallCommandHub.IncomingCallRequest) {
         if (_isActive.value || _incomingCall.value != null || _callPhase.value != CallPhase.IDLE) {
             Log.w(TAG, "handleIncomingCallRequest ignored: busy (active=${_isActive.value}, phase=${_callPhase.value})")
@@ -839,6 +959,8 @@ class VoiceCallManager(
         }
 
         startRingtone()
+        // 显示系统来电横幅通知
+        showIncomingCallNotification(req.callId, req.assistantId)
 
         ringTimeoutJob?.cancel()
         ringTimeoutJob = scope.launch {
@@ -868,6 +990,7 @@ class VoiceCallManager(
             return
         }
         stopRingtone()
+        cancelIncomingCallNotification()
         ringTimeoutJob?.cancel(); ringTimeoutJob = null
         _incomingCall.value = null
         Log.i(TAG, "acceptIncomingCall callId=$callId")
@@ -935,6 +1058,7 @@ class VoiceCallManager(
         endReason: String
     ) {
         stopRingtone()
+        cancelIncomingCallNotification()
         ringTimeoutJob?.cancel(); ringTimeoutJob = null
         _incomingCall.value = null
         CallCommandHub.claimTerminal(callId, result)
@@ -1204,6 +1328,9 @@ class VoiceCallManager(
                     // 开场白属于通话的一部分：打标为 CALL + callId（隐藏于普通对话、进入通话记录、
                     // 并会被朗读），而不是从聊天记录中删除。
                     retagCallOpeningNodeAsCall(convId, openingNode, activeCallId)
+                    // 把触发拨号的那一轮（空白文本 + call_control 工具调用 + 工具结果）
+                    // 也隐藏进通话记录，避免普通聊天里残留一条「空消息」。
+                    retagCallControlTriggerNodesAsCall(convId, activeCallId)
                     Log.i(TAG, "Call opening (agent-initiated): \"${openingText.take(50)}...\" start")
                     _callStatus.value = CallStatus.SPEAKING
                     runCatching {
@@ -1392,6 +1519,88 @@ class VoiceCallManager(
                 )
             }
         }.onFailure { Log.w(TAG, "retagCallOpeningNodeAsCall failed", it) }
+    }
+
+    /**
+     * 把 AI 主动拨号的「触发轮」原地打标为通话消息（[MessageSource.CALL] + callId + skipContext）。
+     *
+     * 触发轮 = AI 回复里只有空白文本（如 "\n"）+ call_control 工具调用，以及对应的 ToolResult 节点。
+     * 模型在调用工具前吐一个换行/空白是普遍行为，这条消息本身没有用户可见的内容，
+     * 留在普通聊天里就成了「空消息」。这里把它和开场白一样隐藏进通话记录。
+     *
+     * 只处理文本部分全为空白的节点；如果 AI 在调用前说了实质内容（如"好的，我打给你"），
+     * 该节点保留为普通聊天消息。
+     */
+    private suspend fun retagCallControlTriggerNodesAsCall(convId: Uuid, callId: String?) {
+        if (callId == null) return
+        if (chatService.isGenerating(convId)) {
+            Log.w(TAG, "retagCallControlTriggerNodesAsCall skipped: generation still running")
+            return
+        }
+        runCatching {
+            chatService.replaceConversationMessages(convId) { current ->
+                // 1. 找出文本全空白、含 call_control ToolCall 的 assistant 节点，记录其 toolCallId
+                val callControlCallIds = mutableSetOf<String>()
+                val assistantTriggerNodeIds = mutableSetOf<Uuid>()
+                current.messageNodes.forEach { node ->
+                    val msg = node.currentMessage
+                    if (msg.role != MessageRole.ASSISTANT) return@forEach
+                    if (msg.skipContext) return@forEach
+                    val toolCalls = msg.parts
+                        .filterIsInstance<UIMessagePart.ToolCall>()
+                        .filter { it.toolName == CALL_CONTROL_TOOL_NAME }
+                    if (toolCalls.isEmpty()) return@forEach
+                    val allTextBlank = msg.parts
+                        .filterIsInstance<UIMessagePart.Text>()
+                        .all { it.text.isBlank() }
+                    if (!allTextBlank) return@forEach
+                    callControlCallIds.addAll(toolCalls.map { it.toolCallId })
+                    assistantTriggerNodeIds.add(node.id)
+                }
+                if (assistantTriggerNodeIds.isEmpty()) {
+                    return@replaceConversationMessages null
+                }
+
+                // 2. 找出同 toolCallId 的 call_control ToolResult 节点
+                val toolResultNodeIds = mutableSetOf<Uuid>()
+                current.messageNodes.forEach { node ->
+                    val msg = node.currentMessage
+                    if (msg.role != MessageRole.TOOL) return@forEach
+                    if (msg.skipContext) return@forEach
+                    val matched = msg.parts
+                        .filterIsInstance<UIMessagePart.ToolResult>()
+                        .any { it.toolName == CALL_CONTROL_TOOL_NAME && it.toolCallId in callControlCallIds }
+                    if (matched) toolResultNodeIds.add(node.id)
+                }
+
+                val nodeIdsToRetag = assistantTriggerNodeIds + toolResultNodeIds
+                var changed = false
+                val updatedNodes = current.messageNodes.map { node ->
+                    if (node.id !in nodeIdsToRetag) {
+                        node
+                    } else {
+                        val updatedMessages = node.messages.map { message ->
+                            val retagged = message.copy(
+                                skipContext = true,
+                                messageSource = MessageSource.CALL,
+                                callId = callId,
+                            )
+                            if (retagged != message) changed = true
+                            retagged
+                        }
+                        node.copy(messages = updatedMessages)
+                    }
+                }
+                if (!changed) {
+                    return@replaceConversationMessages null
+                }
+                ConversationMessageDeletion(
+                    conversation = current.copy(messageNodes = updatedNodes).normalizeMessageNodes(),
+                    deletedNodeIds = emptySet(),
+                    deletedMessageIds = emptySet(),
+                )
+            }
+        }.onFailure { Log.w(TAG, "retagCallControlTriggerNodesAsCall failed", it) }
     }
 
     /**
@@ -2852,14 +3061,23 @@ class VoiceCallManager(
     }
 
     fun hangup(endReason: String = "user_hangup") {
+        // 幂等：若已在结束流程中或已 IDLE，直接返回，避免重复释放
+        if (_callPhase.value == CallPhase.ENDING || _callPhase.value == CallPhase.IDLE) {
+            Log.i(TAG, "hangup ignored: phase=${_callPhase.value}")
+            return
+        }
         Log.i(TAG, "hangup session=${identity.callSessionId} reason=$endReason")
         val endingCallId = activeCallId
         val endingConnectedAt = connectedAtMs
         val disconnectedAt = System.currentTimeMillis()
+        // ★ 进入 ENDING：禁止新通话，直到资源清理完成
+        _callPhase.value = CallPhase.ENDING
         _isActive.value = false
         CallCommandHub.setCallActive(false)
         _callStatus.value = CallStatus.DISCONNECTED
-        _callPhase.value = CallPhase.IDLE
+        // 重置缩小状态：挂断后迷你窗口应消失
+        _isCallMinimized.value = false
+        stopCallDurationTicker()
         activeCallId = null
         connectedAtMs = 0L
         stopRingtone()
@@ -2916,6 +3134,7 @@ class VoiceCallManager(
             } else {
                 0L
             }
+            // 录音与 DB 写入完成后才置为 IDLE，确保旧通话资源完全释放
             scope.launch {
                 runCatching {
                     callRecordRepository.updateEnded(
@@ -2927,16 +3146,20 @@ class VoiceCallManager(
                         endReason = endReason
                     )
                 }.onFailure { Log.w(TAG, "updateEnded failed", it) }
-            }
-            // ★ 录音收尾：停止编码 → 写 audio 相对路径 + 7 天过期时间
-            scope.launch {
+                // ★ 录音收尾：停止编码 → 写 audio 相对路径 + 7 天过期时间
                 stopCallRecordingAndPersist(endingCallId, disconnectedAt)
+                // ★ 固定挂断提示音：仅在真实接通的通话结束时播放一次
+                CallSoundPlayer.playHangup(context)
+                // 所有异步清理完成，恢复可发起新通话
+                _callPhase.value = CallPhase.IDLE
+                Log.i(TAG, "hangup complete: phase → IDLE")
             }
-            // ★ 固定挂断提示音：仅在真实接通的通话结束时播放一次（endCallWithResult 拒绝/超时路径不经过这里）
-            CallSoundPlayer.playHangup(context)
         } else {
             // 无 callId 兜底：清理录音器，避免资源泄漏
-            scope.launch { discardCallRecording() }
+            scope.launch {
+                discardCallRecording()
+                _callPhase.value = CallPhase.IDLE
+            }
         }
     }
 
@@ -3203,6 +3426,9 @@ class VoiceCallManager(
     }
 
     companion object {
+        // 内部通话控制工具名（用于识别拨号触发轮）
+        private const val CALL_CONTROL_TOOL_NAME = "call_control"
+
         // 录音默认保留时长：7 天（forever=1 时跳过清理）
         private const val AUDIO_RETENTION_MS = 7L * 24L * 60L * 60L * 1000L
 

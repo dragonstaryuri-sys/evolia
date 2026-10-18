@@ -246,6 +246,12 @@ class WakeWordService : Service(), KoinComponent {
                     targetAssistantId = targetAssistant.id,
                     skipAutoArchive = true
                 )
+                // 全局单通话限制：若已有有效通话，startCall 内部会静默返回
+                if (!voiceCallManager.canStartCall()) {
+                    val name = voiceCallManager.getActiveCallAssistantName() ?: "AI"
+                    Log.w(TAG, "唤醒触发通话被拒绝：正在与「$name」通话中")
+                    return@launch
+                }
                 voiceCallManager.startCall(conversationId)
                 Log.i(TAG, "通话已启动（assistant=${targetAssistant.name}）: convId=$conversationId")
                 val intent = Intent(this@WakeWordService, RouteActivity::class.java).apply {

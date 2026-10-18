@@ -9,17 +9,15 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
-import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.service.notification.NotificationSoundManager
 
 class VoiceCallForegroundService : Service() {
     companion object {
         private const val TAG = "VoiceCallFgService"
         private const val NOTIFICATION_ID = 1002
-        private const val CHANNEL_ID = "voice_call_foreground"
         private var wakeLock: PowerManager.WakeLock? = null
 
         fun start(context: Context) {
@@ -42,7 +40,6 @@ class VoiceCallForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        createNotificationChannel()
         val notification = createNotification()
 
         try {
@@ -97,20 +94,16 @@ class VoiceCallForegroundService : Service() {
     }
 
     private fun createNotification(): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        // 与「AI 来电」共用同一通知渠道（NotificationSoundManager.INCOMING_CALL_CHANNEL_ID）。
+        // 该渠道为 IMPORTANCE_HIGH 以支持来电横幅；通话中的常驻通知用 setSilent(true) 静默，
+        // 避免通话期间反复响铃 / 弹出横幅。
+        return NotificationCompat.Builder(this, NotificationSoundManager.INCOMING_CALL_CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.notification_voice_call_active))
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
             .build()
-    }
-
-    private fun createNotificationChannel() {
-        val notificationManager = NotificationManagerCompat.from(this)
-        val channel = NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
-            .setName(getString(R.string.notification_channel_voice_call))
-            .build()
-        notificationManager.createNotificationChannel(channel)
     }
 }

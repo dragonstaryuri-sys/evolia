@@ -544,6 +544,16 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
                                 triggerLoading = true
                                 scope.launch {
                                     runCatching {
+                                        // 全局单通话限制
+                                        if (!voiceCallManager.canStartCall()) {
+                                            val name = voiceCallManager.getActiveCallAssistantName() ?: "AI"
+                                            toaster.show(
+                                                message = "你正在与「$name」通话，请结束当前通话后再发起新的通话。",
+                                                type = me.rerere.rikkahub.ui.components.ui.ToastType.Error
+                                            )
+                                            triggerLoading = false
+                                            return@runCatching
+                                        }
                                         val conversationId = Uuid.random()
                                         chatService.initializeConversation(
                                             conversationId = conversationId,

@@ -1378,7 +1378,6 @@
   <string name="notification_chat_generating">Chat is generating...</string>
   <string name="notification_channel_chat_generation">Chat Generation</string>
   <string name="notification_voice_call_active">Voice call in progress</string>
-  <string name="notification_channel_voice_call">Voice Call</string>
   <string name="setting_provider_page_balance_authorize_key">Authorize Key</string>
   <string name="setting_provider_page_balance_user_id">User ID</string>
   <string name="master_memory_backup_title">Copy Current Profile</string>
@@ -2020,8 +2019,8 @@
   <string name="notification_page_switch_ai_reply_desc">Notify when a background AI reply is ready</string>
   <string name="notification_page_switch_backup">Backup notifications</string>
   <string name="notification_page_switch_backup_desc">Notify about data backup success or failure</string>
-  <string name="notification_page_switch_call">Voice call notifications</string>
-  <string name="notification_page_switch_call_desc">Foreground service notification for ongoing voice calls</string>
+  <string name="notification_page_switch_call">AI call notifications</string>
+  <string name="notification_page_switch_call_desc">Incoming AI call banner and ongoing call notification</string>
   <string name="notification_page_sound_section">Sounds and ringtone</string>
   <string name="notification_page_message_sound">Message sound</string>
   <string name="notification_page_message_sound_desc">Sound played for message notifications</string>
@@ -2032,6 +2031,7 @@
   <string name="notification_channel_diary_updates">Diary updates</string>
   <string name="notification_channel_relationship_profile">Relationship profile updates</string>
   <string name="notification_channel_data_backup">Data backup</string>
+  <string name="notification_channel_incoming_call">AI calls</string>
   <string name="call_ringtone_page_title">Call ringtone</string>
   <string name="call_ringtone_system_default">System ringtone</string>
   <string name="call_ringtone_custom">Custom ringtone</string>

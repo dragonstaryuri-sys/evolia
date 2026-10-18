@@ -352,6 +352,12 @@ private fun parseJsonObjectOrNull(raw: String): JsonObject? {
 }
 
 /**
+ * 内部通话控制工具名。它只驱动通话状态机，不代表用户可见的「活动」，
+ * 也不产生正文气泡，因此不参与活动胶囊统计、也不单独占位渲染。
+ */
+private const val CALL_CONTROL_TOOL_NAME = "call_control"
+
+/**
  * Get display name for a tool.
  */
 private fun getToolDisplayName(toolName: String): String {
@@ -398,7 +404,11 @@ private fun deriveActivityState(
             } else 0L
         }
 
-        val toolCategories = toolCalls.map { categorizeToolName(it.toolName) }.distinct()
+        // call_control 属于内部通话控制，不计入用户可见的活动胶囊。
+        // 否则 AI 主动拨号的那一轮（前导文本为空 + 仅一次 call_control 调用 + 工具结果）
+        // 会渲染成「只有头像 + 活动胶囊、没有正文气泡」的空 AI 消息。
+        val visibleToolCalls = toolCalls.filter { it.toolName != CALL_CONTROL_TOOL_NAME }
+        val toolCategories = visibleToolCalls.map { categorizeToolName(it.toolName) }.distinct()
 
         // ✨ Reasoning only contributes to activity pill if auto-collapse is enabled
         // If auto-collapse is OFF, we hide the finished pill because it's shown in message flow
@@ -416,14 +426,14 @@ private fun deriveActivityState(
 
             activityCount == 1 && hasTools -> ActivityState.CompletedSingle(
                 type = toolCategories.first(),
-                toolName = toolCalls.first().toolName,
-                displayName = getToolDisplayName(toolCalls.first().toolName),
-                count = toolCalls.size
+                toolName = visibleToolCalls.first().toolName,
+                displayName = getToolDisplayName(visibleToolCalls.first().toolName),
+                count = visibleToolCalls.size
             )
 
             else -> ActivityState.CompletedMultiple(
                 reasoningDurationMs = if (hasReasoning) totalReasoningMs else null,
-                toolsUsed = toolCalls.map { it.toolName }.distinct()
+                toolsUsed = visibleToolCalls.map { it.toolName }.distinct()
             )
         }
     }
@@ -1431,6 +1441,13 @@ private fun AssistantMessageTurn(
                 }
             }
         }
+    }
+
+    // 整轮没有任何可渲染内容时（例如 AI 主动拨号的那一轮只有一段空白文本 +
+    // 内部 call_control 工具调用/结果）整轮不渲染，避免对话列表出现
+    // 「只有 AI 头像、没有消息气泡」的空消息。
+    if (!loading && renderItems.isEmpty() && activityState is ActivityState.Hidden) {
+        return
     }
 
     Column(

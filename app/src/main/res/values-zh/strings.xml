@@ -1355,7 +1355,6 @@
   <string name="notification_chat_generating">正在生成回复...</string>
   <string name="notification_channel_chat_generation">后台生成保活 (防止系统强制挂起对话)</string>
   <string name="notification_voice_call_active">语音通话进行中</string>
-  <string name="notification_channel_voice_call">语音通话</string>
   <string name="setting_provider_page_balance_authorize_key">余额查询授权码 (Authorize Key)</string>
   <string name="setting_provider_page_balance_user_id">用户 ID (User ID)</string>
   <!-- 关系档案备份提示 -->
@@ -2004,8 +2003,8 @@
   <string name="notification_page_switch_ai_reply_desc">后台 AI 回复生成完成时通知</string>
   <string name="notification_page_switch_backup">数据备份通知</string>
   <string name="notification_page_switch_backup_desc">数据备份成功或失败时通知</string>
-  <string name="notification_page_switch_call">语音通话通知</string>
-  <string name="notification_page_switch_call_desc">语音通话进行中的前台服务通知</string>
+  <string name="notification_page_switch_call">AI 通话通知</string>
+  <string name="notification_page_switch_call_desc">AI 来电横幅与通话中的前台服务通知</string>
   <string name="notification_page_sound_section">提示音和铃声</string>
   <string name="notification_page_message_sound">消息提示音</string>
   <string name="notification_page_message_sound_desc">消息通知播放的提示音</string>
@@ -2016,6 +2015,7 @@
   <string name="notification_channel_diary_updates">日记更新</string>
   <string name="notification_channel_relationship_profile">关系档案更新</string>
   <string name="notification_channel_data_backup">数据备份</string>
+  <string name="notification_channel_incoming_call">AI 通话</string>
   <string name="call_ringtone_page_title">来电铃声</string>
   <string name="call_ringtone_system_default">系统铃声</string>
   <string name="call_ringtone_custom">自定义铃声</string>

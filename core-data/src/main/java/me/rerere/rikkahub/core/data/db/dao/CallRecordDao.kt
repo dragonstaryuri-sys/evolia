@@ -107,4 +107,7 @@ interface CallRecordDao {
 
     @Query("DELETE FROM call_records WHERE assistant_id = :assistantId")
     suspend fun deleteByAssistant(assistantId: String)
+
+    @Query("DELETE FROM call_records WHERE id = :callId")
+    suspend fun deleteById(callId: String)
 }

@@ -72,6 +72,8 @@ class CallRecordRepository(private val dao: CallRecordDao) {
         dao.getExpiredAudioRecords(now)
 
     suspend fun deleteByAssistant(assistantId: String) = dao.deleteByAssistant(assistantId)
+
+    suspend fun deleteById(callId: String) = dao.deleteById(callId)
 }
 
 /** 历史通话列表排序方式。 */

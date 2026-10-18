@@ -62,6 +62,7 @@ import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.ui.hooks.QuotedMessage
 import me.rerere.rikkahub.ui.hooks.rememberChatInputState
 import me.rerere.rikkahub.ui.theme.AssistantChatTheme
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.utils.base64UrlDecode
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileMimeType
@@ -232,6 +233,11 @@ private fun ChatPageContent(
     val toaster = LocalToaster.current
     val context = LocalContext.current
 
+    // 通话期间禁止向当前通话 AI 发送普通消息
+    val activeCallConversationId by vm.activeCallConversationId.collectAsStateWithLifecycle()
+    val isCurrentAssistantInCall = activeCallConversationId != null && activeCallConversationId == conversation.id
+    val inCallAssistantName = vm.getActiveCallAssistantName() ?: "AI"
+
     // 通话前动态申请录音权限（Manifest 声明不足以触发 SystemASR 的 SpeechRecognizer）
     var pendingCallConvId by remember { mutableStateOf<Uuid?>(null) }
     val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
@@ -240,13 +246,25 @@ private fun ChatPageContent(
         val convId = pendingCallConvId
         pendingCallConvId = null
         if (granted && convId != null) {
-            vm.startCall(convId)
+            // 权限弹窗期间可能已有通话进入，再次校验单通话限制
+            if (!vm.canStartCall()) {
+                val name = vm.getActiveCallAssistantName() ?: "AI"
+                toaster.show("你正在与「$name」通话，请结束当前通话后再发起新的通话。", ToastType.Error)
+            } else {
+                vm.startCall(convId)
+            }
         } else if (convId != null) {
             toaster.show("需要录音权限才能进行语音通话", ToastType.Error)
         }
     }
 
     fun startCallWithPermission(convId: Uuid) {
+        // 全局单通话限制：通话中/来电等待/结束中均禁止发起新通话
+        if (!vm.canStartCall()) {
+            val name = vm.getActiveCallAssistantName() ?: "AI"
+            toaster.show("你正在与「$name」通话，请结束当前通话后再发起新的通话。", ToastType.Error)
+            return
+        }
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
@@ -596,6 +614,7 @@ private fun ChatPageContent(
     var showRegenerateRequirementDialog by rememberSaveable { mutableStateOf(false) }
     var pendingRegenerateMessage by remember { mutableStateOf<me.rerere.ai.ui.UIMessage?>(null) }
     var pendingRegenerateRequirement by remember { mutableStateOf<String?>(null) }
+    var pendingDeleteCallRecord by remember { mutableStateOf<me.rerere.rikkahub.core.data.db.entity.CallRecordEntity?>(null) }
 
     val currentAssistant = setting.getCurrentAssistant()
     val topMessagePadding = 72.dp
@@ -793,6 +812,9 @@ private fun ChatPageContent(
                             navController.navigate(Screen.CallDetail(callId = record.id))
                         },
                         onRedialCall = { startCallWithPermission(conversation.id) },
+                        onLongPressCallRecord = { record ->
+                            pendingDeleteCallRecord = record
+                        },
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {
@@ -922,6 +944,30 @@ private fun ChatPageContent(
                         )
                     }
 
+                    if (pendingDeleteCallRecord != null) {
+                        val record = pendingDeleteCallRecord!!
+                        AlertDialog(
+                            onDismissRequest = { pendingDeleteCallRecord = null },
+                            title = { Text("删除通话记录") },
+                            text = {
+                                Text("确定要删除这条通话记录及其关联的聊天消息吗？此操作不可撤销。")
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        vm.deleteCallRecord(record)
+                                        pendingDeleteCallRecord = null
+                                    }
+                                ) { Text("删除") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { pendingDeleteCallRecord = null }) {
+                                    Text(stringResource(R.string.cancel))
+                                }
+                            }
+                        )
+                    }
+
                     AnimatedVisibility(
                         visible = (hasUserSentMessages || hasAnyPresetMessages || isTemporaryChat || !shouldShowNewChatContent) && targetMessageId.isNullOrBlank(),
                         enter = fadeIn(),
@@ -941,6 +987,24 @@ private fun ChatPageContent(
                                     )
                                 )
                         )
+                    }
+
+                    // 通话期间：在输入区上方显示提示条，告知用户结束通话后才能发消息
+                    if (isCurrentAssistantInCall) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            shape = AppShapes.CardMedium,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                        ) {
+                            Text(
+                                text = "正在与「$inCallAssistantName」通话，请结束当前通话后再发送文字消息。",
+                                modifier = Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
 
                     if (targetMessageId.isNullOrBlank()) {

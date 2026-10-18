@@ -114,6 +114,7 @@ fun ChatList(
     onManualTranscribe: (nodeId: Uuid, audioUrl: String) -> Unit = { _, _ -> },
     onCallRecordClick: (me.rerere.rikkahub.core.data.db.entity.CallRecordEntity) -> Unit = {},
     onRedialCall: () -> Unit = {},
+    onLongPressCallRecord: (me.rerere.rikkahub.core.data.db.entity.CallRecordEntity) -> Unit = {},
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -228,6 +229,7 @@ fun ChatList(
                             onManualTranscribe = onManualTranscribe,
                             onCallRecordClick = onCallRecordClick,
                             onRedialCall = onRedialCall,
+                            onLongPressCallRecord = onLongPressCallRecord,
                         )
                     }
                 }
@@ -267,6 +269,7 @@ private fun SharedTransitionScope.ChatListNormal(
     onManualTranscribe: (nodeId: Uuid, audioUrl: String) -> Unit = { _, _ -> },
     onCallRecordClick: (me.rerere.rikkahub.core.data.db.entity.CallRecordEntity) -> Unit = {},
     onRedialCall: () -> Unit = {},
+    onLongPressCallRecord: (me.rerere.rikkahub.core.data.db.entity.CallRecordEntity) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
@@ -530,6 +533,7 @@ private fun SharedTransitionScope.ChatListNormal(
                             wechatMode = callEffectiveDisplay.wechatMode,
                             onClick = { onCallRecordClick(item.record) },
                             onRedial = onRedialCall,
+                            onLongPress = { onLongPressCallRecord(item.record) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

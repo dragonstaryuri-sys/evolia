@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import coil3.compose.AsyncImage
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.R
@@ -42,6 +43,9 @@ import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+
+/** 左滑缩小为迷你窗口的最小拖动距离（dp）。 */
+private const val MIN_SWIPE_TO_MINIMIZE_DP = 80
 
 /**
  * 通话状态枚举
@@ -424,9 +428,12 @@ fun CallScreen(
     onSpeakerToggle: () -> Unit,
     onHangup: () -> Unit,
     onInterrupt: () -> Unit = {},
+    onMinimize: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics()
+    // 左滑缩小：累计水平拖动距离，向左超过阈值时触发缩小
+    var dragTotalX by remember { mutableStateOf(0f) }
 
     // 1. 呼吸动画控制 (多层联动)
     val infiniteTransition = rememberInfiniteTransition(label = "breathing_aura")
@@ -491,11 +498,23 @@ fun CallScreen(
             .background(Color.Black)
             .pointerInput(Unit) {
                 // 消费所有未被内部按钮处理的指针事件，
-                // 防止点击/长按穿透到下层的消息气泡（触发操作框等）
+                // 防止点击/长按穿透到下层的消息气泡（触发操作框等）。
+                // 同时检测左滑手势：向左拖动超过阈值时触发缩小为迷你窗口。
                 awaitPointerEventScope {
                     while (true) {
                         val event = awaitPointerEvent()
-                        event.changes.forEach { it.consume() }
+                        event.changes.forEach { change ->
+                            if (change.pressed) {
+                                dragTotalX += change.positionChange().x
+                            } else {
+                                // 抬手：判断是否为左滑缩小
+                                if (dragTotalX < -MIN_SWIPE_TO_MINIMIZE_DP.dp.toPx()) {
+                                    onMinimize()
+                                }
+                                dragTotalX = 0f
+                            }
+                            change.consume()
+                        }
                     }
                 }
             }
@@ -929,5 +948,103 @@ private fun CallControlButton(
             style = MaterialTheme.typography.labelMedium,
             color = Color.White.copy(alpha = 0.7f)
         )
+    }
+}
+
+/**
+ * 应用内迷你通话窗口：通话缩小后显示，不中断语音会话。
+ *
+ * 显示 AI 头像、名称、通话时长；点击整体恢复完整通话页；右侧挂断按钮结束通话。
+ * 由 VoiceCallManager.isCallMinimized 驱动，不独立维护通话状态。
+ */
+@Composable
+fun MiniCallWindow(
+    assistant: Assistant,
+    durationMs: Long,
+    onExpand: () -> Unit,
+    onHangup: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptics = rememberPremiumHaptics()
+    val minutes = (durationMs / 60000).toInt()
+    val seconds = ((durationMs % 60000) / 1000).toInt()
+    val durationText = "%02d:%02d".format(minutes, seconds)
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 6.dp,
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    haptics.perform(HapticPattern.Pop)
+                    onExpand()
+                }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // AI 头像
+            UIAvatar(
+                value = assistant.avatar,
+                name = assistant.name,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape),
+                onUpdate = null
+            )
+            // 名称 + 时长
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = assistant.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Call,
+                        contentDescription = null,
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = durationText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            // 挂断按钮
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color(0xFFE53935), CircleShape)
+                    .clickable {
+                        haptics.perform(HapticPattern.Thud)
+                        onHangup()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.CallEnd,
+                    contentDescription = stringResource(R.string.call_action_end),
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
     }
 }

@@ -18,6 +18,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -26,7 +29,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -50,6 +55,7 @@ import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.service.voice.VoiceCallManager
 import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.IncomingCallScreen
+import me.rerere.rikkahub.ui.components.chat.MiniCallWindow
 import me.rerere.rikkahub.ui.components.chat.OutgoingCallWaitingScreen
 import org.koin.compose.koinInject
 import kotlinx.serialization.Serializable
@@ -515,6 +521,8 @@ private fun GlobalCallOverlay(settings: Settings) {
     val callPhase by voiceCallManager.callPhase.collectAsStateWithLifecycle()
     val incomingCall by voiceCallManager.incomingCall.collectAsStateWithLifecycle()
     val activeCallAssistantId by voiceCallManager.activeCallAssistantId.collectAsStateWithLifecycle()
+    val isCallMinimized by voiceCallManager.isCallMinimized.collectAsStateWithLifecycle()
+    val callDurationMs by voiceCallManager.callDurationMs.collectAsStateWithLifecycle()
 
     val currentAssistant = settings.getCurrentAssistant()
 
@@ -553,29 +561,51 @@ private fun GlobalCallOverlay(settings: Settings) {
     }
 
     // 已接通通话页：全屏覆盖，盖住任意页面的 TopBar
-    AnimatedVisibility(
-        visible = isCallActive,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        val connectedAssistant = activeCallAssistantId
-            ?.let { id -> settings.assistants.find { it.id == id } }
-            ?: currentAssistant
-        CallScreen(
-            assistant = connectedAssistant,
-            status = callStatus,
-            isMuted = isMuted,
-            isSpeakerOn = isSpeakerOn,
-            isHeadsetConnected = isHeadsetConnected,
-            latestMessageRole = callLatestMessage?.role,
-            latestMessageText = callLatestMessage?.text,
-            listeningText = callListeningText,
-            isNearEar = isProximityNear,
-            onMuteToggle = { voiceCallManager.toggleMute() },
-            onSpeakerToggle = { voiceCallManager.toggleSpeaker() },
-            onHangup = { voiceCallManager.hangup() },
-            onInterrupt = { voiceCallManager.manualInterrupt() },
-            modifier = Modifier.fillMaxSize()
-        )
+    // 缩小状态下显示迷你窗口，否则显示完整通话页
+    val connectedAssistant = activeCallAssistantId
+        ?.let { id -> settings.assistants.find { it.id == id } }
+        ?: currentAssistant
+    if (isCallActive && isCallMinimized) {
+        // 迷你通话窗口：固定在顶部，不遮挡页面主要内容
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            MiniCallWindow(
+                assistant = connectedAssistant,
+                durationMs = callDurationMs,
+                onExpand = { voiceCallManager.expandCall() },
+                onHangup = { voiceCallManager.hangup() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+            )
+        }
+    } else {
+        AnimatedVisibility(
+            visible = isCallActive,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            CallScreen(
+                assistant = connectedAssistant,
+                status = callStatus,
+                isMuted = isMuted,
+                isSpeakerOn = isSpeakerOn,
+                isHeadsetConnected = isHeadsetConnected,
+                latestMessageRole = callLatestMessage?.role,
+                latestMessageText = callLatestMessage?.text,
+                listeningText = callListeningText,
+                isNearEar = isProximityNear,
+                onMuteToggle = { voiceCallManager.toggleMute() },
+                onSpeakerToggle = { voiceCallManager.toggleSpeaker() },
+                onHangup = { voiceCallManager.hangup() },
+                onInterrupt = { voiceCallManager.manualInterrupt() },
+                onMinimize = { voiceCallManager.minimizeCall() },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
