@@ -93,6 +93,7 @@ class ChatVM(
     val callIsSpeakerOn: StateFlow<Boolean> = voiceCallManager.isSpeakerOn
     val callIsHeadsetConnected: StateFlow<Boolean> = voiceCallManager.isHeadsetConnected
     val isCallActive: StateFlow<Boolean> = voiceCallManager.isActive
+    val isCallMinimized: StateFlow<Boolean> = voiceCallManager.isCallMinimized
     val callError: SharedFlow<String> = voiceCallManager.callError
     // 贴近耳朵（接近传感器触发）→ CallScreen 盖全黑遮罩 + 禁用触摸（兜底）
     val isProximityNear: StateFlow<Boolean> = voiceCallManager.isNearEar
@@ -413,6 +414,9 @@ class ChatVM(
     }
 
     fun hangupCall() = voiceCallManager.hangup()
+
+    /** 缩小全屏通话页为应用内迷你窗口（系统返回手势触发，不挂断通话） */
+    fun minimizeCall() = voiceCallManager.minimizeCall()
     fun toggleCallMute() = voiceCallManager.toggleMute()
     fun toggleCallSpeaker() = voiceCallManager.toggleSpeaker()
     fun manualInterruptCall() = voiceCallManager.manualInterrupt()

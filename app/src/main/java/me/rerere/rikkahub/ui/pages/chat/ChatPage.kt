@@ -579,14 +579,17 @@ private fun ChatPageContent(
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
 
-    // 通话激活状态：仅用于「返回键优先挂断通话」；通话 UI 已上移到 RouteActivity 全局遮罩
+    // 通话激活状态：仅用于「返回键优先缩小通话」；通话 UI 已上移到 RouteActivity 全局遮罩
     val isCallActive by vm.isCallActive.collectAsStateWithLifecycle()
+    val isCallMinimized by vm.isCallMinimized.collectAsStateWithLifecycle()
 
     // --- 统一返回出口逻辑 ---
     val handleBack: () -> Unit = {
         when {
-            isCallActive -> {
-                vm.hangupCall()
+            // 仅在全屏通话页拦截返回手势：缩小为迷你窗口，不挂断通话。
+            // 已缩小（迷你窗）时不再受通话影响，放行正常返回逻辑。
+            isCallActive && !isCallMinimized -> {
+                vm.minimizeCall()
             }
 
             previewMode -> {
