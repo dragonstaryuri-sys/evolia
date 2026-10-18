@@ -1,6 +1,5 @@
 package me.rerere.rikkahub.service
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -148,15 +147,11 @@ class AgentTaskWorker(
     }
 
     private fun sendNotification(title: String, content: String) {
+        // AI 消息提醒开关（SET）：关闭则不再推送
+        if (!settingsStore.settingsFlow.value.notificationAiReplyEnabled) return
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "agent_task_notification"
-        // 使用 strings.xml 中的资源名
-        val channel = NotificationChannel(
-            channelId,
-            applicationContext.getString(R.string.notification_channel_agent_task),
-            NotificationManager.IMPORTANCE_DEFAULT
-        )
-        notificationManager.createNotificationChannel(channel)
+        // 归入统一的 ai_messages 渠道（渠道类别已精简）
+        val channelId = me.rerere.rikkahub.service.notification.NotificationSoundManager.AI_MESSAGES_CHANNEL_ID
 
         val intent = Intent(applicationContext, RouteActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP

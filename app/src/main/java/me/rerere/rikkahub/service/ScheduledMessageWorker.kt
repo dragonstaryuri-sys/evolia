@@ -109,14 +109,10 @@ class ScheduledMessageWorker(
     }
 
     private fun sendNotification(title: String, content: String, conversationId: Uuid) {
+        // 主动消息归入「AI 消息提醒」总开关
+        if (!settingsStore.settingsFlow.value.notificationAiReplyEnabled) return
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        val channelId = "assistant_scheduled"
-        val channel = android.app.NotificationChannel(
-            channelId,
-            "Scheduled Messages",
-            android.app.NotificationManager.IMPORTANCE_DEFAULT
-        )
-        notificationManager.createNotificationChannel(channel)
+        val channelId = me.rerere.rikkahub.service.notification.NotificationSoundManager.AI_MESSAGES_CHANNEL_ID
 
         val intent = Intent(applicationContext, RouteActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP

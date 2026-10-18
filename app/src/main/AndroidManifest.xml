@@ -128,11 +128,6 @@
     </service>
 
     <service
-        android:name=".service.ChatForegroundService"
-        android:foregroundServiceType="dataSync"
-        android:exported="false" />
-
-    <service
         android:name=".service.VoiceCallForegroundService"
         android:foregroundServiceType="microphone"
         android:exported="false" />

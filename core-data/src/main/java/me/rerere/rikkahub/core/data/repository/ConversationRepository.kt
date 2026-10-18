@@ -11,6 +11,7 @@ import androidx.paging.PagingData
 import androidx.paging.map
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import me.rerere.rikkahub.core.data.db.dao.*
@@ -25,6 +26,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.deleteChatFiles
+import me.rerere.ai.ui.MessageSource
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import java.time.Instant
@@ -52,6 +54,7 @@ class ConversationRepository(
     private val dailyActivityDAO: DailyActivityDAO,
     private val tokenUsageDAO: TokenUsageDAO,
     private val scheduleDAO: ScheduleDAO,
+    private val callRecordDao: CallRecordDao,
 ) {
     companion object {
         private const val PAGE_SIZE = 30
@@ -105,23 +108,39 @@ class ConversationRepository(
     }
 
     /**
-     * 获取所有智能体的最后一条消息内容（高效版）
+     * 获取所有智能体的最后一条消息内容（高效版）。
+     * 若该智能体最近一次活动是通话，则优先显示通话记录（通话时长 / 已挂断）。
      */
     fun getAssistantsLastMessagesFlow(): Flow<Map<Uuid, String>> {
-        return conversationDAO.getAssistantsLastMessagesFlow()
-            .map { list ->
-                list.associate { result ->
-                    val content = result.content?.let { json ->
+        val messagesFlow = conversationDAO.getAssistantsLastMessagesFlow()
+        val callRecordsFlow = callRecordDao.getLatestByAllAssistants()
+        return combine(messagesFlow, callRecordsFlow) { msgList, callRecords ->
+            val callRecordByAssistant = callRecords.associateBy { it.assistantId }
+            msgList.associate { result ->
+                val assistantId = Uuid.parse(result.assistantId)
+                val callRecord = callRecordByAssistant[result.assistantId]
+                // 通话记录比最后一条普通消息更新时，优先展示通话信息
+                val useCallPreview = callRecord != null &&
+                    (result.content.isNullOrEmpty() || callRecord.createTime > result.createdAt)
+                val preview = if (useCallPreview && callRecord != null) {
+                    callRecordPreviewText(callRecord)
+                } else {
+                    result.content?.let { json ->
                         try {
                             JsonInstant.decodeFromString<UIMessage>(json).toPreviewText()
                         } catch (e: Exception) {
                             ""
                         }
                     } ?: ""
-                    Uuid.parse(result.assistantId) to content
                 }
+                assistantId to preview
             }
-            .flowOn(Dispatchers.IO)
+        }.flowOn(Dispatchers.IO)
+    }
+
+    /** 通话记录预览文本：统一显示「语音通话」。 */
+    private fun callRecordPreviewText(record: CallRecordEntity): String {
+        return "[语音通话]"
     }
 
 
@@ -1238,6 +1257,19 @@ class ConversationRepository(
     ): List<ChatMessageEntity> {
         return chatMessageDAO.getMessagesByTimeRange(convId, startTime, endTime)
     }
+
+    /**
+     * 拉取某次通话（callId）在该会话内的真实通话转写（messageSource == CALL），按时间升序。
+     *
+     * 通话状态标记（CALL_STATE）与临时决策消息（NORMAL + skipContext）会被过滤掉，
+     * 通话详情页只展示真实转写。未接通或无转写时返回空列表。
+     */
+    suspend fun getCallTranscript(conversationId: String, callId: String): List<UIMessage> =
+        withContext(Dispatchers.IO) {
+            chatMessageDAO.getMessagesByCallId(conversationId, callId)
+                .decodeMessagesSafely()
+                .filter { it.callId == callId && it.messageSource == MessageSource.CALL }
+        }
 
     /**
      * 按 [startTime, endTime] 闭区间拉取指定会话的消息（按创建时间升序），

@@ -81,15 +81,40 @@ object DeviceCommandHub {
 }
 
 /**
- * AI 工具调用 ↔ VoiceCallManager 之间的通话控制命令总线。
+ * AI 工具调用 ↔ VoiceCallManager / 来电 UI 之间的通话控制总线。
  *
  * 为什么不直接注入 VoiceCallManager / ChatService 到 LocalTools？
  * 因为 ChatService 构造时已经依赖了 LocalTools，直接注入会形成构造器循环依赖。
- * 使用 object 单例 + Flow 可以优雅地解耦：
- *   工具侧 (AI)       → emit command / 读取 isCallActive
- *   VoiceCallManager  → collect command / 更新 isCallActive
+ * 使用 object 单例 + Flow/CompletableDeferred 可以优雅地解耦：
+ *   - 工具侧 (AI)：requestAgentCall(...) 发起来电并**挂起等待真实结果**；
+ *                  sendHangup() 发起挂断。
+ *   - VoiceCallManager：collect incomingRequests 启动响铃 / 收音；
+ *                       accept / reject / timeout / failed 时通过 deliverResult 回传终态。
+ *
+ * 幂等保证：同一 callId 的**第一个合法终态**获胜（CONNECTED/REJECTED/MISSED/FAILED），
+ * 后到事件被忽略并记录日志，避免同一通电话既返回“接通”又返回“超时/拒绝”。
  */
 object CallCommandHub {
+
+    /** Agent 来电请求（VoiceCallManager / UI 侧 collect）。 */
+    data class IncomingCallRequest(
+        val callId: String,
+        val conversationId: Uuid,
+        val assistantId: Uuid,
+    )
+
+    /** 通话终态结果。 */
+    data class CallResult(
+        val callId: String,
+        val status: CallEndStatus,
+        val error: String? = null,
+    )
+
+    enum class CallEndStatus { CONNECTED, REJECTED, MISSED, FAILED }
+
+    private const val TAG = "CallCommandHub"
+
+    // ===== 控制命令（保留既有语义：hangup） =====
     data class CallCommand(val action: String, val conversationId: Uuid)
 
     private val _commands = MutableSharedFlow<CallCommand>(extraBufferCapacity = 10)
@@ -98,19 +123,93 @@ object CallCommandHub {
     private val _isCallActive = MutableStateFlow(false)
     val isCallActive = _isCallActive.asStateFlow()
 
-    /** 由 VoiceCallManager.startCall / hangup 更新，不要在工具侧写。 */
+    /** 由 VoiceCallManager 更新，不要在工具侧写。 */
     internal fun setCallActive(active: Boolean) {
         _isCallActive.value = active
     }
 
-    /** 工具侧发送 call 命令（带 conversationId）。 */
-    suspend fun sendCall(conversationId: Uuid) {
-        _commands.emit(CallCommand(action = "call", conversationId = conversationId))
-    }
-
-    /** 工具侧发送 hangup 命令。conversationId 仅用于日志校验，不必严格匹配。 */
     suspend fun sendHangup(conversationId: Uuid) {
         _commands.emit(CallCommand(action = "hangup", conversationId = conversationId))
+    }
+
+    // ===== Agent 来电请求 / 结果桥接 =====
+    private val _incomingRequests = MutableSharedFlow<IncomingCallRequest>(extraBufferCapacity = 1)
+    val incomingRequests = _incomingRequests.asSharedFlow()
+
+    /** UI 关闭来电页事件（超时/收尾时由 VoiceCallManager 通知 UI 停止铃声并收起来电页）。 */
+    private val _incomingDismiss = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val incomingDismiss = _incomingDismiss.asSharedFlow()
+
+    private val pendingResults = ConcurrentHashMap<String, CompletableDeferred<CallResult>>()
+
+    /** 终态认领表：某 callId 一旦被认领即不可再写终态，保证幂等。 */
+    private val claimedTerminals = ConcurrentHashMap<String, CallResult>()
+
+    /**
+     * 工具侧：Agent 发起呼叫并**挂起等待真实结果**。
+     *
+     * 默认等 120 秒（响铃超时）。若超时仍无终态，则工具侧认领 MISSED 作为兜底
+     * （正常情况下 VoiceCallManager 会在 120 秒时先认领 MISSED 并通知 UI 关闭来电页）。
+     */
+    suspend fun requestAgentCall(
+        conversationId: Uuid,
+        assistantId: Uuid,
+        timeoutMs: Long = 125_000L
+    ): CallResult {
+        // 已有通话进行中：明确失败，不覆写现有会话。
+        if (_isCallActive.value || claimedTerminals.values.any { it.status == CallEndStatus.CONNECTED }) {
+            android.util.Log.w(TAG, "requestAgentCall rejected: another call is active")
+            return CallResult(callId = "", status = CallEndStatus.FAILED, error = "already_in_call")
+        }
+
+        val callId = "call_" + Uuid.random().toString().substring(0, 12)
+        val deferred = CompletableDeferred<CallResult>()
+        pendingResults[callId] = deferred
+        android.util.Log.i(TAG, "requestAgentCall: emit incoming request callId=$callId conv=$conversationId")
+        _incomingRequests.emit(IncomingCallRequest(callId, conversationId, assistantId))
+
+        val delivered = withTimeoutOrNull(timeoutMs) { deferred.await() }
+        if (delivered != null) {
+            pendingResults.remove(callId)
+            claimedTerminals.remove(callId)
+            return delivered
+        }
+
+        // 工具侧兜底超时：认领 MISSED，通知 UI 关闭来电页
+        android.util.Log.w(TAG, "requestAgentCall: tool-side timeout, claim MISSED callId=$callId")
+        val missed = CallResult(callId, CallEndStatus.MISSED)
+        val claimed = claimTerminal(callId, missed)
+        _incomingDismiss.tryEmit(callId)
+        pendingResults.remove(callId)
+        return if (claimed) missed else (claimedTerminals[callId] ?: missed)
+    }
+
+    /**
+     * 认领某 callId 的终态。返回 true 表示本次调用是第一个合法终态（获胜）；
+     * false 表示已有终态，本次事件被忽略。
+     */
+    fun claimTerminal(callId: String, result: CallResult): Boolean {
+        val existing = claimedTerminals.putIfAbsent(callId, result)
+        if (existing != null) {
+            android.util.Log.w(TAG, "claimTerminal ignored (already ${existing.status}) callId=$callId incoming=${result.status}")
+            return false
+        }
+        pendingResults.remove(callId)?.complete(result)
+        return true
+    }
+
+    /** 是否已有该 callId 的终态（供 UI 判定是否还要响应接听/拒绝）。 */
+    fun isTerminated(callId: String): Boolean = claimedTerminals.containsKey(callId)
+
+    /** VoiceCallManager 收尾后调用：清理认领表（保留到工具读取完结果后再清）。 */
+    internal fun cleanup(callId: String) {
+        claimedTerminals.remove(callId)
+        pendingResults.remove(callId)
+    }
+
+    /** 通知 UI 收起来电页（不产生终态）。 */
+    fun dismissIncomingUi(callId: String) {
+        _incomingDismiss.tryEmit(callId)
     }
 }
 
@@ -2712,7 +2811,7 @@ class LocalTools(
                                 }
                             }
                             withContext(Dispatchers.IO) {
-                                // ==== 关键：如果是微信模式，自动切换到普通模式 ====
+                                // ==== 如果是微信模式，自动切换到普通模式（微信模式会分句存储 AI 回复，不适合通话） ====
                                 val settings = settingsStore.settingsFlow.first()
                                 val assistant = settings.assistants.find { it.id == assistantId }
                                 var switchedFromWechat = false
@@ -2736,13 +2835,30 @@ class LocalTools(
                                         )
                                     }
                                 }
-                                // 通过 CallCommandHub 异步通知 VoiceCallManager 发起通话
-                                CallCommandHub.sendCall(conversationId)
+
+                                // ★ 关键：挂起等待真实通话决策结果（接听 / 拒绝 / 超时 / 失败），
+                                //   不再“发完命令就返回已接通”。
+                                val result = CallCommandHub.requestAgentCall(conversationId, assistantId)
+                                val (success, message) = when (result.status) {
+                                    CallCommandHub.CallEndStatus.CONNECTED -> true to "通话已接通"
+                                    CallCommandHub.CallEndStatus.REJECTED -> false to "用户拒绝了通话"
+                                    CallCommandHub.CallEndStatus.MISSED -> false to "响铃2分钟未接听，用户可能在忙，请稍后再拨"
+                                    CallCommandHub.CallEndStatus.FAILED -> {
+                                        val reason = when (result.error) {
+                                            "permission_denied" -> "通话失败：麦克风权限不足"
+                                            else -> "通话失败：语音会话初始化失败"
+                                        }
+                                        false to reason
+                                    }
+                                }
                                 buildJsonObject {
-                                    put("success", true)
+                                    put("success", success)
                                     put("action", "call")
-                                    put("switched_from_wechat_mode", switchedFromWechat)
-                                    put("note", if (switchedFromWechat) "已自动从微信模式切换为普通模式，保证通话体验。通话将立即接通。" else "通话已发起，正在接通。")
+                                    put("status", result.status.name)
+                                    put("result", message)
+                                    if (switchedFromWechat) {
+                                        put("note", "已自动从微信模式切换为普通模式，保证通话体验。")
+                                    }
                                 }
                             }
                         }

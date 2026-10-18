@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -28,14 +29,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
 import coil3.compose.AsyncImage
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -53,6 +58,396 @@ enum class CallStatus {
     SPEAKING,
     DUCKING,
     DISCONNECTED
+}
+
+/**
+ * Agent 来电响铃页：等待用户「接听 / 拒绝」。
+ *
+ * 设计约束：
+ * - 未接通前绝不显示为「已接通」：只展示来电提示，不展示通话状态/时长/静音等控制。
+ * - 交互对齐手机原生来电页：两个圆钮需「向上滑」才触发（防误触），右绿 = 接听，左红 = 挂断。
+ */
+@Composable
+fun IncomingCallScreen(
+    assistant: Assistant,
+    onAccept: () -> Unit,
+    onReject: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptics = rememberPremiumHaptics()
+    val infiniteTransition = rememberInfiniteTransition(label = "incoming_ring")
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "incoming_pulse"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent().changes.forEach { it.consume() }
+                    }
+                }
+            }
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            UIAvatar(
+                value = assistant.avatar,
+                name = assistant.name,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(50.dp)
+                    .graphicsLayer { alpha = 0.45f },
+                onUpdate = null
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)),
+                            startY = 400f
+                        )
+                    )
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 80.dp)
+            ) {
+                Text(
+                    text = assistant.name,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(color = Color.White.copy(alpha = 0.1f), shape = CircleShape) {
+                    Text(
+                        text = "来电",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.85f)
+                    )
+                }
+            }
+
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(240.dp)
+                        .graphicsLayer {
+                            scaleX = pulse
+                            scaleY = pulse
+                            alpha = 0.25f
+                        }
+                        .background(Color.White.copy(alpha = 0.25f), CircleShape)
+                )
+                UIAvatar(
+                    value = assistant.avatar,
+                    name = assistant.name,
+                    modifier = Modifier
+                        .size(160.dp)
+                        .clip(CircleShape),
+                    onUpdate = null
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 64.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 挂断：向上滑触发（左红钮）
+                SwipeUpCallButton(
+                    icon = Icons.Rounded.CallEnd,
+                    label = "挂断",
+                    background = Color(0xFFE53935),
+                    onTrigger = {
+                        haptics.perform(HapticPattern.Thud)
+                        onReject()
+                    }
+                )
+                // 接听：向上滑触发（右绿钮）
+                SwipeUpCallButton(
+                    icon = Icons.Rounded.Call,
+                    label = "接听",
+                    background = Color(0xFF43A047),
+                    onTrigger = {
+                        haptics.perform(HapticPattern.Pop)
+                        onAccept()
+                    }
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 用户主动拨号等待页：已发出呼叫，等待 AI 决定是否接听。
+ * 期间不视为「已接通」，只提供取消按钮。
+ */
+@Composable
+fun OutgoingCallWaitingScreen(
+    assistant: Assistant,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptics = rememberPremiumHaptics()
+    val infiniteTransition = rememberInfiniteTransition(label = "outgoing_wait")
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "outgoing_pulse"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent().changes.forEach { it.consume() }
+                    }
+                }
+            }
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            UIAvatar(
+                value = assistant.avatar,
+                name = assistant.name,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(50.dp)
+                    .graphicsLayer { alpha = 0.45f },
+                onUpdate = null
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)),
+                            startY = 400f
+                        )
+                    )
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(top = 80.dp)
+            ) {
+                Text(
+                    text = assistant.name,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(color = Color.White.copy(alpha = 0.1f), shape = CircleShape) {
+                    Text(
+                        text = "正在呼叫…",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.85f)
+                    )
+                }
+            }
+
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(240.dp)
+                        .graphicsLayer {
+                            scaleX = pulse
+                            scaleY = pulse
+                            alpha = 0.2f
+                        }
+                        .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                )
+                UIAvatar(
+                    value = assistant.avatar,
+                    name = assistant.name,
+                    modifier = Modifier
+                        .size(160.dp)
+                        .clip(CircleShape),
+                    onUpdate = null
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 80.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CallAnswerButton(
+                    icon = Icons.Rounded.CallEnd,
+                    label = "取消",
+                    background = Color(0xFFE53935),
+                    onClick = {
+                        haptics.perform(HapticPattern.Thud)
+                        onCancel()
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallAnswerButton(
+    icon: ImageVector,
+    label: String,
+    background: Color,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "answer_scale"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .background(background, CircleShape)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = ripple(bounded = false, radius = 40.dp),
+                    onClick = onClick
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White.copy(alpha = 0.9f)
+        )
+    }
+}
+
+/**
+ * 手机原生来电页风格的「上滑操作」圆钮：
+ * - 圆钮上方有一个 ^ 提示箭头（随上滑进度淡出），需将圆钮向上滑到阈值才触发，防止误触；
+ * - 松手未达阈值时圆钮自动回弹归位。
+ */
+@Composable
+private fun SwipeUpCallButton(
+    icon: ImageVector,
+    label: String,
+    background: Color,
+    onTrigger: () -> Unit
+) {
+    val density = LocalDensity.current
+    val maxDragPx = with(density) { 48.dp.toPx() }
+    val triggerThreshold = maxDragPx * 0.6f
+    var offsetY by remember { mutableFloatStateOf(0f) }
+    val animatedOffsetY by animateFloatAsState(
+        targetValue = offsetY,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 420f),
+        label = "swipe_up_knob_offset"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // 上滑提示箭头（随拖动进度淡出）
+        val dragProgress = (abs(animatedOffsetY) / triggerThreshold).coerceIn(0f, 1f)
+        Icon(
+            imageVector = Icons.Rounded.KeyboardArrowUp,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.55f * (1f - dragProgress)),
+            modifier = Modifier.size(22.dp)
+        )
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .offset { IntOffset(0, animatedOffsetY.roundToInt()) }
+                .background(background, CircleShape)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onDragEnd = {
+                            val reached = -offsetY >= triggerThreshold
+                            offsetY = 0f
+                            if (reached) onTrigger()
+                        },
+                        onDragCancel = { offsetY = 0f },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            // 仅允许向上拖动（负方向）
+                            val directedAmount = dragAmount.coerceAtMost(0f)
+                            offsetY = (offsetY + directedAmount).coerceIn(-maxDragPx, 0f)
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = Color.White,
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White.copy(alpha = 0.9f)
+        )
+    }
 }
 
 @Composable

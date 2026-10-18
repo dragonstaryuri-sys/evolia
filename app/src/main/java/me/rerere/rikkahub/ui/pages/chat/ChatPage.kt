@@ -69,7 +69,8 @@ import me.rerere.rikkahub.utils.navigateToChatPage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
-import me.rerere.rikkahub.ui.components.chat.CallScreen
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 import me.rerere.rikkahub.data.ai.tools.CameraCaptureHub
 import me.rerere.rikkahub.ui.components.camera.CameraCaptureOverlay
@@ -412,33 +413,102 @@ private fun ChatPageContent(
     val isAiTyping by vm.isAiTyping.collectAsStateWithLifecycle()
     val pageNodes = successState?.nodes.orEmpty()
     val hasOlder = successState?.hasOlder == true
-    val assembledItems by remember(pageNodes, hasOlder, isAiTyping) {
+    // 通话记录：与消息回合按时间倒序合并进时间线，渲染独立通话卡片
+    val callRecords by vm.callRecords.collectAsStateWithLifecycle()
+    val assembledItems by remember(pageNodes, hasOlder, isAiTyping, callRecords) {
         derivedStateOf {
-            if (pageNodes.isEmpty()) return@derivedStateOf emptyList<ChatUIItem>()
+            if (pageNodes.isEmpty() && callRecords.isEmpty()) return@derivedStateOf emptyList<ChatUIItem>()
+
+            val zone = TimeZone.currentSystemDefault()
+            val reversedTurns = pageNodes.groupIntoTurns().reversed()
+
+            // 回合与通话记录统一按时间倒序合并（index 越小越新）
+            val merged = mutableListOf<Pair<Long, ChatUIItem>>()
+            // 已插入到某个回合内部的通话记录，避免后续重复添加
+            val placedRecordIds = mutableSetOf<String>()
+
+            reversedTurns.forEachIndexed { index, turn ->
+                // group.nodes 为 新→旧，反转为 旧→新（与下方渲染约定一致）
+                val orderedNodes = turn.nodes.reversed()
+                val turnStartMs = orderedNodes.first().currentMessage.createdAt
+                    .toInstant(zone).toEpochMilliseconds()
+                val turnEndMs = orderedNodes.last().currentMessage.createdAt
+                    .toInstant(zone).toEpochMilliseconds()
+                val turnConvId = orderedNodes.first().conversationId.toString()
+
+                // 与用户诉求对应：通话气泡需按创建时间排入回合「内部」，
+                // 而不是固定在回合最下方。命中该回合时间范围且同会话的记录会切分回合。
+                val innerRecords = callRecords
+                    .filter { record ->
+                        record.conversationId == turnConvId &&
+                            record.createTime in turnStartMs..turnEndMs
+                    }
+                    .sortedBy { it.createTime }
+
+                if (innerRecords.isEmpty()) {
+                    merged.add(
+                        turnStartMs to ChatUIItem.Turn(
+                            turn.copy(nodes = orderedNodes),
+                            isGenerating = index == 0 && isAiTyping
+                        )
+                    )
+                    return@forEachIndexed
+                }
+
+                // 通话记录把回合切分为若干消息段，记录按其 createTime 插在段与段之间
+                var remaining = orderedNodes
+                var segmentStartMs = turnStartMs
+                innerRecords.forEach { record ->
+                    val (olderNodes, newerNodes) = remaining.partition {
+                        it.currentMessage.createdAt.toInstant(zone).toEpochMilliseconds() <= record.createTime
+                    }
+                    if (olderNodes.isNotEmpty()) {
+                        merged.add(
+                            segmentStartMs to ChatUIItem.Turn(
+                                turn.copy(nodes = olderNodes),
+                                isGenerating = false
+                            )
+                        )
+                    }
+                    merged.add(record.createTime to ChatUIItem.CallRecord(record))
+                    placedRecordIds.add(record.id)
+                    remaining = newerNodes
+                    segmentStartMs = newerNodes.firstOrNull()?.currentMessage?.createdAt
+                        ?.toInstant(zone)?.toEpochMilliseconds() ?: record.createTime
+                }
+                if (remaining.isNotEmpty()) {
+                    merged.add(
+                        segmentStartMs to ChatUIItem.Turn(
+                            turn.copy(nodes = remaining),
+                            isGenerating = index == 0 && isAiTyping
+                        )
+                    )
+                }
+            }
+
+            // 未落在任何回合内部的通话记录（例如未接来电、跨会话记录）单独参与排序
+            callRecords.forEach { record ->
+                if (record.id !in placedRecordIds) {
+                    merged.add(record.createTime to ChatUIItem.CallRecord(record))
+                }
+            }
+            merged.sortByDescending { it.first }
 
             val items = mutableListOf<ChatUIItem>()
-            val turns = pageNodes.groupIntoTurns()
-            val reversedTurns = turns.reversed()
-
             var lastConvId: Uuid? = null
-            reversedTurns.forEachIndexed { index, turn ->
-                val firstNode = turn.firstNode
-                // 话题线逻辑：如果会话 ID 变了，插一根分隔线
-                if (lastConvId != null && firstNode.conversationId != lastConvId) {
-                    items.add(ChatUIItem.Separator(
-                        text = context.getString(R.string.chat_topic_started),
-                        uid = "topic_${firstNode.conversationId}"
-                    ))
+            merged.forEach { (_, item) ->
+                if (item is ChatUIItem.Turn) {
+                    // nodes 已反转为新→旧，最后一个即该回合最早（时间顺序）的节点
+                    val oldestNode = item.group.nodes.lastOrNull() ?: return@forEach
+                    if (lastConvId != null && oldestNode.conversationId != lastConvId) {
+                        items.add(ChatUIItem.Separator(
+                            text = context.getString(R.string.chat_topic_started),
+                            uid = "topic_${oldestNode.conversationId}"
+                        ))
+                    }
+                    lastConvId = oldestNode.conversationId
                 }
-                val reversedTurn = turn.copy(
-                    nodes = turn.nodes.reversed()
-                )
-                // 组装成 UI 条目，index == 0 是最新的消息
-                items.add(ChatUIItem.Turn(
-                    reversedTurn,
-                    isGenerating = index == 0 && isAiTyping
-                ))
-                lastConvId = firstNode.conversationId
+                items.add(item)
             }
 
             // 顶部加载提示
@@ -491,16 +561,8 @@ private fun ChatPageContent(
     var previewMode by rememberSaveable { mutableStateOf(false) }
     var isTemporaryChat by rememberSaveable { mutableStateOf(false) }
 
-    // Voice Call States - 由 ChatVM 转发的 VoiceCallManager StateFlow 驱动
+    // 通话激活状态：仅用于「返回键优先挂断通话」；通话 UI 已上移到 RouteActivity 全局遮罩
     val isCallActive by vm.isCallActive.collectAsStateWithLifecycle()
-    val isMuted by vm.callIsMuted.collectAsStateWithLifecycle()
-    val isSpeakerOn by vm.callIsSpeakerOn.collectAsStateWithLifecycle()
-    val isHeadsetConnected by vm.callIsHeadsetConnected.collectAsStateWithLifecycle()
-    val callStatus by vm.callStatus.collectAsStateWithLifecycle()
-    val callLatestMessage by vm.callLatestMessage.collectAsStateWithLifecycle()
-    val callListeningText by vm.callListeningText.collectAsStateWithLifecycle()
-    // 接近传感器：耳朵贴近 → true（遮罩兜底 + 禁止触摸）
-    val isProximityNear by vm.isProximityNear.collectAsStateWithLifecycle()
 
     // --- 统一返回出口逻辑 ---
     val handleBack: () -> Unit = {
@@ -727,6 +789,10 @@ private fun ChatPageContent(
                         voiceMessagePlayer = vm.voiceMessagePlayer,
                         shownTranscriptions = vm.shownTranscriptions,
                         onManualTranscribe = { nodeId, audioUrl -> vm.manualTranscribeAudio(nodeId, audioUrl) },
+                        onCallRecordClick = { record ->
+                            navController.navigate(Screen.CallDetail(callId = record.id))
+                        },
+                        onRedialCall = { startCallWithPermission(conversation.id) },
                     )
 
                     val hasUserSentMessages = remember(conversation.messageNodes) {
@@ -1108,29 +1174,7 @@ private fun ChatPageContent(
                 }
             }
 
-            // Voice Call Overlay：直接在 Surface 层级覆盖 Scaffold，真正全屏（盖住顶部 TopBar）
-            AnimatedVisibility(
-                visible = isCallActive,
-                enter = fadeIn() + expandIn(expandFrom = Alignment.BottomCenter),
-                exit = fadeOut() + shrinkOut(shrinkTowards = Alignment.BottomCenter)
-            ) {
-                CallScreen(
-                    assistant = currentAssistant,
-                    status = callStatus,
-                    isMuted = isMuted,
-                    isSpeakerOn = isSpeakerOn,
-                    isHeadsetConnected = isHeadsetConnected,
-                    latestMessageRole = callLatestMessage?.role,
-                    latestMessageText = callLatestMessage?.text,
-                    listeningText = callListeningText,
-                    isNearEar = isProximityNear,
-                    onMuteToggle = { vm.toggleCallMute() },
-                    onSpeakerToggle = { vm.toggleCallSpeaker() },
-                    onHangup = { vm.hangupCall() },
-                    onInterrupt = { vm.manualInterruptCall() },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            // 通话 UI（来电响铃 / 拨号等待 / 已接通）已上移到 RouteActivity 的全局遮罩
 
             // AI 摄像头拍照 Overlay：盖在 Scaffold 之上，全屏相机预览 + 倒计时
             val activeCapture = pendingCapture

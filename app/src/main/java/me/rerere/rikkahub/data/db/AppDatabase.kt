@@ -39,9 +39,10 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageNodeEntity::class,
         ChatMessageEntity::class,
         ProfileHistoryEntity::class,
-        AppLockEntity::class
+        AppLockEntity::class,
+        CallRecordEntity::class
     ],
-    version = 37,
+    version = 39,
     exportSchema = true
 )
 @TypeConverters(
@@ -69,6 +70,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDAO
     abstract fun profileHistoryDao(): ProfileHistoryDAO
     abstract fun appLockDao(): AppLockDAO
+    abstract fun callRecordDao(): CallRecordDao
 
     companion object {
         const val TAG = "AppDatabase"
@@ -416,6 +418,64 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 36->37 迁移：agent_monitor_tasks 表新增 pause_until 列")
                 db.execSQL(
                     "ALTER TABLE `agent_monitor_tasks` ADD COLUMN `pause_until` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /**
+         * 37 → 38：新建 call_records 表，用于通话记录（含接通/拒绝/超时/失败等所有尝试）。
+         *
+         * 主键 id 同时作为 callId，关联通话转写消息（UIMessage.callId）。
+         * audio 存录音文件的相对路径；audio_expires_at / forever 控制到期清理与永久保存。
+         * 仅新增表，不改动任何既有表，历史数据完整保留。
+         */
+        val MIGRATION_37_38 = object : Migration(37, 38) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 37->38 迁移：新建 call_records 表（通话记录）")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `call_records` (
+                        `id` TEXT NOT NULL,
+                        `assistant_id` TEXT NOT NULL,
+                        `conversation_id` TEXT NOT NULL,
+                        `start_time` INTEGER,
+                        `end_time` INTEGER,
+                        `audio` TEXT,
+                        `create_time` INTEGER NOT NULL,
+                        `forever` INTEGER NOT NULL DEFAULT 0,
+                        `status` TEXT NOT NULL,
+                        `connected_at` INTEGER,
+                        `disconnected_at` INTEGER,
+                        `duration_ms` INTEGER NOT NULL DEFAULT 0,
+                        `end_reason` TEXT,
+                        `audio_expires_at` INTEGER,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_call_records_assistant_id_create_time` " +
+                        "ON `call_records` (`assistant_id`, `create_time`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_call_records_conversation_id` " +
+                        "ON `call_records` (`conversation_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_call_records_status` " +
+                        "ON `call_records` (`status`)"
+                )
+            }
+        }
+
+        /**
+         * 38 → 39：call_records 表新增 initiator 列，记录通话发起方（user / agent）。
+         */
+        val MIGRATION_38_39 = object : Migration(38, 39) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 38->39 迁移：call_records 表新增 initiator 列")
+                db.execSQL(
+                    "ALTER TABLE `call_records` ADD COLUMN `initiator` TEXT NOT NULL DEFAULT 'user'"
                 )
             }
         }

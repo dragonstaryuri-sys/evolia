@@ -76,7 +76,8 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
     override fun startRecognition(
         context: Context,
         providerSetting: ASRProviderSetting.LocalSenseVoiceASR,
-        preRollPcm: List<ShortArray>?
+        preRollPcm: List<ShortArray>?,
+        onPcmFrame: ((ShortArray) -> Unit)?
     ) = channelFlow @androidx.annotation.RequiresPermission(android.Manifest.permission.RECORD_AUDIO) {
         // 校验模型是否就绪（首次使用时自动从 assets 复制内置模型）
         ensureBuiltinModel(context)
@@ -272,6 +273,9 @@ class LocalSenseVoiceASRProvider : ASRProvider<ASRProviderSetting.LocalSenseVoic
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, WINDOW_SIZE)
                 if (read <= 0) continue
+
+                // 通话录音 near-end：暴露麦克风 PCM（非阻塞，上层只做加性混音）
+                onPcmFrame?.let { cb -> runCatching { cb(buffer.copyOfRange(0, read)) } }
 
                 val samples = FloatArray(read) { buffer[it] / 32768.0f }
                 vad.acceptWaveform(samples)

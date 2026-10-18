@@ -46,6 +46,14 @@ sealed interface Screen {
     @Serializable
     data class ChatHistorySearch(val assistantId: String) : Screen
 
+    /** 通话详情页（只读）：播放录音 + 该 callId 的通话转写 + 录音保存/删除。 */
+    @Serializable
+    data class CallDetail(val callId: String) : Screen
+
+    /** 智能体历史通话列表（4 种排序）。 */
+    @Serializable
+    data class HistoryCall(val assistantId: String) : Screen
+
     @Serializable
     data object Menu : Screen
 
@@ -123,6 +131,14 @@ sealed interface Screen {
 
     @Serializable
     data object SettingUserProfile : Screen
+
+    /** 通知设置页（5 个通知开关 + 提示音和铃声入口）。 */
+    @Serializable
+    data object SettingNotification : Screen
+
+    /** 来电铃声设置页。 */
+    @Serializable
+    data object SettingCallRingtone : Screen
 
     @Serializable
     data object Discover : Screen

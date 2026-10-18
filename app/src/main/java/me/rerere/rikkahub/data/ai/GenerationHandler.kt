@@ -142,6 +142,7 @@ class GenerationHandler(
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null,
         isCallMode: Boolean = false,
+        callId: String? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
         val providerImpl = providerManager.getProviderByType(provider)
@@ -466,7 +467,7 @@ class GenerationHandler(
                     val processedMessages = if (skipContextForResponse) {
                         updatedFromChunk.mapIndexed { index, uiMessage ->
                             if (index == updatedFromChunk.lastIndex && uiMessage.role == CoreMessageRole.ASSISTANT) {
-                                uiMessage.copy(skipContext = true, messageSource = responseMessageSource)
+                                uiMessage.copy(skipContext = true, messageSource = responseMessageSource, callId = callId)
                             } else uiMessage
                         }
                     } else updatedFromChunk
@@ -503,7 +504,8 @@ class GenerationHandler(
                 includeSkipContextMessages = includeSkipContextMessages,
                 responseMessageSource = responseMessageSource,
                 conversationId = conversationId,
-                isCallMode = isCallMode
+                isCallMode = isCallMode,
+                callId = callId
             )
 
 
@@ -1055,12 +1057,16 @@ class GenerationHandler(
             // 包含 skipContext 消息，根据消息来源决定截断策略：
             // - AGENT_TASK: 完整带入，不截断
             // - DIARY_COMMENT: 完整带入，不截断（用户评论+日记内容是后续对话的重要上下文）
+            // - CALL / CALL_STATE: 完整带入，不截断（通话真实转写与通话状态标记必须进入后续上下文）
             // - NORMAL: 历史消息截断到前 100 字，保留最后一条 user 消息完整
             val lastUserMsgIndex = messages.indexOfLast { it.role == CoreMessageRole.USER }
             messages.mapIndexed { index, msg ->
+                val isContextWhitelistedSource = msg.messageSource == MessageSource.AGENT_TASK
+                    || msg.messageSource == MessageSource.DIARY_COMMENT
+                    || msg.messageSource == MessageSource.CALL
+                    || msg.messageSource == MessageSource.CALL_STATE
                 val shouldTruncate = msg.skipContext
-                    && msg.messageSource != MessageSource.AGENT_TASK
-                    && msg.messageSource != MessageSource.DIARY_COMMENT
+                    && !isContextWhitelistedSource
                     && index != lastUserMsgIndex
                 if (shouldTruncate) {
                     msg.copy(parts = msg.parts.map { part ->
@@ -1072,7 +1078,12 @@ class GenerationHandler(
                 } else msg
             }
         } else {
-            messages.filter { !it.skipContext }
+            // 不包含（大多数）skipContext 消息，但 CALL 真实转写与 CALL_STATE 状态标记
+            // 必须按来源白名单保留，纳入后续上下文；普通 skipContext 指令维持原有语义。
+            val isCallVisibleSource: (UIMessage) -> Boolean = { msg ->
+                msg.messageSource == MessageSource.CALL || msg.messageSource == MessageSource.CALL_STATE
+            }
+            messages.filter { !it.skipContext || isCallVisibleSource(it) }
         }
         Log.d("ContextDebug", "--- Context Build Start ---")
         Log.d("ContextDebug", "Incoming lastArchivedMessageTime: $lastArchivedMessageTime")
@@ -1741,6 +1752,7 @@ class GenerationHandler(
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null,
         isCallMode: Boolean = false,
+        callId: String? = null,
     ) {
         val buildResult = buildMessages(
             assistant = assistant,

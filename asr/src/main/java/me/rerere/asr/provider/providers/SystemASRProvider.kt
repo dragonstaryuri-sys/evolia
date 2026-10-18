@@ -24,10 +24,12 @@ class SystemASRProvider : ASRProvider<ASRProviderSetting.SystemASR> {
     override fun startRecognition(
         context: Context,
         providerSetting: ASRProviderSetting.SystemASR,
-        preRollPcm: List<ShortArray>?
+        preRollPcm: List<ShortArray>?,
+        onPcmFrame: ((ShortArray) -> Unit)?
     ): Flow<ASRResult> = callbackFlow {
         // SystemASR 走 Android SpeechRecognizer 服务，无法注入预卷 PCM（系统服务内部自己管麦克风采集）
         // 忽略 preRollPcm 参数；打断场景下用户开头字可能丢失，但 SystemASR 在通话场景很少用
+        // 同样无法提供麦克风 PCM 采样（onPcmFrame）——系统服务不暴露 PCM，通话录音将缺少用户侧输入
         // 诊断: 检查设备上是否有可用的语音识别服务组件
         val serviceIntent = Intent("android.speech.RecognitionService")
         val services = context.packageManager.queryIntentServices(serviceIntent, 0)

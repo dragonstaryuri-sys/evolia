@@ -21,7 +21,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessage
-import me.rerere.rikkahub.AGENT_TASK_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.service.notification.NotificationSoundManager
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_DIARY_PROMPT
@@ -459,7 +459,8 @@ class DiaryWorker(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        val notification = NotificationCompat.Builder(applicationContext, AGENT_TASK_NOTIFICATION_CHANNEL_ID)
+        if (!settingsStore.settingsFlow.value.notificationDiaryEnabled) return
+        val notification = NotificationCompat.Builder(applicationContext, NotificationSoundManager.DIARY_CHANNEL_ID)
             .setSmallIcon(R.drawable.about_logo)
             .setContentTitle(applicationContext.getString(R.string.discover_page_diary_title))
             .setContentText(text)

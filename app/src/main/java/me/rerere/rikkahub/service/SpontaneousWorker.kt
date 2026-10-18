@@ -227,17 +227,10 @@ class SpontaneousWorker(
     }
 
     private fun sendNotification(title: String, content: String, conversationId: kotlin.uuid.Uuid) {
+        // 主动消息归入「AI 消息提醒」总开关
+        if (!settingsStore.settingsFlow.value.notificationAiReplyEnabled) return
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        val channelId = "assistant_spontaneous"
-        val channelName = applicationContext.getString(R.string.notification_channel_assistant_updates)
-        val channel = android.app.NotificationChannel(
-            channelId,
-            channelName,
-            android.app.NotificationManager.IMPORTANCE_HIGH // 开启悬浮通知
-        ).apply {
-            enableVibration(true) // 开启震动
-        }
-        notificationManager.createNotificationChannel(channel)
+        val channelId = me.rerere.rikkahub.service.notification.NotificationSoundManager.AI_MESSAGES_CHANNEL_ID
 
         val intent = android.content.Intent(applicationContext, me.rerere.rikkahub.RouteActivity::class.java).apply {
             flags = android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP

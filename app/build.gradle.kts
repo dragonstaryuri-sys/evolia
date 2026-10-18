@@ -191,6 +191,7 @@ android {
         compilerOptions.optIn.add("kotlin.uuid.ExperimentalUuidApi")
         compilerOptions.optIn.add("kotlin.time.ExperimentalTime")
         compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
+        compilerOptions.optIn.add("androidx.media3.common.util.UnstableApi")
     }
 }
 
@@ -330,6 +331,7 @@ dependencies {
     // Media3 (ExoPlayer) - 语音消息播放
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.transformer)
     implementation(libs.androidx.media3.ui)
 
     // Room

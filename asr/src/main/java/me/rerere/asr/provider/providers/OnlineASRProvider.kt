@@ -86,7 +86,8 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
     override fun startRecognition(
         context: Context,
         providerSetting: ASRProviderSetting.OnlineASR,
-        preRollPcm: List<ShortArray>?
+        preRollPcm: List<ShortArray>?,
+        onPcmFrame: ((ShortArray) -> Unit)?
     ) = channelFlow @androidx.annotation.RequiresPermission(Manifest.permission.RECORD_AUDIO) {
         // 校验配置
         if (providerSetting.apiKey.isBlank()) {
@@ -266,6 +267,9 @@ class OnlineASRProvider : ASRProvider<ASRProviderSetting.OnlineASR> {
             while (isActive) {
                 val read = audioRecord.read(buffer, 0, WINDOW_SIZE)
                 if (read <= 0) continue
+
+                // 通话录音 near-end：暴露麦克风 PCM（非阻塞，上层只做加性混音）
+                onPcmFrame?.let { cb -> runCatching { cb(buffer.copyOfRange(0, read)) } }
 
                 val samples = FloatArray(read) { buffer[it] / 32768.0f }
                 vad.acceptWaveform(samples)

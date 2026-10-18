@@ -79,6 +79,30 @@ class VoiceMessagePlayer(context: Context) {
     }
 
     /**
+     * 拖动到指定进度（仅当 [key] 与当前播放 key 一致时生效）。
+     */
+    fun seekTo(key: String, positionMs: Long) {
+        scope.launch {
+            if (_currentKey.value != key) return@launch
+            val duration = if (player.duration > 0) player.duration else 0L
+            val target = positionMs.coerceIn(0L, duration.coerceAtLeast(0L))
+            player.seekTo(target)
+            _playback.update { it?.copy(positionMs = target) }
+        }
+    }
+
+    /**
+     * 设置播放倍速（仅当 [key] 与当前播放 key 一致时生效）。
+     * 已结束（STATE_ENDED）的记录再次播放时沿用当前倍速。
+     */
+    fun setSpeed(key: String, speed: Float) {
+        scope.launch {
+            if (_currentKey.value != key) return@launch
+            player.setPlaybackSpeed(speed.coerceIn(0.5f, 3.0f))
+        }
+    }
+
+    /**
      * 停止当前播放（不影响其它语音条状态）。
      */
     fun stop() {

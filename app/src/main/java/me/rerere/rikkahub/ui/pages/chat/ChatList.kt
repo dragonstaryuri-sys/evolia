@@ -42,6 +42,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.data.datastore.getAssistantById
+import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
@@ -79,6 +80,7 @@ sealed class ChatUIItem {
         val isGenerating: Boolean = false
     ) : ChatUIItem()
     data class Separator(val text: String, val uid: String) : ChatUIItem()
+    data class CallRecord(val record: me.rerere.rikkahub.core.data.db.entity.CallRecordEntity) : ChatUIItem()
 }
 @Composable
 fun ChatList(
@@ -110,6 +112,8 @@ fun ChatList(
     voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
     shownTranscriptions: MutableSet<String>,
     onManualTranscribe: (nodeId: Uuid, audioUrl: String) -> Unit = { _, _ -> },
+    onCallRecordClick: (me.rerere.rikkahub.core.data.db.entity.CallRecordEntity) -> Unit = {},
+    onRedialCall: () -> Unit = {},
 ) {
     val previewState = rememberLazyListState()
     var scrollToNodeId by remember { mutableStateOf<Uuid?>(null) }
@@ -222,6 +226,8 @@ fun ChatList(
                             voiceMessagePlayer = voiceMessagePlayer,
                             shownTranscriptions = shownTranscriptions,
                             onManualTranscribe = onManualTranscribe,
+                            onCallRecordClick = onCallRecordClick,
+                            onRedialCall = onRedialCall,
                         )
                     }
                 }
@@ -259,6 +265,8 @@ private fun SharedTransitionScope.ChatListNormal(
     voiceMessagePlayer: me.rerere.rikkahub.service.voice.VoiceMessagePlayer? = null,
     shownTranscriptions: MutableSet<String>,
     onManualTranscribe: (nodeId: Uuid, audioUrl: String) -> Unit = { _, _ -> },
+    onCallRecordClick: (me.rerere.rikkahub.core.data.db.entity.CallRecordEntity) -> Unit = {},
+    onRedialCall: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
@@ -408,6 +416,7 @@ private fun SharedTransitionScope.ChatListNormal(
                     when (item) {
                         is ChatUIItem.Turn -> "turn_${item.group.firstNode.id}"
                         is ChatUIItem.Separator -> "sep_${item.uid}"
+                        is ChatUIItem.CallRecord -> "call_${item.record.id}"
                     }
                 }
             )  { index, item ->
@@ -510,6 +519,19 @@ private fun SharedTransitionScope.ChatListNormal(
                                 color = MaterialTheme.colorScheme.outline
                             )
                         }
+                    }
+                    is ChatUIItem.CallRecord -> {
+                        val callAssistant = settings.getAssistantById(conversation.assistantId)
+                        val callEffectiveDisplay = settings.getEffectiveDisplaySetting(callAssistant)
+                        me.rerere.rikkahub.ui.components.chat.CallRecordCard(
+                            record = item.record,
+                            assistant = callAssistant,
+                            userAvatar = callEffectiveDisplay.userAvatar,
+                            wechatMode = callEffectiveDisplay.wechatMode,
+                            onClick = { onCallRecordClick(item.record) },
+                            onRedial = onRedialCall,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }

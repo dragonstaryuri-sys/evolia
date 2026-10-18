@@ -275,6 +275,13 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         icon = { Icon(Icons.Rounded.Code, null, modifier = Modifier.size(20.dp)) },
                         onClick = { navController.navigate(Screen.SettingModes()) }
                     )
+
+                    SettingGroupItem(
+                        title = stringResource(R.string.setting_page_notification),
+                        subtitle = stringResource(R.string.setting_page_notification_desc),
+                        icon = { Icon(Icons.Rounded.Notifications, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingNotification) }
+                    )
                 }
             }
 

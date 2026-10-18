@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Build
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.CleaningServices
 import androidx.compose.material.icons.rounded.DataObject
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Person
@@ -391,6 +392,9 @@ fun AssistantDetailPage(
                     onNavigateToMemory = { navController.navigate(AssistantDetailRoutes.MEMORY) },
                     onNavigateToUI = { navController.navigate(AssistantDetailRoutes.UI) },
                     onNavigateToAdvanced = { navController.navigate(AssistantDetailRoutes.ADVANCED) },
+                    onNavigateToHistoryCall = {
+                        globalNavController.navigate(Screen.HistoryCall(assistantId = id))
+                    },
                     onClearConversationsAndSegments = { vm.clearConversationsAndSegmentMemory() }
                 )
             }
@@ -577,6 +581,7 @@ private fun AssistantDetailHome(
     onNavigateToMemory: () -> Unit,
     onNavigateToUI: () -> Unit,
     onNavigateToAdvanced: () -> Unit,
+    onNavigateToHistoryCall: () -> Unit,
     onClearConversationsAndSegments: () -> Unit
 ) {
     Column(
@@ -673,6 +678,15 @@ private fun AssistantDetailHome(
                 title = stringResource(R.string.assistant_detail_tools_search_title),
                 description = stringResource(R.string.assistant_detail_tools_search_desc),
                 onClick = onNavigateToTools
+            )
+        }
+
+        SettingsGroup(title = stringResource(R.string.assistant_detail_group_chat_call)) {
+            NavigationCard(
+                icon = Icons.Rounded.History,
+                title = stringResource(R.string.assistant_detail_history_call_title),
+                description = stringResource(R.string.assistant_detail_history_call_desc),
+                onClick = onNavigateToHistoryCall
             )
         }
 

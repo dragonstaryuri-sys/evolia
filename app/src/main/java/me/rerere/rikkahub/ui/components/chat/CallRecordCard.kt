@@ -1,0 +1,132 @@
+package me.rerere.rikkahub.ui.components.chat
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.CallEnd
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import me.rerere.rikkahub.core.data.db.entity.CallInitiator
+import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.theme.AppShapes
+
+/**
+ * 聊天时间线中的「通话卡片」。
+ *
+ * 排布方式与普通消息气泡一致：
+ * - AI 发起的通话：左侧显示 AI 头像，右侧紧跟通话卡片
+ * - 用户发起的通话：右侧显示通话卡片，再右侧是用户头像
+ *
+ * - 成功接通：显示「通话时长 mm:ss」，点击进入通话详情页。
+ * - 未接通（拒绝 / 未接 / 失败 / 已取消）：显示「已挂断」，点击重拨。
+ */
+@Composable
+fun CallRecordCard(
+    record: CallRecordEntity,
+    assistant: Assistant?,
+    userAvatar: Avatar,
+    wechatMode: Boolean,
+    onClick: () -> Unit,
+    onRedial: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isConnected = record.connectedAt != null || record.durationMs > 0L
+    val label = if (isConnected) "通话时长 ${formatCallDuration(record.durationMs)}" else "已挂断"
+    val icon = if (isConnected) Icons.Rounded.Call else Icons.Rounded.CallEnd
+    val tint = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val isAgentInitiated = record.initiator == CallInitiator.AGENT
+
+    val card = @Composable {
+        Card(
+            shape = AppShapes.CardMedium,
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ),
+            onClick = { if (isConnected) onClick() else onRedial() }
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = if (isConnected) "查看详情" else "重拨",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = if (isAgentInitiated) Arrangement.Start else Arrangement.End,
+        verticalAlignment = Alignment.Top
+    ) {
+        if (isAgentInitiated) {
+            if (wechatMode) {
+                UIAvatar(
+                    name = assistant?.name?.ifEmpty { null } ?: "Assistant",
+                    value = assistant?.avatar ?: Avatar.Dummy,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .padding(top = 2.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            card()
+        } else {
+            card()
+            if (wechatMode) {
+                Spacer(Modifier.width(8.dp))
+                UIAvatar(
+                    name = "我",
+                    value = userAvatar,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .padding(top = 2.dp)
+                )
+            }
+        }
+    }
+}
+
+/** 毫秒时长格式化为 mm:ss。 */
+fun formatCallDuration(ms: Long): String {
+    val totalSeconds = (ms / 1000).coerceAtLeast(0L)
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%02d:%02d".format(minutes, seconds)
+}

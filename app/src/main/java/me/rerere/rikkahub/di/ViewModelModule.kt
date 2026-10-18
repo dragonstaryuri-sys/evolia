@@ -5,6 +5,8 @@ import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantDetailVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportVM
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportMemoryVM
 import me.rerere.rikkahub.ui.pages.backup.BackupVM
+import me.rerere.rikkahub.ui.pages.call.CallDetailVM
+import me.rerere.rikkahub.ui.pages.call.HistoryCallVM
 import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.rikkahub.ui.pages.chat.ChatListVM
 import me.rerere.rikkahub.ui.pages.chat.ChatHistorySearchVM
@@ -43,7 +45,8 @@ val viewModelModule = module {
             voiceCallManager = get(),
             asrManager = get(),
             voiceMessagePlayer = get(),
-            customTtsState = get()
+            customTtsState = get(),
+            callRecordRepository = get()
         )
     }
     viewModel<SettingVM> {
@@ -137,6 +140,21 @@ val viewModelModule = module {
     viewModelOf(::TokenReportVM)
     viewModelOf(::PermissionVM)
     viewModelOf(::FavoritesVM)
+    viewModel<CallDetailVM> { params ->
+        CallDetailVM(
+            callId = params.get(),
+            context = get(),
+            callRecordRepository = get(),
+            conversationRepository = get(),
+            voiceMessagePlayer = get()
+        )
+    }
+    viewModel<HistoryCallVM> { params ->
+        HistoryCallVM(
+            assistantId = params.get(),
+            callRecordRepository = get()
+        )
+    }
     viewModel<FavoriteDetailVM> { params ->
         FavoriteDetailVM(
             id = params.get(),

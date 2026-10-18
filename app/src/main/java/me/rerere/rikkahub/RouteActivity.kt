@@ -42,8 +42,16 @@ import coil3.svg.SvgDecoder
 import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import okio.Path.Companion.toOkioPath
+import androidx.compose.animation.AnimatedVisibility
 import me.rerere.rikkahub.ui.components.ui.AppToasterHost
 import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
+import me.rerere.rikkahub.data.datastore.Settings
+import me.rerere.rikkahub.data.datastore.getCurrentAssistant
+import me.rerere.rikkahub.service.voice.VoiceCallManager
+import me.rerere.rikkahub.ui.components.chat.CallScreen
+import me.rerere.rikkahub.ui.components.chat.IncomingCallScreen
+import me.rerere.rikkahub.ui.components.chat.OutgoingCallWaitingScreen
+import org.koin.compose.koinInject
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.launch
 import me.rerere.highlight.Highlighter
@@ -65,6 +73,8 @@ import me.rerere.rikkahub.ui.pages.assistant.AssistantImportDoubaoPage
 import me.rerere.rikkahub.ui.pages.assistant.AssistantImportMemoryPage
 import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
+import me.rerere.rikkahub.ui.pages.call.CallDetailPage
+import me.rerere.rikkahub.ui.pages.call.HistoryCallPage
 import me.rerere.rikkahub.ui.pages.developer.DeveloperPage
 import me.rerere.rikkahub.ui.pages.imggen.ImageGenPage
 import me.rerere.rikkahub.ui.pages.menu.MenuPage
@@ -91,6 +101,8 @@ import me.rerere.rikkahub.ui.pages.setting.SettingEmailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWakeWordPage
 import me.rerere.rikkahub.ui.pages.setting.SettingUserProfilePage
 import me.rerere.rikkahub.ui.pages.setting.SettingPermissionCheckPage
+import me.rerere.rikkahub.ui.pages.setting.SettingNotificationPage
+import me.rerere.rikkahub.ui.pages.setting.SettingCallRingtonePage
 import me.rerere.rikkahub.ui.pages.home.HomePage
 import me.rerere.rikkahub.ui.pages.discover.DiscoverPage
 import me.rerere.rikkahub.ui.pages.discover.DiaryListPage
@@ -362,6 +374,16 @@ class RouteActivity : AppCompatActivity() {
                         ChatHistorySearchPage(assistantId = route.assistantId)
                     }
 
+                    composable<Screen.CallDetail> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.CallDetail>()
+                        CallDetailPage(callId = route.callId)
+                    }
+
+                    composable<Screen.HistoryCall> { backStackEntry ->
+                        val route = backStackEntry.toRoute<Screen.HistoryCall>()
+                        HistoryCallPage(assistantId = route.assistantId)
+                    }
+
                     composable<Screen.AssistantImportDoubao> {
                         AssistantImportDoubaoPage()
                     }
@@ -416,6 +438,8 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingEmail> { SettingEmailPage() }
                     composable<Screen.SettingWakeWord> { SettingWakeWordPage() }
                     composable<Screen.SettingUserProfile> { SettingUserProfilePage() }
+                    composable<Screen.SettingNotification> { SettingNotificationPage() }
+                    composable<Screen.SettingCallRingtone> { SettingCallRingtonePage() }
                     composable<Screen.SettingPermissionCheck> { SettingPermissionCheckPage() }
                     composable<Screen.Discover> { DiscoverPage() }
                     composable<Screen.DiaryList> { backStackEntry ->
@@ -457,9 +481,101 @@ class RouteActivity : AppCompatActivity() {
                         BookReaderScreen(bookId = route.bookId, onBack = { navBackStack.popBackStack() })
                     }
                 }
+                // ===== 全局通话遮罩：来电响铃 / 用户拨号等待 / 已接通通话 =====
+                // 从 ChatPage 上移到根级 Box，使通话页面能覆盖任意页面（对齐手机原生来电的全局体验）。
+                GlobalCallOverlay(settings = settings)
                 AppToasterHost(state = toastState)
                 }
             }
         }
+    }
+}
+
+/**
+ * 全局通话遮罩：把来电响铃页 / 用户拨号等待页 / 已接通通话页统一放到根级，
+ * 使通话页面能够覆盖任意界面（对齐手机原生来电的全局体验）。
+ *
+ * 三态由 VoiceCallManager 驱动：
+ * - incomingCall != null           → 来电响铃（滑动接听 / 挂断）
+ * - callPhase == OUTGOING_WAITING  → 用户拨号等待
+ * - isActive                       → 已接通通话页
+ */
+@Composable
+private fun GlobalCallOverlay(settings: Settings) {
+    val voiceCallManager = koinInject<VoiceCallManager>()
+
+    val isCallActive by voiceCallManager.isActive.collectAsStateWithLifecycle()
+    val callStatus by voiceCallManager.callStatus.collectAsStateWithLifecycle()
+    val isMuted by voiceCallManager.isMuted.collectAsStateWithLifecycle()
+    val isSpeakerOn by voiceCallManager.isSpeakerOn.collectAsStateWithLifecycle()
+    val isHeadsetConnected by voiceCallManager.isHeadsetConnected.collectAsStateWithLifecycle()
+    val callLatestMessage by voiceCallManager.latestCallMessage.collectAsStateWithLifecycle()
+    val callListeningText by voiceCallManager.listeningText.collectAsStateWithLifecycle()
+    val isProximityNear by voiceCallManager.isNearEar.collectAsStateWithLifecycle()
+    val callPhase by voiceCallManager.callPhase.collectAsStateWithLifecycle()
+    val incomingCall by voiceCallManager.incomingCall.collectAsStateWithLifecycle()
+    val activeCallAssistantId by voiceCallManager.activeCallAssistantId.collectAsStateWithLifecycle()
+
+    val currentAssistant = settings.getCurrentAssistant()
+
+    // 来电响铃覆盖页：未接通前只显示接听 / 拒绝，绝不显示为已接通
+    AnimatedVisibility(
+        visible = incomingCall != null,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        val info = incomingCall
+        if (info != null) {
+            val incomingAssistant = settings.assistants.find { it.id == info.assistantId } ?: currentAssistant
+            IncomingCallScreen(
+                assistant = incomingAssistant,
+                onAccept = { voiceCallManager.acceptIncomingCall(info.callId) },
+                onReject = { voiceCallManager.rejectIncomingCall(info.callId) },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+
+    // 用户拨号等待页（AI 决策是否接听中）：未接通前只提供取消
+    AnimatedVisibility(
+        visible = callPhase == VoiceCallManager.CallPhase.OUTGOING_WAITING,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        val waitingAssistant = activeCallAssistantId
+            ?.let { id -> settings.assistants.find { it.id == id } }
+            ?: currentAssistant
+        OutgoingCallWaitingScreen(
+            assistant = waitingAssistant,
+            onCancel = { voiceCallManager.cancelUserCall() },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+
+    // 已接通通话页：全屏覆盖，盖住任意页面的 TopBar
+    AnimatedVisibility(
+        visible = isCallActive,
+        enter = fadeIn(),
+        exit = fadeOut()
+    ) {
+        val connectedAssistant = activeCallAssistantId
+            ?.let { id -> settings.assistants.find { it.id == id } }
+            ?: currentAssistant
+        CallScreen(
+            assistant = connectedAssistant,
+            status = callStatus,
+            isMuted = isMuted,
+            isSpeakerOn = isSpeakerOn,
+            isHeadsetConnected = isHeadsetConnected,
+            latestMessageRole = callLatestMessage?.role,
+            latestMessageText = callLatestMessage?.text,
+            listeningText = callListeningText,
+            isNearEar = isProximityNear,
+            onMuteToggle = { voiceCallManager.toggleMute() },
+            onSpeakerToggle = { voiceCallManager.toggleSpeaker() },
+            onHangup = { voiceCallManager.hangup() },
+            onInterrupt = { voiceCallManager.manualInterrupt() },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }

@@ -113,7 +113,8 @@ val appModule = module {
             ttsController = get(),
             asrManager = get(),
             settingsStore = get(),
-            customTtsState = get()
+            customTtsState = get(),
+            callRecordRepository = get()
         )
     }
 

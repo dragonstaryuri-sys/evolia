@@ -124,6 +124,15 @@ class SettingsStore(
         val WAKE_WORD_ASSISTANT_ID = stringPreferencesKey("wake_word_assistant_id")
         val CALL_BARGE_IN_SENSITIVITY = intPreferencesKey("call_barge_in_sensitivity")
         val CHAT_GENERATION_TIMEOUT_MINUTES = intPreferencesKey("chat_generation_timeout_minutes")
+        // ===== 通知与声音设置（SET 需求）=====
+        val NOTIFICATION_DIARY_ENABLED = booleanPreferencesKey("notification_diary_enabled")
+        val NOTIFICATION_PROFILE_ENABLED = booleanPreferencesKey("notification_profile_enabled")
+        val NOTIFICATION_AI_REPLY_ENABLED = booleanPreferencesKey("notification_ai_reply_enabled")
+        val NOTIFICATION_BACKUP_ENABLED = booleanPreferencesKey("notification_backup_enabled")
+        // 来电铃声类型："system1"/"system2"/"custom"
+        val CALL_RINGTONE = stringPreferencesKey("call_ringtone")
+        // 自定义铃声在 filesDir/ringtones/ 下的相对路径
+        val CALL_RINGTONE_CUSTOM_PATH = stringPreferencesKey("call_ringtone_custom_path")
     }
 
     private val dataStore = context.settingsStore
@@ -224,6 +233,12 @@ class SettingsStore(
                 wakeWordAssistantId = preferences[WAKE_WORD_ASSISTANT_ID].toUuidOrNull(),
                 callBargeInSensitivity = preferences[CALL_BARGE_IN_SENSITIVITY] ?: 50,
                 chatGenerationTimeoutMinutes = preferences[CHAT_GENERATION_TIMEOUT_MINUTES] ?: 20,
+                notificationDiaryEnabled = preferences[NOTIFICATION_DIARY_ENABLED] ?: true,
+                notificationProfileEnabled = preferences[NOTIFICATION_PROFILE_ENABLED] ?: true,
+                notificationAiReplyEnabled = preferences[NOTIFICATION_AI_REPLY_ENABLED] ?: true,
+                notificationBackupEnabled = preferences[NOTIFICATION_BACKUP_ENABLED] ?: true,
+                callRingtone = preferences[CALL_RINGTONE] ?: "system1",
+                callRingtoneCustomPath = preferences[CALL_RINGTONE_CUSTOM_PATH] ?: "",
             )
         }
         .map {
@@ -460,6 +475,12 @@ class SettingsStore(
             preferences[WAKE_WORD_ASSISTANT_ID] = settingsToSave.wakeWordAssistantId?.toString() ?: ""
             preferences[CALL_BARGE_IN_SENSITIVITY] = settingsToSave.callBargeInSensitivity
             preferences[CHAT_GENERATION_TIMEOUT_MINUTES] = settingsToSave.chatGenerationTimeoutMinutes
+            preferences[NOTIFICATION_DIARY_ENABLED] = settingsToSave.notificationDiaryEnabled
+            preferences[NOTIFICATION_PROFILE_ENABLED] = settingsToSave.notificationProfileEnabled
+            preferences[NOTIFICATION_AI_REPLY_ENABLED] = settingsToSave.notificationAiReplyEnabled
+            preferences[NOTIFICATION_BACKUP_ENABLED] = settingsToSave.notificationBackupEnabled
+            preferences[CALL_RINGTONE] = settingsToSave.callRingtone
+            preferences[CALL_RINGTONE_CUSTOM_PATH] = settingsToSave.callRingtoneCustomPath
         }
     }
 
@@ -557,6 +578,15 @@ data class Settings(
     val callBargeInSensitivity: Int = 50,
     // 对话生成整体超时（分钟），覆盖思考+答案+工具调用的全过程，默认 20 分钟
     val chatGenerationTimeoutMinutes: Int = 20,
+    // ===== 通知与声音设置（SET 需求，默认开启，旧版兼容）=====
+    val notificationDiaryEnabled: Boolean = true,
+    val notificationProfileEnabled: Boolean = true,
+    val notificationAiReplyEnabled: Boolean = true,
+    val notificationBackupEnabled: Boolean = true,
+    // 来电铃声：system1 / system2 / custom
+    val callRingtone: String = "system1",
+    // 自定义来电铃声相对路径（filesDir/ringtones/ 下）
+    val callRingtoneCustomPath: String = "",
 ) {
     companion object {
         fun dummy() = Settings(init = true)

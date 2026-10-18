@@ -93,6 +93,15 @@ interface ChatMessageDAO {
     @Query("SELECT * FROM chat_messages WHERE conversation_id IN (SELECT id FROM conversationentity WHERE assistant_id = :assistantId) AND content_json LIKE '%' || :query || '%' AND is_deleted = 0 ORDER BY created_at DESC")
     fun searchMessagesOfAssistant(assistantId: String, query: String): Flow<List<ChatMessageEntity>>
 
+    /**
+     * 按 callId 拉取某会话内归属于该次通话的消息（按创建时间升序）。
+     *
+     * content_json 序列化后包含 `"callId":"<id>"`，因此用 LIKE 粗筛，再由调用方按 callId +
+     * messageSource == CALL 精确过滤（防止子串误命中）。callId 唯一，结果集规模有限。
+     */
+    @Query("SELECT * FROM chat_messages WHERE conversation_id = :conversationId AND content_json LIKE '%' || :callId || '%' AND is_deleted = 0 ORDER BY created_at ASC")
+    suspend fun getMessagesByCallId(conversationId: String, callId: String): List<ChatMessageEntity>
+
     @Query("SELECT node_id FROM chat_messages WHERE id = :messageId")
     suspend fun getNodeIdByMessageId(messageId: String): String?
 

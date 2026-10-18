@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.Modality
+import me.rerere.ai.ui.MessageSource
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.isEmptyInputMessage
@@ -36,6 +37,8 @@ import me.rerere.rikkahub.core.data.model.restoreMessagesFrom
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.core.data.repository.FavoriteRepository
+import me.rerere.rikkahub.core.data.repository.CallRecordRepository
+import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.voice.VoiceCallManager
 import me.rerere.rikkahub.service.voice.VoiceMessagePlayer
@@ -81,6 +84,7 @@ class ChatVM(
     private val asrManager: ASRManager,
     val voiceMessagePlayer: VoiceMessagePlayer,
     private val customTtsState: CustomTtsState,
+    private val callRecordRepository: CallRecordRepository,
 ) : ViewModel() {
 
     // --- 通话状态暴露（直接转发 VoiceCallManager 的 StateFlow, 避免冗余复制） ---
@@ -92,6 +96,16 @@ class ChatVM(
     val callError: SharedFlow<String> = voiceCallManager.callError
     // 贴近耳朵（接近传感器触发）→ CallScreen 盖全黑遮罩 + 禁用触摸（兜底）
     val isProximityNear: StateFlow<Boolean> = voiceCallManager.isNearEar
+    // --- 通话生命周期：来电响铃 / 用户拨号等待 / 已接通 ---
+    val callPhase: StateFlow<VoiceCallManager.CallPhase> = voiceCallManager.callPhase
+    val incomingCall: StateFlow<VoiceCallManager.IncomingCallInfo?> = voiceCallManager.incomingCall
+
+    fun acceptIncomingCall(callId: String) = voiceCallManager.acceptIncomingCall(callId)
+
+    fun rejectIncomingCall(callId: String) = voiceCallManager.rejectIncomingCall(callId)
+
+    /** 用户主动拨号等待期间取消呼叫 */
+    fun cancelUserCall() = voiceCallManager.cancelUserCall()
 
     // --- 正在后台 ASR 转写的 USER 节点 ID 集合（允许多条并行；集合非空 = 转写中） ---
     private val pendingASRNodeIds: MutableSet<Uuid> = ConcurrentHashMap.newKeySet<Uuid>()
@@ -448,6 +462,11 @@ class ChatVM(
     private val anchorConversationId: Uuid = Uuid.parse(id)
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
 
+    /** 当前活跃会话的通话记录流（用于聊天时间线渲染通话卡片）。 */
+    val callRecords: StateFlow<List<CallRecordEntity>> = _currentActiveId
+        .flatMapLatest { convId -> callRecordRepository.getByConversation(convId.toString()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // 启动自动朗读监听（在 CustomTtsState 单例作用域中运行，不随 VM 销毁而停止）
     // 必须跟随 _currentActiveId 变化重新订阅：新建话题/切换会话时会话 id 会变，
     // 若不重新调用 startAutoRead，autoReadJob 仍订阅旧会话的 flow，新消息不会触发朗读。
@@ -510,8 +529,13 @@ class ChatVM(
         .combine(voiceCallManager.callStartTimeMs) { conv, callStartMs ->
             if (callStartMs <= 0L) return@combine null
             // 只取通话开始时间之后产生的节点；timelineCreatedAt 是节点最早消息时间
+            // 排除 skipContext 隐藏消息（如 CALL_STATE 通话状态标记），避免在通话字幕上显示。
+            // 但通话真实转写（messageSource == CALL）虽也是 skipContext=true，仍需显示在字幕上。
             conv.messageNodes
-                .filter { it.timelineCreatedAt >= callStartMs }
+                .filter {
+                    it.timelineCreatedAt >= callStartMs &&
+                        (!it.currentMessage.skipContext || it.currentMessage.messageSource == MessageSource.CALL)
+                }
                 .asReversed()
                 .firstNotNullOfOrNull { node ->
                     when (node.role) {
@@ -609,12 +633,29 @@ class ChatVM(
 
         // 同步整个活跃会话。刷新一个多节点工具回合时，首节点的版本和后续
         // 工具节点都可能变化，不能只注入列表末尾的节点。
+        // 同时通过前后快照差集找出被物理移除的节点（例如用户拨号通话里 AI 回复的
+        // 裸 0/1 决策节点，在解析后会被删除），传给分页管理器使其从缓存窗口剔除，
+        // 避免已删除节点仍显示在对话列表（退出重进后才会消失）。
+        var previousConversationId: Uuid? = null
+        var previousNodeIds: Set<Uuid> = emptySet()
         viewModelScope.launch {
             conversation
                 .map { active -> active.id to active.messageNodes }
                 .distinctUntilChanged()
                 .collect { (conversationId, nodes) ->
-                    paginationManager?.syncConversationNodes(conversationId, nodes)
+                    val currentNodeIds = nodes.mapTo(mutableSetOf()) { it.id }
+                    val deletedIds = if (conversationId == previousConversationId) {
+                        previousNodeIds - currentNodeIds
+                    } else {
+                        emptySet()
+                    }
+                    previousConversationId = conversationId
+                    previousNodeIds = currentNodeIds
+                    paginationManager?.syncConversationNodes(
+                        conversationId = conversationId,
+                        nodes = nodes,
+                        deletedNodeIds = deletedIds
+                    )
                 }
         }
     }

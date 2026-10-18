@@ -2,8 +2,6 @@ package me.rerere.rikkahub
 
 import android.app.Application
 import android.util.Log
-import androidx.core.app.NotificationChannelCompat
-import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -36,8 +34,10 @@ import androidx.work.workDataOf
 import me.rerere.rikkahub.service.MemoryConsolidationWorker
 import me.rerere.rikkahub.service.SpontaneousWorker
 import me.rerere.rikkahub.service.BackupWorker
+import me.rerere.rikkahub.service.CallAudioCleanupWorker
 import me.rerere.rikkahub.service.DiarySchedulerWorker
 import me.rerere.rikkahub.service.AgentTaskScheduler
+import me.rerere.rikkahub.service.notification.NotificationSoundManager
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -50,10 +50,6 @@ import java.time.ZoneId
 import java.util.Calendar
 
 private const val TAG = "EvoliaApp"
-
-const val CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID = "chat_completed"
-const val BACKUP_NOTIFICATION_CHANNEL_ID = "backup_status"
-const val AGENT_TASK_NOTIFICATION_CHANNEL_ID = "agent_task_notification"
 
 class EvoliaApp : Application() {
     override fun onCreate() {
@@ -115,6 +111,13 @@ class EvoliaApp : Application() {
                         .build()
                 )
                 .build()
+        )
+
+        // 通话录音 7 天过期清理：启动时检查一次 + 每 24h 周期清理
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "call_audio_cleanup",
+            ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<CallAudioCleanupWorker>(24, TimeUnit.HOURS).build()
         )
 
         // Schedule Master Memory (L3) Daily Consolidation at 3:00 AM
@@ -213,37 +216,9 @@ class EvoliaApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        val notificationManager = NotificationManagerCompat.from(this)
-
-        val chatCompletedChannel = NotificationChannelCompat
-            .Builder(
-                CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID,
-                NotificationManagerCompat.IMPORTANCE_HIGH
-            )
-            .setName(getString(R.string.notification_channel_chat_completed))
-            .setVibrationEnabled(true)
-            .build()
-        notificationManager.createNotificationChannel(chatCompletedChannel)
-
-        val backupChannel = NotificationChannelCompat
-            .Builder(
-                BACKUP_NOTIFICATION_CHANNEL_ID,
-                NotificationManagerCompat.IMPORTANCE_HIGH // 提升为高优先级以支持悬浮通知
-            )
-            .setName(getString(R.string.notification_channel_backup))
-            .setVibrationEnabled(true) // 开启震动
-            .build()
-        notificationManager.createNotificationChannel(backupChannel)
-
-        val agentTaskChannel = NotificationChannelCompat
-            .Builder(
-                AGENT_TASK_NOTIFICATION_CHANNEL_ID,
-                NotificationManagerCompat.IMPORTANCE_DEFAULT
-            )
-            .setName(getString(R.string.notification_channel_agent_task))
-            .setVibrationEnabled(true)
-            .build()
-        notificationManager.createNotificationChannel(agentTaskChannel)
+        // 精简为 4 个应用自建渠道 + 语音通话（由 VoiceCallForegroundService 创建），
+        // 并顺带清理历史遗留渠道，避免系统通知设置里类别过多。
+        NotificationSoundManager(this).setupChannels()
     }
 
     override fun onTerminate() {

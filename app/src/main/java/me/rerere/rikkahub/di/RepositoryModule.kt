@@ -22,7 +22,8 @@ val repositoryModule = module {
             chatSegmentDAO = get(),
             dailyActivityDAO = get(),
             tokenUsageDAO = get(),
-            scheduleDAO = get() // 新增注入
+            scheduleDAO = get(), // 新增注入
+            callRecordDao = get()
         )
     }
 
@@ -89,5 +90,9 @@ val repositoryModule = module {
 
     single {
         AppLockRepository(appLockDao = get())
+    }
+
+    single {
+        CallRecordRepository(dao = get())
     }
 }

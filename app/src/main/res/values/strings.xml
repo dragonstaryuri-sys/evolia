@@ -934,6 +934,9 @@
   <!-- Assistant Detail Page -->
   <string name="assistant_detail_group_configuration">Configuration</string>
   <string name="assistant_detail_group_capabilities">Capabilities</string>
+  <string name="assistant_detail_group_chat_call">Chat &amp; Calls</string>
+  <string name="assistant_detail_history_call_title">Call History</string>
+  <string name="assistant_detail_history_call_desc">View this assistant\'s call records and recordings</string>
   <string name="assistant_detail_group_other">Other</string>
   <string name="assistant_detail_profile_title">Profile</string>
   <string name="assistant_detail_profile_desc">Name, avatar, tags, appearance</string>
@@ -2005,4 +2008,44 @@
   <string name="import_config_memories_desc">Import core and episodic memories</string>
   <string name="import_config_ready">Ready to import this character.</string>
   <string name="import_config_importing">Importing character, please wait…</string>
+  <!-- Notification settings (SET) -->
+  <string name="setting_page_notification">Notifications</string>
+  <string name="setting_page_notification_desc">Notification categories, sounds and ringtone</string>
+  <string name="notification_page_title">Notifications</string>
+  <string name="notification_page_switch_diary">Diary notifications</string>
+  <string name="notification_page_switch_diary_desc">Notify when a diary entry is generated</string>
+  <string name="notification_page_switch_profile">Profile notifications</string>
+  <string name="notification_page_switch_profile_desc">Notify when the relationship profile is updated</string>
+  <string name="notification_page_switch_ai_reply">AI reply notifications</string>
+  <string name="notification_page_switch_ai_reply_desc">Notify when a background AI reply is ready</string>
+  <string name="notification_page_switch_backup">Backup notifications</string>
+  <string name="notification_page_switch_backup_desc">Notify about data backup success or failure</string>
+  <string name="notification_page_switch_call">Voice call notifications</string>
+  <string name="notification_page_switch_call_desc">Foreground service notification for ongoing voice calls</string>
+  <string name="notification_page_sound_section">Sounds and ringtone</string>
+  <string name="notification_page_message_sound">Message sound</string>
+  <string name="notification_page_message_sound_desc">Sound played for message notifications</string>
+  <string name="notification_page_call_ringtone">Call ringtone</string>
+  <string name="notification_page_call_ringtone_desc">Ringtone used for incoming calls</string>
+  <string name="notification_page_go_to_system">Open system settings</string>
+  <string name="notification_channel_ai_messages">AI messages</string>
+  <string name="notification_channel_diary_updates">Diary updates</string>
+  <string name="notification_channel_relationship_profile">Relationship profile updates</string>
+  <string name="notification_channel_data_backup">Data backup</string>
+  <string name="call_ringtone_page_title">Call ringtone</string>
+  <string name="call_ringtone_system_default">System ringtone</string>
+  <string name="call_ringtone_custom">Custom ringtone</string>
+  <string name="call_ringtone_custom_desc">Pick an audio file (max 10 MB, up to 60 seconds)</string>
+  <string name="call_ringtone_hint">Custom ringtones must be 10 MB or smaller and no longer than 60 seconds. New settings take effect on the next incoming call.</string>
+  <string name="call_ringtone_import_success">Custom ringtone saved</string>
+  <string name="call_ringtone_error_too_large">The audio file exceeds the 10 MB limit</string>
+  <string name="call_ringtone_error_too_long">The audio file exceeds the 60 second limit</string>
+  <string name="call_ringtone_error_invalid">The audio file could not be read. Please choose another one</string>
+  <string name="call_ringtone_trim_title">Trim ringtone</string>
+  <string name="call_ringtone_trim_desc">Choose a clip no longer than 60 seconds</string>
+  <string name="call_ringtone_trim_confirm">Trim and save</string>
+  <string name="call_ringtone_trim_cancel">Cancel</string>
+  <string name="call_ringtone_trim_processing">Trimming…</string>
+  <string name="call_ringtone_trim_failed">Trimming failed, please try again</string>
+  <string name="call_ringtone_trim_play_preview">Preview</string>
 </resources>

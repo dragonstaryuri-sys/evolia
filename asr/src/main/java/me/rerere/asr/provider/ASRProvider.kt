@@ -17,11 +17,15 @@ interface ASRProvider<T : ASRProviderSetting> {
      *                  Provider 应在 AudioRecord 初始化后、正常 read 循环开始前，先将这些预卷帧喂给 VAD，
      *                  以避免用户抢话的开头字被 ASR 丢失。不支持预卷的 Provider（如 SystemASR）可以忽略。
      *                  null 表示非打断场景（普通启动），无需预卷。
+     * @param onPcmFrame 可选麦克风 PCM 采样回调（16kHz / 16-bit / mono），用于通话双向录音的 near-end 采集。
+     *                  在 read 循环内逐帧回调，**实现方不得在该回调内做耗时操作**（调用方只做加性混音，非阻塞）。
+     *                  不支持暴露 PCM 的 Provider（如 SystemASR）可以忽略，传 null 表示不采集。
      */
     fun startRecognition(
         context: Context,
         providerSetting: T,
-        preRollPcm: List<ShortArray>? = null
+        preRollPcm: List<ShortArray>? = null,
+        onPcmFrame: ((ShortArray) -> Unit)? = null
     ): Flow<ASRResult>
 
     /**

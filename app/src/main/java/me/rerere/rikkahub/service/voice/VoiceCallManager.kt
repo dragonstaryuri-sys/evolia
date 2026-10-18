@@ -32,20 +32,36 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.MessageSource
+import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.asr.provider.ASRManager
 import me.rerere.asr.provider.ASRProviderSetting
 import me.rerere.asr.provider.providers.LocalSenseVoiceASRProvider
 import me.rerere.rikkahub.common.utils.WebRtcAudioProcessor
+import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
+import me.rerere.rikkahub.core.data.db.entity.CallInitiator
+import me.rerere.rikkahub.core.data.db.entity.CallRecordStatus
+import me.rerere.rikkahub.core.data.model.ConversationMessageDeletion
 import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.core.data.model.deleteMessages
+import me.rerere.rikkahub.core.data.model.normalizeMessageNodes
+import me.rerere.rikkahub.core.data.model.toMessageNode
+import me.rerere.rikkahub.core.data.repository.CallRecordRepository
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.datastore.getSelectedASRProvider
@@ -106,7 +122,8 @@ class VoiceCallManager(
     private val ttsController: TtsController,
     private val asrManager: ASRManager,
     private val settingsStore: SettingsStore,
-    private val customTtsState: CustomTtsState
+    private val customTtsState: CustomTtsState,
+    private val callRecordRepository: CallRecordRepository
 ) {
     private val _callStatus = MutableStateFlow(CallStatus.CONNECTING)
     val callStatus: StateFlow<CallStatus> = _callStatus.asStateFlow()
@@ -165,7 +182,84 @@ class VoiceCallManager(
     private val _isNearEar = MutableStateFlow(false)
     val isNearEar: StateFlow<Boolean> = _isNearEar.asStateFlow()
 
+    // ===== 通话生命周期阶段 =====
+    // 与 CallStatus（接通后的对话状态：CONNECTING/LISTENING/THINKING/SPEAKING）分离：
+    // 来电等待期处于 INCOMING_RINGING，绝不视为"已接通"，不启动正式会话/不开麦。
+    enum class CallPhase { IDLE, INCOMING_RINGING, OUTGOING_WAITING, CONNECTED }
+
+    private val _callPhase = MutableStateFlow(CallPhase.IDLE)
+    val callPhase: StateFlow<CallPhase> = _callPhase.asStateFlow()
+
+    // Agent 来电信息（UI 渲染来电覆盖页）
+    data class IncomingCallInfo(
+        val callId: String,
+        val conversationId: Uuid,
+        val assistantId: Uuid,
+    )
+
+    private val _incomingCall = MutableStateFlow<IncomingCallInfo?>(null)
+    val incomingCall: StateFlow<IncomingCallInfo?> = _incomingCall.asStateFlow()
+
+    // 当前通话（含未接通响铃）的 callId（=CallRecordEntity.id）
+    @Volatile private var activeCallId: String? = null
+    // 实际接通时间戳（毫秒），未接通为 0L
+    @Volatile private var connectedAtMs: Long = 0L
+    // 响铃超时（120s）Job
+    private var ringTimeoutJob: Job? = null
+    // 用户主动拨号的接听决策 Job（用于取消拨号）
+    private var outgoingDecisionJob: Job? = null
+
+    // ===== 双向录音器（near-end 麦克风 PCM + far-end TTS PCM 混音编码） =====
+    @Volatile private var callRecorder: CallRecorder? = null
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // ===== 全局通话 UI 数据源（供根级遮罩使用，不再局限于聊天页） =====
+    // 当前已接通会话的 id / 智能体 id（接通时设置，挂断或取消时清空）
+    private val _activeCallConversationId = MutableStateFlow<Uuid?>(null)
+    val activeCallConversationId: StateFlow<Uuid?> = _activeCallConversationId.asStateFlow()
+
+    private val _activeCallAssistantId = MutableStateFlow<Uuid?>(null)
+    val activeCallAssistantId: StateFlow<Uuid?> = _activeCallAssistantId.asStateFlow()
+
+    /** 通话页面显示的「最新一条消息」（只取通话开始后的 USER / ASSISTANT 文本）。 */
+    data class CallLatestMessage(val role: MessageRole, val text: String)
+
+    val latestCallMessage: StateFlow<CallLatestMessage?> = combine(
+        _activeCallConversationId,
+        _callStartTimeMs
+    ) { convId, callStartMs -> convId to callStartMs }
+        .flatMapLatest { (convId, callStartMs) ->
+            if (convId == null || callStartMs <= 0L) {
+                flowOf(null)
+            } else {
+                chatService.getConversationFlow(convId)
+                    .map { conv -> computeLatestCallMessage(conv.messageNodes, callStartMs) }
+            }
+        }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
+    private fun computeLatestCallMessage(nodes: List<MessageNode>, callStartMs: Long): CallLatestMessage? =
+        nodes
+            .filter {
+                it.timelineCreatedAt >= callStartMs &&
+                    (!it.currentMessage.skipContext ||
+                        it.currentMessage.messageSource == MessageSource.CALL)
+            }
+            .asReversed()
+            .firstNotNullOfOrNull { node ->
+                if (node.role != MessageRole.USER && node.role != MessageRole.ASSISTANT) {
+                    return@firstNotNullOfOrNull null
+                }
+                val text = node.currentMessage.parts
+                    .filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("") { it.text }
+                    .trim()
+                    .replace(Regex("```[\\s\\S]*?```"), "")
+                    .replace(Regex("[#*_>`]+"), "")
+                    .replace(Regex("\\[[^\\]]+\\]\\([^)]+\\)"), "")
+                if (text.isBlank()) null else CallLatestMessage(node.role, text)
+            }
 
     init {
         // 订阅来自 call_control 本地工具的通话控制命令（由 AI 主动调用触发）
@@ -173,16 +267,30 @@ class VoiceCallManager(
             CallCommandHub.commands.collect { cmd ->
                 Log.i(TAG, "CallCommandHub: received action=${cmd.action} convId=${cmd.conversationId}")
                 when (cmd.action) {
-                    "call" -> {
-                        if (!_isActive.value) {
-                            startCall(cmd.conversationId)
-                        }
-                    }
                     "hangup" -> {
                         if (_isActive.value) {
                             // AI 主动挂断：延迟 1 分钟再挂，给 AI 留出说再见的时间
                             scheduleDelayedAiHangup()
                         }
+                    }
+                }
+            }
+        }
+
+        // ===== Agent 来电请求（call_control 工具的 call 分支触发） =====
+        scope.launch {
+            CallCommandHub.incomingRequests.collect { req ->
+                handleIncomingCallRequest(req)
+            }
+        }
+        // ===== 来电页关闭事件（超时/收尾时通知 UI 收起来电页并停铃声） =====
+        scope.launch {
+            CallCommandHub.incomingDismiss.collect { callId ->
+                if (_incomingCall.value?.callId == callId) {
+                    stopRingtone()
+                    _incomingCall.value = null
+                    if (_callPhase.value == CallPhase.INCOMING_RINGING) {
+                        _callPhase.value = CallPhase.IDLE
                     }
                 }
             }
@@ -430,6 +538,15 @@ class VoiceCallManager(
     @Volatile private var priorAssistantNodeId: Uuid? = null
     @Volatile private var speakingStarted = false
 
+    // ===== 通话期间「外部触发回复」朗读 watcher（item: 同一回合多条 AI 消息） =====
+    // 通话中若被定时任务 / 监控器等外部流程触发，AI 会在本轮回复之后于同一回合再补一条普通回复；
+    // 主观察者 observeAiResponseStreaming 只覆盖「本轮用户消息触发的生成」（首个 generationDone 即收尾），
+    // 因此这里用独立轮询 watcher 兜底朗读这些 MessageSource.NORMAL 的外部回复。
+    // - spokenAssistantNodeIds: 本轮通话已朗读过的 ASSISTANT 节点 id（含我方回合），用于去重
+    // - externalReplyWatcherJob: 轮询 watcher 任务
+    private val spokenAssistantNodeIds = ConcurrentHashMap.newKeySet<Uuid>()
+    private var externalReplyWatcherJob: Job? = null
+
     // 回声尾窗：最后一次观察到 TTS 播放的时间戳；处于尾窗内时动态提高 RMS 门限
     @Volatile private var lastTtsPlayingAtMs: Long = 0L
 
@@ -469,58 +586,570 @@ class VoiceCallManager(
     //  startCall / hangup
     // ========================================================================
 
+    // ========================================================================
+    //  用户主动拨号（AI 决定是否接听）/ 正式接通
+    // ========================================================================
+
+    /**
+     * 用户主动拨打：进入 OUTGOING_WAITING，向 AI 发起隐藏的接听决策指令。
+     * AI 回复 1 → 存 CALL_STATE（我接通了电话）并接通；回复 0 → 存 CALL_STATE（我拒接了电话）→ REJECTED。
+     * 无效决策最多纠错重试一次；两次都无效则按"未接通"处理，绝不默认接通。
+     */
     fun startCall(conversationId: Uuid) {
-        if (_isActive.value) return
-        // 通话开始：立刻停掉对话页的自动朗读，避免双重播放
+        if (_isActive.value || _callPhase.value != CallPhase.IDLE) return
         customTtsState.pauseAutoReadForCall()
 
+        val callId = "call_" + Uuid.random().toString().substring(0, 12)
+        activeCallId = callId
         this.conversationId = conversationId
-        _isActive.value = true
-        CallCommandHub.setCallActive(true)
-        _callStartTimeMs.value = System.currentTimeMillis()
-        _listeningText.value = null
-        _callStatus.value = CallStatus.CONNECTING
-        resetStreamingState()
-        lastUserSpeakAtMs = System.currentTimeMillis()  // 用户沉默超时计时起点
-        // 记录是否为 Agent 主动拨打（startCall 时 AI 正在生成开场白）
-        isAgentInitiatedCall = chatService.isGenerating(conversationId)
+        connectedAtMs = 0L
+        _callPhase.value = CallPhase.OUTGOING_WAITING
+        Log.i(TAG, "startCall(user-initiated): callId=$callId conv=$conversationId")
 
-        // 初始化三层身份：新的 callSession
-        identity = CallIdentity(callSessionId = "call_${Uuid.random().toString().substring(0, 8)}")
-        Log.i(TAG, "startCall: session=${identity.callSessionId}, convId=$conversationId")
+        // 全局通话遮罩数据源：用户拨号等待期也要能解析智能体（等待页头像/昵称）
+        _activeCallConversationId.value = conversationId
+        _activeCallAssistantId.value = chatService.getConversationFlow(conversationId).value.assistantId
 
-        // ===== 音频路由：进入通话模式，切到 VoIP 路径 =====
-        enterCallAudioMode()
+        // 用户拨号等待期播放"拨通中"铃声（复用设置里的来电铃声，与 Agent 拨入时一致），
+        // 接通 / 拒绝 / 取消 / 初始化失败时统一在对应收尾路径 stopRingtone()。
+        startRingtone()
 
-        // 如果当前是微信模式，自动切换为普通模式（微信模式会分句存储 AI 回复，不适合通话场景）
-        scope.launch { ensureNormalUiModeForCall(conversationId) }
+        outgoingDecisionJob = scope.launch {
+            val conv = chatService.getConversationFlow(conversationId).value
+            val assistantId = conv.assistantId
+            runCatching {
+                callRecordRepository.insert(
+                    CallRecordEntity(
+                        id = callId,
+                        assistantId = assistantId.toString(),
+                        conversationId = conversationId.toString(),
+                        createTime = System.currentTimeMillis(),
+                        status = CallRecordStatus.RINGING,
+                        initiator = CallInitiator.USER
+                    )
+                )
+            }.onFailure { Log.w(TAG, "insert RINGING record failed", it) }
 
-        // 预热 & 模式
-        chatService.setCallMode(conversationId, active = true)
-        startL1Timer(conversationId)
-        startUserSilenceMonitor()  // 启动 30 分钟用户沉默自动挂断监控
-        warmUpRecordAudioPermission()
+            val accepted = requestUserCallDecision(conversationId, callId)
+            if (accepted) {
+                persistCallStateMarker(conversationId, callId, "我接通了电话")
+                val ok = beginConnectedSession(conversationId, callId, agentInitiated = false)
+                if (!ok) {
+                    Log.e(TAG, "startCall: session init failed")
+                    stopRingtone()
+                    runCatching {
+                        callRecordRepository.updateStatusWithReason(callId, CallRecordStatus.FAILED, "init_failed")
+                    }
+                    _callPhase.value = CallPhase.IDLE
+                    activeCallId = null
+                    _activeCallConversationId.value = null
+                    _activeCallAssistantId.value = null
+                    _callError.tryEmit("通话失败：语音会话初始化失败")
+                }
+            } else {
+                persistCallStateMarker(conversationId, callId, "我拒接了电话")
+                stopRingtone()
+                runCatching {
+                    callRecordRepository.updateStatusWithReason(callId, CallRecordStatus.REJECTED, "rejected")
+                }
+                _callPhase.value = CallPhase.IDLE
+                activeCallId = null
+                _activeCallConversationId.value = null
+                _activeCallAssistantId.value = null
+                _callError.tryEmit("对方暂时无法接听，请稍后再拨")
+            }
+        }
+    }
 
-        // 启动前台 Service + WakeLock，保证后台/息屏后通话不中断
-        VoiceCallForegroundService.start(context)
+    /**
+     * 正式接通：执行通话初始化流程（音频路由 / 前台服务 / VAD / 问候）。
+     * 返回 true 表示成功进入 CONNECTED；false 表示初始化失败（不进入通话）。
+     */
+    private fun beginConnectedSession(convId: Uuid, callId: String, agentInitiated: Boolean): Boolean {
+        // 接通即停止响铃 / 拨通中铃声（用户主动拨号等待期与 Agent 拨入响铃共用同一播放器）
+        stopRingtone()
+        return try {
+            customTtsState.pauseAutoReadForCall()
 
+            conversationId = convId
+            activeCallId = callId
+            _isActive.value = true
+            CallCommandHub.setCallActive(true)
+            _callPhase.value = CallPhase.CONNECTED
+            connectedAtMs = System.currentTimeMillis()
+            _callStartTimeMs.value = connectedAtMs
+            _listeningText.value = null
+            _callStatus.value = CallStatus.CONNECTING
+            resetStreamingState()
+            lastUserSpeakAtMs = System.currentTimeMillis()
+            isAgentInitiatedCall = agentInitiated
+
+            // 初始化三层身份：callSessionId 直接使用 callId，便于日志与记录关联
+            identity = CallIdentity(callSessionId = callId)
+            // 全局通话页数据源：记录当前会话 / 智能体，供根级遮罩解析头像与字幕
+            _activeCallConversationId.value = convId
+            _activeCallAssistantId.value = chatService.getConversationFlow(convId).value.assistantId
+            Log.i(TAG, "beginConnectedSession: callId=$callId agentInitiated=$agentInitiated")
+
+            // 启动外部触发回复 watcher：通话中被定时任务 / 监控器触发的 AI 普通回复由它朗读
+            spokenAssistantNodeIds.clear()
+            startExternalReplyWatcher(convId)
+
+            scope.launch {
+                runCatching {
+                    callRecordRepository.markConnected(callId, CallRecordStatus.CONNECTED, connectedAtMs)
+                }.onFailure { Log.w(TAG, "markConnected failed", it) }
+            }
+
+            // ===== 音频路由：进入通话模式，切到 VoIP 路径 =====
+            enterCallAudioMode()
+
+            // 微信模式自动切换为普通模式（微信模式会分句存储 AI 回复，不适合通话场景）
+            scope.launch { ensureNormalUiModeForCall(convId) }
+
+            chatService.setCallMode(convId, active = true)
+            startL1Timer(convId)
+            startUserSilenceMonitor()
+            warmUpRecordAudioPermission()
+
+            VoiceCallForegroundService.start(context)
+
+            // 录音只能在"真正接通后"开始（响铃/等待决策期不得录制）
+            startCallRecording(callId)
+
+            runCatching {
+                vadDetector = VadDetector(context).also { Log.i(TAG, "VAD initialized") }
+            }.onFailure { Log.e(TAG, "VAD init failed", it) }
+
+            startProximitySensor()
+
+            val settings = settingsStore.settingsFlow.value
+            ttsController.setProvider(settings.getSelectedTTSProvider())
+
+            playCallGreetingThenListen()
+
+            // 注意：拨通时不启 listeningPreRoll。
+            // 原因：问候语播放期间，AI 扬声器的"喂？"回声会被 listeningPreRoll 录下来，
+            // 传给 ASR 后被识别成用户说话。问候期间 warmUpAsrAndListening 已在录音，
+            // 且有 greeting substring match 过滤，不需要额外预卷。
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "beginConnectedSession failed", t)
+            // 初始化失败：释放录音器并删除临时文件（不产生录音）
+            scope.launch { discardCallRecording() }
+            false
+        }
+    }
+
+    // ========================================================================
+    //  双向录音接入点
+    // ========================================================================
+
+    /**
+     * 开始双向录音：创建 [CallRecorder] 并注册 far-end 监听（TTS 播放前 PCM）。
+     * far-end 监听与 WebRTC AEC 无关（AEC 走 session 绑定自动路由），仅用于录音。
+     */
+    private fun startCallRecording(callId: String) {
+        if (callRecorder != null) return
         runCatching {
-            vadDetector = VadDetector(context).also { Log.i(TAG, "VAD initialized") }
-        }.onFailure { Log.e(TAG, "VAD init failed", it) }
+            callRecorder = CallRecorder(context, callId, scope).also { it.start() }
+            refreshFarPcmListener()
+        }.onFailure {
+            Log.e(TAG, "startCallRecording failed", it)
+            callRecorder = null
+        }
+    }
 
-        // ===== 接近传感器：贴近耳朵自动息屏 =====
-        startProximitySensor()
+    /**
+     * 按当前是否有录音器，绑定/解绑 TTS far-end PCM 监听。
+     * 替换原先在各处的 setOnFarPcmListener(null)（那会导致录音丢失 AI 侧声音）。
+     */
+    private fun refreshFarPcmListener() {
+        val recorder = callRecorder
+        if (recorder != null) {
+            ttsController.setOnFarPcmListener { pcm, sampleRate, channels ->
+                recorder.feedFarEnd(pcm, sampleRate, channels)
+            }
+        } else {
+            ttsController.setOnFarPcmListener(null)
+        }
+    }
 
+    /** 结束录音并把录音相对路径 + 过期时间写入通话记录。 */
+    private suspend fun stopCallRecordingAndPersist(callId: String, disconnectedAt: Long) {
+        val recorder = callRecorder ?: return
+        callRecorder = null
+        runCatching { ttsController.setOnFarPcmListener(null) }
+        val relPath = runCatching { recorder.stop() }.getOrNull()
+        if (relPath != null) {
+            val expiresAt = disconnectedAt + AUDIO_RETENTION_MS
+            runCatching {
+                callRecordRepository.updateAudio(callId, relPath, expiresAt)
+            }.onFailure { Log.w(TAG, "updateAudio failed", it) }
+            Log.i(TAG, "call recording saved: $relPath (expires=$expiresAt)")
+        } else {
+            Log.i(TAG, "call recording discarded (no valid content)")
+        }
+    }
+
+    /** 初始化失败 / 取消：停止录音并删除临时文件。 */
+    private suspend fun discardCallRecording() {
+        val recorder = callRecorder ?: return
+        callRecorder = null
+        runCatching { ttsController.setOnFarPcmListener(null) }
+        runCatching { recorder.discard() }
+    }
+
+    // ========================================================================
+    //  Agent 来电（响铃 / 接听 / 拒绝 / 超时）
+    // ========================================================================
+
+    private fun handleIncomingCallRequest(req: CallCommandHub.IncomingCallRequest) {
+        if (_isActive.value || _incomingCall.value != null || _callPhase.value != CallPhase.IDLE) {
+            Log.w(TAG, "handleIncomingCallRequest ignored: busy (active=${_isActive.value}, phase=${_callPhase.value})")
+            CallCommandHub.claimTerminal(
+                req.callId,
+                CallCommandHub.CallResult(req.callId, CallCommandHub.CallEndStatus.FAILED, "already_in_call")
+            )
+            return
+        }
+        Log.i(TAG, "incoming call ringing: callId=${req.callId} conv=${req.conversationId}")
+        activeCallId = req.callId
+        connectedAtMs = 0L
+        _callPhase.value = CallPhase.INCOMING_RINGING
+        _incomingCall.value = IncomingCallInfo(req.callId, req.conversationId, req.assistantId)
+
+        scope.launch {
+            runCatching {
+                callRecordRepository.insert(
+                    CallRecordEntity(
+                        id = req.callId,
+                        assistantId = req.assistantId.toString(),
+                        conversationId = req.conversationId.toString(),
+                        createTime = System.currentTimeMillis(),
+                        status = CallRecordStatus.RINGING,
+                        initiator = CallInitiator.AGENT
+                    )
+                )
+            }.onFailure { Log.w(TAG, "insert RINGING record failed", it) }
+        }
+
+        startRingtone()
+
+        ringTimeoutJob?.cancel()
+        ringTimeoutJob = scope.launch {
+            delay(CALL_RING_TIMEOUT_MS)
+            val still = _incomingCall.value
+            if (still?.callId == req.callId && !CallCommandHub.isTerminated(req.callId)) {
+                Log.i(TAG, "incoming call ring timeout (${CALL_RING_TIMEOUT_MS / 1000}s): callId=${req.callId}")
+                finishIncoming(
+                    callId = req.callId,
+                    result = CallCommandHub.CallResult(req.callId, CallCommandHub.CallEndStatus.MISSED),
+                    recordStatus = CallRecordStatus.MISSED,
+                    endReason = "missed"
+                )
+            }
+        }
+    }
+
+    /** 用户点击接听：校验权限 → 初始化会话 → 成功则认领 CONNECTED，失败则认领 FAILED。 */
+    fun acceptIncomingCall(callId: String) {
+        val info = _incomingCall.value ?: return
+        if (info.callId != callId) return
+        if (CallCommandHub.isTerminated(callId)) {
+            Log.w(TAG, "acceptIncomingCall: already terminated callId=$callId")
+            stopRingtone()
+            _incomingCall.value = null
+            _callPhase.value = CallPhase.IDLE
+            return
+        }
+        stopRingtone()
+        ringTimeoutJob?.cancel(); ringTimeoutJob = null
+        _incomingCall.value = null
+        Log.i(TAG, "acceptIncomingCall callId=$callId")
+
+        // 会话初始化涉及音频路由 / 前台服务 / VAD 等重操作，切到 IO 线程执行，避免阻塞主线程
+        scope.launch {
+            if (!hasRecordAudioPermission()) {
+                Log.w(TAG, "acceptIncomingCall: RECORD_AUDIO permission missing")
+                CallCommandHub.claimTerminal(
+                    callId,
+                    CallCommandHub.CallResult(callId, CallCommandHub.CallEndStatus.FAILED, "permission_denied")
+                )
+                CallCommandHub.dismissIncomingUi(callId)
+                _callPhase.value = CallPhase.IDLE
+                activeCallId = null
+                _callError.tryEmit("通话失败：麦克风权限不足")
+                runCatching {
+                    callRecordRepository.updateStatusWithReason(callId, CallRecordStatus.FAILED, "permission_denied")
+                }
+                return@launch
+            }
+
+            val ok = beginConnectedSession(info.conversationId, callId, agentInitiated = true)
+            if (ok) {
+                CallCommandHub.claimTerminal(
+                    callId,
+                    CallCommandHub.CallResult(callId, CallCommandHub.CallEndStatus.CONNECTED)
+                )
+            } else {
+                Log.e(TAG, "acceptIncomingCall: session init failed")
+                CallCommandHub.claimTerminal(
+                    callId,
+                    CallCommandHub.CallResult(callId, CallCommandHub.CallEndStatus.FAILED, "init_failed")
+                )
+                CallCommandHub.dismissIncomingUi(callId)
+                _callPhase.value = CallPhase.IDLE
+                activeCallId = null
+                callError("通话失败：语音会话初始化失败")
+                runCatching {
+                    callRecordRepository.updateStatusWithReason(callId, CallRecordStatus.FAILED, "init_failed")
+                }
+            }
+        }
+    }
+
+    /** 用户点击拒绝接听。 */
+    fun rejectIncomingCall(callId: String) {
+        val info = _incomingCall.value ?: return
+        if (info.callId != callId) return
+        if (CallCommandHub.isTerminated(callId)) return
+        Log.i(TAG, "rejectIncomingCall callId=$callId")
+        finishIncoming(
+            callId = callId,
+            result = CallCommandHub.CallResult(callId, CallCommandHub.CallEndStatus.REJECTED),
+            recordStatus = CallRecordStatus.REJECTED,
+            endReason = "rejected"
+        )
+    }
+
+    /** 来电结束收尾（拒绝 / 超时）：停铃声、认领终态、关闭来电页、写记录。 */
+    private fun finishIncoming(
+        callId: String,
+        result: CallCommandHub.CallResult,
+        recordStatus: String,
+        endReason: String
+    ) {
+        stopRingtone()
+        ringTimeoutJob?.cancel(); ringTimeoutJob = null
+        _incomingCall.value = null
+        CallCommandHub.claimTerminal(callId, result)
+        CallCommandHub.dismissIncomingUi(callId)
+        _callPhase.value = CallPhase.IDLE
+        if (activeCallId == callId) activeCallId = null
+        scope.launch {
+            runCatching { callRecordRepository.updateStatusWithReason(callId, recordStatus, endReason) }
+        }
+    }
+
+    // ===== 来电铃声（默认铃声；自定义铃声见设置模块） =====
+    @Volatile private var ringtonePlayer: android.media.Ringtone? = null
+
+    /** 铃声循环重播任务：铃声本身只播放一遍，未接听/未挂断前需要反复重播。 */
+    private var ringtoneLoopJob: Job? = null
+
+    private fun startRingtone() {
+        stopRingtone()
+        runCatching {
+            val uri = resolveCallRingtoneUri()
+                ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+            val rt = android.media.RingtoneManager.getRingtone(context, uri)
+            rt?.play()
+            ringtonePlayer = rt
+            Log.i(TAG, "startRingtone: playing $uri")
+        }.onFailure { Log.w(TAG, "startRingtone failed", it) }
+
+        // 铃声默认只播放一遍：播放结束后若仍在响铃（未接听、未拒绝、未超时）则重新播放。
+        if (ringtonePlayer != null) {
+            ringtoneLoopJob = scope.launch {
+                while (isActive) {
+                    delay(RINGTONE_LOOP_POLL_MS)
+                    val player = ringtonePlayer ?: break
+                    val stillPlaying = runCatching { player.isPlaying }.getOrDefault(false)
+                    if (!stillPlaying) {
+                        runCatching { player.play() }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 解析设置中的来电铃声，全部通过 RingtoneManager 查询设备实际可用铃声，不硬编码资源 ID：
+     * - custom：filesDir/ringtones/ 下的自定义文件（缺失/失效时回退系统铃声）
+     * - system2：设备可用的第 2 个系统铃声（设备仅有一个时退化到第 1 个）
+     * - 其余：设备可用的第 1 个系统铃声
+     */
+    private fun resolveCallRingtoneUri(): android.net.Uri? {
         val settings = settingsStore.settingsFlow.value
-        ttsController.setProvider(settings.getSelectedTTSProvider())
+        if (settings.callRingtone == "custom") {
+            val path = settings.callRingtoneCustomPath
+            if (path.isNotBlank()) {
+                val file = java.io.File(context.filesDir, "ringtones/$path")
+                if (file.exists()) return android.net.Uri.fromFile(file)
+            }
+        }
+        return runCatching {
+            val manager = android.media.RingtoneManager(context).apply {
+                setType(android.media.RingtoneManager.TYPE_RINGTONE)
+            }
+            val count = manager.cursor.count
+            if (count > 0) {
+                val index = if (settings.callRingtone == "system2") 1.coerceAtMost(count - 1) else 0
+                manager.getRingtoneUri(index)
+            } else null
+        }.getOrNull()
+            ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+    }
 
-        // 接通问候（PDF §3.3 call greeting）：先打个招呼，再进入监听
-        playCallGreetingThenListen()
+    private fun stopRingtone() {
+        ringtoneLoopJob?.cancel()
+        ringtoneLoopJob = null
+        runCatching { ringtonePlayer?.stop() }
+        ringtonePlayer = null
+    }
 
-        // 注意：拨通时不启 listeningPreRoll。
-        // 原因：问候语播放期间，AI 扬声器的"喂？"回声会被 listeningPreRoll 录下来，
-        // 传给 ASR 后被识别成用户说话。问候期间 warmUpAsrAndListening 已在录音，
-        // 且有 greeting substring match 过滤，不需要额外预卷。
+    private fun hasRecordAudioPermission(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun callError(message: String) {
+        _callError.tryEmit(message)
+    }
+
+    /**
+     * 用户取消未接通的拨号（OUTGOING_WAITING 阶段）。
+     * 取消决策 Job、终止 AI 生成，记录状态置为 CANCELLED（不计为接通/拒绝）。
+     */
+    fun cancelUserCall() {
+        if (_callPhase.value != CallPhase.OUTGOING_WAITING) return
+        val callId = activeCallId
+        Log.i(TAG, "cancelUserCall callId=$callId")
+        stopRingtone()
+        outgoingDecisionJob?.cancel(); outgoingDecisionJob = null
+        conversationId?.let { chatService.stopGeneration(it) }
+        conversationId = null
+        activeCallId = null
+        connectedAtMs = 0L
+        _callPhase.value = CallPhase.IDLE
+        _activeCallConversationId.value = null
+        _activeCallAssistantId.value = null
+        if (callId != null) {
+            scope.launch {
+                runCatching {
+                    callRecordRepository.updateStatusWithReason(callId, CallRecordStatus.CANCELLED, "cancelled")
+                }
+            }
+        }
+        customTtsState.resumeAutoReadAfterCall()
+    }
+
+    // ========================================================================
+    //  用户主动拨号：接听决策指令 / 解析
+    // ========================================================================
+
+    /**
+     * 用户主动拨号时向 AI 请求接听决策。
+     * 指令为隐藏消息（skipContext=true）；AI 的原始 1/0 回复在解析后立即从数据表移除，
+     * 改由 [persistCallStateMarker] 落库语义化标记（我接通了电话 / 我拒接了电话）。
+     * @return true = AI 同意接通；false = AI 拒绝 / 多次无效决策（不默认接通）。
+     */
+    private suspend fun requestUserCallDecision(convId: Uuid, callId: String): Boolean {
+        var attempt = 0
+        while (attempt < 2) {
+            attempt++
+            val instruction =
+                "【系统通话决策】用户正在给你打电话，请决定是否接听。只回复数字 1（同意接听）或 0（拒绝接听），不要回复任何其他内容。"
+            val decisionUserNode = UIMessage(
+                role = MessageRole.USER,
+                parts = listOf(UIMessagePart.Text(instruction)),
+                skipContext = true,
+                messageSource = MessageSource.NORMAL
+            ).toMessageNode(convId)
+            chatService.sendMessage(
+                conversationId = convId,
+                content = listOf(UIMessagePart.Text(instruction)),
+                answer = true,
+                predefinedUserNode = decisionUserNode,
+                skipContextForResponse = true,
+                includeSkipContextMessages = true,
+                responseMessageSource = MessageSource.NORMAL
+            )
+            val replyNode = awaitAssistantReplyNodeAfter(convId) ?: return false
+            val reply = replyNode.currentMessage.parts
+                .filterIsInstance<UIMessagePart.Text>()
+                .joinToString("") { it.text }
+                .trim()
+            val decision = parseCallDecision(reply)
+            // 原始 1/0 回复不写入数据表：移除该节点，由调用方落库语义化 CALL_STATE 标记。
+            removeDecisionReplyNode(convId, replyNode.currentMessage.id)
+            if (decision != null) return decision
+            Log.w(TAG, "requestUserCallDecision: invalid decision '$reply' (attempt=$attempt)")
+        }
+        Log.w(TAG, "requestUserCallDecision: exhausted retries, treat as not answered callId=$callId")
+        return false
+    }
+
+    /** 等待本次决策轮次的 AI 回复节点（等生成结束或超时）。 */
+    private suspend fun awaitAssistantReplyNodeAfter(convId: Uuid, timeoutMs: Long = 120_000): MessageNode? {
+        val knownIds = chatService.getConversationFlow(convId).value.messageNodes
+            .filter { it.role == MessageRole.ASSISTANT }
+            .map { it.currentMessage.id }
+            .toSet()
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            delay(200)
+            val nodes = chatService.getConversationFlow(convId).value.messageNodes
+            val fresh = nodes.lastOrNull {
+                it.role == MessageRole.ASSISTANT && it.currentMessage.id !in knownIds
+            } ?: continue
+            if (chatService.isGenerating(convId)) continue
+            val text = fresh.currentMessage.parts
+                .filterIsInstance<UIMessagePart.Text>()
+                .joinToString("") { it.text }
+                .trim()
+            if (text.isNotBlank()) return fresh
+        }
+        return null
+    }
+
+    /** 移除通话决策轮次里的原始回复节点，避免把裸 1/0 决策文本写入数据表。 */
+    private suspend fun removeDecisionReplyNode(convId: Uuid, messageId: Uuid) {
+        runCatching {
+            chatService.replaceConversationMessages(convId) { current ->
+                current.deleteMessages(setOf(messageId))
+            }
+        }.onFailure { Log.w(TAG, "removeDecisionReplyNode failed", it) }
+    }
+
+    /** 解析 AI 的接听决策：1/接通 → true；0/挂断/拒绝 → false；其他 → null（无效）。 */
+    private fun parseCallDecision(reply: String): Boolean? {
+        val text = reply.trim()
+        if (text.isEmpty()) return null
+        return when {
+            text.startsWith("1") -> true
+            text.startsWith("0") -> false
+            text.contains("接通") || text.contains("同意") -> true
+            text.contains("挂断") || text.contains("拒绝") || text.contains("不方便") -> false
+            else -> null
+        }
+    }
+
+    /** 持久化 CALL_STATE 标记消息（Assistant；skipContext=true，仅进后续上下文，不进 UI/搜索/导出）。 */
+    private fun persistCallStateMarker(convId: Uuid, callId: String, text: String) {
+        val node = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Text(text)),
+            skipContext = true,
+            messageSource = MessageSource.CALL_STATE,
+            callId = callId
+        ).toMessageNode(convId)
+        chatService.sendMessage(
+            conversationId = convId,
+            content = emptyList(),
+            answer = false,
+            predefinedUserNode = node
+        )
     }
 
     /**
@@ -563,9 +1192,14 @@ class VoiceCallManager(
                         delay(200)
                     }
                 }
-                val openingText = getCallOpeningText(convId)
+                val openingNode = getCallOpeningNode(convId)
+                val openingText = openingNode?.let { extractOpeningText(it) }
                 identity = identity.newTurn().newGeneration()
                 if (openingText != null) {
+                    // 开场白只属于通话：取用完即从聊天记录中移除该回复节点，
+                    // 避免它以普通聊天消息的形式出现在对话里，也避免它把所在回合的排序
+                    // 时间拉晚、导致通话时长卡片位置错乱。
+                    consumeCallOpeningNode(convId, openingNode)
                     Log.i(TAG, "Call opening (agent-initiated): \"${openingText.take(50)}...\" start")
                     _callStatus.value = CallStatus.SPEAKING
                     runCatching {
@@ -639,18 +1273,20 @@ class VoiceCallManager(
     }
 
     /**
-     * 获取 Agent 主动拨打电话场景下的开场白文本。
-     * 取会话最后一条 assistant 消息（通话刚接通时，最后一条 assistant 消息即为开场白），
+     * 获取 Agent 主动拨打电话场景下的开场白节点。
+     * 取会话最后一条 assistant 节点（通话刚接通时，该节点即为 AI 对"通话工具结果"的回复），
      * 不依赖时间戳过滤（开场白消息的 createdAt 可能与 callStartTimeMs 过于接近甚至略早，
      * 用 timelineCreatedAt >= callStartMs 过滤会误判为空）。
-     * 返回净化后的纯文本，如果不存在则返回 null。
      */
-    private fun getCallOpeningText(convId: Uuid): String? {
+    private fun getCallOpeningNode(convId: Uuid): MessageNode? {
         val conv = chatService.getConversationFlow(convId).value
-        val openingNode = conv.messageNodes
+        return conv.messageNodes
             .filter { it.role == MessageRole.ASSISTANT }
             .maxByOrNull { it.timelineCreatedAt }
-            ?: return null
+    }
+
+    /** 从开场白节点中提取净化后的纯文本，若为空返回 null。 */
+    private fun extractOpeningText(openingNode: MessageNode): String? {
         val text = openingNode.currentMessage.parts
             .filterIsInstance<UIMessagePart.Text>()
             .joinToString("") { it.text }
@@ -659,6 +1295,44 @@ class VoiceCallManager(
             .replace(Regex("[#*_>`]+"), "")
             .replace(Regex("\\[[^\\]]+\\]\\([^)]+\\)"), "")
         return if (text.isNotBlank()) text else null
+    }
+
+    /**
+     * 把 AI 的开场白回复从聊天记录中移除。
+     *
+     * 该回复只应作为通话开场白存在，不应作为普通聊天消息落库，否则：
+     * 1) 会作为一条普通 AI 消息显示在对话里（用户视角是"多出来的回复"）；
+     * 2) 会把所在回合的排序时间拉晚到通话记录之后，导致通话时长卡片位置错乱。
+     *
+     * 防护：AI 仍在生成时不操作（避免破坏进行中的写入）；节点含 ToolCall/ToolResult 时跳过
+     * （删除工具节点会破坏工具调用链）。
+     */
+    private suspend fun consumeCallOpeningNode(convId: Uuid, node: MessageNode?) {
+        if (node == null) return
+        if (chatService.isGenerating(convId)) {
+            Log.w(TAG, "consumeCallOpeningNode skipped: generation still running")
+            return
+        }
+        val hasToolInteraction = node.currentMessage.parts.any {
+            it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult
+        }
+        if (hasToolInteraction) {
+            Log.w(TAG, "consumeCallOpeningNode skipped: node contains tool parts")
+            return
+        }
+        runCatching {
+            chatService.replaceConversationMessages(convId) { current ->
+                val remainingNodes = current.messageNodes.filterNot { it.id == node.id }
+                if (remainingNodes.size == current.messageNodes.size) {
+                    return@replaceConversationMessages null
+                }
+                ConversationMessageDeletion(
+                    conversation = current.copy(messageNodes = remainingNodes).normalizeMessageNodes(),
+                    deletedNodeIds = setOf(node.id),
+                    deletedMessageIds = node.messages.mapTo(mutableSetOf()) { it.id }
+                )
+            }
+        }.onFailure { Log.w(TAG, "consumeCallOpeningNode failed", it) }
     }
 
     /**
@@ -674,7 +1348,11 @@ class VoiceCallManager(
         val snapshotSessionId = identity.callSessionId
         asrJob = scope.launch {
             try {
-                asrManager.startRecognition(asrSetting, context).collect { result ->
+                asrManager.startRecognition(
+                    asrSetting,
+                    context,
+                    onPcmFrame = { pcm -> callRecorder?.feedNearEnd(pcm) }
+                ).collect { result ->
                     if (identity.callSessionId != snapshotSessionId || identity.turnId != snapshotTurnId) {
                         Log.d(TAG, "Warmup ASR result stale: drop '${result.text}'")
                         return@collect
@@ -781,7 +1459,7 @@ class VoiceCallManager(
                 Log.v(TAG, "silenceMonitor: silentMs=$silentMs / threshold=${USER_SILENCE_TIMEOUT_MS}")
                 if (silentMs >= USER_SILENCE_TIMEOUT_MS) {
                     Log.i(TAG, "silenceMonitor: 用户已沉默 ${silentMs / 60000} 分钟，触发自动挂断")
-                    hangup()
+                    hangup(endReason = "timeout")
                     break
                 }
             }
@@ -834,7 +1512,7 @@ class VoiceCallManager(
                 return@launch
             }
             Log.i(TAG, "scheduleDelayedAiHangup: 延迟挂断条件全部满足，正式挂断")
-            hangup()
+            hangup(endReason = "agent_hangup")
         }
     }
 
@@ -978,7 +1656,12 @@ class VoiceCallManager(
                     Log.d(TAG, "Delay ${remainIgnoreMs}ms to avoid greeting echo")
                     delay(remainIgnoreMs)
                 }
-                asrManager.startRecognition(asrSetting, context, preRollPcm).collect { result ->
+                asrManager.startRecognition(
+                    asrSetting,
+                    context,
+                    preRollPcm,
+                    onPcmFrame = { pcm -> callRecorder?.feedNearEnd(pcm) }
+                ).collect { result ->
                     // 关键：先验身份。如果 turn/session 变了，这个结果就过期
                     if (identity.callSessionId != snapshotSessionId || identity.turnId != snapshotTurnId) {
                         Log.d(TAG, "ASR result stale: turn changed, drop '${result.text}'")
@@ -1129,11 +1812,39 @@ class VoiceCallManager(
         val snapshotGenId = identity.generationId
         Log.i(TAG, "  → generation=$snapshotGenId")
 
+        // ★ 通话消息打标：MessageSource.CALL + callId
+        //   - 用户转写与 AI 回复均 skipContext=true（普通聊天 UI/搜索/导出隐藏）
+        //   - 通过上下文来源白名单进入当前及后续 AI 上下文与既有自动总结/记忆
+        //   - includeSkipContextMessages=false：只放行 CALL / CALL_STATE 白名单来源，
+        //     把"接听决策指令 + 原始 1/0 回复"（NORMAL + skipContext）排除在后续上下文之外
+        val callIdForMsg = activeCallId
+        val userNode = UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text(text)),
+            skipContext = true,
+            messageSource = MessageSource.CALL,
+            callId = callIdForMsg
+        ).toMessageNode(convId)
         chatService.sendMessage(
             conversationId = convId,
             content = listOf(UIMessagePart.Text(text)),
-            skipContextForResponse = false
+            answer = true,
+            predefinedUserNode = userNode,
+            skipContextForResponse = true,
+            includeSkipContextMessages = false,
+            responseMessageSource = MessageSource.CALL,
+            callId = callIdForMsg
         )
+        // 记录第一条 / 最后一条真实转写时间（用于通话记录 start_time / end_time）
+        if (callIdForMsg != null) {
+            val nowMs = System.currentTimeMillis()
+            scope.launch {
+                runCatching {
+                    callRecordRepository.updateStartTimeIfEarlier(callIdForMsg, nowMs)
+                    callRecordRepository.updateEndTimeIfLater(callIdForMsg, nowMs)
+                }
+            }
+        }
         // ★ 发消息后延迟 1s，如果 LLM 还没返回可朗读内容就播 listenerCue（"嗯/啊/哦"）
         //   只有语音通话场景 scheduleCue=true；文本输入等不需要
         if (scheduleCue) scheduleListenerCueDelayed()
@@ -1183,6 +1894,8 @@ class VoiceCallManager(
                         val aiText = aiNode.currentMessage.parts
                             .filterIsInstance<UIMessagePart.Text>()
                             .joinToString("") { it.text }
+                        // 标记为本轮通话已处理节点，避免外部回复 watcher 重复朗读
+                        spokenAssistantNodeIds.add(aiNode.id)
                         val nodeFedLen = fedLengthPerNode[aiNode.id] ?: 0
 
                         if (aiText.length > nodeFedLen) {
@@ -1231,6 +1944,7 @@ class VoiceCallManager(
                 val aiText = aiNode.currentMessage.parts
                     .filterIsInstance<UIMessagePart.Text>()
                     .joinToString("") { it.text }
+                spokenAssistantNodeIds.add(aiNode.id)
                 val nodeFedLen = fedLengthPerNode[aiNode.id] ?: 0
                 if (aiText.length > nodeFedLen) {
                     val remaining = aiText.substring(nodeFedLen.coerceAtMost(aiText.length)).stripMarkdownForTts()
@@ -1252,6 +1966,82 @@ class VoiceCallManager(
                 return@launch
             }
             awaitTtsCompleteThenHandle(convId, expectGenId)
+        }
+    }
+
+    // ========================================================================
+    //  外部触发回复 watcher（通话期间定时任务 / 监控器触发的 AI 回复朗读）
+    // ========================================================================
+
+    /**
+     * 启动通话期间的「外部触发回复」轮询 watcher。
+     *
+     * 场景：通话中若定时任务 / 监控器等外部流程触发，AI 会在回复完用户上一条消息后，
+     * 于同一回合再补一条**普通**回复（MessageSource.NORMAL，非 skipContext）。
+     * 主观察者 [observeAiResponseStreaming] 只覆盖「本轮用户消息触发的生成」，
+     * 拿到首个 generationDone 即收尾，因此这条外部回复不会被朗读。此 watcher 兜底。
+     *
+     * 约束（避免误朗读）：仅在
+     * - 通话已接通、且非我方 THINKING/SPEAKING（status == LISTENING）
+     * - 当前无 TTS 播放、会话无正在进行的生成
+     * - 用户静默超过 [EXTERNAL_REPLY_SILENCE_GATE_MS]
+     * 时才朗读；且只朗读通话开始后出现、未被 [spokenAssistantNodeIds] 记录过的普通 ASSISTANT 节点。
+     */
+    private fun startExternalReplyWatcher(convId: Uuid) {
+        externalReplyWatcherJob?.cancel()
+        externalReplyWatcherJob = scope.launch {
+            while (_isActive.value && _callPhase.value == CallPhase.CONNECTED) {
+                delay(EXTERNAL_REPLY_POLL_MS)
+                if (!_isActive.value) break
+                // 仅在我方处于倾听、且没有 TTS / 生成冲突时朗读
+                if (_callStatus.value != CallStatus.LISTENING) continue
+                if (ttsController.isSpeaking.value) continue
+                if (chatService.isGenerating(convId)) continue
+                if (System.currentTimeMillis() - lastUserSpeakAtMs < EXTERNAL_REPLY_SILENCE_GATE_MS) continue
+
+                val callStartMs = _callStartTimeMs.value
+                val conv = chatService.getConversationFlow(convId).value
+                val candidate = conv.messageNodes.lastOrNull { node ->
+                    node.role == MessageRole.ASSISTANT &&
+                        node.timelineCreatedAt >= callStartMs &&
+                        !node.currentMessage.skipContext &&
+                        node.currentMessage.messageSource == MessageSource.NORMAL &&
+                        node.id !in spokenAssistantNodeIds
+                } ?: continue
+
+                // 先登记去重，避免下一轮轮询重复触发（即使文本为空）
+                spokenAssistantNodeIds.add(candidate.id)
+                val text = candidate.currentMessage.parts
+                    .filterIsInstance<UIMessagePart.Text>()
+                    .joinToString("") { it.text }
+                    .stripMarkdownForTts()
+                if (text.isBlank()) continue
+
+                Log.i(TAG, "External reply during call detected node=${candidate.id}, speaking: \"${text.take(40)}...\"")
+                speakExternalReply(convId, text)
+            }
+        }
+    }
+
+    /** 朗读通话期间的外部触发回复，并复用「朗读 → 等 TTS 结束 → 回到倾听」的既有链路。 */
+    private fun speakExternalReply(convId: Uuid, text: String) {
+        responseJob?.cancel()
+        responseJob = scope.launch {
+            try {
+                identity = identity.newGeneration()
+                val genId = identity.generationId
+                _callStatus.value = CallStatus.SPEAKING
+                runCatching {
+                    ttsController.setVolume(1f)
+                    ttsController.speak(text, flush = true)
+                }.onFailure { Log.w(TAG, "External reply TTS speak failed", it) }
+                lastTtsPlayingAtMs = System.currentTimeMillis()
+                startInterruptionDetection(convId, genId)
+                awaitTtsCompleteThenHandle(convId, genId)
+            } catch (e: Exception) {
+                Log.w(TAG, "speakExternalReply failed", e)
+                startListeningSafely()
+            }
         }
     }
 
@@ -1489,8 +2279,9 @@ class VoiceCallManager(
                 } else {
                     Log.w(TAG, "WebRTC APM unavailable (.so load failed?), fallback pure VAD")
                 }
-                // far-end 监听器不需要了：WebRtcAudioEffects 走 MediaServer 自动路由
-                ttsController.setOnFarPcmListener(null)
+                // far-end 监听：AEC 走 MediaServer 自动路由（session 绑定），
+                // 但录音需要 TTS PCM → 保持录音器监听器绑定
+                refreshFarPcmListener()
             }.onFailure { e ->
                 Log.e(TAG, "WebRTC APM init FAILED, fallback pure VAD: ${e.message}")
                 apm = null
@@ -1540,6 +2331,10 @@ class VoiceCallManager(
                 if (snapGenId != null && identity.generationId != snapGenId) break
                 val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
                 if (read <= 0) { consecutiveSpeechFrames = 0; continue }
+
+                // 录音 near-end：本轮 AudioRecord 已绑定 WebRTC APM，read() 返回的是消回声后的
+                // 麦克风 PCM（AI 说话期间近乎静音），适合作为录音的用户侧输入
+                callRecorder?.feedNearEnd(buffer, read)
 
                 // 关键：WebRtcAudioEffects 已通过 sessionId 绑定到这个 AudioRecord 上，
                 // 所以 buffer 里 read() 返回的**已经是** WebRTC AEC3 消回声 + NS 降噪后的 PCM，
@@ -1743,9 +2538,8 @@ class VoiceCallManager(
         aecEffect = null
         runCatching { nsEffect?.let { it.enabled = false; it.release() } }
         nsEffect = null
-        // ====== 释放 WebRTC APM + 解绑 far-end 监听 ======
-        // 先解绑监听避免 TTS 继续喂数据到死掉的 APM，再 close 释放 native 资源
-        runCatching { ttsController.setOnFarPcmListener(null) }
+        // ====== 释放 WebRTC APM（far-end 监听保留给录音器；无录音器时才会解绑）======
+        refreshFarPcmListener()
         runCatching { apm?.close() }
         apm = null
         // ===== 条件性 preRoll 处理 + 延迟启动 listeningPreRoll =====
@@ -1836,6 +2630,9 @@ class VoiceCallManager(
                         skippedTtsTail++
                         continue
                     }
+                    // 录音 near-end：非 TTS 尾音窗口的麦克风 PCM 直接混入（不做 RMS 门，
+                    // 保留轻声/气声；这段时间 AI 静音，麦克风里的就是用户声音）
+                    callRecorder?.feedNearEnd(buf, read)
                     // ===== Gate 2: RMS 噪声门（节省预卷空间 + 减少下游误识别"嗯/啊"） =====
                     var sumSq = 0.0
                     for (i in 0 until read) {
@@ -1990,11 +2787,20 @@ class VoiceCallManager(
         applySpeakerRoute(_isSpeakerOn.value)
     }
 
-    fun hangup() {
-        Log.i(TAG, "hangup session=${identity.callSessionId}")
+    fun hangup(endReason: String = "user_hangup") {
+        Log.i(TAG, "hangup session=${identity.callSessionId} reason=$endReason")
+        val endingCallId = activeCallId
+        val endingConnectedAt = connectedAtMs
+        val disconnectedAt = System.currentTimeMillis()
         _isActive.value = false
         CallCommandHub.setCallActive(false)
         _callStatus.value = CallStatus.DISCONNECTED
+        _callPhase.value = CallPhase.IDLE
+        activeCallId = null
+        connectedAtMs = 0L
+        stopRingtone()
+        ringTimeoutJob?.cancel(); ringTimeoutJob = null
+        _incomingCall.value = null
         stopInterruptionDetection()
         stopListeningPreRoll()
         stopL1Timer()
@@ -2016,8 +2822,8 @@ class VoiceCallManager(
         vadDetector?.release(); vadDetector = null
         // ===== 停止接近传感器 =====
         stopProximitySensor()
-        // ====== 兜底：hangup 时再清一次 APM / far-end 监听，防止 stopInterruptionDetection 漏调 ======
-        runCatching { ttsController.setOnFarPcmListener(null) }
+        // ====== 兜底：hangup 时释放 APM；far-end 监听由录音器持有（无录音器才解绑）======
+        refreshFarPcmListener()
         runCatching { apm?.close() }
         apm = null
         synchronized(preRollFrames) { preRollFrames.clear() }
@@ -2029,11 +2835,45 @@ class VoiceCallManager(
         isAgentInitiatedCall = false
         identity = CallIdentity(callSessionId = "none")
         _callStartTimeMs.value = 0L
+        _activeCallConversationId.value = null
+        _activeCallAssistantId.value = null
         _listeningText.value = null
+        // 停止外部触发回复 watcher
+        externalReplyWatcherJob?.cancel(); externalReplyWatcherJob = null
         // 退出通话音频模式：还原 audio mode / speaker route
         leaveCallAudioMode()
         // 通话结束：恢复对话页的自动朗读（从通话开始前的断点继续，不漏读）
         customTtsState.resumeAutoReadAfterCall()
+
+        // ★ 通话记录收尾：写 ENDED 状态 + 通话时长（仅按 connected_at → disconnected_at 计算）
+        if (endingCallId != null) {
+            val durationMs = if (endingConnectedAt > 0L) {
+                (disconnectedAt - endingConnectedAt).coerceAtLeast(0L)
+            } else {
+                0L
+            }
+            scope.launch {
+                runCatching {
+                    callRecordRepository.updateEnded(
+                        callId = endingCallId,
+                        status = CallRecordStatus.ENDED,
+                        connectedAt = if (endingConnectedAt > 0L) endingConnectedAt else null,
+                        disconnectedAt = disconnectedAt,
+                        durationMs = durationMs,
+                        endReason = endReason
+                    )
+                }.onFailure { Log.w(TAG, "updateEnded failed", it) }
+            }
+            // ★ 录音收尾：停止编码 → 写 audio 相对路径 + 7 天过期时间
+            scope.launch {
+                stopCallRecordingAndPersist(endingCallId, disconnectedAt)
+            }
+            // ★ 固定挂断提示音：仅在真实接通的通话结束时播放一次（endCallWithResult 拒绝/超时路径不经过这里）
+            CallSoundPlayer.playHangup(context)
+        } else {
+            // 无 callId 兜底：清理录音器，避免资源泄漏
+            scope.launch { discardCallRecording() }
+        }
     }
 
     // ========================================================================
@@ -2299,6 +3139,9 @@ class VoiceCallManager(
     }
 
     companion object {
+        // 录音默认保留时长：7 天（forever=1 时跳过清理）
+        private const val AUDIO_RETENTION_MS = 7L * 24L * 60L * 60L * 1000L
+
         // PCM 预卷帧数（每帧 32ms，47 帧≈1.5s）
         // 从 31 帧放宽到 47 帧：更长的预卷窗口，防止慢开口用户在 AI 刚停时说话的头字丢失
         private const val PRE_ROLL_MAX_FRAMES = 47
@@ -2328,6 +3171,11 @@ class VoiceCallManager(
         // ASR 忽略期：从 TTS 播完后开始计时，800ms 覆盖大音量扬声器的尾音回声
         // （500ms 不够：大音量扬声器物理振铃需要 300-500ms 衰减）
         private const val ASR_IGNORE_PERIOD_MS = 800L
+        // 外部触发回复 watcher 轮询间隔：既保证及时朗读，又避免过于频繁读取会话流
+        private const val EXTERNAL_REPLY_POLL_MS = 700L
+        // 外部触发回复朗读前的用户静默门槛：用户静默超过该时长才朗读，
+        // 避免在用户正在说话时突然插入 AI 语音
+        private const val EXTERNAL_REPLY_SILENCE_GATE_MS = 1200L
         // 预卷能量过滤阈值：从 0.005 → 0.0015
         // 原 0.005 对应约 164 samples 幅度（-46dBFS 左右），
         //   VOICE_COMMUNICATION 模式下系统 AEC/NS 会衰减信号 → 轻声说话/气声/辅音（s/sh/f 等）
@@ -2347,6 +3195,12 @@ class VoiceCallManager(
         private const val AI_HANGUP_DELAY_MS = 30L * 1000L
         // 等待 AI 流式生成 + TTS 播放完的最长时间（避免卡住永远不挂）
         private const val AI_HANGUP_TTS_MAX_WAIT_MS = AI_HANGUP_DELAY_MS
+
+        // Agent 来电响铃超时：2 分钟无人接听 → MISSED
+        private const val CALL_RING_TIMEOUT_MS = 120L * 1000L
+
+        // 铃声循环重播的检测间隔：铃声播放一遍结束后重新播放
+        private const val RINGTONE_LOOP_POLL_MS = 500L
 
         // 用户说完后、AI 开始回复前，随机播放一个"听话提示"，让对话不像机器人
         private val LISTENER_CUE_BASE = listOf(

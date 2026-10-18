@@ -54,7 +54,7 @@ import me.rerere.ai.ui.finishReasoning
 import me.rerere.ai.ui.truncate
 import me.rerere.common.android.Logging
 import me.rerere.rikkahub.AppScope
-import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.service.notification.NotificationSoundManager
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.common.JsonInstant
@@ -441,25 +441,6 @@ class ChatService(
 
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(lifecycleObserver)
-
-        // 自动管理前台服务状态
-        appScope.launch {
-            // 联合监听任务列表和前台状态，确保状态同步
-            combine(generationJobs, _isForeground) { jobs, isForeground ->
-                jobs.isNotEmpty() to isForeground
-            }.collect { (hasJobs, isForeground) ->
-                if (hasJobs) {
-                    if (isForeground) {
-                        ChatForegroundService.start(context)
-                    }
-                } else {
-                    delay(2000)
-                    if (_generationJobs.value.isEmpty()) {
-                        ChatForegroundService.stop(context)
-                    }
-                }
-            }
-        }
     }
 
     fun cleanup() = runCatching {
@@ -982,7 +963,8 @@ class ChatService(
         predefinedUserNode: MessageNode? = null,
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = true, // 普通对话也包含 skipContext 消息，由 messageSource 控制截断策略
-        responseMessageSource: MessageSource = MessageSource.NORMAL // AI 回复的消息来源标识
+        responseMessageSource: MessageSource = MessageSource.NORMAL, // AI 回复的消息来源标识
+        callId: String? = null
     ) {
         if (isTemporaryChat) {
             temporaryConversations.add(conversationId)
@@ -1021,7 +1003,8 @@ class ChatService(
                 conversationId = conversationId,
                 skipContextForResponse = skipContextForResponse,
                 includeSkipContextMessages = includeSkipContextMessages,
-                responseMessageSource = responseMessageSource
+                responseMessageSource = responseMessageSource,
+                callId = callId
             )
         }
     }
@@ -1036,7 +1019,8 @@ class ChatService(
         conversationId: Uuid,
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = true,
-        responseMessageSource: MessageSource = MessageSource.NORMAL
+        responseMessageSource: MessageSource = MessageSource.NORMAL,
+        callId: String? = null
     ) {
         // 取消已存在的生成任务，防止出现孤儿任务继续流式存储未保存的分句。
         // sendMessage 已取消一次，但 maybeTriggerAIAfterAsr 等调用方可能未取消，
@@ -1072,7 +1056,8 @@ class ChatService(
                     conversationId = conversationId,
                     skipContextForResponse = skipContextForResponse,
                     includeSkipContextMessages = includeSkipContextMessages,
-                    responseMessageSource = responseMessageSource
+                    responseMessageSource = responseMessageSource,
+                    callId = callId
                 )
                 _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
@@ -1260,6 +1245,7 @@ class ChatService(
         skipContextForResponse: Boolean = false,
         includeSkipContextMessages: Boolean = true,
         responseMessageSource: MessageSource = MessageSource.NORMAL,
+        callId: String? = null,
         requirement: String? = null,
         targetMessageId: Uuid? = null
     ) {
@@ -1524,7 +1510,8 @@ class ChatService(
                         skipContextForResponse = skipContextForResponse,
                         includeSkipContextMessages = includeSkipContextMessages,
                         responseMessageSource = responseMessageSource,
-                        conversationId = conversationId
+                        conversationId = conversationId,
+                        callId = callId
                     ).onCompletion {
                         _generatingNodeIds.update { old ->
                             old - currentConversation.messageNodes.map { it.id }.toSet()
@@ -2859,12 +2846,16 @@ class ChatService(
     private fun sendGenerationDoneNotification(conversationId: Uuid) {
         val conversation = getConversationFlow(conversationId).value
         val settings = settingsStore.settingsFlow.value
+        // AI 回复通知开关（SET）：关闭则不再推送
+        if (!settings.notificationAiReplyEnabled) return
         val assistant = settings.getAssistantById(conversation.assistantId) ?: settings.getCurrentAssistant()
         val lastMsg = conversation.currentMessages.lastOrNull()
         // skipContext=true 的消息是隐形对话（日记评论、agent_task 等），不推送系统通知避免泄露内容
         if (lastMsg == null || lastMsg.skipContext) return
         val msg = lastMsg.toPreviewText()?.take(50) ?: ""
-        val notification = NotificationCompat.Builder(context, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
+        // AI 消息提醒统一使用 ai_messages 渠道（渠道类别已精简）
+        val channelId = NotificationSoundManager.AI_MESSAGES_CHANNEL_ID
+        val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle(assistant.name)
             .setContentText(msg)
             .setSmallIcon(R.drawable.about_logo)

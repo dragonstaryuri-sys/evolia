@@ -36,7 +36,7 @@ import kotlin.uuid.Uuid
 import me.rerere.rikkahub.core.data.ai.EmbeddingService
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import me.rerere.rikkahub.CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.service.notification.NotificationSoundManager
 import me.rerere.rikkahub.common.JsonInstant
 import java.io.IOException
 import kotlinx.datetime.TimeZone
@@ -627,8 +627,9 @@ class MemoryConsolidationWorker(
     }
 
     private fun sendNotification(title: String, content: String) {
+        if (!settingsStore.settingsFlow.value.notificationProfileEnabled) return
         val notificationManager = NotificationManagerCompat.from(applicationContext)
-        val notification = NotificationCompat.Builder(applicationContext, CHAT_COMPLETED_NOTIFICATION_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(applicationContext, NotificationSoundManager.PROFILE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(content)

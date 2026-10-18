@@ -6,7 +6,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import me.rerere.rikkahub.BACKUP_NOTIFICATION_CHANNEL_ID
+import me.rerere.rikkahub.service.notification.NotificationSoundManager
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.sync.BackupHttpException
@@ -107,10 +107,11 @@ class BackupWorker(
 
     private fun showSuccessNotification() {
         try {
+            if (!settingsStore.settingsFlow.value.notificationBackupEnabled) return
             if (!hasNotificationPermission()) return
             val notificationManager = NotificationManagerCompat.from(applicationContext)
 
-            val notification = NotificationCompat.Builder(applicationContext, BACKUP_NOTIFICATION_CHANNEL_ID)
+            val notification = NotificationCompat.Builder(applicationContext, NotificationSoundManager.BACKUP_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(applicationContext.getString(R.string.backup_notification_success_title))
                 .setContentText(applicationContext.getString(R.string.backup_notification_success_desc))
@@ -126,6 +127,7 @@ class BackupWorker(
 
     private fun showFailedNotification(reason: String, isFinalFailure: Boolean) {
         try {
+            if (!settingsStore.settingsFlow.value.notificationBackupEnabled) return
             if (!hasNotificationPermission()) {
                 // 即便无法弹通知，也要在日志里明确写原因，便于 logcat 排查
                 Log.e(
@@ -146,7 +148,7 @@ class BackupWorker(
             val style = NotificationCompat.BigTextStyle()
                 .bigText("$baseDesc\n\n$reason")
 
-            val notification = NotificationCompat.Builder(applicationContext, BACKUP_NOTIFICATION_CHANNEL_ID)
+            val notification = NotificationCompat.Builder(applicationContext, NotificationSoundManager.BACKUP_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
                 .setContentText(baseDesc)

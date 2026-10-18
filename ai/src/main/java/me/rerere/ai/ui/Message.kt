@@ -20,15 +20,21 @@ import kotlin.uuid.Uuid
 
 /**
  * 消息来源标识：用于区分不同来源的 skipContext 消息在上下文中的处理策略。
- * - NORMAL: 普通对话消息（历史消息截断到前100字，当前消息完整）
+ * - NORMAL: 普通对话消息（历史消息截断到前 100 字，当前消息完整）
  * - DIARY_COMMENT: 日记评论指令（完整带入，不截断；存储前已剥离 JSON 决策外壳）
  * - AGENT_TASK: 自动化任务触发指令（完整带入，不截断）
+ * - CALL: 通话期间真实的用户转写与 Assistant 回复。skipContext=true，UI/搜索/导出隐藏，
+ *   但必须在上下文组装与自动总结/记忆链路中按普通对话内容纳入（不截断）。
+ * - CALL_STATE: Assistant 的「（我接通了电话）」/「（我挂断了电话）」通话状态标记。
+ *   skipContext=true，UI/搜索/导出/通话转写区隐藏，但必须进入后续 AI 上下文（不截断）。
  */
 @Serializable
 enum class MessageSource {
     NORMAL,
     DIARY_COMMENT,
-    AGENT_TASK
+    AGENT_TASK,
+    CALL,
+    CALL_STATE
 }
 
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO
@@ -49,7 +55,8 @@ data class UIMessage(
     val usedMemories: List<UsedMemory>? = null, // Memories used in this message
     val versionTag: String? = null, // Links messages from same generation for multi-node turn versioning
     val skipContext: Boolean = false, // 如果为 true，这条消息在后续对话中不会被作为上下文发送给 AI
-    val messageSource: MessageSource = MessageSource.NORMAL // 消息来源标识，控制 skipContext 消息在上下文中的截断策略
+    val messageSource: MessageSource = MessageSource.NORMAL, // 消息来源标识，控制 skipContext 消息在上下文中的截断策略
+    val callId: String? = null // 归属的通话 ID（=CallRecordEntity.id）；老消息缺省为 null，不做批量改写
 ) {
     /**
      * 标记此消息是否为「损坏消息占位」。

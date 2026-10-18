@@ -16,13 +16,14 @@ class ASRManager {
     fun startRecognition(
         providerSetting: ASRProviderSetting,
         context: Context,
-        preRollPcm: List<ShortArray>? = null
+        preRollPcm: List<ShortArray>? = null,
+        onPcmFrame: ((ShortArray) -> Unit)? = null
     ): Flow<ASRResult> {
         return when (providerSetting) {
-            is ASRProviderSetting.SystemASR -> systemProvider.startRecognition(context, providerSetting, preRollPcm)
-            is ASRProviderSetting.OnlineASR -> onlineProvider.startRecognition(context, providerSetting, preRollPcm)
-            is ASRProviderSetting.EvoliaASR -> onlineProvider.startRecognition(context, providerSetting.toOnlineASR(), preRollPcm)
-            is ASRProviderSetting.LocalSenseVoiceASR -> localSenseVoiceProvider.startRecognition(context, providerSetting, preRollPcm)
+            is ASRProviderSetting.SystemASR -> systemProvider.startRecognition(context, providerSetting, preRollPcm, onPcmFrame)
+            is ASRProviderSetting.OnlineASR -> onlineProvider.startRecognition(context, providerSetting, preRollPcm, onPcmFrame)
+            is ASRProviderSetting.EvoliaASR -> onlineProvider.startRecognition(context, providerSetting.toOnlineASR(), preRollPcm, onPcmFrame)
+            is ASRProviderSetting.LocalSenseVoiceASR -> localSenseVoiceProvider.startRecognition(context, providerSetting, preRollPcm, onPcmFrame)
         }
     }
 
