@@ -123,13 +123,38 @@ object CallCommandHub {
     private val _isCallActive = MutableStateFlow(false)
     val isCallActive = _isCallActive.asStateFlow()
 
+    /** 是否已收到 AI 的挂断请求（幂等：同一通通话只处理一次 hangup 命令，避免 AI 反复调用）。 */
+    private val _hangupRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** 由 VoiceCallManager 更新，不要在工具侧写。 */
     internal fun setCallActive(active: Boolean) {
         _isCallActive.value = active
+        // 通话开始或结束时重置挂断标记，保证下一次挂断请求能正常处理
+        _hangupRequested.set(false)
     }
 
-    suspend fun sendHangup(conversationId: Uuid) {
+    /**
+     * AI 主动挂断：仅首次调用会真正发出命令，后续重复调用直接返回 false，
+     * 避免 AI 因挂断延迟期间通话仍处于 active 状态而反复调用工具。
+     *
+     * @return true 表示本次是首次请求（已下发挂断命令）；false 表示已请求过，无需重复。
+     */
+    suspend fun sendHangup(conversationId: Uuid): Boolean {
+        val wasRequested = _hangupRequested.getAndSet(true)
+        if (wasRequested) {
+            android.util.Log.i(TAG, "sendHangup ignored: already requested for this call")
+            return false
+        }
         _commands.emit(CallCommand(action = "hangup", conversationId = conversationId))
+        return true
+    }
+
+    /**
+     * 重置挂断请求标记（由 VoiceCallManager 在「延迟挂断被取消」时调用，
+     * 例如用户在宽限期内开口说话导致放弃挂断，此时 AI 应可再次请求挂断）。
+     */
+    internal fun resetHangupRequest() {
+        _hangupRequested.set(false)
     }
 
     // ===== Agent 来电请求 / 结果桥接 =====
@@ -2812,9 +2837,9 @@ class LocalTools(
                             }
                             withContext(Dispatchers.IO) {
                                 // ==== 如果是微信模式，自动切换到普通模式（微信模式会分句存储 AI 回复，不适合通话） ====
+                                // 静默切换，不向 AI / 用户提示；切换发生在创建通话之前，保证通话消息不被拆分。
                                 val settings = settingsStore.settingsFlow.first()
                                 val assistant = settings.assistants.find { it.id == assistantId }
-                                var switchedFromWechat = false
                                 if (assistant != null) {
                                     val isWechatMode = settings.getEffectiveDisplaySetting(assistant).wechatMode
                                     if (isWechatMode) {
@@ -2828,7 +2853,6 @@ class LocalTools(
                                                 }
                                             )
                                         )
-                                        switchedFromWechat = true
                                         android.util.Log.i(
                                             "LocalTools",
                                             "call_control: call start, switched assistant $assistantId from wechatMode→normal"
@@ -2856,9 +2880,6 @@ class LocalTools(
                                     put("action", "call")
                                     put("status", result.status.name)
                                     put("result", message)
-                                    if (switchedFromWechat) {
-                                        put("note", "已自动从微信模式切换为普通模式，保证通话体验。")
-                                    }
                                 }
                             }
                         }
@@ -2870,11 +2891,21 @@ class LocalTools(
                                 }
                             }
                             withContext(Dispatchers.IO) {
-                                CallCommandHub.sendHangup(conversationId)
-                                buildJsonObject {
-                                    put("success", true)
-                                    put("action", "hangup")
-                                    put("note", "挂断指令已发出，通话将在60s内结束。")
+                                val firstRequest = CallCommandHub.sendHangup(conversationId)
+                                if (firstRequest) {
+                                    buildJsonObject {
+                                        put("success", true)
+                                        put("action", "hangup")
+                                        put("note", "挂断指令已执行，通话即将结束。请直接用一句话向用户道别（例如\"那先这样，拜拜\"），不要再调用任何工具。")
+                                    }
+                                } else {
+                                    // 幂等：同一通通话已请求过挂断，直接告知 AI 不要重复调用
+                                    buildJsonObject {
+                                        put("success", true)
+                                        put("action", "hangup")
+                                        put("already_requested", true)
+                                        put("note", "挂断已在处理中，通话即将结束。请直接回复道别语，不要再调用任何工具。")
+                                    }
                                 }
                             }
                         }

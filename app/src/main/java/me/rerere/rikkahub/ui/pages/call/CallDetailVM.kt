@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -18,8 +20,10 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
 import me.rerere.rikkahub.core.data.repository.CallRecordRepository
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.service.voice.VoiceMessagePlayer
 import java.io.File
+import kotlin.uuid.Uuid
 
 private const val TAG = "CallDetailVM"
 
@@ -37,6 +41,7 @@ class CallDetailVM(
     private val callRecordRepository: CallRecordRepository,
     private val conversationRepository: ConversationRepository,
     private val voiceMessagePlayer: VoiceMessagePlayer,
+    private val settingsStore: SettingsStore,
 ) : ViewModel() {
 
     /** 录音播放 key（与聊天页语音条 key 空间保持一致，避免冲突）。 */
@@ -44,6 +49,17 @@ class CallDetailVM(
 
     val record: StateFlow<CallRecordEntity?> = callRecordRepository.getByIdFlow(callId)
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** 通话对应的助手名称（根据 record.assistantId 查找，找不到回退"助手"）。 */
+    val assistantName: StateFlow<String> = combine(record, settingsStore.settingsFlow) { r, settings ->
+        val id = runCatching { Uuid.parse(r?.assistantId.orEmpty()) }.getOrNull()
+        id?.let { settings.assistants.find { a -> a.id == it }?.name }.orEmpty()
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+    /** 用户昵称（来自显示设置，空则回退"用户"）。 */
+    val userName: StateFlow<String> = settingsStore.settingsFlow
+        .map { it.displaySetting.userNickname.ifEmpty { "用户" } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "用户")
 
     /** 全局播放器状态（仅当播放 key == audioKey 时对本页有意义）。 */
     val playback = voiceMessagePlayer.playback

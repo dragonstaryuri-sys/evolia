@@ -141,7 +141,7 @@ class GenerationHandler(
         includeSkipContextMessages: Boolean = false,
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null,
-        isCallMode: Boolean = false,
+        isCallMode: () -> Boolean = { false },
         callId: String? = null,
     ): Flow<GenerationChunk> = flow {
         val provider = model.findProvider(settings.providers) ?: error("Provider not found")
@@ -615,7 +615,12 @@ class GenerationHandler(
             currentMessages = currentMessages + UIMessage(
                 role = CoreMessageRole.TOOL,
                 parts = results,
-                skipContext = skipContextForResponse
+                // ★ 工具结果必须跟随 responseMessageSource：
+                //   通话中 skipContextForResponse=true 会让本条 skipContext=true，
+                //   若 messageSource 仍为默认 NORMAL，会被「只放行 CALL/CALL_STATE」的
+                //   上下文白名单过滤掉，导致 AI 看不到工具结果而反复调用同一工具。
+                skipContext = skipContextForResponse,
+                messageSource = responseMessageSource
             )
 
             // camera_capture 工具特殊处理：把拍下的照片作为一条额外 user 图片消息注入，
@@ -1083,7 +1088,18 @@ class GenerationHandler(
             val isCallVisibleSource: (UIMessage) -> Boolean = { msg ->
                 msg.messageSource == MessageSource.CALL || msg.messageSource == MessageSource.CALL_STATE
             }
-            messages.filter { !it.skipContext || isCallVisibleSource(it) }
+            val filtered = messages.filter { !it.skipContext || isCallVisibleSource(it) }
+            // 诊断日志：通话中工具结果若 messageSource!=CALL 会被过滤，导致 AI 看不到结果而反复调用工具
+            if (isCallMode) {
+                val droppedToolResults = messages.count {
+                    it.role == CoreMessageRole.TOOL && it.skipContext && !isCallVisibleSource(it)
+                }
+                if (droppedToolResults > 0) {
+                    Log.w(TAG, "ContextDebug: $droppedToolResults 条 TOOL 结果因 skipContext+非CALL来源被过滤，AI 将看不到这些工具结果！")
+                }
+                Log.i(TAG, "ContextDebug: isCallMode=$isCallMode, 输入${messages.size}条 → 过滤后${filtered.size}条, dropToolResults=$droppedToolResults")
+            }
+            filtered
         }
         Log.d("ContextDebug", "--- Context Build Start ---")
         Log.d("ContextDebug", "Incoming lastArchivedMessageTime: $lastArchivedMessageTime")
@@ -1751,7 +1767,7 @@ class GenerationHandler(
         includeSkipContextMessages: Boolean = false,
         responseMessageSource: MessageSource = MessageSource.NORMAL,
         conversationId: Uuid? = null,
-        isCallMode: Boolean = false,
+        isCallMode: () -> Boolean = { false },
         callId: String? = null,
     ) {
         val buildResult = buildMessages(
@@ -1767,7 +1783,7 @@ class GenerationHandler(
             temporarySummaries = temporarySummaries,
             includeSkipContextMessages = includeSkipContextMessages,
             conversationId = conversationId,
-            isCallMode = isCallMode
+            isCallMode = isCallMode()
         )
         val internalMessages = buildResult.messages.transforms(transformers, context, model, assistant)
 

@@ -269,7 +269,12 @@ class VoiceCallManager(
                 when (cmd.action) {
                     "hangup" -> {
                         if (_isActive.value) {
-                            // AI 主动挂断：延迟 1 分钟再挂，给 AI 留出说再见的时间
+                            // ★ 关键：AI 一请求挂断，立刻退出 callMode。
+                            //   否则系统提示仍注入"你和用户正在打电话"，AI 看到通话未真正结束
+                            //   （挂断有 30s 道别宽限）会反复调用 hangup 工具（最多 256 次）。
+                            //   退出 callMode 后，下一轮生成不再带通话指令，AI 会直接回复道别语并停止调用工具。
+                            cmd.conversationId.let { chatService.setCallMode(it, active = false) }
+                            // AI 主动挂断：延迟挂断，给 AI 留出说再见的时间
                             scheduleDelayedAiHangup()
                         }
                     }
@@ -617,6 +622,8 @@ class VoiceCallManager(
         outgoingDecisionJob = scope.launch {
             val conv = chatService.getConversationFlow(conversationId).value
             val assistantId = conv.assistantId
+            // 用户主动拨号：拨号即退出微信模式（微信分句存储会拆碎通话决策与通话消息）
+            ensureNormalUiModeForCall(conversationId)
             runCatching {
                 callRecordRepository.insert(
                     CallRecordEntity(
@@ -703,9 +710,6 @@ class VoiceCallManager(
 
             // ===== 音频路由：进入通话模式，切到 VoIP 路径 =====
             enterCallAudioMode()
-
-            // 微信模式自动切换为普通模式（微信模式会分句存储 AI 回复，不适合通话场景）
-            scope.launch { ensureNormalUiModeForCall(convId) }
 
             chatService.setCallMode(convId, active = true)
             startL1Timer(convId)
@@ -1177,29 +1181,29 @@ class VoiceCallManager(
 
     private fun playCallGreetingThenListen() {
         val convId = conversationId ?: return
+        // 同步快照「接通时已存在的节点 ID」：AI 对通话工具结果的回复是在此之后（claimTerminal
+        // 返回工具结果 → AI 生成）新增的节点，因此用「不在快照中」即可准确识别开场白，
+        // 比时间戳过滤更稳健（不受消息 createdAt 与接通时刻先后关系影响）。
+        val baselineNodeIds = chatService.getConversationFlow(convId).value.messageNodes
+            .mapTo(mutableSetOf()) { it.id }
         listenerCueJob?.cancel()
         listenerCueJob = scope.launch {
             val settings = settingsStore.settingsFlow.value
             val asrSetting = settings.getSelectedASRProvider()
 
             if (isAgentInitiatedCall) {
-                // ===== Agent 主动拨打电话：等待 AI 生成完成后朗读开场白 =====
+                // ===== Agent 主动拨打电话：等待「AI 对通话工具结果的回复」并朗读 =====
+                // 该回复即接通后的开场白。不依赖 chatService.isGenerating（定时任务 / 监控器
+                // 触发的生成可能未登记为生成任务，导致误判为空而跳过等待），
+                // 改为轮询等待「接通后新增的 AI 文本回复」。
                 // 播放期间不启动 ASR（与 AI 回复期间一致），避免长文本回声被识别成用户输入
-                if (chatService.isGenerating(convId)) {
-                    Log.i(TAG, "Waiting for AI generation to complete before playing opening...")
-                    val waitDeadline = System.currentTimeMillis() + 10_000
-                    while (chatService.isGenerating(convId) && _isActive.value && System.currentTimeMillis() < waitDeadline) {
-                        delay(200)
-                    }
-                }
-                val openingNode = getCallOpeningNode(convId)
+                val openingNode = awaitCallOpeningNode(convId, baselineNodeIds)
                 val openingText = openingNode?.let { extractOpeningText(it) }
                 identity = identity.newTurn().newGeneration()
                 if (openingText != null) {
-                    // 开场白只属于通话：取用完即从聊天记录中移除该回复节点，
-                    // 避免它以普通聊天消息的形式出现在对话里，也避免它把所在回合的排序
-                    // 时间拉晚、导致通话时长卡片位置错乱。
-                    consumeCallOpeningNode(convId, openingNode)
+                    // 开场白属于通话的一部分：打标为 CALL + callId（隐藏于普通对话、进入通话记录、
+                    // 并会被朗读），而不是从聊天记录中删除。
+                    retagCallOpeningNodeAsCall(convId, openingNode, activeCallId)
                     Log.i(TAG, "Call opening (agent-initiated): \"${openingText.take(50)}...\" start")
                     _callStatus.value = CallStatus.SPEAKING
                     runCatching {
@@ -1273,15 +1277,54 @@ class VoiceCallManager(
     }
 
     /**
-     * 获取 Agent 主动拨打电话场景下的开场白节点。
-     * 取会话最后一条 assistant 节点（通话刚接通时，该节点即为 AI 对"通话工具结果"的回复），
-     * 不依赖时间戳过滤（开场白消息的 createdAt 可能与 callStartTimeMs 过于接近甚至略早，
-     * 用 timelineCreatedAt >= callStartMs 过滤会误判为空）。
+     * 等待 Agent 主动拨打电话场景下的开场白节点（AI 对"通话工具结果"的回复）。
+     *
+     * 不依赖 [ChatService.isGenerating]（定时任务 / 监控器触发的生成可能未被登记为生成任务，
+     * 导致误判为空而跳过等待），改为轮询会话，等待「接通时基线节点集合之外新增的、
+     * 非工具、含文本的 assistant 节点」出现，并在其文本稳定且生成结束后返回，
+     * 避免朗读到半截内容。
      */
-    private fun getCallOpeningNode(convId: Uuid): MessageNode? {
+    private suspend fun awaitCallOpeningNode(
+        convId: Uuid,
+        baselineNodeIds: Set<Uuid>,
+        timeoutMs: Long = 15_000,
+    ): MessageNode? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var lastCandidate: MessageNode? = null
+        var lastText: String? = null
+        var stableCount = 0
+        while (_isActive.value && System.currentTimeMillis() < deadline) {
+            val found = findOpeningCandidate(convId, baselineNodeIds)
+            if (found != null) {
+                val text = extractOpeningText(found)
+                lastCandidate = found
+                // 连续两次文本一致且生成任务已结束 → 视为回复已完成
+                stableCount = if (text != null && text == lastText) stableCount + 1 else 0
+                lastText = text
+                if (stableCount >= 2 && !chatService.isGenerating(convId)) {
+                    return found
+                }
+            }
+            delay(150)
+        }
+        return lastCandidate
+    }
+
+    /**
+     * 在会话中寻找「接通后新增的、非工具、含文本的 assistant 节点」，
+     * 即 AI 对通话工具结果的回复（开场白）。命中多个时取最新的一个。
+     */
+    private fun findOpeningCandidate(convId: Uuid, baselineNodeIds: Set<Uuid>): MessageNode? {
         val conv = chatService.getConversationFlow(convId).value
         return conv.messageNodes
-            .filter { it.role == MessageRole.ASSISTANT }
+            .filter { node ->
+                node.id !in baselineNodeIds &&
+                    node.role == MessageRole.ASSISTANT &&
+                    node.currentMessage.parts.none {
+                        it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult
+                    } &&
+                    extractOpeningText(node) != null
+            }
             .maxByOrNull { it.timelineCreatedAt }
     }
 
@@ -1298,41 +1341,57 @@ class VoiceCallManager(
     }
 
     /**
-     * 把 AI 的开场白回复从聊天记录中移除。
+     * 把 AI 的开场白回复原地打标为「通话消息」（[MessageSource.CALL] + callId + skipContext）。
      *
-     * 该回复只应作为通话开场白存在，不应作为普通聊天消息落库，否则：
-     * 1) 会作为一条普通 AI 消息显示在对话里（用户视角是"多出来的回复"）；
-     * 2) 会把所在回合的排序时间拉晚到通话记录之后，导致通话时长卡片位置错乱。
+     * 该回复属于通话的一部分：保留在记录中（通话页 / 通话记录 / 转写可见，并会被朗读），
+     * 但通过 skipContext=true 从普通聊天 UI 隐藏，避免它作为普通消息出现在对话里；
+     * 同时 callId 让 UI 把它归入对应通话，不会打乱通话时长卡片的位置。
      *
      * 防护：AI 仍在生成时不操作（避免破坏进行中的写入）；节点含 ToolCall/ToolResult 时跳过
-     * （删除工具节点会破坏工具调用链）。
+     * （改写工具节点会破坏工具调用链）。
      */
-    private suspend fun consumeCallOpeningNode(convId: Uuid, node: MessageNode?) {
-        if (node == null) return
+    private suspend fun retagCallOpeningNodeAsCall(convId: Uuid, node: MessageNode?, callId: String?) {
+        if (node == null || callId == null) return
         if (chatService.isGenerating(convId)) {
-            Log.w(TAG, "consumeCallOpeningNode skipped: generation still running")
+            Log.w(TAG, "retagCallOpeningNodeAsCall skipped: generation still running")
             return
         }
         val hasToolInteraction = node.currentMessage.parts.any {
             it is UIMessagePart.ToolCall || it is UIMessagePart.ToolResult
         }
         if (hasToolInteraction) {
-            Log.w(TAG, "consumeCallOpeningNode skipped: node contains tool parts")
+            Log.w(TAG, "retagCallOpeningNodeAsCall skipped: node contains tool parts")
             return
         }
         runCatching {
             chatService.replaceConversationMessages(convId) { current ->
-                val remainingNodes = current.messageNodes.filterNot { it.id == node.id }
-                if (remainingNodes.size == current.messageNodes.size) {
+                var changed = false
+                val updatedNodes = current.messageNodes.map { currentNode ->
+                    if (currentNode.id != node.id) {
+                        currentNode
+                    } else {
+                        val updatedMessages = currentNode.messages.map { message ->
+                            val retagged = message.copy(
+                                skipContext = true,
+                                messageSource = MessageSource.CALL,
+                                callId = callId,
+                            )
+                            if (retagged != message) changed = true
+                            retagged
+                        }
+                        currentNode.copy(messages = updatedMessages)
+                    }
+                }
+                if (!changed) {
                     return@replaceConversationMessages null
                 }
                 ConversationMessageDeletion(
-                    conversation = current.copy(messageNodes = remainingNodes).normalizeMessageNodes(),
-                    deletedNodeIds = setOf(node.id),
-                    deletedMessageIds = node.messages.mapTo(mutableSetOf()) { it.id }
+                    conversation = current.copy(messageNodes = updatedNodes).normalizeMessageNodes(),
+                    deletedNodeIds = emptySet(),
+                    deletedMessageIds = emptySet(),
                 )
             }
-        }.onFailure { Log.w(TAG, "consumeCallOpeningNode failed", it) }
+        }.onFailure { Log.w(TAG, "retagCallOpeningNodeAsCall failed", it) }
     }
 
     /**
@@ -1493,6 +1552,7 @@ class VoiceCallManager(
             }
             if (!_isActive.value || identity.callSessionId != snapshotSessionId) {
                 Log.i(TAG, "scheduleDelayedAiHangup: 会话已结束或换 session，取消")
+                CallCommandHub.resetHangupRequest()
                 return@launch
             }
             // Phase 2: 1 分钟宽限倒计时（已经花掉的 TTS 等待时间算在这 1 分钟里，不额外累加）
@@ -1503,12 +1563,16 @@ class VoiceCallManager(
             }
             if (!_isActive.value || identity.callSessionId != snapshotSessionId) {
                 Log.i(TAG, "scheduleDelayedAiHangup: 宽限期间会话状态变化，取消")
+                CallCommandHub.resetHangupRequest()
                 return@launch
             }
             // Phase 3: 用户可能在此期间又开口说话了 → 再次兜底校验
             val finalSilentMs = System.currentTimeMillis() - lastUserSpeakAtMs
             if (finalSilentMs < 5000L) {
                 Log.i(TAG, "scheduleDelayedAiHangup: 宽限期内用户 ${finalSilentMs}ms 前还说过话，放弃挂断")
+                // 用户开口了，通话继续：恢复 callMode 并允许 AI 再次请求挂断
+                conversationId?.let { chatService.setCallMode(it, active = true) }
+                CallCommandHub.resetHangupRequest()
                 return@launch
             }
             Log.i(TAG, "scheduleDelayedAiHangup: 延迟挂断条件全部满足，正式挂断")

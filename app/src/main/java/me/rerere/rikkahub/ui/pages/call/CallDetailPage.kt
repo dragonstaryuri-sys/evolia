@@ -72,6 +72,8 @@ fun CallDetailPage(callId: String) {
     val transcript by vm.transcript.collectAsStateWithLifecycle()
     val playback by vm.playback.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val assistantName by vm.assistantName.collectAsStateWithLifecycle()
+    val userName by vm.userName.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -171,7 +173,7 @@ fun CallDetailPage(callId: String) {
                     )
                 }
             } else {
-                items(transcript) { msg -> TranscriptRow(msg) }
+                items(transcript) { msg -> TranscriptRow(msg, userName, assistantName) }
             }
         }
     }
@@ -296,13 +298,15 @@ private fun PlayerCard(
 }
 
 @Composable
-private fun TranscriptRow(message: UIMessage) {
+private fun TranscriptRow(message: UIMessage, userName: String, assistantName: String) {
     val isUser = message.role == MessageRole.USER
     val text = message.parts
         .filterIsInstance<UIMessagePart.Text>()
         .joinToString("") { it.text }
         .trim()
     if (text.isBlank()) return
+
+    val speakerName = if (isUser) userName else assistantName.ifEmpty { "助手" }
 
     val alignment: Alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     val container = if (isUser) {
@@ -324,7 +328,7 @@ private fun TranscriptRow(message: UIMessage) {
         ) {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text(
-                    text = if (isUser) "用户" else "助手",
+                    text = speakerName,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

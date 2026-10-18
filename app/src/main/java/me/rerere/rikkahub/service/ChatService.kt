@@ -1411,7 +1411,7 @@ class ChatService(
                         memories = retrievedMemories,
                         inputTransformers = buildList { addAll(inputTransformers); add(templateTransformer) },
                         outputTransformers = outputTransformers,
-                        isCallMode = callModeConversations.contains(conversationId),
+                        isCallMode = { callModeConversations.contains(conversationId) },
                         tools = buildList {
                             val isMain = assistant.isMain
 

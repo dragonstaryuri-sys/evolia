@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -29,18 +28,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
 import coil3.compose.AsyncImage
-import kotlin.math.abs
-import kotlin.math.roundToInt
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -65,7 +60,7 @@ enum class CallStatus {
  *
  * 设计约束：
  * - 未接通前绝不显示为「已接通」：只展示来电提示，不展示通话状态/时长/静音等控制。
- * - 交互对齐手机原生来电页：两个圆钮需「向上滑」才触发（防误触），右绿 = 接听，左红 = 挂断。
+ * - 交互对齐手机原生来电页：两个圆钮点击即触发，右绿 = 接听，左红 = 挂断。
  */
 @Composable
 fun IncomingCallScreen(
@@ -379,9 +374,7 @@ private fun CallAnswerButton(
 }
 
 /**
- * 手机原生来电页风格的「上滑操作」圆钮：
- * - 圆钮上方有一个 ^ 提示箭头（随上滑进度淡出），需将圆钮向上滑到阈值才触发，防止误触；
- * - 松手未达阈值时圆钮自动回弹归位。
+ * 来电页接听/挂断圆钮：点击即触发，左红挂断、右绿接听。
  */
 @Composable
 private fun SwipeUpCallButton(
@@ -390,49 +383,15 @@ private fun SwipeUpCallButton(
     background: Color,
     onTrigger: () -> Unit
 ) {
-    val density = LocalDensity.current
-    val maxDragPx = with(density) { 48.dp.toPx() }
-    val triggerThreshold = maxDragPx * 0.6f
-    var offsetY by remember { mutableFloatStateOf(0f) }
-    val animatedOffsetY by animateFloatAsState(
-        targetValue = offsetY,
-        animationSpec = spring(dampingRatio = 0.65f, stiffness = 420f),
-        label = "swipe_up_knob_offset"
-    )
-
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 上滑提示箭头（随拖动进度淡出）
-        val dragProgress = (abs(animatedOffsetY) / triggerThreshold).coerceIn(0f, 1f)
-        Icon(
-            imageVector = Icons.Rounded.KeyboardArrowUp,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.55f * (1f - dragProgress)),
-            modifier = Modifier.size(22.dp)
-        )
         Box(
             modifier = Modifier
                 .size(80.dp)
-                .offset { IntOffset(0, animatedOffsetY.roundToInt()) }
                 .background(background, CircleShape)
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onDragEnd = {
-                            val reached = -offsetY >= triggerThreshold
-                            offsetY = 0f
-                            if (reached) onTrigger()
-                        },
-                        onDragCancel = { offsetY = 0f },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            // 仅允许向上拖动（负方向）
-                            val directedAmount = dragAmount.coerceAtMost(0f)
-                            offsetY = (offsetY + directedAmount).coerceIn(-maxDragPx, 0f)
-                        }
-                    )
-                },
+                .clickable(onClick = onTrigger),
             contentAlignment = Alignment.Center
         ) {
             Icon(

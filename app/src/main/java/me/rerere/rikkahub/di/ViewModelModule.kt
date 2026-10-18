@@ -146,7 +146,8 @@ val viewModelModule = module {
             context = get(),
             callRecordRepository = get(),
             conversationRepository = get(),
-            voiceMessagePlayer = get()
+            voiceMessagePlayer = get(),
+            settingsStore = get()
         )
     }
     viewModel<HistoryCallVM> { params ->
