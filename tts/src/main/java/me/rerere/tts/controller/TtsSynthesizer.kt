@@ -41,8 +41,15 @@ class TtsSynthesizer(
         if (cacheFile.exists()) {
             runCatching {
                 val response = JsonInstant.decodeFromString<TTSResponse>(cacheFile.readText())
-                Log.d(TAG, "Cache HIT for chunk ${chunk.index}: $cacheKey")
-                return@withContext response
+                // 历史缓存可能是 MP3 等压缩格式，无法为通话录音/WebRTC AEC 提供 PCM。
+                // 统一要求 PCM：非 PCM 缓存视为失效，重新合成。
+                if (response.format == AudioFormat.PCM) {
+                    Log.d(TAG, "Cache HIT for chunk ${chunk.index}: $cacheKey")
+                    return@withContext response
+                } else {
+                    Log.d(TAG, "Cache stale (format=${response.format}) for chunk ${chunk.index}, re-synthesizing")
+                    cacheFile.delete()
+                }
             }.onFailure {
                 Log.e(TAG, "Failed to decode cache for chunk ${chunk.index}", it)
             }

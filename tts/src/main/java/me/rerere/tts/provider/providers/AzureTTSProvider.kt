@@ -55,7 +55,8 @@ class AzureTTSProvider : TTSProvider<TTSProviderSetting.Azure> {
             .url(url)
             .addHeader("Ocp-Apim-Subscription-Key", providerSetting.apiKey)
             .addHeader("Content-Type", "application/ssml+xml")
-            .addHeader("X-Microsoft-OutputFormat", "audio-24khz-160kbitrate-mono-mp3")
+            // 输出 16kHz/16-bit/mono PCM：通话录音与 WebRTC AEC 远端参考链路需要 PCM。
+            .addHeader("X-Microsoft-OutputFormat", "audio-16khz-16bit-mono-pcm")
             .addHeader("User-Agent", "Evolia")
             .post(ssml.toRequestBody("application/ssml+xml".toMediaType()))
             .build()
@@ -75,7 +76,8 @@ class AzureTTSProvider : TTSProvider<TTSProviderSetting.Azure> {
         emit(
             AudioChunk(
                 data = audioData,
-                format = AudioFormat.MP3,
+                format = AudioFormat.PCM,
+                sampleRate = 16000,
                 isLast = true,
                 metadata = mapOf(
                     "provider" to "azure",

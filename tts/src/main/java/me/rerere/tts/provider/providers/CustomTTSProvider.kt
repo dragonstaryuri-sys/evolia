@@ -32,7 +32,8 @@ class CustomTTSProvider : TTSProvider<TTSProviderSetting.Custom> {
             put("model", providerSetting.model)
             put("input", request.text)
             put("voice", providerSetting.voice)
-            put("response_format", "mp3")
+            // 输出原始 PCM（24kHz/16-bit/mono）：通话录音与 WebRTC AEC 远端参考链路需要 PCM。
+            put("response_format", "pcm")
         }
 
         Log.i(
@@ -61,7 +62,8 @@ class CustomTTSProvider : TTSProvider<TTSProviderSetting.Custom> {
         emit(
             AudioChunk(
                 data = audioData,
-                format = AudioFormat.MP3,
+                format = AudioFormat.PCM,
+                sampleRate = 24000,
                 isLast = true,
                 metadata = mapOf(
                     "provider" to "custom",

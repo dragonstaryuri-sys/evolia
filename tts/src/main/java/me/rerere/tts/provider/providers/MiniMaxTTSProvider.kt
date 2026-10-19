@@ -165,6 +165,13 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
                 put("emotion", providerSetting.emotion)
                 put("speed", providerSetting.speed)
             })
+            // 指定输出 PCM 格式：流式通话链路（WebRTC AEC 远端参考 + 通话录音）
+            // 依赖 far-end PCM 回调，MP3 等压缩格式无法直接提供 PCM 参考信号。
+            put("audio_setting", buildJsonObject {
+                put("format", "pcm")
+                put("sample_rate", 32000)
+                put("channel", 1)
+            })
         }
 
         Log.i(
@@ -202,7 +209,7 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
                         emit(
                             AudioChunk(
                                 data = audioBytes,
-                                format = AudioFormat.MP3,
+                                format = AudioFormat.PCM,
                                 sampleRate = 32000,
                                 isLast = false,
                                 metadata = mapOf(
@@ -227,7 +234,7 @@ class MiniMaxTTSProvider : TTSProvider<TTSProviderSetting.MiniMax> {
                         emit(
                             AudioChunk(
                                 data = byteArrayOf(),
-                                format = AudioFormat.MP3,
+                                format = AudioFormat.PCM,
                                 sampleRate = 32000,
                                 isLast = true,
                                 metadata = mapOf("provider" to "minimax")

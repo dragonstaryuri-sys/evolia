@@ -25,12 +25,14 @@ import kotlinx.coroutines.withContext
  * @param isPlaying 是否正在播放
  * @param positionMs 当前播放位置
  * @param durationMs 总时长
+ * @param speed 当前播放倍速（持久化在播放器层，不随 Composable 销毁丢失）
  */
 data class VoiceMessagePlayback(
     val key: String,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val speed: Float = 1.0f
 )
 
 /**
@@ -51,6 +53,13 @@ class VoiceMessagePlayer(context: Context) {
     /** 当前播放状态（仅当 currentKey != null 时有意义）。 */
     private val _playback = MutableStateFlow<VoiceMessagePlayback?>(null)
     val playback: StateFlow<VoiceMessagePlayback?> = _playback.asStateFlow()
+
+    /**
+     * 当前播放倍速（持久化，不随播放状态变化或 Composable 销毁丢失）。
+     * 切换录音 / 重播时沿用该倍速。
+     */
+    private val _speed = MutableStateFlow(1.0f)
+    val speed: StateFlow<Float> = _speed.asStateFlow()
 
     private var positionJob: Job? = null
     private var listener: Player.Listener? = null
@@ -92,13 +101,20 @@ class VoiceMessagePlayer(context: Context) {
     }
 
     /**
-     * 设置播放倍速（仅当 [key] 与当前播放 key 一致时生效）。
-     * 已结束（STATE_ENDED）的记录再次播放时沿用当前倍速。
+     * 设置播放倍速。
+     *
+     * - 始终持久化到 [_speed]，确保 UI 滑动后重建仍能显示当前倍速；
+     * - 仅当 [key] 与当前播放 key 一致时才应用到 ExoPlayer；
+     * - 已结束（STATE_ENDED）的记录再次播放时沿用当前倍速。
      */
     fun setSpeed(key: String, speed: Float) {
+        val clamped = speed.coerceIn(0.5f, 3.0f)
+        _speed.value = clamped
         scope.launch {
-            if (_currentKey.value != key) return@launch
-            player.setPlaybackSpeed(speed.coerceIn(0.5f, 3.0f))
+            if (_currentKey.value == key) {
+                player.setPlaybackSpeed(clamped)
+            }
+            _playback.update { it?.copy(speed = clamped) }
         }
     }
 
@@ -134,10 +150,12 @@ class VoiceMessagePlayer(context: Context) {
         player.stop()
         player.clearMediaItems()
         player.setMediaItem(MediaItem.fromUri(uri))
+        // 沿用持久化的倍速
+        player.setPlaybackSpeed(_speed.value)
         player.prepare()
         player.playWhenReady = true
         _currentKey.value = key
-        _playback.value = VoiceMessagePlayback(key = key, isPlaying = true)
+        _playback.value = VoiceMessagePlayback(key = key, isPlaying = true, speed = _speed.value)
         attachListener(key)
         startPositionUpdates(key)
     }

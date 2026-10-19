@@ -34,7 +34,8 @@ class OpenAITTSProvider : TTSProvider<TTSProviderSetting.OpenAI> {
             put("input", request.text)
             put("voice", providerSetting.voice)
             put("speed", providerSetting.speed)
-            put("response_format", "mp3") // Default to MP3
+            // 输出原始 PCM（24kHz/16-bit/mono）：通话录音与 WebRTC AEC 远端参考链路需要 PCM。
+            put("response_format", "pcm")
         }
 
         Log.i(
@@ -63,7 +64,8 @@ class OpenAITTSProvider : TTSProvider<TTSProviderSetting.OpenAI> {
         emit(
             AudioChunk(
                 data = audioData,
-                format = AudioFormat.MP3,
+                format = AudioFormat.PCM,
+                sampleRate = 24000,
                 isLast = true,
                 metadata = mapOf(
                     "provider" to "openai",

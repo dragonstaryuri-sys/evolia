@@ -64,6 +64,9 @@ class CallDetailVM(
     /** 全局播放器状态（仅当播放 key == audioKey 时对本页有意义）。 */
     val playback = voiceMessagePlayer.playback
 
+    /** 当前播放倍速（持久化在播放器层，滑动后重建仍保持）。 */
+    val speed = voiceMessagePlayer.speed
+
     private val _transcript = MutableStateFlow<List<UIMessage>>(emptyList())
     val transcript: StateFlow<List<UIMessage>> = _transcript.asStateFlow()
 

@@ -168,8 +168,8 @@ class AudioPlayer(
     suspend fun play(response: TTSResponse) = withContext(Dispatchers.Main.immediate) {
         suspendCancellableCoroutine<Unit> { cont ->
             // ====== WebRTC AEC far-end 参考：PCM 模式下先把原始音频回调给上层 ======
-            // 注意：即使是非 PCM 格式（比如 MP3/OPUS），也可以在这里解码后回调，
-            // 但目前所有 TTS Provider 在通话模式下都用 PCM 流式，所以只处理 PCM 就够了。
+            // 所有 TTS Provider 统一输出 PCM（16-bit 小端），因此直接回调原始字节。
+            // 对非 PCM 格式（理论上不会出现），跳过回调以避免把压缩字节误当作 PCM。
             if (response.format == AudioFormat.PCM) {
                 val listener = farPcmListener
                 val sampleRate = response.sampleRate ?: 24000

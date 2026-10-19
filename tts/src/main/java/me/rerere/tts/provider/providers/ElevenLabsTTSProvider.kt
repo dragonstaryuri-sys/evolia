@@ -51,10 +51,12 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
             Log.i(TAG, "generateSpeech: voiceId=${providerSetting.voiceId}, model=${providerSetting.modelId}, speed=${providerSetting.speed}")
 
             val httpRequest = Request.Builder()
-                .url("https://api.elevenlabs.io/v1/text-to-speech/${providerSetting.voiceId}")
+                // output_format=pcm_16000：输出 16kHz/16-bit/mono PCM，
+                // 供通话录音与 WebRTC AEC 远端参考链路使用。
+                // 不设 Accept 头，避免某些端点对 audio/pcm 的兼容性问题；output_format 为准。
+                .url("https://api.elevenlabs.io/v1/text-to-speech/${providerSetting.voiceId}?output_format=pcm_16000")
                 .addHeader("xi-api-key", providerSetting.apiKey)
                 .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "audio/mpeg")
                 .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -72,7 +74,8 @@ class ElevenLabsTTSProvider : TTSProvider<TTSProviderSetting.ElevenLabs> {
                 emit(
                     AudioChunk(
                         data = audioData,
-                        format = AudioFormat.MP3,
+                        format = AudioFormat.PCM,
+                        sampleRate = 16000,
                         isLast = true,
                         metadata = mapOf(
                             "provider" to "elevenlabs",

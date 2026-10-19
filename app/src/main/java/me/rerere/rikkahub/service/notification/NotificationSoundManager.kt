@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.service.notification
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
@@ -53,17 +54,42 @@ class NotificationSoundManager(private val context: Context) {
     /** 创建精简后的应用自建渠道，并清理历史渠道。 */
     fun setupChannels() {
         val manager = NotificationManagerCompat.from(context)
+        // 系统默认通知铃声与音频属性，供需要声音的渠道复用
+        val defaultSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        val audioAttrs = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .build()
+
+        // AI 消息：允许悬浮通知 + 声音 + 振动
         createChannel(manager, AI_MESSAGES_CHANNEL_ID, R.string.notification_channel_ai_messages,
-            NotificationManagerCompat.IMPORTANCE_HIGH)
+            importance = NotificationManagerCompat.IMPORTANCE_HIGH,
+            sound = defaultSound,
+            audioAttributes = audioAttrs,
+            vibrationEnabled = true)
+        // 日记更新：无悬浮 + 静音 + 无振动
         createChannel(manager, DIARY_CHANNEL_ID, R.string.notification_channel_diary_updates,
-            NotificationManagerCompat.IMPORTANCE_DEFAULT)
+            importance = NotificationManagerCompat.IMPORTANCE_DEFAULT,
+            sound = null,
+            audioAttributes = null,
+            vibrationEnabled = false)
+        // 关系档案：无悬浮 + 静音 + 无振动
         createChannel(manager, PROFILE_CHANNEL_ID, R.string.notification_channel_relationship_profile,
-            NotificationManagerCompat.IMPORTANCE_DEFAULT)
+            importance = NotificationManagerCompat.IMPORTANCE_DEFAULT,
+            sound = null,
+            audioAttributes = null,
+            vibrationEnabled = false)
+        // 数据备份：无悬浮 + 声音 + 无振动
         createChannel(manager, BACKUP_CHANNEL_ID, R.string.notification_channel_data_backup,
-            NotificationManagerCompat.IMPORTANCE_HIGH)
-        // 来电通知：IMPORTANCE_HIGH 以启用横幅（Heads-up）展示
+            importance = NotificationManagerCompat.IMPORTANCE_DEFAULT,
+            sound = defaultSound,
+            audioAttributes = audioAttrs,
+            vibrationEnabled = false)
+        // AI 通话：允许悬浮通知 + 声音 + 振动
         createChannel(manager, INCOMING_CALL_CHANNEL_ID, R.string.notification_channel_incoming_call,
-            NotificationManagerCompat.IMPORTANCE_HIGH)
+            importance = NotificationManagerCompat.IMPORTANCE_HIGH,
+            sound = defaultSound,
+            audioAttributes = audioAttrs,
+            vibrationEnabled = true)
 
         // 清理历史渠道（无效 ID 调用无副作用）
         LEGACY_CHANNEL_IDS.forEach { manager.deleteNotificationChannel(it) }
@@ -73,12 +99,16 @@ class NotificationSoundManager(private val context: Context) {
         manager: NotificationManagerCompat,
         channelId: String,
         nameRes: Int,
-        importance: Int
+        importance: Int,
+        sound: Uri?,
+        audioAttributes: AudioAttributes?,
+        vibrationEnabled: Boolean
     ) {
         val channel = NotificationChannelCompat
             .Builder(channelId, importance)
             .setName(context.getString(nameRes))
-            .setVibrationEnabled(true)
+            .setSound(sound, audioAttributes)
+            .setVibrationEnabled(vibrationEnabled)
             .build()
         manager.createNotificationChannel(channel)
     }

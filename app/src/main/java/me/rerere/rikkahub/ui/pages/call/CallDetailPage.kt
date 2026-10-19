@@ -36,7 +36,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -71,6 +70,7 @@ fun CallDetailPage(callId: String) {
     val record by vm.record.collectAsStateWithLifecycle()
     val transcript by vm.transcript.collectAsStateWithLifecycle()
     val playback by vm.playback.collectAsStateWithLifecycle()
+    val speed by vm.speed.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val assistantName by vm.assistantName.collectAsStateWithLifecycle()
     val userName by vm.userName.collectAsStateWithLifecycle()
@@ -125,6 +125,7 @@ fun CallDetailPage(callId: String) {
                     durationMs = playback?.takeIf { it.key == vm.audioKey }?.durationMs
                         ?.takeIf { it > 0L } ?: (record?.durationMs ?: 0L),
                     expired = vm.isExpired(record),
+                    currentSpeed = speed,
                     onToggle = { vm.togglePlay(record) },
                     onSeek = { vm.seekTo(it) },
                     onSpeed = { vm.setSpeed(it) },
@@ -203,6 +204,7 @@ private fun PlayerCard(
     positionMs: Long,
     durationMs: Long,
     expired: Boolean,
+    currentSpeed: Float,
     onToggle: () -> Unit,
     onSeek: (Long) -> Unit,
     onSpeed: (Float) -> Unit,
@@ -210,8 +212,9 @@ private fun PlayerCard(
 ) {
     val hasAudio = record?.audio != null
     val speeds = listOf(1.0f, 1.25f, 1.5f, 2.0f)
-    var speedIndex by remember { mutableFloatStateOf(0f) }
-    val currentSpeed = speeds[speedIndex.toInt().coerceIn(0, speeds.lastIndex)]
+    // 从持久化的当前倍速推导索引；若不在预设档位内，回退到 0 档。
+    val speedIndex = speeds.indexOfFirst { it == currentSpeed }.coerceAtLeast(0)
+    val displayedSpeed = speeds[speedIndex]
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -287,10 +290,10 @@ private fun PlayerCard(
                     Spacer(modifier = Modifier.width(1.dp))
                 }
                 TextButton(onClick = {
-                    speedIndex = ((speedIndex.toInt() + 1) % speeds.size).toFloat()
-                    onSpeed(speeds[speedIndex.toInt()])
+                    val nextIndex = (speedIndex + 1) % speeds.size
+                    onSpeed(speeds[nextIndex])
                 }) {
-                    Text("${currentSpeed}x")
+                    Text("${displayedSpeed}x")
                 }
             }
         }
