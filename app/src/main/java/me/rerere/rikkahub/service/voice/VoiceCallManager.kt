@@ -560,6 +560,14 @@ class VoiceCallManager(
     private val spokenPartsPerNode = ConcurrentHashMap<Uuid, Int>()
     @Volatile private var spokenTextLen = 0
     @Volatile private var priorAssistantNodeId: Uuid? = null
+    // ===== 当前请求的可靠边界（防止历史 assistant 消息被重新喂给 TTS）=====
+    // - requestBaselineNodeIds: sendUserMessage 发消息之前会话里已存在的节点 ID 快照。
+    //   节点 ID 是稳定且持久化的，本轮新生成的节点一定不在快照内，
+    //   因此即使 priorAssistantNodeId 因会话缓存失效 / DB 版本替换而找不到，也不会把历史消息当成"新消息"。
+    // - requestStartedAtMs: 请求发起时间，作为第二道防线（排除创建时间明确早于本轮的历史节点）。
+    private val requestBaselineNodeIds: MutableSet<Uuid> =
+        java.util.Collections.newSetFromMap(ConcurrentHashMap<Uuid, Boolean>())
+    @Volatile private var requestStartedAtMs: Long = 0L
     @Volatile private var speakingStarted = false
 
     // ===== 通话期间「外部触发回复」朗读 watcher（item: 同一回合多条 AI 消息） =====
@@ -630,6 +638,7 @@ class VoiceCallManager(
     fun minimizeCall() {
         if (_callPhase.value != CallPhase.CONNECTED) return
         if (_isCallMinimized.value) return
+        logCallUiBoundary("minimizeCall")
         Log.i(TAG, "minimizeCall: switch full call screen → mini window")
         _isCallMinimized.value = true
     }
@@ -637,8 +646,28 @@ class VoiceCallManager(
     /** 从迷你窗口恢复完整通话页面。 */
     fun expandCall() {
         if (!_isCallMinimized.value) return
+        logCallUiBoundary("expandCall")
         Log.i(TAG, "expandCall: switch mini window → full call screen")
         _isCallMinimized.value = false
+    }
+
+    /**
+     * 低频诊断：记录缩小/恢复时刻的通话上下文与朗读请求边界，
+     * 用于排查"缩小后重新朗读历史消息"（A: 历史被重新选入队列 / B: 为何恰好在缩小时发生）。
+     */
+    private fun logCallUiBoundary(action: String) {
+        val convId = conversationId
+        // 只读取缓存快照：诊断日志不得创建占位会话或触发会话淘汰
+        val nodes = convId?.let { chatService.peekConversation(it)?.messageNodes }.orEmpty()
+        val priorId = priorAssistantNodeId
+        val priorIndex = if (priorId == null) -1 else nodes.indexOfFirst { it.id == priorId }
+        Log.i(
+            TAG,
+            "$action: callId=$activeCallId convId=$convId phase=${_callPhase.value} status=${_callStatus.value} " +
+                "minimized=${_isCallMinimized.value} nodes=${nodes.size} priorAssistantNodeId=$priorId " +
+                "priorIndex=$priorIndex baselineNodes=${requestBaselineNodeIds.size} " +
+                "requestStartMs=$requestStartedAtMs fedNodes=${fedLengthPerNode.size} spokenNodes=${spokenAssistantNodeIds.size}"
+        )
     }
 
     /** 启动通话时长计时器（接通时调用），每秒刷新 _callDurationMs。 */
@@ -2073,8 +2102,20 @@ class VoiceCallManager(
         noteUserSpoke()  // 重置 30 分钟沉默计时器 + 取消 AI 延迟挂断（用户仍在说话，不该挂）
         val priorConv = chatService.getConversationFlow(convId).value
         priorAssistantNodeId = priorConv.messageNodes.lastOrNull { it.role == MessageRole.ASSISTANT }?.id
-        Log.d(TAG, "priorAssistantNodeId=$priorAssistantNodeId")
+        // 请求边界快照必须在 sendMessage 之前取：之后新生成的节点 ID 一定不在快照内
+        requestBaselineNodeIds.clear()
+        requestBaselineNodeIds.addAll(priorConv.messageNodes.map { it.id })
+        requestStartedAtMs = System.currentTimeMillis()
+        val priorFoundInBaseline = priorAssistantNodeId?.let { requestBaselineNodeIds.contains(it) } == true
+        Log.i(
+            TAG,
+            "request boundary: baselineNodes=${requestBaselineNodeIds.size} " +
+                "convNodes=${priorConv.messageNodes.size} priorAssistantNodeId=$priorAssistantNodeId " +
+                "priorFoundInBaseline=$priorFoundInBaseline requestStartMs=$requestStartedAtMs"
+        )
 
+        // 只重置本轮朗读进度：历史节点不会因为这次 clear 重新进入朗读队列，
+        // 因为 findNewAssistantNodes 会用 requestBaselineNodeIds 把历史节点全部排除
         fedLengthPerNode.clear()
         spokenPartsPerNode.clear()
         spokenTextLen = 0
@@ -2212,6 +2253,12 @@ class VoiceCallManager(
             // flush 剩余：遍历所有新 ASSISTANT 节点，把每个节点还没喂完的残句都 flush 掉
             val conv = chatService.getConversationFlow(convId).value
             val newAiNodes = findNewAssistantNodes(conv.messageNodes)
+            // 诊断：记录本次 flush 实际喂给通话 TTS 的节点，便于区分历史消息是否被重新入队
+            Log.i(
+                TAG,
+                "flush: gen=$expectGenId totalNodes=${conv.messageNodes.size} flushNodes=${newAiNodes.size} " +
+                    "ids=${newAiNodes.take(8).joinToString { it.id.toString() }}"
+            )
             val flushSb = StringBuilder()
             newAiNodes.forEach { aiNode ->
                 val aiText = aiNode.currentMessage.parts
@@ -2322,14 +2369,71 @@ class VoiceCallManager(
      * 找出用户本轮发送后，新出现的**所有**ASSISTANT 节点（工具调用链路会产生多个：前导话术节点、工具结果总结节点）
      */
     private fun findNewAssistantNodes(messageNodes: List<MessageNode>): List<MessageNode> {
-        val priorIndex = if (priorAssistantNodeId != null) {
-            messageNodes.indexOfFirst { it.id == priorAssistantNodeId }
-        } else -1
-        return if (priorIndex >= 0) {
-            messageNodes.drop(priorIndex + 1).filter { it.role == MessageRole.ASSISTANT }
-        } else {
-            messageNodes.filter { it.role == MessageRole.ASSISTANT }
+        val priorIndex = priorAssistantNodeId?.let { id ->
+            messageNodes.indexOfFirst { it.id == id }
+        } ?: -1
+        val requestStartMs = requestStartedAtMs
+
+        // 分支 1：锚定成功 —— 只取 priorAssistantNodeId 之后的节点，位置本身就是可靠边界
+        if (priorIndex >= 0) {
+            var historicalSkipped = 0
+            val newNodes = messageNodes.drop(priorIndex + 1).filter { node ->
+                val isAssistant = node.role == MessageRole.ASSISTANT
+                if (!isAssistant) return@filter false
+
+                val notInBaseline = node.id !in requestBaselineNodeIds
+                // timelineCreatedAt<=0 属于时间游标缺失，锚定分支下不据此排除（位置已可靠）
+                val notBeforeRequest = requestStartMs <= 0L ||
+                    node.timelineCreatedAt <= 0L ||
+                    node.timelineCreatedAt >= requestStartMs
+                val belongsToCurrentRequest = notInBaseline && notBeforeRequest
+                if (!belongsToCurrentRequest) historicalSkipped++
+                belongsToCurrentRequest
+            }
+            if (historicalSkipped > 0) {
+                Log.i(
+                    TAG,
+                    "findNewAssistantNodes branch=anchored priorIndex=$priorIndex selected=${newNodes.size} " +
+                        "historicalSkipped=$historicalSkipped"
+                )
+            }
+            return newNodes
         }
+
+        // 分支 2：锚定失败（priorAssistantNodeId 为 null / 被清理 / 会话被 DB 版本替换）
+        // 绝不允许返回整个会话的 assistant 节点。只接受「不在请求基线内 且 创建时间晚于请求起点」的节点，
+        // 时间戳缺失的节点一律视为不可确认，直接丢弃。
+        if (requestStartMs <= 0L) {
+            Log.w(
+                TAG,
+                "findNewAssistantNodes branch=fallback-blocked: no request boundary " +
+                    "(priorAssistantNodeId=$priorAssistantNodeId, nodes=${messageNodes.size}), drop all candidates"
+            )
+            return emptyList()
+        }
+        var rejectedByBaseline = 0
+        var rejectedByTime = 0
+        val newNodes = messageNodes.filter { node ->
+            if (node.role != MessageRole.ASSISTANT) return@filter false
+            val notInBaseline = node.id !in requestBaselineNodeIds
+            val createdInRequest = node.timelineCreatedAt >= requestStartMs
+            when {
+                !notInBaseline -> rejectedByBaseline++
+                !createdInRequest -> rejectedByTime++
+            }
+            notInBaseline && createdInRequest
+        }
+        val sample = newNodes.take(4).joinToString { node ->
+            "${node.id}:${node.currentMessage.messageSource}:${node.timelineCreatedAt}"
+        }
+        Log.w(
+            TAG,
+            "findNewAssistantNodes branch=fallback: priorAssistantNodeId=$priorAssistantNodeId " +
+                "nodes=${messageNodes.size} baseline=${requestBaselineNodeIds.size} " +
+                "selected=${newNodes.size} rejectedByBaseline=$rejectedByBaseline " +
+                "rejectedByTime=$rejectedByTime requestStartMs=$requestStartMs sample=[$sample]"
+        )
+        return newNodes
     }
 
     @Deprecated("Use findNewAssistantNodes + node-based tracking", ReplaceWith("findNewAssistantNodes(messageNodes).lastOrNull()"))
@@ -3010,6 +3114,9 @@ class VoiceCallManager(
         spokenTextLen = 0
         speakingStarted = false
         priorAssistantNodeId = null
+        // 通话结束/新一轮通话开始时清理请求边界，避免上一次通话的基线影响下一次通话
+        requestBaselineNodeIds.clear()
+        requestStartedAtMs = 0L
     }
 
     // ========================================================================

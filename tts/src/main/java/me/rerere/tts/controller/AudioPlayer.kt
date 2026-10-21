@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -167,24 +168,11 @@ class AudioPlayer(
     @OptIn(UnstableApi::class)
     suspend fun play(response: TTSResponse) = withContext(Dispatchers.Main.immediate) {
         suspendCancellableCoroutine<Unit> { cont ->
-            // ====== WebRTC AEC far-end 参考：PCM 模式下先把原始音频回调给上层 ======
-            // 所有 TTS Provider 统一输出 PCM（16-bit 小端），因此直接回调原始字节。
-            // 对非 PCM 格式（理论上不会出现），跳过回调以避免把压缩字节误当作 PCM。
-            if (response.format == AudioFormat.PCM) {
-                val listener = farPcmListener
-                val sampleRate = response.sampleRate ?: 24000
-                val channels = 1 // TTS 输出固定单声道
-                // 立刻回调原始 PCM 字节 + 采样率，不阻塞播放（上层用协程/非阻塞消费）
-                runCatching {
-                    listener?.onPcmReady(response.audioData, sampleRate, channels)
-                }.onFailure {
-                    android.util.Log.w("AudioPlayer", "Far-end PCM callback failed", it)
-                }
-            }
+            val isPcm = response.format == AudioFormat.PCM
+            val pcmData = response.audioData
+            val pcmSampleRate = response.sampleRate ?: 24000
 
-            val bytes = if (response.format == AudioFormat.PCM) {
-                pcmToWav(response.audioData, response.sampleRate ?: 24000)
-            } else response.audioData
+            val bytes = if (isPcm) pcmToWav(pcmData, pcmSampleRate) else response.audioData
 
             val dataSourceFactory = DataSource.Factory { ByteArrayDataSource(bytes) }
             val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
@@ -201,6 +189,20 @@ class AudioPlayer(
                 durationMs = (response.duration?.times(1000))?.toLong() ?: it.durationMs
             )
         }
+
+        // ====== far-end PCM：按真实播放进度增量回调 ======
+        // 不能整块一次性回调：
+        //   - 通话录音（CallRecorder）的 near-end 来自实时采集流；
+        //   - 若 far-end 在 play() 入口整块灌入，会与 near-end 时基错位，
+        //     导致录音时间轴被拉长、AI 语音段之间被 near-end 静音帧打断（听感"吞字"），
+        //     并冲垮录音编码队列（有界队列满即丢帧）。
+        // 按 player.currentPosition 增量推送，使 far-end 与 near-end 同处实时时基。
+        // 必须放在 prepare/play 之后启动：此时 position 已归零，
+        // 否则会读到上一段残留的 currentPosition 而首帧整块灌入。
+        // 非 PCM（理论不会出现）不回调，避免把压缩字节误当作 PCM。
+        val farPcmJob = if (isPcm && pcmData.isNotEmpty() && farPcmListener != null) {
+            scope.launch { streamFarPcmByPlaybackPosition(pcmData, pcmSampleRate) }
+        } else null
 
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
@@ -223,6 +225,7 @@ class AudioPlayer(
                     }
                     Player.STATE_ENDED -> {
                         stopPositionUpdates()
+                        farPcmJob?.cancel()
                         _playbackState.update {
                             it.copy(
                                 status = PlaybackStatus.Ended,
@@ -243,6 +246,7 @@ class AudioPlayer(
             override fun onPlayerError(error: PlaybackException) {
                 player.removeListener(this)
                 stopPositionUpdates()
+                farPcmJob?.cancel()
                 _playbackState.update { it.copy(status = PlaybackStatus.Error, errorMessage = error.message) }
                 if (cont.isActive) cont.resumeWithException(error)
             }
@@ -260,8 +264,41 @@ class AudioPlayer(
                 player.removeListener(listener)
                 player.stop()
             }
+            farPcmJob?.cancel()
             stopPositionUpdates()
         }
+        }
+    }
+
+    /**
+     * 按真实播放位置增量推送 far-end PCM。
+     *
+     * 每个 tick 依据 [ExoPlayer.getCurrentPosition] 计算「已应播放到」的字节位置，
+     * 只把新增区间回调给监听器，使 far-end 与 near-end 实时采集流保持同一时基。
+     * - 暂停时 currentPosition 不前进，回调随之暂停；
+     * - 取消/结束时协程退出，不补发已打断的音频。
+     */
+    private suspend fun CoroutineScope.streamFarPcmByPlaybackPosition(pcm: ByteArray, sampleRate: Int) {
+        val bytesPerSample = 2 // 16-bit PCM
+        val end = pcm.size and 1.inv() // 对齐到样本边界（丢弃可能的半个样本）
+        var delivered = 0
+        while (isActive) {
+            val posMs = player.currentPosition
+            val target = ((posMs * sampleRate.toLong() * bytesPerSample) / 1000L).toInt()
+            val aligned = target.coerceIn(0, end) and 1.inv()
+            if (aligned > delivered) {
+                val listener = farPcmListener
+                if (listener != null) {
+                    runCatching {
+                        listener.onPcmReady(pcm.copyOfRange(delivered, aligned), sampleRate, 1)
+                    }.onFailure {
+                        android.util.Log.w("AudioPlayer", "Far-end PCM callback failed", it)
+                    }
+                }
+                delivered = aligned
+            }
+            if (delivered >= end) return
+            delay(20L)
         }
     }
 
