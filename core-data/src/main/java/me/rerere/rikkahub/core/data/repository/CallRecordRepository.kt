@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.core.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import me.rerere.rikkahub.core.data.db.dao.CallRecordDao
 import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
 import me.rerere.rikkahub.core.data.db.entity.CallRecordStatus
@@ -24,6 +25,16 @@ class CallRecordRepository(private val dao: CallRecordDao) {
 
     suspend fun getByConversationOnce(conversationId: String): List<CallRecordEntity> =
         dao.getByConversationOnce(conversationId)
+
+    /**
+     * 批量会话的通话记录（含未接通），按 create_time 升序。
+     * 专供聊天时间线合并使用：消息分页是滑动窗口，只加载窗口内出现过的会话，
+     * 通话记录也只加载这些会话，避免全量加载占用内存，
+     * 同时避免「会话消息未进入窗口、通话卡片却孤立显示」。
+     */
+    fun getByConversations(conversationIds: List<String>): Flow<List<CallRecordEntity>> =
+        if (conversationIds.isEmpty()) flowOf(emptyList())
+        else dao.getByConversations(conversationIds)
 
     /**
      * 某智能体的通话记录（仅已接通的），按 [sort] 排序。

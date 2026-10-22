@@ -72,6 +72,7 @@ import org.koin.core.parameter.parametersOf
 import kotlin.uuid.Uuid
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import me.rerere.rikkahub.ui.components.chat.CallRecordDeleteDialog
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 import me.rerere.rikkahub.data.ai.tools.CameraCaptureHub
 import me.rerere.rikkahub.ui.components.camera.CameraCaptureOverlay
@@ -433,9 +434,15 @@ private fun ChatPageContent(
     val hasOlder = successState?.hasOlder == true
     // 通话记录：与消息回合按时间倒序合并进时间线，渲染独立通话卡片
     val callRecords by vm.callRecords.collectAsStateWithLifecycle()
-    val assembledItems by remember(pageNodes, hasOlder, isAiTyping, callRecords) {
+    // 分页未就绪（null / Idle / Loading）时先不合并通话记录：
+    // 记录来自 Room Flow，会比消息分页先返回，直接渲染会造成"先出通话卡片、消息随后才填进来"的闪烁。
+    // 分页失败（Error）时仍展示记录，避免页面永久空白（错误页由 ChatList 自己处理）。
+    val isTimelineReady = successState != null ||
+        pagingState is ConversationRepository.ChatPaginationState.Error
+    val visibleCallRecords = if (isTimelineReady) callRecords else emptyList()
+    val assembledItems by remember(pageNodes, hasOlder, isAiTyping, visibleCallRecords) {
         derivedStateOf {
-            if (pageNodes.isEmpty() && callRecords.isEmpty()) return@derivedStateOf emptyList<ChatUIItem>()
+            if (pageNodes.isEmpty() && visibleCallRecords.isEmpty()) return@derivedStateOf emptyList<ChatUIItem>()
 
             val zone = TimeZone.currentSystemDefault()
             val reversedTurns = pageNodes.groupIntoTurns().reversed()
@@ -456,7 +463,7 @@ private fun ChatPageContent(
 
                 // 与用户诉求对应：通话气泡需按创建时间排入回合「内部」，
                 // 而不是固定在回合最下方。命中该回合时间范围且同会话的记录会切分回合。
-                val innerRecords = callRecords
+                val innerRecords = visibleCallRecords
                     .filter { record ->
                         record.conversationId == turnConvId &&
                             record.createTime in turnStartMs..turnEndMs
@@ -505,7 +512,7 @@ private fun ChatPageContent(
             }
 
             // 未落在任何回合内部的通话记录（例如未接来电、跨会话记录）单独参与排序
-            callRecords.forEach { record ->
+            visibleCallRecords.forEach { record ->
                 if (record.id !in placedRecordIds) {
                     merged.add(record.createTime to ChatUIItem.CallRecord(record))
                 }
@@ -949,24 +956,11 @@ private fun ChatPageContent(
 
                     if (pendingDeleteCallRecord != null) {
                         val record = pendingDeleteCallRecord!!
-                        AlertDialog(
+                        CallRecordDeleteDialog(
                             onDismissRequest = { pendingDeleteCallRecord = null },
-                            title = { Text("删除通话记录") },
-                            text = {
-                                Text("确定要删除这条通话记录及其关联的聊天消息吗？此操作不可撤销。")
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        vm.deleteCallRecord(record)
-                                        pendingDeleteCallRecord = null
-                                    }
-                                ) { Text("删除") }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { pendingDeleteCallRecord = null }) {
-                                    Text(stringResource(R.string.cancel))
-                                }
+                            onConfirm = {
+                                vm.deleteCallRecord(record)
+                                pendingDeleteCallRecord = null
                             }
                         )
                     }

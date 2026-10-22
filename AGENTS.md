@@ -66,6 +66,14 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 ### Animation
 -   Keep animations subtle and purposeful. Avoid over-animation.
 
+### Theme & Dark/Light Adaptation (强制)
+-   **必须双模式自检**：任何新增/修改的 UI（页面、卡片、气泡、弹窗、BottomSheet、菜单、输入框、列表项）都必须同时在浅色（`ColorMode.LIGHT`）与深色（`ColorMode.DARK / SYSTEM`）下检查，禁止只按浅色效果交付。
+-   **优先使用主题语义色**：背景/容器用 `MaterialTheme.colorScheme.surface*`，文字用 `onSurface / onSurfaceVariant`，强调用 `primary / error` 等；未覆盖的语义用 `MaterialTheme.extendColors`（已按深浅色成对提供），禁止直接写死颜色值。
+-   **禁止写死单模式颜色**：不得在 UI 中使用 `Color.White`、`Color.Black`、`Color(0xFF...)` 作为背景色、文字色、边框色或图标色（AMOLED 纯黑判断等已有显式分支除外）。确需使用品牌固有色（如微信模式气泡）时，必须定义浅色/深色成对常量，并用 `LocalDarkMode.current` 选择。
+-   **弹窗与浮层显式指定配色**：`AlertDialog / ModalBottomSheet / DropdownMenu` 等必须显式传入 `containerColor / titleContentColor / textContentColor` 及按钮色（确认= `error` 或 `primary`，取消= `onSurfaceVariant`），不得依赖默认值或肉眼假设。
+-   **共用组件只做一份适配**：同一交互（例如删除通话记录弹窗）必须抽成共用 Composable，由调用方复用，避免各页面各自实现导致深浅色行为不一致。
+-   **验收**：切换深/浅色后无白底黑字刺眼、无浅底白字不可见、无与主题割裂的纯黑/纯白块；深色下层级（surfaceContainerLow → High）仍需可辨。
+
 ## 6. Memory & Context Management (L0-L3 Hierarchy)
 
 ### 6.0 Memory Tier Overview
@@ -160,3 +168,54 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 ### 9.4 分页与性能限制
 - **滑动窗口**：`_activeMessageLimit` 控制 UI 显示的消息上限（默认 100/500 条），防止超长对话导致 Compose 渲染性能下降。
 - **手动加载**：当 `totalCount > limit` 时，列表顶部显示“查看更早的消息”，点击后触发限制增加并从 DB 加载更多深层历史.
+
+## 10. 语音通话 (Voice Call)
+
+### 10.1 核心组件
+- **`VoiceCallManager`**（`service/voice/`，Koin singleton）：通话唯一状态源。
+  - `CallPhase`：`IDLE / INCOMING_RINGING / OUTGOING_WAITING / CONNECTED / ENDING`（生命周期，决定能否发起新通话）。
+  - `CallStatus`：`CONNECTING / LISTENING / THINKING / SPEAKING / DUCKING / DISCONNECTED`（接通后的对话状态）。
+  - 对外暴露 `isActive / isCallMinimized / callDurationMs / incomingCall / isNearEar / activeCallConversationId`。
+- **`CallCommandHub`**（LocalTools）：AI 工具与通话管理器之间的命令通道，解耦 `call / hangup` 请求与执行。
+- **UI**（`ui/components/chat/CallScreen.kt`）：`IncomingCallScreen`（来电全屏覆盖）、`OutgoingCallWaitingScreen`（拨号等待）、`CallScreen`（通话页）、`MiniCallWindow`（应用内迷你窗）。由 `RouteActivity` 根级挂载，任意页面均可弹出。
+- **`CallRecorder` + `CallMixer`**：双向录音；**`CallSoundPlayer`**：挂断音；**`VadDetector`**（`service/voice/`）与 **`WebRtcAudioProcessor`**（`common/utils/`）：VAD / AEC3 / NS。
+
+### 10.2 生命周期与状态机
+- **全局单通话**：仅 `callPhase == IDLE` 时允许新建（`canStartCall()`）；UI 按钮、后台通知、Agent 工具等所有入口都必须显式校验。
+- **用户拨号**：`startCall(conversationId)` → `OUTGOING_WAITING`，播放与 AI 来电相同的配置铃声，等待 AI 决策（0 拒绝 / 1 接通）。
+- **AI 来电**：`call_control` 的 `call` 分支 → 写入 `CallRecordEntity(status=RINGING)` + 全屏来电页 + `incoming_call` 通知 + 铃声；120s 未接听 → `MISSED`。
+- **接通**：`acceptIncomingCall(callId)` → `CONNECTED`，此时才 `setCallMode(true)`、开麦、启动录音和时长 ticker；用户接通结果必须在通话真正初始化完成后才回传 AI（避免通话时长气泡位置异常）。
+- **挂断**：`hangup(endReason)`。AI 主动挂断先立即退出 callMode（否则 AI 看不到结果会反复调用工具），再延迟 `AI_HANGUP_DELAY_MS`（30s，等 AI 说完道别）才真正挂断；宽限期内用户开口（`noteUserSpoke`）会取消挂断。真实接通的结束只播放一次挂断音（1.5s 去重窗口）；拒绝 / 超时 / 权限失败 / 初始化失败 / 取消路径不播。
+- **未接通路径**（拒绝 / 超时 / 权限失败 / 初始化失败 / 取消）：只更新通话记录状态并提示错误，不进入正式 `CallScreen`，也不出现在历史通话列表。
+- **模式约束**：进入接听/接听确认环节时，静默将微信模式切换为普通模式，不提示用户或 AI。
+- **缩略**：仅全屏通话页左边缘返回手势触发 `minimizeCall()`；迷你窗由 `isCallMinimized` 统一驱动，点击 `expandCall()` 恢复，缩小期间通话不中断。
+
+### 10.3 音频链路（硬性约束）
+- **TTS 输出**：所有提供商统一输出 16-bit 小端单声道裸 PCM。采样率：Mimo / Gemini / OpenAI / Custom 24kHz，MiniMax 32kHz，Azure / ElevenLabs 16kHz，System TTS 为引擎实际值。缓存若为旧的非 PCM 格式必须删除并重新合成。
+- **通话 TTS 链路**：使用独立的 `TtsController`（`USAGE_VOICE_COMMUNICATION`，Koin single），与 UI 自动朗读的 `CustomTtsState` 实例区分。
+- **far-end PCM 分流**：`TtsController.setOnFarPcmListener` 暴露 TTS PCM，**仅**用于 `CallRecorder.feedFarEnd`（重采样至 16kHz mono）。监听器必须由 `refreshFarPcmListener()` 在录音器存在时绑定、停止 / 挂断时解绑；禁止在别处直接 `setOnFarPcmListener(null)`（曾导致录音丢失 AI 侧声音）。禁止为录音另建解码 / 播放链路。
+- **录音**：`CallRecorder` 以 near（麦克风）驱动时间轴，far 先入环形缓冲，再在**同一位置 overlap-add**（`CallMixer`）；输出 16kHz mono AAC `.m4a`（`filesDir/call_recordings/{callId}.m4a`）。混入有效内容不足 1s 时删除文件、不生成录音。
+- **AEC**：`WebRtcAudioProcessor` 包装 `WebRtcAudioEffects`（`AudioEffect`），必须 **attach 到 `AudioRecord.audioSessionId` 且在 `startRecording()` 之前**；绑定后由 MediaServer 自动以当前播放流作 far-end 参考，`AudioRecord.read()` 返回的已是消回声 + 降噪 PCM，**不要再手动 processStream / processReverseStream**。默认禁用系统 `AcousticEchoCanceler` / `NoiseSuppressor`（跨机型不一致），并在 `close()` / 挂断时释放。
+- **音频路由**：`MODE_IN_COMMUNICATION`；默认外放；检测到耳机（有线 / USB / BLE / SCO / A2DP）时强制路由耳机并禁用扬声器切换。
+
+### 10.4 交互与打断
+- **VAD 两阶段**：DUCK（压低 AI 音量，保留 PCM 预卷）→ INTERRUPT（停 TTS、取消生成、回到 `LISTENING`）。
+- **严格模式**：TTS 播放期间启用更高阈值与绝对下限；TTS 结束后约 220ms 回声尾窗内继续提高门槛，防止尾部回声误打断。
+- **手动打断**：`manualInterrupt()` 优先级高于 VAD 自动打断；被打断时仅已播放文本入库，未播放文本丢弃。
+- **资源生命周期**：打断检测开始时创建 `WebRtcAudioProcessor` 并注册 TTS PCM 监听，停止 / 挂断时必须释放。
+- **通话期消息限制**：`ChatVM` 层拦截向通话中 AI 发送普通文字消息（可查看历史），但通话内部的 ASR 转写与 AI 语音回复不受限。
+
+### 10.5 通话朗读 (TTS) 边界规则
+- 每次请求前必须快照 `requestBaselineNodeIds` 并记录 `requestStartedAtMs`；`findNewAssistantNodes` 只接受同时满足「锚点之后」「不在基线内」「`timelineCreatedAt >= requestStartedAtMs`」的节点。
+- `priorAssistantNodeId` 失效且无可靠时间边界时**直接返回空**（fallback-blocked），严禁把全量历史 assistant 节点当候选，否则会从会话第一条消息开始重播。
+- `fedLengthPerNode` 只重置当前请求的进度；`resetStreamingState` 同时清理边界与朗读进度。
+- 同一 turn 内的所有 AI 消息（含定时任务 / 监控产生的额外回复）都必须朗读，不能简单只取最后一条。
+
+### 10.6 数据、通知与 UI
+- **`CallRecordEntity`**（Room `call_records`）：主键 `id` 即 `callId`；`status` 为 `RINGING / CONNECTED / REJECTED / MISSED / FAILED / ENDED / CANCELLED`；`audio` 存相对路径（禁止二进制入 Room）；`forever=0` 时录音 7 天过期清理；`durationMs = disconnectedAt - connectedAt`。
+- **转写归属**：通话消息通过 `UIMessage.callId` + `MessageSource.CALL` 标记。AI 拨号前仅含空白文本的触发轮需重打标为 `CALL`，不残留为普通聊天消息；有实质文字则保留正常显示。
+- **对话列表合并**：通话记录只加载**当前消息分页窗口内出现过的会话**（与消息滑动窗口一致，不全量加载），再按 `createTime` 统一排序；命中回合时间范围且同会话的记录会按时间切分回合，未落回合的记录（未接来电等）独立排序。上滑加载更早消息时，新进入窗口的会话其通话记录会随之补齐。分页未就绪（`null / Idle / Loading`）时**先不合并通话记录**，避免「先出通话卡片、消息随后填入」的闪烁；分页 `Error` 时仍展示记录。
+- **首页预览**：最新记录为通话时统一显示「语音通话」，不区分时长 / 已挂断。
+- **历史通话列表**：仅展示已接通的记录。
+- **通知渠道**：`incoming_call`（来电，高优先级，不使用强制全屏 Intent，点击复用现有页面栈）与 `voice_call_foreground`（通话中保活）。
+- **铃声设置**：`callRingtone` / `callRingtoneCustomPath`；自定义铃声 ≤10MB、≤60s，超长时调用裁切器；试听前必须停止上一段试听音频。

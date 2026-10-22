@@ -36,6 +36,13 @@ interface CallRecordDao {
     )
     fun getByAssistant(assistantId: String): Flow<List<CallRecordEntity>>
 
+    /** 批量会话的通话记录（含未接通），按创建时间升序。
+     *  聊天时间线采用滑动窗口（只加载当前可见范围内的消息节点），
+     *  通话记录也只加载窗口内出现过的会话，避免全量加载占用内存、
+     *  以及出现「会话消息未加载、通话卡片却孤立显示」的情况。 */
+    @Query("SELECT * FROM call_records WHERE conversation_id IN (:conversationIds) ORDER BY create_time ASC")
+    fun getByConversations(conversationIds: List<String>): Flow<List<CallRecordEntity>>
+
     /** 获取每个智能体最新的一条通话记录（用于首页预览）。 */
     @Query(
         "SELECT * FROM call_records WHERE (assistant_id, create_time) IN " +

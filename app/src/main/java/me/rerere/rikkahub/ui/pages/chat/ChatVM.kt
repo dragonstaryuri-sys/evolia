@@ -475,9 +475,23 @@ class ChatVM(
     private val anchorConversationId: Uuid = Uuid.parse(id)
     private val _currentActiveId = MutableStateFlow(anchorConversationId)
 
-    /** 当前活跃会话的通话记录流（用于聊天时间线渲染通话卡片）。 */
-    val callRecords: StateFlow<List<CallRecordEntity>> = _currentActiveId
-        .flatMapLatest { convId -> callRecordRepository.getByConversation(convId.toString()) }
+    /** 当前消息分页窗口内各会话的通话记录流（用于聊天时间线渲染通话卡片）。
+     *
+     *  关键约束：消息列表是滑动窗口（见 ConversationRepository.MessagePaginationManager，
+     *  BATCH_SIZE=100 / WINDOW_LIMIT=1000），只持有当前可见范围的节点。
+     *  因此通话记录也必须按「窗口内出现过的会话」加载，而不是该智能体的全量记录——
+     *  否则通话记录多时有内存压力，且会出现「会话消息未加载、通话卡片却孤立显示」。
+     *  上滑加载更早消息时，新会话进入窗口，通话记录会随之补齐。
+     *  合并时由 ChatPage 按 record.conversationId == turnConvId 归属到对应会话的回合。 */
+    val callRecords: StateFlow<List<CallRecordEntity>> = chatPaginationState
+        .map { state ->
+            (state as? ConversationRepository.ChatPaginationState.Success)
+                ?.nodes
+                ?.map { it.conversationId.toString() }
+                ?.distinct()
+                .orEmpty()
+        }
+        .flatMapLatest { convIds -> callRecordRepository.getByConversations(convIds) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // 启动自动朗读监听（在 CustomTtsState 单例作用域中运行，不随 VM 销毁而停止）
