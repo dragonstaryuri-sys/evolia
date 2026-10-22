@@ -153,7 +153,9 @@ val viewModelModule = module {
     viewModel<HistoryCallVM> { params ->
         HistoryCallVM(
             assistantId = params.get(),
-            callRecordRepository = get()
+            callRecordRepository = get(),
+            conversationRepo = get(),
+            chatService = get()
         )
     }
     viewModel<FavoriteDetailVM> { params ->

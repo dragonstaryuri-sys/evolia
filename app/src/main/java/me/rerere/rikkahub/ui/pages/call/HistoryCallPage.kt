@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.pages.call
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,12 +40,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
 import me.rerere.rikkahub.core.data.repository.CallHistorySort
+import me.rerere.rikkahub.ui.components.chat.CallRecordDeleteDialog
 import me.rerere.rikkahub.ui.components.chat.formatCallDuration
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -53,7 +58,7 @@ import org.koin.core.parameter.parametersOf
 /**
  * 智能体历史通话列表：默认最新优先，可切换 4 种排序；点击进入该记录的通话详情页。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HistoryCallPage(assistantId: String) {
     val vm: HistoryCallVM = koinViewModel(parameters = { parametersOf(assistantId) })
@@ -62,6 +67,7 @@ fun HistoryCallPage(assistantId: String) {
     val sort by vm.sort.collectAsStateWithLifecycle()
 
     var sortMenuExpanded by remember { mutableStateOf(false) }
+    var pendingDeleteRecord by remember { mutableStateOf<CallRecordEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -134,27 +140,51 @@ fun HistoryCallPage(assistantId: String) {
                 items(records, key = { it.id }) { record ->
                     HistoryCallCard(
                         record = record,
-                        onClick = { navController.navigate(Screen.CallDetail(record.id)) }
+                        onClick = { navController.navigate(Screen.CallDetail(record.id)) },
+                        onLongClick = { pendingDeleteRecord = record }
                     )
                 }
             }
         }
     }
+
+    pendingDeleteRecord?.let { record ->
+        CallRecordDeleteDialog(
+            onDismissRequest = { pendingDeleteRecord = null },
+            onConfirm = {
+                vm.deleteCallRecord(record)
+                pendingDeleteRecord = null
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HistoryCallCard(record: CallRecordEntity, onClick: () -> Unit) {
+private fun HistoryCallCard(
+    record: CallRecordEntity,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
     val isConnected = record.connectedAt != null || record.durationMs > 0L
     val icon = if (isConnected) Icons.Rounded.Call else Icons.Rounded.CallEnd
     val tint = if (isConnected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val haptic = LocalHapticFeedback.current
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                }
+            ),
         shape = AppShapes.CardMedium,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        ),
-        onClick = onClick
+        )
     ) {
         Row(
             modifier = Modifier

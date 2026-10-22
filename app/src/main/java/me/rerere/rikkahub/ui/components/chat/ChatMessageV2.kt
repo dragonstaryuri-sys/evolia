@@ -109,10 +109,14 @@ import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.BuildConfig
 import kotlin.uuid.Uuid
 
-// WeChat Colors
+// WeChat Colors (Light)
 private val WeChatUserGreen = Color(0xFF95EC69)
 private val WeChatAiWhite = Color(0xFFFFFFFF)
 private val WeChatTextBlack = Color(0xFF191919)
+// WeChat Colors (Dark)：用户气泡深绿、AI 气泡深灰，文字改为浅色
+private val WeChatUserGreenDark = Color(0xFF3E6B2E)
+private val WeChatAiDark = Color(0xFF2C2C2C)
+private val WeChatTextDark = Color(0xFFE6E6E6)
 
 /**
  * 语音消息长按操作表的目标：定位到具体消息节点 + 其中的 Audio Part。
@@ -803,6 +807,14 @@ private fun UserMessageTurn(
 ) {
     val haptics = rememberPremiumHaptics(enabled = enableHaptics)
     val navController = LocalNavController.current
+    // 微信模式气泡：浅色沿用微信原生配色，深色切换为对应的深色配色，避免白底黑字在深色主题下刺眼
+    val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
+    val wechatBubbleColor = if (wechatMode) {
+        if (isDarkMode) WeChatUserGreenDark else WeChatUserGreen
+    } else null
+    val wechatBubbleContentColor = if (wechatMode) {
+        if (isDarkMode) WeChatTextDark else WeChatTextBlack
+    } else null
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -944,8 +956,8 @@ private fun UserMessageTurn(
                                 modifier = Modifier
                                     .weight(1f, fill = false)
                                     .widthIn(max = maxWidth),
-                                containerColor = if (wechatMode) WeChatUserGreen else null,
-                                contentColor = if (wechatMode) WeChatTextBlack else null,
+                                containerColor = if (wechatMode) wechatBubbleColor else null,
+                                contentColor = if (wechatMode) wechatBubbleContentColor else null,
                                 onClick = {
                                     haptics.perform(HapticPattern.Pop)
                                     if (selecting) {
@@ -992,8 +1004,8 @@ private fun UserMessageTurn(
                                     },
                                     showTranscription = audio.url in shownTranscriptions,
                                     transcription = transcription,
-                                    containerColor = if (wechatMode) WeChatUserGreen else MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onPrimaryContainer,
+                                    containerColor = (wechatBubbleColor ?: MaterialTheme.colorScheme.primaryContainer),
+                                    contentColor = (wechatBubbleContentColor ?: MaterialTheme.colorScheme.onPrimaryContainer),
                                     modifier = Modifier
                                         .widthIn(max = maxWidth)
                                 )
@@ -1200,6 +1212,15 @@ private fun AssistantMessageTurn(
     val avatarValue = assistant?.avatar ?: Avatar.Dummy
     val hasInterestingActivity = activityState !is ActivityState.Hidden && !wechatMode
 
+    // 微信模式气泡：浅色为微信白底黑字，深色切换为深灰底浅色字
+    val isDarkMode = me.rerere.rikkahub.ui.theme.LocalDarkMode.current
+    val wechatBubbleColor = if (wechatMode) {
+        if (isDarkMode) WeChatAiDark else WeChatAiWhite
+    } else null
+    val wechatBubbleContentColor = if (wechatMode) {
+        if (isDarkMode) WeChatTextDark else WeChatTextBlack
+    } else null
+
     // ✨ 混合渲染：按 node 顺序 + part 原始顺序，展平 Text / Reasoning / Audio
     val renderItems: List<AssistantRenderItem> = remember(
         group.filteredNodes,
@@ -1350,8 +1371,8 @@ private fun AssistantMessageTurn(
                                 position = position,
                                 role = BubbleRole.ASSISTANT,
                                 modifier = Modifier.widthIn(max = maxWidth),
-                                containerColor = if (wechatMode) WeChatAiWhite else null,
-                                contentColor = if (wechatMode) WeChatTextBlack else null,
+                                containerColor = if (wechatMode) wechatBubbleColor else null,
+                                contentColor = if (wechatMode) wechatBubbleContentColor else null,
                                 onClick = onClickBubble
                             ) {
                                 MarkdownBlock(
@@ -1400,8 +1421,8 @@ private fun AssistantMessageTurn(
                             },
                             showTranscription = audio.url in shownTranscriptions,
                             transcription = transcription,
-                            containerColor = if (wechatMode) WeChatAiWhite else MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onSurface,
+                            containerColor = (wechatBubbleColor ?: MaterialTheme.colorScheme.surfaceContainerHigh),
+                            contentColor = (wechatBubbleContentColor ?: MaterialTheme.colorScheme.onSurface),
                             modifier = Modifier.widthIn(max = maxWidth)
                         )
                     }
@@ -1413,8 +1434,8 @@ private fun AssistantMessageTurn(
                                 position = position,
                                 role = BubbleRole.ASSISTANT,
                                 modifier = Modifier.widthIn(max = maxWidth),
-                                containerColor = if (wechatMode) WeChatAiWhite else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                contentColor = if (wechatMode) WeChatTextBlack else MaterialTheme.colorScheme.onSurface,
+                                containerColor = (wechatBubbleColor ?: MaterialTheme.colorScheme.surfaceContainerHigh),
+                                contentColor = (wechatBubbleContentColor ?: MaterialTheme.colorScheme.onSurface),
                                 onClick = {
                                     if (!selecting) onBubbleClick(node)
                                 }
