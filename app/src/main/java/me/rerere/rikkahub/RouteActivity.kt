@@ -515,7 +515,8 @@ private fun GlobalCallOverlay(settings: Settings) {
     val isMuted by voiceCallManager.isMuted.collectAsStateWithLifecycle()
     val isSpeakerOn by voiceCallManager.isSpeakerOn.collectAsStateWithLifecycle()
     val isHeadsetConnected by voiceCallManager.isHeadsetConnected.collectAsStateWithLifecycle()
-    val callLatestMessage by voiceCallManager.latestCallMessage.collectAsStateWithLifecycle()
+    val callTranscript by voiceCallManager.callTranscript.collectAsStateWithLifecycle()
+    val isSubtitleEnabled by voiceCallManager.isSubtitleEnabled.collectAsStateWithLifecycle()
     val callListeningText by voiceCallManager.listeningText.collectAsStateWithLifecycle()
     val isProximityNear by voiceCallManager.isNearEar.collectAsStateWithLifecycle()
     val callPhase by voiceCallManager.callPhase.collectAsStateWithLifecycle()
@@ -595,8 +596,9 @@ private fun GlobalCallOverlay(settings: Settings) {
                 isMuted = isMuted,
                 isSpeakerOn = isSpeakerOn,
                 isHeadsetConnected = isHeadsetConnected,
-                latestMessageRole = callLatestMessage?.role,
-                latestMessageText = callLatestMessage?.text,
+                durationMs = callDurationMs,
+                subtitleEnabled = isSubtitleEnabled,
+                transcript = callTranscript,
                 listeningText = callListeningText,
                 isNearEar = isProximityNear,
                 onMuteToggle = { voiceCallManager.toggleMute() },
@@ -604,6 +606,7 @@ private fun GlobalCallOverlay(settings: Settings) {
                 onHangup = { voiceCallManager.hangup() },
                 onInterrupt = { voiceCallManager.manualInterrupt() },
                 onMinimize = { voiceCallManager.minimizeCall() },
+                onSubtitleToggle = { voiceCallManager.toggleSubtitle() },
                 modifier = Modifier.fillMaxSize()
             )
         }

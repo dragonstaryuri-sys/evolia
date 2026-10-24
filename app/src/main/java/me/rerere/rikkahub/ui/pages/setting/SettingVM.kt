@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -9,10 +10,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
+import me.rerere.rikkahub.core.data.repository.CallRecordRepository
 import me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.service.voice.CallRecorder
 import me.rerere.rikkahub.utils.IconStorageManager
 import me.rerere.rikkahub.common.deleteAllChatFiles
 import me.rerere.rikkahub.common.deleteAllImageFiles
@@ -23,7 +26,8 @@ class SettingVM(
     private val mcpManager: McpManager,
     private val context: Context,
     private val okHttpClient: OkHttpClient,
-    private val profileHistoryRepository: ProfileHistoryRepository
+    private val profileHistoryRepository: ProfileHistoryRepository,
+    private val callRecordRepository: CallRecordRepository
 ) :
     ViewModel() {
     val settings: StateFlow<Settings> = settingsStore.settingsFlow
@@ -60,12 +64,29 @@ class SettingVM(
     }
 
     /**
-     * 清理缓存：包括聊天上传的文件和生成的图片
+     * 清理缓存：聊天上传的文件、生成的图片，以及未永久保存的通话录音。
+     *
+     * 通话录音只删音频文件并清空 audio 字段，通话记录与转写完整保留；
+     * 已永久保存（导出到公共目录）的录音不受影响。
      */
     fun clearCache(onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             context.deleteAllChatFiles()
             context.deleteAllImageFiles()
+
+            val removedAudioPaths = runCatching {
+                callRecordRepository.clearTransientAudio()
+            }.onFailure {
+                Log.w("SettingVM", "clearTransientAudio failed", it)
+            }.getOrDefault(emptyList())
+            removedAudioPaths.forEach { stored ->
+                CallRecorder.resolveAudioFile(context, stored)?.let { file ->
+                    if (file.exists()) {
+                        runCatching { file.delete() }
+                    }
+                }
+            }
+
             onComplete()
         }
     }

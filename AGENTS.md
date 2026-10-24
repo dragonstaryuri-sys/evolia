@@ -212,7 +212,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - 同一 turn 内的所有 AI 消息（含定时任务 / 监控产生的额外回复）都必须朗读，不能简单只取最后一条。
 
 ### 10.6 数据、通知与 UI
-- **`CallRecordEntity`**（Room `call_records`）：主键 `id` 即 `callId`；`status` 为 `RINGING / CONNECTED / REJECTED / MISSED / FAILED / ENDED / CANCELLED`；`audio` 存相对路径（禁止二进制入 Room）；`forever=0` 时录音 7 天过期清理；`durationMs = disconnectedAt - connectedAt`。
+- **`CallRecordEntity`**（Room `call_records`）：主键 `id` 即 `callId`；`status` 为 `RINGING / CONNECTED / REJECTED / MISSED / FAILED / ENDED / CANCELLED`；`audio` 存路径字符串（禁止二进制入 Room）：未永久保存时为私有目录相对路径（`call_recordings/`），永久保存后为公共目录（`Download/Evolia/`）绝对路径——保存时文件**移动**至公共目录（MediaStore，单份存储，App 内可播、文件管理器可见），解析统一走 `CallRecorder.resolveAudioFile`；详情页会自动检测 audio 指向的文件缺失（被外部移动/删除）并重置 `audio=null, forever=0`，播放器显示「无通话录音」；`forever=0` 时录音 7 天过期清理，且「清理缓存」也会清除其音频（只清音频，通话记录与转写保留），删除通话记录时同步删除音频文件；`durationMs = disconnectedAt - connectedAt`。
 - **转写归属**：通话消息通过 `UIMessage.callId` + `MessageSource.CALL` 标记。AI 拨号前仅含空白文本的触发轮需重打标为 `CALL`，不残留为普通聊天消息；有实质文字则保留正常显示。
 - **对话列表合并**：通话记录只加载**当前消息分页窗口内出现过的会话**（与消息滑动窗口一致，不全量加载），再按 `createTime` 统一排序；命中回合时间范围且同会话的记录会按时间切分回合，未落回合的记录（未接来电等）独立排序。上滑加载更早消息时，新进入窗口的会话其通话记录会随之补齐。分页未就绪（`null / Idle / Loading`）时**先不合并通话记录**，避免「先出通话卡片、消息随后填入」的闪烁；分页 `Error` 时仍展示记录。
 - **首页预览**：最新记录为通话时统一显示「语音通话」，不区分时长 / 已挂断。

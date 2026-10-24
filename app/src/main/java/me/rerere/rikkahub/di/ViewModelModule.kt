@@ -55,7 +55,8 @@ val viewModelModule = module {
             mcpManager = get(),
             context = get(),
             okHttpClient = get(),
-            profileHistoryRepository = get()
+            profileHistoryRepository = get(),
+            callRecordRepository = get()
         )
     }
     viewModelOf(::ChatListVM)
@@ -153,6 +154,7 @@ val viewModelModule = module {
     viewModel<HistoryCallVM> { params ->
         HistoryCallVM(
             assistantId = params.get(),
+            context = get(),
             callRecordRepository = get(),
             conversationRepo = get(),
             chatService = get()

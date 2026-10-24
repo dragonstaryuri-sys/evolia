@@ -72,6 +72,14 @@ interface CallRecordDao {
     @Query("SELECT * FROM call_records WHERE forever = 0 AND audio IS NOT NULL AND audio_expires_at IS NOT NULL AND audio_expires_at <= :now")
     suspend fun getExpiredAudioRecords(now: Long): List<CallRecordEntity>
 
+    /** 未永久保存且仍有音频的记录（清理缓存时只清音频、保留通话记录用）。 */
+    @Query("SELECT * FROM call_records WHERE forever = 0 AND audio IS NOT NULL")
+    suspend fun getNonForeverAudioRecords(): List<CallRecordEntity>
+
+    /** 批量清空未永久保存录音的 audio 引用（通话记录与转写保留）。 */
+    @Query("UPDATE call_records SET audio = NULL, audio_expires_at = NULL WHERE forever = 0 AND audio IS NOT NULL")
+    suspend fun clearAudioForTransient()
+
     @Query("UPDATE call_records SET status = :status WHERE id = :callId")
     suspend fun updateStatus(callId: String, status: String)
 

@@ -6,13 +6,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
@@ -37,6 +41,8 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
@@ -58,6 +64,15 @@ enum class CallStatus {
     DUCKING,
     DISCONNECTED
 }
+
+/**
+ * 通话字幕面板的转写条目（角色 + 清洗后的纯文本），按时间正序，
+ * 由 VoiceCallManager.callTranscript 提供。
+ */
+data class CallTranscriptEntry(
+    val role: MessageRole,
+    val text: String
+)
 
 /**
  * Agent 来电响铃页：等待用户「接听 / 拒绝」。
@@ -420,8 +435,9 @@ fun CallScreen(
     isMuted: Boolean,
     isSpeakerOn: Boolean,
     isHeadsetConnected: Boolean = false,
-    latestMessageRole: MessageRole? = null,
-    latestMessageText: String? = null,
+    durationMs: Long = 0L,
+    subtitleEnabled: Boolean = false,
+    transcript: List<CallTranscriptEntry> = emptyList(),
     listeningText: String? = null,
     isNearEar: Boolean = false,
     onMuteToggle: () -> Unit,
@@ -429,6 +445,7 @@ fun CallScreen(
     onHangup: () -> Unit,
     onInterrupt: () -> Unit = {},
     onMinimize: () -> Unit = {},
+    onSubtitleToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val haptics = rememberPremiumHaptics()
@@ -504,6 +521,12 @@ fun CallScreen(
                     while (true) {
                         val event = awaitPointerEvent()
                         event.changes.forEach { change ->
+                            if (change.isConsumed) {
+                                // 字幕面板滚动等子组件已接管手势：
+                                // 放弃本次左滑累计，避免滚动被误判为缩小手势。
+                                dragTotalX = 0f
+                                return@forEach
+                            }
                             if (change.pressed) {
                                 dragTotalX += change.positionChange().x
                             } else {
@@ -570,96 +593,152 @@ fun CallScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 顶部信息
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = 80.dp)
-            ) {
-                Text(
-                    text = assistant.name,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Surface(
-                    color = Color.White.copy(alpha = 0.1f),
-                    shape = CircleShape
+            // 顶部信息（居中）+ 右上角操作按钮（字幕开关 / 缩小通话）
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 80.dp)
                 ) {
                     Text(
-                        text = when (status) {
-                            CallStatus.CONNECTING -> stringResource(R.string.call_status_connecting)
-                            CallStatus.LISTENING -> stringResource(R.string.call_status_listening)
-                            CallStatus.THINKING -> stringResource(R.string.call_status_thinking)
-                            CallStatus.SPEAKING -> stringResource(R.string.call_status_speaking)
-                            CallStatus.DUCKING -> stringResource(R.string.call_status_ducking)
-                            CallStatus.DISCONNECTED -> stringResource(R.string.call_status_disconnected)
-                        },
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.85f)
+                        text = assistant.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
                     )
-                }
-                // 手动打断按钮：只在 AI 正在思考/说话/检测到用户声音时显示
-                if (status == CallStatus.THINKING ||
-                    status == CallStatus.SPEAKING ||
-                    status == CallStatus.DUCKING
-                ) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    val interruptInteractionSource = remember { MutableInteractionSource() }
-                    val isInterruptPressed by interruptInteractionSource.collectIsPressedAsState()
-                    val interruptScale by animateFloatAsState(
-                        targetValue = if (isInterruptPressed) 0.9f else 1f,
-                        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
-                        label = "interrupt_scale"
-                    )
                     Surface(
-                        color = Color.White.copy(alpha = 0.15f),
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .graphicsLayer {
-                                scaleX = interruptScale
-                                scaleY = interruptScale
-                            }
-                            .clickable(
-                                interactionSource = interruptInteractionSource,
-                                indication = ripple(bounded = false, radius = 28.dp),
-                                onClick = {
-                                    haptics.perform(HapticPattern.Pop)
-                                    onInterrupt()
-                                }
-                            )
+                        color = Color.White.copy(alpha = 0.1f),
+                        shape = CircleShape
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
+                        Text(
+                            text = when (status) {
+                                CallStatus.CONNECTING -> stringResource(R.string.call_status_connecting)
+                                CallStatus.LISTENING -> stringResource(R.string.call_status_listening)
+                                CallStatus.THINKING -> stringResource(R.string.call_status_thinking)
+                                CallStatus.SPEAKING -> stringResource(R.string.call_status_speaking)
+                                CallStatus.DUCKING -> stringResource(R.string.call_status_ducking)
+                                CallStatus.DISCONNECTED -> stringResource(R.string.call_status_disconnected)
+                            },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+                    }
+                    // 通话时长：与迷你窗同格式（%02d:%02d），接通后每秒刷新
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = formatCallDuration(durationMs),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White.copy(alpha = 0.65f)
+                    )
+                    // 手动打断按钮：只在 AI 正在思考/说话/检测到用户声音时显示
+                    if (status == CallStatus.THINKING ||
+                        status == CallStatus.SPEAKING ||
+                        status == CallStatus.DUCKING
+                    ) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        val interruptInteractionSource = remember { MutableInteractionSource() }
+                        val isInterruptPressed by interruptInteractionSource.collectIsPressedAsState()
+                        val interruptScale by animateFloatAsState(
+                            targetValue = if (isInterruptPressed) 0.9f else 1f,
+                            animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+                            label = "interrupt_scale"
+                        )
+                        Surface(
+                            color = Color.White.copy(alpha = 0.15f),
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    scaleX = interruptScale
+                                    scaleY = interruptScale
+                                }
+                                .clickable(
+                                    interactionSource = interruptInteractionSource,
+                                    indication = ripple(bounded = false, radius = 28.dp),
+                                    onClick = {
+                                        haptics.perform(HapticPattern.Pop)
+                                        onInterrupt()
+                                    }
+                                )
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.FrontHand,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "打断",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Color.White
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.FrontHand,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "打断",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
                 }
+
+                // 右上角操作按钮：字幕开关（左）+ 缩小通话（右）
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 16.dp, end = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CallIconButton(
+                        icon = Icons.Rounded.ClosedCaption,
+                        contentDescription = stringResource(R.string.call_action_subtitle),
+                        active = subtitleEnabled,
+                        onClick = onSubtitleToggle
+                    )
+                    CallIconButton(
+                        icon = Icons.Rounded.Minimize,
+                        contentDescription = stringResource(R.string.call_action_minimize),
+                        active = false,
+                        onClick = onMinimize
+                    )
+                }
             }
 
-            // 中间：动态头像 + 最新一条消息气泡
+            // 中间：动态头像 +（字幕开启时的）实时转写面板
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                // 动态头像 / 多层呼吸光圈
-                Box(contentAlignment = Alignment.Center) {
+                // 字幕开启时头像整体缩小，为转写面板让出空间
+                val avatarScale by animateFloatAsState(
+                    targetValue = if (subtitleEnabled) 0.7f else 1f,
+                    animationSpec = tween(300),
+                    label = "call_avatar_scale"
+                )
+
+                // 动态头像 / 多层呼吸光圈：
+                // 字幕开启时占据剩余空间并居中，面板固定在下方
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = if (subtitleEnabled) {
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                scaleX = avatarScale
+                                scaleY = avatarScale
+                            }
+                    } else {
+                        Modifier.graphicsLayer {
+                            scaleX = avatarScale
+                            scaleY = avatarScale
+                        }
+                    }
+                ) {
                     // 外层灵动光圈
                     Box(
                         modifier = Modifier
@@ -701,92 +780,17 @@ fun CallScreen(
                     )
                 }
 
-                // 最新一条对话气泡（含"正在听"时的识别文字）：
-                // - LISTENING 状态且有 listeningText（ASR 实时 partial）：优先显示，角色=USER，末尾加闪烁省略号
-                // - 否则：显示最近一条已落盘的消息
-                val isListeningNow = status == CallStatus.LISTENING && listeningText != null
-                val (displayRole, displayText, showTypingDot) = when {
-                    isListeningNow -> Triple(MessageRole.USER, listeningText.orEmpty(), true)
-                    else -> Triple(latestMessageRole, latestMessageText.orEmpty(), false)
-                }
-
-                // 过滤掉带有“系统”标识的 User 消息（通常是定时任务或监控触发的指令）
-                val isSystemTriggered = displayRole == MessageRole.USER &&
-                    (displayText.startsWith("【系统自动化指令 - 任务触发】"))
-
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = displayText.isNotBlank() && !isSystemTriggered,
-                    enter = fadeIn(tween(300)),
-                    exit = fadeOut(tween(200)),
-                    modifier = Modifier.padding(top = 36.dp, start = 24.dp, end = 24.dp)
-                ) {
-                    val isUser = displayRole == MessageRole.USER
-                    // user 和 agent 都用同样的半透明白底，整体风格统一
-                    val bubbleColor = Color.White.copy(alpha = 0.12f)
-                    val textColor = Color.White
-                    val iconTint = if (isUser) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
-                    // 固定最大高度（≈5 行文字），气泡高度不超过这个值；文字超出时内部滚动
-                    val bubbleMaxHeight = 110.dp
-
-                    // 自动滚动逻辑：记录滚动状态并监听文字或最大滚动值变化
-                    val scrollState = rememberScrollState()
-                    LaunchedEffect(displayText, scrollState.maxValue) {
-                        scrollState.animateScrollTo(scrollState.maxValue)
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.Top,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // 实时转写面板：由右上角字幕开关控制显隐，关闭时为纯语音通话界面
+                if (subtitleEnabled) {
+                    CallTranscriptPanel(
+                        status = status,
+                        transcript = transcript,
+                        listeningText = listeningText,
                         modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .heightIn(max = bubbleMaxHeight)
-                            .background(bubbleColor, RoundedCornerShape(20.dp))
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isUser) Icons.Rounded.Person else Icons.Rounded.AutoAwesome,
-                            contentDescription = null,
-                            tint = iconTint,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .padding(top = 2.dp)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .verticalScroll(scrollState)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = displayText,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontSize = 14.sp,
-                                    color = textColor,
-                                    textAlign = TextAlign.Start,
-                                    lineHeight = 20.sp
-                                )
-                                if (showTypingDot) {
-                                    // 识别中闪烁省略号：给用户明确的"还在继续识别"信号
-                                    val dotAlpha by infiniteTransition.animateFloat(
-                                        initialValue = 0.2f,
-                                        targetValue = 1f,
-                                        animationSpec = infiniteRepeatable(
-                                            animation = tween(600, easing = FastOutSlowInEasing),
-                                            repeatMode = RepeatMode.Reverse
-                                        ),
-                                        label = "listening_dot_alpha"
-                                    )
-                                    Text(
-                                        text = "…",
-                                        fontSize = 18.sp,
-                                        color = Color(0xFF4CAF50).copy(alpha = dotAlpha),
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(start = 2.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                            .fillMaxWidth(0.92f)
+                            .heightIn(min = 180.dp, max = 300.dp)
+                            .padding(bottom = 12.dp)
+                    )
                 }
             }
 
@@ -949,6 +953,291 @@ private fun CallControlButton(
             color = Color.White.copy(alpha = 0.7f)
         )
     }
+}
+
+/**
+ * 通话页右上角圆形小按钮（字幕开关 / 缩小通话）。
+ * 样式与底部控制按钮一致：active 时白底黑图标，按下缩放 + 触觉反馈。
+ */
+@Composable
+private fun CallIconButton(
+    icon: ImageVector,
+    contentDescription: String,
+    active: Boolean,
+    onClick: () -> Unit
+) {
+    val haptics = rememberPremiumHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.9f else 1f,
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
+        label = "call_icon_button_scale"
+    )
+
+    Surface(
+        color = if (active) Color.White else Color.White.copy(alpha = 0.15f),
+        shape = CircleShape,
+        modifier = Modifier
+            .size(44.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = ripple(bounded = false, radius = 22.dp),
+                onClick = {
+                    haptics.perform(HapticPattern.Pop)
+                    onClick()
+                }
+            )
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = if (active) Color.Black else Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 通话实时转写面板：完整展示本次通话的双向对话（按时间正序）。
+ *
+ * - 自动跟随最新消息；用户上滑离开底部即暂停跟随，出现「回到最新」胶囊；
+ * - LISTENING 时末尾追加实时识别行（用户正在说的话，带闪烁省略号）；
+ * - 过滤系统自动化指令触发的消息，与聊天时间线口径一致。
+ */
+@Composable
+private fun CallTranscriptPanel(
+    status: CallStatus,
+    transcript: List<CallTranscriptEntry>,
+    listeningText: String?,
+    modifier: Modifier = Modifier
+) {
+    val haptics = rememberPremiumHaptics()
+    val scope = rememberCoroutineScope()
+
+    // 过滤系统自动化指令触发的 User 消息（定时任务/监控指令，对通话用户无意义）
+    val visibleEntries = transcript.filterNot { entry ->
+        entry.role == MessageRole.USER && entry.text.startsWith("【系统自动化指令 - 任务触发】")
+    }
+    // LISTENING 且有实时识别文本时，末尾追加一条"正在说"的用户行
+    val isListeningNow = status == CallStatus.LISTENING && !listeningText.isNullOrBlank()
+    val lastEntryText = visibleEntries.lastOrNull()?.text.orEmpty()
+
+    val listState = rememberLazyListState()
+    // 跟随状态：默认跟随最新转写；用户拖动列表即暂停（停在用户滚到的位置），
+    // 拖动/惯性滚动结束回到最底部时自动恢复跟随。
+    var autoFollow by remember { mutableStateOf(true) }
+
+    // 用户开始拖动列表 → 暂停自动跟随
+    LaunchedEffect(Unit) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Start) {
+                autoFollow = false
+            }
+        }
+    }
+    // 拖动结束（含惯性滚动）后：若列表停在最底部则恢复跟随，否则保持暂停
+    LaunchedEffect(Unit) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Stop || interaction is DragInteraction.Cancel) {
+                scope.launch {
+                    // 等惯性滚动完全停下来再判断是否贴底
+                    snapshotFlow { listState.isScrollInProgress }.first { !it }
+                    if (!listState.canScrollForward) {
+                        autoFollow = true
+                    }
+                }
+            }
+        }
+    }
+
+    // 面板组合且列表首次有内容时，直接跳到最新一条
+    // （字幕常在通话中途开启，此时已有历史消息，不能从最早一条开始显示）
+    LaunchedEffect(Unit) {
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .first { it > 0 }
+        listState.scrollToLatestBottom(animate = false)
+    }
+
+    // 新消息到达或最后一条消息流式增长（AI 回复中）：跟随状态下平滑滚动到最新
+    LaunchedEffect(visibleEntries.size, lastEntryText, autoFollow) {
+        if (autoFollow) {
+            listState.scrollToLatestBottom(animate = true)
+        }
+    }
+    // 实时识别文本增长（高频 partial）：跟随状态下瞬时跟上，避免动画反复重启的抖动
+    LaunchedEffect(listeningText) {
+        if (autoFollow) {
+            listState.scrollToLatestBottom(animate = false)
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color.White.copy(alpha = 0.12f))
+    ) {
+        if (visibleEntries.isEmpty() && !isListeningNow) {
+            // 空态：字幕刚打开、通话内容尚未产生
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.call_subtitle_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.5f),
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(visibleEntries) { entry ->
+                    TranscriptPanelRow(
+                        role = entry.role,
+                        text = entry.text,
+                        showTypingDot = false
+                    )
+                }
+                if (isListeningNow) {
+                    item(key = "listening") {
+                        TranscriptPanelRow(
+                            role = MessageRole.USER,
+                            text = listeningText.orEmpty(),
+                            showTypingDot = true
+                        )
+                    }
+                }
+            }
+
+            // 回到最新：跟随被暂停时出现
+            androidx.compose.animation.AnimatedVisibility(
+                visible = !autoFollow,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200)),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.25f),
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .padding(bottom = 10.dp)
+                        .clickable(
+                            onClick = {
+                                haptics.perform(HapticPattern.Pop)
+                                autoFollow = true
+                                scope.launch {
+                                    listState.scrollToLatestBottom(animate = true)
+                                }
+                            }
+                        )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.call_subtitle_back_to_latest),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 滚动到列表最底部。scrollToItem/animateScrollToItem 停在最后一条消息的顶部，
+ * 当该消息比可视区还高时补一次滚动，确保真正停在底部（canScrollForward == false）。
+ */
+private suspend fun LazyListState.scrollToLatestBottom(animate: Boolean) {
+    val lastIndex = layoutInfo.totalItemsCount - 1
+    if (lastIndex < 0) return
+    if (animate) {
+        animateScrollToItem(lastIndex)
+    } else {
+        scrollToItem(lastIndex)
+    }
+    if (canScrollForward) {
+        scrollBy(Float.MAX_VALUE)
+    }
+}
+
+/** 转写面板单行：角色图标 + 文本；识别行末尾带闪烁省略号。 */
+@Composable
+private fun TranscriptPanelRow(
+    role: MessageRole,
+    text: String,
+    showTypingDot: Boolean
+) {
+    val isUser = role == MessageRole.USER
+    val iconTint = if (isUser) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+
+    Row(
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = if (isUser) Icons.Rounded.Person else Icons.Rounded.AutoAwesome,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(16.dp)
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.sp,
+                color = Color.White,
+                lineHeight = 20.sp
+            )
+            if (showTypingDot) {
+                ListeningTypingDot()
+            }
+        }
+    }
+}
+
+/** 识别中闪烁省略号：给用户明确的"还在继续识别"信号。 */
+@Composable
+private fun ListeningTypingDot() {
+    val infiniteTransition = rememberInfiniteTransition(label = "listening_dot")
+    val dotAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "listening_dot_alpha"
+    )
+    Text(
+        text = "…",
+        fontSize = 18.sp,
+        color = Color(0xFF4CAF50).copy(alpha = dotAlpha),
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 2.dp)
+    )
 }
 
 /**

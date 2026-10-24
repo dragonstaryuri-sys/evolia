@@ -27,8 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -41,6 +39,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,7 +49,10 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
 import me.rerere.rikkahub.ui.components.chat.formatCallDuration
+import me.rerere.rikkahub.ui.components.ui.ToastAction
+import me.rerere.rikkahub.ui.components.ui.ToastType
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
@@ -75,12 +78,22 @@ fun CallDetailPage(callId: String) {
     val assistantName by vm.assistantName.collectAsStateWithLifecycle()
     val userName by vm.userName.collectAsStateWithLifecycle()
 
-    val snackbarHostState = remember { SnackbarHostState() }
+    val toaster = LocalToaster.current
+    val clipboard = LocalClipboardManager.current
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    // 一次性操作提示：统一走全局顶部 Toaster；保存成功附带「复制路径」动作
     LaunchedEffect(message) {
-        message?.let {
-            snackbarHostState.showSnackbar(it)
+        message?.let { msg ->
+            val copyText = msg.copyText
+            toaster.show(
+                message = msg.text,
+                type = if (copyText != null) ToastType.Success else ToastType.Normal,
+                duration = if (copyText != null) 8000L else 4000L,
+                action = copyText?.let { path ->
+                    ToastAction("复制路径") { clipboard.setText(AnnotatedString(path)) }
+                }
+            )
             vm.clearMessage()
         }
     }
@@ -107,8 +120,7 @@ fun CallDetailPage(callId: String) {
                     }
                 }
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        }
     ) { padding ->
         LazyColumn(
             modifier = Modifier

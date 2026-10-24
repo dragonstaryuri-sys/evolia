@@ -116,6 +116,15 @@ class GenerationHandler(
     private val appScope: AppScope,
     private val scheduleRepo: ScheduleRepository,
 ) {
+    companion object {
+        /**
+         * 语音通话期间禁止执行的工具：
+         * 图片生成 / Python / JS 引擎产出的内容（图片、文件、控制台输出）无法在通话中呈现，
+         * 拦截后以错误 ToolResult 提示 AI 改为口头告知用户，通话结束后再使用。
+         */
+        private val CALL_BLOCKED_TOOLS = setOf("generate_image", "eval_python", "eval_javascript")
+    }
+
     // 安全解码：损坏消息返回 null，避免某条脏消息让整个生成/检索流程崩掉
     private fun safeDecodeUIMessage(contentJson: String, tagExtra: Any? = null): UIMessage? =
         runCatching { json.decodeFromString<UIMessage>(contentJson) }.getOrNull()
@@ -542,6 +551,27 @@ class GenerationHandler(
                                 put(
                                     "error",
                                     JsonPrimitive("已达到搜索次数上限（1次）。获得结果后请直接总结并回复用户，不要再次搜索。")
+                                )
+                            },
+                            arguments = runCatching {
+                                json.parseToJsonElement(toolCall.arguments.ifBlank { "{}" })
+                            }.getOrElse { buildJsonObject {} },
+                            metadata = toolCall.metadata
+                        )
+                        return@forEach
+                    }
+
+                    // 通话中拦截重计算/产媒体类工具：产物无法在通话中呈现，
+                    // 直接返回错误结果让 AI 改为口头告知用户，避免执行后输出无处消费。
+                    if (isCallMode() && toolCall.toolName in CALL_BLOCKED_TOOLS) {
+                        Log.i(TAG, "generateText: blocked tool '${toolCall.toolName}' during call")
+                        results += UIMessagePart.ToolResult(
+                            toolName = toolCall.toolName,
+                            toolCallId = toolCall.toolCallId,
+                            content = buildJsonObject {
+                                put(
+                                    "error",
+                                    JsonPrimitive("通话过程中不能调用此工具，请结束通话后再使用。请用语音简要告知用户。")
                                 )
                             },
                             arguments = runCatching {

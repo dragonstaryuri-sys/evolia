@@ -66,6 +66,16 @@ class CallRecorder(
         /** 由相对路径解析出真实文件；为空返回 null。 */
         fun fileForOrNull(context: Context, relativePath: String?): File? =
             relativePath?.takeIf { it.isNotBlank() }?.let { fileFor(context, it) }
+
+        /**
+         * 统一解析 DB 中 audio 字段为真实文件：
+         * - 以 "/" 开头 → 已永久保存并导出到公共目录的绝对路径，直接使用；
+         * - 否则 → 私有目录（filesDir/call_recordings）内的相对路径，拼上 filesDir。
+         */
+        fun resolveAudioFile(context: Context, stored: String?): File? =
+            stored?.takeIf { it.isNotBlank() }?.let { path ->
+                if (path.startsWith("/")) File(path) else File(context.filesDir, path)
+            }
     }
 
     private val appContext = context.applicationContext

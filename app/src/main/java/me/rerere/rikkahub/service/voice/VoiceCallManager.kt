@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -76,6 +77,7 @@ import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.VoiceCallForegroundService
 import me.rerere.rikkahub.data.ai.tools.CallCommandHub
 import me.rerere.rikkahub.ui.components.chat.CallStatus
+import me.rerere.rikkahub.ui.components.chat.CallTranscriptEntry
 import me.rerere.rikkahub.ui.hooks.CustomTtsState
 import me.rerere.tts.controller.TtsController
 import me.rerere.tts.model.PlaybackStatus
@@ -203,6 +205,16 @@ class VoiceCallManager(
     private val _isCallMinimized = MutableStateFlow(false)
     val isCallMinimized: StateFlow<Boolean> = _isCallMinimized.asStateFlow()
 
+    // ===== 通话页字幕开关 =====
+    // 通话页右上角按钮切换；进程内记住用户选择（缩小/挂断不重置），重启应用回到默认关闭。
+    private val _isSubtitleEnabled = MutableStateFlow(false)
+    val isSubtitleEnabled: StateFlow<Boolean> = _isSubtitleEnabled.asStateFlow()
+
+    fun toggleSubtitle() {
+        _isSubtitleEnabled.value = !_isSubtitleEnabled.value
+        Log.i(TAG, "toggleSubtitle: subtitleEnabled=${_isSubtitleEnabled.value}")
+    }
+
     // 通话时长（毫秒）：基于 connectedAtMs 每秒刷新，供迷你窗口与通话页显示。
     private val _callDurationMs = MutableStateFlow(0L)
     val callDurationMs: StateFlow<Long> = _callDurationMs.asStateFlow()
@@ -240,34 +252,35 @@ class VoiceCallManager(
     private val _activeCallAssistantId = MutableStateFlow<Uuid?>(null)
     val activeCallAssistantId: StateFlow<Uuid?> = _activeCallAssistantId.asStateFlow()
 
-    /** 通话页面显示的「最新一条消息」（只取通话开始后的 USER / ASSISTANT 文本）。 */
-    data class CallLatestMessage(val role: MessageRole, val text: String)
-
-    val latestCallMessage: StateFlow<CallLatestMessage?> = combine(
+    /**
+     * 通话页字幕面板的完整转写流：只取通话开始后的 USER / ASSISTANT 文本消息。
+     * 过滤规则与原单条 latestCallMessage 完全同源，但返回全量列表（正序），
+     * 供字幕面板滚动展示完整对话。
+     */
+    val callTranscript: StateFlow<List<CallTranscriptEntry>> = combine(
         _activeCallConversationId,
         _callStartTimeMs
     ) { convId, callStartMs -> convId to callStartMs }
         .flatMapLatest { (convId, callStartMs) ->
             if (convId == null || callStartMs <= 0L) {
-                flowOf(null)
+                flowOf(emptyList())
             } else {
                 chatService.getConversationFlow(convId)
-                    .map { conv -> computeLatestCallMessage(conv.messageNodes, callStartMs) }
+                    .map { conv -> computeCallTranscript(conv.messageNodes, callStartMs) }
             }
         }
-        .stateIn(scope, SharingStarted.Eagerly, null)
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
-    private fun computeLatestCallMessage(nodes: List<MessageNode>, callStartMs: Long): CallLatestMessage? =
+    private fun computeCallTranscript(nodes: List<MessageNode>, callStartMs: Long): List<CallTranscriptEntry> =
         nodes
             .filter {
                 it.timelineCreatedAt >= callStartMs &&
                     (!it.currentMessage.skipContext ||
                         it.currentMessage.messageSource == MessageSource.CALL)
             }
-            .asReversed()
-            .firstNotNullOfOrNull { node ->
+            .mapNotNull { node ->
                 if (node.role != MessageRole.USER && node.role != MessageRole.ASSISTANT) {
-                    return@firstNotNullOfOrNull null
+                    return@mapNotNull null
                 }
                 val text = node.currentMessage.parts
                     .filterIsInstance<UIMessagePart.Text>()
@@ -276,7 +289,7 @@ class VoiceCallManager(
                     .replace(Regex("```[\\s\\S]*?```"), "")
                     .replace(Regex("[#*_>`]+"), "")
                     .replace(Regex("\\[[^\\]]+\\]\\([^)]+\\)"), "")
-                if (text.isBlank()) null else CallLatestMessage(node.role, text)
+                if (text.isBlank()) null else CallTranscriptEntry(node.role, text)
             }
 
     init {

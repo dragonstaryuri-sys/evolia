@@ -82,6 +82,17 @@ class CallRecordRepository(private val dao: CallRecordDao) {
     suspend fun getExpiredAudioRecords(now: Long = System.currentTimeMillis()): List<CallRecordEntity> =
         dao.getExpiredAudioRecords(now)
 
+    /**
+     * 清理缓存用：清除所有未永久保存录音的 audio 引用，返回被清除的存储路径供调用方删除文件。
+     * 只清音频字段，通话记录与转写完整保留。
+     */
+    suspend fun clearTransientAudio(): List<String> {
+        val records = dao.getNonForeverAudioRecords()
+        if (records.isEmpty()) return emptyList()
+        dao.clearAudioForTransient()
+        return records.mapNotNull { it.audio }
+    }
+
     suspend fun deleteByAssistant(assistantId: String) = dao.deleteByAssistant(assistantId)
 
     suspend fun deleteById(callId: String) = dao.deleteById(callId)

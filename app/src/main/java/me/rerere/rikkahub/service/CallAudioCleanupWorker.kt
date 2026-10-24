@@ -41,8 +41,8 @@ class CallAudioCleanupWorker(
                     runCatching { callRecordRepository.clearAudio(record.id) }
                     continue
                 }
-                val file = CallRecorder.fileFor(applicationContext, relPath)
-                val fileDeleted = if (file.exists()) {
+                val file = CallRecorder.resolveAudioFile(applicationContext, relPath)
+                val fileDeleted = if (file != null && file.exists()) {
                     runCatching { file.delete() }.getOrDefault(false)
                 } else {
                     true // 文件不存在：修正数据库即可

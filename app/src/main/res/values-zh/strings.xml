@@ -1649,6 +1649,10 @@
   <string name="call_action_mute">静音</string>
   <string name="call_action_speaker">扬声器</string>
   <string name="call_action_headset">耳机</string>
+  <string name="call_action_subtitle">字幕</string>
+  <string name="call_action_minimize">缩小通话</string>
+  <string name="call_subtitle_back_to_latest">回到最新</string>
+  <string name="call_subtitle_empty">字幕已开启，通话内容将实时显示在这里</string>
   <string name="setting_provider_minimax_realtime_title">实时语音设置</string>
   <string name="setting_provider_minimax_group_id">Group ID</string>
   <string name="setting_provider_minimax_realtime_hint">如果需要使用该模型的实时通话功能，请填写以下信息。Group ID 可在 MiniMax 控制台获取。</string>
