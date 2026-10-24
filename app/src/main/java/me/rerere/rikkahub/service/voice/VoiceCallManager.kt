@@ -21,6 +21,7 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -63,6 +65,8 @@ import me.rerere.rikkahub.common.utils.WebRtcAudioProcessor
 import me.rerere.rikkahub.core.data.db.entity.CallRecordEntity
 import me.rerere.rikkahub.core.data.db.entity.CallInitiator
 import me.rerere.rikkahub.core.data.db.entity.CallRecordStatus
+import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.core.data.model.ConversationMessageDeletion
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.core.data.model.deleteMessages
@@ -204,6 +208,14 @@ class VoiceCallManager(
     // 语音会话由 VoiceCallManager 管理，与 UI 缩小状态完全解耦。
     private val _isCallMinimized = MutableStateFlow(false)
     val isCallMinimized: StateFlow<Boolean> = _isCallMinimized.asStateFlow()
+
+    // ===== 系统悬浮迷你窗（通话缩小后悬浮在其他应用上层）=====
+    // 需「显示在其他应用上层」权限；未授权时由应用内迷你窗兜底（见 RouteActivity）。
+    // 权限非运行时权限，需跳系统设置手动开启；UI 在 ON_RESUME 时调用 refreshOverlayPermission() 同步状态。
+    private val _overlayPermissionGranted = MutableStateFlow(false)
+    val overlayPermissionGranted: StateFlow<Boolean> = _overlayPermissionGranted.asStateFlow()
+    private val callMiniOverlay by lazy { CallMiniOverlayWindow(context) }
+    private var overlayDurationJob: Job? = null
 
     // ===== 通话页字幕开关 =====
     // 通话页右上角按钮切换；进程内记住用户选择（缩小/挂断不重置），重启应用回到默认关闭。
@@ -355,6 +367,23 @@ class VoiceCallManager(
                     }
                 }
             }
+        }
+
+        // ===== 系统悬浮迷你窗驱动：CONNECTED + 已缩小 + 已授权悬浮窗权限时显示 =====
+        // 单一副作用流覆盖所有路径（缩小/展开/挂断/异常清理/授权状态变化），
+        // 无需在各条清理路径上散落 hide() 调用。WindowManager 操作必须在主线程。
+        scope.launch(Dispatchers.Main) {
+            combine(
+                _isCallMinimized,
+                _callPhase,
+                _overlayPermissionGranted
+            ) { minimized, phase, granted ->
+                minimized && phase == CallPhase.CONNECTED && granted
+            }
+                .distinctUntilChanged()
+                .collect { shouldShow ->
+                    if (shouldShow) showCallMiniOverlay() else hideCallMiniOverlay()
+                }
         }
 
         // 初始化耳机连接状态 + 注册耳机插拔广播监听
@@ -686,6 +715,56 @@ class VoiceCallManager(
         logCallUiBoundary("expandCall")
         Log.i(TAG, "expandCall: switch mini window → full call screen")
         _isCallMinimized.value = false
+    }
+
+    /** 同步「显示在其他应用上层」权限状态（UI ON_RESUME 时调用，授权页返回后悬浮窗自动接管）。 */
+    fun refreshOverlayPermission() {
+        val granted = Settings.canDrawOverlays(context)
+        if (_overlayPermissionGranted.value != granted) {
+            Log.i(TAG, "refreshOverlayPermission: granted=$granted")
+            _overlayPermissionGranted.value = granted
+        }
+    }
+
+    /** 当前通话所属 AI（悬浮窗显示名称与头像用）；无通话或找不到时返回 null。 */
+    private fun currentActiveCallAssistant(): Assistant? {
+        val assistantId = _activeCallAssistantId.value ?: return null
+        return settingsStore.settingsFlow.value.assistants.find { it.id == assistantId }
+    }
+
+    private fun showCallMiniOverlay() {
+        val assistant = currentActiveCallAssistant()
+        val name = assistant?.name?.takeIf { it.isNotBlank() } ?: "AI"
+        val avatar = assistant?.avatar ?: Avatar.Dummy
+        callMiniOverlay.show(
+            name = name,
+            avatar = avatar,
+            onExpand = {
+                // 点击悬浮窗：拉回应用并展开通话页。
+                // 持有 SYSTEM_ALERT_WINDOW 权限的应用享有后台启动 Activity 豁免，后台点击也能拉起。
+                runCatching {
+                    val intent = Intent(context, RouteActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                    context.startActivity(intent)
+                }.onFailure {
+                    Log.w(TAG, "showCallMiniOverlay: launch RouteActivity failed", it)
+                }
+                expandCall()
+            },
+            onHangup = { hangup() }
+        )
+        // 时长跟随每秒 tick 刷新
+        overlayDurationJob?.cancel()
+        overlayDurationJob = scope.launch(Dispatchers.Main) {
+            callDurationMs.collect { callMiniOverlay.updateDuration(it) }
+        }
+    }
+
+    private fun hideCallMiniOverlay() {
+        overlayDurationJob?.cancel()
+        overlayDurationJob = null
+        callMiniOverlay.hide()
     }
 
     /**

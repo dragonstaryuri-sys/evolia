@@ -1,0 +1,8 @@
+{
+  "plugins": {
+    "enabledPlugins": {
+      "android-emulator@zcode-plugins-official": true,
+      "lark-cli@zcode-plugins-official": false
+    }
+  }
+}

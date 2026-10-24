@@ -188,7 +188,7 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **挂断**：`hangup(endReason)`。AI 主动挂断先立即退出 callMode（否则 AI 看不到结果会反复调用工具），再延迟 `AI_HANGUP_DELAY_MS`（30s，等 AI 说完道别）才真正挂断；宽限期内用户开口（`noteUserSpoke`）会取消挂断。真实接通的结束只播放一次挂断音（1.5s 去重窗口）；拒绝 / 超时 / 权限失败 / 初始化失败 / 取消路径不播。
 - **未接通路径**（拒绝 / 超时 / 权限失败 / 初始化失败 / 取消）：只更新通话记录状态并提示错误，不进入正式 `CallScreen`，也不出现在历史通话列表。
 - **模式约束**：进入接听/接听确认环节时，静默将微信模式切换为普通模式，不提示用户或 AI。
-- **缩略**：仅全屏通话页左边缘返回手势触发 `minimizeCall()`；迷你窗由 `isCallMinimized` 统一驱动，点击 `expandCall()` 恢复，缩小期间通话不中断。
+- **缩略**：仅全屏通话页左边缘返回手势触发 `minimizeCall()`，点击 `expandCall()` 恢复，缩小期间通话不中断。缩小后按悬浮窗权限二选一：已授权「显示在其他应用上层」（`SYSTEM_ALERT_WINDOW`）→ 由 **`CallMiniOverlayWindow`**（`service/voice/`，WindowManager `TYPE_APPLICATION_OVERLAY` 传统 View 顶部窄条，Telegram 式）接管，App 退后台/桌面时迷你窗仍悬浮可见，点击拉回应用并展开、挂断钮直接挂断；未授权 → 应用内 `MiniCallWindow` 兜底（仅 App 内可见）。悬浮窗显示/移除由 `VoiceCallManager` 内 `combine(_isCallMinimized, _callPhase, _overlayPermissionGranted)` 单一副作用流驱动，禁止在各清理路径散落 hide()；权限状态由 UI 在 ON_RESUME 调 `refreshOverlayPermission()` 同步（授权页返回后悬浮窗自动接管）。缩小通话时未授权会弹出解释弹窗引导授权（RouteActivity）；设置页「权限管理」含悬浮窗条目（`PermissionType.OVERLAY`）。
 
 ### 10.3 音频链路（硬性约束）
 - **TTS 输出**：所有提供商统一输出 16-bit 小端单声道裸 PCM。采样率：Mimo / Gemini / OpenAI / Custom 24kHz，MiniMax 32kHz，Azure / ElevenLabs 16kHz，System TTS 为引擎实际值。缓存若为旧的非 PCM 格式必须删除并重新合成。

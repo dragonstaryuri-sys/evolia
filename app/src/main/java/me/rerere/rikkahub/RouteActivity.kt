@@ -21,9 +21,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,8 +35,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -53,6 +61,7 @@ import me.rerere.rikkahub.ui.components.ui.rememberAppToasterState
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.datastore.getCurrentAssistant
 import me.rerere.rikkahub.service.voice.VoiceCallManager
+import me.rerere.rikkahub.service.voice.launchOverlayPermissionSettings
 import me.rerere.rikkahub.ui.components.chat.CallScreen
 import me.rerere.rikkahub.ui.components.chat.IncomingCallScreen
 import me.rerere.rikkahub.ui.components.chat.MiniCallWindow
@@ -509,6 +518,7 @@ class RouteActivity : AppCompatActivity() {
 @Composable
 private fun GlobalCallOverlay(settings: Settings) {
     val voiceCallManager = koinInject<VoiceCallManager>()
+    val context = LocalContext.current
 
     val isCallActive by voiceCallManager.isActive.collectAsStateWithLifecycle()
     val callStatus by voiceCallManager.callStatus.collectAsStateWithLifecycle()
@@ -524,6 +534,53 @@ private fun GlobalCallOverlay(settings: Settings) {
     val activeCallAssistantId by voiceCallManager.activeCallAssistantId.collectAsStateWithLifecycle()
     val isCallMinimized by voiceCallManager.isCallMinimized.collectAsStateWithLifecycle()
     val callDurationMs by voiceCallManager.callDurationMs.collectAsStateWithLifecycle()
+    val overlayPermissionGranted by voiceCallManager.overlayPermissionGranted.collectAsStateWithLifecycle()
+
+    // ON_RESUME 同步悬浮窗权限状态：用户从授权页返回后悬浮窗自动接管
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                voiceCallManager.refreshOverlayPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 悬浮窗权限引导弹窗：缩小通话时未授权则解释用途并跳转系统设置
+    var showOverlayPermissionDialog by remember { mutableStateOf(false) }
+    if (showOverlayPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = { showOverlayPermissionDialog = false },
+            title = { Text(stringResource(R.string.call_overlay_permission_title)) },
+            text = { Text(stringResource(R.string.call_overlay_permission_body)) },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showOverlayPermissionDialog = false
+                        context.launchOverlayPermissionSettings()
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.call_overlay_permission_go_grant),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOverlayPermissionDialog = false }) {
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        )
+    }
 
     val currentAssistant = settings.getCurrentAssistant()
 
@@ -562,11 +619,12 @@ private fun GlobalCallOverlay(settings: Settings) {
     }
 
     // 已接通通话页：全屏覆盖，盖住任意页面的 TopBar
-    // 缩小状态下显示迷你窗口，否则显示完整通话页
+    // 缩小状态下：已授权悬浮窗权限 → 由系统悬浮窄条接管（App 外也可见）；
+    // 未授权 → 显示应用内迷你窗口兜底。
     val connectedAssistant = activeCallAssistantId
         ?.let { id -> settings.assistants.find { it.id == id } }
         ?: currentAssistant
-    if (isCallActive && isCallMinimized) {
+    if (isCallActive && isCallMinimized && !overlayPermissionGranted) {
         // 迷你通话窗口：固定在顶部，不遮挡页面主要内容
         Box(
             modifier = Modifier
@@ -586,7 +644,9 @@ private fun GlobalCallOverlay(settings: Settings) {
         }
     } else {
         AnimatedVisibility(
-            visible = isCallActive,
+            // 已接通且已缩小 → 由迷你窗（应用内或系统悬浮）接管，全屏通话页必须退出，
+            // 否则会与迷你窗共存并遮住 App 内容
+            visible = isCallActive && !isCallMinimized,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -605,7 +665,13 @@ private fun GlobalCallOverlay(settings: Settings) {
                 onSpeakerToggle = { voiceCallManager.toggleSpeaker() },
                 onHangup = { voiceCallManager.hangup() },
                 onInterrupt = { voiceCallManager.manualInterrupt() },
-                onMinimize = { voiceCallManager.minimizeCall() },
+                onMinimize = {
+                    // 缩小照常生效（未授权时由应用内迷你窗兜底），未授权则同时引导授权
+                    voiceCallManager.minimizeCall()
+                    if (!overlayPermissionGranted) {
+                        showOverlayPermissionDialog = true
+                    }
+                },
                 onSubtitleToggle = { voiceCallManager.toggleSubtitle() },
                 modifier = Modifier.fillMaxSize()
             )

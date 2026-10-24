@@ -117,6 +117,7 @@ private fun PermissionItem(
                 PermissionType.AUTO_START -> Icons.Rounded.RocketLaunch
                 PermissionType.USAGE_STATS -> Icons.Rounded.Analytics
                 PermissionType.ACCESSIBILITY -> Icons.Rounded.AccessibilityNew
+                PermissionType.OVERLAY -> Icons.Rounded.Layers
             }
 
             val title = when (type) {
@@ -127,6 +128,7 @@ private fun PermissionItem(
                 PermissionType.AUTO_START -> stringResource(R.string.permission_check_auto_start)
                 PermissionType.USAGE_STATS -> stringResource(R.string.permission_check_usage_stats)
                 PermissionType.ACCESSIBILITY -> stringResource(R.string.permission_check_accessibility)
+                PermissionType.OVERLAY -> stringResource(R.string.permission_check_overlay)
             }
 
             val desc = when (type) {
@@ -137,6 +139,7 @@ private fun PermissionItem(
                 PermissionType.AUTO_START -> stringResource(R.string.permission_check_auto_start_desc)
                 PermissionType.USAGE_STATS -> stringResource(R.string.permission_check_usage_stats_desc)
                 PermissionType.ACCESSIBILITY -> stringResource(R.string.permission_check_accessibility_desc)
+                PermissionType.OVERLAY -> stringResource(R.string.permission_check_overlay_desc)
             }
 
             Icon(

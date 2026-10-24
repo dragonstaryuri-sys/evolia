@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.service.EvoliaMonitorService
+import me.rerere.rikkahub.service.voice.launchOverlayPermissionSettings
 
 class PermissionVM(private val context: Context) : ViewModel() {
     private val _permissionStates = MutableStateFlow<Map<PermissionType, Boolean>>(emptyMap())
@@ -72,6 +73,9 @@ class PermissionVM(private val context: Context) : ViewModel() {
             }
             PermissionType.ACCESSIBILITY -> {
                 isAccessibilityServiceEnabled(context, EvoliaMonitorService::class.java)
+            }
+            PermissionType.OVERLAY -> {
+                Settings.canDrawOverlays(context)
             }
             PermissionType.AUTO_START -> false // 无法自动检测
         }
@@ -136,6 +140,8 @@ class PermissionVM(private val context: Context) : ViewModel() {
                 }
                 context.startActivity(intent)
             }
+            // 「显示在其他应用上层」授权页：定位到本应用，失败回退到通用悬浮窗列表
+            PermissionType.OVERLAY -> context.launchOverlayPermissionSettings()
             else -> {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.fromParts("package", context.packageName, null)
@@ -190,5 +196,6 @@ enum class PermissionType {
     NOTIFICATION,
     AUTO_START,
     USAGE_STATS,
-    ACCESSIBILITY
+    ACCESSIBILITY,
+    OVERLAY
 }
