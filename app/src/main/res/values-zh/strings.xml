@@ -1850,10 +1850,12 @@
   <string name="chat_voice_transcribe">转文字</string>
   <string name="chat_voice_hide_transcription">取消转文字</string>
   <string name="chat_voice_no_transcription">暂无转文字内容</string>
-  <string name="chat_voice_slide_up_cancel">上滑取消</string>
+  <string name="chat_voice_slide_left_cancel">左滑取消</string>
   <string name="chat_voice_release_to_cancel">松开手指，取消发送</string>
   <string name="chat_voice_slide_right_transcribe">右滑转文字</string>
   <string name="chat_voice_release_to_transcribe">松开手指，转文字</string>
+  <string name="chat_voice_cancel_label">取消</string>
+  <string name="chat_voice_transcribe_label">转文字</string>
   <string name="setting_provider_page_audio">音频</string>
   <!-- 日记功能升级 -->
   <string name="diary_view_list">列表</string>

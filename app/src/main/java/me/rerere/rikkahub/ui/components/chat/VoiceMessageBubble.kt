@@ -2,6 +2,7 @@ package me.rerere.rikkahub.ui.components.chat
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -57,6 +58,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -292,10 +295,10 @@ private fun formatVoiceDuration(ms: Long): String {
 }
 
 /**
- * 录音时手指上滑后的目标动作区。
- * - [None]：未上滑或在中间区域，松开即发送语音。
- * - [Cancel]：左上滑，松开取消录音。
- * - [Transcribe]：右上滑，松开发送语音并自动展开转文字。
+ * 录音时横滑锁定的目标动作区。
+ * - [None]：未锁定，松开即发送语音。
+ * - [Cancel]：左滑锁定，松开取消录音。
+ * - [Transcribe]：右滑锁定，松开发送语音并自动展开转文字。
  */
 private enum class RecordZone { None, Cancel, Transcribe }
 
@@ -306,15 +309,15 @@ private enum class RecordZone { None, Cancel, Transcribe }
  * （[VoiceRecorderController.stop]）并把结果回调给 [onRecordComplete]。
  * 过短录音返回 null，由上层提示"录音太短"。
  *
- * 手势分区（类似微信）：
+ * 手势分区（横滑锁定，判定相对按下点的水平位移，与手指按在按钮哪个位置无关）：
  * - 直接松开 → 发送语音消息。
- * - 左上滑（上滑且向左）→ 取消录音。
- * - 右上滑（上滑且向右）→ 发送语音并自动展开转文字。
+ * - 左滑超过锁定阈值 → 取消录音（滑回中间可恢复发送）。
+ * - 右滑超过锁定阈值 → 发送语音并自动展开转文字（滑回中间可恢复发送）。
  *
  * @param controller 录音控制器
  * @param transcribing 是否正在 ASR 转写（松开后、发送前），为 true 时禁用按钮并显示加载
  * @param onRecordComplete 录音完成回调；第一个参数为 null 表示过短/取消，
- *   第二个参数表示是否需要自动展开转文字（右上滑时为 true）
+ *   第二个参数表示是否需要自动展开转文字（右滑锁定时为 true）
  * @param onError 录音启动失败回调（如权限缺失、MediaRecorder 异常）
  */
 @Composable
@@ -330,18 +333,21 @@ fun VoiceRecordButton(
     val isRecording = recorderState == VoiceRecorderState.Recording
 
     val holdToSpeakText = stringResource(R.string.chat_hold_to_speak)
-    val recordingText = stringResource(R.string.chat_voice_recording)
     val transcribingText = stringResource(R.string.chat_voice_transcribing)
-    val slideUpCancelText = stringResource(R.string.chat_voice_slide_up_cancel)
+    val slideLeftCancelText = stringResource(R.string.chat_voice_slide_left_cancel)
     val slideRightTranscribeText = stringResource(R.string.chat_voice_slide_right_transcribe)
     val releaseToCancelText = stringResource(R.string.chat_voice_release_to_cancel)
     val releaseToTranscribeText = stringResource(R.string.chat_voice_release_to_transcribe)
+    val cancelLabelText = stringResource(R.string.chat_voice_cancel_label)
+    val transcribeLabelText = stringResource(R.string.chat_voice_transcribe_label)
 
-    // 当前上滑目标区
+    // 当前横滑锁定区
     var zone by remember { mutableStateOf(RecordZone.None) }
     val density = LocalDensity.current
-    // 垂直方向触发阈值（上滑超过此距离才进入分区判定）
-    val verticalThresholdPx = with(density) { 80.dp.toPx() }
+    // 横滑锁定阈值：相对按下点左/右滑超过此距离即锁定目标区
+    val lockThresholdPx = with(density) { 60.dp.toPx() }
+    // 解锁半径：滑回按下点附近此距离内才恢复"松开即发送"（与锁定阈值构成滞回防抖）
+    val unlockRadiusPx = with(density) { 36.dp.toPx() }
 
     val pulseTransition = rememberInfiniteTransition(label = "rec_pulse")
     val pulseAlpha by pulseTransition.animateFloat(
@@ -368,52 +374,47 @@ fun VoiceRecordButton(
                 else Modifier.pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        // 按下：开始录音
+                        // 按下：开始录音，重置锁定区
                         zone = RecordZone.None
-                        val startY = down.position.y
+                        val startX = down.position.x
                         try {
                             controller.start()
                         } catch (e: Exception) {
                             onError(e.message ?: "录音启动失败")
                             return@awaitEachGesture
                         }
-                        // 持续追踪手指移动，检测上滑方向
+                        // 持续追踪手指相对按下点的水平位移：左滑取消、右滑转文字
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull() ?: continue
-                            val currentY = change.position.y
-                            val deltaY = startY - currentY // 正数=上滑
+                            val deltaX = change.position.x - startX
 
-                            if (deltaY > verticalThresholdPx) {
-                                // 已上滑超过阈值，按手指在屏幕上的绝对水平位置分区
-                                // 按钮居中在屏幕底部，左半屏 = 取消，右半屏 = 转文字
-                                // 用手指相对按钮中心的水平偏移来判定
-                                val centerPx = size.width / 2f
-                                val offsetFromCenter = change.position.x - centerPx
-                                zone = if (offsetFromCenter < 0) {
-                                    RecordZone.Cancel
-                                } else {
-                                    RecordZone.Transcribe
-                                }
-                            } else {
-                                zone = RecordZone.None
+                            val inCancelLock = deltaX < -lockThresholdPx
+                            val inTranscribeLock = deltaX > lockThresholdPx
+                            val backToCenter = kotlin.math.abs(deltaX) < unlockRadiusPx
+                            zone = when {
+                                inCancelLock -> RecordZone.Cancel
+                                inTranscribeLock -> RecordZone.Transcribe
+                                backToCenter -> RecordZone.None
+                                // 锁定与解锁阈值之间的滞回区间：维持当前状态
+                                else -> zone
                             }
 
                             if (change.changedToUp()) {
                                 // 手指抬起
                                 when (zone) {
                                     RecordZone.Cancel -> {
-                                        // 左上滑取消
+                                        // 左滑锁定：取消录音
                                         controller.cancel()
                                         onRecordComplete(null, false)
                                     }
                                     RecordZone.Transcribe -> {
-                                        // 右上滑转文字：发送语音并自动展开转写
+                                        // 右滑锁定：发送语音并自动展开转写
                                         val result = controller.stop()
                                         onRecordComplete(result, true)
                                     }
                                     RecordZone.None -> {
-                                        // 正常发送
+                                        // 未锁定：正常发送
                                         val result = controller.stop()
                                         onRecordComplete(result, false)
                                     }
@@ -491,11 +492,12 @@ fun VoiceRecordButton(
                 amplitude = controller.amplitude.collectAsState().value,
                 isCancelZone = isCancelZone,
                 isTranscribeZone = isTranscribeZone,
-                recordingText = recordingText,
-                slideUpCancelText = slideUpCancelText,
+                slideLeftCancelText = slideLeftCancelText,
                 slideRightTranscribeText = slideRightTranscribeText,
                 releaseToCancelText = releaseToCancelText,
-                releaseToTranscribeText = releaseToTranscribeText
+                releaseToTranscribeText = releaseToTranscribeText,
+                cancelLabelText = cancelLabelText,
+                transcribeLabelText = transcribeLabelText
             )
         }
     }
@@ -504,8 +506,9 @@ fun VoiceRecordButton(
 /**
  * 录音中遮罩浮层（全屏半透明 + 底部操作区，类似微信）。
  *
- * 布局自上而下：波形 → 计时 → 取消/转文字按钮（最靠近手指）。
- * 按钮图案直观，不再显示文字提示；进入操作区时仅显示对应松开提示。
+ * 布局自上而下：波形 → 计时 → 提示文字 → 取消/转文字大目标卡（最靠近手指）。
+ * 横滑锁定模型：左滑锁定取消、右滑锁定转文字，整卡即视觉落点；
+ * 遮罩为微信式深色半透明浮层（深浅色模式下均为深底白字），不随主题切换。
  */
 @Composable
 private fun RecordingOverlay(
@@ -513,11 +516,12 @@ private fun RecordingOverlay(
     amplitude: Int,
     isCancelZone: Boolean,
     isTranscribeZone: Boolean,
-    recordingText: String,
-    slideUpCancelText: String,
+    slideLeftCancelText: String,
     slideRightTranscribeText: String,
     releaseToCancelText: String,
-    releaseToTranscribeText: String
+    releaseToTranscribeText: String,
+    cancelLabelText: String,
+    transcribeLabelText: String
 ) {
     val bgColor = when {
         isCancelZone -> Color(0x99FF4D4F)
@@ -538,7 +542,7 @@ private fun RecordingOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // 波形条：仅在未进入操作区时显示
+            // 波形条：仅在未锁定时显示
             if (!isCancelZone && !isTranscribeZone) {
                 WaveformBars(
                     amplitude = amplitude,
@@ -554,64 +558,88 @@ private fun RecordingOverlay(
                 color = Color.White
             )
 
-            // 松开提示（仅进入操作区时显示）
+            // 提示：锁定时显示松开提示，未锁定时常显横滑指引
             val hintText = when {
                 isCancelZone -> releaseToCancelText
                 isTranscribeZone -> releaseToTranscribeText
-                else -> ""
+                else -> "← $slideLeftCancelText · $slideRightTranscribeText →"
             }
-            if (hintText.isNotEmpty()) {
-                Text(
-                    text = hintText,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.9f)
+            Text(
+                text = hintText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.9f)
+            )
+
+            // 取消（左）/ 转文字（右）大目标卡 — 平分宽度，整卡即落点
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                RecordTargetCard(
+                    icon = Icons.Rounded.Close,
+                    label = cancelLabelText,
+                    isSelected = isCancelZone,
+                    selectedTint = Color(0xFFFF4D4F),
+                    modifier = Modifier.weight(1f)
+                )
+                RecordTargetCard(
+                    icon = Icons.Rounded.TextFields,
+                    label = transcribeLabelText,
+                    isSelected = isTranscribeZone,
+                    selectedTint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
                 )
             }
+        }
+    }
+}
 
-            // 取消（左）/ 转文字（右）按钮 — 放在最下方，靠近手指
-            Row(
-                modifier = Modifier.fillMaxWidth(0.75f),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 取消图标（药丸形，增大滑动命中区域）
-                Box(
-                    modifier = Modifier
-                        .width(90.dp)
-                        .height(56.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(
-                            if (isCancelZone) Color.White else Color.White.copy(alpha = 0.25f)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
-                        contentDescription = null,
-                        modifier = Modifier.size(28.dp),
-                        tint = if (isCancelZone) Color(0xFFFF4D4F) else Color.White
-                    )
-                }
+/**
+ * 录音横滑目标卡（取消 / 转文字）。
+ * 大面积药丸卡（50% 圆角），图标 + 文字标签；选中时白底高亮、着色并轻微放大。
+ */
+@Composable
+private fun RecordTargetCard(
+    icon: ImageVector,
+    label: String,
+    isSelected: Boolean,
+    selectedTint: Color,
+    modifier: Modifier = Modifier
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.06f else 1f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 400f),
+        label = "target_scale"
+    )
 
-                // 转文字图标（药丸形，增大滑动命中区域）
-                Box(
-                    modifier = Modifier
-                        .width(90.dp)
-                        .height(56.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .background(
-                            if (isTranscribeZone) Color.White else Color.White.copy(alpha = 0.25f)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.TextFields,
-                        contentDescription = null,
-                        modifier = Modifier.size(28.dp),
-                        tint = if (isTranscribeZone) MaterialTheme.colorScheme.primary else Color.White
-                    )
-                }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(88.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
             }
+            .clip(RoundedCornerShape(44.dp))
+            .background(if (isSelected) Color.White else Color.White.copy(alpha = 0.22f))
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = if (isSelected) selectedTint else Color.White
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isSelected) selectedTint else Color.White
+            )
         }
     }
 }
