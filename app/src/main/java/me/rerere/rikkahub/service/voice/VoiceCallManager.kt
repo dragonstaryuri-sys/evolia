@@ -271,6 +271,30 @@ class VoiceCallManager(
         }
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    // ===== 通话期间持有的会话引用 =====
+    // callTranscript 订阅的是 chatService 内存会话（StateFlow 实例）。若通话期间
+    // ChatVM 被销毁（切后台被回收等），引用计数归零会触发 cleanupConversation，
+    // 该实例从缓存移除，后续消息写入的是新实例，字幕订阅依然挂在旧实例上，
+    // 表现为缩窗/切后台期间的转写丢失且之后不再刷新。通话期间持有引用可避免该问题。
+    @Volatile private var retainedConversationId: Uuid? = null
+
+    @Synchronized
+    private fun retainCallConversationReference(convId: Uuid) {
+        if (retainedConversationId == convId) return
+        retainedConversationId?.let { old ->
+            chatService.removeConversationReference(old)
+        }
+        chatService.addConversationReference(convId)
+        retainedConversationId = convId
+    }
+
+    @Synchronized
+    private fun releaseCallConversationReference() {
+        val convId = retainedConversationId ?: return
+        retainedConversationId = null
+        chatService.removeConversationReference(convId)
+    }
+
     private fun computeCallTranscript(nodes: List<MessageNode>, callStartMs: Long): List<CallTranscriptEntry> =
         nodes
             .filter {
@@ -728,6 +752,8 @@ class VoiceCallManager(
         // 全局通话遮罩数据源：用户拨号等待期也要能解析智能体（等待页头像/昵称）
         _activeCallConversationId.value = conversationId
         _activeCallAssistantId.value = chatService.getConversationFlow(conversationId).value.assistantId
+        // 通话（含拨号等待期）期间持有会话引用，避免字幕订阅的内存会话实例被清理
+        retainCallConversationReference(conversationId)
 
         // 用户拨号等待期播放"拨通中"铃声（复用设置里的来电铃声，与 Agent 拨入时一致），
         // 接通 / 拒绝 / 取消 / 初始化失败时统一在对应收尾路径 stopRingtone()。
@@ -765,6 +791,7 @@ class VoiceCallManager(
                     activeCallId = null
                     _activeCallConversationId.value = null
                     _activeCallAssistantId.value = null
+                    releaseCallConversationReference()
                     _callError.tryEmit("通话失败：语音会话初始化失败")
                 }
             } else {
@@ -777,6 +804,7 @@ class VoiceCallManager(
                 activeCallId = null
                 _activeCallConversationId.value = null
                 _activeCallAssistantId.value = null
+                releaseCallConversationReference()
                 _callError.tryEmit("对方暂时无法接听，请稍后再拨")
             }
         }
@@ -813,6 +841,8 @@ class VoiceCallManager(
             // 全局通话页数据源：记录当前会话 / 智能体，供根级遮罩解析头像与字幕
             _activeCallConversationId.value = convId
             _activeCallAssistantId.value = chatService.getConversationFlow(convId).value.assistantId
+            // 接通后确保持有引用（拨号等待期已持有则幂等跳过）
+            retainCallConversationReference(convId)
             Log.i(TAG, "beginConnectedSession: callId=$callId agentInitiated=$agentInitiated")
 
             // 启动外部触发回复 watcher：通话中被定时任务 / 监控器触发的 AI 普通回复由它朗读
@@ -858,6 +888,8 @@ class VoiceCallManager(
             Log.e(TAG, "beginConnectedSession failed", t)
             // 初始化失败：释放录音器并删除临时文件（不产生录音）
             scope.launch { discardCallRecording() }
+            // 失败路径不应继续持有会话引用，避免引用计数泄漏
+            releaseCallConversationReference()
             false
         }
     }
@@ -1204,6 +1236,7 @@ class VoiceCallManager(
         _callPhase.value = CallPhase.IDLE
         _activeCallConversationId.value = null
         _activeCallAssistantId.value = null
+        releaseCallConversationReference()
         if (callId != null) {
             scope.launch {
                 runCatching {
@@ -3239,6 +3272,7 @@ class VoiceCallManager(
         _callStartTimeMs.value = 0L
         _activeCallConversationId.value = null
         _activeCallAssistantId.value = null
+        releaseCallConversationReference()
         _listeningText.value = null
         // 停止外部触发回复 watcher
         externalReplyWatcherJob?.cancel(); externalReplyWatcherJob = null

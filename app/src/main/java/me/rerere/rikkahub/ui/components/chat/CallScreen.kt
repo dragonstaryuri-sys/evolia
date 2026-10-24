@@ -1,7 +1,5 @@
 package me.rerere.rikkahub.ui.components.chat
 
-import android.os.SystemClock
-import android.util.Log
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
@@ -57,9 +55,6 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
 /** 左滑缩小为迷你窗口的最小拖动距离（dp）。 */
 private const val MIN_SWIPE_TO_MINIMIZE_DP = 80
-
-/** 字幕滚动排查日志 TAG（验证完成后移除）。 */
-private const val TAG_SUBTITLE_SCROLL = "CallSubtitleScroll"
 
 /**
  * 通话状态枚举
@@ -523,46 +518,27 @@ fun CallScreen(
             .background(Color.Black)
             .pointerInput(Unit) {
                 // 只观察不消费：全屏 Box 参与命中测试即可阻止触摸穿透到下层的消息气泡，
-                // 不需要 consume（在 Final pass consume 会污染子组件的手势协商状态）。
+                // 不需要 consume（在 Final pass consume 会污染子组件的手势协商状态，
+                // 导致字幕列表的 LazyColumn 收不到拖动）。
                 // 同时检测左滑手势：向左拖动超过阈值时触发缩小为迷你窗口。
                 awaitPointerEventScope {
-                    var unconsumedFrames = 0
-                    var consumedFrames = 0
-                    var sumDx = 0f
-                    var sumDy = 0f
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Final)
                         event.changes.forEach { change ->
                             if (change.isConsumed) {
                                 // 字幕面板滚动等子组件已接管手势：
                                 // 放弃本次左滑累计，避免滚动被误判为缩小手势。
-                                consumedFrames++
                                 dragTotalX = 0f
                                 return@forEach
                             }
-                            unconsumedFrames++
                             if (change.pressed) {
-                                val delta = change.positionChange()
-                                sumDx += delta.x
-                                sumDy += delta.y
-                                dragTotalX += delta.x
+                                dragTotalX += change.positionChange().x
                             } else {
                                 // 抬手：判断是否为左滑缩小
-                                Log.d(
-                                    TAG_SUBTITLE_SCROLL,
-                                    "root-gesture-end: consumedFrames=$consumedFrames " +
-                                        "unconsumedFrames=$unconsumedFrames " +
-                                        "sumDx=$sumDx sumDy=$sumDy dragTotalX=$dragTotalX " +
-                                        "minimizeThresholdPx=${MIN_SWIPE_TO_MINIMIZE_DP.dp.toPx()}"
-                                )
                                 if (dragTotalX < -MIN_SWIPE_TO_MINIMIZE_DP.dp.toPx()) {
                                     onMinimize()
                                 }
                                 dragTotalX = 0f
-                                unconsumedFrames = 0
-                                consumedFrames = 0
-                                sumDx = 0f
-                                sumDy = 0f
                             }
                         }
                     }
@@ -1065,29 +1041,12 @@ private fun CallTranscriptPanel(
     // 表现为"第一次滑动没反应、要再滑一次才生效"。按下即暂停自动滚动可消除该竞争。
     var userTouching by remember { mutableStateOf(false) }
 
-    // 排查日志节流：AI 流式输出时 lastEntryText 变化非常频繁，避免刷屏
-    var lastAutoScrollLogAt by remember { mutableStateOf(0L) }
-    fun logListState(event: String) {
-        val info = listState.layoutInfo
-        Log.d(
-            TAG_SUBTITLE_SCROLL,
-            "$event: totalItems=${info.totalItemsCount} visibleItems=${info.visibleItemsInfo.size} " +
-                "canScrollForward=${listState.canScrollForward} " +
-                "canScrollBackward=${listState.canScrollBackward} " +
-                "firstIndex=${listState.firstVisibleItemIndex} " +
-                "firstOffset=${listState.firstVisibleItemScrollOffset} " +
-                "isScrollInProgress=${listState.isScrollInProgress} " +
-                "autoFollow=$autoFollow touching=$userTouching"
-        )
-    }
-
     // 用户开始拖动列表 → 暂停自动跟随
     LaunchedEffect(Unit) {
         listState.interactionSource.interactions.collect { interaction ->
             if (interaction is DragInteraction.Start) {
                 autoFollow = false
             }
-            logListState("interaction=${interaction.javaClass.simpleName}")
         }
     }
     // 拖动结束（含惯性滚动）后：若列表停在最底部则恢复跟随，否则保持暂停
@@ -1115,22 +1074,12 @@ private fun CallTranscriptPanel(
 
     // 新消息到达或最后一条消息流式增长（AI 回复中）：跟随状态下平滑滚动到最新
     LaunchedEffect(visibleEntries.size, lastEntryText, autoFollow, userTouching) {
-        val now = SystemClock.uptimeMillis()
-        if (now - lastAutoScrollLogAt > 300L) {
-            lastAutoScrollLogAt = now
-            logListState("autoScroll(size,animate=true) run=${autoFollow && !userTouching}")
-        }
         if (autoFollow && !userTouching) {
             listState.scrollToLatestBottom(animate = true)
         }
     }
     // 实时识别文本增长（高频 partial）：跟随状态下瞬时跟上，避免动画反复重启的抖动
     LaunchedEffect(listeningText, autoFollow, userTouching) {
-        val now = SystemClock.uptimeMillis()
-        if (now - lastAutoScrollLogAt > 300L) {
-            lastAutoScrollLogAt = now
-            logListState("autoScroll(listening,animate=false) run=${autoFollow && !userTouching}")
-        }
         if (autoFollow && !userTouching) {
             listState.scrollToLatestBottom(animate = false)
         }
@@ -1164,41 +1113,14 @@ private fun CallTranscriptPanel(
                         // 避免流式转写触发的 animateScrollToItem 抢占并取消用户刚开始的拖动。
                         // 只观察不消费，不影响 LazyColumn 自身的滚动处理。
                         awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
+                            awaitFirstDown(requireUnconsumed = false)
                             userTouching = true
-                            val touchSlop = viewConfiguration.touchSlop
-                            var totalDx = 0f
-                            var totalDy = 0f
-                            var slopCrossed = false
-                            logListState(
-                                "list-down at=(${down.position.x},${down.position.y}) " +
-                                    "touchSlop=$touchSlop"
-                            )
                             try {
                                 do {
                                     val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id }
-                                    if (change != null) {
-                                        val delta = change.positionChange()
-                                        totalDx += delta.x
-                                        totalDy += delta.y
-                                        if (!slopCrossed &&
-                                            kotlin.math.abs(totalDy) > touchSlop
-                                        ) {
-                                            slopCrossed = true
-                                            logListState(
-                                                "list-slop-crossed totalDy=$totalDy " +
-                                                    "consumed=${change.isConsumed}"
-                                            )
-                                        }
-                                    }
                                 } while (event.changes.any { it.pressed })
                             } finally {
                                 userTouching = false
-                                logListState(
-                                    "list-up totalDx=$totalDx totalDy=$totalDy " +
-                                        "slopCrossed=$slopCrossed"
-                                )
                             }
                         }
                     },

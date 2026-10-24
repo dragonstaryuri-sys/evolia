@@ -682,13 +682,6 @@ class ChatService(
         }
 
         return conversations.computeIfAbsent(conversationId) {
-            // 诊断：缓存未命中会创建空占位会话（messageNodes 为空），
-            // 通话侧若在此刻抓取 priorAssistantNodeId 会得到 null，需要靠 request-boundary 兜底
-            Log.i(
-                TAG,
-                "getConversationFlow: cache miss conv=$conversationId, create empty placeholder " +
-                    "(cacheSize=${conversations.size})"
-            )
             MutableStateFlow(
                 Conversation.ofId(
                     id = conversationId,
@@ -831,13 +824,6 @@ class ChatService(
             if (isGenerating && currentInMem != null && currentInMem.messageNodes.isNotEmpty()) {
                 Log.v(TAG, "会话 $conversationId 正在后台生成中，跳过内存重置以保护当前生成状态")
             } else {
-                // 诊断：内存会话被 DB 版本整体替换（历史上会导致通话侧 priorAssistantNodeId 失效）
-                Log.i(
-                    TAG,
-                    "initializeConversation: replace in-memory conv=$conversationId " +
-                        "memNodes=${currentInMem?.messageNodes?.size ?: -1} " +
-                        "dbNodes=${currentConvInDb.messageNodes.size} isGenerating=$isGenerating"
-                )
                 updateConversation(conversationId) { currentConvInDb }
             }
             if (targetAssistantId == null) {
