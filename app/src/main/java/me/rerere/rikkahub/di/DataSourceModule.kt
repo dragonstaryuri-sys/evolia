@@ -28,6 +28,7 @@ import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.db.AppDatabase
 import me.rerere.rikkahub.data.db.RoomTransactionRunner
 import me.rerere.rikkahub.data.ai.mcp.McpManager
+import me.rerere.rikkahub.data.planner.PlannerFacade
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
 import me.rerere.rikkahub.core.data.repository.DoubaoImportManager
@@ -146,6 +147,15 @@ val dataSourceModule = module {
 
     single<DbTransactionRunner> { RoomTransactionRunner(get()) }
 
+    single {
+        PlannerFacade(
+            context = get(),
+            scheduleDAO = get(),
+            scheduleEventDAO = get(),
+            transactionRunner = get()
+        )
+    }
+
     single { MilestoneRepository(milestoneDAO = get()) }
     single { me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository(profileHistoryDAO = get()) }
     single { DiaryRepository(agentDiaryDao = get()) }
@@ -168,7 +178,8 @@ val dataSourceModule = module {
             chatSegmentDAO = get(),
             diaryRepo = get(),
             appScope = get(),
-            scheduleRepo = get()
+            scheduleRepo = get(),
+            plannerFacade = get()
         )
     }
 

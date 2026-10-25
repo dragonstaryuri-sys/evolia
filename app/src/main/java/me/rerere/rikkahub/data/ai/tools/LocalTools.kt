@@ -34,6 +34,7 @@ import me.rerere.rikkahub.core.data.db.entity.MilestoneEntity
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
+import me.rerere.rikkahub.data.planner.PlannerFacade
 import me.rerere.rikkahub.service.AgentTaskScheduler
 import org.koin.compose.koinInject
 import java.util.Properties
@@ -298,6 +299,7 @@ fun rememberLocalTools(): LocalTools {
     val genMediaRepository = koinInject<GenMediaRepository>()
     val profileHistoryRepo = koinInject<ProfileHistoryRepository>()
     val appLockRepository = koinInject<AppLockRepository>()
+    val plannerFacade = koinInject<PlannerFacade>()
 
     return remember {
         LocalTools(
@@ -315,7 +317,8 @@ fun rememberLocalTools(): LocalTools {
             providerManager,
             genMediaRepository,
             profileHistoryRepo,
-            appLockRepository
+            appLockRepository,
+            plannerFacade
         )
     }
 }
@@ -335,7 +338,8 @@ class LocalTools(
     private val providerManager: ProviderManager,
     private val genMediaRepository: GenMediaRepository,
     private val profileHistoryRepo: ProfileHistoryRepository,
-    private val appLockRepository: AppLockRepository
+    private val appLockRepository: AppLockRepository,
+    private val plannerFacade: PlannerFacade
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -1326,6 +1330,10 @@ class LocalTools(
                                 val schedules = scheduleRepository.getPendingAndTodayCompleted().first()
                                     .filter { it.category == category && !it.isCompleted }
 
+                                // 3. 已排程状态实时推导自 schedule_events（存在关联日程即已排程），
+                                //    不在待办表冗余存储，保证与实际日程数据一致
+                                val scheduledIds = plannerFacade.scheduledTaskIds()
+
                                 val df = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
                                 buildJsonObject {
                                     put("schedules", JsonArray(schedules.map { s ->
@@ -1335,12 +1343,16 @@ class LocalTools(
                                             put("priority", s.priority)
                                             put("urgency", s.urgency)
                                             put("difficulty", s.difficulty)
-                                            put("start_time", df.format(java.util.Date(s.startTime)))
+                                            // 截止时间是排程的核心输入，随列表返回
                                             s.endTime?.let { put("end_time", df.format(java.util.Date(it))) }
                                             put("is_completed", s.isCompleted)
-                                            put("category", s.category)
+                                            put("scheduled", scheduledIds.contains(s.id))
                                         }
                                     }))
+                                    put(
+                                        "note",
+                                        "scheduled=true 表示该待办已有至少一条日程安排；同一待办仍可被再次排程（用 schedule_planner 的 draft/save）。"
+                                    )
                                 }
                             }
 
@@ -1505,9 +1517,16 @@ class LocalTools(
                         buildJsonObject { put("error", e.message ?: "日程操作失败") }
                     }
                 }
-            )
+            ),
+            getSchedulePlannerTool(plannerFacade)
         )
     }
+
+    /**
+     * AI 日程排版工具：根据 AI 生成的结构化排版配置渲染计划表预览 / 导出 PDF。
+     * 配置由系统校验降级后使用内置素材渲染，不执行任何 AI 生成的绘图代码，
+     * 也不会修改真实日程与待办数据。
+     */
 
     /**
      * 解析日程的 end_time，用于日程截止时间及自动创建的到期提醒 agent_task。

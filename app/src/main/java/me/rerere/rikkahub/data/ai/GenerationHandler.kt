@@ -38,6 +38,7 @@ import me.rerere.ai.ui.handleMessageChunk
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
+import me.rerere.rikkahub.data.planner.PlannerFacade
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
@@ -115,6 +116,7 @@ class GenerationHandler(
     private val diaryRepo: DiaryRepository,
     private val appScope: AppScope,
     private val scheduleRepo: ScheduleRepository,
+    private val plannerFacade: PlannerFacade,
 ) {
     companion object {
         /**
@@ -1356,6 +1358,18 @@ class GenerationHandler(
 
             // 3. Chat History (L0)
             val sortedSelectedMessages = selectedMessages.sortedBy { messages.indexOf(it) }
+            // 正在进行的日程：时间观念 + 日程管理同时开启时，注入当前时段日程（每请求只查一次）
+            val ongoingScheduleText = if (
+                assistant.localTools.any { it is LocalToolOption.TimeSense } &&
+                assistant.localTools.any { it is LocalToolOption.ScheduleManagement }
+            ) {
+                runCatching { plannerFacade.currentOngoingEvents() }
+                    .getOrDefault(emptyList())
+                    .takeIf { it.isNotEmpty() }
+                    ?.joinToString("\n") { "- 「${it.taskTitle}」${it.date} ${it.timeLabel()}" }
+            } else {
+                null
+            }
             val lastUserMessageIndex = sortedSelectedMessages.indexOfLast { it.role == CoreMessageRole.USER }
             sortedSelectedMessages.forEachIndexed { index, msg ->
                 if (index == lastUserMessageIndex) {
@@ -1447,6 +1461,12 @@ class GenerationHandler(
                             appendLine("编造时间将会受到系统处罚。")
                             appendLine()
                         }
+                        // 正在进行的日程：仅当存在符合条件（今天 && 开始<=当前<结束）的日程时注入
+                        if (ongoingScheduleText != null) {
+                            appendLine("## 正在进行的日程")
+                            appendLine(ongoingScheduleText)
+                            appendLine()
+                        }
                         if (assistant.languageStyleExamples.isNotEmpty()) {
                             appendLine("## 语言风格示例")
                             assistant.languageStyleExamples.forEach { example ->
@@ -1515,9 +1535,9 @@ class GenerationHandler(
                     if (dynamicContext.isNotBlank()) {
                         val newTextPart = UIMessagePart.Text(
                             text = buildString {
-                                appendLine("# 系统消息")
+                                appendLine("System")
                                 append(dynamicContext)
-                                appendLine("# 用户问题")
+                                appendLine("User:")
                                 append(builtText)
                             }
                         )

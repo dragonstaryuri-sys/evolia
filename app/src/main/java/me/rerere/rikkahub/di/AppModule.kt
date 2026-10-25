@@ -53,6 +53,7 @@ val appModule = module {
             genMediaRepository = get(),
             profileHistoryRepo = get(),
             appLockRepository = get(),
+            plannerFacade = get(),
         )
     }
 
