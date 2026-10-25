@@ -40,9 +40,10 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         ChatMessageEntity::class,
         ProfileHistoryEntity::class,
         AppLockEntity::class,
-        CallRecordEntity::class
+        CallRecordEntity::class,
+        ScheduleEventEntity::class
     ],
-    version = 39,
+    version = 40,
     exportSchema = true
 )
 @TypeConverters(
@@ -71,6 +72,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun profileHistoryDao(): ProfileHistoryDAO
     abstract fun appLockDao(): AppLockDAO
     abstract fun callRecordDao(): CallRecordDao
+    abstract fun scheduleEventDao(): ScheduleEventDAO
 
     companion object {
         const val TAG = "AppDatabase"
@@ -476,6 +478,46 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 38->39 迁移：call_records 表新增 initiator 列")
                 db.execSQL(
                     "ALTER TABLE `call_records` ADD COLUMN `initiator` TEXT NOT NULL DEFAULT 'user'"
+                )
+            }
+        }
+
+        /**
+         * 39 → 40：新建 schedule_events 表（日程安排）。
+         *
+         * 待办（schedules）与日程（schedule_events）分表存储：一个待办可关联
+         * 零条、一条或多条日程，task_id 不设唯一约束。
+         * - date 为 epoch day，start_time / end_time 为当天分钟数（0..1439）；
+         * - task_id 外键关联 schedules.id，ON DELETE CASCADE：删除待办时
+         *   其关联日程随之删除，保证引用完整性；
+         * - 仅新增表，不改动 schedules 任何字段，历史待办数据完整保留，
+         *   且不为旧待办自动生成日程（旧数据默认视为未排程）。
+         */
+        val MIGRATION_39_40 = object : Migration(39, 40) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 39->40 迁移：新建 schedule_events 表（日程安排）")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `schedule_events` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `task_id` INTEGER NOT NULL,
+                        `date` INTEGER NOT NULL,
+                        `start_time` INTEGER NOT NULL,
+                        `end_time` INTEGER NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `created_at` INTEGER NOT NULL,
+                        `updated_at` INTEGER NOT NULL,
+                        FOREIGN KEY(`task_id`) REFERENCES `schedules`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_schedule_events_task_id` " +
+                        "ON `schedule_events` (`task_id`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_schedule_events_date` " +
+                        "ON `schedule_events` (`date`)"
                 )
             }
         }

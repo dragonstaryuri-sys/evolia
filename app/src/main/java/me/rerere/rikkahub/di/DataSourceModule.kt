@@ -13,6 +13,7 @@ import me.rerere.common.http.AcceptLanguageBuilder
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.core.data.model.Assistant
+import me.rerere.rikkahub.core.data.db.DbTransactionRunner
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.data.ai.AIRequestInterceptor
 import me.rerere.rikkahub.data.ai.transformers.AssistantTemplateLoader
@@ -25,6 +26,7 @@ import me.rerere.rikkahub.data.datastore.QuickSettingsCache
 import me.rerere.rikkahub.data.datastore.SecureStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.db.AppDatabase
+import me.rerere.rikkahub.data.db.RoomTransactionRunner
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.sync.WebdavSync
 import me.rerere.rikkahub.core.data.repository.MilestoneRepository
@@ -106,7 +108,8 @@ val dataSourceModule = module {
                 AppDatabase.MIGRATION_35_36,
                 AppDatabase.MIGRATION_36_37,
                 AppDatabase.MIGRATION_37_38,
-                AppDatabase.MIGRATION_38_39
+                AppDatabase.MIGRATION_38_39,
+                AppDatabase.MIGRATION_39_40
             )
             .build()
     }
@@ -139,6 +142,9 @@ val dataSourceModule = module {
     single { get<AppDatabase>().profileHistoryDao() }
     single { get<AppDatabase>().appLockDao() }
     single { get<AppDatabase>().callRecordDao() }
+    single { get<AppDatabase>().scheduleEventDao() }
+
+    single<DbTransactionRunner> { RoomTransactionRunner(get()) }
 
     single { MilestoneRepository(milestoneDAO = get()) }
     single { me.rerere.rikkahub.core.data.repository.ProfileHistoryRepository(profileHistoryDAO = get()) }

@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.discover.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,14 +10,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.MoreTime
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -26,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -41,21 +40,43 @@ import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 待办视图（嵌入日程规划页）。
+ *
+ * 保留原有难度分组（简单 / 一般 / 不简单）与待处理 / 已完成 Tab，
+ * 在此基础上增加排程状态筛选（全部 / 未排程 / 已排程，默认未排程）。
+ * 分组内部按 截止日期队列 → 重要度 → 难度 → 创建时间 排序。
+ *
+ * @param onArrangeTime 待办卡片"安排时间"入口，由宿主页面打开日程表单
+ */
 @Composable
-fun ScheduleScreen(
-    onBack: () -> Unit,
-    viewModel: ScheduleViewModel = koinViewModel()
+fun ScheduleTodoContent(
+    viewModel: ScheduleViewModel,
+    onArrangeTime: (ScheduleEntity) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val pendingSchedules by viewModel.allPendingSchedules.collectAsState()
+    val pendingSchedules by viewModel.filteredPendingSchedules.collectAsState()
     val completedSchedules by viewModel.allCompletedSchedules.collectAsState()
-    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val scheduleFilter by viewModel.scheduleFilter.collectAsState()
+    // 保持 scheduledTaskIds 处于活跃收集状态，供删除前的联动确认判断使用
+    val scheduledTaskIds by viewModel.scheduledTaskIds.collectAsState()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var editingSchedule by remember { mutableStateOf<ScheduleEntity?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
+
+    // 删除待办前的联动确认：待办存在关联日程时提示日程将一并删除
+    var pendingDelete by remember { mutableStateOf<ScheduleEntity?>(null) }
+    val requestDelete: (ScheduleEntity) -> Unit = { task ->
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        val hasEvents = task.id in scheduledTaskIds
+        if (hasEvents) {
+            pendingDelete = task
+        } else {
+            viewModel.deleteSchedule(task.id)
+        }
+    }
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     val tabs = listOf(
@@ -68,85 +89,9 @@ fun ScheduleScreen(
         mutableStateOf(PowerUtils.isIgnoringBatteryOptimizations(context))
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            Column {
-                LargeTopAppBar(
-                    title = { Text(stringResource(R.string.discover_schedule_all_tasks)) },
-                    navigationIcon = {
-                        IconButton(onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onBack()
-                        }) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.setCategory(if (selectedCategory == "user") "assistant" else "user")
-                        }) {
-                            Icon(
-                                imageVector = if (selectedCategory == "user") Icons.Rounded.Person else Icons.Rounded.SmartToy,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    },
-                    scrollBehavior = scrollBehavior
-                )
-                SecondaryTabRow(
-                    selectedTabIndex = selectedTabIndex,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    divider = {}
-                ) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTabIndex == index,
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                selectedTabIndex = index
-                            },
-                            text = { Text(title) }
-                        )
-                    }
-                }
-            }
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    editingSchedule = null
-                    showEditDialog = true
-                },
-                shape = CircleShape
-            ) {
-                Icon(Icons.Rounded.Add, contentDescription = null)
-            }
-        }
-    ) { padding ->
-        val displaySchedules = if (selectedTabIndex == 0) pendingSchedules else completedSchedules
-
-        val groupedSchedules = remember(displaySchedules, selectedTabIndex) {
-            if (selectedTabIndex == 0) {
-                displaySchedules.groupBy { it.difficulty }.mapValues { (_, list) ->
-                    list.sortedWith(
-                        compareByDescending<ScheduleEntity> { it.priority }
-                            .thenByDescending { it.urgency }
-                    )
-                }
-            } else {
-                emptyMap()
-            }
-        }
-
+    Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -161,9 +106,39 @@ fun ScheduleScreen(
                 }
             }
 
+            // 排程状态筛选条（仅待处理 Tab；与难度分类是两个独立维度）
+            if (selectedTabIndex == 0) {
+                item(key = "schedule_filter") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val filterOptions = listOf(
+                            ScheduleStatusFilter.UNSCHEDULED to stringResource(R.string.schedule_filter_unscheduled),
+                            ScheduleStatusFilter.SCHEDULED to stringResource(R.string.schedule_filter_scheduled),
+                            ScheduleStatusFilter.ALL to stringResource(R.string.schedule_filter_all)
+                        )
+                        filterOptions.forEach { (option, label) ->
+                            FilterChip(
+                                selected = scheduleFilter == option,
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    viewModel.setScheduleFilter(option)
+                                },
+                                label = { Text(label) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            val displaySchedules = if (selectedTabIndex == 0) pendingSchedules else completedSchedules
+
             if (displaySchedules.isEmpty()) {
                 item {
-                    Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(320.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
                             text = if (selectedTabIndex == 0)
                                 stringResource(R.string.discover_schedule_no_tasks)
@@ -174,8 +149,9 @@ fun ScheduleScreen(
                     }
                 }
             } else if (selectedTabIndex == 0) {
+                // 难度分组保留；列表已按新排序规则排列，组内保持该顺序
                 listOf(0, 1, 2).forEach { diff ->
-                    val items = groupedSchedules[diff] ?: emptyList()
+                    val items = displaySchedules.filter { it.difficulty == diff }
                     if (items.isNotEmpty()) {
                         item(key = "diff_$diff") {
                             DifficultyGroup(
@@ -189,9 +165,12 @@ fun ScheduleScreen(
                                     editingSchedule = it
                                     showEditDialog = true
                                 },
-                                onDelete = {
+                                onSchedule = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    viewModel.deleteSchedule(it.id)
+                                    onArrangeTime(it)
+                                },
+                                onDelete = {
+                                    requestDelete(it)
                                 }
                             )
                         }
@@ -199,7 +178,7 @@ fun ScheduleScreen(
                 }
             } else {
                 items(displaySchedules, key = { it.id }) { schedule ->
-                    ScheduleItem(
+                    SwipeableScheduleItem(
                         schedule = schedule,
                         onToggle = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -209,24 +188,77 @@ fun ScheduleScreen(
                             editingSchedule = schedule
                             showEditDialog = true
                         },
-                        onDelete = {
+                        onSchedule = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.deleteSchedule(schedule.id)
+                            onArrangeTime(schedule)
+                        },
+                        onDelete = {
+                            requestDelete(schedule)
                         }
                     )
                 }
             }
+        }
+
+        FloatingActionButton(
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                editingSchedule = null
+                showEditDialog = true
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            shape = CircleShape
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = null)
         }
     }
 
     if (showEditDialog) {
         ScheduleEditDialog(
             initialSchedule = editingSchedule,
-            defaultCategory = selectedCategory,
+            defaultCategory = viewModel.selectedCategory.value,
             onDismiss = { showEditDialog = false },
             onSave = { schedule ->
                 viewModel.saveSchedule(schedule)
                 showEditDialog = false
+            }
+        )
+    }
+
+    // 删除待办联动确认
+    pendingDelete?.let { task ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = { Text(stringResource(R.string.schedule_todo_delete_with_events_title)) },
+            text = { Text(stringResource(R.string.schedule_todo_delete_with_events_message)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingDelete = null
+                        viewModel.deleteSchedule(task.id)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text(stringResource(R.string.schedule_todo_delete_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { pendingDelete = null },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
+                    Text(stringResource(android.R.string.cancel))
+                }
             }
         )
     }
@@ -283,6 +315,7 @@ private fun DifficultyGroup(
     schedules: List<ScheduleEntity>,
     onToggle: (ScheduleEntity) -> Unit,
     onClick: (ScheduleEntity) -> Unit,
+    onSchedule: (ScheduleEntity) -> Unit,
     onDelete: (ScheduleEntity) -> Unit
 ) {
     val title = when(difficulty) {
@@ -296,22 +329,120 @@ private fun DifficultyGroup(
         initiallyExpanded = true
     ) {
         schedules.forEach { schedule ->
-            ScheduleItem(
-                schedule = schedule,
-                onToggle = { onToggle(schedule) },
-                onClick = { onClick(schedule) },
-                onDelete = { onDelete(schedule) }
-            )
+            key(schedule.id) {
+                SwipeableScheduleItem(
+                    schedule = schedule,
+                    onToggle = { onToggle(schedule) },
+                    onClick = { onClick(schedule) },
+                    onSchedule = { onSchedule(schedule) },
+                    onDelete = { onDelete(schedule) }
+                )
+            }
         }
     }
 }
 
+/**
+ * 可滑动待办卡片：右滑切换完成状态，左滑删除（删除有关联日程时由宿主弹出确认），
+ * 释放复选框与删除按钮占用的空间，把更多宽度留给标题。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ScheduleItem(
+private fun SwipeableScheduleItem(
     schedule: ScheduleEntity,
     onToggle: () -> Unit,
     onClick: () -> Unit,
+    onSchedule: () -> Unit,
     onDelete: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onToggle()
+                    // 不真正移除卡片：切换状态后回弹，由数据层驱动刷新
+                    false
+                }
+
+                SwipeToDismissBoxValue.EndToStart -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDelete()
+                    false
+                }
+
+                else -> false
+            }
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            val target = dismissState.targetValue
+            if (target == SwipeToDismissBoxValue.Settled) {
+                Box(Modifier.fillMaxSize())
+            } else {
+                val isCompleteAction = target == SwipeToDismissBoxValue.StartToEnd
+                val backgroundColor = if (isCompleteAction) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.errorContainer
+                }
+                val contentColor = if (isCompleteAction) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onErrorContainer
+                }
+                val alignment = if (isCompleteAction) Alignment.CenterStart else Alignment.CenterEnd
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(MaterialTheme.shapes.large)
+                        .background(backgroundColor),
+                    contentAlignment = alignment
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isCompleteAction) Icons.Rounded.Check else Icons.Rounded.Delete,
+                            contentDescription = null,
+                            tint = contentColor
+                        )
+                        Text(
+                            text = stringResource(
+                                if (isCompleteAction) R.string.schedule_swipe_complete
+                                else R.string.schedule_swipe_delete
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = contentColor
+                        )
+                    }
+                }
+            }
+        }
+    ) {
+        ScheduleItemCard(
+            schedule = schedule,
+            onClick = onClick,
+            onSchedule = onSchedule
+        )
+    }
+}
+
+/**
+ * 待办卡片本体：无复选框与删除按钮，完成状态以勾选图标 + 删除线表达；
+ * "安排时间"入口仅对 user 类待办显示（assistant 待办不排程）。
+ */
+@Composable
+private fun ScheduleItemCard(
+    schedule: ScheduleEntity,
+    onClick: () -> Unit,
+    onSchedule: () -> Unit
 ) {
     val itemBaseColor = when (schedule.priority) {
         2 -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
@@ -332,14 +463,18 @@ private fun ScheduleItem(
         } else null
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(
-                checked = schedule.isCompleted,
-                onCheckedChange = { onToggle() }
-            )
-            Spacer(Modifier.width(8.dp))
+            if (schedule.isCompleted) {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = stringResource(R.string.discover_schedule_completed),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     text = schedule.title,
@@ -383,8 +518,15 @@ private fun ScheduleItem(
                     )
                 }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Rounded.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
+            // 安排时间入口：仅 user 类待办显示，已有日程的待办仍可继续添加日程
+            if (schedule.category == "user") {
+                IconButton(onClick = onSchedule) {
+                    Icon(
+                        Icons.Rounded.MoreTime,
+                        contentDescription = stringResource(R.string.schedule_arrange_time),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                }
             }
         }
     }

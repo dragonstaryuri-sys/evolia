@@ -71,4 +71,34 @@
   <string name="reading_delete_confirm">确定删除这本书吗？</string>
   <string name="reading_empty_shelf">你的书架空空如也，上传书籍开启阅读之旅吧！</string>
   <string name="reading_ai_thought">AI阅读感悟</string>
+
+  <!-- 日程规划 -->
+  <string name="schedule_planner_view_timeline">时间轴</string>
+  <string name="schedule_planner_view_todo">待办视图</string>
+  <string name="schedule_planner_ai_auto">AI 自动排程</string>
+  <string name="schedule_filter_unscheduled">未排程</string>
+  <string name="schedule_filter_scheduled">已排程</string>
+  <string name="schedule_filter_all">全部</string>
+  <string name="schedule_event_new">新建日程</string>
+  <string name="schedule_event_edit">编辑日程</string>
+  <string name="schedule_event_date">日期</string>
+  <string name="schedule_event_name_hint">输入新事项名称</string>
+  <string name="schedule_event_pick_task">从待办中选择</string>
+  <string name="schedule_event_pick_time">选择时间</string>
+  <string name="schedule_event_save">保存</string>
+  <string name="schedule_event_time_invalid">结束时间需晚于开始时间</string>
+  <string name="schedule_event_overlap_title">时间重叠</string>
+  <string name="schedule_event_overlap_message">该时间段与已有日程重叠，是否仍要保存？</string>
+  <string name="schedule_event_overlap_confirm">仍要保存</string>
+  <string name="schedule_event_delete_title">删除日程</string>
+  <string name="schedule_event_delete_message">确定删除该日程安排吗？对应的待办将保留。</string>
+  <string name="schedule_event_delete_confirm">删除</string>
+  <string name="schedule_todo_delete_with_events_title">删除待办</string>
+  <string name="schedule_todo_delete_with_events_message">该待办已有日程安排，删除待办后，关联日程也将被删除。是否继续？</string>
+  <string name="schedule_todo_delete_confirm">删除</string>
+  <string name="schedule_arrange_time">安排时间</string>
+  <string name="schedule_event_start_short">开始</string>
+  <string name="schedule_event_end_short">结束</string>
+  <string name="schedule_swipe_complete">完成</string>
+  <string name="schedule_swipe_delete">删除</string>
 </resources>

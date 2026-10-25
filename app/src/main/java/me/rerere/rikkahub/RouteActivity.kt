@@ -127,7 +127,7 @@ import me.rerere.rikkahub.ui.pages.discover.DiarySearchPage
 import me.rerere.rikkahub.ui.pages.discover.HourLightPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoritesPage
 import me.rerere.rikkahub.ui.pages.favorites.FavoriteDetailPage
-import me.rerere.rikkahub.discover.ui.ScheduleScreen
+import me.rerere.rikkahub.discover.ui.SchedulePlannerScreen
 import me.rerere.rikkahub.discover.ui.TokenReportScreen
 import me.rerere.rikkahub.discover.ui.BookShelfScreen
 import me.rerere.rikkahub.discover.ui.BookReaderScreen
@@ -483,7 +483,7 @@ class RouteActivity : AppCompatActivity() {
                         FavoriteDetailPage(id = route.id)
                     }
                     composable<Screen.Schedule> {
-                        ScheduleScreen(onBack = { navBackStack.popBackStack() })
+                        SchedulePlannerScreen(onBack = { navBackStack.popBackStack() })
                     }
                     composable<Screen.TokenReport> {
                         TokenReportScreen(onBack = { navBackStack.popBackStack() })

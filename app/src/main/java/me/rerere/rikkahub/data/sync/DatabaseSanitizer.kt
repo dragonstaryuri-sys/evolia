@@ -80,7 +80,8 @@ object DatabaseSanitizer {
                 "agent_tasks", "token_usage", "books", "book_progress",
                 "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
                 "assistant_extended_state", "favorites", "profile_history",
-                "chat_messages", "chat_message_nodes", "app_locks"
+                "chat_messages", "chat_message_nodes", "app_locks",
+                "schedule_events"
             )
 
             for (sourceTableName in sourceTables) {
@@ -179,6 +180,13 @@ object DatabaseSanitizer {
             targetDbInfo.execSQL("""
                 DELETE FROM `chat_message_nodes`
                 WHERE `id` NOT IN (SELECT DISTINCT `node_id` FROM `chat_messages`)
+            """.trimIndent())
+
+            // 清理孤儿日程：还原过程外键处于关闭状态，若待办表拷贝失败
+            // 可能留下指向不存在待办的 schedule_events，恢复外键前一并清理
+            targetDbInfo.execSQL("""
+                DELETE FROM `schedule_events`
+                WHERE `task_id` NOT IN (SELECT `id` FROM `schedules`)
             """.trimIndent())
 
             // 同步进度水位线

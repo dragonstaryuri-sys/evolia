@@ -72,4 +72,34 @@
   <string name="schedule_category">Task Ownership</string>
   <string name="schedule_category_user">User</string>
   <string name="schedule_category_assistant">Assistant</string>
+
+  <!-- Schedule Planner -->
+  <string name="schedule_planner_view_timeline">Timeline</string>
+  <string name="schedule_planner_view_todo">To-do View</string>
+  <string name="schedule_planner_ai_auto">AI Auto-Schedule</string>
+  <string name="schedule_filter_unscheduled">Unscheduled</string>
+  <string name="schedule_filter_scheduled">Scheduled</string>
+  <string name="schedule_filter_all">All</string>
+  <string name="schedule_event_new">New Event</string>
+  <string name="schedule_event_edit">Edit Event</string>
+  <string name="schedule_event_date">Date</string>
+  <string name="schedule_event_name_hint">Enter new item name</string>
+  <string name="schedule_event_pick_task">Pick from To-dos</string>
+  <string name="schedule_event_pick_time">Pick Time</string>
+  <string name="schedule_event_save">Save</string>
+  <string name="schedule_event_time_invalid">End time must be later than start time</string>
+  <string name="schedule_event_overlap_title">Time Overlap</string>
+  <string name="schedule_event_overlap_message">This time range overlaps an existing event. Save anyway?</string>
+  <string name="schedule_event_overlap_confirm">Save Anyway</string>
+  <string name="schedule_event_delete_title">Delete Event</string>
+  <string name="schedule_event_delete_message">Delete this scheduled block? The linked to-do will be kept.</string>
+  <string name="schedule_event_delete_confirm">Delete</string>
+  <string name="schedule_todo_delete_with_events_title">Delete To-do</string>
+  <string name="schedule_todo_delete_with_events_message">This to-do has scheduled events. Deleting the to-do will also delete its events. Continue?</string>
+  <string name="schedule_todo_delete_confirm">Delete</string>
+  <string name="schedule_arrange_time">Schedule Time</string>
+  <string name="schedule_event_start_short">Start</string>
+  <string name="schedule_event_end_short">End</string>
+  <string name="schedule_swipe_complete">Complete</string>
+  <string name="schedule_swipe_delete">Delete</string>
 </resources>
