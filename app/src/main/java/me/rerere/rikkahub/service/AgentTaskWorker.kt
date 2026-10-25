@@ -16,6 +16,7 @@ import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.repository.AgentTaskRepository
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
+import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.core.data.db.dao.AgentDiaryDAO
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
@@ -28,6 +29,9 @@ import javax.mail.internet.MimeMessage
 import java.text.SimpleDateFormat
 
 private const val TAG = "AgentTaskWorker"
+
+// 可执行的任务类型白名单：认领前校验，未知类型不推进重复链
+private val KNOWN_TASK_TYPES = setOf("AGENT_TASK", "EMAIL", "NOTIFICATION", "DIARY")
 
 class AgentTaskWorker(
     context: Context,
@@ -48,6 +52,9 @@ class AgentTaskWorker(
             return Result.failure()
         }
 
+        // 认领状态：事务提交后置 true；异常分支据此判断重复链是否已推进、还能否安全重试
+        var claimed = false
+
         return try {
             // 自动清理：在执行新任务前，先清理数据库中所有已执行完成的记录
             agentTaskRepository.deleteExecutedTasks()
@@ -64,13 +71,32 @@ class AgentTaskWorker(
                 return Result.success()
             }
 
-            Log.d(TAG, "Executing task ${task.id} of type [${task.taskType}]")
-
             val data = JsonInstant.parseToJsonElement(task.taskData) as? JsonObject
             if (data == null) {
                 Log.e(TAG, "Task $taskId has invalid JSON data: ${task.taskData}")
                 return Result.failure()
             }
+
+            // 未知类型在认领前直接失败：认领会推进重复链，无法执行的任务不应该被续接
+            val isKnownType = task.taskType in KNOWN_TASK_TYPES
+            if (!isKnownType) {
+                Log.w(TAG, "Unknown task type: [${task.taskType}] for task $taskId")
+                return Result.failure()
+            }
+
+            // 原子认领 + 事务内创建下一周期记录。
+            // 同一 taskId 可能被多条链并发触发（WorkManager 延时链、闹钟立即链、心跳重调度），
+            // 只有条件更新成功（claimed=true）的那个实例会继续执行，其余直接退出，
+            // 从根源上杜绝「重复执行 + 重复创建下一周期任务」。
+            val nextScheduledTime = calculateNextScheduledTime(task)
+            val claimResult = agentTaskRepository.claimAndChainNext(task, nextScheduledTime)
+            if (!claimResult.claimed) {
+                Log.d(TAG, "Task $taskId already claimed by another worker, skipping.")
+                return Result.success()
+            }
+            claimed = true
+
+            Log.d(TAG, "Executing task ${task.id} of type [${task.taskType}]")
 
             val success = when (task.taskType) {
                 "AGENT_TASK", "EMAIL", "NOTIFICATION" -> {
@@ -91,58 +117,59 @@ class AgentTaskWorker(
                     Log.d(TAG, "Saved diary entry for $date")
                     true
                 }
-                else -> {
-                    Log.w(TAG, "Unknown task type: [${task.taskType}] for task $taskId")
-                    false
-                }
+                else -> false // 前面已做类型白名单校验，理论上不可达
             }
 
             if (success) {
-                // Mark current task as executed
-                agentTaskRepository.updateTask(task.copy(isExecuted = true))
-                Log.d(TAG, "Task ${task.id} marked as executed.")
-
-                // Handle repeating tasks
-                if (task.repeatInterval > 0) {
-                    val now = System.currentTimeMillis()
-                    val threshold = 5 * 60 * 60 * 1000L // 5 小时阈值
-
-                    // 根据重复间隔决定调度策略
-                    val calculatedNextTime = if (task.repeatInterval < threshold) {
-                        // 1. 动态间隔模式 (高频任务)：基于“实际执行时间”计算，防止关机后的通知轰炸
-                        now + task.repeatInterval
-                    } else {
-                        // 2. 固定网格模式 (长周期任务)：基于“原定计划时间”计算，保证如每日/每周任务的准时性
-                        task.scheduledTime + task.repeatInterval
-                    }
-
-                    // 安全检查：如果计算出的下一次时间依然早于或等于现在（比如手机关机时间超过了一个重复周期）
-                    // 则强制切换到从“现在”开始计算，确保不会陷入连续补发通知的死循环
-                    val finalNextTime = if (calculatedNextTime <= now) {
-                        now + task.repeatInterval
-                    } else {
-                        calculatedNextTime
-                    }
-
-                    val nextTask = task.copy(
-                        id = 0, // 创建新记录
-                        scheduledTime = finalNextTime,
-                        isExecuted = false,
-                        createdAt = now
-                    )
-                    val newId = agentTaskRepository.addTask(nextTask)
-                    agentTaskScheduler.scheduleTask(nextTask.copy(id = newId))
-                    Log.d(TAG, "Scheduled next repeat task: $newId at $finalNextTime (Interval: ${task.repeatInterval}ms)")
+                // 认领事务已插入下一周期记录，这里只需补上调度（进程若在此前被杀，
+                // 心跳闹钟会在到期后通过 getPendingTasks 兜底捞回）
+                claimResult.nextTask?.let { nextTask ->
+                    agentTaskScheduler.scheduleTask(nextTask)
+                    Log.d(TAG, "Scheduled next repeat task: ${nextTask.id} at ${nextTask.scheduledTime} (Interval: ${task.repeatInterval}ms)")
                 }
-
                 Result.success()
             } else {
-                Log.w(TAG, "Task execution failed (success=false), worker will NOT retry to avoid loops if type is unknown")
+                // 认领事务已提交、重复链已推进，无法回滚重试，仅记录失败
+                Log.w(TAG, "Task execution failed (success=false) for task ${task.id}")
                 Result.failure()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Exception during task $taskId execution: ${e.message}", e)
-            Result.retry()
+            if (claimed) {
+                // 已认领：任务已被标记执行，重试只会被 isExecuted 检查跳过，直接失败
+                Log.e(TAG, "Exception during claimed task $taskId execution (repeat chain already advanced): ${e.message}", e)
+                Result.failure()
+            } else {
+                // 未认领：状态未受影响，可以安全重试
+                Log.e(TAG, "Exception during task $taskId execution: ${e.message}", e)
+                Result.retry()
+            }
+        }
+    }
+
+    /**
+     * 计算重复任务的下一次执行时间；非重复任务（repeatInterval <= 0）返回 null。
+     */
+    private fun calculateNextScheduledTime(task: AgentTaskEntity): Long? {
+        if (task.repeatInterval <= 0) return null
+
+        val now = System.currentTimeMillis()
+        val threshold = 5 * 60 * 60 * 1000L // 5 小时阈值
+
+        // 根据重复间隔决定调度策略
+        val calculatedNextTime = if (task.repeatInterval < threshold) {
+            // 1. 动态间隔模式 (高频任务)：基于“实际执行时间”计算，防止关机后的通知轰炸
+            now + task.repeatInterval
+        } else {
+            // 2. 固定网格模式 (长周期任务)：基于“原定计划时间”计算，保证如每日/每周任务的准时性
+            task.scheduledTime + task.repeatInterval
+        }
+
+        // 安全检查：如果计算出的下一次时间依然早于或等于现在（比如手机关机时间超过了一个重复周期）
+        // 则强制切换到从“现在”开始计算，确保不会陷入连续补发通知的死循环
+        return if (calculatedNextTime <= now) {
+            now + task.repeatInterval
+        } else {
+            calculatedNextTime
         }
     }
 

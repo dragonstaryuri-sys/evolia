@@ -29,6 +29,11 @@ class AgentTaskScheduler(private val context: Context) : KoinComponent {
 
         // 1. WorkManager 调度 (作为保底)
         // 注意：这里去掉了 NetworkType.CONNECTED 约束，防止息屏时因网络判定延迟任务
+        // REPLACE 保证 edit 改时间 / 心跳重调度逾期任务时，用新延迟替换仍在排队的旧请求。
+        // 它可能取消“正在运行”的 Worker，但这在认领式执行下是安全的：
+        // AgentTaskWorker 在执行任务体之前就通过事务把 is_executed 置 1，
+        // 心跳的 getPendingTasks 只查 is_executed = 0，看不到执行中的任务，
+        // 实际可被 REPLACE 打断的只有认领前几毫秒的 DB 读取，打断后重跑会被原子认领去重。
         val workRequest = OneTimeWorkRequestBuilder<AgentTaskWorker>()
             .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
             .setInputData(workDataOf("taskId" to task.id))
@@ -89,18 +94,30 @@ class AgentTaskScheduler(private val context: Context) : KoinComponent {
     }
 
     /**
-     * 立即执行指定任务
+     * 立即执行指定任务（由 AlarmManager 精确闹钟触发）。
+     *
+     * 使用独立的 "_alarm" 唯一链，与 scheduleTask 的延时主链分开：
+     * - 不能用 REPLACE 覆盖主链：闹钟与主链几乎同时到期时，REPLACE 会取消
+     *   刚开始运行的 Worker，导致任务被认领却未执行。
+     * - 两条链并发触发的去重由 AgentTaskWorker 内的原子认领（claimAndChainNext）保证，
+     *   后到的实例发现任务已被认领会直接退出。
      */
     fun executeTaskImmediately(taskId: Long) {
         val workRequest = OneTimeWorkRequestBuilder<AgentTaskWorker>()
             .setInputData(workDataOf("taskId" to taskId))
             .build()
-        WorkManager.getInstance(context).enqueue(workRequest)
-        Log.d(TAG, "Immediately enqueued task $taskId via WorkManager")
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "agent_task_${taskId}_alarm",
+            ExistingWorkPolicy.KEEP,
+            workRequest
+        )
+        Log.d(TAG, "Immediately enqueued task $taskId via WorkManager (alarm chain)")
     }
 
     fun cancelTask(taskId: Long) {
         WorkManager.getInstance(context).cancelUniqueWork("agent_task_$taskId")
+        // 闹钟立即执行链一并取消，避免取消后残留的 _alarm 请求再触发一次空跑
+        WorkManager.getInstance(context).cancelUniqueWork("agent_task_${taskId}_alarm")
 
         // 同时取消闹钟
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
