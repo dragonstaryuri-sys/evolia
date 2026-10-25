@@ -1454,8 +1454,8 @@ class ChatService(
                                         LocalToolOption.WebPageReader,
                                         LocalToolOption.PeekUser,
                                         LocalToolOption.UpdateProfile,
-                                        LocalToolOption.TimeSense,
-                                        LocalToolOption.PrintContent
+                                        LocalToolOption.TimeSense
+                                        // PrintContent 不强制注入：打印工具对所有智能体（含主助手）严格跟随工具开关
                                     )
                                     coreTools.forEach { tool ->
                                         if (list.none { it::class == tool::class }) {

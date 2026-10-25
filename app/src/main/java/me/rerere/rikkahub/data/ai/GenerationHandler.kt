@@ -1535,8 +1535,10 @@ class GenerationHandler(
                     if (dynamicContext.isNotBlank()) {
                         val newTextPart = UIMessagePart.Text(
                             text = buildString {
-                                appendLine("System")
+                                appendLine("System:")
+                                append("[")
                                 append(dynamicContext)
+                                append("]")
                                 appendLine("User:")
                                 append(builtText)
                             }
