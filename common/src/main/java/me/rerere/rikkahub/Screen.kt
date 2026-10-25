@@ -126,6 +126,14 @@ sealed interface Screen {
     @Serializable
     data object SettingEmail : Screen
 
+    /** 扩展服务页（搜索服务 / 邮件服务 / 打印机服务聚合入口）。 */
+    @Serializable
+    data object SettingExtensions : Screen
+
+    /** 打印机服务页（设备管理 / 自动打印 / 测试打印）。 */
+    @Serializable
+    data object SettingPrinter : Screen
+
     @Serializable
     data object SettingWakeWord : Screen
 

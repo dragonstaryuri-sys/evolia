@@ -327,10 +327,10 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     )
 
                     SettingGroupItem(
-                        title = stringResource(R.string.setting_page_search_service),
-                        subtitle = stringResource(R.string.setting_page_search_service_desc),
-                        icon = { Icon(Icons.Rounded.Public, null, modifier = Modifier.size(20.dp)) },
-                        onClick = { navController.navigate(Screen.SettingSearch) }
+                        title = stringResource(R.string.setting_page_extension_service),
+                        subtitle = stringResource(R.string.setting_page_extension_service_desc),
+                        icon = { Icon(Icons.Rounded.Extension, null, modifier = Modifier.size(20.dp)) },
+                        onClick = { navController.navigate(Screen.SettingExtensions) }
                     )
 
                     SettingGroupItem(
@@ -348,13 +348,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             onClick = { navController.navigate(Screen.SettingWakeWord) }
                         )
                     }
-
-                    SettingGroupItem(
-                        title = stringResource(R.string.setting_page_email_service),
-                        subtitle = stringResource(R.string.setting_page_email_service_desc),
-                        icon = { Icon(Icons.Rounded.Email, null, modifier = Modifier.size(20.dp)) },
-                        onClick = { navController.navigate(Screen.SettingEmail) }
-                    )
 
                     SettingGroupItem(
                         title = stringResource(R.string.setting_page_mcp),

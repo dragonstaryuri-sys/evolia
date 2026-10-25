@@ -158,6 +158,34 @@ fun AssistantToolsSubPage(
                     }
                 )
 
+                // Print Content（打印内容到热敏打印机）
+                SettingGroupItem(
+                    title = stringResource(R.string.assistant_page_local_tools_print_content_title),
+                    subtitle = stringResource(R.string.assistant_page_local_tools_print_content_desc),
+                    trailing = {
+                        HapticSwitch(
+                            checked = assistant.localTools.contains(LocalToolOption.PrintContent),
+                            onCheckedChange = { enabled ->
+                                val newLocalTools = if (enabled) {
+                                    assistant.localTools + LocalToolOption.PrintContent
+                                } else {
+                                    assistant.localTools - LocalToolOption.PrintContent
+                                }
+                                onUpdate(assistant.copy(localTools = newLocalTools))
+                            }
+                        )
+                    },
+                    onClick = {
+                        val enabled = !assistant.localTools.contains(LocalToolOption.PrintContent)
+                        val newLocalTools = if (enabled) {
+                            assistant.localTools + LocalToolOption.PrintContent
+                        } else {
+                            assistant.localTools - LocalToolOption.PrintContent
+                        }
+                        onUpdate(assistant.copy(localTools = newLocalTools))
+                    }
+                )
+
                 // JavaScript Engine
                 SettingGroupItem(
                     title = stringResource(R.string.assistant_page_local_tools_javascript_engine_title),

@@ -33,6 +33,7 @@ import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV1Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV2Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV3Migration
 import me.rerere.rikkahub.data.datastore.migration.PreferenceStoreV4Migration
+import me.rerere.rikkahub.data.print.PrinterDeviceConfig
 import me.rerere.rikkahub.ui.theme.PresetThemes
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.utils.toMutableStateFlow
@@ -133,6 +134,8 @@ class SettingsStore(
         val CALL_RINGTONE = stringPreferencesKey("call_ringtone")
         // 自定义铃声在 filesDir/ringtones/ 下的相对路径
         val CALL_RINGTONE_CUSTOM_PATH = stringPreferencesKey("call_ringtone_custom_path")
+        // 打印机配置（设备信息 + 自动打印开关）
+        val PRINT_CONFIG = stringPreferencesKey("print_config")
     }
 
     private val dataStore = context.settingsStore
@@ -239,6 +242,9 @@ class SettingsStore(
                 notificationBackupEnabled = preferences[NOTIFICATION_BACKUP_ENABLED] ?: true,
                 callRingtone = preferences[CALL_RINGTONE] ?: "system1",
                 callRingtoneCustomPath = preferences[CALL_RINGTONE_CUSTOM_PATH] ?: "",
+                printerConfig = preferences[PRINT_CONFIG]?.let {
+                    JsonInstant.decodeFromString<PrinterDeviceConfig>(it)
+                } ?: PrinterDeviceConfig(),
             )
         }
         .map {
@@ -481,6 +487,7 @@ class SettingsStore(
             preferences[NOTIFICATION_BACKUP_ENABLED] = settingsToSave.notificationBackupEnabled
             preferences[CALL_RINGTONE] = settingsToSave.callRingtone
             preferences[CALL_RINGTONE_CUSTOM_PATH] = settingsToSave.callRingtoneCustomPath
+            preferences[PRINT_CONFIG] = JsonInstant.encodeToString(settingsToSave.printerConfig)
         }
     }
 
@@ -587,6 +594,8 @@ data class Settings(
     val callRingtone: String = "system1",
     // 自定义来电铃声相对路径（filesDir/ringtones/ 下）
     val callRingtoneCustomPath: String = "",
+    // 打印机配置（已保存设备 + 自动打印开关，默认未配置/关闭）
+    val printerConfig: PrinterDeviceConfig = PrinterDeviceConfig(),
 ) {
     companion object {
         fun dummy() = Settings(init = true)

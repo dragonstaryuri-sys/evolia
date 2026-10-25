@@ -7,6 +7,7 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
 import kotlin.math.ceil
+import kotlin.math.round
 
 /**
  * Markdown 日计划 PDF 渲染器。
@@ -152,6 +153,84 @@ class PlannerMarkdownPdfRenderer {
                 )
             }
         }
+    }
+
+    /**
+     * 打印专用：热敏连续纸按条带（strip）分段渲染，逐条回调给调用方转成点阵发送。
+     *
+     * 与 [renderContinuous] 共用同一套 [layout] 与 [drawLine]，版面规则一致；
+     * 区别在于每个条带的像素高度不超过 [maxStripHeightPx]，条带之间按行边界
+     * 无缝衔接（像素边界由累计 pt 坐标取整得到，不产生累积缝隙），
+     * 从而避免为长文档一次性创建整卷超高 Bitmap。
+     * 首条带包含上边距、末条带包含下边距，内容与连续纸 PDF 输出一致。
+     *
+     * @param scale 每 pt 对应的像素数；输出条带宽度 = round(paper.widthPt * scale)
+     * @return 是否完整渲染了全部条带（调用方返回 false 中止时为 false）
+     */
+    fun renderPrintStrips(
+        markdown: String,
+        paper: PlannerPaper,
+        scale: Float,
+        maxStripHeightPx: Int,
+        consumer: PrintStripConsumer,
+    ): Boolean {
+        require(scale > 0f) { "scale must be positive" }
+        require(maxStripHeightPx >= 64) { "maxStripHeightPx too small" }
+
+        val palette = Palette()
+        val margin = paper.marginPt
+        val contentWidth = paper.widthPt - margin * 2
+        val lines = layout(markdown, paper, contentWidth)
+        val widthPx = round(paper.widthPt * scale).toInt()
+        val maxStripPt = maxStripHeightPx / scale
+
+        // 按行边界分组条带：条带高度（首条带含上边距）不超过像素上限
+        class Strip(val lines: MutableList<LayoutLine>, val startPt: Float)
+        val strips = mutableListOf<Strip>()
+        var current = mutableListOf<LayoutLine>()
+        var stripStartPt = 0f
+        var cursor = margin   // 内容绘制光标；空白内容时停在 margin，条带自动退化为上下边距
+        lines.forEach { line ->
+            val required = line.height + line.spaceBefore
+            val lineBottom = cursor + required
+            val stripHeight = lineBottom - stripStartPt
+            if (current.isNotEmpty() && stripHeight > maxStripPt) {
+                strips.add(Strip(current, stripStartPt))
+                current = mutableListOf()
+                stripStartPt = cursor
+            }
+            current.add(line)
+            cursor = lineBottom
+        }
+        val totalEndPt = cursor + margin  // 末条带尾部保留下边距
+        strips.add(Strip(current, stripStartPt))
+
+        strips.forEachIndexed { index, strip ->
+            val endPt = if (index == strips.lastIndex) totalEndPt else strips[index + 1].startPt
+            val pxStart = round(strip.startPt * scale).toInt()
+            val pxHeight = round(endPt * scale).toInt() - pxStart
+            if (pxHeight <= 0) return@forEachIndexed
+            val continued = consumer.onStrip(index, widthPx, pxHeight) { canvas ->
+                canvas.drawColor(Color.WHITE)
+                canvas.save()
+                canvas.scale(scale, scale)
+                canvas.translate(0f, -strip.startPt)
+                var y = strip.startPt
+                strip.lines.forEach { line ->
+                    y += line.spaceBefore
+                    drawLine(canvas, line, margin, contentWidth, y, palette)
+                    y += line.height
+                }
+                canvas.restore()
+            }
+            if (!continued) return false
+        }
+        return true
+    }
+
+    fun interface PrintStripConsumer {
+        /** 返回 false 中止后续条带（用户取消或发送失败时） */
+        fun onStrip(index: Int, widthPx: Int, heightPx: Int, draw: (Canvas) -> Unit): Boolean
     }
 
     companion object {

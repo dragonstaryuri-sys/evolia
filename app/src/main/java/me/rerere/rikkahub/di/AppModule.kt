@@ -54,6 +54,7 @@ val appModule = module {
             profileHistoryRepo = get(),
             appLockRepository = get(),
             plannerFacade = get(),
+            printTaskManager = get(),
         )
     }
 
@@ -137,6 +138,22 @@ val appModule = module {
 
     single {
         me.rerere.rikkahub.service.voice.VoiceMessagePlayer(get())
+    }
+
+    single {
+        me.rerere.rikkahub.data.print.PrinterManager(
+            context = get(),
+            settingsStore = get(),
+        )
+    }
+
+    single {
+        me.rerere.rikkahub.data.print.PrintTaskManager(
+            context = get(),
+            printerManager = get(),
+            settingsStore = get(),
+            appScope = get(),
+        )
     }
 
     singleOf(::ChatService)

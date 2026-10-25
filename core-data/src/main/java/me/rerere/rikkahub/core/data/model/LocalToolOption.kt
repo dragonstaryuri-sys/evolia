@@ -57,6 +57,10 @@ sealed class LocalToolOption {
     @SerialName("call_control")
     data object CallControl : LocalToolOption()
 
+    @Serializable
+    @SerialName("print_content")
+    data object PrintContent : LocalToolOption()
+
     /**
      * 已废弃：摄像头拍照已合并到 [DeviceControl] 开关下。
      * 保留此枚举仅为兼容旧数据库反序列化；运行时等同于 [DeviceControl]。

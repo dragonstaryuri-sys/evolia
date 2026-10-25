@@ -1454,7 +1454,8 @@ class ChatService(
                                         LocalToolOption.WebPageReader,
                                         LocalToolOption.PeekUser,
                                         LocalToolOption.UpdateProfile,
-                                        LocalToolOption.TimeSense
+                                        LocalToolOption.TimeSense,
+                                        LocalToolOption.PrintContent
                                     )
                                     coreTools.forEach { tool ->
                                         if (list.none { it::class == tool::class }) {
@@ -1477,6 +1478,7 @@ class ChatService(
                                         it is LocalToolOption.EmailService ||
                                         it is LocalToolOption.ImageGeneration ||
                                         it is LocalToolOption.DeviceControl ||
+                                        it is LocalToolOption.PrintContent ||
                                         @Suppress("DEPRECATION") it is LocalToolOption.CameraCapture
                                 }
                             }

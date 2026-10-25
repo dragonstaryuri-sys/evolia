@@ -377,6 +377,7 @@ private fun getToolDisplayName(toolName: String): String {
         "create_memory" -> "Creating memory"
         "edit_memory" -> "Editing memory"
         "delete_memory" -> "Deleting memory"
+        "print_content" -> "Preparing print"
         else -> toolName.replace("_", " ").replaceFirstChar { it.uppercase() }
     }
 }
@@ -1158,6 +1159,15 @@ private sealed class AssistantRenderItem {
         override val isLastInTurn: Boolean,
         override val totalInTurn: Int,
     ) : AssistantRenderItem()
+
+    /** print_content 打印任务卡片：实时状态 + 确认/取消操作 */
+    data class PrintTaskItem(
+        override val node: MessageNode,
+        val taskId: String,
+        override val isFirstInTurn: Boolean,
+        override val isLastInTurn: Boolean,
+        override val totalInTurn: Int,
+    ) : AssistantRenderItem()
 }
 
 /**
@@ -1267,6 +1277,18 @@ private fun AssistantMessageTurn(
                                 )
                             }
                         }
+                        // print_content 工具：渲染打印任务卡片（状态实时来自 PrintTaskManager）
+                        if (part.toolName == "print_content") {
+                            val contentObj = part.content as? JsonObject
+                            val taskId = contentObj?.get("task_id")?.jsonPrimitiveOrNull?.contentOrNull
+                            if (!taskId.isNullOrBlank()) {
+                                flat += AssistantRenderItem.PrintTaskItem(
+                                    node = node,
+                                    taskId = taskId,
+                                    isFirstInTurn = false, isLastInTurn = false, totalInTurn = 0
+                                )
+                            }
+                        }
                     }
                     else -> Unit
                 }
@@ -1281,6 +1303,7 @@ private fun AssistantMessageTurn(
                 is AssistantRenderItem.ReasoningItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.AudioItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
                 is AssistantRenderItem.CameraCaptureImageItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
+                is AssistantRenderItem.PrintTaskItem -> item.copy(isFirstInTurn = first, isLastInTurn = last, totalInTurn = total)
             }
         }
     }
@@ -1456,6 +1479,18 @@ private fun AssistantMessageTurn(
                                     .clip(MaterialTheme.shapes.medium)
                                     .height(200.dp)
                                     .clickable { if (!selecting) onBubbleClick(node) }
+                            )
+                        }
+                    }
+
+                    is AssistantRenderItem.PrintTaskItem -> {
+                        // 打印任务卡片：自带容器与配色（主题语义色），确认/取消不触发 AI 轮次
+                        if (selecting) {
+                            // 多选模式下不渲染交互卡片
+                        } else {
+                            PrintTaskCard(
+                                taskId = item.taskId,
+                                modifier = Modifier.widthIn(max = maxWidth)
                             )
                         }
                     }

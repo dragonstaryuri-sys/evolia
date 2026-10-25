@@ -35,6 +35,7 @@ import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.data.planner.PlannerFacade
+import me.rerere.rikkahub.data.print.PrintTaskManager
 import me.rerere.rikkahub.service.AgentTaskScheduler
 import org.koin.compose.koinInject
 import java.util.Properties
@@ -300,6 +301,7 @@ fun rememberLocalTools(): LocalTools {
     val profileHistoryRepo = koinInject<ProfileHistoryRepository>()
     val appLockRepository = koinInject<AppLockRepository>()
     val plannerFacade = koinInject<PlannerFacade>()
+    val printTaskManager = koinInject<PrintTaskManager>()
 
     return remember {
         LocalTools(
@@ -318,7 +320,8 @@ fun rememberLocalTools(): LocalTools {
             genMediaRepository,
             profileHistoryRepo,
             appLockRepository,
-            plannerFacade
+            plannerFacade,
+            printTaskManager
         )
     }
 }
@@ -339,7 +342,8 @@ class LocalTools(
     private val genMediaRepository: GenMediaRepository,
     private val profileHistoryRepo: ProfileHistoryRepository,
     private val appLockRepository: AppLockRepository,
-    private val plannerFacade: PlannerFacade
+    private val plannerFacade: PlannerFacade,
+    private val printTaskManager: PrintTaskManager
 ) {
     val javascriptTool by lazy {
         Tool(
@@ -2991,6 +2995,10 @@ class LocalTools(
         )
     }
 
+    fun getPrintContentTools(): List<Tool> = listOf(
+        getPrintContentTool(printTaskManager)
+    )
+
     fun getTools(
         options: List<LocalToolOption>,
         assistantId: Uuid,
@@ -3016,6 +3024,7 @@ class LocalTools(
         if (options.contains(LocalToolOption.CallControl)) {
             tools.addAll(getCallControlTools(assistantId, conversationId))
         }
+        if (options.contains(LocalToolOption.PrintContent)) tools.addAll(getPrintContentTools())
         return tools
     }
 }

@@ -29,6 +29,19 @@
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
   <!-- 通话缩小后的系统悬浮迷你窗（显示在其他应用上层） -->
   <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <!-- BLE 热敏打印机（PD01）：S+ 使用连接/扫描权限，扫描不用于定位 -->
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <uses-permission
+    android:name="android.permission.BLUETOOTH_SCAN"
+    android:usesPermissionFlags="neverForLocation"
+    tools:targetApi="s" />
+  <!-- 旧版本（Android 11 及以下）蓝牙权限 -->
+  <uses-permission
+    android:name="android.permission.BLUETOOTH"
+    android:maxSdkVersion="30" />
+  <uses-permission
+    android:name="android.permission.BLUETOOTH_ADMIN"
+    android:maxSdkVersion="30" />
   <uses-feature
     android:name="android.hardware.camera"
     android:required="false" />
