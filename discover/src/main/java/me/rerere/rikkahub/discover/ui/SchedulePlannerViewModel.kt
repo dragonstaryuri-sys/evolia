@@ -18,6 +18,12 @@ import me.rerere.rikkahub.discover.repo.ScheduleEventWithTask
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
 import java.time.LocalDate
 
+/** 某一天的日程及其所属日期（供时间轴按日期做翻页动画） */
+data class PlannerDayEvents(
+    val date: LocalDate,
+    val events: List<ScheduleEventWithTask>,
+)
+
 /** 日程页面的两种视图：全天时间轴 / 待办列表 */
 enum class PlannerView { TIMELINE, TODO }
 
@@ -48,22 +54,28 @@ class SchedulePlannerViewModel(
     /**
      * 所选日期的日程（含关联待办），已按 开始时间 → 创建时间 → ID 排序。
      * 本期日程规划只面向 user 类待办，防御性过滤 category。
+     * 携带所属日期，供时间轴翻页动画区分新旧两天的数据。
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val eventsForDate: StateFlow<List<ScheduleEventWithTask>> = _selectedDate
+    val eventsForDate: StateFlow<PlannerDayEvents> = _selectedDate
         .flatMapLatest { date ->
             combine(
                 eventRepository.observeEventsForDate(date.toEpochDay()),
                 scheduleRepository.getAllSchedules()
             ) { events, todos ->
                 val todoById = todos.associateBy { it.id }
-                events.mapNotNull { event ->
+                val list = events.mapNotNull { event ->
                     val todo = todoById[event.taskId] ?: return@mapNotNull null
                     if (event.category != "user") return@mapNotNull null
                     ScheduleEventWithTask(event, todo)
                 }
+                PlannerDayEvents(date, list)
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            PlannerDayEvents(_selectedDate.value, emptyList())
+        )
 
     /**
      * 日程表单的待办候选列表：仅 user 类待办，按排程状态筛选。

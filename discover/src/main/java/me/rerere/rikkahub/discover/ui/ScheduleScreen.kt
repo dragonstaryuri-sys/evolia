@@ -35,10 +35,17 @@ import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.discover.R
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import me.rerere.rikkahub.common.ui.components.ExpandableCard
+import me.rerere.rikkahub.common.ui.theme.LocalDarkTheme
 import me.rerere.rikkahub.common.PowerUtils
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+
+// 右滑完成背景的品牌绿（深浅色成对，取值与 app 主题 extendColors.green2/green8 同源）
+private val CompleteSwipeBgLight = Color(175, 240, 181)
+private val CompleteSwipeBgDark = Color(4, 102, 37)
+private val CompleteSwipeContentLight = Color(0, 128, 38)
+private val CompleteSwipeContentDark = Color(126, 225, 139)
 
 /**
  * 待办视图（嵌入日程规划页）。
@@ -109,22 +116,31 @@ fun ScheduleTodoContent(
             // 排程状态筛选条（仅待处理 Tab；与难度分类是两个独立维度）
             if (selectedTabIndex == 0) {
                 item(key = "schedule_filter") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val filterOptions = listOf(
-                            ScheduleStatusFilter.UNSCHEDULED to stringResource(R.string.schedule_filter_unscheduled),
-                            ScheduleStatusFilter.SCHEDULED to stringResource(R.string.schedule_filter_scheduled),
-                            ScheduleStatusFilter.ALL to stringResource(R.string.schedule_filter_all)
-                        )
-                        filterOptions.forEach { (option, label) ->
-                            FilterChip(
-                                selected = scheduleFilter == option,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    viewModel.setScheduleFilter(option)
-                                },
-                                label = { Text(label) }
+                    Column {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val filterOptions = listOf(
+                                ScheduleStatusFilter.UNSCHEDULED to stringResource(R.string.schedule_filter_unscheduled),
+                                ScheduleStatusFilter.SCHEDULED to stringResource(R.string.schedule_filter_scheduled),
+                                ScheduleStatusFilter.ALL to stringResource(R.string.schedule_filter_all)
                             )
+                            filterOptions.forEach { (option, label) ->
+                                FilterChip(
+                                    selected = scheduleFilter == option,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        viewModel.setScheduleFilter(option)
+                                    },
+                                    label = { Text(label) }
+                                )
+                            }
                         }
+                        // 滑动操作提示：让用户知道卡片支持左滑/右滑
+                        Text(
+                            text = stringResource(R.string.schedule_swipe_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, top = 6.dp)
+                        )
                     }
                 }
             }
@@ -385,13 +401,16 @@ private fun SwipeableScheduleItem(
                 Box(Modifier.fillMaxSize())
             } else {
                 val isCompleteAction = target == SwipeToDismissBoxValue.StartToEnd
+                // 右滑完成使用品牌绿（取自主题 extendColors.green2/green8 的深浅色成对值，
+                // discover 模块无法直接访问 extendColors，经 LocalDarkTheme 选择）
+                val darkTheme = LocalDarkTheme.current
                 val backgroundColor = if (isCompleteAction) {
-                    MaterialTheme.colorScheme.primaryContainer
+                    if (darkTheme) CompleteSwipeBgDark else CompleteSwipeBgLight
                 } else {
                     MaterialTheme.colorScheme.errorContainer
                 }
                 val contentColor = if (isCompleteAction) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
+                    if (darkTheme) CompleteSwipeContentDark else CompleteSwipeContentLight
                 } else {
                     MaterialTheme.colorScheme.onErrorContainer
                 }

@@ -1,7 +1,16 @@
 package me.rerere.rikkahub.discover.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,7 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Schedule
@@ -36,6 +44,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import me.rerere.rikkahub.discover.R
@@ -65,9 +74,15 @@ fun SchedulePlannerScreen(
 ) {
     val viewMode by viewModel.viewMode.collectAsState()
     val selectedDate by viewModel.selectedDate.collectAsState()
-    val events by viewModel.eventsForDate.collectAsState()
+    val dayEvents by viewModel.eventsForDate.collectAsState()
     val selectedCategory by todoViewModel.selectedCategory.collectAsState()
     val haptic = LocalHapticFeedback.current
+
+    // 按日期缓存各天已加载的日程快照：翻页动画期间，退场页保留其当日数据
+    val eventsCache = remember { mutableStateMapOf<LocalDate, List<ScheduleEventWithTask>>() }
+    LaunchedEffect(dayEvents) {
+        eventsCache[dayEvents.date] = dayEvents.events
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showDatePicker by remember { mutableStateOf(false) }
@@ -97,31 +112,8 @@ fun SchedulePlannerScreen(
                         }
                     },
                     actions = {
-                        if (viewMode == PlannerView.TIMELINE) {
-                            // AI 自动排程占位按钮：本期未开放，仅提供禁用态入口
-                            AssistChip(
-                                onClick = {},
-                                enabled = false,
-                                label = {
-                                    Text(
-                                        text = stringResource(R.string.schedule_planner_ai_auto),
-                                        style = MaterialTheme.typography.labelMedium
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Rounded.AutoAwesome,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        } else {
+                        // 分类切换仅在待办视图有意义（时间轴视图的日程均为 user 类）
+                        if (viewMode == PlannerView.TODO) {
                             IconButton(onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 val next = if (selectedCategory == "user") "assistant" else "user"
@@ -182,15 +174,38 @@ fun SchedulePlannerScreen(
     ) { padding ->
         when (viewMode) {
             PlannerView.TIMELINE -> {
-                TimelineContent(
-                    events = events,
-                    selectedDate = selectedDate,
-                    onEventClick = { formRequest = EventFormRequest.edit(it) },
-                    onEmptyAreaClick = { minute ->
-                        formRequest = EventFormRequest.newAt(selectedDate, minute)
+                // 翻页动画：按日程数据实际到达的日期触发，方向与切日方向一致
+                // （共享轴模式：新页从滑动方向滑入，旧页向反方向位移 1/3 并淡出）
+                AnimatedContent(
+                    targetState = dayEvents.date,
+                    transitionSpec = {
+                        val forward = targetState.isAfter(initialState)
+                        val moveSpec = tween<IntOffset>(280, easing = FastOutSlowInEasing)
+                        val fadeSpec = tween<Float>(280, easing = FastOutSlowInEasing)
+                        if (forward) {
+                            (slideInHorizontally(moveSpec) { it } + fadeIn(fadeSpec)) togetherWith
+                                (slideOutHorizontally(moveSpec) { -it / 3 } + fadeOut(fadeSpec))
+                        } else {
+                            (slideInHorizontally(moveSpec) { -it } + fadeIn(fadeSpec)) togetherWith
+                                (slideOutHorizontally(moveSpec) { it / 3 } + fadeOut(fadeSpec))
+                        }
                     },
-                    modifier = Modifier.padding(padding)
-                )
+                    label = "dayPage"
+                ) { animatedDate ->
+                    TimelineContent(
+                        events = eventsCache[animatedDate].orEmpty(),
+                        selectedDate = animatedDate,
+                        onEventClick = { formRequest = EventFormRequest.edit(it) },
+                        onEmptyAreaClick = { minute ->
+                            formRequest = EventFormRequest.newAt(animatedDate, minute)
+                        },
+                        onSwipeDay = { deltaDays ->
+                            // 以 VM 当前日期为基准，连续滑动不丢日
+                            viewModel.setSelectedDate(viewModel.selectedDate.value.plusDays(deltaDays))
+                        },
+                        modifier = Modifier.padding(padding)
+                    )
+                }
             }
 
             PlannerView.TODO -> {
@@ -296,6 +311,7 @@ data class EventFormRequest(
 private const val TIMELINE_HOUR_HEIGHT_DP = 56
 private val TimelineHourHeight = TIMELINE_HOUR_HEIGHT_DP.dp
 private val TimelineLabelWidth = 52.dp
+private val SwipeDayThreshold = 72.dp
 private val TimelineMinCardHeight = 44.dp
 private val TimelineCardGap = 6.dp
 
@@ -320,11 +336,14 @@ private fun TimelineContent(
     selectedDate: LocalDate,
     onEventClick: (ScheduleEventWithTask) -> Unit,
     onEmptyAreaClick: (startMinute: Int) -> Unit,
+    onSwipeDay: (deltaDays: Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
+    // 左右滑动切日的触发阈值：水平拖动超过该距离即切换（与垂直滚动互不干扰）
+    val swipeThresholdPx = with(density) { SwipeDayThreshold.toPx() }
 
     val layout = remember(events) { buildTimelineLayout(events) }
 
@@ -345,10 +364,28 @@ private fun TimelineContent(
         if (isToday) LocalTime.now().let { it.hour * 60 + it.minute } else -1
     }
 
+    // 左右滑动切换前一天 / 后一天：水平拖动累积距离，松手超过阈值即切日；
+    // 与垂直滚动互不干扰（各自只响应本方向的拖动），卡片点击仍由子级处理
+    var swipeAccumulated = 0f
     Row(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { swipeAccumulated = 0f },
+                    onDragEnd = {
+                        if (kotlin.math.abs(swipeAccumulated) >= swipeThresholdPx) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (swipeAccumulated < 0) onSwipeDay(1) else onSwipeDay(-1)
+                        }
+                    },
+                    onDragCancel = { swipeAccumulated = 0f },
+                ) { change, dragAmount ->
+                    change.consume()
+                    swipeAccumulated += dragAmount
+                }
+            }
     ) {
         // 左侧时间刻度
         Box(

@@ -89,7 +89,8 @@ fun RikkahubTheme(
 
     CompositionLocalProvider(
         LocalDarkMode provides darkTheme,
-        LocalExtendColors provides extendColors
+        LocalExtendColors provides extendColors,
+        me.rerere.rikkahub.common.ui.theme.LocalDarkTheme provides darkTheme
     ) {
         // Create typography from font settings
         val fontSettings = me.rerere.rikkahub.ui.hooks.rememberFontSettings()

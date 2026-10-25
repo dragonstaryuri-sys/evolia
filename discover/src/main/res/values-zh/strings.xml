@@ -75,7 +75,6 @@
   <!-- 日程规划 -->
   <string name="schedule_planner_view_timeline">时间轴</string>
   <string name="schedule_planner_view_todo">待办视图</string>
-  <string name="schedule_planner_ai_auto">AI 自动排程</string>
   <string name="schedule_filter_unscheduled">未排程</string>
   <string name="schedule_filter_scheduled">已排程</string>
   <string name="schedule_filter_all">全部</string>
@@ -101,4 +100,5 @@
   <string name="schedule_event_end_short">结束</string>
   <string name="schedule_swipe_complete">完成</string>
   <string name="schedule_swipe_delete">删除</string>
+  <string name="schedule_swipe_hint">小提示：左滑删除待办，右滑标记完成</string>
 </resources>

@@ -76,7 +76,6 @@
   <!-- Schedule Planner -->
   <string name="schedule_planner_view_timeline">Timeline</string>
   <string name="schedule_planner_view_todo">To-do View</string>
-  <string name="schedule_planner_ai_auto">AI Auto-Schedule</string>
   <string name="schedule_filter_unscheduled">Unscheduled</string>
   <string name="schedule_filter_scheduled">Scheduled</string>
   <string name="schedule_filter_all">All</string>
@@ -102,4 +101,5 @@
   <string name="schedule_event_end_short">End</string>
   <string name="schedule_swipe_complete">Complete</string>
   <string name="schedule_swipe_delete">Delete</string>
+  <string name="schedule_swipe_hint">Tip: swipe a card left to delete, right to mark done</string>
 </resources>
