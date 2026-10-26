@@ -579,6 +579,13 @@ fun SettingLorebookDetailPage(
                                 entry = entry,
                                 priority = (lorebook.entries.indexOf(entry) + 1),
                                 onEdit = { editingEntry = entry },
+                                onToggleEnabled = { enabled ->
+                                    updateLorebook(lorebook.copy(
+                                        entries = lorebook.entries.map {
+                                            if (it.id == entry.id) it.copy(enabled = enabled) else it
+                                        }
+                                    ))
+                                },
                                 dragHandle = {
                                     if (!isFiltering) {
                                         IconButton(
@@ -594,6 +601,10 @@ fun SettingLorebookDetailPage(
                                         ) {
                                             Icon(Icons.Rounded.DragIndicator, contentDescription = null)
                                         }
+                                    } else {
+                                        // Keep the leading slot width stable while filtering
+                                        // (drag is disabled), so the number badges don't shift
+                                        Spacer(modifier = Modifier.size(48.dp))
                                     }
                                 }
                             )
@@ -689,6 +700,7 @@ private fun EntryCard(
     entry: LorebookEntry,
     priority: Int,
     onEdit: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit,
     dragHandle: @Composable () -> Unit
 ) {
     Card(
@@ -704,10 +716,13 @@ private fun EntryCard(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Leading Content (Number)
+            // Leading Content (Drag Handle)
+            dragHandle()
+
+            // Number badge
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.secondary,
+                color = if (entry.enabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceContainerHighest,
                 modifier = Modifier.size(28.dp)
             ) {
                 Box(
@@ -718,7 +733,7 @@ private fun EntryCard(
                         text = priority.toString(),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSecondary
+                        color = if (entry.enabled) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -733,6 +748,7 @@ private fun EntryCard(
                 Text(
                     text = entry.name.ifEmpty { stringResource(R.string.lorebook_entry_unnamed) },
                     style = MaterialTheme.typography.titleMedium,
+                    color = if (entry.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -749,14 +765,17 @@ private fun EntryCard(
                         LorebookActivationType.RAG -> stringResource(R.string.activation_rag)
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary
+                    color = if (entry.enabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-            // Trailing Content (Drag Handle)
-            dragHandle()
+            // Trailing Content (Enabled Toggle)
+            HapticSwitch(
+                checked = entry.enabled,
+                onCheckedChange = onToggleEnabled
+            )
         }
     }
 }
