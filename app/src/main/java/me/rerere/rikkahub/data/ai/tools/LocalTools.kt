@@ -700,7 +700,7 @@ class LocalTools(
                                 put("prompt_message", lock.promptMessage)
                                 put("emoji", lock.emoji ?: "")
                                 // is_active_now：当前是否处于锁定生效状态（暂停中或不在时段内 → false）
-                                put("is_active_now", AppLockEntity.isLockedNow(lock).not())
+                                put("is_active_now", AppLockEntity.isLockedNow(lock))
                                 // 锁定类型：time_window（仅时间窗口）/ unlock_condition（仅解锁条件）/ both（两者都有）
                                 val hasTimeWindow = periods.isNotEmpty()
                                 val hasUnlockCondition = !lock.unlockCondition.isNullOrBlank()

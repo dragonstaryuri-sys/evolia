@@ -51,7 +51,8 @@ private val CompleteSwipeContentDark = Color(126, 225, 139)
  * 待办视图（嵌入日程规划页）。
  *
  * 保留原有难度分组（简单 / 一般 / 不简单）与待处理 / 已完成 Tab，
- * 在此基础上增加排程状态筛选（全部 / 未排程 / 已排程，默认未排程）。
+ * 在此基础上为 user 视角增加排程状态筛选（已排程 / 未排程 / 全部，默认已排程）；
+ * assistant 视角不显示筛选项，直接展示其全部待办。
  * 分组内部按 截止日期队列 → 重要度 → 难度 → 创建时间 排序。
  *
  * @param onArrangeTime 待办卡片"安排时间"入口，由宿主页面打开日程表单
@@ -65,6 +66,7 @@ fun ScheduleTodoContent(
     val pendingSchedules by viewModel.filteredPendingSchedules.collectAsState()
     val completedSchedules by viewModel.allCompletedSchedules.collectAsState()
     val scheduleFilter by viewModel.scheduleFilter.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
     // 保持 scheduledTaskIds 处于活跃收集状态，供删除前的联动确认判断使用
     val scheduledTaskIds by viewModel.scheduledTaskIds.collectAsState()
     val context = LocalContext.current
@@ -113,25 +115,27 @@ fun ScheduleTodoContent(
                 }
             }
 
-            // 排程状态筛选条（仅待处理 Tab；与难度分类是两个独立维度）
+            // 排程状态筛选条（仅 user 视角的待处理 Tab；assistant 视角直接展示全部待办，不显示筛选项）
             if (selectedTabIndex == 0) {
                 item(key = "schedule_filter") {
                     Column {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val filterOptions = listOf(
-                                ScheduleStatusFilter.UNSCHEDULED to stringResource(R.string.schedule_filter_unscheduled),
-                                ScheduleStatusFilter.SCHEDULED to stringResource(R.string.schedule_filter_scheduled),
-                                ScheduleStatusFilter.ALL to stringResource(R.string.schedule_filter_all)
-                            )
-                            filterOptions.forEach { (option, label) ->
-                                FilterChip(
-                                    selected = scheduleFilter == option,
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        viewModel.setScheduleFilter(option)
-                                    },
-                                    label = { Text(label) }
+                        if (selectedCategory == "user") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val filterOptions = listOf(
+                                    ScheduleStatusFilter.SCHEDULED to stringResource(R.string.schedule_filter_scheduled),
+                                    ScheduleStatusFilter.UNSCHEDULED to stringResource(R.string.schedule_filter_unscheduled),
+                                    ScheduleStatusFilter.ALL to stringResource(R.string.schedule_filter_all)
                                 )
+                                filterOptions.forEach { (option, label) ->
+                                    FilterChip(
+                                        selected = scheduleFilter == option,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            viewModel.setScheduleFilter(option)
+                                        },
+                                        label = { Text(label) }
+                                    )
+                                }
                             }
                         }
                         // 滑动操作提示：让用户知道卡片支持左滑/右滑

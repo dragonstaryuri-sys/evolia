@@ -34,7 +34,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 40
-        versionName = "4.7.0.1"
+        versionName = "4.7.1"
         buildConfigField("String", "GITHUB_REPO", "\"dragonstaryuri-sys/evolia\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

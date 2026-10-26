@@ -20,8 +20,8 @@ class ScheduleViewModel(
     private val _selectedCategory = MutableStateFlow("user")
     val selectedCategory: StateFlow<String> = _selectedCategory.asStateFlow()
 
-    // 待办视图的排程状态筛选，默认只看未排程
-    private val _scheduleFilter = MutableStateFlow(ScheduleStatusFilter.UNSCHEDULED)
+    // 待办视图的排程状态筛选（仅 user 视角有效），默认只看已排程
+    private val _scheduleFilter = MutableStateFlow(ScheduleStatusFilter.SCHEDULED)
     val scheduleFilter: StateFlow<ScheduleStatusFilter> = _scheduleFilter.asStateFlow()
 
     // 今日所有日程 (用于发现页进度计算)
@@ -37,7 +37,8 @@ class ScheduleViewModel(
         sortTodosForDisplay(list.filter { it.category == category })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 待办视图专用：在分类过滤的基础上叠加排程状态筛选（默认未排程）
+    // 待办视图专用：user 视角叠加排程状态筛选（默认已排程）；
+    // assistant 视角不区分排程状态，直接展示其全部待办
     val filteredPendingSchedules: StateFlow<List<ScheduleEntity>> = combine(
         repository.getAllPending(),
         _selectedCategory,
@@ -45,12 +46,17 @@ class ScheduleViewModel(
         _scheduleFilter
     ) { list, category, scheduledIds, filter ->
         val scheduledSet = scheduledIds.toSet()
+        val isAssistantCategory = category == "assistant"
         val scoped = list.filter { it.category == category }
             .filter { todo ->
-                when (filter) {
-                    ScheduleStatusFilter.UNSCHEDULED -> todo.id !in scheduledSet
-                    ScheduleStatusFilter.SCHEDULED -> todo.id in scheduledSet
-                    ScheduleStatusFilter.ALL -> true
+                if (isAssistantCategory) {
+                    true
+                } else {
+                    when (filter) {
+                        ScheduleStatusFilter.UNSCHEDULED -> todo.id !in scheduledSet
+                        ScheduleStatusFilter.SCHEDULED -> todo.id in scheduledSet
+                        ScheduleStatusFilter.ALL -> true
+                    }
                 }
             }
         sortTodosForDisplay(scoped)
