@@ -36,6 +36,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **MCP**: `data/ai/mcp/McpManager.kt`（连接/同步/调用，Koin single）、`data/ai/mcp/McpConfig.kt`（数据模型）、`ui/pages/setting/McpToolDescVM.kt` + `SettingMcpToolDescPage.kt`（工具描述管理）。
 -   **Settings**: `data/datastore/PreferencesStore.kt`（`SettingsStore`：DataStore 持久化、`Settings` 模型、V1–V4 偏好迁移；DI 注册于 `di/DataSourceModule.kt`）。
 -   **Room Database**: `data/db/AppDatabase.kt`（`version = 40`；新增 schema 变更必须新增 `MIGRATION_n_n` 并在 `di/DataSourceModule.kt` 的 `addMigrations` 中注册，禁止依赖 fallbackToDestructiveMigration）。
+-   **备份恢复**: `data/sync/WebdavSync.kt`（整库 zip 打包/覆盖 + `DatabaseSanitizer` 白名单重建）。**新增 Room 表必须同步登记进 `DatabaseSanitizer.kt` 的白名单（写蛇形物理表名，驼峰类名匹配不上），否则备份恢复时该表数据被静默丢弃**（曾致 `call_records` 通话记录恢复后消失；白名单匹配规则有单测固化）。录音目录 `call_recordings/` 有意不在 FILES 备份名单（体积大 + 7 天过期策略），恢复后详情页优雅降级为「无通话录音」。
 
 ## 4. Coding Standards & Best Practices
 
@@ -241,4 +242,3 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 -   **单元测试**: `./gradlew :app:testDebugUnitTest`（纯 JVM 环境，无 Robolectric）。注意 `android.util.Log` **未 mock**——需要单测覆盖的逻辑必须抽为不依赖 Android API 的纯函数（参考 `mergeSyncedTools`、`buildMcpCatalogPrompt` 的做法）。现有测试位于 `app/src/test/java/me/rerere/rikkahub/`。
 -   **最小编译检查**: `./gradlew :app:compileDebugKotlin`。
 -   **模块依赖顺序**: `app` 依赖 `ai / common / search / tts / highlight`；改动子模块公共接口后必须连同 `app` 一起编译验证。
--   **已知存量问题**（截至 2026-10）：`ShareSheetTest` 中 `decode should restore OpenAI provider correctly` 在当前分支失败（Provider 分享串解码后 `models` 为空），与 MCP 无关，修复前勿误判为新回归。

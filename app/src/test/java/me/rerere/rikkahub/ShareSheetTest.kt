@@ -44,8 +44,9 @@ class ShareSheetTest {
         assertEquals("Test OpenAI", decodedOpenAI.name)
         assertEquals("sk-test-key", decodedOpenAI.apiKey)
         assertEquals("https://api.openai.com/v1", decodedOpenAI.baseUrl)
-        assertEquals(1, decodedOpenAI.models.size)
-        assertEquals("gpt-4", decodedOpenAI.models[0].displayName)
+        // 分享串只携带连接配置：encodeForShare 刻意剥离 models（QR 容量有限，
+        // 模型列表导入后由 Provider API 重新拉取），往返后 models 必须为空
+        assertTrue(decodedOpenAI.models.isEmpty())
     }
 
     @Test

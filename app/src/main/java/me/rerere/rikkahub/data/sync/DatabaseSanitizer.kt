@@ -72,7 +72,11 @@ object DatabaseSanitizer {
                 while (c.moveToNext()) targetTables.add(c.getString(0))
             }
 
-            // 白名单：包含类名和物理表名，确保能匹配上
+            // 白名单：包含类名和物理表名，确保能匹配上。
+            // 注意：必须写 Room 物理表名（蛇形），驼峰类名匹配不上——
+            // 如 "CallRecordEntity" 规范化后为 "callrecordentity"，与 "call_records"
+            // 的 "callrecords" 及拼接形式 "callrecordsentity" 均不相等。
+            // 新增 Room 表时必须同步加入此名单，否则备份恢复会静默丢失该表数据。
             val whiteList = listOf(
                 "ConversationEntity", "MemoryEntity", "GenMediaEntity",
                 "ChatEpisodeEntity", "EmbeddingCacheEntity", "embedding_cache",
@@ -81,15 +85,11 @@ object DatabaseSanitizer {
                 "MilestoneEntity", "user_device_state", "agent_monitor_tasks",
                 "assistant_extended_state", "favorites", "profile_history",
                 "chat_messages", "chat_message_nodes", "app_locks",
-                "schedule_events"
+                "schedule_events", "call_records"
             )
 
             for (sourceTableName in sourceTables) {
-                val isWhitelisted = whiteList.any {
-                    val cleanWhite = it.replace("_", "").lowercase()
-                    val cleanSource = sourceTableName.replace("_", "").lowercase()
-                    cleanWhite == cleanSource || cleanWhite == cleanSource + "entity" || cleanSource == cleanWhite + "entity"
-                }
+                val isWhitelisted = isWhitelistedTable(whiteList, sourceTableName)
 
                 if (isWhitelisted) {
                     val targetTableName = targetTables.find {
@@ -211,6 +211,18 @@ object DatabaseSanitizer {
             targetRoomDb.close()
         }
         return targetDbFile to totalResult.copy(modifiedSettings = finalSettings)
+    }
+
+    /**
+     * 白名单表名匹配（纯函数，便于单元测试）：双方均去掉下划线并小写后比较，
+     * 并允许与 "entity" 后缀互相拼接匹配（兼容「白名单写类名/表名混用」的历史条目）。
+     */
+    internal fun isWhitelistedTable(whiteList: List<String>, sourceTableName: String): Boolean {
+        return whiteList.any {
+            val cleanWhite = it.replace("_", "").lowercase()
+            val cleanSource = sourceTableName.replace("_", "").lowercase()
+            cleanWhite == cleanSource || cleanWhite == cleanSource + "entity" || cleanSource == cleanWhite + "entity"
+        }
     }
 
     private fun copyTable(
