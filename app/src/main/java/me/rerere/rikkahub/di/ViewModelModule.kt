@@ -13,6 +13,7 @@ import me.rerere.rikkahub.ui.pages.chat.ChatHistorySearchVM
 import me.rerere.rikkahub.ui.pages.developer.DeveloperVM
 import me.rerere.rikkahub.ui.pages.imggen.ImgGenVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
+import me.rerere.rikkahub.ui.pages.setting.McpToolDescVM
 import me.rerere.rikkahub.ui.pages.setting.PermissionVM
 import me.rerere.rikkahub.ui.pages.setting.PrinterVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
@@ -62,6 +63,7 @@ val viewModelModule = module {
     }
     viewModelOf(::ChatListVM)
     viewModelOf(::AssistantVM)
+    viewModelOf(::McpToolDescVM)
     viewModel { params ->
         AssistantImportVM(
             application = get(),

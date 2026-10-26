@@ -96,6 +96,7 @@ import me.rerere.rikkahub.ui.pages.menu.MenuPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAboutPage
 import me.rerere.rikkahub.ui.pages.setting.SettingDisplayPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMcpPage
+import me.rerere.rikkahub.ui.pages.setting.SettingMcpToolDescPage
 import me.rerere.rikkahub.ui.pages.setting.SettingModelPage
 import me.rerere.rikkahub.ui.pages.setting.SettingPage
 import me.rerere.rikkahub.ui.pages.setting.SettingProviderDetailPage
@@ -437,6 +438,7 @@ class RouteActivity : AppCompatActivity() {
                     composable<Screen.SettingSearch> { SettingSearchPage() }
                     composable<Screen.SettingTTS> { SettingTTSPage() }
                     composable<Screen.SettingMcp> { SettingMcpPage() }
+                    composable<Screen.SettingMcpToolDesc> { SettingMcpToolDescPage() }
                     composable<Screen.SettingPermissionCheck> { SettingPermissionCheckPage() }
                     composable<Screen.SettingRpOptimizations> { SettingRpOptimizationsPage() }
                     composable<Screen.SettingPromptInjections> { SettingPromptInjectionsPage() }

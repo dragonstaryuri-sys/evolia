@@ -82,6 +82,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
 import me.rerere.rikkahub.data.ai.tools.LocalTools
+import me.rerere.rikkahub.data.ai.tools.buildMcpAgentTools
 import me.rerere.rikkahub.data.ai.transformers.Base64ImageToLocalFileTransformer
 import me.rerere.rikkahub.data.ai.transformers.DocumentAsPromptTransformer
 import me.rerere.rikkahub.data.ai.transformers.OcrTransformer
@@ -1492,24 +1493,10 @@ class ChatService(
                                         ?.map { it.url } ?: emptyList()))
 
 
-                            val nameRegex = Regex("[^a-zA-Z0-9_-]")
-                            mcpManager.getAllAvailableTools().forEach { mcpTool ->
-                                val originalName = mcpTool.name
-                                val sanitizedName = "mcp_" + originalName.replace(nameRegex, "_").let {
-                                    if (it.firstOrNull()?.isLetter() == true || it.startsWith("_")) it else "_$it"
-                                }
-
-                                add(
-                                    Tool(
-                                        name = sanitizedName,
-                                        description = mcpTool.description ?: "",
-                                        parameters = { mcpTool.inputSchema },
-                                        execute = { jsonElement ->
-                                            val input = jsonElement as? JsonObject ?: JsonObject(emptyMap())
-                                            mcpManager.callTool(originalName, input).truncateLargeJsonText()
-                                        })
-                                )
-                            }
+                            // MCP 工具按需加载：不逐工具注入完整 Schema，只注册两个固定函数
+                            // （查询 Schema + 执行工具），工具目录（名称+有效描述）由
+                            // get_mcp_tool_schema 的 systemPrompt 注入系统提示
+                            addAll(buildMcpAgentTools(mcpManager))
 
                         },
                         lastArchivedMessageTime = 0L,
@@ -2934,18 +2921,5 @@ class ChatService(
                 }
             }
         }
-    }
-}
-
-private fun kotlinx.serialization.json.JsonElement.truncateLargeJsonText(maxLength: Int = 32000): kotlinx.serialization.json.JsonElement {
-    return when (this) {
-        is JsonPrimitive -> if (this.isString && this.content.length > maxLength) JsonPrimitive(
-            this.content.take(
-                maxLength
-            ) + "... (truncated)"
-        ) else this
-
-        is JsonObject -> JsonObject(this.mapValues { it.value.truncateLargeJsonText(maxLength) })
-        is JsonArray -> JsonArray(this.map { it.truncateLargeJsonText(maxLength) })
     }
 }

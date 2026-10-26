@@ -149,11 +149,13 @@ private fun ActivityType.getDisplayText(): String = when (this) {
 
 /**
  * Categorize a tool name into activity type.
+ * get_mcp_tool_schema / call_mcp_tool 是 MCP 按需加载的两个固定工具。
  */
 internal fun categorizeToolName(toolName: String): ActivityType = when (toolName) {
     "search_web", "scrape_web" -> ActivityType.SEARCH
     "eval_python", "pip_install", "write_sandbox_file",
     "read_sandbox_file", "list_sandbox_files", "delete_sandbox_file" -> ActivityType.PYTHON
+    "get_mcp_tool_schema", "call_mcp_tool" -> ActivityType.MCP
     else -> if (toolName.startsWith("mcp_")) ActivityType.MCP else ActivityType.TOOL_OTHER
 }
 

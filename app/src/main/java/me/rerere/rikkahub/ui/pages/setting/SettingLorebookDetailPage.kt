@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.ToggleOn
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -48,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -219,6 +221,62 @@ fun SettingLorebookDetailPage(
         ))
     }
 
+    // Detect RAG entries whose embeddings were generated with a different embedding model.
+    // getEmbeddingModelId resolves the globally configured model (with fallback), so compare
+    // against that resolved id; entries saved before embeddingModelId existed have null and
+    // are also treated as stale to be safe.
+    val currentEmbeddingModelId = remember(settings) { embeddingService.getEmbeddingModelId(null) }
+    val staleEmbeddingEntries = remember(lorebook.entries, currentEmbeddingModelId) {
+        lorebook.entries.filter { entry ->
+            entry.enabled &&
+            entry.activationType == LorebookActivationType.RAG &&
+            entry.hasEmbedding &&
+            entry.prompt.isNotBlank() &&
+            entry.embeddingModelId != currentEmbeddingModelId
+        }
+    }
+    var isReembedding by remember { mutableStateOf(false) }
+
+    fun reembedStaleEntries() {
+        if (isReembedding || staleEmbeddingEntries.isEmpty()) return
+        isReembedding = true
+        scope.launch {
+            try {
+                val currentLorebook = lorebook
+                val staleEntries = staleEmbeddingEntries
+                val associatedAssistantId = settings.assistants
+                    .find { it.enabledLorebookIds.contains(currentLorebook.id) }?.id?.toString()
+                val result = embeddingService.embedBatch(
+                    staleEntries.map { it.prompt },
+                    associatedAssistantId
+                )
+                val idToUpdated = staleEntries.mapIndexedNotNull { index, entry ->
+                    val embedding = result.embeddings.getOrNull(index)
+                        ?: return@mapIndexedNotNull null
+                    entry.id to entry.copy(
+                        embedding = embedding,
+                        hasEmbedding = true,
+                        embeddingModelId = result.modelId
+                    )
+                }.toMap()
+                updateLorebook(currentLorebook.copy(
+                    entries = currentLorebook.entries.map { idToUpdated[it.id] ?: it }
+                ))
+                haptics.perform(HapticPattern.Success)
+                toaster.show(context.getString(R.string.lorebook_embedding_reembed_success, idToUpdated.size))
+            } catch (e: Exception) {
+                android.util.Log.w("LorebookDetail", "Failed to re-embed stale entries", e)
+                haptics.perform(HapticPattern.Error)
+                toaster.show(
+                    message = context.getString(R.string.lorebook_embedding_reembed_failed, e.message ?: ""),
+                    type = me.rerere.rikkahub.ui.components.ui.ToastType.Error
+                )
+            } finally {
+                isReembedding = false
+            }
+        }
+    }
+
     fun exportLorebook(format: String) {
         val content = when (format) {
             "evolia" -> LorebookExportImport.exportToEvoliaFormat(lorebook, context)
@@ -341,6 +399,56 @@ fun SettingLorebookDetailPage(
             // Lorebook description (centered, no card)
             item(key = "header") {
                 Column {
+                    // Warning: RAG entries embedded with a different embedding model
+                    if (staleEmbeddingEntries.isNotEmpty()) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            ),
+                            shape = AppShapes.CardMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.lorebook_embedding_stale_title),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.lorebook_embedding_stale_message,
+                                        staleEmbeddingEntries.size
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                TextButton(
+                                    onClick = { reembedStaleEntries() },
+                                    enabled = !isReembedding,
+                                    colors = ButtonDefaults.textButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                ) {
+                                    Text(
+                                        text = if (isReembedding) {
+                                            stringResource(R.string.lorebook_embedding_reembedding)
+                                        } else {
+                                            stringResource(
+                                                R.string.lorebook_embedding_stale_reembed,
+                                                staleEmbeddingEntries.size
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if (lorebook.description.isNotEmpty()) {
                         Text(
                             text = lorebook.description,
@@ -675,7 +783,8 @@ private fun EntryEditorSheet(
     var keywords by remember { mutableStateOf(entry?.keywords?.joinToString(", ") ?: "") }
     var caseSensitive by remember { mutableStateOf(entry?.caseSensitive ?: false) }
     var useRegex by remember { mutableStateOf(entry?.useRegex ?: false) }
-    var scanDepth by remember { mutableStateOf(entry?.scanDepth ?: 5) }
+    var scanDepth by remember { mutableStateOf(entry?.scanDepth ?: 10) }
+    var ragSimilarityThreshold by remember { mutableStateOf(entry?.ragSimilarityThreshold ?: 0.5f) }
     var injectionPosition by remember {
         mutableStateOf(entry?.injectionPosition ?: InjectionPosition.AFTER_SYSTEM)
     }
@@ -852,12 +961,38 @@ private fun EntryEditorSheet(
                 }
             }
 
+            AnimatedVisibility(visible = activationType == LorebookActivationType.RAG) {
+                FormItem(
+                    label = { Text(stringResource(R.string.lorebook_entry_rag_threshold)) }
+                ) {
+                    Column {
+                        Text(
+                            text = "%.2f".format(ragSimilarityThreshold),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Slider(
+                            value = ragSimilarityThreshold,
+                            onValueChange = { ragSimilarityThreshold = it },
+                            valueRange = 0f..1f,
+                            steps = 18, // 0.05 steps
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = stringResource(R.string.lorebook_entry_rag_threshold_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             FormItem(
                 label = { Text(stringResource(R.string.lorebook_entry_scan_depth)) }
             ) {
                 OutlinedTextField(
                     value = scanDepth.toString(),
-                    onValueChange = { scanDepth = it.toIntOrNull() ?: 5 },
+                    onValueChange = { scanDepth = it.toIntOrNull()?.coerceIn(1, 100) ?: 10 },
                     modifier = Modifier.width(80.dp),
                     singleLine = true
                 )
@@ -956,6 +1091,7 @@ private fun EntryEditorSheet(
                             caseSensitive = caseSensitive,
                             useRegex = useRegex,
                             scanDepth = scanDepth,
+                            ragSimilarityThreshold = ragSimilarityThreshold,
                             injectionPosition = injectionPosition,
                             attachments = attachments
                         )

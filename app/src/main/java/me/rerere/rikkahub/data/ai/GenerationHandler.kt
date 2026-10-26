@@ -724,14 +724,16 @@ class GenerationHandler(
 
         fun getLorebookEntryActivationReason(
             entry: LorebookEntry,
-            recentMessages: List<String>,
+            messageTexts: List<String>,
             queryEmbedding: List<Float>? = null
         ): String? {
             if (!entry.enabled) return null
+            // Each entry scans its own scanDepth window of recent messages
+            val scanWindow = messageTexts.takeLast(entry.scanDepth.coerceAtLeast(1))
             return when (entry.activationType) {
                 LorebookActivationType.ALWAYS -> context.getString(R.string.activation_always)
                 LorebookActivationType.KEYWORDS -> {
-                    val searchText = recentMessages.joinToString(" ")
+                    val searchText = scanWindow.joinToString(" ")
                     val matchingKeyword = entry.keywords.firstOrNull { keyword ->
                         if (entry.useRegex) {
                             try {
@@ -764,7 +766,7 @@ class GenerationHandler(
                         null
                     } else {
                         val similarity = cosineSimilarity(entryEmbedding, queryEmbedding)
-                        val threshold = 0.5f
+                        val threshold = entry.ragSimilarityThreshold.coerceIn(0f, 1f)
                         val activated = similarity >= threshold
                         if (activated) {
                             val scoreStr = try {
@@ -780,7 +782,7 @@ class GenerationHandler(
             }
         }
 
-        val recentMessagesForScan = messages.takeLast(10).map { it.toText() }
+        val messageTextsForScan = messages.map { it.toText() }
         val enabledModes =
             if (enabledModeIds.isNotEmpty()) settings.modes.filter { enabledModeIds.contains(it.id) } else settings.modes.filter { it.defaultEnabled }
 
@@ -801,20 +803,25 @@ class GenerationHandler(
 
         val lorebooksForAssistant =
             settings.lorebooks.filter { it.enabled && assistant.enabledLorebookIds.contains(it.id) }
-        val hasRagEntries =
-            lorebooksForAssistant.any { lorebook -> lorebook.entries.any { it.activationType == LorebookActivationType.RAG && it.enabled } }
+        val ragEntries = lorebooksForAssistant
+            .flatMap { lorebook -> lorebook.entries }
+            .filter { it.enabled && it.activationType == LorebookActivationType.RAG }
 
-        val queryEmbedding: List<Float>? = if (hasRagEntries) {
-            try {
-                val queryText = recentMessagesForScan.takeLast(3).joinToString("\n")
-                if (queryText.isNotBlank()) {
-                    embeddingService.embed(queryText, null)
-                } else null
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to compute query embedding for RAG", e)
-                null
+        // RAG query window = the last min(scanDepth, 3) messages within each entry's scan window.
+        // Deduplicate by window size so each distinct window only costs one embedding call.
+        val queryEmbeddingsByWindowSize = mutableMapOf<Int, List<Float>>()
+        if (ragEntries.isNotEmpty()) {
+            val windowSizes = ragEntries.map { minOf(it.scanDepth.coerceAtLeast(1), 3) }.distinct()
+            for (windowSize in windowSizes) {
+                val queryText = messageTextsForScan.takeLast(windowSize).joinToString("\n")
+                if (queryText.isBlank()) continue
+                try {
+                    queryEmbeddingsByWindowSize[windowSize] = embeddingService.embed(queryText, null)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to compute query embedding for RAG (windowSize=$windowSize)", e)
+                }
             }
-        } else null
+        }
 
         data class ActivatedEntryWithLorebook(
             val lorebook: Lorebook,
@@ -826,7 +833,10 @@ class GenerationHandler(
         val activatedEntriesWithLorebook = lorebooksForAssistant
             .flatMap { lorebook ->
                 lorebook.entries.mapIndexedNotNull { index, entry ->
-                    val reason = getLorebookEntryActivationReason(entry, recentMessagesForScan, queryEmbedding)
+                    val queryEmbedding = if (entry.activationType == LorebookActivationType.RAG) {
+                        queryEmbeddingsByWindowSize[minOf(entry.scanDepth.coerceAtLeast(1), 3)]
+                    } else null
+                    val reason = getLorebookEntryActivationReason(entry, messageTextsForScan, queryEmbedding)
                     if (reason != null) {
                         ActivatedEntryWithLorebook(lorebook, entry, index, reason)
                     } else null

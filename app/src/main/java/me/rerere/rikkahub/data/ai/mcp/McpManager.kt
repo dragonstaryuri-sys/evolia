@@ -100,23 +100,101 @@ class McpManager(
         return mcpServers
     }
 
-    suspend fun callTool(toolName: String, args: JsonObject): JsonElement {
-        val tools = getAllAvailableTools()
-        val tool = tools.find { it.name == toolName }
-            ?: return JsonPrimitive("Failed to execute tool, because no such tool")
-        val client =
-            clients.entries.find { it.key.commonOptions.tools.any { it.name == toolName } }?.value
-        if (client == null) return JsonPrimitive("Failed to execute tool, because no such mcp client for the tool")
-        val config = clients.entries.first { it.value == client }.key
-        Log.i(TAG, "callTool: $toolName / $args")
+    /**
+     * 与 [getAllAvailableTools] 相同的可见性规则，但保留工具所属服务的标识信息，
+     * 供 Agent 工具目录区分不同 MCP 服务中的同名工具。
+     */
+    fun getAllAvailableToolsWithServer(): List<McpToolRef> {
+        val settings = settingsStore.settingsFlow.value
+        val assistant = settings.getCurrentAssistant()
+        return settings.mcpServers
+            .filter {
+                it.commonOptions.enable && it.id in assistant.mcpServers
+            }
+            .flatMap { serverConfig ->
+                serverConfig.commonOptions.tools
+                    .filter { it.enable }
+                    .map { tool ->
+                        McpToolRef(
+                            serverId = serverConfig.id,
+                            serverName = serverConfig.commonOptions.name,
+                            tool = tool
+                        )
+                    }
+            }
+    }
 
-        if (client.transport == null) client.connect(getTransport(config))
-        val result = client.callTool(
-            name = tool.name,
-            arguments = args,
-            options = RequestOptions(timeout = 60.seconds)
+    /**
+     * 按 server_id + tool_name 精确查找工具，区分不同 MCP 服务中的同名工具。
+     * 工具定义来自 DataStore 缓存（sync 时写入），服务短暂离线仍可查询 Schema。
+     */
+    fun findTool(serverId: Uuid, toolName: String): McpToolRef? {
+        val settings = settingsStore.settingsFlow.value
+        val assistant = settings.getCurrentAssistant()
+        val serverConfig = settings.mcpServers.firstOrNull {
+            it.commonOptions.enable && it.id == serverId && it.id in assistant.mcpServers
+        } ?: return null
+        val tool = serverConfig.commonOptions.tools.firstOrNull {
+            it.name == toolName && it.enable
+        } ?: return null
+        return McpToolRef(
+            serverId = serverConfig.id,
+            serverName = serverConfig.commonOptions.name,
+            tool = tool
         )
-        return McpJson.encodeToJsonElement(result.content)
+    }
+
+    /**
+     * 按服务标识执行 MCP 工具（get_mcp_tool_schema / call_mcp_tool 固定工具的执行后端）。
+     * 返回结构化结果：执行层错误（找不到服务/工具、连接失败）返回带 error 字段的对象；
+     * 工具自身的执行错误通过 MCP 协议的 isError 标记后原样透传给 Agent 自行纠正。
+     */
+    suspend fun callTool(serverId: Uuid, toolName: String, args: JsonObject): JsonElement {
+        val ref = findTool(serverId, toolName)
+            ?: return buildJsonObject {
+                put("error", JsonPrimitive("MCP tool not found or not enabled for the current assistant: server_id=$serverId, tool_name=$toolName"))
+            }
+        val config = clients.entries.find { it.key.id == serverId }?.key
+            ?: return buildJsonObject {
+                put("error", JsonPrimitive("MCP server is not connected: server_id=$serverId (${ref.serverName}). Please retry later."))
+            }
+        val client = clients[config] ?: return buildJsonObject {
+            put("error", JsonPrimitive("MCP client unavailable: server_id=$serverId (${ref.serverName})"))
+        }
+        Log.i(TAG, "callTool: server=$serverId tool=$toolName / $args")
+
+        runCatching {
+            if (client.transport == null) client.connect(getTransport(config))
+        }.getOrElse {
+            it.printStackTrace()
+            return buildJsonObject {
+                put("error", JsonPrimitive("Failed to connect MCP server $serverId (${ref.serverName}): ${it.message}"))
+            }
+        }
+
+        val result = runCatching {
+            client.callTool(
+                name = ref.tool.name,
+                arguments = args,
+                options = RequestOptions(timeout = 60.seconds)
+            )
+        }.getOrElse {
+            it.printStackTrace()
+            return buildJsonObject {
+                put("error", JsonPrimitive("MCP tool execution failed: ${it.message}"))
+            }
+        }
+
+        val contentJson = McpJson.encodeToJsonElement(result.content)
+        // isError=true 表示工具已执行但业务失败，content 中是对 Agent 可读的错误说明，
+        // 透传给 Agent 自行判断是否重试或换方案
+        if (result.isError == true) {
+            return buildJsonObject {
+                put("isError", JsonPrimitive(true))
+                put("content", contentJson)
+            }
+        }
+        return contentJson
     }
 
     private fun getTransport(config: McpServerConfig): AbstractTransport = when (config) {
@@ -195,7 +273,9 @@ class McpManager(
                             val index = tools.indexOf(tool)
                             tools[index] = tool.copy(
                                 description = serverTool.description,
-                                inputSchema = serverTool.inputSchema.toSchema()
+                                inputSchema = serverTool.inputSchema.toSchema(),
+                                // 原始描述随服务端刷新，但用户自定义描述必须原样保留
+                                customDescription = tool.customDescription
                             )
                         }
                     }

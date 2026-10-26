@@ -33,8 +33,8 @@ android {
         applicationId = "ailand.lastchat.rikkafork.cocolal"
         minSdk = 28
         targetSdk = 36
-        versionCode = 38
-        versionName = "4.7.0"
+        versionCode = 40
+        versionName = "4.7.0.1"
         buildConfigField("String", "GITHUB_REPO", "\"dragonstaryuri-sys/evolia\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

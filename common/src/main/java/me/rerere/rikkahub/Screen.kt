@@ -96,6 +96,13 @@ sealed interface Screen {
     @Serializable
     data object SettingMcp : Screen
 
+    /**
+     * MCP 工具描述管理页（高级设置）。
+     * serverId 为可选的初始服务过滤条件（从某个服务的工具页签进入时携带）。
+     */
+    @Serializable
+    data class SettingMcpToolDesc(val serverId: String? = null) : Screen
+
     @Serializable
     data object SettingPermissionCheck : Screen
 

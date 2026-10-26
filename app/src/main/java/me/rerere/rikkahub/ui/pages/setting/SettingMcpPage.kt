@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.foundation.background
@@ -79,7 +80,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CommentsDisabled
@@ -91,6 +94,7 @@ import androidx.compose.material.icons.rounded.Terminal
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.InputSchema
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.mcp.McpServerConfig
 import me.rerere.rikkahub.data.ai.mcp.McpStatus
@@ -1024,11 +1028,57 @@ private fun McpToolsConfigure(
     update: (McpServerConfig) -> Unit,
 ) {
     val mcpManager = koinInject<McpManager>()
+    val navController = LocalNavController.current
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // 高级设置入口：独立的工具描述管理页（编辑/简化/重置描述，按服务分组管理全部服务）
+        item {
+            Card(
+                onClick = {
+                    navController.navigate(Screen.SettingMcpToolDesc(serverId = config.id.toString()))
+                },
+                shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHighest
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.Tune,
+                        null,
+                        tint = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.mcp_tool_desc_page_title),
+                            style = androidx.compose.material3.MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.mcp_tool_desc_simplify_hint),
+                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        null,
+                        tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
         if (mcpManager.getClient(config) == null) {
             item {
                 Text(stringResource(R.string.setting_mcp_page_tools_unavailable_message))
@@ -1056,8 +1106,9 @@ private fun McpToolsConfigure(
                             text = tool.name,
                             style = MaterialTheme.typography.titleLarge
                         )
+                        // 展示有效描述（自定义优先），与注入模型上下文的描述保持一致
                         Text(
-                            text = tool.description ?: "",
+                            text = tool.effectiveDescription ?: "",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                         )

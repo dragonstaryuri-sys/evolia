@@ -49,7 +49,8 @@ data class LorebookEntry(
     // RAG settings (when activationType is RAG)
     val embedding: List<Float>? = null,  // The embedding vector
     val hasEmbedding: Boolean = false,
-    val embeddingModelId: String? = null
+    val embeddingModelId: String? = null,
+    val ragSimilarityThreshold: Float = 0.5f  // Cosine similarity threshold for RAG activation
 )
 
 /**

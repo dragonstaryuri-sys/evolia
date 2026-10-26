@@ -441,6 +441,26 @@
   <string name="setting_mcp_page_title">MCP</string>
   <string name="setting_mcp_page_tools">Tools</string>
   <string name="setting_mcp_page_tools_unavailable_message">Tools list unavailable during creation. Please view after adding.</string>
+  <string name="mcp_tool_desc_page_title">Tool Description Manager</string>
+  <string name="mcp_tool_desc_page_hint">Simplifying descriptions saves tokens. Keep the tool\'s main purpose and when the AI should call it; the description does not need to be very detailed, because the tool\'s parameter schema is only sent after the AI confirms it needs to call the tool.</string>
+  <string name="mcp_tool_desc_search_hint">Search tools</string>
+  <string name="mcp_tool_desc_server_all">All servers</string>
+  <string name="mcp_tool_desc_customized_tag">Customized</string>
+  <string name="mcp_tool_desc_simplify_btn">Simplify</string>
+  <string name="mcp_tool_desc_simplify_hint">Uses the default model in Settings (global background model)</string>
+  <string name="mcp_tool_desc_reset_btn">Reset</string>
+  <string name="mcp_tool_desc_reset_confirm_title">Reset description?</string>
+  <string name="mcp_tool_desc_reset_confirm_text">The saved custom description will be cleared and restored to the original description returned by the MCP server.</string>
+  <string name="mcp_tool_desc_batch_select">Batch simplify</string>
+  <string name="mcp_tool_desc_batch_simplify_selected">Simplify selected (%1$d)</string>
+  <string name="mcp_tool_desc_preview_title">Simplification result</string>
+  <string name="mcp_tool_desc_preview_desc">Review the simplified description below. Applying it will replace the current content in the editor and auto-save.</string>
+  <string name="mcp_tool_desc_batch_preview_title">Batch simplification results</string>
+  <string name="mcp_tool_desc_batch_preview_desc">Check the results to apply. Failed items can be retried individually.</string>
+  <string name="mcp_tool_desc_batch_apply_selected">Apply selected (%1$d)</string>
+  <string name="mcp_tool_desc_batch_retry">Retry</string>
+  <string name="mcp_tool_desc_empty">No MCP tools found. Connect an MCP server and enable it for the current assistant first.</string>
+  <string name="mcp_tool_desc_readonly_name_hint">Tool name (read-only)</string>
   <string name="setting_mcp_page_transport_type">Transport Type</string>
   <string name="setting_mcp_page_transport_type_desc">Select transport protocol</string>
   <string name="setting_mcp_page_url_label">URL</string>
@@ -801,6 +821,14 @@
   <string name="lorebook_entry_case_sensitive">Case Sensitive</string>
   <string name="lorebook_entry_use_regex">Use Regex</string>
   <string name="lorebook_entry_scan_depth">Scan Depth</string>
+  <string name="lorebook_entry_rag_threshold">Similarity Threshold</string>
+  <string name="lorebook_entry_rag_threshold_desc">Higher = stricter semantic matching. Entries activate only when similarity reaches this value (default 0.50).</string>
+  <string name="lorebook_embedding_stale_title">Embedding model changed</string>
+  <string name="lorebook_embedding_stale_message">%1$d RAG entries were embedded with a different embedding model. Semantic matching may fail until they are re-embedded.</string>
+  <string name="lorebook_embedding_stale_reembed">Re-embed (%1$d)</string>
+  <string name="lorebook_embedding_reembedding">Re-embedding…</string>
+  <string name="lorebook_embedding_reembed_success">Re-embedded %1$d entries</string>
+  <string name="lorebook_embedding_reembed_failed">Re-embedding failed: %1$s</string>
   <string name="lorebook_entry_injection_position">Injection Position</string>
   <string name="lorebook_search_entries_placeholder">Search entries...</string>
   <!-- Activation Types -->
