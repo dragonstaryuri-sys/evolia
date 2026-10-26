@@ -2,7 +2,7 @@ package me.rerere.rikkahub.data.ai.mcp
 
 import android.util.Log
 import io.modelcontextprotocol.kotlin.sdk.Implementation
-import io.modelcontextprotocol.kotlin.sdk.Tool
+import io.modelcontextprotocol.kotlin.sdk.types.Tool
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.shared.AbstractTransport
 import io.modelcontextprotocol.kotlin.sdk.shared.RequestOptions
@@ -49,7 +49,9 @@ class McpManager(
         .followRedirects(true)
         .build()
 
-    private val clients: MutableMap<McpServerConfig, Client> = mutableMapOf()
+    // clients 被多个协程/调度器并发访问（init 收集、addClient/sync 于 IO、callTool 于聊天流上下文），
+    // 必须使用并发容器，避免 ConcurrentModificationException 或写入丢失
+    private val clients: MutableMap<McpServerConfig, Client> = java.util.concurrent.ConcurrentHashMap()
     val syncingStatus = MutableStateFlow<Map<Uuid, McpStatus>>(mapOf())
 
     init {
@@ -247,48 +249,23 @@ class McpManager(
             client.connect(getTransport(config))
         }
         val serverTools = client.listTools().tools
-        val currentSettings = settingsStore.settingsFlow.value
         Log.i(TAG, "sync: tools count: ${serverTools.size}")
-        settingsStore.update(
+        // 变换事务：锁内基于最新快照合并工具列表。多个服务并发 sync、
+        // 或 sync 与用户编辑工具描述并发时，各自基于对方最新结果增量修改，
+        // 不会再用陈旧快照整体覆盖导致丢更新
+        settingsStore.update { currentSettings ->
             currentSettings.copy(
                 mcpServers = currentSettings.mcpServers.map { serverConfig ->
                     if (serverConfig.id != config.id) return@map serverConfig
                     val common = serverConfig.commonOptions
-                    val tools = common.tools.toMutableList()
-
-                    // 基于server对比
-                    serverTools.forEach { serverTool ->
-                        Log.d(TAG, "sync: Tool found: ${serverTool.name}, Raw Schema: ${serverTool.inputSchema}")
-                        val tool = tools.find { it.name == serverTool.name }
-                        if (tool == null) {
-                            tools.add(
-                                McpTool(
-                                    name = serverTool.name,
-                                    description = serverTool.description,
-                                    enable = true,
-                                    inputSchema = serverTool.inputSchema.toSchema()
-                                )
-                            )
-                        } else {
-                            val index = tools.indexOf(tool)
-                            tools[index] = tool.copy(
-                                description = serverTool.description,
-                                inputSchema = serverTool.inputSchema.toSchema(),
-                                // 原始描述随服务端刷新，但用户自定义描述必须原样保留
-                                customDescription = tool.customDescription
-                            )
-                        }
-                    }
-
-                    // 删除不在server内的
-                    tools.removeIf { tool -> serverTools.none { it.name == tool.name } }
+                    val mergedTools = mergeSyncedTools(common.tools, serverTools)
 
                     // 更新clients
                     clients.remove(config)
                     clients.put(
                         config.clone(
                             commonOptions = common.copy(
-                                tools = tools
+                                tools = mergedTools
                             )
                         ), client
                     )
@@ -296,12 +273,12 @@ class McpManager(
                     // 返回新的serverConfig，更新到settings store
                     serverConfig.clone(
                         commonOptions = common.copy(
-                            tools = tools
+                            tools = mergedTools
                         )
                     )
                 }
             )
-        )
+        }
 
         setStatus(config = config, status = McpStatus.Connected)
     }
@@ -339,6 +316,43 @@ class McpManager(
     fun getStatus(config: McpServerConfig): Flow<McpStatus> {
         return syncingStatus.map { it[config.id] ?: McpStatus.Idle }
     }
+}
+
+/**
+ * MCP 服务同步的工具列表合并（纯函数，便于单元测试）：
+ * - 服务端新增的工具按定义加入（默认启用）；
+ * - 已有工具刷新原始描述与 Schema，用户自定义描述（customDescription）与启用状态原样保留；
+ * - 服务端已删除的本地工具移除。
+ */
+internal fun mergeSyncedTools(
+    existingTools: List<McpTool>,
+    serverTools: List<Tool>
+): List<McpTool> {
+    val tools = existingTools.toMutableList()
+    serverTools.forEach { serverTool ->
+        val tool = tools.find { it.name == serverTool.name }
+        if (tool == null) {
+            tools.add(
+                McpTool(
+                    name = serverTool.name,
+                    description = serverTool.description,
+                    enable = true,
+                    inputSchema = serverTool.inputSchema.toSchema()
+                )
+            )
+        } else {
+            val index = tools.indexOf(tool)
+            tools[index] = tool.copy(
+                description = serverTool.description,
+                inputSchema = serverTool.inputSchema.toSchema(),
+                // 原始描述随服务端刷新，但用户自定义描述必须原样保留
+                customDescription = tool.customDescription
+            )
+        }
+    }
+    // 删除不在server内的
+    tools.removeIf { tool -> serverTools.none { it.name == tool.name } }
+    return tools
 }
 
 internal val McpJson: Json by lazy {

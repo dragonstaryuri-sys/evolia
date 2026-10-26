@@ -44,6 +44,8 @@ import me.rerere.asr.provider.ASRProviderSetting
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import kotlin.uuid.Uuid
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -414,7 +416,39 @@ class SettingsStore(
         }
     }
 
+    /**
+     * 设置写入的串行化锁：保证「读取快照 → 增量修改 → 写回」事务的原子性。
+     *
+     * Settings 是一整个大对象，MCP 服务同步、工具描述编辑等多个组件会并发地
+     * 「读 settingsFlow.value → copy → update(...)」。若不串行化，后写者会基于
+     * 陈旧快照整体覆盖，丢失先写者的修改（如并发 sync 时某服务的工具列表丢失、
+     * sync 覆盖用户刚保存的 customDescription）。[update] 全量写入与
+     * [update] 变换事务共用此锁，统一所有写入路径的先后顺序。
+     */
+    private val updateMutex = Mutex()
+
     suspend fun update(settings: Settings) {
+        updateMutex.withLock { persistLocked(settings) }
+    }
+
+    /**
+     * 原子的「读取 → 变换 → 写回」事务：[transform] 基于锁内最新快照执行，
+     * 与其他并发写入（含全量 [update]）自动合并，不会互相覆盖。
+     *
+     * 约束：transform 必须是纯函数且禁止在内部再调用本类的 update（锁不可重入）。
+     * 返回值与当前值相等（data class equals）时跳过落盘。
+     */
+    suspend fun update(transform: (Settings) -> Settings) {
+        updateMutex.withLock {
+            val current = settingsFlow.value
+            val transformed = transform(current)
+            if (transformed != current) {
+                persistLocked(transformed)
+            }
+        }
+    }
+
+    private suspend fun persistLocked(settings: Settings) {
         if (settings.init) return
         val settingsToSave =
             if (settings.assistantId != settingsFlow.value.assistantId && !settingsFlow.value.init && settings.assistants.any { it.id == settings.assistantId }) {

@@ -17,8 +17,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -120,9 +118,6 @@ class McpToolDescVM(
      */
     private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val pendingSaves = mutableMapOf<String, Job>()
-
-    /** 串行化「读 settings → copy → 写回」事务，防止并发保存互相覆盖（批量简化应用场景） */
-    private val saveMutex = Mutex()
 
     /** 每个工具当前的编辑内容，独立于 settings 流，避免保存回写时覆盖正在输入的文本 */
     private val editContents = mutableMapOf<String, String>()
@@ -250,11 +245,11 @@ class McpToolDescVM(
     }
 
     /**
-     * 「读取当前 settings → 计算 custom → 写回」的完整事务。
+     * 「读取当前 settings → 计算 custom → 写回」走 SettingsStore 的原子变换事务。
      *
-     * 必须全程持锁：批量简化应用会对多个工具几乎同时触发保存，
-     * 若各自基于同一份旧快照做全量覆盖写，后写的会冲掉先写的（只留一条）。
-     * 锁保证每个保存都基于前一个的最新结果。
+     * 事务性由 SettingsStore.update(transform) 内部的串行化锁保证：
+     * 批量简化应用触发的并发保存、以及与 McpManager 后台 sync 的并发写入，
+     * 都会在锁内基于彼此的最新结果增量修改，不会用陈旧快照互相覆盖。
      */
     private suspend fun saveCustomDescription(
         serverId: Uuid,
@@ -262,9 +257,8 @@ class McpToolDescVM(
         newContent: String,
         forceReset: Boolean = false
     ) {
-        saveMutex.withLock {
-            runCatching {
-                val current = settingsStore.settingsFlow.value
+        runCatching {
+            settingsStore.update { current ->
                 val original = current.mcpServers
                     .firstOrNull { it.id == serverId }
                     ?.commonOptions?.tools?.firstOrNull { it.name == toolName }
@@ -285,10 +279,10 @@ class McpToolDescVM(
                         commonOptions = serverConfig.commonOptions.copy(tools = newTools)
                     )
                 }
-                settingsStore.update(current.copy(mcpServers = newServers))
-            }.onFailure {
-                Log.e(TAG, "saveCustomDescription failed for $toolName", it)
+                current.copy(mcpServers = newServers)
             }
+        }.onFailure {
+            Log.e(TAG, "saveCustomDescription failed for $toolName", it)
         }
     }
 

@@ -30,6 +30,13 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **Network:** OkHttp (with SSE support).
 -   **Serialization:** Kotlinx Serialization.
 
+### Key Entry Points (app module, path relative to `app/src/main/java/me/rerere/rikkahub/`)
+-   **Chat Generation Chain**: `service/ChatService.kt`（组装上下文与工具列表，收集生成流）→ `data/ai/GenerationHandler.kt`（`generateText` 多步工具循环，`maxSteps` 上限；`Tool.systemPrompt` 在此注入系统提示）→ `ai/` 模块各 Provider（OpenAI / Google / Claude）。
+-   **Tool Registration**: `data/ai/tools/LocalTools.kt`（本地工具，按 `Assistant.localTools` 选项装配）、`service/ChatService.kt` 内的 `createSearchTool`（联网搜索）、`data/ai/tools/McpAgentTools.kt`（MCP 固定工具）。
+-   **MCP**: `data/ai/mcp/McpManager.kt`（连接/同步/调用，Koin single）、`data/ai/mcp/McpConfig.kt`（数据模型）、`ui/pages/setting/McpToolDescVM.kt` + `SettingMcpToolDescPage.kt`（工具描述管理）。
+-   **Settings**: `data/datastore/PreferencesStore.kt`（`SettingsStore`：DataStore 持久化、`Settings` 模型、V1–V4 偏好迁移；DI 注册于 `di/DataSourceModule.kt`）。
+-   **Room Database**: `data/db/AppDatabase.kt`（`version = 40`；新增 schema 变更必须新增 `MIGRATION_n_n` 并在 `di/DataSourceModule.kt` 的 `addMigrations` 中注册，禁止依赖 fallbackToDestructiveMigration）。
+
 ## 4. Coding Standards & Best Practices
 
 ### Performance & Concurrency
@@ -45,6 +52,7 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **REQUIRED:** Use safe type checks (`is JsonArray`, `jsonPrimitiveOrNull`).
 -   **State Management:**
 -   When updating `StateFlow` in services (e.g., `ChatService`), **snapshot** the current value into a local variable before applying complex transformations to avoid race conditions.
+-   **Settings 事务（强制）**: `Settings` 是 DataStore 中的单个大对象。**禁止**「读 `settingsFlow.value` 快照 → `copy` → `settingsStore.update(全量对象)`」的写法——多个组件（MCP 服务同步、描述编辑等）并发执行时，后写者会基于陈旧快照整体覆盖，丢失其他写入方的修改。增量修改必须使用原子变换事务 `settingsStore.update { settings -> settings.copy(...) }`（锁内基于最新快照执行）；transform 必须是纯函数，且**不得**在内部再调用 `update`（锁不可重入）。
 
 ### Readability & Maintainability
 -   **Complex Logic:** Extract conditional expressions, calculations, and multi-step logic into **named local variables** (e.g., `val reason`, `val isActivated`) instead of inlining them directly into constructor or function parameters.
@@ -149,6 +157,14 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **Profile Updater (`update_profile`)**: Allows AI to dynamically update User/Assistant Profile fields.
 - **Milestone Manager (`milestone_manager`)**: Records core relationship events (Relationship, Commitment, Identity, etc.).
 
+### 8.4 MCP 按需加载 (On-Demand Schema)
+- **上下文策略**: MCP 工具的 `inputSchema` **不常驻**模型上下文。取而代之常驻两个固定 Function Tool：`get_mcp_tool_schema`（查询参数定义）与 `call_mcp_tool`（执行），定义于 `data/ai/tools/McpAgentTools.kt`；当前助手无可用 MCP 工具时不注册。
+- **工具目录**: 各 MCP 工具的「名称 + 有效描述」目录由 `get_mcp_tool_schema` 的 `Tool.systemPrompt` 注入系统提示（`GenerationHandler` 统一收集各工具的 systemPrompt），Agent 先查 Schema 再按 Schema 组织参数调用。
+- **精确定位**: 一律以 `serverId + toolName` 二元组定位工具，避免不同 MCP 服务同名工具冲突；Schema 查询走 DataStore 缓存（服务端同步时写入），服务短暂离线仍可查询。
+- **执行边界**: 执行层错误（找不到工具 / 服务未连接 / 连接失败）返回带 `error` 字段的 JSON 对象；工具自身业务错误经 MCP 协议 `isError` 标记原样透传给 Agent 自行纠正。超大结果递归截断（单字符串 32000 字符上限）。
+- **描述管理**: `McpTool.customDescription` 持久化于 Settings（null 表示未自定义，有效描述 = customDescription 优先 / 原始 description 兜底）。服务同步时原始描述与 Schema 刷新、用户自定义描述原样保留（合并逻辑在 `McpManager.kt` 的 `mergeSyncedTools` 纯函数，有单元测试）。批量简化使用用户配置的全局后台模型（`ui/pages/setting/McpToolDescVM.kt`）。
+- **并发约束**: `McpManager.clients` 是跨协程共享的并发容器（ConcurrentHashMap），直接读写即可；MCP 相关的 Settings 写入必须走 `SettingsStore.update(transform)` 原子事务（见第 4 节），否则多服务并发同步会丢更新。
+
 ## 9. 会话加载与 UI 同步逻辑 (Chat Loading & UI Sync)
 
 ### 9.1 混合消息流 (Hybrid Message Flow)
@@ -219,3 +235,10 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **历史通话列表**：仅展示已接通的记录。
 - **通知渠道**：`incoming_call`（来电，高优先级，不使用强制全屏 Intent，点击复用现有页面栈）与 `voice_call_foreground`（通话中保活）。
 - **铃声设置**：`callRingtone` / `callRingtoneCustomPath`；自定义铃声 ≤10MB、≤60s，超长时调用裁切器；试听前必须停止上一段试听音频。
+
+## 11. 构建与验证 (Build & Verification)
+
+-   **单元测试**: `./gradlew :app:testDebugUnitTest`（纯 JVM 环境，无 Robolectric）。注意 `android.util.Log` **未 mock**——需要单测覆盖的逻辑必须抽为不依赖 Android API 的纯函数（参考 `mergeSyncedTools`、`buildMcpCatalogPrompt` 的做法）。现有测试位于 `app/src/test/java/me/rerere/rikkahub/`。
+-   **最小编译检查**: `./gradlew :app:compileDebugKotlin`。
+-   **模块依赖顺序**: `app` 依赖 `ai / common / search / tts / highlight`；改动子模块公共接口后必须连同 `app` 一起编译验证。
+-   **已知存量问题**（截至 2026-10）：`ShareSheetTest` 中 `decode should restore OpenAI provider correctly` 在当前分支失败（Provider 分享串解码后 `models` 为空），与 MCP 无关，修复前勿误判为新回归。
