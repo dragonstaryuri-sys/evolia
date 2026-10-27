@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
@@ -134,6 +135,8 @@ fun ChatExportSheet(
         ModalBottomSheet(
             onDismissRequest = onDismissRequest,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
         ) {
             Column(
                 modifier = Modifier
@@ -558,7 +561,7 @@ private fun ExportedChatMessage(
                                 contentDescription = "Image",
                                 modifier = Modifier
                                     .sizeIn(maxWidth = (540 * 0.7).dp, maxHeight = 400.dp)
-                                    .clip(RoundedCornerShape(12.dp)),
+                                    .clip(AppShapes.ButtonSquared),
                             )
                         }
 

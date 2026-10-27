@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.SecretKeyManager
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -120,7 +121,7 @@ fun SettingEmailPage(vm: SettingVM = koinViewModel()) {
                         enabled = !testing && account.isNotBlank() && password.isNotBlank()
                     ) {
                         if (testing) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            InlineSpinner(size = 20.dp, strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(stringResource(R.string.setting_email_page_testing))
                         } else {

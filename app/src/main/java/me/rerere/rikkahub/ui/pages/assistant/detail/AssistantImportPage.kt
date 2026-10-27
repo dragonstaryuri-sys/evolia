@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -60,10 +61,7 @@ fun AssistantImportPage(
     var pendingImportType by remember { mutableStateOf<ImportType?>(null) }
 
     // 样式参数
-    val cardColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-        MaterialTheme.colorScheme.surfaceContainerLow
-    else
-        MaterialTheme.colorScheme.surfaceContainerHigh
+    val cardColor = me.rerere.rikkahub.ui.theme.groupContainerColor()
     val cardShape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
 
     // 导出模板 Launcher (XLSX)
@@ -272,6 +270,10 @@ fun AssistantImportPage(
     if (showL3Dialog) {
         AlertDialog(
             onDismissRequest = { showL3Dialog = false },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text("导入记忆档案") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -281,7 +283,12 @@ fun AssistantImportPage(
                 }
             },
             confirmButton = { Button(onClick = { showL3Dialog = false; pendingImportType = ImportType.L3; importLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") }) { Text("选择文件并导入") } },
-            dismissButton = { TextButton(onClick = { showL3Dialog = false }) { Text("取消") } }
+            dismissButton = {
+                TextButton(
+                    onClick = { showL3Dialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                ) { Text("取消") }
+            }
         )
     }
 
@@ -289,6 +296,10 @@ fun AssistantImportPage(
     if (showCoreDialog) {
         AlertDialog(
             onDismissRequest = { showCoreDialog = false },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text("导入核心记忆") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -298,7 +309,12 @@ fun AssistantImportPage(
                 }
             },
             confirmButton = { Button(onClick = { showCoreDialog = false; pendingImportType = ImportType.CORE; importLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") }) { Text("选择文件并导入") } },
-            dismissButton = { TextButton(onClick = { showCoreDialog = false }) { Text("取消") } }
+            dismissButton = {
+                TextButton(
+                    onClick = { showCoreDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                ) { Text("取消") }
+            }
         )
     }
 
@@ -306,6 +322,10 @@ fun AssistantImportPage(
     if (showHistoryDialog) {
         AlertDialog(
             onDismissRequest = { showHistoryDialog = false },
+            shape = me.rerere.rikkahub.ui.theme.AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text("导入会话历史") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -315,7 +335,12 @@ fun AssistantImportPage(
                 }
             },
             confirmButton = { Button(onClick = { showHistoryDialog = false; pendingImportType = ImportType.HISTORY; importLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") }) { Text("选择文件并导入") } },
-            dismissButton = { TextButton(onClick = { showHistoryDialog = false }) { Text("取消") } }
+            dismissButton = {
+                TextButton(
+                    onClick = { showHistoryDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                ) { Text("取消") }
+            }
         )
     }
 }

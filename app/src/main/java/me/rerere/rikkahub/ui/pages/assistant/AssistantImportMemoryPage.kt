@@ -4,22 +4,26 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 
@@ -35,11 +39,14 @@ fun AssistantImportMemoryPage(
     val toaster = LocalToaster.current
     val successMessage = stringResource(R.string.import_memory_success_toast)
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
-        modifier = Modifier.fillMaxSize().imePadding(),
+        modifier = Modifier.fillMaxSize().imePadding().nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.import_memory_title)) },
+            OneUITopAppBar(
+                title = stringResource(R.string.import_memory_title),
+                scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() }
             )
         },
@@ -56,11 +63,11 @@ fun AssistantImportMemoryPage(
                         .fillMaxWidth()
                         .padding(16.dp)
                         .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = AppShapes.CardSmall,
                     enabled = !vm.isGeneratingL1
                 ) {
                     if (vm.isGeneratingL1) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        InlineSpinner(size = 24.dp, strokeWidth = 2.dp)
                     } else {
                         Text(stringResource(R.string.import_memory_submit_button), fontWeight = FontWeight.Bold)
                     }
@@ -83,7 +90,7 @@ fun AssistantImportMemoryPage(
                     onValueChange = { vm.relationshipProfile = it },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
                     placeholder = { Text(stringResource(R.string.import_memory_l3_placeholder)) },
-                    shape = RoundedCornerShape(16.dp)
+                    shape = AppShapes.CardSmall
                 )
             }
 
@@ -188,7 +195,7 @@ fun AssistantImportMemoryPage(
                 MemorySectionHeader(title = stringResource(R.string.import_memory_l1_title), icon = Icons.Rounded.History)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = AppShapes.CardMedium,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.common.ui.components.InputDialog
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -874,83 +876,60 @@ private fun ChatPageContent(
                     val errorSelectModelText = stringResource(R.string.error_select_model_first)
 
                     if (showRegenerateConfirmDialog && pendingRegenerateMessage != null) {
-                        AlertDialog(
+                        ConfirmDialog(
                             onDismissRequest = {
                                 showRegenerateConfirmDialog = false
                                 pendingRegenerateMessage = null
                                 pendingRegenerateRequirement = null
                             },
-                            title = { Text(stringResource(R.string.regenerate_title)) },
-                            text = {
-                                Text(stringResource(R.string.regenerate_description))
+                            onConfirm = {
+                                pendingRegenerateMessage?.let { message ->
+                                    vm.regenerateAtMessage(
+                                        message,
+                                        forceWipe = true,
+                                        requirement = pendingRegenerateRequirement
+                                    )
+                                }
+                                showRegenerateConfirmDialog = false
+                                pendingRegenerateMessage = null
+                                pendingRegenerateRequirement = null
                             },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        pendingRegenerateMessage?.let { message ->
-                                            vm.regenerateAtMessage(
-                                                message,
-                                                forceWipe = true,
-                                                requirement = pendingRegenerateRequirement
-                                            )
-                                        }
-                                        showRegenerateConfirmDialog = false
-                                        pendingRegenerateMessage = null
-                                        pendingRegenerateRequirement = null
-                                    }
-                                ) { Text(stringResource(R.string.regenerate_confirm)) }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = {
-                                    showRegenerateConfirmDialog = false
-                                    pendingRegenerateMessage = null
-                                    pendingRegenerateRequirement = null
-                                }) { Text(stringResource(R.string.cancel)) }
-                            }
+                            title = stringResource(R.string.regenerate_title),
+                            text = stringResource(R.string.regenerate_description),
+                            confirmText = stringResource(R.string.regenerate_confirm),
+                            dismissText = stringResource(R.string.cancel),
+                            dangerous = false,
                         )
                     }
 
                     if (showRegenerateRequirementDialog && pendingRegenerateMessage != null) {
                         var requirement by remember { mutableStateOf("") }
-                        AlertDialog(
+                        InputDialog(
                             onDismissRequest = {
                                 showRegenerateRequirementDialog = false
                                 pendingRegenerateMessage = null
                             },
-                            title = { Text(stringResource(R.string.chat_page_regenerate_requirement_title)) },
-                            text = {
-                                OutlinedTextField(
-                                    value = requirement,
-                                    onValueChange = { requirement = it },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    placeholder = { Text(stringResource(R.string.chat_page_regenerate_requirement_placeholder)) },
-                                    label = { Text(stringResource(R.string.chat_page_regenerate_requirement_label)) }
-                                )
-                            },
-                            confirmButton = {
-                                TextButton(
-                                    onClick = {
-                                        pendingRegenerateMessage?.let { message ->
-                                            val req = requirement.ifBlank { null }
-                                            if (vm.canPreserveVersionHistory(message)) {
-                                                vm.regenerateAtMessage(message, forceWipe = false, requirement = req)
-                                                showRegenerateRequirementDialog = false
-                                                pendingRegenerateMessage = null
-                                            } else {
-                                                pendingRegenerateRequirement = req
-                                                showRegenerateRequirementDialog = false
-                                                showRegenerateConfirmDialog = true
-                                            }
-                                        }
+                            onConfirm = {
+                                pendingRegenerateMessage?.let { message ->
+                                    val req = requirement.ifBlank { null }
+                                    if (vm.canPreserveVersionHistory(message)) {
+                                        vm.regenerateAtMessage(message, forceWipe = false, requirement = req)
+                                        showRegenerateRequirementDialog = false
+                                        pendingRegenerateMessage = null
+                                    } else {
+                                        pendingRegenerateRequirement = req
+                                        showRegenerateRequirementDialog = false
+                                        showRegenerateConfirmDialog = true
                                     }
-                                ) { Text(stringResource(R.string.regenerate_confirm)) }
+                                }
                             },
-                            dismissButton = {
-                                TextButton(onClick = {
-                                    showRegenerateRequirementDialog = false
-                                    pendingRegenerateMessage = null
-                                }) { Text(stringResource(R.string.cancel)) }
-                            }
+                            title = stringResource(R.string.chat_page_regenerate_requirement_title),
+                            value = requirement,
+                            onValueChange = { requirement = it },
+                            confirmText = stringResource(R.string.regenerate_confirm),
+                            dismissText = stringResource(R.string.cancel),
+                            placeholder = stringResource(R.string.chat_page_regenerate_requirement_placeholder),
+                            label = stringResource(R.string.chat_page_regenerate_requirement_label),
                         )
                     }
 
@@ -1282,7 +1261,7 @@ private fun TopBar(
     val navController = LocalNavController.current
     val topContainerColor = MaterialTheme.colorScheme.surfaceContainer
     val topContainerBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.background)
-    val buttonShape = RoundedCornerShape(999.dp)
+    val buttonShape = AppShapes.ButtonPill
     val topPillSize = 48.dp
     var showAssistantPicker by remember { mutableStateOf(false) }
     val currentAssistant = settings.getCurrentAssistant()

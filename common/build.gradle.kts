@@ -82,3 +82,11 @@ dependencies {
     // 用 api 暴露给上层模块（app / tts 等都能直接 import org.webrtc.*）
     api(files("libs/libwebrtc.aar"))
 }
+
+// 与 app 模块保持一致的实验性 API opt-in（TopAppBar / DatePicker / TimePicker 等 M3 API 需要）
+tasks.withType<KotlinCompile>().configureEach {
+    compilerOptions.optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
+    compilerOptions.optIn.add("androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")
+    compilerOptions.optIn.add("androidx.compose.foundation.ExperimentalFoundationApi")
+    compilerOptions.optIn.add("androidx.compose.foundation.layout.ExperimentalLayoutApi")
+}

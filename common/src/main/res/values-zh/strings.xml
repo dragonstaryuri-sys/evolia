@@ -17,4 +17,6 @@
     <string name="doubao_import_template_bot_name">示例智能体</string>
     <string name="doubao_import_template_bot_desc">这是一个导入模板，你可以根据这个格式修改自己的聊天记录进行导入。</string>
     <string name="doubao_import_session_title">%1$s历史导入 (%2$d)</string>
+    <!-- 共享 UI 组件 -->
+    <string name="common_back">返回</string>
 </resources>

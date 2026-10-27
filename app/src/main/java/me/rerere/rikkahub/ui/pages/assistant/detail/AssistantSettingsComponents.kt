@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 
 /**
  * PixelPlay-style settings section with title and grouped content.
@@ -63,7 +65,7 @@ fun AssistantSettingsSection(
             )
         }
         Column(
-            modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+            modifier = Modifier.clip(AppShapes.CardMedium),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             content = content
         )
@@ -94,17 +96,14 @@ fun AssistantSettingsItem(
     )
 
     Surface(
-        color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) 
-            MaterialTheme.colorScheme.surfaceContainerLow 
-        else 
-            MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = groupContainerColor(),
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(10.dp))
+            .clip(AppShapes.ListItemSmall)
             .then(
                 if (onClick != null) {
                     Modifier.clickable(

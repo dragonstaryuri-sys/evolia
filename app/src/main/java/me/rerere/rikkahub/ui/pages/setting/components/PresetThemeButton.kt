@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.theme.PresetTheme
 import me.rerere.rikkahub.ui.theme.PresetThemes
@@ -53,7 +54,7 @@ fun PresetThemeButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(AppShapes.CardSmall)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = LocalIndication.current,

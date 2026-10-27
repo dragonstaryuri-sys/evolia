@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.common.ui.components.InputDialog
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.ui.unit.IntOffset
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -133,7 +135,7 @@ fun ColumnScope.ConversationList(
             onValueChange = onSearchQueryChange,
             modifier = Modifier
                 .weight(1f),
-            shape = RoundedCornerShape(50),
+            shape = AppShapes.ButtonPill,
             trailingIcon = {
                 AnimatedVisibility(searchQuery.isNotEmpty()) {
                     IconButton(
@@ -176,7 +178,7 @@ fun ColumnScope.ConversationList(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = AppShapes.CardSmall,
                         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         Text(
@@ -411,7 +413,7 @@ private fun ConversationItem(
                 scaleY = scale
                 this.alpha = combinedAlpha
             }
-            .clip(RoundedCornerShape(50f))
+            .clip(AppShapes.ButtonPill)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -473,7 +475,7 @@ private fun ConversationItem(
             DropdownMenu(
                 expanded = showDropdownMenu,
                 onDismissRequest = { showDropdownMenu = false },
-                shape = RoundedCornerShape(20.dp),
+                shape = AppShapes.ButtonSquared,
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
                 DropdownMenuItem(
@@ -556,31 +558,18 @@ private fun ConversationItem(
             }
 
             if (showEditTitleDialog) {
-                AlertDialog(
+                InputDialog(
                     onDismissRequest = { showEditTitleDialog = false },
-                    title = { Text(stringResource(R.string.chat_page_edit_title)) },
-                    text = {
-                        OutlinedTextField(
-                            value = editedTitle,
-                            onValueChange = { editedTitle = it },
-                            singleLine = true
-                        )
+                    onConfirm = {
+                        onEditTitle(conversation, editedTitle)
+                        showEditTitleDialog = false
                     },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                onEditTitle(conversation, editedTitle)
-                                showEditTitleDialog = false
-                            }
-                        ) {
-                            Text(stringResource(R.string.chat_page_save))
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showEditTitleDialog = false }) {
-                            Text(stringResource(R.string.chat_page_cancel))
-                        }
-                    }
+                    title = stringResource(R.string.chat_page_edit_title),
+                    value = editedTitle,
+                    onValueChange = { editedTitle = it },
+                    confirmText = stringResource(R.string.chat_page_save),
+                    dismissText = stringResource(R.string.chat_page_cancel),
+                    singleLine = true,
                 )
             }
         }

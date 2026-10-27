@@ -35,7 +35,7 @@ import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.BasicAlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -79,6 +79,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.ui.components.ui.FormItem
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.OutlinedNumberInput
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -340,7 +341,7 @@ private fun MimoTTSConfiguration(
                             modifier = Modifier.padding(end = 4.dp)
                         ) {
                             if (isFetchingModels) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                InlineSpinner(size = 20.dp, strokeWidth = 2.dp)
                                 Spacer(Modifier.size(4.dp))
                             }
                             IconButton(
@@ -357,6 +358,8 @@ private fun MimoTTSConfiguration(
                     }
                 )
                 ExposedDropdownMenu(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = AppShapes.ButtonSquared,
                     expanded = modelExpanded,
                     onDismissRequest = { modelExpanded = false }
                 ) {
@@ -453,6 +456,8 @@ private fun MimoTTSConfiguration(
                     }
                 )
                 ExposedDropdownMenu(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = AppShapes.ButtonSquared,
                     expanded = voiceExpanded,
                     onDismissRequest = { voiceExpanded = false }
                 ) {
@@ -582,10 +587,7 @@ private fun MimoTTSConfiguration(
                         enabled = !isConvertingAudio
                     ) {
                         if (isConvertingAudio) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp
-                            )
+                            InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                             Spacer(Modifier.size(8.dp))
                             Text("处理中…")
                         } else {
@@ -846,7 +848,7 @@ private fun AzureTTSConfiguration(
             trailingIcon = {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
                     if (isLoadingVoices) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        InlineSpinner(size = 24.dp, strokeWidth = 2.dp)
                         Spacer(Modifier.size(8.dp))
                     }
                     IconButton(onClick = { showVoicePicker = true }) {
@@ -1214,6 +1216,8 @@ private fun MiniMaxTTSConfiguration(
                 shape = MaterialTheme.shapes.medium
             )
             ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
                 expanded = miniMaxModelExpanded,
                 onDismissRequest = { miniMaxModelExpanded = false }
             ) {
@@ -1312,7 +1316,7 @@ private fun MiniMaxTTSConfiguration(
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp)) {
-                        if (isLoadingVoices) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        if (isLoadingVoices) InlineSpinner(size = 24.dp, strokeWidth = 2.dp)
                         IconButton(onClick = { showVoicePicker = true }) {
                             Icon(Icons.AutoMirrored.Rounded.List, contentDescription = "Select Voice")
                         }
@@ -1411,7 +1415,7 @@ private fun MiniMaxTTSConfiguration(
                         },
                         trailingIcon = {
                             if (isLoadingExistingVoices) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                             } else {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                             }
@@ -1419,6 +1423,8 @@ private fun MiniMaxTTSConfiguration(
                         shape = MaterialTheme.shapes.medium
                     )
                     ExposedDropdownMenu(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = AppShapes.ButtonSquared,
                         expanded = expanded,
                         onDismissRequest = { expanded = false }
                     ) {
@@ -1527,7 +1533,7 @@ private fun MiniMaxTTSConfiguration(
                     enabled = !isGenerating && localApiKey.isNotBlank() && localDesignPrompt.isNotBlank()
                 ) {
                     if (isGenerating) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                         Spacer(Modifier.size(8.dp))
                         Text("设计中…")
                     } else {
@@ -1614,7 +1620,7 @@ private fun MiniMaxTTSConfiguration(
                         },
                         trailingIcon = {
                             if (isLoadingExistingVoices) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                             } else {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                             }
@@ -1622,6 +1628,8 @@ private fun MiniMaxTTSConfiguration(
                         shape = MaterialTheme.shapes.medium
                     )
                     ExposedDropdownMenu(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = AppShapes.ButtonSquared,
                         expanded = expanded,
                         onDismissRequest = { expanded = false }
                     ) {
@@ -1729,7 +1737,7 @@ private fun MiniMaxTTSConfiguration(
                     enabled = !isGenerating && localApiKey.isNotBlank()
                 ) {
                     if (isGenerating && uploadingPurpose == "voice_clone") {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                         Spacer(Modifier.size(8.dp))
                         Text("上传中…")
                     } else {
@@ -1778,7 +1786,7 @@ private fun MiniMaxTTSConfiguration(
                         enabled = !isGenerating && localApiKey.isNotBlank()
                     ) {
                         if (isGenerating && uploadingPurpose == "prompt_audio") {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                             Spacer(Modifier.size(8.dp))
                             Text("上传中…")
                         } else {
@@ -1901,7 +1909,7 @@ private fun MiniMaxTTSConfiguration(
                         voiceIdError == null
                 ) {
                     if (isGenerating) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                         Spacer(Modifier.size(8.dp))
                         Text("复刻中…")
                     } else {
@@ -2460,6 +2468,8 @@ private fun OpenAITTSConfiguration(
                 }
             )
             ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
                 expanded = voiceExpanded,
                 onDismissRequest = { voiceExpanded = false }
             ) {
@@ -2723,6 +2733,8 @@ private fun SystemTTSConfiguration(
                 }
             )
             ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
                 expanded = voiceExpanded,
                 onDismissRequest = { voiceExpanded = false }
             ) {

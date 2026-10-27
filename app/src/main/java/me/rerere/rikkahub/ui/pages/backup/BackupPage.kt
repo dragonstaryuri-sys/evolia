@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.backup
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.PermissionChecker
 
@@ -25,6 +28,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -99,12 +103,14 @@ import kotlin.system.exitProcess
 fun BackupPage(vm: BackupVM = koinViewModel()) {
     val pagerState = rememberPagerState { 2 }
     val scope = rememberCoroutineScope()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(stringResource(R.string.backup_page_title))
-                },
+            OneUITopAppBar(
+                title = stringResource(R.string.backup_page_title),
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
                 }
@@ -437,6 +443,8 @@ private fun WebDavPage(
             onDismissRequest = {
                 showBackupFiles = false
             },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             sheetState = rememberModalBottomSheetState(
                 skipPartiallyExpanded = true
             ),
@@ -552,6 +560,10 @@ private fun WebDavPage(
                 showPermissionDialog = false
                 showRestartDialog = true
             },
+            shape = AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.permissions_required)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -883,6 +895,10 @@ private fun ImportExportPage(
                 showPermissionDialog = false
                 showRestartDialog = true
             },
+            shape = AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.permissions_required)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -935,6 +951,10 @@ private fun BackupDialog(
 ) {
     AlertDialog(
         onDismissRequest = {}, // Disallow dismissing by clicking outside
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.backup_page_restart_app)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

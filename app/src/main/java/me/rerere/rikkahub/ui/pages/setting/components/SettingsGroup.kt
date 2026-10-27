@@ -34,6 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 
 @Composable
 fun SettingsGroup(
@@ -54,7 +56,7 @@ fun SettingsGroup(
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
-                .clip(RoundedCornerShape(24.dp)), // 整个模块的大圆角
+                .clip(AppShapes.CardMedium), // 整个模块的大圆角
             verticalArrangement = Arrangement.spacedBy(0.dp), // 内部项无间距
             content = content
         )
@@ -87,7 +89,7 @@ fun SettingGroupItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = groupContainerColor(),
         shape = RectangleShape, // 内部项设为直角，以便合并成一整块卡片
         interactionSource = interactionSource,
         modifier = Modifier

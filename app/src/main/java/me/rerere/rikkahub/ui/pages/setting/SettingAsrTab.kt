@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.asr.provider.ASRProviderSetting
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
@@ -102,6 +103,8 @@ fun AsrTab(
         val scope = rememberCoroutineScope()
 
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = { editingProvider = null },
             sheetState = sheetState,
             sheetGesturesEnabled = false,

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -29,7 +30,7 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 fun ToggleSurface(
     checked: Boolean,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(50),
+    shape: Shape = AppShapes.ButtonPill,
     checkedColor: Color = MaterialTheme.colorScheme.primaryContainer,
     uncheckedColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,

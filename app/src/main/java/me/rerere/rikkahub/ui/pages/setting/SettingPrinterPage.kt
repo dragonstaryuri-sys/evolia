@@ -16,7 +16,7 @@ import androidx.compose.material.icons.rounded.Print
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -193,7 +193,7 @@ fun SettingPrinterPage(vm: PrinterVM = koinViewModel()) {
                         subtitle = stringResource(R.string.printer_page_scan_desc),
                         icon = {
                             if (scanning) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                InlineSpinner(size = 20.dp, strokeWidth = 2.dp)
                             } else {
                                 Icon(Icons.Rounded.BluetoothSearching, null, modifier = Modifier.size(20.dp))
                             }

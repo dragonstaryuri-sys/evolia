@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.common.ui.components.AppFab
+import me.rerere.rikkahub.common.ui.components.FabVariant
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -324,6 +326,8 @@ fun SettingLorebookDetailPage(
                             Icon(Icons.Rounded.Upload, contentDescription = stringResource(R.string.export_label))
                         }
                         DropdownMenu(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = AppShapes.ButtonSquared,
                             expanded = showExportMenu,
                             onDismissRequest = { showExportMenu = false }
                         ) {
@@ -359,14 +363,12 @@ fun SettingLorebookDetailPage(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Toggle assistants FAB - same size as Add, gray like floating toolbar
-                FloatingActionButton(
+                AppFab(
                     onClick = {
                         showAssistantToggleSheet = true
                         haptics.perform(HapticPattern.Tick)
                     },
-                    shape = AppShapes.CardLarge,
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = MaterialTheme.colorScheme.onSurface
+                    variant = FabVariant.Secondary,
                 ) {
                     Icon(
                         Icons.Rounded.ToggleOn,
@@ -375,12 +377,10 @@ fun SettingLorebookDetailPage(
                 }
 
                 // Main FAB for add entry
-                FloatingActionButton(
+                AppFab(
                     onClick = {
                         showAddEntrySheet = true
-                        haptics.perform(HapticPattern.Pop)
                     },
-                    shape = AppShapes.CardLarge
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                 }
@@ -860,6 +860,8 @@ private fun EntryEditorSheet(
     }
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -1151,6 +1153,8 @@ private fun LorebookEditorSheet(
     }
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
@@ -1174,7 +1178,7 @@ private fun LorebookEditorSheet(
             ) {
                 // Cover picker - book-like aspect ratio
                 Surface(
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.size(width = 56.dp, height = 78.dp),
                     onClick = { imagePickerLauncher.launch("image/*") }
@@ -1270,7 +1274,7 @@ private fun LorebookEntryAttachmentItem(
     ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+            shape = AppShapes.Indicator,
             color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Box(
@@ -1381,6 +1385,8 @@ private fun AssistantLorebookToggleSheet(
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -1438,7 +1444,7 @@ private fun AssistantLorebookToggleSheet(
 
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                     ),
                     shape = shape
                 ) {

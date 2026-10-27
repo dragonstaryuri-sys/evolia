@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -394,6 +395,9 @@ private fun RpStyleRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Text(if (rule != null) stringResource(R.string.rp_opt_dialog_edit_rule) else stringResource(R.string.rp_opt_dialog_add_rule))
         },
@@ -547,13 +551,21 @@ private fun RpStyleRuleDialog(
                             )
                         )
                     }
-                }
+                },
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
             ) {
                 Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         }

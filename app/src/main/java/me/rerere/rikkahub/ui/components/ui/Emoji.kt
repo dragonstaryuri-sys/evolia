@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -82,7 +83,7 @@ fun EmojiPicker(
                     .height(height.dp)
                     .background(
                         MaterialTheme.colorScheme.surface,
-                        RoundedCornerShape(10.dp)
+                        AppShapes.ListItemSmall
                     )
                     .padding(8.dp)
             ) {
@@ -108,7 +109,7 @@ fun EmojiPicker(
                             onSearch = { /* Handle search */ }
                         ),
                         singleLine = true,
-                        shape = RoundedCornerShape(50)
+                        shape = AppShapes.ButtonPill
                     )
                 }
 
@@ -131,7 +132,7 @@ fun EmojiPicker(
                                         lazyListState.animateScrollToItem(0)
                                     }
                                 }
-                                .clip(RoundedCornerShape(20.dp)),
+                                .clip(AppShapes.ButtonRounded),
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isSelected) {
                                     MaterialTheme.colorScheme.primary
@@ -245,7 +246,7 @@ private fun EmojiItem(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .clip(RoundedCornerShape(8.dp))
+            .clip(AppShapes.Indicator)
             .background(
                 MaterialTheme.colorScheme.surfaceVariant.copy(
                     alpha = if (hasVariants) 0.5f else 0.3f
@@ -279,7 +280,7 @@ private fun EmojiModifierPicker(
             modifier = Modifier
                 .wrapContentSize()
                 .padding(16.dp),
-            shape = RoundedCornerShape(10.dp),
+            shape = AppShapes.ListItemSmall,
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 8.dp,
             tonalElevation = 8.dp
@@ -301,7 +302,7 @@ private fun EmojiModifierPicker(
                             modifier = Modifier
                                 .size(48.dp)
                                 .clickable { onEmojiSelected(variant) }
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(AppShapes.Indicator)
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
                             contentAlignment = Alignment.Center
                         ) {

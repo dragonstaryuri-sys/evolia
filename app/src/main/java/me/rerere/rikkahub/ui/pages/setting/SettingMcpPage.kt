@@ -39,7 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -108,6 +108,7 @@ import me.rerere.rikkahub.ui.components.ui.ItemPosition
 import me.rerere.rikkahub.ui.hooks.EditState
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -292,42 +293,27 @@ fun SettingMcpPage(vm: SettingVM = koinViewModel()) {
 
     // Delete confirmation dialog
     if (showDeleteDialog && mcpToDelete != null) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = {
                 showDeleteDialog = false
                 mcpToDelete = null
             },
-            title = {
-                Text(stringResource(R.string.confirm_delete))
-            },
-            text = {
-                Text("Are you sure you want to delete this MCP server?")
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    mcpToDelete = null
-                }) {
-                    Text(stringResource(R.string.cancel))
+            onConfirm = {
+                mcpToDelete?.let { mcp ->
+                    vm.updateSettings(
+                        settings.copy(
+                            mcpServers = mcpConfigs.filter { it.id != mcp.id }
+                        )
+                    )
                 }
+                showDeleteDialog = false
+                mcpToDelete = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        mcpToDelete?.let { mcp ->
-                            vm.updateSettings(
-                                settings.copy(
-                                    mcpServers = mcpConfigs.filter { it.id != mcp.id }
-                                )
-                            )
-                        }
-                        showDeleteDialog = false
-                        mcpToDelete = null
-                    }
-                ) {
-                    Text(stringResource(R.string.delete))
-                }
-            }
+            title = stringResource(R.string.confirm_delete),
+            text = "Are you sure you want to delete this MCP server?",
+            confirmText = stringResource(R.string.delete),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
         )
     }
     McpServerConfigModal(creationState)
@@ -358,6 +344,8 @@ private fun McpServerAddSheet(
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismiss,
         sheetState = bottomSheetState,
         dragHandle = {
@@ -393,7 +381,7 @@ private fun McpServerAddSheet(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 ),
-                shape = RoundedCornerShape(24.dp)
+                shape = AppShapes.CardMedium
             ) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -415,8 +403,8 @@ private fun McpServerAddSheet(
                 Surface(
                     onClick = { onPresetAdd(preset) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    color = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    shape = AppShapes.CardMedium,
+                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
@@ -477,7 +465,7 @@ private fun McpServerItem(
 
         // Disabled cards: transparent background (black in dark mode) with outline
         val disabledBackground = if (LocalDarkMode.current)
-            Color.Black
+            MaterialTheme.colorScheme.surfaceContainerLowest
         else
             MaterialTheme.colorScheme.surface
 
@@ -532,9 +520,7 @@ private fun McpServerItem(
             Box(modifier = grayscaleModifier) {
                 when (status) {
                     McpStatus.Idle -> Icon(Icons.Rounded.CommentsDisabled, null)
-                    McpStatus.Connecting -> CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp)
-                    )
+                    McpStatus.Connecting -> InlineSpinner(size = 24.dp)
                     McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
                     is McpStatus.Error -> Icon(Icons.Rounded.ErrorOutline, null)
                 }
@@ -586,6 +572,8 @@ private fun McpServerConfigModal(state: EditState<McpServerConfig>) {
         val scope = rememberCoroutineScope()
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 state.dismiss()
             },
@@ -888,7 +876,7 @@ private fun McpCommonOptionsConfigure(
                     Surface(
                         onClick = { context.openUrl(authHelpUrl) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = AppShapes.CardSmall,
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Row(

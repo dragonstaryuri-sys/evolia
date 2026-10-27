@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.FontConfig
 import me.rerere.rikkahub.data.datastore.FontSettings
@@ -253,23 +254,17 @@ fun SettingFontsPage(vm: SettingVM = koinViewModel()) {
 
     // Reset All Dialog
     if (showResetAllDialog) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showResetAllDialog = false },
-            title = { Text(stringResource(R.string.fonts_page_reset_all_dialog_title)) },
-            text = { Text(stringResource(R.string.fonts_page_reset_all_dialog_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    updateLocalFontSettings(FontSettings(), persist = true)
-                    showResetAllDialog = false
-                }) {
-                    Text(stringResource(R.string.reset))
-                }
+            onConfirm = {
+                updateLocalFontSettings(FontSettings(), persist = true)
+                showResetAllDialog = false
             },
-            dismissButton = {
-                TextButton(onClick = { showResetAllDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
+            title = stringResource(R.string.fonts_page_reset_all_dialog_title),
+            text = stringResource(R.string.fonts_page_reset_all_dialog_text),
+            confirmText = stringResource(R.string.reset),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
         )
     }
 }
@@ -442,7 +437,7 @@ private fun FontConfigSection(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(AppShapes.Indicator)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .padding(12.dp)
                             ) {
@@ -606,23 +601,17 @@ private fun FontConfigSection(
 
     // Reset Dialog
     if (showResetDialog) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text(stringResource(R.string.fonts_page_reset_font_dialog_title, title)) },
-            text = { Text(stringResource(R.string.fonts_page_reset_font_dialog_text, title)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onReset()
-                    showResetDialog = false
-                }) {
-                    Text(stringResource(R.string.reset))
-                }
+            onConfirm = {
+                onReset()
+                showResetDialog = false
             },
-            dismissButton = {
-                TextButton(onClick = { showResetDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
+            title = stringResource(R.string.fonts_page_reset_font_dialog_title, title),
+            text = stringResource(R.string.fonts_page_reset_font_dialog_text, title),
+            confirmText = stringResource(R.string.reset),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
         )
     }
 }
@@ -726,7 +715,7 @@ private fun FontPreviewCard(fontSettings: FontSettings) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(AppShapes.Indicator)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .padding(12.dp)
             ) {

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.menu
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -261,7 +262,7 @@ private fun ImageGenCard(
                 Surface(
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f),
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    shape = RoundedCornerShape(999.dp)
+                    shape = AppShapes.ButtonPill
                 ) {
                     Text(
                         text = "Open",

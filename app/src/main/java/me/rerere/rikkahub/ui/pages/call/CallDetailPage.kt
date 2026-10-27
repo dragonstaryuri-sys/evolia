@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.call
 
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +23,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -102,15 +107,15 @@ fun CallDetailPage(callId: String) {
     val canSave = hasPlayableAudio && record?.forever == 0
     val isConnected = record?.connectedAt != null || (record?.durationMs ?: 0L) > 0L
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("通话详情", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                },
+            OneUITopAppBar(
+                title = "通话详情",
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton() },
                 actions = {
                     TextButton(
                         onClick = { vm.saveForever() },
@@ -192,19 +197,17 @@ fun CallDetailPage(callId: String) {
     }
 
     if (showDeleteConfirm) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除录音") },
-            text = { Text("确定要删除这条通话录音吗？删除后不可恢复，但通话转写会保留。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteConfirm = false
-                    vm.deleteAudio(record)
-                }) { Text("删除") }
+            onConfirm = {
+                showDeleteConfirm = false
+                vm.deleteAudio(record)
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
-            }
+            title = "删除录音",
+            text = "确定要删除这条通话录音吗？删除后不可恢复，但通话转写会保留。",
+            confirmText = "删除",
+            dismissText = "取消",
+            dangerous = true,
         )
     }
 }

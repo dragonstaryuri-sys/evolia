@@ -25,6 +25,7 @@ import androidx.compose.material3.LocalAbsoluteTonalElevation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -156,7 +157,9 @@ fun SearchPickerButton(
     if (showSearchPicker) {
         ModalBottomSheet(
             onDismissRequest = { showSearchPicker = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
         ) {
             Column(
                 modifier = Modifier
@@ -263,12 +266,12 @@ private fun AppSearchSettings(
     
     // Position-based corner shape calculator
     fun getItemShape(index: Int, totalCount: Int, isSelected: Boolean): RoundedCornerShape {
-        if (isSelected) return RoundedCornerShape(50) // Selected = fully round
+        if (isSelected) return AppShapes.ButtonPill // Selected = fully round
         return when {
-            totalCount == 1 -> RoundedCornerShape(24.dp) // Single item
+            totalCount == 1 -> AppShapes.CardMedium // Single item
             index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
             index == totalCount - 1 -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-            else -> RoundedCornerShape(10.dp)
+            else -> AppShapes.ListItemSmall
         }
     }
     
@@ -283,7 +286,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = RoundedCornerShape(24.dp),
+                shape = AppShapes.CardMedium,
                 isAmoled = isAmoled,
                 isDarkMode = isDarkMode
             )
@@ -295,7 +298,7 @@ private fun AppSearchSettings(
                 onToggleSearch = onToggleSearch,
                 onDismiss = onDismiss,
                 navBackStack = navBackStack,
-                shape = RoundedCornerShape(24.dp),
+                shape = AppShapes.CardMedium,
                 isAmoled = isAmoled,
                 isDarkMode = isDarkMode
             )
@@ -368,7 +371,7 @@ private fun SearchToggleItem(
     isDarkMode: Boolean
 ) {
     // Use surfaceContainerHigh for Light Mode consistency
-    val containerColor = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+    val containerColor = if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
     val contentColor = MaterialTheme.colorScheme.onSurface
     
     Row(
@@ -444,7 +447,7 @@ private fun SearchProviderItem(
     val targetContainerColor = if (isSelected) {
         MaterialTheme.colorScheme.primaryContainer
     } else if (isDarkMode) {
-        Color.Black
+        MaterialTheme.colorScheme.surfaceContainerLowest
     } else {
         MaterialTheme.colorScheme.surfaceContainerHigh
     }
@@ -500,7 +503,7 @@ private fun BuiltInSearchSetting(
     val isDarkMode = LocalDarkMode.current
     val isAmoled = amoledMode && isDarkMode
     
-    val containerColor = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+    val containerColor = if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
     val contentColor = if (isAmoled) Color.White else MaterialTheme.colorScheme.onSurface
 
     CompositionLocalProvider(LocalAbsoluteTonalElevation provides 0.dp) {

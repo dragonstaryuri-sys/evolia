@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Share
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.rikkahub.common.JsonInstant
 import kotlin.io.encoding.Base64
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun ShareSheet(
@@ -39,7 +40,9 @@ fun ShareSheet(
             onDismissRequest = {
                 state.dismiss()
             },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
         ) {
             Column(
                 modifier = Modifier
@@ -76,7 +79,7 @@ fun ShareSheet(
                 QRCode(
                     value = state.currentProvider?.encodeForShare() ?: "",
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(AppShapes.Indicator)
                         .fillMaxWidth()
                         .aspectRatio(1f)
                 )

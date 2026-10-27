@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.favorites
 
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +22,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.core.data.model.MessageNode
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.ui.components.chat.ChatMessageTurn
 import me.rerere.rikkahub.ui.components.chat.groupIntoTurns
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -40,15 +45,15 @@ fun FavoriteDetailPage(id: Long) {
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.favorites_detail_title), fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                },
+            OneUITopAppBar(
+                title = stringResource(R.string.favorites_detail_title),
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton() },
                 actions = {
                     IconButton(onClick = { showDeleteConfirm = true }) {
                         Icon(Icons.Rounded.Delete, null)
@@ -92,33 +97,24 @@ fun FavoriteDetailPage(id: Long) {
                 item { Spacer(Modifier.height(32.dp)) }
             }
         } ?: Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+            InlineSpinner()
         }
     }
 
     if (showDeleteConfirm) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.confirm_delete)) },
-            text = { Text(stringResource(R.string.chat_page_delete)) }, // 借用现有字符串
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        haptics.perform(HapticPattern.Pop)
-                        favoritesVM.deleteFavorite(id)
-                        navController.navigateUp()
-                        showDeleteConfirm = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text(stringResource(R.string.delete))
-                }
+            onConfirm = {
+                haptics.perform(HapticPattern.Pop)
+                favoritesVM.deleteFavorite(id)
+                navController.navigateUp()
+                showDeleteConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
+            title = stringResource(R.string.confirm_delete),
+            text = stringResource(R.string.chat_page_delete), // 借用现有字符串
+            confirmText = stringResource(R.string.delete),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
         )
     }
 }

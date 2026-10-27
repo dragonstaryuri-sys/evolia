@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -40,7 +41,6 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.TextFields
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -71,6 +71,8 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.runtime.collectAsState
 import androidx.core.net.toUri
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.ui.theme.extendColors
 import me.rerere.rikkahub.service.voice.VoiceMessagePlayer
 import me.rerere.rikkahub.service.voice.VoiceRecorderController
 import me.rerere.rikkahub.service.voice.VoiceRecorderResult
@@ -221,7 +223,7 @@ fun VoiceMessageBubble(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .width(bubbleWidth + 80.dp) // 文本比语音条稍宽，提升可读性
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(AppShapes.ButtonSquared)
                         .background(transcriptionBg)
                         .padding(horizontal = 10.dp, vertical = 6.dp)
                 )
@@ -361,7 +363,7 @@ fun VoiceRecordButton(
     val isTranscribeZone = zone == RecordZone.Transcribe
 
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = when (zone) {
             RecordZone.Cancel -> MaterialTheme.colorScheme.errorContainer
             RecordZone.Transcribe -> MaterialTheme.colorScheme.primaryContainer
@@ -436,10 +438,7 @@ fun VoiceRecordButton(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
+                        InlineSpinner(size = 16.dp, strokeWidth = 2.dp)
                         Text(
                             text = transcribingText,
                             style = MaterialTheme.typography.bodyMedium,
@@ -581,7 +580,7 @@ private fun RecordingOverlay(
                     icon = Icons.Rounded.Close,
                     label = cancelLabelText,
                     isSelected = isCancelZone,
-                    selectedTint = Color(0xFFFF4D4F),
+                    selectedTint = MaterialTheme.extendColors.red6,
                     modifier = Modifier.weight(1f)
                 )
                 RecordTargetCard(
@@ -622,7 +621,7 @@ private fun RecordTargetCard(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(44.dp))
+            .clip(AppShapes.ButtonPill)
             .background(if (isSelected) Color.White else Color.White.copy(alpha = 0.22f))
     ) {
         Row(

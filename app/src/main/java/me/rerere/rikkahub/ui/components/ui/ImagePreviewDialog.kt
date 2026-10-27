@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -139,7 +140,7 @@ fun ImagePreviewDialog(
                                     onDismissRequest()
                                 }
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = AppShapes.ListItemSmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(48.dp)
                         ) {

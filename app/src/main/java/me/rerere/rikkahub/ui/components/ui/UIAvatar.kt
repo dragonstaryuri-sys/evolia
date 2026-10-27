@@ -17,7 +17,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,7 +44,9 @@ import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Avatar
+import me.rerere.rikkahub.common.ui.components.InputDialog
 import me.rerere.rikkahub.ui.hooks.rememberAvatarShape
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun TextAvatar(
@@ -180,6 +181,9 @@ fun UIAvatar(
             onDismissRequest = {
                 showPickOption = false
             },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = {
                 Text(text = stringResource(id = R.string.avatar_change_avatar))
             },
@@ -247,7 +251,9 @@ fun UIAvatar(
             onDismissRequest = {
                 showEmojiPicker = false
             },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
         ) {
             EmojiPicker(
                 onEmojiSelected = { emoji ->
@@ -263,43 +269,23 @@ fun UIAvatar(
     }
 
     if (showUrlInput) {
-        AlertDialog(
+        InputDialog(
             onDismissRequest = {
                 showUrlInput = false
             },
-            title = {
-                Text(text = stringResource(id = R.string.avatar_url_dialog_title))
-            },
-            text = {
-                OutlinedTextField(
-                    value = urlInput,
-                    onValueChange = { urlInput = it },
-                    label = { Text(stringResource(id = R.string.avatar_url_hint)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (urlInput.isNotBlank()) {
-                            onUpdate?.invoke(Avatar.Image(urlInput.trim()))
-                            showUrlInput = false
-                        }
-                    }
-                ) {
-                    Text(stringResource(id = R.string.avatar_url_confirm))
+            onConfirm = {
+                if (urlInput.isNotBlank()) {
+                    onUpdate?.invoke(Avatar.Image(urlInput.trim()))
+                    showUrlInput = false
                 }
             },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showUrlInput = false
-                    }
-                ) {
-                    Text(stringResource(id = R.string.avatar_cancel))
-                }
-            }
+            title = stringResource(id = R.string.avatar_url_dialog_title),
+            value = urlInput,
+            onValueChange = { urlInput = it },
+            confirmText = stringResource(id = R.string.avatar_url_confirm),
+            dismissText = stringResource(id = R.string.avatar_cancel),
+            placeholder = stringResource(id = R.string.avatar_url_hint),
+            singleLine = true,
         )
     }
 

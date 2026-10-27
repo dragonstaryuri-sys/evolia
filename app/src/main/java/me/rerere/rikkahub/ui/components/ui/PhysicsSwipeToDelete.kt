@@ -1,6 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -168,7 +168,7 @@ fun PhysicsSwipeToDelete(
     }
 
     // 对调：卡片颜色改为浅灰 (surfaceContainerHigh)，以便与白色背景区分，与设置页保持一致
-    val cardColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+    val cardColor = groupContainerColor()
 
     Box(
         modifier = modifier.fillMaxWidth()

@@ -32,12 +32,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.Lorebook
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.theme.AppShapes
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Avatar
 
@@ -52,31 +53,12 @@ fun AssistantLorebooksSubPage(
     val navController = LocalNavController.current
 
     if (lorebooks.isEmpty()) {
-        Box(
+        val emptyText = stringResource(R.string.assistant_lorebooks_empty) + "\n" + stringResource(R.string.assistant_lorebooks_empty_hint)
+        EmptyPlaceholder(
+            text = emptyText,
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.Book,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-                Text(
-                    text = stringResource(R.string.assistant_lorebooks_empty),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = stringResource(R.string.assistant_lorebooks_empty_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+            icon = Icons.Rounded.Book
+        )
     } else {
         LazyColumn(
             modifier = Modifier
@@ -88,7 +70,7 @@ fun AssistantLorebooksSubPage(
             item(key = "description") {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = groupContainerColor()
                     ),
                     shape = AppShapes.CardLarge
                 ) {
@@ -177,7 +159,7 @@ private fun LorebookSelectionCard(
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            containerColor = groupContainerColor()
         ),
         shape = shape,
         onClick = onClick
@@ -199,7 +181,7 @@ private fun LorebookSelectionCard(
                     topStart = 16.dp, topEnd = 6.dp,
                     bottomStart = 6.dp, bottomEnd = 6.dp
                 )
-                me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
+                me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> AppShapes.Indicator
                 me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
                     topStart = 6.dp, topEnd = 6.dp,
                     bottomStart = 16.dp, bottomEnd = 6.dp

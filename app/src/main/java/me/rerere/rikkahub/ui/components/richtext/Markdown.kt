@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.background
@@ -641,7 +642,7 @@ private fun MarkdownNode(
                     model = imageUrl,
                     contentDescription = altText,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(AppShapes.Indicator)
                         .widthIn(min = 120.dp)
                         .heightIn(min = 120.dp),
                 )

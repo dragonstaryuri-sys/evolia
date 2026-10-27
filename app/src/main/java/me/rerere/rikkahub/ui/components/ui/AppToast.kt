@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
@@ -340,7 +341,7 @@ private fun ToastContent(
     val isLongMessage = toast.message.length > 80
 
     Surface(
-        shape = RoundedCornerShape(28.dp),
+        shape = AppShapes.CardLarge,
         color = containerColor,
         contentColor = contentColor,
         tonalElevation = 2.dp,
@@ -410,7 +411,7 @@ private fun ToastContent(
             if (isLongMessage && !isExpanded) {
                 Surface(
                     onClick = { isExpanded = true },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = AppShapes.ListItemSmall,
                     color = contentColor.copy(alpha = 0.1f),
                     modifier = Modifier.size(28.dp)
                 ) {

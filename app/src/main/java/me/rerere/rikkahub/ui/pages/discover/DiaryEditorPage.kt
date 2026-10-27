@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.discover
 
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.common.ui.components.EvoliaDatePickerDialog
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -291,10 +293,7 @@ fun DiaryEditorPage(
                             modifier = Modifier.size(48.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
+                            InlineSpinner(size = 20.dp, strokeWidth = 2.dp)
                         }
                     } else {
                         IconButton(
@@ -335,17 +334,17 @@ fun DiaryEditorPage(
                     val datePickerState = rememberDatePickerState(
                         initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
                     )
-                    DatePickerDialog(
+                    EvoliaDatePickerDialog(
+                        state = datePickerState,
                         onDismissRequest = { showDatePicker = false },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                datePickerState.selectedDateMillis?.let {
-                                    selectedDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
-                                }
-                                showDatePicker = false
-                            }) { Text(stringResource(R.string.confirm)) }
-                        }
-                    ) { DatePicker(state = datePickerState) }
+                        onConfirm = {
+                            datePickerState.selectedDateMillis?.let {
+                                selectedDate = Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate()
+                            }
+                            showDatePicker = false
+                        },
+                        confirmText = stringResource(R.string.confirm),
+                    )
                 }
 
                 Spacer(Modifier.height(16.dp))

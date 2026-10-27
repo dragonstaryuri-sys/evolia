@@ -14,7 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
-import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.R
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
@@ -56,7 +56,7 @@ fun BackButton(
     ) {
         Icon(
             Icons.AutoMirrored.Rounded.ArrowBack,
-            contentDescription = stringResource(R.string.back)
+            contentDescription = stringResource(R.string.common_back)
         )
     }
 }

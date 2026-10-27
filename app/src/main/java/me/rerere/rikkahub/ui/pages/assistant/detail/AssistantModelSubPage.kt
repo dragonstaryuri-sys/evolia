@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -38,7 +37,8 @@ import me.rerere.rikkahub.ui.components.ui.Tag
 import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import me.rerere.rikkahub.utils.toFixed
 import kotlin.uuid.Uuid
 import me.rerere.ai.core.ReasoningLevel
@@ -67,11 +67,8 @@ fun AssistantModelSubPage(
             // Chat Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -100,11 +97,8 @@ fun AssistantModelSubPage(
             // Background Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -133,11 +127,8 @@ fun AssistantModelSubPage(
             // Summarizer Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -166,11 +157,8 @@ fun AssistantModelSubPage(
             // Memory Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -199,11 +187,8 @@ fun AssistantModelSubPage(
             // Diary Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -232,11 +217,8 @@ fun AssistantModelSubPage(
             // Suggestion Model
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -312,11 +294,8 @@ fun AssistantModelSubPage(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Surface(
-                    color = if (LocalDarkMode.current)
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    else
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(10.dp)
+                    color = groupContainerColor(),
+                    shape = AppShapes.ListItemSmall
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Slider(
@@ -372,11 +351,8 @@ fun AssistantModelSubPage(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Surface(
-                    color = if (LocalDarkMode.current)
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    else
-                        MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(10.dp)
+                    color = groupContainerColor(),
+                    shape = AppShapes.ListItemSmall
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Slider(

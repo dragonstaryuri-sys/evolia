@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.ui.graphics.RectangleShape
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
@@ -94,6 +95,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Close
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.ui.ToastType
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -353,38 +355,29 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
         }
 
         if (showDeleteDialog && providerToDelete != null) {
-            androidx.compose.material3.AlertDialog(
+            ConfirmDialog(
                 onDismissRequest = {
                     showDeleteDialog = false
                     providerToDelete = null
                 },
-                title = { Text(stringResource(R.string.confirm_delete)) },
-                text = { Text(stringResource(R.string.assistant_page_delete_dialog_text)) },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showDeleteDialog = false
-                        providerToDelete = null
-                    }) {
-                        Text(stringResource(R.string.cancel))
+                onConfirm = {
+                    providerToDelete?.let { p ->
+                        val newProviders = settings.ttsProviders - p
+                        val newSelectedId =
+                            if (settings.selectedTTSProviderId == p.id) DEFAULT_SYSTEM_TTS_ID else settings.selectedTTSProviderId
+                        vm.updateSettings(settings.copy(
+                            ttsProviders = newProviders,
+                            selectedTTSProviderId = newSelectedId
+                        ))
                     }
+                    showDeleteDialog = false
+                    providerToDelete = null
                 },
-                confirmButton = {
-                    TextButton(onClick = {
-                        providerToDelete?.let { p ->
-                            val newProviders = settings.ttsProviders - p
-                            val newSelectedId =
-                                if (settings.selectedTTSProviderId == p.id) DEFAULT_SYSTEM_TTS_ID else settings.selectedTTSProviderId
-                            vm.updateSettings(settings.copy(
-                                ttsProviders = newProviders,
-                                selectedTTSProviderId = newSelectedId
-                            ))
-                        }
-                        showDeleteDialog = false
-                        providerToDelete = null
-                    }) {
-                        Text(stringResource(R.string.confirm))
-                    }
-                }
+                title = stringResource(R.string.confirm_delete),
+                text = stringResource(R.string.assistant_page_delete_dialog_text),
+                confirmText = stringResource(R.string.confirm),
+                dismissText = stringResource(R.string.cancel),
+                dangerous = true,
             )
         }
             } else {
@@ -405,6 +398,8 @@ fun SettingTTSPage(vm: SettingVM = koinViewModel()) {
             "ko" to "안녕하세요, 이것은 한국어 음性 미리보기입니다. 어떠신가요?"
         )
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 editingProvider = null
             },
@@ -553,6 +548,8 @@ private fun TtsTextFilterSettingsDialog(
     val scope = rememberCoroutineScope()
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -851,29 +848,44 @@ private fun TtsTextFilterSettingsDialog(
                 )
 
                 // 这里由于 M3 官方没提供标准的 TimePickerDialog 包裹类，我们写一个通用的
+                // （无法迁移到 EvoliaTimePickerDialog：原「清除」按钮语义是清空时间而非关闭弹窗，
+                //   与组件 dismissButton 复用 onDismissRequest 的设计冲突，故保留原容器仅补齐配色）
                 androidx.compose.material3.DatePickerDialog( // 借用 DatePickerDialog 的容器样式
                     onDismissRequest = { showTimePicker = false },
+                    colors = androidx.compose.material3.DatePickerDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    ),
                     confirmButton = {
-                        TextButton(onClick = {
-                            val formattedTime = String.format("%02d:%02d", timePickerState.hour, timePickerState.minute)
-                            if (pickingStart) {
-                                onUpdateSettings(displaySetting.copy(muteTimeStart = formattedTime))
-                            } else {
-                                onUpdateSettings(displaySetting.copy(muteTimeEnd = formattedTime))
-                            }
-                            showTimePicker = false
-                        }) { Text(stringResource(R.string.confirm)) }
+                        TextButton(
+                            onClick = {
+                                val formattedTime = String.format("%02d:%02d", timePickerState.hour, timePickerState.minute)
+                                if (pickingStart) {
+                                    onUpdateSettings(displaySetting.copy(muteTimeStart = formattedTime))
+                                } else {
+                                    onUpdateSettings(displaySetting.copy(muteTimeEnd = formattedTime))
+                                }
+                                showTimePicker = false
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) { Text(stringResource(R.string.confirm)) }
                     },
                     dismissButton = {
-                        TextButton(onClick = {
-                            // 可选：清除时间
-                            if (pickingStart) {
-                                onUpdateSettings(displaySetting.copy(muteTimeStart = null))
-                            } else {
-                                onUpdateSettings(displaySetting.copy(muteTimeEnd = null))
-                            }
-                            showTimePicker = false
-                        }) { Text("清除") }
+                        TextButton(
+                            onClick = {
+                                // 可选：清除时间
+                                if (pickingStart) {
+                                    onUpdateSettings(displaySetting.copy(muteTimeStart = null))
+                                } else {
+                                    onUpdateSettings(displaySetting.copy(muteTimeEnd = null))
+                                }
+                                showTimePicker = false
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) { Text("清除") }
                     }
                 ) {
                     Box(modifier = Modifier.padding(24.dp).align(Alignment.CenterHorizontally)) {
@@ -980,6 +992,9 @@ private fun TtsFilterRuleEditDialog(
 
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Text(if (rule != null) stringResource(R.string.tts_filter_dialog_edit) else stringResource(R.string.tts_filter_dialog_add))
         },
@@ -1058,13 +1073,21 @@ private fun TtsFilterRuleEditDialog(
                             )
                         )
                     }
-                }
+                },
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
             ) {
                 Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = onDismiss,
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         }
@@ -1125,6 +1148,8 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
         val scope = rememberCoroutineScope()
 
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 showBottomSheet = false
             },
@@ -1194,8 +1219,8 @@ private fun AddTTSProviderButton(onAdd: (TTSProviderSetting) -> Unit) {
                         val shape = when (position) {
                             ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
                             ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                            ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+                            ItemPosition.MIDDLE -> AppShapes.ListItemSmall
+                            ItemPosition.ONLY -> AppShapes.CardMedium
                         }
 
                         androidx.compose.material3.Surface(
@@ -1330,7 +1355,7 @@ private fun TTSProviderItemContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
+            .clip(RectangleShape)
             .background(backgroundColor)
             .clickable {
                 haptics.perform(HapticPattern.Pop)

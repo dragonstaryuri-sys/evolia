@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui.permission
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +52,7 @@ internal fun PermissionRationaleDialog(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            shape = RoundedCornerShape(16.dp),
+            shape = AppShapes.CardSmall,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
@@ -174,7 +175,7 @@ private fun PermissionItem(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
         ),
-        shape = RoundedCornerShape(8.dp)
+        shape = AppShapes.Indicator
     ) {
         Column(
             modifier = Modifier

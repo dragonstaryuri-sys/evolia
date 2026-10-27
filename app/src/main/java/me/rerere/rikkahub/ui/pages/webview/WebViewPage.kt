@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.webview
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,20 +79,19 @@ fun WebViewPage(url: String, content: String, title: String? = null) {
         state.goBack()
     }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = title ?: state.pageTitle?.takeIf { it.isNotEmpty() } ?: state.currentUrl
+            OneUITopAppBar(
+                title = title ?: state.pageTitle?.takeIf { it.isNotEmpty() } ?: state.currentUrl
                         ?: "",
-                        maxLines = 1,
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                },
+                scrollBehavior = scrollBehavior,
                 navigationIcon = {
                     BackButton()
                 },
+                titleMaxLines = 1,
                 actions = {
                     if (url.startsWith("content://")) {
                         IconButton(onClick = {
@@ -120,7 +123,9 @@ fun WebViewPage(url: String, content: String, title: String? = null) {
 
                         DropdownMenu(
                             expanded = showDropdown,
-                            onDismissRequest = { showDropdown = false }
+                            onDismissRequest = { showDropdown = false },
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = AppShapes.ButtonSquared
                         ) {
                             DropdownMenuItem(
                                 text = { Text("Open in Browser") },
@@ -159,7 +164,9 @@ fun WebViewPage(url: String, content: String, title: String? = null) {
     if (showConsoleSheet) {
         ModalBottomSheet(
             onDismissRequest = { showConsoleSheet = false },
-            sheetState = sheetState
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
         ) {
             Column(
                 modifier = Modifier

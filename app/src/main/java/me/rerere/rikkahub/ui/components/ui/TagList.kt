@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
@@ -105,7 +106,10 @@ fun TagsInput(
             showAddDialog = false
             tagName = ""
             showError = false
-        }, title = {
+        }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = {
             Text(stringResource(R.string.tag_input_dialog_title))
         }, text = {
             Column {
@@ -191,7 +195,8 @@ fun TagsInput(
                             showError = false
                         }
                     }
-                }, enabled = tagName.isNotBlank()
+                }, enabled = tagName.isNotBlank(),
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text(stringResource(R.string.confirm))
             }
@@ -201,7 +206,9 @@ fun TagsInput(
                     showAddDialog = false
                     tagName = ""
                     showError = false
-                }) {
+                },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         })

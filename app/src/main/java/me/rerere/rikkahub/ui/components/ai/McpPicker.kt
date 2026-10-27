@@ -1,6 +1,8 @@
 package me.rerere.rikkahub.ui.components.ai
 
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +20,6 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LocalContentColor
@@ -85,9 +86,7 @@ fun McpPickerButton(
                 contentAlignment = Alignment.Center
             ) {
                 if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp)
-                    )
+                    InlineSpinner(size = 20.dp, strokeWidth = 4.dp)
                 } else {
                     BadgedBox(
                         badge = {
@@ -113,7 +112,9 @@ fun McpPickerButton(
     if (showMcpPicker) {
         ModalBottomSheet(
             onDismissRequest = { showMcpPicker = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
         ) {
             Column(
                 modifier = Modifier.Companion
@@ -175,7 +176,7 @@ fun McpPicker(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -187,11 +188,7 @@ fun McpPicker(
                 ) {
                     when (status) {
                         McpStatus.Idle -> Icon(Icons.Rounded.SpeakerNotesOff, null)
-                        McpStatus.Connecting -> CircularProgressIndicator(
-                            modifier = Modifier.size(
-                                24.dp
-                            )
-                        )
+                        McpStatus.Connecting -> InlineSpinner(strokeWidth = 4.dp)
 
                         McpStatus.Connected -> Icon(Icons.Rounded.Terminal, null)
                         is McpStatus.Error -> Icon(Icons.Rounded.Error, null)

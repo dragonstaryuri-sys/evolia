@@ -320,7 +320,9 @@ fun Mermaid(
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             sheetGesturesEnabled = false,
-            dragHandle = {}
+            dragHandle = {},
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
         ) {
             Column(
                 modifier = Modifier

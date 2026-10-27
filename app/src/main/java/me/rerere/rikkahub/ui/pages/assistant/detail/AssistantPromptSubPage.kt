@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
@@ -96,6 +95,8 @@ import me.rerere.rikkahub.ui.components.ui.Select
 import me.rerere.rikkahub.ui.components.ui.Tag
 import androidx.compose.ui.text.font.FontFamily
 import me.rerere.rikkahub.utils.UiState
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import me.rerere.rikkahub.utils.insertAtCursor
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.utils.onError
@@ -142,10 +143,7 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = groupContainerColor(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
                 Column(
@@ -281,10 +279,7 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = groupContainerColor(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
                 Column(
@@ -402,10 +397,7 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = groupContainerColor(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
                 Row(
@@ -448,10 +440,7 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = groupContainerColor(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
                 Column(
@@ -519,7 +508,7 @@ fun AssistantPromptSubPage(
                     // Preview section
                     Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(AppShapes.Indicator)
                             .background(MaterialTheme.colorScheme.background)
                             .padding(8.dp)
                             .fillMaxWidth()
@@ -593,10 +582,7 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = groupContainerColor(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
                 Column(
@@ -618,7 +604,7 @@ fun AssistantPromptSubPage(
                         // Each preset message in its own card
                         Surface(
                             color = MaterialTheme.colorScheme.background,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = AppShapes.ListItemSmall,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -718,10 +704,7 @@ fun AssistantPromptSubPage(
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = groupContainerColor(),
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
             ) {
                 Column(
@@ -779,10 +762,7 @@ private fun LanguageStyleExamplesSection(
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                MaterialTheme.colorScheme.surfaceContainerLow
-            else
-                MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = groupContainerColor(),
             shape = me.rerere.rikkahub.ui.theme.AppShapes.CardLarge
         ) {
             Column(
@@ -827,7 +807,7 @@ private fun StyleExampleList(
         examples.fastForEachIndexed { index, example ->
             Surface(
                 color = MaterialTheme.colorScheme.background,
-                shape = RoundedCornerShape(10.dp),
+                shape = AppShapes.ListItemSmall,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -882,7 +862,7 @@ private fun AssistantRegexCard(
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
+        shape = AppShapes.ListItemSmall,
         color = MaterialTheme.colorScheme.background
     ) {
         Column(
@@ -1145,7 +1125,7 @@ private fun FullScreenSystemPromptEditor(
                 modifier = Modifier
                     .widthIn(max = 800.dp)
                     .fillMaxHeight(0.9f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                shape = AppShapes.ListItemFirst
             ) {
                 Column(
                     modifier = Modifier
@@ -1181,7 +1161,7 @@ private fun FullScreenSystemPromptEditor(
                         modifier = Modifier
                             .imePadding()
                             .fillMaxSize(),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = AppShapes.CardSmall,
                         placeholder = {
                             Text(stringResource(R.string.assistant_page_system_prompt))
                         },

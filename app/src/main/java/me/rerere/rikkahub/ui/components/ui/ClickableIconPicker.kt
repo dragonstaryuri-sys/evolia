@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -162,6 +163,9 @@ fun ClickableIconPicker(
     if (showSelectionDialog) {
         AlertDialog(
             onDismissRequest = { showSelectionDialog = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.setting_provider_page_select_icon)) },
             text = {
                 Column(
@@ -174,7 +178,7 @@ fun ClickableIconPicker(
                             imagePickerLauncher.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = AppShapes.ListItemSmall,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         androidx.compose.foundation.layout.Row(
@@ -194,7 +198,7 @@ fun ClickableIconPicker(
                             showLobeHubSearch = true
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = AppShapes.ListItemSmall,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         androidx.compose.foundation.layout.Row(
@@ -268,6 +272,9 @@ private fun LobeHubIconSearchDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.setting_provider_page_search_lobehub)) },
         text = {
             Column(
@@ -280,7 +287,7 @@ private fun LobeHubIconSearchDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    shape = RoundedCornerShape(50)
+                    shape = AppShapes.ButtonPill
                 )
                 
                 LazyVerticalGrid(
@@ -321,7 +328,7 @@ private fun LobeHubIconItem(
     Surface(
         onClick = onSelect,
         modifier = Modifier.size(56.dp),
-        shape = RoundedCornerShape(10.dp),
+        shape = AppShapes.ListItemSmall,
         color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         AsyncImage(

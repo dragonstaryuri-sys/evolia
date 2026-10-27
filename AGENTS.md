@@ -83,6 +83,13 @@ Evolia is an AI companion focused on "Personal Growth" and "Soul Resonance". It 
 -   **共用组件只做一份适配**：同一交互（例如删除通话记录弹窗）必须抽成共用 Composable，由调用方复用，避免各页面各自实现导致深浅色行为不一致。
 -   **验收**：切换深/浅色后无白底黑字刺眼、无浅底白字不可见、无与主题割裂的纯黑/纯白块；深色下层级（surfaceContainerLow → High）仍需可辨。
 
+### 共享 UI 组件与豁免口径（2026-10 UI 统一）
+-   **共享组件优先（禁止再手写等价物）**：确认弹窗用 common 的 `ConfirmDialog`（`dangerous = true` 时确认按钮为 error 色，删除类操作必须用）；文本输入弹窗用 `InputDialog`；空态用 `EmptyPlaceholder`；行内加载用 `InlineSpinner`（24dp 默认 / 16dp 紧凑两档，禁止手抄不同尺寸的 CircularProgressIndicator）；FAB 用 `AppFab`（统一 `AppShapes.CardLarge` + PremiumHaptics）；日期/时间选择用 `EvoliaDatePickerDialog` / `EvoliaTimePickerDialog`，**禁止使用 android.app 平台对话框**（深色模式不受主题控制）。
+-   **浮层配色合规路径**：ModalBottomSheet 必须显式传 `containerColor = surfaceContainerHigh` 与 `shape = AppShapes.BottomSheet`；DropdownMenu 必须显式传 `containerColor = surfaceContainerHigh` 与 `shape = AppShapes.ButtonSquared`；不落入共享组件的 AlertDialog 必须显式传 containerColor / titleContentColor / textContentColor 及按钮色。
+-   **形状 token 映射**：10dp 一律用 `AppShapes.ListItemSmall`；6dp 归并 `AppShapes.Indicator`(8dp)；40/44/50dp 大胶囊归并 `ButtonPill`；分组容器 24dp 用 `AppShapes.CardMedium`。设置分组容器背景色统一走 `groupContainerColor()`（app theme 内），禁止复制 `if (LocalDarkMode) … else …` 三元公式。
+-   **沉浸式深色画布豁免清单**：以下场景允许使用 `Color.Black` / `Color.White`（固定深色画布上的前景/遮罩，不做深浅切换）：CallScreen 通话页背景与前景、相机/裁剪遮罩、图片预览器、渐变 scrim、`Color.Black.copy` 遮罩浮层；CallScreen 的红/绿/黄信号色使用文件内命名常量（如 `CallRejectColor`），禁止新增内联 `Color(0xFF…)`。
+-   **Chip 与 Tag 边界**：语义状态标签（成功/错误/警告/信息）用 `Tag(type = …)`；可输入/可筛选的交互 chip 用 M3 `InputChip` / `FilterChip`。
+
 ## 6. Memory & Context Management (L0-L3 Hierarchy)
 
 ### 6.0 Memory Tier Overview

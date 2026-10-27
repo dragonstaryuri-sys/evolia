@@ -24,7 +24,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -226,7 +226,10 @@ fun SettingMcpToolDescPage(vm: McpToolDescVM = koinViewModel()) {
                     onClick = {
                         vm.updateSinglePreviewText(editingPreview)
                         vm.confirmSinglePreview()
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
                     Text(stringResource(R.string.confirm))
                 }
@@ -282,7 +285,10 @@ fun SettingMcpToolDescPage(vm: McpToolDescVM = koinViewModel()) {
             confirmButton = {
                 TextButton(
                     onClick = { vm.applyBatchResults() },
-                    enabled = successResults.any { it.key in uiState.batchCheckedKeys }
+                    enabled = successResults.any { it.key in uiState.batchCheckedKeys },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
                     Text(
                         stringResource(
@@ -345,10 +351,7 @@ private fun McpToolDescTopBarActions(
             enabled = !uiState.batchRunning && uiState.batchSelectedKeys.isNotEmpty()
         ) {
             if (uiState.batchRunning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp
-                )
+                InlineSpinner(size = 16.dp, strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
             }
             Text(
@@ -490,7 +493,7 @@ private fun McpToolDescItemCard(
                     enabled = !simplifying && !batchMode
                 ) {
                     if (simplifying) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        InlineSpinner(size = 16.dp, strokeWidth = 2.dp)
                         Spacer(Modifier.width(6.dp))
                     }
                     Text(stringResource(R.string.mcp_tool_desc_simplify_btn))

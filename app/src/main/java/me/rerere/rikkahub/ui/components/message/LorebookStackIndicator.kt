@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.message
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,7 +73,7 @@ fun LorebookStackIndicator(
         modifier = modifier
             .width(totalWidth)
             .height(bookHeight)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(AppShapes.Indicator)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -145,12 +146,12 @@ private fun BookCover(
     Box(
         modifier = modifier
             .graphicsLayer { this.alpha = alpha }
-            .clip(RoundedCornerShape(6.dp))
+            .clip(AppShapes.Indicator)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(6.dp)
+                shape = AppShapes.Indicator
             ),
         contentAlignment = Alignment.Center
     ) {

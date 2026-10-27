@@ -89,6 +89,7 @@ import me.rerere.rikkahub.core.data.model.AssistantAffectScope
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.core.data.model.replaceRegexes
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionButtons
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.components.message.ChatMessageActionsSheet
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
@@ -1809,6 +1810,8 @@ fun VoiceMessageActionsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
     ) {
         Column(
             modifier = Modifier

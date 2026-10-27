@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -75,7 +76,7 @@ fun FieldHistorySection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
+                .clip(AppShapes.Indicator)
                 .clickable { expanded = !expanded }
                 .padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -132,7 +133,7 @@ private fun HistoryValueRow(
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(12.dp),
+        shape = AppShapes.ButtonSquared,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(

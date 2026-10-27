@@ -50,7 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,7 +58,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -73,8 +73,11 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.extendColors
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -132,10 +135,14 @@ fun AssistantImportDoubaoPage(
         }
     }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.import_doubao_title)) },
+            OneUITopAppBar(
+                title = stringResource(R.string.import_doubao_title),
+                scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
                 actions = {
                     if (vm.importLog.isNotBlank()) {
@@ -172,7 +179,7 @@ fun AssistantImportDoubaoPage(
                     Card(
                         onClick = { if (!vm.isImporting) importLauncher.launch(arrayOf("application/json")) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp)
+                        shape = AppShapes.CardMedium
                     ) {
                         Row(
                             modifier = Modifier.padding(20.dp),
@@ -195,7 +202,7 @@ fun AssistantImportDoubaoPage(
                                 )
                             }
                             if (vm.importData != null) {
-                                Icon(Icons.Rounded.CheckCircle, null, tint = Color.Green)
+                                Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.extendColors.green6)
                             }
                         }
                     }
@@ -227,12 +234,12 @@ fun AssistantImportDoubaoPage(
                                 trailingContent = {
                                     Switch(checked = vm.isMainAgent, onCheckedChange = { vm.isMainAgent = it })
                                 },
-                                modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                                modifier = Modifier.clip(AppShapes.CardSmall)
                             )
 
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
+                                shape = AppShapes.CardSmall,
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                             ) {
                                 Column(Modifier.padding(16.dp)) {
@@ -275,7 +282,7 @@ fun AssistantImportDoubaoPage(
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = AppShapes.CardSmall
                             ) {
                                 Icon(Icons.Rounded.CloudUpload, null)
                                 Spacer(Modifier.width(8.dp))
@@ -311,7 +318,7 @@ fun AssistantImportDoubaoPage(
                                 .fillMaxWidth()
                                 .weight(1f),
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            shape = RoundedCornerShape(12.dp)
+                            shape = AppShapes.ButtonSquared
                         ) {
                             val logScrollState = rememberScrollState()
 
@@ -367,6 +374,10 @@ fun PreviewDialog(
 ) {
     AlertDialog(
         onDismissRequest = onCancel,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.import_doubao_preview_title)) },
         text = {
             Column(
@@ -382,7 +393,7 @@ fun PreviewDialog(
                     label = { Text(stringResource(R.string.assistant_import_page_agent_name_label)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = AppShapes.ButtonSquared
                 )
 
                 OutlinedTextField(
@@ -390,7 +401,7 @@ fun PreviewDialog(
                     onValueChange = onBotDescriptionChange,
                     label = { Text(stringResource(R.string.assistant_import_page_system_prompt_label)) },
                     modifier = Modifier.fillMaxWidth().heightIn(max = 120.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = AppShapes.ButtonSquared
                 )
 
                 Text(stringResource(R.string.import_doubao_preview_first_segment), style = MaterialTheme.typography.labelLarge)
@@ -398,7 +409,7 @@ fun PreviewDialog(
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), AppShapes.ButtonSquared)
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {

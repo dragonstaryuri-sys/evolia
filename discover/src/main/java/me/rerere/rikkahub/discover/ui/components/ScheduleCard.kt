@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.discover.R
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun ScheduleCard(
@@ -27,7 +28,7 @@ fun ScheduleCard(
 ) {
     Surface(
         onClick = onClick,
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = AppShapes.CardLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth()
     ) {

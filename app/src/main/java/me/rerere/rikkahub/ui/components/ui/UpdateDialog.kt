@@ -20,6 +20,9 @@ fun UpdateDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Text(text = stringResource(R.string.update_dialog_title, updateInfo.version))
         },
@@ -42,12 +45,18 @@ fun UpdateDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+            ) {
                 Text(text = stringResource(R.string.update_action_go))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismissRequest) {
+            TextButton(
+                onClick = onDismissRequest,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+            ) {
                 Text(text = stringResource(R.string.update_action_know))
             }
         }

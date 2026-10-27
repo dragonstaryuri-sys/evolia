@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -32,8 +33,13 @@ import me.rerere.ai.provider.ModelType
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.entity.AgentTaskEntity
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
+import me.rerere.rikkahub.common.ui.components.EvoliaDatePickerDialog
 import me.rerere.rikkahub.ui.components.ai.ModelSelector
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
@@ -55,11 +61,14 @@ fun AssistantAgentTaskPage(assistantId: String) {
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     var showCreateDialog by remember { mutableStateOf(false) }
     var showEditModelTask by remember { mutableStateOf<AgentTaskEntity?>(null) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.agent_task_manager)) },
+            OneUITopAppBar(
+                title = stringResource(R.string.agent_task_manager),
+                scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
                 actions = {
                     IconButton(onClick = { showCreateDialog = true }) {
@@ -70,17 +79,12 @@ fun AssistantAgentTaskPage(assistantId: String) {
         }
     ) { padding ->
         if (tasks.isEmpty()) {
-            Box(
+            EmptyPlaceholder(
+                text = stringResource(R.string.agent_task_empty),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.agent_task_empty),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+                    .padding(padding)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -156,6 +160,10 @@ private fun CreateTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.agent_task_add)) },
         text = {
             Column(
@@ -248,7 +256,9 @@ private fun CreateTaskDialog(
                     )
                     ExposedDropdownMenu(
                         expanded = expandedRepeat,
-                        onDismissRequest = { expandedRepeat = false }
+                        onDismissRequest = { expandedRepeat = false },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = AppShapes.ButtonSquared
                     ) {
                         repeatOptions.forEach { (value, label) ->
                             DropdownMenuItem(
@@ -336,31 +346,29 @@ private fun CreateTaskDialog(
 
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(initialSelectedDateMillis = scheduledTime)
-        DatePickerDialog(
+        EvoliaDatePickerDialog(
+            state = datePickerState,
             onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let {
-                        val calendar = Calendar.getInstance().apply { timeInMillis = scheduledTime }
-                        val hour = calendar.get(Calendar.HOUR_OF_DAY)
-                        val minute = calendar.get(Calendar.MINUTE)
+            confirmText = stringResource(R.string.confirm),
+            onConfirm = {
+                datePickerState.selectedDateMillis?.let {
+                    val calendar = Calendar.getInstance().apply { timeInMillis = scheduledTime }
+                    val hour = calendar.get(Calendar.HOUR_OF_DAY)
+                    val minute = calendar.get(Calendar.MINUTE)
 
-                        val newCalendar = Calendar.getInstance().apply {
-                            timeInMillis = it
-                            set(Calendar.HOUR_OF_DAY, hour)
-                            set(Calendar.MINUTE, minute)
-                            set(Calendar.SECOND, 0)
-                            set(Calendar.MILLISECOND, 0)
-                        }
-                        scheduledTime = newCalendar.timeInMillis
+                    val newCalendar = Calendar.getInstance().apply {
+                        timeInMillis = it
+                        set(Calendar.HOUR_OF_DAY, hour)
+                        set(Calendar.MINUTE, minute)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
                     }
-                    showDatePicker = false
-                    showTimePicker = true
-                }) { Text(stringResource(R.string.confirm)) }
+                    scheduledTime = newCalendar.timeInMillis
+                }
+                showDatePicker = false
+                showTimePicker = true
             }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+        )
     }
 
     if (showTimePicker) {
@@ -490,22 +498,16 @@ private fun AgentTaskItem(
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text(stringResource(R.string.delete)) },
-            text = { Text(stringResource(R.string.agent_task_delete_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(task)
-                    showDeleteDialog = false
-                }) {
-                    Text(stringResource(R.string.confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
+            title = stringResource(R.string.delete),
+            text = stringResource(R.string.agent_task_delete_confirm),
+            confirmText = stringResource(R.string.confirm),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
+            onConfirm = {
+                showDeleteDialog = false
+                onDelete(task)
             }
         )
     }
@@ -561,6 +563,10 @@ private fun EditTaskDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Text(
                 text = stringResource(R.string.agent_task_edit_title),

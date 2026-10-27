@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -26,8 +27,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.common.JsonInstant
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.parameter.parametersOf
 import java.text.SimpleDateFormat
@@ -40,27 +45,25 @@ fun AssistantAgentMonitorPage(assistantId: String) {
     val monitors by vm.monitorTasks.collectAsStateWithLifecycle()
 
     var detailMonitor by remember { mutableStateOf<AgentMonitorTaskEntity?>(null) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.agent_monitor_manager)) },
+            OneUITopAppBar(
+                title = stringResource(R.string.agent_monitor_manager),
+                scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() }
             )
         }
     ) { padding ->
         if (monitors.isEmpty()) {
-            Box(
+            EmptyPlaceholder(
+                text = stringResource(R.string.agent_monitor_empty),
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.agent_monitor_empty),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+                    .padding(padding)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
@@ -141,22 +144,16 @@ private fun AgentMonitorItem(
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text(stringResource(R.string.delete)) },
-            text = { Text(stringResource(R.string.agent_monitor_delete_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(monitor)
-                    showDeleteDialog = false
-                }) {
-                    Text(stringResource(R.string.confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
+            title = stringResource(R.string.delete),
+            text = stringResource(R.string.agent_monitor_delete_confirm),
+            confirmText = stringResource(R.string.confirm),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
+            onConfirm = {
+                showDeleteDialog = false
+                onDelete(monitor)
             }
         )
     }
@@ -182,6 +179,10 @@ private fun AgentMonitorDetailDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Text(
                 text = stringResource(R.string.agent_monitor_detail_title),

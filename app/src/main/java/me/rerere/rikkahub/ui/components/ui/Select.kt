@@ -93,7 +93,8 @@ fun <T> Select(
             onDismissRequest = {
                 expanded = false
             },
-            shape = AppShapes.CardMedium
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.ButtonSquared
         ) {
             options.fastForEach { option ->
                 DropdownMenuItem(

@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.*
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -184,7 +186,7 @@ fun ChatList(
                     val initialError = paginationState as? ConversationRepository.ChatPaginationState.Error
                     if (isInitialLoading) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                            InlineSpinner()
                         }
                     } else if (initialError != null && items.isEmpty()) {
                         Column(
@@ -393,7 +395,7 @@ private fun SharedTransitionScope.ChatListNormal(
             if (pageState?.loadingDirection == ConversationRepository.PageLoadDirection.NEWER) {
                 item("newer_loading_indicator") {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                        InlineSpinner(size = 20.dp, strokeWidth = 2.dp)
                     }
                 }
             }
@@ -544,7 +546,7 @@ private fun SharedTransitionScope.ChatListNormal(
             if (isHistoryLoading || paginationState is ConversationRepository.ChatPaginationState.Loading) {
                 item("loading_indicator") {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                        InlineSpinner(size = 28.dp, strokeWidth = 3.dp)
                     }
                 }
             }
@@ -722,8 +724,12 @@ private fun extractMatchingSnippet(text: String, query: String): String {
 fun MemoryPreviewDialog(memory: UsedMemory, isLoading: Boolean, onDismissRequest: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         confirmButton = { TextButton(onClick = onDismissRequest) { Text(stringResource(id = android.R.string.ok)) } },
         title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Icon(imageVector = when(memory.memoryType) { 0 -> Icons.Rounded.Memory; 2 -> Icons.Rounded.Bolt; else -> Icons.Rounded.History }, contentDescription = null, tint = MaterialTheme.colorScheme.primary); Text(text = if (memory.memoryType == 0) stringResource(R.string.context_sources_core_memory) else stringResource(R.string.context_sources_episodic_memory)) } },
-        text = { Box(modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = spring(stiffness = 300f)).heightIn(min = 120.dp), contentAlignment = Alignment.Center) { if (isLoading) CircularProgressIndicator(modifier = Modifier.size(36.dp)) else Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) { Text(text = memory.memoryContent, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium) } } } }
+        text = { Box(modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = spring(stiffness = 300f)).heightIn(min = 120.dp), contentAlignment = Alignment.Center) { if (isLoading) InlineSpinner(size = 36.dp, strokeWidth = 4.dp) else Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) { Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) { Text(text = memory.memoryContent, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium) } } } }
     )
 }

@@ -26,7 +26,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RangeSlider
@@ -351,6 +352,9 @@ private fun RingtoneTrimDialog(
 
     AlertDialog(
         onDismissRequest = { stopPreview(); if (!trimming) onDismiss() },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.call_ringtone_trim_title)) },
         text = {
             Column {
@@ -399,7 +403,7 @@ private fun RingtoneTrimDialog(
                 if (trimming) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        InlineSpinner(size = 20.dp, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = stringResource(R.string.call_ringtone_trim_processing),
@@ -415,13 +419,22 @@ private fun RingtoneTrimDialog(
                 onClick = {
                     stopPreview()
                     onConfirm(range.start.toLong(), range.endInclusive.toLong())
-                }
+                },
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
             ) {
                 Text(stringResource(R.string.call_ringtone_trim_confirm))
             }
         },
         dismissButton = {
-            TextButton(enabled = !trimming, onClick = { stopPreview(); onDismiss() }) {
+            TextButton(
+                enabled = !trimming,
+                onClick = { stopPreview(); onDismiss() },
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
                 Text(stringResource(R.string.call_ringtone_trim_cancel))
             }
         }

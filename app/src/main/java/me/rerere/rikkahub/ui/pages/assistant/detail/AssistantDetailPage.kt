@@ -68,12 +68,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.hooks.heroAnimation
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.IconButton
 import androidx.compose.ui.platform.LocalContext
@@ -254,7 +256,9 @@ fun AssistantDetailPage(
 
                                 DropdownMenu(
                                     expanded = showExportMenu,
-                                    onDismissRequest = { showExportMenu = false }
+                                    onDismissRequest = { showExportMenu = false },
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    shape = AppShapes.ButtonSquared
                                 ) {
                                     DropdownMenuItem(
                                         text = { Text(stringResource(R.string.assistant_detail_export_bundle)) },
@@ -722,22 +726,16 @@ private fun AssistantDetailHome(
             )
 
             if (showClearConfirmDialog) {
-                AlertDialog(
+                ConfirmDialog(
                     onDismissRequest = { showClearConfirmDialog = false },
-                    title = { Text(stringResource(R.string.clear_conversations_and_segments_title)) },
-                    text = { Text(stringResource(R.string.clear_conversations_and_segments_confirm)) },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            onClearConversationsAndSegments()
-                            showClearConfirmDialog = false
-                        }) {
-                            Text(stringResource(R.string.confirm))
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showClearConfirmDialog = false }) {
-                            Text(stringResource(R.string.cancel))
-                        }
+                    title = stringResource(R.string.clear_conversations_and_segments_title),
+                    text = stringResource(R.string.clear_conversations_and_segments_confirm),
+                    confirmText = stringResource(R.string.confirm),
+                    dismissText = stringResource(R.string.cancel),
+                    dangerous = true,
+                    onConfirm = {
+                        showClearConfirmDialog = false
+                        onClearConversationsAndSegments()
                     }
                 )
             }

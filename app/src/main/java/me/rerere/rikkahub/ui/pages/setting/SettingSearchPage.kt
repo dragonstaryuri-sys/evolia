@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.ui.graphics.RectangleShape
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import androidx.compose.animation.core.spring
@@ -37,7 +38,9 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.BottomSheetDefaults
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -409,37 +412,28 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         
         // Delete confirmation dialog
         if (showDeleteDialog && serviceToDelete != null) {
-            AlertDialog(
-                onDismissRequest = { 
+            ConfirmDialog(
+                onDismissRequest = {
                     showDeleteDialog = false
                     serviceToDelete = null
                 },
-                title = { Text(stringResource(R.string.confirm_delete)) },
-                text = { Text("Are you sure you want to delete this search service?") },
-                dismissButton = {
-                    TextButton(onClick = { 
-                        showDeleteDialog = false
-                        serviceToDelete = null
-                    }) {
-                        Text(stringResource(R.string.cancel))
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        serviceToDelete?.let { svc ->
-                            val idx = settings.searchServices.indexOfFirst { it.id == svc.id }
-                            if (idx >= 0) {
-                                val newServices = settings.searchServices.toMutableList()
-                                newServices.removeAt(idx)
-                                vm.updateSettings(settings.copy(searchServices = newServices))
-                            }
+                onConfirm = {
+                    serviceToDelete?.let { svc ->
+                        val idx = settings.searchServices.indexOfFirst { it.id == svc.id }
+                        if (idx >= 0) {
+                            val newServices = settings.searchServices.toMutableList()
+                            newServices.removeAt(idx)
+                            vm.updateSettings(settings.copy(searchServices = newServices))
                         }
-                        showDeleteDialog = false
-                        serviceToDelete = null
-                    }) {
-                        Text(stringResource(R.string.confirm))
                     }
-                }
+                    showDeleteDialog = false
+                    serviceToDelete = null
+                },
+                title = stringResource(R.string.confirm_delete),
+                text = "Are you sure you want to delete this search service?",
+                confirmText = stringResource(R.string.confirm),
+                dismissText = stringResource(R.string.cancel),
+                dangerous = true,
             )
         }
     }
@@ -451,6 +445,8 @@ fun SettingSearchPage(vm: SettingVM = koinViewModel()) {
         var currentService by remember(service) { mutableStateOf(service) }
 
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 editingService = null
             },
@@ -631,6 +627,8 @@ private fun AddSearchServiceButton(
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 showBottomSheet = false
             },
@@ -732,8 +730,8 @@ private fun AddSearchServiceButton(
                             val shape = when (position) {
                                 ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
                                 ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                                ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                                ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+                                ItemPosition.MIDDLE -> AppShapes.ListItemSmall
+                                ItemPosition.ONLY -> AppShapes.CardMedium
                             }
                             
                             Surface(
@@ -809,7 +807,7 @@ private fun SearchServiceItemContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
+            .clip(RectangleShape)
             .background(if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable {
                 haptics.perform(HapticPattern.Pop)
@@ -1014,6 +1012,9 @@ private fun CommonOptionsDialog(
     
     AlertDialog(
         onDismissRequest = onDismissRequest,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Text(stringResource(R.string.setting_page_search_common_options))
         },
@@ -1041,7 +1042,10 @@ private fun CommonOptionsDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = onDismissRequest
+                onClick = onDismissRequest,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary
+                )
             ) {
                 Text(stringResource(android.R.string.ok))
             }

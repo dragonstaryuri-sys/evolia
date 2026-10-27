@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.assistant
 
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -96,6 +97,8 @@ import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.useEditState
 import me.rerere.rikkahub.ui.modifier.onClick
 import me.rerere.rikkahub.ui.pages.assistant.detail.AssistantImporter
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import org.koin.androidx.compose.koinViewModel
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -460,7 +463,9 @@ fun AssistantCreationSheet(
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             dragHandle = {},
-            sheetGesturesEnabled = false
+            sheetGesturesEnabled = false,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet
         ) {
             Column(
                 modifier = Modifier
@@ -550,8 +555,8 @@ private fun AssistantItemContent(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(0.dp))
-            .background(if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clip(RectangleShape)
+            .background(groupContainerColor())
             .clickable {
                 haptics.perform(HapticPattern.Pop)
                 onClick()
@@ -617,7 +622,7 @@ private fun AssistantItemContent(
                             assistant.tags.fastForEach { tagId ->
                                 val tag = settings.assistantTags.find { it.id == tagId } ?: return@fastForEach
                                 Surface(
-                                    shape = RoundedCornerShape(50),
+                                    shape = AppShapes.ButtonPill,
                                     color = MaterialTheme.colorScheme.tertiaryContainer,
                                 ) {
                                     Text(
@@ -638,7 +643,7 @@ private fun AssistantItemContent(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(
                                         Color.Transparent,
-                                        if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        groupContainerColor()
                                     )
                                 )
                             )

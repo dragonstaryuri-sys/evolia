@@ -36,6 +36,8 @@ import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.core.data.model.Tag as DataTag
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 
 /**
  * Profile tab - Assistant identity and appearance settings.
@@ -101,11 +103,8 @@ fun AssistantProfileSubPage(
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),

@@ -67,6 +67,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -198,6 +199,8 @@ fun ModelSelector(
             },
             sheetState = state,
             sheetGesturesEnabled = false,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             dragHandle = {
                 IconButton(
                     onClick = {
@@ -421,7 +424,7 @@ internal fun ColumnScope.ModelList(
         },
         maxLines = 1,
         singleLine = true,
-        shape = RoundedCornerShape(50),
+        shape = AppShapes.ButtonPill,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
             imeAction = androidx.compose.ui.text.input.ImeAction.Done
         ),
@@ -700,19 +703,19 @@ private fun ModelItem(
 
     // Calculate shape based on position - edges get 24dp, connections get 10dp
     val itemShape = if (select) {
-        RoundedCornerShape(50.dp)  // Selected items are fully round
+        AppShapes.ButtonPill  // Selected items are fully round
     } else {
         when (position) {
             ModelItemPosition.FIRST -> RoundedCornerShape(
                 topStart = 24.dp, topEnd = 24.dp,
                 bottomStart = 10.dp, bottomEnd = 10.dp
             )
-            ModelItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
+            ModelItemPosition.MIDDLE -> AppShapes.ListItemSmall
             ModelItemPosition.LAST -> RoundedCornerShape(
                 topStart = 10.dp, topEnd = 10.dp,
                 bottomStart = 24.dp, bottomEnd = 24.dp
             )
-            ModelItemPosition.SINGLE -> RoundedCornerShape(24.dp)
+            ModelItemPosition.SINGLE -> AppShapes.CardMedium
         }
     }
 

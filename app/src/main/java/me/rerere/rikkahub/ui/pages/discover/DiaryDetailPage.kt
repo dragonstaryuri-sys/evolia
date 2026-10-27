@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.discover
 
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -84,7 +86,7 @@ fun DiaryDetailPage(
     ) { padding ->
         if (diaryState == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                InlineSpinner()
             }
         } else {
             val diary = diaryState!!
@@ -298,19 +300,17 @@ private fun CommentItemDetailed(
     }
 
     if (showDeleteConfirm) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.confirm_delete)) },
-            text = { Text(stringResource(R.string.diary_comment_delete_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete()
-                    showDeleteConfirm = false
-                }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }
+            onConfirm = {
+                onDelete()
+                showDeleteConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
-            }
+            title = stringResource(R.string.confirm_delete),
+            text = stringResource(R.string.diary_comment_delete_confirm),
+            confirmText = stringResource(R.string.confirm),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
         )
     }
 
@@ -372,7 +372,9 @@ private fun CommentItemDetailed(
         ) {
             DropdownMenu(
                 expanded = showMenu,
-                onDismissRequest = { showMenu = false }
+                onDismissRequest = { showMenu = false },
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.copy)) },
@@ -449,7 +451,7 @@ private fun CommentInputAreaDetailed(
                 ) {
                     // 与 ActivityPill Waiting 状态一致的 pill 容器：surfaceContainerHigh + 20dp 圆角
                     androidx.compose.material3.Surface(
-                        shape = RoundedCornerShape(20.dp),
+                        shape = AppShapes.ButtonRounded,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
@@ -531,7 +533,12 @@ private fun CommentInputAreaDetailed(
                         },
                         trailingIcon = { Icon(Icons.Rounded.ArrowDropDown, null, modifier = Modifier.size(16.dp)) }
                     )
-                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = AppShapes.ButtonSquared
+                    ) {
                         settings.assistants.forEach { assistant ->
                             DropdownMenuItem(
                                 text = { Text(assistant.name) },

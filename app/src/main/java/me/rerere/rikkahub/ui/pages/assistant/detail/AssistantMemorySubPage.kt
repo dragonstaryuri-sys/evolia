@@ -72,7 +72,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
@@ -102,7 +101,10 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.common.FeatureConfig
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import me.rerere.rikkahub.common.ui.components.FullscreenLoadingOverlay
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.common.ui.components.InputDialog
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.core.data.model.AssistantMemory
 import me.rerere.rikkahub.core.data.model.MemoryRetrievalMode
@@ -111,12 +113,14 @@ import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.DebouncedTextField
 import me.rerere.rikkahub.ui.components.ui.EmbeddingModelWarningBanner
 import me.rerere.rikkahub.ui.components.ui.Tag
+import me.rerere.rikkahub.ui.components.ui.TagType
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.EditStateContent
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.hooks.useEditState
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import me.rerere.rikkahub.utils.insertAtCursor
 import me.rerere.rikkahub.utils.toLocalString
 import me.rerere.rikkahub.Screen
@@ -230,6 +234,10 @@ fun AssistantMemorySettings(
     if (embeddingProgress != null && embeddingProgress.isRunning) {
         AlertDialog(
             onDismissRequest = { },
+            shape = AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.generating_embeddings)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -262,6 +270,10 @@ fun AssistantMemorySettings(
     if (isConsolidating) {
         AlertDialog(
             onDismissRequest = { assistantDetailVM.cancelConsolidation() },
+            shape = AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.loading)) },
             text = {
                 Column(
@@ -269,7 +281,7 @@ fun AssistantMemorySettings(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    CircularProgressIndicator()
+                    InlineSpinner()
                     Text(stringResource(R.string.context_refresh_loading), style = MaterialTheme.typography.bodyMedium)
                 }
             },
@@ -285,6 +297,10 @@ fun AssistantMemorySettings(
     memoryDialogState.EditStateContent { memory, update ->
         AlertDialog(
             onDismissRequest = { memoryDialogState.dismiss() },
+            shape = AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.assistant_page_manage_memory_title)) },
             text = {
                 TextField(
@@ -343,7 +359,7 @@ fun AssistantMemorySettings(
                 SettingsGroupHeader(title = stringResource(R.string.assistant_memory_group_settings))
 
                 Column(
-                    modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+                    modifier = Modifier.clip(AppShapes.CardMedium),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     MemorySettingsItem(
@@ -414,7 +430,10 @@ fun AssistantMemorySettings(
                                         )
                                         DropdownMenu(
                                             expanded = showStrategyMenu,
-                                            onDismissRequest = { showStrategyMenu = false }) {
+                                            onDismissRequest = { showStrategyMenu = false },
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            shape = AppShapes.ButtonSquared
+                                        ) {
                                             DropdownMenuItem(
                                                 text = { Text(stringResource(R.string.memory_mode_off)) },
                                                 onClick = {
@@ -493,7 +512,7 @@ fun AssistantMemorySettings(
                                     }
                                     AnimatedVisibility(visible = assistant.enableDetailMemory) {
                                         Surface(
-                                            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            color = groupContainerColor(),
                                             shape = RoundedCornerShape(
                                                 bottomStart = 24.dp,
                                                 bottomEnd = 24.dp,
@@ -549,7 +568,7 @@ fun AssistantMemorySettings(
                                                         horizontalArrangement = Arrangement.Center,
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                                        InlineSpinner(size = 16.dp, strokeWidth = 2.dp)
                                                         Spacer(Modifier.width(8.dp))
                                                         Text(stringResource(R.string.manual_archive_l1_loading), style = MaterialTheme.typography.bodySmall)
                                                     }
@@ -748,7 +767,7 @@ private fun MemorySettingsItem(
             }
         },
         enabled = onClick != null,
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = groupContainerColor(),
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -800,7 +819,7 @@ private fun MemorySettingsItem(
 private fun MemoryModeIndicator(mode: MemoryMode) {
     val backgroundColor by animateColorAsState(
         targetValue = if (mode == MemoryMode.OFF)
-            if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+            groupContainerColor()
         else
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
         animationSpec = spring(),
@@ -808,7 +827,7 @@ private fun MemoryModeIndicator(mode: MemoryMode) {
     )
 
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = backgroundColor,
         modifier = Modifier.animateContentSize()
     ) {
@@ -870,11 +889,11 @@ private fun RagSettingsCard(
     val haptics = rememberPremiumHaptics()
 
     Column(
-        modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+        modifier = Modifier.clip(AppShapes.CardMedium),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = groupContainerColor(),
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
         ) {
             Column {
@@ -968,34 +987,27 @@ private fun MasterMemoryCard(
     val scope = rememberCoroutineScope()
 
     if (showBackupDialog) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showBackupDialog = false },
-            title = { Text(stringResource(R.string.master_memory_backup_title)) },
-            text = { Text(stringResource(R.string.master_memory_backup_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showBackupDialog = false
-                    if (assistant.masterMemoryContent.isNotBlank()) {
-                        scope.launch {
-                            clipboard.setClipEntry(
-                                ClipEntry(
-                                    ClipData.newPlainText(
-                                        "Master Memory",
-                                        assistant.masterMemoryContent
-                                    )
+            title = stringResource(R.string.master_memory_backup_title),
+            text = stringResource(R.string.master_memory_backup_message),
+            confirmText = stringResource(R.string.master_memory_backup_confirm),
+            dismissText = stringResource(R.string.assistant_page_cancel),
+            onConfirm = {
+                showBackupDialog = false
+                if (assistant.masterMemoryContent.isNotBlank()) {
+                    scope.launch {
+                        clipboard.setClipEntry(
+                            ClipEntry(
+                                ClipData.newPlainText(
+                                    "Master Memory",
+                                    assistant.masterMemoryContent
                                 )
                             )
-                        }
+                        )
                     }
-                    onConsolidate()
-                }) {
-                    Text(stringResource(R.string.master_memory_backup_confirm))
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBackupDialog = false }) {
-                    Text(stringResource(R.string.assistant_page_cancel))
-                }
+                onConsolidate()
             }
         )
     }
@@ -1009,15 +1021,15 @@ private fun MasterMemoryCard(
     }
 
     Column(
-        modifier = Modifier.clip(RoundedCornerShape(24.dp)),
+        modifier = Modifier.clip(AppShapes.CardMedium),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Surface(
-            color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = groupContainerColor(),
             shape = if (assistant.enableMasterMemory)
                 RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
             else
-                RoundedCornerShape(24.dp)
+                AppShapes.CardMedium
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
@@ -1078,8 +1090,8 @@ private fun MasterMemoryCard(
                 var contentExpanded by remember { mutableStateOf(false) }
 
                 Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(10.dp)
+                    color = groupContainerColor(),
+                    shape = AppShapes.ListItemSmall
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
@@ -1136,7 +1148,7 @@ private fun MasterMemoryCard(
                 }
 
                 Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = groupContainerColor(),
                     shape = RoundedCornerShape(
                         bottomStart = 24.dp,
                         bottomEnd = 24.dp,
@@ -1188,6 +1200,10 @@ private fun MasterMemoryPromptEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             Text(stringResource(R.string.assistant_memory_master_prompt_title))
         },
@@ -1203,7 +1219,7 @@ private fun MasterMemoryPromptEditorDialog(
                 if (assistant.isMain) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = AppShapes.ListItemSmall
                     ) {
                         Row(
                             modifier = Modifier.padding(10.dp),
@@ -1313,8 +1329,8 @@ private fun MemoryStatisticsCard(
     val withEmbeddings = memories.count { it.hasEmbedding }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(24.dp)
+        color = groupContainerColor(),
+        shape = AppShapes.CardMedium
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1500,7 +1516,9 @@ private fun ManageMemoriesSection(
                     }
                     DropdownMenu(
                         expanded = showSortMenu,
-                        onDismissRequest = { showSortMenu = false }
+                        onDismissRequest = { showSortMenu = false },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = AppShapes.ButtonSquared
                     ) {
                         MemorySortOrder.entries.forEach { order ->
                             DropdownMenuItem(
@@ -1542,7 +1560,7 @@ private fun ManageMemoriesSection(
             TabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = Color.Transparent,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                modifier = Modifier.clip(AppShapes.ListItemSmall)
             ) {
                 Tab(
                     selected = selectedTab == 0,
@@ -1567,7 +1585,7 @@ private fun ManageMemoriesSection(
             placeholder = { Text(stringResource(R.string.search_memories)) },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
             singleLine = true,
-            shape = RoundedCornerShape(16.dp),
+            shape = AppShapes.CardSmall,
             colors = TextFieldDefaults.colors(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent
@@ -1577,7 +1595,7 @@ private fun ManageMemoriesSection(
         // --- 列表部分 ---
         Column(
             modifier = Modifier
-                .clip(RoundedCornerShape(24.dp))
+                .clip(AppShapes.CardMedium)
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -1608,8 +1626,8 @@ private fun ManageMemoriesSection(
 
             if (displayMemories.isEmpty()) {
                 Surface(
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-                    shape = RoundedCornerShape(24.dp),
+                    color = groupContainerColor(),
+                    shape = AppShapes.CardMedium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
@@ -1627,7 +1645,7 @@ private fun ManageMemoriesSection(
             if (allFilteredMemories.size > displayMemories.size) {
                 Surface(
                     onClick = { displayLimit += 100 }, // 每次加载 100 条
-                    color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = groupContainerColor(),
                     shape = RoundedCornerShape(
                         bottomStart = 24.dp,
                         bottomEnd = 24.dp,
@@ -1689,28 +1707,17 @@ private fun MemoryItem(
     }
 
     if (showDeleteConfirmation) {
-        AlertDialog(
+        val deleteConfirmText = stringResource(R.string.delete_memory_confirmation) + "\n\n\"${memory.content.take(100)}${if (memory.content.length > 100) "..." else ""}\""
+        ConfirmDialog(
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text(stringResource(R.string.assistant_page_delete)) },
-            text = {
-                Text(
-                    text = stringResource(R.string.delete_memory_confirmation) + "\n\n\"${memory.content.take(100)}${if (memory.content.length > 100) "..." else ""}\""
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteConfirmation = false
-                        onDeleteMemory(memory)
-                    }
-                ) {
-                    Text(stringResource(R.string.assistant_page_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text(stringResource(R.string.assistant_page_cancel))
-                }
+            title = stringResource(R.string.assistant_page_delete),
+            text = deleteConfirmText,
+            confirmText = stringResource(R.string.assistant_page_delete),
+            dismissText = stringResource(R.string.assistant_page_cancel),
+            dangerous = true,
+            onConfirm = {
+                showDeleteConfirmation = false
+                onDeleteMemory(memory)
             }
         )
     }
@@ -1718,39 +1725,25 @@ private fun MemoryItem(
     // 重新生成片段记忆的“优化记忆要求”对话框（仅片段记忆显示入口）
     // 确认后即关闭对话框，由 AssistantMemorySettings 顶层的 FullscreenLoadingOverlay 承担加载提示
     if (showRegenerateDialog) {
-        AlertDialog(
+        InputDialog(
             onDismissRequest = { showRegenerateDialog = false },
-            title = { Text(stringResource(R.string.memory_regenerate_requirement_title)) },
-            text = {
-                OutlinedTextField(
-                    value = regenerateRequirement,
-                    onValueChange = { regenerateRequirement = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(stringResource(R.string.memory_regenerate_requirement_placeholder)) },
-                    label = { Text(stringResource(R.string.memory_regenerate_requirement_label)) }
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val req = regenerateRequirement.ifBlank { null }
-                        showRegenerateDialog = false
-                        onRegenerateSegment(memory, req)
-                    },
-                    enabled = !isRegeneratingSegment
-                ) { Text(stringResource(R.string.regenerate_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRegenerateDialog = false }) {
-                    Text(stringResource(R.string.assistant_page_cancel))
-                }
+            title = stringResource(R.string.memory_regenerate_requirement_title),
+            value = regenerateRequirement,
+            onValueChange = { regenerateRequirement = it },
+            placeholder = stringResource(R.string.memory_regenerate_requirement_placeholder),
+            confirmText = stringResource(R.string.regenerate_confirm),
+            dismissText = stringResource(R.string.assistant_page_cancel),
+            onConfirm = {
+                val req = regenerateRequirement.ifBlank { null }
+                showRegenerateDialog = false
+                onRegenerateSegment(memory, req)
             }
         )
     }
 
     Surface(
         onClick = { onEditMemory(memory) },
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = groupContainerColor(),
         shape = RoundedCornerShape(
             topStart = topCorner,
             topEnd = topCorner,
@@ -1807,31 +1800,15 @@ private fun MemoryItem(
                         when {
                             !memory.hasEmbedding -> {
                                 // 完全没有向量 → 无嵌入（红色）
-                                Surface(
-                                    color = Color(0xFFC62828),
-                                    shape = MaterialTheme.shapes.extraSmall
-                                ) {
-                                    Text(
-                                        text = stringResource(R.string.no_embedding),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                        color = Color.White
-                                    )
+                                Tag(type = TagType.ERROR) {
+                                    Text(text = stringResource(R.string.no_embedding))
                                 }
                             }
                             memory.embeddingModelId != null
                                 && memory.embeddingModelId != currentEmbeddingModelId -> {
                                 // 有向量但生成模型≠当前嵌入模型 → 待重新嵌入（橙色）
-                                Surface(
-                                    color = Color(0xFFEF6C00),
-                                    shape = MaterialTheme.shapes.extraSmall
-                                ) {
-                                    Text(
-                                        text = "待重新嵌入",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                                        color = Color.White
-                                    )
+                                Tag(type = TagType.WARNING) {
+                                    Text(text = "待重新嵌入")
                                 }
                             }
                         }
@@ -1911,8 +1888,8 @@ private fun MemoryDebugger(
     val (query, setQuery) = remember { mutableStateOf("") }
 
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(24.dp)
+        color = groupContainerColor(),
+        shape = AppShapes.CardMedium
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1935,7 +1912,7 @@ private fun MemoryDebugger(
                     placeholder = { Text(stringResource(R.string.test_query_placeholder)) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = AppShapes.ListItemSmall,
                     colors = TextFieldDefaults.colors(
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
@@ -1962,7 +1939,7 @@ private fun MemoryDebugger(
                     retrievalResults.forEachIndexed { index, (memory, score) ->
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            shape = RoundedCornerShape(10.dp)
+                            shape = AppShapes.ListItemSmall
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Row(

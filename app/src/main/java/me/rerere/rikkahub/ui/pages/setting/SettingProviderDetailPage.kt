@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import androidx.compose.ui.graphics.RectangleShape
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.components.richtext.ZoomableAsyncImage
 import androidx.compose.animation.AnimatedVisibility
@@ -42,6 +44,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingToolbarDefaults.ScreenOffset
@@ -247,7 +250,7 @@ fun SettingProviderDetailPage(id: Uuid, vm: SettingVM = koinViewModel()) {
                 // Centered floating tab bar
                 Surface(
                     modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = AppShapes.CardLarge,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     tonalElevation = 6.dp,
                     shadowElevation = 8.dp
@@ -611,6 +614,8 @@ private fun SiliconFlowTutorialBottomSheet(
     val pagerState = rememberPagerState { tutorialImages.size }
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         dragHandle = {
@@ -715,6 +720,8 @@ private fun ZhipuTutorialBottomSheet(
     val pagerState = rememberPagerState { tutorialImages.size }
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         dragHandle = {
@@ -968,6 +975,9 @@ private fun ConnectionTesterButton(
         var testState: UiState<String> by remember { mutableStateOf(UiState.Idle) }
         AlertDialog(
             onDismissRequest = { showTestDialog = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = {
                 Text(stringResource(R.string.setting_provider_page_test_connection))
             },
@@ -1042,7 +1052,12 @@ private fun ConnectionTesterButton(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showTestDialog = false }) {
+                TextButton(
+                    onClick = { showTestDialog = false },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -1097,7 +1112,10 @@ private fun ConnectionTesterButton(
                                 testState = UiState.Error(it)
                             }
                         }
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
                     Text(stringResource(R.string.setting_provider_page_test))
                 }
@@ -1685,6 +1703,8 @@ private fun AddModelButton(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.BottomSheet,
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -1786,6 +1806,8 @@ private fun ModelPickerFab(
 
     if (showPicker) {
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = { showPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
@@ -1996,6 +2018,8 @@ private fun AddNewModelFab(
         dialogState.currentState?.let { modelState ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.BottomSheet,
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -2080,6 +2104,8 @@ private fun ModelPicker(
     var showModal by remember { mutableStateOf(false) }
     if (showModal) {
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = { showModal = false },
             sheetState = rememberModalBottomSheetState(
                 skipPartiallyExpanded = true
@@ -2515,6 +2541,8 @@ private fun ModelCard(
         dialogState.currentState?.let { editingModel ->
             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
             ModalBottomSheet(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.BottomSheet,
                 onDismissRequest = {
                     dialogState.dismiss()
                 },
@@ -2602,7 +2630,7 @@ private fun ModelCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(0.dp))
+                .clip(RectangleShape)
                 .background(
                     color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
                         MaterialTheme.colorScheme.surfaceContainerLow
@@ -2820,6 +2848,8 @@ private fun ProviderOverrideSettings(
         // Provider configuration modal
         if (showProviderConfig && editingProvider != null) {
             ModalBottomSheet(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.BottomSheet,
                 onDismissRequest = {
                     showProviderConfig = false
                     editingProvider = null

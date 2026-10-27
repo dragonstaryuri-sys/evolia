@@ -4,17 +4,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.rerere.rikkahub.discover.R
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.androidx.compose.koinViewModel
 import java.io.File
@@ -28,19 +30,18 @@ fun BookReaderScreen(
 ) {
     val bookWithProgress by viewModel.getBookWithProgress(bookId).collectAsState(null)
     val scrollState = rememberScrollState()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     // 模拟 AI 想法
     var aiThought by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(bookWithProgress?.book?.title ?: "", maxLines = 1) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                },
+            OneUITopAppBar(
+                title = bookWithProgress?.book?.title ?: "",
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton(onClick = onBack) },
                 actions = {
                     IconButton(onClick = { /* 呼叫 AI 深度讨论 */ }) {
                         Icon(Icons.Rounded.ChatBubbleOutline, null)

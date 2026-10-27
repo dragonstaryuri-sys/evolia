@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.crop
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -209,7 +210,7 @@ fun SquareCropImageScreen(
                                 scaleY = cancelScale
                                 alpha = cancelAlpha
                             },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = AppShapes.CardSmall,
                         interactionSource = cancelInteractionSource
                     ) {
                         Icon(Icons.Rounded.Close, contentDescription = null)
@@ -256,7 +257,7 @@ fun SquareCropImageScreen(
                                 scaleY = doneScale
                                 alpha = doneAlpha
                             },
-                        shape = RoundedCornerShape(16.dp),
+                        shape = AppShapes.CardSmall,
                         interactionSource = doneInteractionSource
                     ) {
                         Icon(Icons.Rounded.Check, contentDescription = null)

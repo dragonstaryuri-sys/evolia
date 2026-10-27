@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Delete
@@ -16,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +25,10 @@ import me.rerere.rikkahub.core.data.db.entity.BookCategory
 import me.rerere.rikkahub.core.data.db.entity.BookEntity
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.discover.R
+import me.rerere.rikkahub.common.ui.components.AppFab
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -39,28 +43,28 @@ fun BookShelfScreen(
     val books by viewModel.books.collectAsState()
     var showUploadDialog by remember { mutableStateOf(false) }
     val navController = LocalNavController.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.reading_shelf_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                }
+            OneUITopAppBar(
+                title = stringResource(R.string.reading_shelf_title),
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton(onClick = onBack) }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showUploadDialog = true }) {
+            AppFab(onClick = { showUploadDialog = true }) {
                 Icon(Icons.Rounded.Add, null)
             }
         }
     ) { padding ->
         if (books.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.reading_empty_shelf), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            EmptyPlaceholder(
+                text = stringResource(R.string.reading_empty_shelf),
+                modifier = Modifier.fillMaxSize().padding(padding)
+            )
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -159,6 +163,9 @@ fun UploadBookDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.reading_upload_book)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -193,13 +200,22 @@ fun UploadBookDialog(
         confirmButton = {
             Button(
                 onClick = { selectedUri?.let { onUpload(title, author.takeIf { it.isNotBlank() }, it, category, assistantId) } },
-                enabled = title.isNotBlank() && selectedUri != null
+                enabled = title.isNotBlank() && selectedUri != null,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
                 Text("Upload")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) { Text("Cancel") }
         }
     )
 }

@@ -35,6 +35,7 @@ import kotlinx.serialization.json.Json
 import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.Icon
@@ -65,6 +66,8 @@ fun UsedLorebooksSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         dragHandle = {
             IconButton(
                 onClick = {
@@ -139,7 +142,7 @@ private fun UsedLorebookEntryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier

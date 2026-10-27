@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.chat
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,10 @@ fun ExportOptionsDialog(
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(title) },
         text = {
             Column {

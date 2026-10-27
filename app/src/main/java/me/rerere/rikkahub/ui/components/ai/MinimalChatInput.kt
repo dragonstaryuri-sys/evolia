@@ -130,6 +130,7 @@ import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -367,7 +368,7 @@ fun MinimalChatInput(
                 // Text field capsule with embedded action button
                 // Corner radius = 24dp (user confirmed this was correct)
                 Surface(
-                    shape = RoundedCornerShape(24.dp),  // Fixed radius - correct per user
+                    shape = AppShapes.CardMedium,  // Fixed radius - correct per user
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier
@@ -384,7 +385,7 @@ fun MinimalChatInput(
                                     MaterialTheme.colorScheme.surfaceContainerLowest  // Darker in dark mode
                                 else
                                     MaterialTheme.colorScheme.surfaceContainerHighest,  // Darker in light mode
-                                shape = RoundedCornerShape(16.dp),  // Optical roundness: 24dp outer - 8dp padding = 16dp
+                                shape = AppShapes.CardSmall,  // Optical roundness: 24dp outer - 8dp padding = 16dp
                                 modifier = Modifier.padding(start = 12.dp, top = 10.dp, end = 8.dp, bottom = 4.dp)  // Aligned with text
                             ) {
                                 Row(
@@ -634,7 +635,7 @@ private fun MinimalPickerContent(
 
     // Button shapes for grouped appearance (24dp outer corners, 10dp inner, matches floating toolbar)
     val leftButtonShape = RoundedCornerShape(topStart = 24.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 10.dp)
-    val middleButtonShape = RoundedCornerShape(10.dp)
+    val middleButtonShape = AppShapes.ListItemSmall
     val rightButtonShape = RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
 
     // Crop screen dialog
@@ -1026,6 +1027,7 @@ private fun MinimalPickerContent(
             sheetState = modelPickerSheetState,
             sheetGesturesEnabled = false,
             containerColor = sheetContainerColor,
+            shape = AppShapes.BottomSheet,
             dragHandle = {
                 IconButton(
                     onClick = {
@@ -1107,7 +1109,8 @@ private fun MinimalPickerContent(
         ModalBottomSheet(
             onDismissRequest = { showSearchPicker = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = sheetContainerColor
+            containerColor = sheetContainerColor,
+            shape = AppShapes.BottomSheet
         ) {
             Column(
                 modifier = Modifier
@@ -1161,7 +1164,7 @@ private fun MinimalFileButton(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
+        shape = AppShapes.CardSmall,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.height(80.dp)
     ) {
@@ -1196,7 +1199,7 @@ private fun MinimalFileButtonCompact(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(24.dp),  // Optically round with 40dp outer container
+        shape = AppShapes.CardMedium,  // Optically round with 40dp outer container
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = modifier.height(72.dp)
     ) {
@@ -1362,7 +1365,7 @@ private fun MediaFileInputRow(
             Box {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     AsyncImage(
@@ -1391,7 +1394,7 @@ private fun MediaFileInputRow(
             Box {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -1421,7 +1424,7 @@ private fun MediaFileInputRow(
             Box {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -1571,7 +1574,7 @@ private fun ChatSuggestionsRow(
 
             if (visible || targetAlpha > 0f) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = AppShapes.CardSmall,
                     color = MaterialTheme.colorScheme.surfaceContainer,
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.background),
                     modifier = Modifier

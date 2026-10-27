@@ -90,7 +90,8 @@ fun RikkahubTheme(
     CompositionLocalProvider(
         LocalDarkMode provides darkTheme,
         LocalExtendColors provides extendColors,
-        me.rerere.rikkahub.common.ui.theme.LocalDarkTheme provides darkTheme
+        me.rerere.rikkahub.common.ui.theme.LocalDarkTheme provides darkTheme,
+        me.rerere.rikkahub.common.ui.theme.LocalUIHapticsEnabled provides settings.displaySetting.enableUIHaptics
     ) {
         // Create typography from font settings
         val fontSettings = me.rerere.rikkahub.ui.hooks.rememberFontSettings()
@@ -109,3 +110,15 @@ val MaterialTheme.extendColors
     @Composable
     @ReadOnlyComposable
     get() = LocalExtendColors.current
+
+/**
+ * 设置分组容器的标准背景色（暗色 surfaceContainerLow / 亮色 surfaceContainerHigh）。
+ * 统一收敛自 SettingGroupItem、AssistantSettingsItem 等处复制粘贴的三元公式，
+ * 新代码禁止再内联该判断。
+ */
+@Composable
+fun groupContainerColor(): Color = if (LocalDarkMode.current) {
+    MaterialTheme.colorScheme.surfaceContainerLow
+} else {
+    MaterialTheme.colorScheme.surfaceContainerHigh
+}

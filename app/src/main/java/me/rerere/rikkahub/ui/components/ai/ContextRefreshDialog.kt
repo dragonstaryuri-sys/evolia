@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Refresh
@@ -48,7 +47,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.dao.ChatEpisodeDAO
 import me.rerere.rikkahub.core.data.model.Conversation
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import org.koin.compose.koinInject
 
 enum class RefreshDialogState {
@@ -85,8 +86,10 @@ fun ContextRefreshDialog(
     AlertDialog(
         onDismissRequest = { if (state != RefreshDialogState.LOADING) onDismiss() },
         modifier = Modifier.padding(horizontal = 24.dp),
-        shape = RoundedCornerShape(28.dp),
-        containerColor = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.Dialog,
+        containerColor = groupContainerColor(),
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = {
             AnimatedContent(
                 targetState = state,

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.home
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -432,7 +434,7 @@ fun AgentItem(
             .fillMaxWidth()
             .clickable { onClick() },
         color = Color.Transparent,
-        shape = RoundedCornerShape(0.dp)
+        shape = RectangleShape
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -442,7 +444,7 @@ fun AgentItem(
                 name = assistant.name,
                 value = assistant.avatar,
                 modifier = Modifier.size(48.dp),
-                shape = RoundedCornerShape(8.dp)
+                shape = AppShapes.Indicator
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {

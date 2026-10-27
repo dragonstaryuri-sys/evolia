@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarToday
 import androidx.compose.material.icons.rounded.Check
@@ -35,11 +33,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,6 +45,13 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
 import me.rerere.rikkahub.discover.R
 import me.rerere.rikkahub.discover.repo.ScheduleEventWithTask
+import me.rerere.rikkahub.common.ui.components.AppFab
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
+import me.rerere.rikkahub.common.ui.components.EvoliaDatePickerDialog
+import me.rerere.rikkahub.common.ui.components.EvoliaTimePickerDialog
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.LocalDate
@@ -76,7 +79,7 @@ fun SchedulePlannerScreen(
     val selectedDate by viewModel.selectedDate.collectAsState()
     val dayEvents by viewModel.eventsForDate.collectAsState()
     val selectedCategory by todoViewModel.selectedCategory.collectAsState()
-    val haptic = LocalHapticFeedback.current
+    val haptics = rememberPremiumHaptics()
 
     // 按日期缓存各天已加载的日程快照：翻页动画期间，退场页保留其当日数据
     val eventsCache = remember { mutableStateMapOf<LocalDate, List<ScheduleEventWithTask>>() }
@@ -98,24 +101,19 @@ fun SchedulePlannerScreen(
                         Text(
                             text = dateLabel,
                             modifier = Modifier.clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptics.perform(HapticPattern.Thud)
                                 showDatePicker = true
                             }
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onBack()
-                        }) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = null)
-                        }
+                        BackButton(onClick = onBack)
                     },
                     actions = {
                         // 分类切换仅在待办视图有意义（时间轴视图的日程均为 user 类）
                         if (viewMode == PlannerView.TODO) {
                             IconButton(onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptics.perform(HapticPattern.Thud)
                                 val next = if (selectedCategory == "user") "assistant" else "user"
                                 todoViewModel.setCategory(next)
                             }) {
@@ -140,7 +138,7 @@ fun SchedulePlannerScreen(
                     SegmentedButton(
                         selected = viewMode == PlannerView.TIMELINE,
                         onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            haptics.perform(HapticPattern.Pop)
                             viewModel.setViewMode(PlannerView.TIMELINE)
                         },
                         shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
@@ -149,7 +147,7 @@ fun SchedulePlannerScreen(
                     SegmentedButton(
                         selected = viewMode == PlannerView.TODO,
                         onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            haptics.perform(HapticPattern.Pop)
                             viewModel.setViewMode(PlannerView.TODO)
                         },
                         shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
@@ -160,12 +158,10 @@ fun SchedulePlannerScreen(
         },
         floatingActionButton = {
             if (viewMode == PlannerView.TIMELINE) {
-                FloatingActionButton(
+                AppFab(
                     onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         formRequest = EventFormRequest.newAt(selectedDate, defaultStartMinute())
-                    },
-                    shape = CircleShape
+                    }
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                 }
@@ -212,7 +208,7 @@ fun SchedulePlannerScreen(
                 ScheduleTodoContent(
                     viewModel = todoViewModel,
                     onArrangeTime = { task ->
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        haptics.perform(HapticPattern.Thud)
                         formRequest = EventFormRequest.forTask(task, selectedDate, defaultStartMinute())
                     },
                     modifier = Modifier.padding(padding)
@@ -341,7 +337,7 @@ private fun TimelineContent(
 ) {
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
-    val haptic = LocalHapticFeedback.current
+    val haptics = rememberPremiumHaptics()
     // 左右滑动切日的触发阈值：水平拖动超过该距离即切换（与垂直滚动互不干扰）
     val swipeThresholdPx = with(density) { SwipeDayThreshold.toPx() }
 
@@ -376,7 +372,7 @@ private fun TimelineContent(
                     onDragStart = { swipeAccumulated = 0f },
                     onDragEnd = {
                         if (kotlin.math.abs(swipeAccumulated) >= swipeThresholdPx) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            haptics.perform(HapticPattern.Thud)
                             if (swipeAccumulated < 0) onSwipeDay(1) else onSwipeDay(-1)
                         }
                     },
@@ -453,7 +449,7 @@ private fun TimelineContent(
                 val task = positioned.item.task
                 Surface(
                     onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptics.perform(HapticPattern.Pop)
                         onEventClick(positioned.item)
                     },
                     modifier = Modifier
@@ -635,34 +631,18 @@ private fun ScheduleDatePickerDialog(
         .toEpochMilli()
     val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
 
-    DatePickerDialog(
+    EvoliaDatePickerDialog(
+        state = state,
         onDismissRequest = onDismiss,
-        confirmButton = {
-            Button(onClick = {
-                val millis = state.selectedDateMillis
-                if (millis != null) {
-                    onConfirm(Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate())
-                }
-            }) {
-                Text(stringResource(android.R.string.ok))
+        onConfirm = {
+            val millis = state.selectedDateMillis
+            if (millis != null) {
+                onConfirm(Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate())
             }
         },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        },
-        colors = DatePickerDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
-    ) {
-        DatePicker(state = state)
-    }
+        confirmText = stringResource(android.R.string.ok),
+        dismissText = stringResource(android.R.string.cancel)
+    )
 }
 
 @Composable
@@ -678,32 +658,13 @@ private fun ScheduleTimePickerDialog(
         is24Hour = true
     )
 
-    AlertDialog(
+    EvoliaTimePickerDialog(
+        state = state,
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurface,
-        title = { Text(stringResource(R.string.schedule_event_pick_time)) },
-        text = {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                TimePicker(state = state)
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onConfirm(state.hour * 60 + state.minute) }) {
-                Text(stringResource(android.R.string.ok))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        }
+        onConfirm = { onConfirm(state.hour * 60 + state.minute) },
+        confirmText = stringResource(android.R.string.ok),
+        title = stringResource(R.string.schedule_event_pick_time),
+        dismissText = stringResource(android.R.string.cancel)
     )
 }
 
@@ -720,7 +681,7 @@ private fun EventEditSheet(
     onDismiss: () -> Unit
 ) {
     val isEdit = form.editEventId != null
-    val haptic = LocalHapticFeedback.current
+    val haptics = rememberPremiumHaptics()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // 表单内部状态：以 formId 为 key，重新打开时整体重置
@@ -801,7 +762,7 @@ private fun EventEditSheet(
                 label = stringResource(R.string.schedule_event_date),
                 value = dateLabel,
                 onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    haptics.perform(HapticPattern.Pop)
                     showDatePicker = true
                 }
             )
@@ -844,7 +805,7 @@ private fun EventEditSheet(
                     modifier = Modifier
                         .clip(MaterialTheme.shapes.small)
                         .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            haptics.perform(HapticPattern.Pop)
                             pickingTimeFor = TimeField.START
                         }
                         .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -869,7 +830,7 @@ private fun EventEditSheet(
                     modifier = Modifier
                         .clip(MaterialTheme.shapes.small)
                         .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            haptics.perform(HapticPattern.Pop)
                             pickingTimeFor = TimeField.END
                         }
                         .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -902,7 +863,7 @@ private fun EventEditSheet(
                             FilterChip(
                                 selected = candidateFilter == option,
                                 onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    haptics.perform(HapticPattern.Pop)
                                     viewModel.setCandidateFilter(option)
                                 },
                                 label = { Text(label, style = MaterialTheme.typography.labelSmall) }
@@ -926,7 +887,7 @@ private fun EventEditSheet(
                                 val isSelected = selectedTaskId == todo.id
                                 Surface(
                                     onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        haptics.perform(HapticPattern.Pop)
                                         selectedTaskId = todo.id
                                         title = todo.title
                                     },
@@ -1057,38 +1018,18 @@ private fun EventEditSheet(
 
     // 删除日程确认：仅删除日程记录，待办保留
     if (showDeleteConfirm) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            title = { Text(stringResource(R.string.schedule_event_delete_title)) },
-            text = { Text(stringResource(R.string.schedule_event_delete_message)) },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showDeleteConfirm = false
-                        form.editEventId?.let { viewModel.deleteEvent(it) }
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    )
-                ) {
-                    Text(stringResource(R.string.schedule_event_delete_confirm))
-                }
+            onConfirm = {
+                showDeleteConfirm = false
+                form.editEventId?.let { viewModel.deleteEvent(it) }
+                onDismiss()
             },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDeleteConfirm = false },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            }
+            title = stringResource(R.string.schedule_event_delete_title),
+            text = stringResource(R.string.schedule_event_delete_message),
+            confirmText = stringResource(R.string.schedule_event_delete_confirm),
+            dismissText = stringResource(android.R.string.cancel),
+            dangerous = true
         )
     }
 }

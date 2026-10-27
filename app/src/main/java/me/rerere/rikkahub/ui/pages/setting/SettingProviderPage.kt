@@ -50,6 +50,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -265,42 +267,27 @@ fun SettingProviderPage(vm: SettingVM = koinViewModel()) {
 
             // Delete confirmation dialog
             if (showDeleteDialog && providerToDelete != null) {
-                AlertDialog(
+                ConfirmDialog(
                     onDismissRequest = {
                         showDeleteDialog = false
                         providerToDelete = null
                     },
-                    title = {
-                        Text(stringResource(R.string.confirm_delete))
-                    },
-                    text = {
-                        Text(stringResource(R.string.setting_provider_page_delete_dialog_text))
-                    },
-                    dismissButton = {
-                        TextButton(onClick = {
-                            showDeleteDialog = false
-                            providerToDelete = null
-                        }) {
-                            Text(stringResource(R.string.cancel))
+                    onConfirm = {
+                        providerToDelete?.let { p ->
+                            vm.updateSettings(
+                                settings.copy(
+                                    providers = settings.providers.filter { it.id != p.id }
+                                )
+                            )
                         }
+                        showDeleteDialog = false
+                        providerToDelete = null
                     },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                providerToDelete?.let { p ->
-                                    vm.updateSettings(
-                                        settings.copy(
-                                            providers = settings.providers.filter { it.id != p.id }
-                                        )
-                                    )
-                                }
-                                showDeleteDialog = false
-                                providerToDelete = null
-                            }
-                        ) {
-                            Text(stringResource(R.string.delete))
-                        }
-                    }
+                    title = stringResource(R.string.confirm_delete),
+                    text = stringResource(R.string.setting_provider_page_delete_dialog_text),
+                    confirmText = stringResource(R.string.delete),
+                    dismissText = stringResource(R.string.cancel),
+                    dangerous = true,
                 )
             }
         }
@@ -420,8 +407,8 @@ private fun ProviderListView(
                             onAddProvider(provider)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        color = if (isSystemInDarkTheme()) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        shape = AppShapes.CardMedium,
+                        color = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         Row(
                             modifier = Modifier
@@ -578,6 +565,9 @@ private fun ImportProviderButton(
     if (showImportDialog) {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = {
                 Text(
                     text = stringResource(R.string.setting_provider_page_import_dialog_title),
@@ -664,7 +654,10 @@ private fun ImportProviderButton(
             dismissButton = {
                 TextButton(
                     onClick = { showImportDialog = false },
-                    shape = MaterialTheme.shapes.large
+                    shape = MaterialTheme.shapes.large,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 ) {
                     Text(
                         text = stringResource(R.string.cancel),
@@ -784,6 +777,8 @@ private fun AddButton(
         val scope = rememberCoroutineScope()
 
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 showBottomSheet = false
             },
@@ -888,7 +883,7 @@ private fun AddButton(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer
                             ),
-                            shape = RoundedCornerShape(24.dp)
+                            shape = AppShapes.CardMedium
                         ) {
                             Row(
                                 modifier = Modifier
@@ -932,8 +927,8 @@ private fun AddButton(
                         val shape = when (position) {
                             ItemPosition.FIRST -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
                             ItemPosition.LAST -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-                            ItemPosition.MIDDLE -> RoundedCornerShape(10.dp)
-                            ItemPosition.ONLY -> RoundedCornerShape(24.dp)
+                            ItemPosition.MIDDLE -> AppShapes.ListItemSmall
+                            ItemPosition.ONLY -> AppShapes.CardMedium
                         }
 
                         Surface(
@@ -945,7 +940,7 @@ private fun AddButton(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = shape,
-                            color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                            color = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                         ) {
                             Row(
                                 modifier = Modifier
@@ -991,6 +986,9 @@ private fun AddButton(
             onDismissRequest = {
                 customDialogState.dismiss()
             },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = {
                 Text(stringResource(R.string.setting_provider_page_add_provider))
             },
@@ -1005,7 +1003,10 @@ private fun AddButton(
                 TextButton(
                     onClick = {
                         customDialogState.confirm()
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
                 ) {
                     Text(stringResource(R.string.setting_provider_page_add))
                 }
@@ -1014,7 +1015,10 @@ private fun AddButton(
                 TextButton(
                     onClick = {
                         customDialogState.dismiss()
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 ) {
                     Text(stringResource(R.string.cancel))
                 }
@@ -1041,7 +1045,7 @@ private fun ProviderItemContent(
 
     // Disabled cards: transparent background (black in dark mode) with outline
     val disabledBackground = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current)
-        Color.Black
+        MaterialTheme.colorScheme.surfaceContainerLowest
     else
         MaterialTheme.colorScheme.surface
 

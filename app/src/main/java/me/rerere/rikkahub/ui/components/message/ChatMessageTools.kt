@@ -16,7 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -61,6 +60,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.rerere.highlight.HighlightText
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.components.richtext.HighlightCodeBlock
@@ -70,6 +70,7 @@ import me.rerere.rikkahub.ui.components.ui.FaviconRow
 import me.rerere.rikkahub.ui.components.ui.FormItem
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.modifier.shimmer
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.common.JsonInstantPretty
 import me.rerere.rikkahub.common.jsonPrimitiveOrNull
 import me.rerere.rikkahub.utils.saveToDownloads
@@ -100,10 +101,7 @@ fun ToolCallItem(
                 .height(IntrinsicSize.Min)
         ) {
             if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 4.dp,
-                )
+                InlineSpinner(size = 20.dp, strokeWidth = 4.dp)
             } else {
                 Icon(
                     imageVector = when (toolName) {
@@ -313,6 +311,8 @@ private fun ToolCallPreviewSheet(
         onDismissRequest = {
             onDismissRequest()
         },
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         content = {
             Column(
                 modifier = Modifier

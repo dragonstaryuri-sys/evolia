@@ -17,4 +17,6 @@
     <string name="doubao_import_template_bot_name">Example Agent</string>
     <string name="doubao_import_template_bot_desc">This is an import template. You can modify your chat records according to this format for import.</string>
     <string name="doubao_import_session_title">%1$s History Import (%2$d)</string>
+    <!-- Shared UI components -->
+    <string name="common_back">Back</string>
 </resources>

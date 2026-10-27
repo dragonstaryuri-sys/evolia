@@ -142,6 +142,7 @@ import me.rerere.rikkahub.ui.components.ui.permission.PermissionCamera
 import me.rerere.rikkahub.ui.components.ui.permission.PermissionManager
 import me.rerere.rikkahub.ui.components.ui.permission.rememberPermissionState
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.ui.hooks.ChatInputState
@@ -746,7 +747,7 @@ private fun TextInputRow(
             if (state.isEditing()) {
                 Surface(
                     tonalElevation = 8.dp,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = AppShapes.CardSmall,
                     modifier = Modifier.padding(bottom = 8.dp, start = 12.dp, top = 8.dp) // Added start and top padding
                 ) {
                     Row(
@@ -915,7 +916,7 @@ private fun TextInputRow(
                         .onFocusChanged {
                             onFocusChange(it.isFocused)
                         },
-                    shape = RoundedCornerShape(20.dp),
+                    shape = AppShapes.ButtonRounded,
                     placeholder = {
                         // 移除占位文字
                     },
@@ -988,7 +989,7 @@ internal fun QuotePreviewCard(
     }
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = AppShapes.CardSmall,
         color = containerColor,
         tonalElevation = if (amoledMode && LocalDarkMode.current) 0.dp else 4.dp,
         modifier = modifier
@@ -1061,7 +1062,7 @@ private fun MediaFileInputRow(
             Box {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     AsyncImage(
@@ -1093,7 +1094,7 @@ private fun MediaFileInputRow(
             Box {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -1126,7 +1127,7 @@ private fun MediaFileInputRow(
             Box {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -1295,7 +1296,7 @@ private fun ChatSuggestionsRow(
                                 scaleX = scale
                                 scaleY = scale
                             }
-                            .clip(RoundedCornerShape(50))
+                            .clip(AppShapes.ButtonPill)
                             .pointerInput(suggestion) {
                                 detectTapGestures(
                                     onPress = {
@@ -1308,7 +1309,7 @@ private fun ChatSuggestionsRow(
                                     }
                                 )
                             },
-                        shape = RoundedCornerShape(50),
+                        shape = AppShapes.ButtonPill,
                         color = MaterialTheme.colorScheme.surface,
                         border = androidx.compose.foundation.BorderStroke(
                             width = 1.dp,
@@ -1359,15 +1360,15 @@ internal fun FilesPicker(
     } else {
         RoundedCornerShape(topStart = 24.dp, topEnd = 10.dp, bottomStart = 10.dp, bottomEnd = 10.dp)
     }
-    val topMiddleShape = RoundedCornerShape(10.dp)
+    val topMiddleShape = AppShapes.ListItemSmall
     val topRightShape = if (isKeyboardVisible) {
         RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
     } else {
         RoundedCornerShape(topStart = 10.dp, topEnd = 24.dp, bottomStart = 10.dp, bottomEnd = 24.dp)
     }
     // Shapes for middle/bottom rows
-    val middleLeftShape = RoundedCornerShape(10.dp)
-    val middleRightShape = RoundedCornerShape(10.dp)
+    val middleLeftShape = AppShapes.ListItemSmall
+    val middleRightShape = AppShapes.ListItemSmall
     val bottomLeftShape = RoundedCornerShape(
         topStart = 10.dp,
         topEnd = 10.dp,
@@ -2130,6 +2131,7 @@ internal fun ModesPickerSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
+        shape = AppShapes.BottomSheet,
         dragHandle = {
             IconButton(
                 onClick = {
@@ -2268,6 +2270,7 @@ internal fun LorebooksPickerSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
+        shape = AppShapes.BottomSheet,
         dragHandle = {
             IconButton(
                 onClick = {
@@ -2359,7 +2362,7 @@ internal fun LorebooksPickerSheet(
                                         bottomStart = 6.dp, bottomEnd = 6.dp
                                     )
 
-                                    me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
+                                    me.rerere.rikkahub.ui.components.ui.ItemPosition.MIDDLE -> AppShapes.Indicator
                                     me.rerere.rikkahub.ui.components.ui.ItemPosition.LAST -> RoundedCornerShape(
                                         topStart = 6.dp, topEnd = 6.dp,
                                         bottomStart = 16.dp, bottomEnd = 6.dp

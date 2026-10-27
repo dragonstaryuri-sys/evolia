@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.favorites
 
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -38,15 +41,15 @@ fun FavoritesPage() {
     val favorites = vm.favorites.collectAsLazyPagingItems()
     val navController = LocalNavController.current
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.favorites_page_title), fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                }
+            OneUITopAppBar(
+                title = stringResource(R.string.favorites_page_title),
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton() }
             )
         }
     ) { padding ->

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 
 import android.content.Intent
@@ -162,7 +163,7 @@ fun SettingAboutPage() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp)),
+                    .clip(AppShapes.CardMedium),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 AboutItem(
@@ -212,7 +213,7 @@ fun SettingAboutPage() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(24.dp)),
+                    .clip(AppShapes.CardMedium),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 AboutItem(
@@ -306,7 +307,7 @@ private fun AboutItem(
         },
         enabled = onClick != null,
         color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(10.dp),
+        shape = AppShapes.ListItemSmall,
         interactionSource = interactionSource,
         modifier = Modifier
             .fillMaxWidth()

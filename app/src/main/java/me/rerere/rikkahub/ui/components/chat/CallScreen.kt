@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
@@ -55,6 +56,13 @@ import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 
 /** 左滑缩小为迷你窗口的最小拖动距离（dp）。 */
 private const val MIN_SWIPE_TO_MINIMIZE_DP = 80
+
+// 通话页为沉浸式深色固定画布（黑白明暗不随主题切换），
+// 以下为该画布上的固定语义色（挂断红 / 接听绿 / DUCKING 黄 / 声纹绿），不参与主题取色。
+private val CallRejectColor = Color(0xFFE53935)
+private val CallAcceptColor = Color(0xFF43A047)
+private val CallDuckingColor = Color(0xFFFFC107)
+private val CallVoiceColor = Color(0xFF4CAF50)
 
 /**
  * 通话状态枚举
@@ -198,7 +206,7 @@ fun IncomingCallScreen(
                 SwipeUpCallButton(
                     icon = Icons.Rounded.CallEnd,
                     label = "挂断",
-                    background = Color(0xFFE53935),
+                    background = CallRejectColor,
                     onTrigger = {
                         haptics.perform(HapticPattern.Thud)
                         onReject()
@@ -208,7 +216,7 @@ fun IncomingCallScreen(
                 SwipeUpCallButton(
                     icon = Icons.Rounded.Call,
                     label = "接听",
-                    background = Color(0xFF43A047),
+                    background = CallAcceptColor,
                     onTrigger = {
                         haptics.perform(HapticPattern.Pop)
                         onAccept()
@@ -335,7 +343,7 @@ fun OutgoingCallWaitingScreen(
                 CallAnswerButton(
                     icon = Icons.Rounded.CallEnd,
                     label = "取消",
-                    background = Color(0xFFE53935),
+                    background = CallRejectColor,
                     onClick = {
                         haptics.perform(HapticPattern.Thud)
                         onCancel()
@@ -505,7 +513,7 @@ fun CallScreen(
         targetValue = when (status) {
             CallStatus.SPEAKING -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
             CallStatus.THINKING -> Color.White.copy(alpha = 0.3f)
-            CallStatus.DUCKING -> Color(0xFFFFC107).copy(alpha = 0.55f)
+            CallStatus.DUCKING -> CallDuckingColor.copy(alpha = 0.55f)
             else -> Color.White.copy(alpha = 0.2f)
         },
         animationSpec = tween(500),
@@ -832,7 +840,7 @@ fun CallScreen(
                             scaleX = hangupScale
                             scaleY = hangupScale
                         }
-                        .background(Color(0xFFE53935), CircleShape)
+                        .background(CallRejectColor, CircleShape)
                         .clickable(
                             interactionSource = hangupInteractionSource,
                             indication = ripple(bounded = false, radius = 44.dp),
@@ -1087,7 +1095,7 @@ private fun CallTranscriptPanel(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(24.dp))
+            .clip(AppShapes.CardMedium)
             .background(Color.White.copy(alpha = 0.12f))
     ) {
         if (visibleEntries.isEmpty() && !isListeningNow) {
@@ -1215,7 +1223,7 @@ private fun TranscriptPanelRow(
     showTypingDot: Boolean
 ) {
     val isUser = role == MessageRole.USER
-    val iconTint = if (isUser) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+    val iconTint = if (isUser) CallVoiceColor else MaterialTheme.colorScheme.primary
 
     Row(
         verticalAlignment = Alignment.Top,
@@ -1258,7 +1266,7 @@ private fun ListeningTypingDot() {
     Text(
         text = "…",
         fontSize = 18.sp,
-        color = Color(0xFF4CAF50).copy(alpha = dotAlpha),
+        color = CallVoiceColor.copy(alpha = dotAlpha),
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(start = 2.dp)
     )
@@ -1287,7 +1295,7 @@ fun MiniCallWindow(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(20.dp),
+        shape = AppShapes.ButtonRounded,
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 6.dp,
         shadowElevation = 4.dp
@@ -1330,7 +1338,7 @@ fun MiniCallWindow(
                     Icon(
                         imageVector = Icons.Rounded.Call,
                         contentDescription = null,
-                        tint = Color(0xFF4CAF50),
+                        tint = CallVoiceColor,
                         modifier = Modifier.size(14.dp)
                     )
                     Text(
@@ -1344,7 +1352,7 @@ fun MiniCallWindow(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(Color(0xFFE53935), CircleShape)
+                    .background(CallRejectColor, CircleShape)
                     .clickable {
                         haptics.perform(HapticPattern.Thud)
                         onHangup()

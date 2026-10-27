@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.call
 
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -22,6 +26,7 @@ import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -69,15 +74,15 @@ fun HistoryCallPage(assistantId: String) {
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var pendingDeleteRecord by remember { mutableStateOf<CallRecordEntity?>(null) }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = { Text("历史通话", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                },
+            OneUITopAppBar(
+                title = "历史通话",
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton() },
                 actions = {
                     Box {
                         IconButton(onClick = { sortMenuExpanded = true }) {
@@ -85,7 +90,9 @@ fun HistoryCallPage(assistantId: String) {
                         }
                         DropdownMenu(
                             expanded = sortMenuExpanded,
-                            onDismissRequest = { sortMenuExpanded = false }
+                            onDismissRequest = { sortMenuExpanded = false },
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = AppShapes.ButtonSquared
                         ) {
                             CallHistorySort.entries.forEach { option ->
                                 DropdownMenuItem(
@@ -114,20 +121,10 @@ fun HistoryCallPage(assistantId: String) {
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Rounded.History,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(40.dp)
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "暂无通话记录",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                EmptyPlaceholder(
+                    icon = Icons.Rounded.History,
+                    text = "暂无通话记录",
+                )
             }
         } else {
             LazyColumn(

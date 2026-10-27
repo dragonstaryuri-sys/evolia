@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.chat
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,7 +51,7 @@ fun PrintTaskCard(
     val task = tasks.find { it.record.taskId == taskId }
 
     Surface(
-        shape = RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.fillMaxWidth()
@@ -265,7 +266,7 @@ private fun PrintStatusBadge(status: PrintTaskStatus) {
         )
     }
     Surface(
-        shape = RoundedCornerShape(50),
+        shape = AppShapes.ButtonPill,
         color = container,
         contentColor = content
     ) {

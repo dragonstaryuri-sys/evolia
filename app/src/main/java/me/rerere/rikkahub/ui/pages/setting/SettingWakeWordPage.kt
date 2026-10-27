@@ -32,7 +32,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,6 +75,7 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.ToastType
@@ -232,6 +233,8 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
                             }
                         )
                         DropdownMenu(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            shape = AppShapes.ButtonSquared,
                             expanded = assistantDropdownExpanded,
                             onDismissRequest = { assistantDropdownExpanded = false }
                         ) {
@@ -346,10 +349,7 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
                         icon = { Icon(Icons.Rounded.GraphicEq, null, modifier = Modifier.size(20.dp)) },
                         trailing = {
                             if (isPreparing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp
-                                )
+                                InlineSpinner(size = 20.dp, strokeWidth = 2.dp)
                             } else {
                                 Icon(
                                     if (modelReady) Icons.Rounded.AutoAwesome else Icons.Rounded.CloudDownload,
@@ -595,10 +595,7 @@ fun SettingWakeWordPage(vm: SettingVM = koinViewModel()) {
                             enabled = !triggerLoading
                         ) {
                             if (triggerLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
+                                InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(stringResource(R.string.setting_wake_word_test_launching))
                             } else {

@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +43,9 @@ import me.rerere.rikkahub.ui.components.ui.ProviderConfigWarningCard
 import me.rerere.rikkahub.common.countImageFiles
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,42 +59,34 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     var showClearCacheDialog by remember { mutableStateOf(false) }
 
     if (showClearCacheDialog) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showClearCacheDialog = false },
-            title = { Text(stringResource(R.string.setting_page_clear_cache_confirm_title)) },
-            text = { Text(stringResource(R.string.setting_page_clear_cache_confirm_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearCacheDialog = false
-                        vm.clearCache {
-                            toaster.show(
-                                message = "缓存清理完成", // 这里也可以用 stringResource，但异步回调里建议直接传或用 context
-                                type = ToastType.Success
-                            )
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error)
+            onConfirm = {
+                showClearCacheDialog = false
+                vm.clearCache {
+                    toaster.show(
+                        message = "缓存清理完成", // 这里也可以用 stringResource，但异步回调里建议直接传或用 context
+                        type = ToastType.Success
+                    )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showClearCacheDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
+            title = stringResource(R.string.setting_page_clear_cache_confirm_title),
+            text = stringResource(R.string.setting_page_clear_cache_confirm_message),
+            confirmText = stringResource(R.string.confirm),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
         )
     }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.settings),
-                        fontWeight = FontWeight.Bold
-                    )
-                },
+            OneUITopAppBar(
+                title = stringResource(R.string.settings),
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton() },
                 actions = {
                     if (settings.developerMode) {
                         IconButton(

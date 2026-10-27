@@ -14,6 +14,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.ui.components.EvoliaDatePickerDialog
 import me.rerere.rikkahub.core.data.db.entity.ProfileHistoryEntity
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
@@ -213,27 +214,19 @@ fun SettingUserProfilePage() {
         val datePickerState = rememberDatePickerState(
             initialSelectedDateMillis = initialDate
         )
-        DatePickerDialog(
+        EvoliaDatePickerDialog(
+            state = datePickerState,
             onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
-                        localSettings = localSettings.copy(userProfile = profile.copy(birthday = date))
-                    }
-                    showDatePicker = false
-                }) {
-                    Text(stringResource(R.string.confirm))
+            onConfirm = {
+                datePickerState.selectedDateMillis?.let { millis ->
+                    val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(millis))
+                    localSettings = localSettings.copy(userProfile = profile.copy(birthday = date))
                 }
+                showDatePicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+            confirmText = stringResource(R.string.confirm),
+            dismissText = stringResource(R.string.cancel),
+        )
     }
 }
 

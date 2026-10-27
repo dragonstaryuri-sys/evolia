@@ -7,7 +7,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -20,9 +19,10 @@ import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import kotlin.math.roundToInt
 
 @Composable
@@ -259,7 +259,7 @@ private fun SummarizerWarningBanner(
     Surface(
         onClick = onClick,
         color = MaterialTheme.colorScheme.errorContainer,
-        shape = RoundedCornerShape(10.dp),
+        shape = AppShapes.ListItemSmall,
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -294,8 +294,8 @@ private fun SliderSettingCard(
     steps: Int
 ) {
     Surface(
-        color = if (LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(10.dp),
+        color = groupContainerColor(),
+        shape = AppShapes.ListItemSmall,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(

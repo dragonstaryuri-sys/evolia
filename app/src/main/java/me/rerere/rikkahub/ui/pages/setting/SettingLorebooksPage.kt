@@ -77,6 +77,8 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.common.ui.components.AppFab
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.LorebookExportImport
 import me.rerere.rikkahub.utils.createChatFilesByContents
@@ -154,7 +156,7 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 // Centered floating tab bar
                 Surface(
                     modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = AppShapes.CardLarge,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     tonalElevation = 6.dp,
                     shadowElevation = 8.dp
@@ -203,13 +205,11 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                 }
 
                 // FAB aligned to end/right
-                FloatingActionButton(
+                AppFab(
                     onClick = {
                         showAddDialog = true
-                        haptics.perform(HapticPattern.Pop)
                     },
                     modifier = Modifier.align(Alignment.CenterEnd),
-                    shape = AppShapes.CardLarge
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                 }
@@ -261,29 +261,14 @@ fun SettingLorebooksPage(vm: SettingVM = koinViewModel()) {
                         ),
                         shape = AppShapes.CardLarge
                     ) {
-                        Column(
+                        EmptyPlaceholder(
+                            text = stringResource(R.string.lorebooks_page_empty_title) + "\n" +
+                                stringResource(R.string.lorebooks_page_empty_desc),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Book,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
-                            Text(
-                                text = stringResource(R.string.lorebooks_page_empty_title),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.lorebooks_page_empty_desc),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                            icon = Icons.Rounded.Book,
+                        )
                     }
                 }
             } else {
@@ -416,7 +401,7 @@ private fun LorebookCard(
                     topStart = 16.dp, topEnd = 6.dp,
                     bottomStart = 6.dp, bottomEnd = 6.dp
                 )
-                ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
+                ItemPosition.MIDDLE -> AppShapes.Indicator
                 ItemPosition.LAST -> RoundedCornerShape(
                     topStart = 6.dp, topEnd = 6.dp,
                     bottomStart = 16.dp, bottomEnd = 6.dp
@@ -519,6 +504,8 @@ internal fun LorebookCreatorSheet(
     }
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismiss,
         sheetState = sheetState
     ) {
@@ -542,7 +529,7 @@ internal fun LorebookCreatorSheet(
             ) {
                 // Cover picker - book-like aspect ratio
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.size(width = 56.dp, height = 78.dp),
                     onClick = { imagePickerLauncher.launch("image/*") }

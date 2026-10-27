@@ -40,13 +40,11 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Terminal
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,6 +80,8 @@ import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
+import me.rerere.rikkahub.common.ui.components.InputDialog
 import me.rerere.rikkahub.ui.theme.AppShapes
 import org.koin.compose.koinInject
 
@@ -274,6 +274,8 @@ fun ActivityTimelineSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
     ) {
         Column(
             modifier = Modifier
@@ -367,73 +369,45 @@ fun ActivityTimelineSheet(
 
     editTarget?.let { target ->
         var text by remember(target) { mutableStateOf(target.content) }
-        AlertDialog(
+        InputDialog(
             onDismissRequest = { editTarget = null },
-            title = { Text(stringResource(R.string.chat_timeline_edit_title)) },
-            text = {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 6,
-                    shape = AppShapes.CardMedium
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val trimmed = text.trim()
-                        if (trimmed.isNotEmpty()) {
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    memoryRepo.updateContent(target.id, trimmed)
-                                }
-                                editTarget = null
-                            }
+            onConfirm = {
+                val trimmed = text.trim()
+                if (trimmed.isNotEmpty()) {
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            memoryRepo.updateContent(target.id, trimmed)
                         }
+                        editTarget = null
                     }
-                ) {
-                    Text(stringResource(R.string.chat_timeline_save))
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { editTarget = null }) {
-                    Text(stringResource(R.string.chat_timeline_cancel))
-                }
-            }
+            title = stringResource(R.string.chat_timeline_edit_title),
+            value = text,
+            onValueChange = { text = it },
+            confirmText = stringResource(R.string.chat_timeline_save),
+            dismissText = stringResource(R.string.chat_timeline_cancel),
         )
     }
 
     deleteTarget?.let { target ->
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text(stringResource(R.string.chat_timeline_delete_title)) },
-            text = {
-                Text(
-                    text = target.content?.take(140)
-                        ?: stringResource(R.string.chat_timeline_memory_deleted)
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                memoryRepo.deleteMemory(target.id)
-                            }
-                            deletedMemoryIds = deletedMemoryIds + target.id
-                            deleteTarget = null
-                        }
+            onConfirm = {
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        memoryRepo.deleteMemory(target.id)
                     }
-                ) {
-                    Text(stringResource(R.string.chat_timeline_action_delete))
+                    deletedMemoryIds = deletedMemoryIds + target.id
+                    deleteTarget = null
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(stringResource(R.string.chat_timeline_cancel))
-                }
-            }
+            title = stringResource(R.string.chat_timeline_delete_title),
+            text = target.content?.take(140)
+                ?: stringResource(R.string.chat_timeline_memory_deleted),
+            confirmText = stringResource(R.string.chat_timeline_action_delete),
+            dismissText = stringResource(R.string.chat_timeline_cancel),
+            dangerous = true,
         )
     }
 }

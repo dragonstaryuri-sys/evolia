@@ -103,6 +103,9 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.common.ui.components.AppFab
+import me.rerere.rikkahub.common.ui.components.FabVariant
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import me.rerere.rikkahub.utils.getFileNameFromUri
@@ -216,7 +219,7 @@ fun SettingModesPage(
                 // Centered floating tab bar
                 Surface(
                     modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = AppShapes.CardLarge,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     tonalElevation = 6.dp,
                     shadowElevation = 8.dp
@@ -278,9 +281,8 @@ fun SettingModesPage(
                 }
 
                 // Add FAB - locked in position, action changes by page
-                FloatingActionButton(
+                AppFab(
                     onClick = {
-                        haptics.perform(HapticPattern.Pop)
                         if (pagerState.currentPage == 0) {
                             showAddDialog = true
                         } else {
@@ -288,7 +290,6 @@ fun SettingModesPage(
                         }
                     },
                     modifier = Modifier.align(Alignment.CenterEnd),
-                    shape = AppShapes.CardLarge
                 ) {
                     Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.add))
                 }
@@ -673,6 +674,8 @@ internal fun ModeEditorSheet(
     }
 
     ModalBottomSheet(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
@@ -721,7 +724,7 @@ internal fun ModeEditorSheet(
                             // TODO: Implement full icon picker in future
                         },
                         modifier = Modifier.size(56.dp),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = AppShapes.ButtonSquared,
                         color = MaterialTheme.colorScheme.tertiaryContainer
                     ) {
                         Box(
@@ -876,7 +879,7 @@ private fun ModeAttachmentItem(
             ModeAttachmentType.IMAGE -> {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     AsyncImage(
@@ -889,7 +892,7 @@ private fun ModeAttachmentItem(
             ModeAttachmentType.VIDEO -> {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -903,7 +906,7 @@ private fun ModeAttachmentItem(
             ModeAttachmentType.AUDIO -> {
                 Surface(
                     modifier = Modifier.size(48.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     Box(
@@ -919,7 +922,7 @@ private fun ModeAttachmentItem(
                     modifier = Modifier
                         .height(48.dp)
                         .widthIn(max = 128.dp),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = AppShapes.Indicator,
                     tonalElevation = 4.dp
                 ) {
                     Row(
@@ -1021,29 +1024,14 @@ private fun LorebooksPageContent(
                         ),
                         shape = AppShapes.CardLarge
                     ) {
-                        Column(
+                        EmptyPlaceholder(
+                            text = stringResource(R.string.lorebooks_page_empty_title) + "\n" +
+                                stringResource(R.string.lorebooks_page_empty_desc),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.Book,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                            )
-                            Text(
-                                text = stringResource(R.string.lorebooks_page_empty_title),
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                text = stringResource(R.string.lorebooks_page_empty_desc),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                            icon = Icons.Rounded.Book,
+                        )
                     }
                 }
             } else {
@@ -1131,7 +1119,7 @@ private fun LorebooksPageContent(
         )
 
         // Import FAB only - Add button is in bottomBar
-        FloatingActionButton(
+        AppFab(
             onClick = {
                 haptics.perform(HapticPattern.Tick)
                 onImport()
@@ -1140,9 +1128,7 @@ private fun LorebooksPageContent(
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
                 .offset(y = -ScreenOffset - 68.dp),  // Extra offset to appear above Add FAB
-            shape = AppShapes.CardLarge,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface
+            variant = FabVariant.Secondary,
         ) {
             Icon(Icons.Rounded.Download, contentDescription = stringResource(R.string.import_label))
         }
@@ -1164,7 +1150,7 @@ private fun LorebookListCard(
             topStart = 16.dp, topEnd = 6.dp,
             bottomStart = 6.dp, bottomEnd = 6.dp
         )
-        ItemPosition.MIDDLE -> RoundedCornerShape(6.dp)
+        ItemPosition.MIDDLE -> AppShapes.Indicator
         ItemPosition.LAST -> RoundedCornerShape(
             topStart = 6.dp, topEnd = 6.dp,
             bottomStart = 16.dp, bottomEnd = 6.dp

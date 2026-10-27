@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.graphics.Color
@@ -124,6 +125,7 @@ fun ReasoningPicker(
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = AppShapes.BottomSheet,
     ) {
         Column(
             modifier = Modifier
@@ -309,7 +311,7 @@ private fun ReasoningLevelCard(
             contentColor = resolvedContentColor
         )
         // Selected items are completely round, non-selected use 10.dp corners
-        val resolvedShape = if (selected) RoundedCornerShape(50) else RoundedCornerShape(10.dp)
+        val resolvedShape = if (selected) AppShapes.ButtonPill else AppShapes.ListItemSmall
         Card(
             onClick = onClick,
             modifier = modifier,

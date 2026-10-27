@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Cloud
@@ -93,7 +94,7 @@ fun EmbeddingModelWarningBanner(onNavigateToModels: () -> Unit) {
     Surface(
         onClick = onNavigateToModels,
         color = MaterialTheme.colorScheme.errorContainer,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+        shape = AppShapes.CardMedium,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
     ) {
         Row(

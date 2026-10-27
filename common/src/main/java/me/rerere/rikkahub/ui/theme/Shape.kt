@@ -40,6 +40,7 @@ object AppShapes {
 
     // List items
     val ListItem = RoundedCornerShape(16.dp)
+    val ListItemSmall = RoundedCornerShape(10.dp)     // Compact list/picker rows
     val ListItemFirst = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
     val ListItemLast = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)
 

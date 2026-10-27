@@ -4,22 +4,23 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Token
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.core.data.db.entity.DailyUsageSummary
 import me.rerere.rikkahub.core.data.db.entity.TokenUsageEntity
 import me.rerere.rikkahub.discover.R
+import me.rerere.rikkahub.ui.components.nav.BackButton
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,22 +33,15 @@ fun TokenReportScreen(
     val agentRankings by viewModel.agentRankings.collectAsState()
     val todayUsage by viewModel.todayTotalUsage.collectAsState()
     val dailyHistory by viewModel.dailyHistory.collectAsState()
-    val haptic = LocalHapticFeedback.current
+    val haptics = rememberPremiumHaptics()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.token_report_title)) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onBack()
-                    }) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, null)
-                    }
-                },
-                scrollBehavior = scrollBehavior
+            OneUITopAppBar(
+                title = stringResource(R.string.token_report_title),
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackButton(onClick = onBack) }
             )
         }
     ) { padding ->
@@ -70,7 +64,7 @@ fun TokenReportScreen(
                 }
                 items(agentRankings, key = { it.assistantId }) { ranking ->
                     AgentUsageItem(ranking, viewModel) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        haptics.perform(HapticPattern.Pop)
                     }
                 }
             }

@@ -11,7 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import me.rerere.rikkahub.ui.theme.extendColors
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -182,7 +182,7 @@ private fun PermissionItem(
                     Icon(
                         imageVector = Icons.Rounded.CheckCircle,
                         contentDescription = null,
-                        tint = Color(0xFF4CAF50)
+                        tint = MaterialTheme.extendColors.green6
                     )
                 }
                 else -> {

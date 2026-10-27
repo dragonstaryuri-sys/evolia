@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.discover
 
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -316,7 +319,7 @@ fun DiaryListPage(
             ) {
                 Surface(
                     modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(28.dp),
+                    shape = AppShapes.CardLarge,
                     color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     tonalElevation = 6.dp,
                     shadowElevation = 8.dp
@@ -494,10 +497,7 @@ private fun DiaryListView(
                         contentAlignment = Alignment.Center
                     ) {
                         if (isLoadingMore) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
+                            InlineSpinner(size = 24.dp, strokeWidth = 2.dp)
                         } else {
                             Text(
                                 text = stringResource(R.string.diary_load_more),
@@ -742,19 +742,17 @@ fun DiarySummaryCard(
                       else settings.assistants.find { it.id.toString() == diary.assistantId }?.avatar ?: me.rerere.rikkahub.core.data.model.Avatar.Dummy
 
     if (showDeleteConfirm) {
-        AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.diary_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.diary_delete_confirm_msg)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete()
-                    showDeleteConfirm = false
-                }) { Text(stringResource(R.string.confirm), color = MaterialTheme.colorScheme.error) }
+            onConfirm = {
+                onDelete()
+                showDeleteConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
-            }
+            title = stringResource(R.string.diary_delete_confirm_title),
+            text = stringResource(R.string.diary_delete_confirm_msg),
+            confirmText = stringResource(R.string.confirm),
+            dismissText = stringResource(R.string.cancel),
+            dangerous = true,
         )
     }
 
@@ -885,9 +883,10 @@ private fun OcrFailureBanner(
 
 @Composable
 fun EmptyState(msg: String) {
-    Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(msg, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-    }
+    EmptyPlaceholder(
+        text = msg,
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1003,7 +1002,7 @@ private fun AddDiaryAuthorSheetContent(
                         modifier = Modifier
                             .width(36.dp)
                             .height(4.dp)
-                            .clip(RoundedCornerShape(50))
+                            .clip(AppShapes.ButtonPill)
                             .background(MaterialTheme.colorScheme.outlineVariant)
                     )
                 }
@@ -1129,7 +1128,7 @@ private fun AddDiaryTypeSheetContent(
                 modifier = Modifier
                     .width(36.dp)
                     .height(4.dp)
-                    .clip(RoundedCornerShape(50))
+                    .clip(AppShapes.ButtonPill)
                     .background(MaterialTheme.colorScheme.outlineVariant)
             )
         }

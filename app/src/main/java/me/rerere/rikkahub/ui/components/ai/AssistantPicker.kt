@@ -67,6 +67,7 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberAssistantState
 import me.rerere.rikkahub.ui.hooks.HapticPattern
@@ -188,6 +189,8 @@ fun AssistantPickerSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
     ) {
         Column(
             modifier = Modifier
@@ -228,7 +231,7 @@ fun AssistantPickerSheet(
                             },
                             label = { Text(tag.name) },
                             selected = tag.id in selectedTagIds,
-                            shape = RoundedCornerShape(50),
+                            shape = AppShapes.ButtonPill,
                         )
                     }
                 }
@@ -284,7 +287,7 @@ fun AssistantPickerSheet(
                             .clip(shape)
                             .background(
                                 color = if (checked) MaterialTheme.colorScheme.primaryContainer
-                                       else if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                                       else if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                             )
                             .clickable(enabled = !isTransitioning) {
                                 if (!checked) {

@@ -17,8 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,7 +39,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.ui.components.InputDialog
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import me.rerere.rikkahub.utils.createChatFilesByContents
 import kotlin.math.roundToInt
 
@@ -80,11 +83,8 @@ fun BackgroundPicker(
 
     // Use Surface with 10dp corners to match SettingsGroup pattern
     androidx.compose.material3.Surface(
-        color = if (isDarkMode) 
-            MaterialTheme.colorScheme.surfaceContainerLow 
-        else 
-            MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(10.dp)
+        color = groupContainerColor(),
+        shape = AppShapes.ListItemSmall
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -150,7 +150,7 @@ fun BackgroundPicker(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(9f / 16f)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(AppShapes.ListItemSmall)
                 ) {
                     AsyncImage(
                         model = background,
@@ -218,6 +218,10 @@ fun BackgroundPicker(
             onDismissRequest = {
                 showPickOption = false
             },
+            shape = AppShapes.Dialog,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = {
                 Text(stringResource(R.string.assistant_page_select_background))
             },
@@ -261,7 +265,8 @@ fun BackgroundPicker(
                 TextButton(
                     onClick = {
                         showPickOption = false
-                    }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
                 ) {
                     Text(stringResource(R.string.assistant_page_cancel))
                 }
@@ -270,42 +275,21 @@ fun BackgroundPicker(
     }
 
     if (showUrlInput) {
-        AlertDialog(
+        InputDialog(
             onDismissRequest = {
                 showUrlInput = false
             },
-            title = {
-                Text(stringResource(R.string.assistant_page_enter_image_url))
-            },
-            text = {
-                OutlinedTextField(
-                    value = urlInput,
-                    onValueChange = { urlInput = it },
-                    label = { Text(stringResource(R.string.assistant_page_image_url)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("https://example.com/image.jpg") },
-                    singleLine = true
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (urlInput.isNotBlank()) {
-                            onUpdate(urlInput.trim())
-                            showUrlInput = false
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.assistant_page_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showUrlInput = false
-                    }
-                ) {
-                    Text(stringResource(R.string.assistant_page_cancel))
+            title = stringResource(R.string.assistant_page_enter_image_url),
+            value = urlInput,
+            onValueChange = { urlInput = it },
+            placeholder = "https://example.com/image.jpg",
+            singleLine = true,
+            confirmText = stringResource(R.string.assistant_page_confirm),
+            dismissText = stringResource(R.string.assistant_page_cancel),
+            onConfirm = {
+                if (urlInput.isNotBlank()) {
+                    onUpdate(urlInput.trim())
+                    showUrlInput = false
                 }
             }
         )

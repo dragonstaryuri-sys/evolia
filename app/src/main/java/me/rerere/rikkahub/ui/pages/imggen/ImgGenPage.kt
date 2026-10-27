@@ -1,5 +1,9 @@
 package me.rerere.rikkahub.ui.pages.imggen
 
+import me.rerere.rikkahub.common.ui.components.EmptyPlaceholder
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.RepeatMode
@@ -268,20 +272,14 @@ private fun CancelDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    AlertDialog(
+    ConfirmDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.imggen_page_cancel_generation_title)) },
-        text = { Text(stringResource(R.string.imggen_page_cancel_generation_message)) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(stringResource(R.string.imggen_page_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.imggen_page_cancel))
-            }
-        }
+        onConfirm = onConfirm,
+        title = stringResource(R.string.imggen_page_cancel_generation_title),
+        text = stringResource(R.string.imggen_page_cancel_generation_message),
+        confirmText = stringResource(R.string.imggen_page_confirm),
+        dismissText = stringResource(R.string.imggen_page_cancel),
+        dangerous = false,
     )
 }
 
@@ -406,30 +404,13 @@ private fun ImageGenScreen(
         // Main content area with generated images - scrollable session history
         if (sessionImages.isEmpty()) {
             // Empty state
-            Box(
+            EmptyPlaceholder(
+                text = stringResource(R.string.imggen_page_prompt_placeholder),
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = 200.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = stringResource(R.string.imggen_page_prompt_placeholder),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
+                icon = Icons.Rounded.AutoAwesome,
+            )
         } else {
             LazyColumn(
                 state = listState,
@@ -476,7 +457,7 @@ private fun ImageGenScreen(
                                         ImageAspectRatio.PORTRAIT -> 9f / 16f
                                     }
                                 )
-                                .clip(RoundedCornerShape(20.dp))
+                                .clip(AppShapes.ButtonRounded)
                                 .clickable { showPreview = true },
                             contentScale = ContentScale.Crop
                         )
@@ -547,8 +528,6 @@ private fun FloatingInputBar(
     onShowSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val cornerRadius = 28.dp
-    val innerCornerRadius = 20.dp
     val haptics = me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics()
 
     val launcher = rememberLauncherForActivityResult(
@@ -566,7 +545,7 @@ private fun FloatingInputBar(
     ) {
         // Main floating container - no glow
         Surface(
-            shape = RoundedCornerShape(cornerRadius),
+            shape = AppShapes.CardLarge,
             color = MaterialTheme.colorScheme.surfaceContainerLow,
             tonalElevation = 8.dp,
             modifier = Modifier.fillMaxWidth()
@@ -586,7 +565,7 @@ private fun FloatingInputBar(
 
                     if (supportsImageInput) {
                         Surface(
-                            shape = RoundedCornerShape(innerCornerRadius),
+                            shape = AppShapes.ButtonRounded,
                             color = Color.Transparent
                         ) {
                             if (selectedImage != null) {
@@ -599,7 +578,7 @@ private fun FloatingInputBar(
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .clip(AppShapes.Indicator)
                                     )
                                     Surface(
                                         shape = CircleShape,
@@ -640,7 +619,7 @@ private fun FloatingInputBar(
 
                     // Text input with black background
                     Surface(
-                        shape = RoundedCornerShape(innerCornerRadius),
+                        shape = AppShapes.ButtonRounded,
                         color = if (LocalDarkMode.current) Color.Black.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.08f),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -699,12 +678,12 @@ private fun FloatingInputBar(
                         containerColor = if (isGenerating) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primary,
                         contentColor = if (isGenerating) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimary
                     ),
-                    shape = RoundedCornerShape(innerCornerRadius),
+                    shape = AppShapes.ButtonRounded,
                     enabled = prompt.isNotBlank() || isGenerating
                 ) {
                     if (isGenerating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
+                        InlineSpinner(
+                            size = 20.dp,
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -784,7 +763,7 @@ private fun ImageGalleryScreen(
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp)
+                            shape = AppShapes.CardSmall
                         ) {
                             Column {
                                 AsyncImage(
@@ -912,6 +891,8 @@ private fun SettingsBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
         Column(

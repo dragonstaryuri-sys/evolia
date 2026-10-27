@@ -6,13 +6,13 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import me.rerere.rikkahub.common.ui.theme.LocalUIHapticsEnabled
 
 /**
  * Premium haptic feedback patterns for a tactile, immersive experience.
@@ -21,37 +21,37 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 sealed class HapticPattern {
     /** Quick, light tap - for button clicks, selections */
     data object Tick : HapticPattern()
-    
+
     /** Soft pop - for toggles, confirmations */
     data object Pop : HapticPattern()
-    
+
     /** Heavy thud - for drops, important actions */
     data object Thud : HapticPattern()
-    
+
     /** Rising buildup - for long press detection */
     data object Buildup : HapticPattern()
-    
+
     /** Success confirmation - double tap */
     data object Success : HapticPattern()
-    
+
     /** Error feedback - sharp, distinct */
     data object Error : HapticPattern()
-    
+
     /** Drag start - subtle lift feel */
     data object DragStart : HapticPattern()
-    
+
     /** Drag end - settling feel */
     data object DragEnd : HapticPattern()
-    
+
     /** Send message - whoosh feel */
     data object Send : HapticPattern()
-    
+
     /** Scroll edge - subtle resistance */
     data object ScrollEdge : HapticPattern()
-    
+
     /** Selection change - light double tick */
     data object Selection : HapticPattern()
-    
+
     /** Cancel/dismiss - quick fade */
     data object Cancel : HapticPattern()
 }
@@ -78,10 +78,10 @@ class PremiumHaptics(
             }
         }
     }
-    
+
     fun perform(pattern: HapticPattern) {
         if (!enabled) return
-        
+
         when (pattern) {
             HapticPattern.Tick -> {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -93,7 +93,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
             }
-            
+
             HapticPattern.Pop -> {
                 // Satisfying pop - click effect
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -105,7 +105,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
-            
+
             HapticPattern.Thud -> {
                 // Heavy satisfying drop
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -117,7 +117,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
-            
+
             HapticPattern.Buildup -> {
                 // Rising intensity
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -136,7 +136,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
-            
+
             HapticPattern.Success -> {
                 // Double tap celebration
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -148,7 +148,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
-            
+
             HapticPattern.Error -> {
                 // Sharp distinct buzz
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -167,7 +167,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
-            
+
             HapticPattern.DragStart -> {
                 // Lift - light rising feel
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -179,7 +179,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
             }
-            
+
             HapticPattern.DragEnd -> {
                 // Drop - heavy thud
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -191,7 +191,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
-            
+
             HapticPattern.Send -> {
                 // Whoosh - quick ascending burst
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -206,7 +206,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 }
             }
-            
+
             HapticPattern.ScrollEdge -> {
                 // Subtle bump
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -221,7 +221,7 @@ class PremiumHaptics(
                     // Skip on older devices
                 }
             }
-            
+
             HapticPattern.Selection -> {
                 // Quick double tick for selection changes
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -233,7 +233,7 @@ class PremiumHaptics(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 }
             }
-            
+
             HapticPattern.Cancel -> {
                 // Quick fade out feel
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -256,14 +256,11 @@ class PremiumHaptics(
 fun rememberPremiumHaptics(enabled: Boolean? = null): PremiumHaptics {
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
-    
-    // Read enableUIHaptics from settings if not explicitly provided
-    val settingsStore = org.koin.compose.koinInject<me.rerere.rikkahub.data.datastore.SettingsStore>()
-    val settings by settingsStore.settingsFlow.collectAsState(
-        initial = me.rerere.rikkahub.data.datastore.Settings(init = true, providers = emptyList())
-    )
-    val isEnabled = enabled ?: settings.displaySetting.enableUIHaptics
-    
+
+    // Read enableUIHaptics from theme-provided local if not explicitly provided
+    val settingsEnabled = LocalUIHapticsEnabled.current
+    val isEnabled = enabled ?: settingsEnabled
+
     val vibrator = remember {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -278,10 +275,8 @@ fun rememberPremiumHaptics(enabled: Boolean? = null): PremiumHaptics {
             null
         }
     }
-    
+
     return remember(hapticFeedback, vibrator, isEnabled) {
         PremiumHaptics(hapticFeedback, vibrator, isEnabled)
     }
 }
-
-

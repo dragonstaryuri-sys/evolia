@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun ImportConfigDialog(
@@ -35,6 +36,10 @@ fun ImportConfigDialog(
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
+        shape = AppShapes.Dialog,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         title = { Text(stringResource(R.string.import_config_dialog_title)) },
         text = {
             Column(

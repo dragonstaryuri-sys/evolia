@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.setting
 
+import me.rerere.rikkahub.common.ui.components.ConfirmDialog
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Arrangement
@@ -237,6 +239,8 @@ private fun DefaultSummarizerModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 showModal = false
             },
@@ -438,6 +442,8 @@ private fun DefaultSuggestionModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 showModal = false
             },
@@ -533,6 +539,8 @@ private fun DefaultOcrModelSetting(
 
     if (showModal) {
         ModalBottomSheet(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = AppShapes.BottomSheet,
             onDismissRequest = {
                 showModal = false
             },
@@ -590,29 +598,25 @@ private fun DefaultEmbeddingModelSetting(
     var pendingNewModelId by remember { mutableStateOf(Uuid.NIL) }
 
     if (showChangeConfirm) {
-        androidx.compose.material3.AlertDialog(
+        ConfirmDialog(
             onDismissRequest = { showChangeConfirm = false },
-            title = { Text("更换嵌入模型") },
-            text = {
-                Text(
-                    "更换嵌入模型后，已有的核心记忆和对话片段在新模型下将无法被语义检索命中。\n\n" +
-                    "更换完成后，请前往每个智能体的详情页，点击「重新生成嵌入」为所有记忆和片段重新生成嵌入向量。\n\n" +
-                    "是否确认更换？"
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.updateSettings(
-                        settings.copy(
-                            embeddingModelId = pendingNewModelId
-                        )
+            onConfirm = {
+                vm.updateSettings(
+                    settings.copy(
+                        embeddingModelId = pendingNewModelId
                     )
-                    showChangeConfirm = false
-                }) { Text("确认更换") }
+                )
+                showChangeConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showChangeConfirm = false }) { Text("取消") }
-            }
+            title = "更换嵌入模型",
+            text = (
+                "更换嵌入模型后，已有的核心记忆和对话片段在新模型下将无法被语义检索命中。\n\n" +
+                "更换完成后，请前往每个智能体的详情页，点击「重新生成嵌入」为所有记忆和片段重新生成嵌入向量。\n\n" +
+                "是否确认更换？"
+            ),
+            confirmText = "确认更换",
+            dismissText = "取消",
+            dangerous = false,
         )
     }
 

@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.discover
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
@@ -44,15 +46,14 @@ fun DiscoverPage() {
     val assistantVm: AssistantVM = koinViewModel()
     val settings by assistantVm.settings.collectAsStateWithLifecycle()
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = stringResource(R.string.discover_page_title),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+            OneUITopAppBar(
+                title = stringResource(R.string.discover_page_title),
+                scrollBehavior = scrollBehavior
             )
         }
     ) { innerPadding ->

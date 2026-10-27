@@ -55,6 +55,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.db.entity.MemoryType
 import me.rerere.rikkahub.core.data.model.Avatar
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 private val json = Json { ignoreUnknownKeys = true }
 
@@ -82,6 +83,8 @@ fun ContextSourcesSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
         sheetGesturesEnabled = false,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
         dragHandle = {
             IconButton(
                 onClick = {
@@ -206,7 +209,7 @@ private fun ModeItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -298,7 +301,7 @@ private fun MemoryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier
@@ -421,7 +424,7 @@ private fun LorebookEntryItem(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = if (isDarkMode) Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+        color = if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
         Row(
             modifier = Modifier

@@ -1,5 +1,7 @@
 package me.rerere.rikkahub.ui.pages.developer
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -31,15 +34,15 @@ import org.koin.androidx.compose.koinViewModel
 fun DeveloperPage(vm: DeveloperVM = koinViewModel()) {
     val pager = rememberPagerState { 1 }
     val scope = rememberCoroutineScope()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Developer Page",
-                        maxLines = 1,
-                    )
-                }
+            OneUITopAppBar(
+                title = "Developer Page",
+                scrollBehavior = scrollBehavior,
+                titleMaxLines = 1
             )
         },
         bottomBar = {

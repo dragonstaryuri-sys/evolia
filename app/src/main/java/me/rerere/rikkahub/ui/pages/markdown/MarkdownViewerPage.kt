@@ -1,5 +1,8 @@
 package me.rerere.rikkahub.ui.pages.markdown
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -43,16 +46,14 @@ fun MarkdownViewerPage(title: String, content: String, uri: String?) {
         }
     }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1
-                    )
-                },
+            OneUITopAppBar(
+                title = title,
+                scrollBehavior = scrollBehavior,
                 navigationIcon = { BackButton() },
                 actions = {
                     if (uri != null) {
@@ -70,7 +71,7 @@ fun MarkdownViewerPage(title: String, content: String, uri: String?) {
     ) { padding ->
         if (isLoading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                InlineSpinner()
             }
         } else {
             MarkdownBlock(

@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
 import me.rerere.rikkahub.ui.components.ui.ToastType
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.BuildConfig
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -109,6 +110,8 @@ fun UpdateCard(vm: ChatVM) {
             ModalBottomSheet(
                 onDismissRequest = { showDetail = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.BottomSheet,
             ) {
                 Column(
                     modifier = Modifier

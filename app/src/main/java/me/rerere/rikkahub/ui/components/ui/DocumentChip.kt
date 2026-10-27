@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,7 +55,7 @@ fun DocumentChip(
             modifier = Modifier
                 .height(40.dp)
                 .widthIn(min = 60.dp, max = 160.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = AppShapes.ButtonRounded,
             tonalElevation = 4.dp
         ) {
             Row(

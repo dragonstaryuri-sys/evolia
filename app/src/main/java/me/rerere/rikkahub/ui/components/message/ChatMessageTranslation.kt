@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,7 +48,9 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Translate
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.theme.AppShapes
 import java.util.Locale
 
 @Composable
@@ -93,6 +94,8 @@ fun LanguageSelectionDialog(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
     ) {
         Column(
             modifier = Modifier
@@ -251,11 +254,7 @@ fun CollapsibleTranslationText(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        InlineSpinner(size = 16.dp, strokeWidth = 2.dp)
 
                         val infiniteTransition = rememberInfiniteTransition(label = "loading")
                         val alpha by infiniteTransition.animateFloat(

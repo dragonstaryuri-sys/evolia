@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PriorityHigh
@@ -37,8 +36,9 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.core.data.model.Assistant
 import me.rerere.rikkahub.ui.pages.setting.components.SettingsGroup
 import me.rerere.rikkahub.ui.pages.setting.components.SettingGroupItem
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
 import me.rerere.rikkahub.core.data.model.ContextPriority
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 
 /**
  * Advanced tab - Notifications and custom request settings.
@@ -177,11 +177,8 @@ fun AssistantAdvancedSubPage(
         SettingsGroup(title = stringResource(R.string.assistant_advanced_group_custom_request)) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     CustomHeaders(
@@ -193,11 +190,8 @@ fun AssistantAdvancedSubPage(
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = if (LocalDarkMode.current)
-                    MaterialTheme.colorScheme.surfaceContainerLow
-                else
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(10.dp)
+                color = groupContainerColor(),
+                shape = AppShapes.ListItemSmall
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     CustomBodies(

@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudDownload
@@ -37,7 +38,7 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import me.rerere.rikkahub.common.ui.components.InlineSpinner
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -165,6 +166,8 @@ private fun SystemASRConfiguration(
                 }
             )
             ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
                 expanded = langExpanded,
                 onDismissRequest = { langExpanded = false }
             ) {
@@ -268,6 +271,8 @@ private fun OnlineASRConfiguration(
                     }
                 )
                 ExposedDropdownMenu(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = AppShapes.ButtonSquared,
                     expanded = providerExpanded,
                     onDismissRequest = { providerExpanded = false }
                 ) {
@@ -416,16 +421,15 @@ private fun OnlineASRConfiguration(
                         placeholder = { Text("TeleAI/TeleSpeechASR") },
                         trailingIcon = {
                             if (loadingModels) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp
-                                )
+                                InlineSpinner(size = 18.dp, strokeWidth = 2.dp)
                             } else {
                                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
                             }
                         }
                     )
                     ExposedDropdownMenu(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = AppShapes.ButtonSquared,
                         expanded = modelExpanded,
                         onDismissRequest = { modelExpanded = false }
                     ) {
@@ -543,6 +547,8 @@ private fun OnlineASRConfiguration(
                 }
             )
             ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
                 expanded = langExpanded,
                 onDismissRequest = { langExpanded = false }
             ) {
@@ -762,6 +768,8 @@ private fun LocalSenseVoiceASRConfiguration(
                 }
             )
             ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
                 expanded = langExpanded,
                 onDismissRequest = { langExpanded = false }
             ) {
@@ -816,6 +824,8 @@ private fun LocalSenseVoiceASRConfiguration(
                 }
             )
             ExposedDropdownMenu(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = AppShapes.ButtonSquared,
                 expanded = threadsExpanded,
                 onDismissRequest = { threadsExpanded = false }
             ) {
@@ -894,7 +904,7 @@ private fun AsrConnectionTestButton(
         description = { Text("按住按钮录制一段测试音频，松开后自动发送到 ASR 服务进行识别") }
     ) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = AppShapes.CardMedium,
             color = when {
                 isRecording -> MaterialTheme.colorScheme.errorContainer
                 testState is UiState.Success -> MaterialTheme.colorScheme.primaryContainer
@@ -980,10 +990,7 @@ private fun AsrConnectionTestButton(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
+                            InlineSpinner(size = 16.dp, strokeWidth = 2.dp)
                             Text(
                                 text = "识别中...",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -1037,7 +1044,7 @@ private fun AsrConnectionTestButton(
     when (val st = testState) {
         is UiState.Success -> {
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = AppShapes.CardSmall,
                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -1060,7 +1067,7 @@ private fun AsrConnectionTestButton(
         }
         is UiState.Error -> {
             Surface(
-                shape = RoundedCornerShape(16.dp),
+                shape = AppShapes.CardSmall,
                 color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
                 modifier = Modifier.fillMaxWidth()
             ) {

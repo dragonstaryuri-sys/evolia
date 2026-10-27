@@ -34,6 +34,7 @@ import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.utils.copyMessageToClipboard
+import me.rerere.rikkahub.ui.theme.AppShapes
 
 @Composable
 fun ChatMessageCopySheet(
@@ -46,6 +47,8 @@ fun ChatMessageCopySheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         sheetGesturesEnabled = false,
         dragHandle = null,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
     ) {
         Column(
             modifier = Modifier

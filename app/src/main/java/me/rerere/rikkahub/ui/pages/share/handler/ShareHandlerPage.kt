@@ -1,5 +1,7 @@
 ﻿package me.rerere.rikkahub.ui.pages.share.handler
 
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
@@ -41,12 +44,14 @@ fun ShareHandlerPage(text: String, image: String?) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(stringResource(R.string.share_handler_page_title))
-                }
+            OneUITopAppBar(
+                title = stringResource(R.string.share_handler_page_title),
+                scrollBehavior = scrollBehavior
             )
         }
     ) {

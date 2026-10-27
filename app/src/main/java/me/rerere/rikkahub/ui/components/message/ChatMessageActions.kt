@@ -57,6 +57,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.getEffectiveDisplaySetting
 import me.rerere.rikkahub.core.data.model.MessageNode
 import me.rerere.rikkahub.ui.context.LocalSettings
+import me.rerere.rikkahub.ui.theme.AppShapes
 import me.rerere.rikkahub.ui.context.LocalTTSState
 import me.rerere.rikkahub.utils.copyMessageToClipboard
 import me.rerere.rikkahub.utils.toLocalString
@@ -227,6 +228,8 @@ fun ChatMessageActionsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = AppShapes.BottomSheet,
     ) {
         Column(
             modifier = Modifier
@@ -244,7 +247,7 @@ fun ChatMessageActionsSheet(
 
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -279,7 +282,7 @@ fun ChatMessageActionsSheet(
 
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(
@@ -311,7 +314,7 @@ fun ChatMessageActionsSheet(
 
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                     colors = CardDefaults.cardColors(
-                        containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                     )
                 ) {
                     Row(
@@ -342,7 +345,7 @@ fun ChatMessageActionsSheet(
                 },
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = if(me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLowest else MaterialTheme.colorScheme.surfaceContainerHigh
                 )
             ) {
                 Row(

@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.ui
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -108,7 +109,7 @@ fun TabAnimation(
             .clip(CircleShape)
             .background(
                 color = backgroundColor,
-                shape = RoundedCornerShape(50)
+                shape = AppShapes.ButtonPill
             ),
         selected = isSelected,
         text = content,

@@ -11,6 +11,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import me.rerere.rikkahub.ui.components.ui.HapticSwitch
+import me.rerere.rikkahub.ui.theme.AppShapes
+import me.rerere.rikkahub.ui.theme.groupContainerColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,7 +46,7 @@ fun AssistantMemoryConsolidationSubPage(
             Card(
                 shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                 colors = CardDefaults.cardColors(
-                    containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                    containerColor = groupContainerColor()
                 )
             ) {
                 Column(
@@ -139,7 +141,7 @@ fun AssistantMemoryConsolidationSubPage(
                 Card(
                     shape = me.rerere.rikkahub.ui.theme.AppShapes.CardMedium,
                     colors = CardDefaults.cardColors(
-                        containerColor = if (me.rerere.rikkahub.ui.theme.LocalDarkMode.current) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh
+                        containerColor = groupContainerColor()
                     )
                 ) {
                     Column(

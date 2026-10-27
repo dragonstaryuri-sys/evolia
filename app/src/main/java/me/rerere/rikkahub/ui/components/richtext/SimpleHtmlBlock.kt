@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.richtext
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -303,7 +304,7 @@ private fun RenderImage(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .clip(AppShapes.Indicator),
                 contentScale = ContentScale.Fit,
             )
         }

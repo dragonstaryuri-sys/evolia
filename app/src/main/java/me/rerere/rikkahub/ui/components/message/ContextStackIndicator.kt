@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.ui.components.message
 
+import me.rerere.rikkahub.ui.theme.AppShapes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -108,13 +109,13 @@ fun ContextStackIndicator(
     }
 
     // Overlay color for dimming (darken in dark mode, lighten in light mode)
-    val overlayColor = if (isDarkMode) Color.Black else Color.White
+    val overlayColor = if (isDarkMode) MaterialTheme.colorScheme.surfaceContainerLowest else Color.White
 
     Box(
         modifier = modifier
             .width(totalWidth)
             .height(bookHeight)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(AppShapes.Indicator)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -212,12 +213,12 @@ private fun ModeCover(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(AppShapes.Indicator)
             .background(MaterialTheme.colorScheme.tertiaryContainer)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(6.dp)
+                shape = AppShapes.Indicator
             )
             .drawWithContent {
                 drawContent()
@@ -260,12 +261,12 @@ private fun MemoryCover(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(AppShapes.Indicator)
             .background(backgroundColor)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(6.dp)
+                shape = AppShapes.Indicator
             )
             .drawWithContent {
                 drawContent()
@@ -320,12 +321,12 @@ private fun LorebookCover(
 ) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
+            .clip(AppShapes.Indicator)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(6.dp)
+                shape = AppShapes.Indicator
             )
             .drawWithContent {
                 drawContent()
