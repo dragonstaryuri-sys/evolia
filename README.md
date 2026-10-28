@@ -2,7 +2,7 @@
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-blue.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-green.svg)](https://developer.android.com/jetpack/compose)
-[![License](https://img.shields.io/badge/License-GPL--3.0-orange.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-orange.svg)](LICENSE)
 
 > **“我们并不是生来完整，而是在与世界的碰撞中，不断进化成更好的自己。”**
 
