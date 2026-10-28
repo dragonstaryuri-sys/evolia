@@ -78,6 +78,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.ai.GenerationChunk
 import me.rerere.rikkahub.data.ai.GenerationHandler
+import me.rerere.rikkahub.data.ai.isTransientNetworkError
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_FULL_SUMMARY_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DEFAULT_TEMP_SUMMARY_PROMPT_TEMPLATE
@@ -2257,6 +2258,21 @@ class ChatService(
                 message.contains("text", ignoreCase = true) &&
                 (message.contains("非法") || message.contains("invalid")) -> {
                 IllegalStateException("该模型只支持文字输入，请前往模型设置关闭图片/音频输入模态。", e)
+            }
+
+            // 网络层错误（连接被系统/代理掐断、重置、DNS 失败、连接超时等）：底层异常原文
+            // （如 "Software caused connection abort"）对用户无意义，翻译为友好提示。
+            // 瞬态中断的重试已在 GenerationHandler 内先行处理，走到这里的通常是重试后仍失败。
+            e is java.net.UnknownHostException -> {
+                java.io.IOException(context.getString(R.string.api_error_host_unreachable), e)
+            }
+
+            e is java.net.SocketTimeoutException -> {
+                java.io.IOException(context.getString(R.string.api_error_connection_timeout), e)
+            }
+
+            isTransientNetworkError(e) -> {
+                java.io.IOException(context.getString(R.string.api_error_network_interrupted), e)
             }
 
             else -> e

@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.ai
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -125,6 +126,9 @@ class GenerationHandler(
          * 拦截后以错误 ToolResult 提示 AI 改为口头告知用户，通话结束后再使用。
          */
         private val CALL_BLOCKED_TOOLS = setOf("generate_image", "eval_python", "eval_javascript")
+
+        /** 瞬态断线自动重试前的等待间隔，给网络栈（如 Wi-Fi 重连）留出恢复时间 */
+        private const val TRANSIENT_NETWORK_RETRY_DELAY_MS = 1000L
     }
 
     // 安全解码：损坏消息返回 null，避免某条脏消息让整个生成/检索流程崩掉
@@ -1898,8 +1902,8 @@ class GenerationHandler(
                 addAll(assistant.customBodies)
                 addAll(model.customBodies)
             },
-            // 非流式调用时供 Provider 层派生 OkHttp readTimeout 使用（流式不影响）；
-            // 与应用层 chatGenerationTimeoutMinutes 兜底保持对齐。
+            // 供 Provider 层派生 OkHttp readTimeout：思考阶段 SSE 可能长时间不下发任何字节，
+            // 沿用全局 60s readTimeout 会误断连接；与应用层 chatGenerationTimeoutMinutes 兜底对齐。
             generationTimeoutMinutes = settings.chatGenerationTimeoutMinutes,
         )
         if (stream) {
@@ -1911,37 +1915,36 @@ class GenerationHandler(
                     stream = true
                 )
             )
-            providerImpl.streamText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = TextGenerationParams(
-                    model = model,
-                    temperature = assistant.temperature,
-                    topP = assistant.topP,
-                    maxTokens = assistant.maxTokens,
-                    tools = tools,
-                    thinkingBudget = assistant.thinkingBudget,
-                    customHeaders = buildList {
-                        addAll(assistant.customHeaders)
-                        addAll(model.customHeaders)
-                    },
-                    customBody = buildList {
-                        addAll(assistant.customBodies)
-                        addAll(model.customBodies)
-                    }
-                )
-            ).collect {
-                currentMessages = currentMessages.handleMessageChunk(it, model = model)
-                it.usage?.let { usage ->
-                    currentMessages = currentMessages.mapIndexed { index, message ->
-                        if (index == currentMessages.lastIndex) {
-                            message.copy(usage = message.usage.merge(usage))
-                        } else {
-                            message
+            // 快照流式开始前的消息状态：瞬态断线重试前回滚，避免半截内容与重新生成的内容拼接
+            val preStreamMessages = currentMessages
+            // 本步是否已收到过任何 chunk；通话模式下已产出内容（可能已被 TTS 朗读）时不重试，
+            // 避免回滚后重新生成的节点被二次朗读
+            var receivedAnyChunk = false
+            withTransientNetworkRetry(
+                canRetry = { !isCallMode() || !receivedAnyChunk },
+                onRetry = {
+                    currentMessages = preStreamMessages
+                    onUpdateMessages(currentMessages)
+                },
+            ) {
+                providerImpl.streamText(
+                    providerSetting = provider,
+                    messages = internalMessages,
+                    params = params,
+                ).collect {
+                    receivedAnyChunk = true
+                    currentMessages = currentMessages.handleMessageChunk(it, model = model)
+                    it.usage?.let { usage ->
+                        currentMessages = currentMessages.mapIndexed { index, message ->
+                            if (index == currentMessages.lastIndex) {
+                                message.copy(usage = message.usage.merge(usage))
+                            } else {
+                                message
+                            }
                         }
                     }
+                    onUpdateMessages(currentMessages)
                 }
-                onUpdateMessages(currentMessages)
             }
             if (hasContextSources) {
                 currentMessages = currentMessages.mapIndexed { index, message ->
@@ -1966,11 +1969,14 @@ class GenerationHandler(
                     stream = false
                 )
             )
-            val chunk = providerImpl.generateText(
-                providerSetting = provider,
-                messages = internalMessages,
-                params = params,
-            )
+            // 非流式一次性返回，期间无部分产出，直接整请求重试即可
+            val chunk = withTransientNetworkRetry {
+                providerImpl.generateText(
+                    providerSetting = provider,
+                    messages = internalMessages,
+                    params = params,
+                )
+            }
             currentMessages = currentMessages.handleMessageChunk(chunk = chunk, model = model)
             chunk.usage?.let { usage ->
                 currentMessages = currentMessages.size.let { _ ->
@@ -1999,6 +2005,31 @@ class GenerationHandler(
                 }
             }
             onUpdateMessages(currentMessages)
+        }
+    }
+
+    /**
+     * 网络层瞬态中断（连接被系统/代理掐断、重置、DNS 失败、建连超时等）自动重试一次。
+     * 仅重试 [isTransientNetworkError] 判定的瞬态错误且 [canRetry] 放行时重试；
+     * 第二次仍失败则原样抛出，由上层 translateError 转为友好提示。
+     * 读超时不在重试之列（等待已远超预期），交给应用层看门狗统一取消。
+     */
+    private suspend fun <T> withTransientNetworkRetry(
+        canRetry: () -> Boolean = { true },
+        onRetry: suspend () -> Unit = {},
+        block: suspend () -> T,
+    ): T {
+        try {
+            return block()
+        } catch (e: Exception) {
+            if (!isTransientNetworkError(e) || !canRetry()) throw e
+            Log.w(
+                TAG,
+                "Transient network error (${e.message}), retrying once in $TRANSIENT_NETWORK_RETRY_DELAY_MS ms"
+            )
+            onRetry()
+            delay(TRANSIENT_NETWORK_RETRY_DELAY_MS)
+            return block()
         }
     }
 
