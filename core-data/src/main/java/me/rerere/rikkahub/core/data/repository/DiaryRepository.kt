@@ -62,6 +62,15 @@ class DiaryRepository(
         return agentDiaryDao.getDiariesByAssistantsPaged(assistantIds, limit, offset)
     }
 
+    // --- Favorite ---
+    suspend fun setDiaryFavorite(id: String, favorite: Boolean) {
+        agentDiaryDao.setDiaryFavorite(id, favorite)
+    }
+
+    fun getFavoriteDiariesByAssistants(assistantIds: List<String>): Flow<List<AgentDiaryEntity>> {
+        return agentDiaryDao.getFavoriteDiariesByAssistants(assistantIds)
+    }
+
     // --- Calendar Support ---
     fun getDatesWithDiaries(assistantIds: List<String>): Flow<List<String>> {
         return agentDiaryDao.getDatesWithDiaries(assistantIds)

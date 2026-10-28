@@ -43,7 +43,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         CallRecordEntity::class,
         ScheduleEventEntity::class
     ],
-    version = 40,
+    version = 41,
     exportSchema = true
 )
 @TypeConverters(
@@ -478,6 +478,20 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 38->39 迁移：call_records 表新增 initiator 列")
                 db.execSQL(
                     "ALTER TABLE `call_records` ADD COLUMN `initiator` TEXT NOT NULL DEFAULT 'user'"
+                )
+            }
+        }
+
+        /**
+         * 40 → 41：日记表新增收藏标记 is_favorite。
+         *
+         * 仅加列 + 默认值 0（未收藏），历史日记全部保持未收藏状态，不改动其他字段。
+         */
+        val MIGRATION_40_41 = object : Migration(40, 41) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 40->41 迁移：日记表新增收藏标记 is_favorite")
+                db.execSQL(
+                    "ALTER TABLE `AgentDiaryEntity` ADD COLUMN `is_favorite` INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

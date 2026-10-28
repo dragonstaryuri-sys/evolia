@@ -25,5 +25,10 @@ data class AgentDiaryEntity(
      * 老日记为 null，回退到 date 次日 0 点；无交互日记无消息可取，保持 null 不推进游标。
      */
     @ColumnInfo(name = "last_message_at")
-    val lastMessageAt: Long? = null
+    val lastMessageAt: Long? = null,
+    /**
+     * 是否被用户收藏。收藏后可在日记页「收藏」tab 中按时间线查看。
+     */
+    @ColumnInfo(name = "is_favorite", defaultValue = "0")
+    val isFavorite: Boolean = false
 )

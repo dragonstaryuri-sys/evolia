@@ -38,6 +38,9 @@ import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
 import me.rerere.rikkahub.ui.components.ui.ImagePreviewDialog
+import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
+import me.rerere.rikkahub.ui.hooks.HapticPattern
+import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.AppShapes
@@ -113,7 +116,11 @@ fun DiaryDetailPage(
                     ) {
                         item {
                             Column {
-                                DetailAuthorHeader(diary, settings)
+                                DetailAuthorHeader(
+                                    diary = diary,
+                                    settings = settings,
+                                    onToggleFavorite = { vm.toggleFavorite(diary.id) }
+                                )
                                 Spacer(Modifier.height(20.dp))
                                 // 手写日记图片展示：纯图片列表，点击放大预览
                                 if (diary.images.isNotEmpty()) {
@@ -244,7 +251,12 @@ private fun DiaryImagesDisplaySection(
 }
 
 @Composable
-private fun DetailAuthorHeader(diary: AgentDiaryEntity, settings: me.rerere.rikkahub.data.datastore.Settings) {
+private fun DetailAuthorHeader(
+    diary: AgentDiaryEntity,
+    settings: me.rerere.rikkahub.data.datastore.Settings,
+    onToggleFavorite: () -> Unit
+) {
+    val haptics = rememberPremiumHaptics()
     val defaultUserStr = stringResource(R.string.diary_filter_user)
     val authorName = if (diary.assistantId == "USER") {
         if (settings.displaySetting.userNickname.isBlank()) defaultUserStr else settings.displaySetting.userNickname
@@ -258,9 +270,33 @@ private fun DetailAuthorHeader(diary: AgentDiaryEntity, settings: me.rerere.rikk
             modifier = Modifier.size(44.dp)
         )
         Spacer(Modifier.width(12.dp))
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(authorName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(diary.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // 收藏按钮：实心爱心 = 已收藏（primary），空心爱心 = 未收藏
+        IconButton(
+            onClick = {
+                haptics.perform(HapticPattern.Pop)
+                onToggleFavorite()
+            },
+            modifier = Modifier.size(40.dp)
+        ) {
+            if (diary.isFavorite) {
+                Icon(
+                    imageVector = HeartIcon,
+                    contentDescription = stringResource(R.string.diary_view_favorite),
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Rounded.FavoriteBorder,
+                    contentDescription = stringResource(R.string.diary_view_favorite),
+                    modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

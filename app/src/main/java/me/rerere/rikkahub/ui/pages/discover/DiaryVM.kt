@@ -66,6 +66,11 @@ sealed class CommentImageContext {
     data object NoImages : CommentImageContext()
 }
 
+/**
+ * 日记页的三种展示模式，对应底部浮动 tab。
+ */
+enum class DiaryViewMode { CALENDAR, LIST, FAVORITES }
+
 class DiaryVM(
     val app: Application,
     private val settingsStore: SettingsStore,
@@ -119,7 +124,7 @@ class DiaryVM(
     private val _selectedAssistantIds = MutableStateFlow(setOf("ALL"))
     val selectedAssistantIds = _selectedAssistantIds.asStateFlow()
 
-    val isCalendarMode = MutableStateFlow(true)
+    val viewMode = MutableStateFlow(DiaryViewMode.CALENDAR)
     val selectedDate = MutableStateFlow(LocalDate.now())
 
     // 搜索逻辑
@@ -150,6 +155,15 @@ class DiaryVM(
     @OptIn(ExperimentalCoroutinesApi::class)
     val filteredDiaries: StateFlow<List<AgentDiaryEntity>> = effectiveFilterIds.flatMapLatest { ids ->
         diaryRepo.getDiariesByAssistants(ids)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * 收藏的日记：与列表/日历共用同一套人员筛选（[effectiveFilterIds]），
+     * 直接由 Room Flow 驱动，收藏状态变更后 UI 自动刷新。
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val favoriteDiaries: StateFlow<List<AgentDiaryEntity>> = effectiveFilterIds.flatMapLatest { ids ->
+        diaryRepo.getFavoriteDiariesByAssistants(ids)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- 分页状态 ---
@@ -743,7 +757,8 @@ class DiaryVM(
                     images = overrideImages ?: (existing?.images ?: emptyList()),
                     date = date,
                     createdAt = existing?.createdAt ?: System.currentTimeMillis(),
-                    lastMessageAt = existing?.lastMessageAt
+                    lastMessageAt = existing?.lastMessageAt,
+                    isFavorite = existing?.isFavorite ?: false
                 )
                 diaryRepo.updateDiary(entity)
             } else {
@@ -847,7 +862,8 @@ class DiaryVM(
                         images = mergedImages,
                         date = date,
                         createdAt = existing?.createdAt ?: System.currentTimeMillis(),
-                        lastMessageAt = existing?.lastMessageAt
+                        lastMessageAt = existing?.lastMessageAt,
+                        isFavorite = existing?.isFavorite ?: false
                     )
                     diaryRepo.updateDiary(entity)
                     onSaved(false)
@@ -1014,6 +1030,17 @@ class DiaryVM(
 
             workManager.enqueueUniqueWork(uniqueName, ExistingWorkPolicy.KEEP, workRequest)
             toaster?.show(app.getString(R.string.discover_page_diary_generating), type = ToastType.Info)
+        }
+    }
+
+    /**
+     * 切换日记收藏状态（详情页爱心按钮）。
+     * 只更新 is_favorite 单列，避免与 OCR / 内容写入产生全量覆盖。
+     */
+    fun toggleFavorite(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val diary = diaryRepo.getDiaryById(id) ?: return@launch
+            diaryRepo.setDiaryFavorite(id, !diary.isFavorite)
         }
     }
 

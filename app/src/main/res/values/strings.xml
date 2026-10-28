@@ -1985,6 +1985,8 @@
   <!-- Diary feature upgrade -->
   <string name="diary_view_list">List</string>
   <string name="diary_view_calendar">Calendar</string>
+  <string name="diary_view_favorite">Favorites</string>
+  <string name="diary_favorite_empty">No favorite diaries yet</string>
   <string name="diary_load_more">Load more</string>
   <string name="diary_filter_all">Everyone</string>
   <string name="diary_filter_user">Me</string>

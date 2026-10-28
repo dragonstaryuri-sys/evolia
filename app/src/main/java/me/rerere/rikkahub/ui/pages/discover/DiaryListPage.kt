@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
@@ -41,6 +42,7 @@ import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.nav.OneUITopAppBar
 import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import me.rerere.rikkahub.ui.components.ui.UIAvatar
+import me.rerere.rikkahub.ui.components.ui.icons.HeartIcon
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalSettings
 import me.rerere.rikkahub.ui.context.LocalToaster
@@ -63,13 +65,15 @@ fun DiaryListPage(
     val haptics = rememberPremiumHaptics()
     val toaster = LocalToaster.current
 
-    val isCalendarMode by vm.isCalendarMode.collectAsStateWithLifecycle()
+    val viewMode by vm.viewMode.collectAsStateWithLifecycle()
+    val isCalendarMode = viewMode == DiaryViewMode.CALENDAR
     val selectedAssistantIds by vm.selectedAssistantIds.collectAsStateWithLifecycle()
     val personnelIds by vm.personnelList.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
 
     val filteredDiaries by vm.filteredDiaries.collectAsStateWithLifecycle()
     val diaryList by vm.diaryList.collectAsStateWithLifecycle()
+    val favoriteDiaries by vm.favoriteDiaries.collectAsStateWithLifecycle()
     val hasMore by vm.hasMore.collectAsStateWithLifecycle()
     val isLoadingMore by vm.isLoadingMore.collectAsStateWithLifecycle()
     val datesWithDiaries by vm.datesWithDiaries.collectAsStateWithLifecycle()
@@ -284,8 +288,8 @@ fun DiaryListPage(
                     bottom = 0.dp
                 )
             ) {
-                if (!isCalendarMode) {
-                    DiaryListView(
+                when (viewMode) {
+                    DiaryViewMode.LIST -> DiaryListView(
                         diaries = diaryList,
                         onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
                         onDelete = { vm.deleteDiary(it) },
@@ -293,8 +297,18 @@ fun DiaryListPage(
                         isLoadingMore = isLoadingMore,
                         onLoadMore = { vm.loadMore() }
                     )
-                } else {
-                    DiaryCalendarView(
+
+                    DiaryViewMode.FAVORITES -> DiaryListView(
+                        diaries = favoriteDiaries,
+                        onDiaryClick = { navController.navigate(Screen.DiaryDetail(it)) },
+                        onDelete = { vm.deleteDiary(it) },
+                        hasMore = false,
+                        isLoadingMore = false,
+                        onLoadMore = {},
+                        emptyText = stringResource(R.string.diary_favorite_empty)
+                    )
+
+                    DiaryViewMode.CALENDAR -> DiaryCalendarView(
                         selectedDate = selectedDate,
                         onMonthChange = { currentMonthByPager = it },
                         datesWithDiaries = datesWithDiaries,
@@ -329,58 +343,71 @@ fun DiaryListPage(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         // 日历视图 tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (isCalendarMode)
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    else Modifier.clickable {
-                                        haptics.perform(HapticPattern.Tick)
-                                        vm.isCalendarMode.value = true
-                                    }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CalendarMonth,
-                                contentDescription = stringResource(R.string.diary_view_calendar),
-                                tint = if (isCalendarMode)
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        DiaryViewTab(
+                            icon = Icons.Rounded.CalendarMonth,
+                            contentDescription = stringResource(R.string.diary_view_calendar),
+                            selected = viewMode == DiaryViewMode.CALENDAR,
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                vm.viewMode.value = DiaryViewMode.CALENDAR
+                            }
+                        )
 
                         // 列表视图 tab
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .then(
-                                    if (!isCalendarMode)
-                                        Modifier.background(MaterialTheme.colorScheme.primaryContainer)
-                                    else Modifier.clickable {
-                                        haptics.perform(HapticPattern.Tick)
-                                        vm.isCalendarMode.value = false
-                                    }
-                                )
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.List,
-                                contentDescription = stringResource(R.string.diary_view_list),
-                                tint = if (!isCalendarMode)
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        DiaryViewTab(
+                            icon = Icons.AutoMirrored.Rounded.List,
+                            contentDescription = stringResource(R.string.diary_view_list),
+                            selected = viewMode == DiaryViewMode.LIST,
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                vm.viewMode.value = DiaryViewMode.LIST
+                            }
+                        )
+
+                        // 收藏视图 tab
+                        DiaryViewTab(
+                            icon = HeartIcon,
+                            contentDescription = stringResource(R.string.diary_view_favorite),
+                            selected = viewMode == DiaryViewMode.FAVORITES,
+                            onClick = {
+                                haptics.perform(HapticPattern.Tick)
+                                vm.viewMode.value = DiaryViewMode.FAVORITES
+                            }
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * 底部浮动 tab 的单个图标按钮：选中态为 primaryContainer 圆底，未选中可点击切换。
+ */
+@Composable
+private fun DiaryViewTab(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .then(
+                if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                else Modifier.clickable(onClick = onClick)
+            )
+            .padding(12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
     }
 }
 
@@ -441,7 +468,8 @@ private fun DiaryListView(
     onDelete: (String) -> Unit,
     hasMore: Boolean,
     isLoadingMore: Boolean,
-    onLoadMore: () -> Unit
+    onLoadMore: () -> Unit,
+    emptyText: String = ""
 ) {
     val settings = LocalSettings.current
     val listState = rememberLazyListState()
@@ -472,8 +500,10 @@ private fun DiaryListView(
             }
     }
 
+    val emptyMessage = if (emptyText.isNotBlank()) emptyText else stringResource(R.string.discover_page_diary_empty)
+
     if (groupedDiaries.isEmpty()) {
-        EmptyState(stringResource(R.string.discover_page_diary_empty))
+        EmptyState(emptyMessage)
     } else {
         LazyColumn(
             state = listState,

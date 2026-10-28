@@ -52,6 +52,16 @@ interface AgentDiaryDAO {
     @Query("SELECT * FROM AgentDiaryEntity WHERE assistant_id IN (:assistantIds) ORDER BY date DESC LIMIT :limit OFFSET :offset")
     suspend fun getDiariesByAssistantsPaged(assistantIds: List<String>, limit: Int, offset: Int): List<AgentDiaryEntity>
 
+    // --- 收藏功能 ---
+    /**
+     * 只更新收藏标记这一列，避免 read-modify-write 全量实体时覆盖 OCR / 内容等并发写入。
+     */
+    @Query("UPDATE AgentDiaryEntity SET is_favorite = :favorite WHERE id = :id")
+    suspend fun setDiaryFavorite(id: String, favorite: Boolean)
+
+    @Query("SELECT * FROM AgentDiaryEntity WHERE is_favorite = 1 AND assistant_id IN (:assistantIds) ORDER BY date DESC, created_at DESC")
+    fun getFavoriteDiariesByAssistants(assistantIds: List<String>): Flow<List<AgentDiaryEntity>>
+
     // --- 升级需求：日历红点 (获取有日记的所有日期) ---
     @Query("SELECT DISTINCT date FROM AgentDiaryEntity WHERE assistant_id IN (:assistantIds)")
     fun getDatesWithDiaries(assistantIds: List<String>): Flow<List<String>>
