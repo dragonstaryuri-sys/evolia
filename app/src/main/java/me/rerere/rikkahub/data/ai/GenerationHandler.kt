@@ -25,6 +25,7 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.Model
 import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
@@ -94,6 +95,136 @@ data class BuildMessagesResult(
     val usedModes: List<UsedMode> = emptyList(),
     val usedMemories: List<UsedMemory> = emptyList()
 )
+
+/**
+ * 组装最后一条 USER 消息的请求 parts：注入动态上下文文本，并按模型音频输入能力决定
+ * Audio Part 的去留（纯函数，不依赖 Android API，便于单元测试）。
+ *
+ * 音频处理策略（[supportsAudioInput] = model.inputModalities 含 Modality.AUDIO）：
+ * - **支持音频输入**：Audio Part 保留原始音频随请求下发（当轮真正"听语音"）；
+ *   转写文本**不**拼入 prompt（避免与音频内容重复）；如有 Quote 引用，仅输出引用结构文本。
+ * - **不支持音频输入**：
+ *   - 有转写（metadata.transcription）：沿用文本路径，转写拼入 prompt、剔除 Audio Part（原行为）；
+ *   - 无转写（ASR 失败/未完成）：保留 Audio Part，交由 [AudioToTextTransformer] 输出失败
+ *     降级文案，不伪造转写内容。
+ *
+ * 文本组装沿用既有规则：Quote 与紧随其后的 Text/Audio 配对，
+ * 产出格式：`引用X刚才说的内容：\n> content\n用户回复：text`。
+ * dynamicContext 与文本均为空时不再塞入空 Text Part（修复 ASR 失败时当轮语音消息
+ * 被替换成空消息的问题）。
+ *
+ * @param parts 原始消息 parts
+ * @param supportsAudioInput 当前模型是否支持音频输入（Modality.AUDIO）
+ * @param dynamicContext 动态上下文（L2 记忆、变量、时间等），可为空
+ * @return 重组后的 parts
+ */
+internal fun buildLastUserMessageParts(
+    parts: List<UIMessagePart>,
+    supportsAudioInput: Boolean,
+    dynamicContext: String,
+): List<UIMessagePart> {
+    fun audioTranscriptionOf(part: UIMessagePart.Audio): String? =
+        part.metadata
+            ?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
+            ?.let { (it as? JsonPrimitive)?.content }
+            ?.takeIf { it.isNotBlank() }
+
+    // Audio Part 去留判定（非保留的 Text/Quote 已转为 builtText，其余类型原样透传）
+    val otherParts = parts.filter { part ->
+        when (part) {
+            is UIMessagePart.Text, is UIMessagePart.Quote -> false
+            is UIMessagePart.Audio -> {
+                val transcription = audioTranscriptionOf(part)
+                supportsAudioInput || transcription == null
+            }
+            else -> true
+        }
+    }
+
+    val builtText = buildString {
+        var pendingQuote: UIMessagePart.Quote? = null
+        var first = true
+        parts.forEach { part ->
+            when (part) {
+                is UIMessagePart.Quote -> {
+                    pendingQuote = part
+                }
+                is UIMessagePart.Text -> {
+                    val quote = pendingQuote
+                    if (quote != null) {
+                        if (!first) append("\n")
+                        val referenceTarget = if (quote.isUser) "我" else "你"
+                        append("引用")
+                        append(referenceTarget)
+                        append("刚才说的内容：\n> ")
+                        append(quote.content.replace("\n", "\n> "))
+                        append("\n用户回复：")
+                        append(part.text)
+                        pendingQuote = null
+                    } else {
+                        if (!first) append("\n")
+                        append(part.text)
+                    }
+                    first = false
+                }
+                is UIMessagePart.Audio -> {
+                    val quote = pendingQuote
+                    val audioTranscription = audioTranscriptionOf(part)
+                    // 仅"模型不支持音频 && 有转写"时走文本路径
+                    val convertToText = !supportsAudioInput && audioTranscription != null
+                    if (convertToText) {
+                        if (quote != null) {
+                            if (!first) append("\n")
+                            val referenceTarget = if (quote.isUser) "我" else "你"
+                            append("引用")
+                            append(referenceTarget)
+                            append("刚才说的内容：\n> ")
+                            append(quote.content.replace("\n", "\n> "))
+                            append("\n用户回复：")
+                            append(audioTranscription)
+                            pendingQuote = null
+                        } else {
+                            // 无引用的语音消息：直接使用转写文本
+                            if (!first) append("\n")
+                            append(audioTranscription)
+                        }
+                    } else if (quote != null) {
+                        // Audio 保留原始音频：仅输出引用结构文本，不拼转写（避免与音频内容重复）
+                        if (!first) append("\n")
+                        val referenceTarget = if (quote.isUser) "我" else "你"
+                        append("引用")
+                        append(referenceTarget)
+                        append("刚才说的内容：\n> ")
+                        append(quote.content.replace("\n", "\n> "))
+                        pendingQuote = null
+                    }
+                    first = false
+                }
+                else -> {}
+            }
+        }
+    }
+
+    val newTextPart = if (dynamicContext.isNotBlank()) {
+        UIMessagePart.Text(
+            text = buildString {
+                appendLine("System:")
+                append("[")
+                append(dynamicContext)
+                append("]")
+                appendLine("User:")
+                append(builtText)
+            }
+        )
+    } else {
+        UIMessagePart.Text(text = builtText)
+    }
+    return if (newTextPart.text.isNotBlank()) {
+        listOf(newTextPart) + otherParts
+    } else {
+        otherParts
+    }
+}
 
 @Serializable
 sealed interface GenerationChunk {
@@ -1489,79 +1620,15 @@ class GenerationHandler(
                         }
 
                     }
-                    val otherParts = msg.parts.filter { it !is UIMessagePart.Text && it !is UIMessagePart.Quote && it !is UIMessagePart.Audio }
-                    // 按原始顺序处理 Quote、Text 和 Audio，将每个 Quote 与紧随其后的 Text/Audio 配对
-                    // 产出格式：引用X刚才说的内容：\n\n> content\n\n用户回复：text
-                    // 微信模式下多条消息合并后，每个引用会与其对应的用户文本配对
-                    val builtText = buildString {
-                        var pendingQuote: UIMessagePart.Quote? = null
-                        var first = true
-                        msg.parts.forEach { part ->
-                            when (part) {
-                                is UIMessagePart.Quote -> {
-                                    pendingQuote = part
-                                }
-                                is UIMessagePart.Text -> {
-                                    val quote = pendingQuote
-                                    if (quote != null) {
-                                        if (!first) append("\n")
-                                        val referenceTarget = if (quote.isUser) "我" else "你"
-                                        append("引用")
-                                        append(referenceTarget)
-                                        append("刚才说的内容：\n> ")
-                                        append(quote.content.replace("\n", "\n> "))
-                                        append("\n用户回复：")
-                                        append(part.text)
-                                        pendingQuote = null
-                                    } else {
-                                        if (!first) append("\n")
-                                        append(part.text)
-                                    }
-                                    first = false
-                                }
-                                is UIMessagePart.Audio -> {
-                                    val quote = pendingQuote
-                                    val audioTranscription = part.metadata
-                                        ?.get(AudioToTextTransformer.METADATA_TRANSCRIPTION)
-                                        ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
-                                    if (quote != null && audioTranscription != null) {
-                                        if (!first) append("\n")
-                                        val referenceTarget = if (quote.isUser) "我" else "你"
-                                        append("引用")
-                                        append(referenceTarget)
-                                        append("刚才说的内容：\n> ")
-                                        append(quote.content.replace("\n", "\n> "))
-                                        append("\n用户回复：")
-                                        append(audioTranscription)
-                                        pendingQuote = null
-                                    } else if (audioTranscription != null) {
-                                        // 无引用的语音消息：直接使用转写文本
-                                        if (!first) append("\n")
-                                        append(audioTranscription)
-                                    }
-                                    first = false
-                                }
-                                else -> {}
-                            }
-                        }
-                    }
-
-                    if (dynamicContext.isNotBlank()) {
-                        val newTextPart = UIMessagePart.Text(
-                            text = buildString {
-                                appendLine("System:")
-                                append("[")
-                                append(dynamicContext)
-                                append("]")
-                                appendLine("User:")
-                                append(builtText)
-                            }
-                        )
-                        add(msg.copy(parts = listOf(newTextPart) + otherParts))
-                    } else {
-                        val newTextPart = UIMessagePart.Text(text = builtText)
-                        add(msg.copy(parts = listOf(newTextPart) + otherParts))
-                    }
+                    // 按模型音频输入能力重组最后一条 USER 消息 parts：
+                    // 支持 AUDIO → 保留原始音频；不支持 → 有转写用转写文本，无转写走降级
+                    val supportsAudioInput = model.inputModalities.contains(Modality.AUDIO)
+                    val newParts = buildLastUserMessageParts(
+                        parts = msg.parts,
+                        supportsAudioInput = supportsAudioInput,
+                        dynamicContext = dynamicContext,
+                    )
+                    add(msg.copy(parts = newParts))
                 } else {
                     add(msg)
                 }
