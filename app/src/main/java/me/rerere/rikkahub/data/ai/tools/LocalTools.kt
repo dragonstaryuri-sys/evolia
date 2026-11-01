@@ -1170,7 +1170,7 @@ class LocalTools(
         return listOf(
             Tool(
                 name = "schedule_manager",
-                description = "管理你或用户的日程和待办。重要原则：凡是你向用户承诺的事、两人共同的约定、你答应要提醒的事或你自己的计划，必须归类为 'assistant'；仅用户纯粹的个人私事（如用户自己去取快递）才记为 'user'。支持操作：add, list, edit, toggle, delete。",
+                description = "管理你或用户的日程和待办。重要原则：凡是你向用户承诺的事、两人共同的约定、你答应要提醒的事或你自己的计划，必须归类为 'assistant'；仅用户纯粹的个人私事（如用户自己去取快递）才记为 'user'。支持操作：add, list, edit, toggle, delete。add 成功后会返回新增日程的 id（如同时设置了截止时间还会返回自动创建的提醒任务 reminder_task_id），后续 edit/toggle/delete 直接使用该 id。",
                 parameters = {
                     InputSchema.Obj(
                         properties = buildJsonObject {
@@ -1194,7 +1194,7 @@ class LocalTools(
                             })
                             put("id", buildJsonObject {
                                 put("type", "integer")
-                                put("description", "日程 ID，编辑、切换状态和删除时必填")
+                                put("description", "日程 ID，编辑、切换状态和删除时必填；add 操作成功后会返回该 ID")
                             })
                             put("title", buildJsonObject {
                                 put("type", "string")
@@ -1282,6 +1282,9 @@ class LocalTools(
                                     )
                                 }
 
+                                // 自动创建的截止提醒任务 ID（仅有截止时间时才会创建）
+                                var reminderTaskId: Long? = null
+
                                 // 如果有截止时间，自动创建 agent_task 用于到期提醒
                                 if (endTime != null) {
                                     try {
@@ -1305,6 +1308,7 @@ class LocalTools(
                                         )
                                         val newTaskId = agentTaskRepository.addTask(taskEntity)
                                         agentTaskScheduler.scheduleTask(taskEntity.copy(id = newTaskId))
+                                        reminderTaskId = newTaskId
 
                                         // 回写 agentTaskId 到 schedule
                                         scheduleRepository.getScheduleById(scheduleId)?.let { saved ->
@@ -1317,7 +1321,13 @@ class LocalTools(
                                     }
                                 }
 
-                                buildJsonObject { put("success", true) }
+                                buildJsonObject {
+                                    put("success", true)
+                                    put("action", "add")
+                                    put("id", scheduleId)
+                                    reminderTaskId?.let { put("reminder_task_id", it) }
+                                    put("message", "待办已创建")
+                                }
                             }
 
                             "list" -> {
@@ -2661,9 +2671,9 @@ class LocalTools(
         val supportsImageInput = imageGenModel?.inputModalities?.contains(Modality.IMAGE) == true
 
         val description = if (supportsImageInput) {
-            "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。如果用户提供了参考图片（image_url），应基于该参考图片进行图像生成或编辑。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接。建议提示词使用详细的英文描述以获得更好效果。"
+            "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。如果用户提供了参考图片（image_url），应基于该参考图片进行图像生成或编辑。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接，generated_images 数组中每张图片包含数据库记录 id，可在后续操作中引用。建议提示词使用详细的英文描述以获得更好效果。"
         } else {
-            "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接。建议提示词使用详细的英文描述以获得更好效果。"
+            "生成图像。基于用户提供的提示词（prompt）生成一张或多张图片。生成的图片将保存到设备中并返回可以直接在回复中使用的 Markdown 链接，generated_images 数组中每张图片包含数据库记录 id，可在后续操作中引用。建议提示词使用详细的英文描述以获得更好效果。"
         }
 
         return listOf(
@@ -2798,10 +2808,11 @@ class LocalTools(
                                     prompt = prompt,
                                     createAt = timestamp
                                 )
-                                genMediaRepository.insertMedia(entity)
+                                val mediaId = genMediaRepository.insertMedia(entity)
 
                                 val uri = android.net.Uri.fromFile(imageFile)
                                 generatedFiles.add(buildJsonObject {
+                                    put("id", mediaId)
                                     put("name", filename)
                                     put("uri", uri.toString())
                                     put("markdown_link", "![generated_image]($uri)")
@@ -2810,8 +2821,9 @@ class LocalTools(
 
                             buildJsonObject {
                                 put("success", true)
+                                put("action", "add")
                                 put("generated_images", JsonArray(generatedFiles))
-                                put("note", "请在你的回复中直接包含 generated_images[].markdown_link 以便用户查看图片。")
+                                put("note", "请在你的回复中直接包含 generated_images[].markdown_link 以便用户查看图片。每条记录的 id 为图库数据库主键，可在后续操作中引用。")
                             }
                         } catch (e: Exception) {
                             android.util.Log.e("LocalTools", "Failed to generate image in tool", e)

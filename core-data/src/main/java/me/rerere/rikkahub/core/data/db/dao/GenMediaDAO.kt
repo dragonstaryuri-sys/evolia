@@ -15,7 +15,7 @@ interface GenMediaDAO {
     suspend fun getAllMedia(): List<GenMediaEntity>
 
     @Insert
-    suspend fun insert(media: GenMediaEntity)
+    suspend fun insert(media: GenMediaEntity): Long
 
     @Query("DELETE FROM genmediaentity WHERE id = :id")
     suspend fun delete(id: Int)
