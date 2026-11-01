@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +79,18 @@ fun ScheduleTodoContent(
 
     var editingSchedule by remember { mutableStateOf<ScheduleEntity?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
+
+    // 难度分组展开状态：提升到页面级由 rememberSaveable 持有。
+    // 分组位于 LazyColumn item 中，滚出视口会被回收，分组内部的 remember 状态会随 item
+    // dispose 丢失导致收起状态被重置；页面级状态在 item 回收、重组、列表刷新时均不受影响。
+    // 键为难度值（0/1/2），各分组独立管理，互不影响。
+    var expandedGroups by rememberSaveable {
+        mutableStateOf(mapOf(0 to true, 1 to true, 2 to true))
+    }
+    val toggleGroupExpanded: (Int) -> Unit = { diff ->
+        val current = expandedGroups[diff] ?: true
+        expandedGroups = expandedGroups + (diff to !current)
+    }
 
     // 删除待办前的联动确认：待办存在关联日程时提示日程将一并删除
     var pendingDelete by remember { mutableStateOf<ScheduleEntity?>(null) }
@@ -175,6 +188,8 @@ fun ScheduleTodoContent(
                         item(key = "diff_$diff") {
                             DifficultyGroup(
                                 difficulty = diff,
+                                expanded = expandedGroups[diff] ?: true,
+                                onExpandedChange = { toggleGroupExpanded(diff) },
                                 schedules = items,
                                 onToggle = {
                                     haptics.perform(HapticPattern.Pop)
@@ -309,6 +324,8 @@ private fun OptimizationCard(onAction: () -> Unit) {
 @Composable
 private fun DifficultyGroup(
     difficulty: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     schedules: List<ScheduleEntity>,
     onToggle: (ScheduleEntity) -> Unit,
     onClick: (ScheduleEntity) -> Unit,
@@ -323,7 +340,9 @@ private fun DifficultyGroup(
 
     ExpandableCard(
         title = title,
-        initiallyExpanded = true
+        // 展开状态由页面级 rememberSaveable 持有（受控模式），item 回收后状态不丢失
+        expanded = expanded,
+        onExpandedChange = onExpandedChange
     ) {
         schedules.forEach { schedule ->
             key(schedule.id) {
