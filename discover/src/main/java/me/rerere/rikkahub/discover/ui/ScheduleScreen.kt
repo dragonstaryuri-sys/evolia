@@ -412,23 +412,44 @@ private fun SwipeableScheduleItem(
     onDelete: () -> Unit
 ) {
     val haptics = rememberPremiumHaptics()
+
+    // confirmValueChange 回调被 rememberSaveable 首帧捕获后不再更新，直接引用参数会持有
+    // 首帧的旧闭包（编辑待办后再滑动会用旧实体写回旧数据），经 rememberUpdatedState 转发最新回调
+    val currentOnToggle by rememberUpdatedState(onToggle)
+    val currentOnDelete by rememberUpdatedState(onDelete)
+
+    // 一次手势只执行一次动作：foundation 1.9 起 AnchoredDraggableState 在拖动越过半程阈值
+    // 后的每一帧都会调用 confirmValueChange（官方已废弃该回调的副作用用法），
+    // 不去重会导致一次滑动触发多次 toggle/delete 并弹出多个 toast。
+    // 回到 Settled 锚点（手势结束回弹到位）时重新武装。
+    var actionConsumed by remember { mutableStateOf(false) }
+
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
                 SwipeToDismissBoxValue.StartToEnd -> {
-                    haptics.perform(HapticPattern.Pop)
-                    onToggle()
+                    if (!actionConsumed) {
+                        actionConsumed = true
+                        haptics.perform(HapticPattern.Pop)
+                        currentOnToggle()
+                    }
                     // 不真正移除卡片：切换状态后回弹，由数据层驱动刷新
                     false
                 }
 
                 SwipeToDismissBoxValue.EndToStart -> {
-                    haptics.perform(HapticPattern.Thud)
-                    onDelete()
+                    if (!actionConsumed) {
+                        actionConsumed = true
+                        haptics.perform(HapticPattern.Thud)
+                        currentOnDelete()
+                    }
                     false
                 }
 
-                else -> false
+                else -> {
+                    actionConsumed = false
+                    false
+                }
             }
         }
     )
