@@ -120,6 +120,18 @@ interface CallRecordDao {
     @Query("UPDATE call_records SET end_time = :endTime WHERE id = :callId AND (end_time IS NULL OR end_time < :endTime)")
     suspend fun updateEndTimeIfLater(callId: String, endTime: Long)
 
+    /** 通话心跳：接通期间周期性刷新（单行 UPDATE，不整行覆盖），供进程死亡后的启动对账估算结束时间。 */
+    @Query("UPDATE call_records SET last_heartbeat_at = :heartbeatAt WHERE id = :callId")
+    suspend fun touchHeartbeat(callId: String, heartbeatAt: Long)
+
+    /** 启动对账用：已接通但从未正常结束的遗留记录（进程异常死亡的特征）。 */
+    @Query("SELECT * FROM call_records WHERE status = 'CONNECTED' AND disconnected_at IS NULL")
+    suspend fun getLeftoverConnected(): List<CallRecordEntity>
+
+    /** 孤儿录音扫描用：所有仍被引用的音频存储路径（私有目录相对路径或公共目录绝对路径）。 */
+    @Query("SELECT audio FROM call_records WHERE audio IS NOT NULL")
+    suspend fun getReferencedAudioPaths(): List<String>
+
     @Query("DELETE FROM call_records WHERE assistant_id = :assistantId")
     suspend fun deleteByAssistant(assistantId: String)
 

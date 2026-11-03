@@ -79,6 +79,18 @@ class CallRecordRepository(private val dao: CallRecordDao) {
     suspend fun updateEndTimeIfLater(callId: String, endTime: Long) =
         dao.updateEndTimeIfLater(callId, endTime)
 
+    /** 通话心跳：接通期间周期性刷新（单行 UPDATE），供进程死亡后的启动对账估算结束时间。 */
+    suspend fun touchHeartbeat(callId: String, heartbeatAt: Long) =
+        dao.touchHeartbeat(callId, heartbeatAt)
+
+    /** 启动对账用：已接通但未正常结束的遗留记录（进程异常死亡）。 */
+    suspend fun getLeftoverConnectedRecords(): List<CallRecordEntity> =
+        dao.getLeftoverConnected()
+
+    /** 孤儿录音扫描用：所有仍被引用的音频存储路径。 */
+    suspend fun getReferencedAudioPaths(): List<String> =
+        dao.getReferencedAudioPaths()
+
     suspend fun getExpiredAudioRecords(now: Long = System.currentTimeMillis()): List<CallRecordEntity> =
         dao.getExpiredAudioRecords(now)
 

@@ -244,6 +244,16 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **通知渠道**：`incoming_call`（来电，高优先级，不使用强制全屏 Intent，点击复用现有页面栈）与 `voice_call_foreground`（通话中保活）。
 - **铃声设置**：`callRingtone` / `callRingtoneCustomPath`；自定义铃声 ≤10MB、≤60s，超长时调用裁切器；试听前必须停止上一段试听音频。
 
+### 10.7 异常中断恢复 (Call Recovery)
+- **背景**：进程被杀 / 划掉最近任务 / 崩溃 / 系统重启不会执行正常 `hangup()` 收尾，会遗留 `status=CONNECTED` 且 `disconnected_at IS NULL` 的记录（时长 0、无结束状态）与无引用孤儿录音。
+- **通话心跳**：接通期间 `VoiceCallManager.startCallHeartbeat` 每 **30s**（`CALL_HEARTBEAT_INTERVAL_MS`）以单行 UPDATE 持久化 `call_records.last_heartbeat_at`（`touchHeartbeat`，禁止整行 REPLACE 覆盖）；hangup 清理段取消心跳 Job。误差上限 = 心跳间隔，不伪装精确时长。
+- **启动对账**（`service/voice/CallRecovery.reconcile`，EvoliaApp onCreate 以 `AppScope.launch(Dispatchers.IO)` 异步执行，不阻塞启动）：
+  1. 查询 `getLeftoverConnected()`（CONNECTED 且无 disconnected_at），跳过与 `VoiceCallManager.currentActiveCallId` 匹配的活跃通话；
+  2. 结束时间锚点 = **clamp(max(最后有效心跳, end_time 末条转写时间), connected_at, 恢复时刻)**——end_time 可能晚于最后一次心跳故取较晚者；两者皆无时以 connected_at 兜底（时长 0，不伪造）；恢复记录 `status=ENDED + end_reason="abnormal_process_death"`（已接通语义，**禁止落 FAILED**），`duration_ms = max(0, endedAt - connected_at)`；纯函数逻辑在 `CallRecovery.computeRecoveredEndAnchor` / `computeRecoveredDurationMs`（有单测固化）；
+  3. 遗留记录的 audio 引用经 `CallRecovery.isAudioFilePlayable`（MediaExtractor 校验有效音频轨道，未完成封装的 m4a 缺 moov 会失败）校验，不可播时**仅清 audio 引用，保留通话记录与转写**；
+  4. 孤儿录音清理：扫描 `filesDir/call_recordings/`，同时满足「DB 无引用（按文件名比对相对/绝对路径）+ lastModified 超过 24h（`ORPHAN_RETENTION_MS`）+ 非活跃 callId」才删除；mtime 不可读（≤0）保守保留；单文件失败仅记日志。
+- **幂等性**：恢复只处理 `disconnected_at IS NULL`，重复启动不重复生成；对账与正常 hangup 互不影响，不改变正常通话既有行为。正常挂断收尾（`stopCallRecordingAndPersist`）也在 `updateAudio` 前做同一完整性校验，失败不落引用（文件留给孤儿清理回收）。
+
 ## 11. 构建与验证 (Build & Verification)
 
 -   **单元测试**: `./gradlew :app:testDebugUnitTest`（纯 JVM 环境，无 Robolectric）。注意 `android.util.Log` **未 mock**——需要单测覆盖的逻辑必须抽为不依赖 Android API 的纯函数（参考 `mergeSyncedTools`、`buildMcpCatalogPrompt` 的做法）。现有测试位于 `app/src/test/java/me/rerere/rikkahub/`。

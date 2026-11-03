@@ -245,12 +245,18 @@ class VoiceCallManager(
 
     // 当前通话（含未接通响铃）的 callId（=CallRecordEntity.id）
     @Volatile private var activeCallId: String? = null
+
+    /** 当前活跃通话 callId 的只读快照（供启动对账守卫使用；未接通响铃期也非 null，但不影响对账——遗留记录过滤只关心已接通记录）。 */
+    val currentActiveCallId: String? get() = activeCallId
+
     // 实际接通时间戳（毫秒），未接通为 0L
     @Volatile private var connectedAtMs: Long = 0L
     // 响铃超时（120s）Job
     private var ringTimeoutJob: Job? = null
     // 用户主动拨号的接听决策 Job（用于取消拨号）
     private var outgoingDecisionJob: Job? = null
+    // 通话心跳 Job：接通期间每 30s 刷新 last_heartbeat_at（进程死亡后的启动对账锚点）
+    private var heartbeatJob: Job? = null
 
     // ===== 双向录音器（near-end 麦克风 PCM + far-end TTS PCM 混音编码） =====
     @Volatile private var callRecorder: CallRecorder? = null
@@ -935,6 +941,9 @@ class VoiceCallManager(
                 }.onFailure { Log.w(TAG, "markConnected failed", it) }
             }
 
+            // 通话心跳：持久化「最后存活时间」，供进程异常死亡后的启动对账估算结束时间
+            startCallHeartbeat()
+
             // ===== 音频路由：进入通话模式，切到 VoIP 路径 =====
             enterCallAudioMode()
 
@@ -975,6 +984,31 @@ class VoiceCallManager(
     }
 
     // ========================================================================
+    //  通话心跳（异常恢复锚点）
+    // ========================================================================
+
+    /**
+     * 通话心跳：接通期间每 [CALL_HEARTBEAT_INTERVAL_MS] 持久化一次 last_heartbeat_at。
+     *
+     * 用途：进程异常死亡后（不会走 hangup 收尾），App 再次启动时由 [CallRecovery]
+     * 以「最后有效心跳」估算异常结束时间（误差 ≤ 心跳间隔），避免把 App 再次启动的
+     * 时间误当作挂断时间。仅单行 UPDATE，DB 开销可忽略；首跳延迟一个间隔
+     * （connected_at 已证明接通时刻存活，更早的心跳无额外信息量）。
+     */
+    private fun startCallHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (isActive) {
+                delay(CALL_HEARTBEAT_INTERVAL_MS)
+                val callId = activeCallId ?: break
+                runCatching {
+                    callRecordRepository.touchHeartbeat(callId, System.currentTimeMillis())
+                }.onFailure { Log.w(TAG, "call heartbeat failed callId=$callId", it) }
+            }
+        }
+    }
+
+    // ========================================================================
     //  双向录音接入点
     // ========================================================================
 
@@ -1008,13 +1042,20 @@ class VoiceCallManager(
         }
     }
 
-    /** 结束录音并把录音相对路径 + 过期时间写入通话记录。 */
+    /** 结束录音并把录音相对路径 + 过期时间写入通话记录。写入前校验文件完整性，不可播时不落引用。 */
     private suspend fun stopCallRecordingAndPersist(callId: String, disconnectedAt: Long) {
         val recorder = callRecorder ?: return
         callRecorder = null
         runCatching { ttsController.setOnFarPcmListener(null) }
         val relPath = runCatching { recorder.stop() }.getOrNull()
         if (relPath != null) {
+            // 完整性校验：能被 MediaExtractor 解析出音频轨道才算成功封装；
+            // 失败（理论上罕见，正常挂断时 muxer.stop 已完成）不写引用，文件留给孤儿清理回收
+            val audioFile = CallRecorder.fileFor(context, relPath)
+            if (!CallRecovery.isAudioFilePlayable(audioFile)) {
+                Log.w(TAG, "call recording failed integrity check, drop audio ref callId=$callId")
+                return
+            }
             val expiresAt = disconnectedAt + AUDIO_RETENTION_MS
             runCatching {
                 callRecordRepository.updateAudio(callId, relPath, expiresAt)
@@ -3313,6 +3354,7 @@ class VoiceCallManager(
         // 重置缩小状态：挂断后迷你窗口应消失
         _isCallMinimized.value = false
         stopCallDurationTicker()
+        heartbeatJob?.cancel(); heartbeatJob = null
         activeCallId = null
         connectedAtMs = 0L
         stopRingtone()
@@ -3667,6 +3709,8 @@ class VoiceCallManager(
 
         // 录音默认保留时长：7 天（forever=1 时跳过清理）
         private const val AUDIO_RETENTION_MS = 7L * 24L * 60L * 60L * 1000L
+        // 通话心跳间隔：接通期间周期性持久化 last_heartbeat_at，估算异常结束时间的误差上限
+        private const val CALL_HEARTBEAT_INTERVAL_MS = 30L * 1000L
 
         // PCM 预卷帧数（每帧 32ms，47 帧≈1.5s）
         // 从 31 帧放宽到 47 帧：更长的预卷窗口，防止慢开口用户在 AI 刚停时说话的头字丢失

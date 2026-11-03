@@ -86,7 +86,16 @@ data class CallRecordEntity(
 
     /** 通话发起方：user = 用户主动拨打；agent = 智能体主动来电。 */
     @ColumnInfo(name = "initiator")
-    val initiator: String = CallInitiator.USER
+    val initiator: String = CallInitiator.USER,
+
+    /**
+     * 最近一次通话心跳时间戳（毫秒）。接通期间每 30s 由 VoiceCallManager 刷新一次，
+     * 用于进程异常死亡后的启动对账：以「最后有效心跳」估算异常结束时间（误差 ≤ 心跳间隔），
+     * 避免把 App 再次启动的时间误当作挂断时间。正常挂断不依赖该字段（用真实 disconnectedAt）。
+     * null 表示尚无心跳（接通后 30s 内死亡或历史数据）。
+     */
+    @ColumnInfo(name = "last_heartbeat_at")
+    val lastHeartbeatAt: Long? = null
 )
 
 /** 通话记录生命周期状态常量。 */

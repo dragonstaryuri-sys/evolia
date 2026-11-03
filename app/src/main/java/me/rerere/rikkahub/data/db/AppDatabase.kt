@@ -43,7 +43,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         CallRecordEntity::class,
         ScheduleEventEntity::class
     ],
-    version = 41,
+    version = 42,
     exportSchema = true
 )
 @TypeConverters(
@@ -492,6 +492,23 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 40->41 迁移：日记表新增收藏标记 is_favorite")
                 db.execSQL(
                     "ALTER TABLE `AgentDiaryEntity` ADD COLUMN `is_favorite` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        /**
+         * 41 → 42：call_records 表新增通话心跳时间列 last_heartbeat_at。
+         *
+         * 通话接通期间每 30s 由 VoiceCallManager 刷新一次，用于进程异常死亡后的
+         * 启动对账（CallRecovery）：以「最后有效心跳时间」估算异常结束时间
+         * （误差 ≤ 心跳间隔），避免把 App 再次启动的时间误当作挂断时间。
+         * 仅加可空列，历史数据全部为 NULL（视为无心跳），不改动任何现有字段。
+         */
+        val MIGRATION_41_42 = object : Migration(41, 42) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 41->42 迁移：call_records 表新增通话心跳时间 last_heartbeat_at")
+                db.execSQL(
+                    "ALTER TABLE `call_records` ADD COLUMN `last_heartbeat_at` INTEGER"
                 )
             }
         }

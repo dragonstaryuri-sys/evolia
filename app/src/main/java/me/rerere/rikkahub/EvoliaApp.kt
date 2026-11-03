@@ -38,6 +38,8 @@ import me.rerere.rikkahub.service.CallAudioCleanupWorker
 import me.rerere.rikkahub.service.DiarySchedulerWorker
 import me.rerere.rikkahub.service.AgentTaskScheduler
 import me.rerere.rikkahub.service.notification.NotificationSoundManager
+import me.rerere.rikkahub.service.voice.CallRecovery
+import me.rerere.rikkahub.service.voice.VoiceCallManager
 import java.util.concurrent.TimeUnit
 import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.startKoin
@@ -146,6 +148,18 @@ class EvoliaApp : Application() {
                     Log.e(TAG, "Daily activity migration failed", e)
                 }
             }
+        }
+
+        // 通话异常对账：恢复遗留 CONNECTED 记录（估算结束时间）+ 清理孤儿录音。
+        // IO 协程异步执行，不阻塞启动；内部幂等，单条失败仅记日志。
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching {
+                CallRecovery.reconcile(
+                    context = applicationContext,
+                    repository = get(),
+                    activeCallId = get<VoiceCallManager>().currentActiveCallId
+                )
+            }.onFailure { Log.e(TAG, "Call recovery reconcile failed", it) }
         }
 
         get<AppScope>().launch {
