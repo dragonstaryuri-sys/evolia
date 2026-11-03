@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.discover.repo
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import me.rerere.rikkahub.core.data.db.DbTransactionRunner
 import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
 import me.rerere.rikkahub.core.data.db.dao.ScheduleEventDAO
@@ -71,5 +72,25 @@ class ScheduleEventRepository(
     ): Long = transactionRunner.runInTransaction {
         val taskId = scheduleDAO.insertSchedule(todo)
         eventDAO.insertEvent(eventBuilder(taskId))
+    }
+
+    /**
+     * 某待办当前全部关联日程的一次性快照。
+     * 删除待办前调用：待办删除时关联日程会被外键 CASCADE 一并删除，
+     * 撤销删除需要这份快照做恢复。
+     */
+    suspend fun getEventsForTask(taskId: Long): List<ScheduleEventEntity> =
+        eventDAO.observeEventsForTask(taskId).first()
+
+    /**
+     * 撤销删除：在同一数据库事务内恢复待办及其关联日程。
+     * 实体携带原 id，DAO 为 REPLACE 语义，恢复后保持原主键不变。
+     */
+    suspend fun restoreScheduleWithEvents(
+        todo: ScheduleEntity,
+        events: List<ScheduleEventEntity>
+    ) = transactionRunner.runInTransaction {
+        scheduleDAO.insertSchedule(todo)
+        events.forEach { eventDAO.insertEvent(it) }
     }
 }

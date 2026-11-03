@@ -101,4 +101,8 @@
   <string name="schedule_swipe_complete">完成</string>
   <string name="schedule_swipe_delete">删除</string>
   <string name="schedule_swipe_hint">小提示：左滑删除待办，右滑标记完成</string>
+  <string name="schedule_undo">撤销</string>
+  <string name="schedule_todo_deleted_toast">已删除待办「%1$s」</string>
+  <string name="schedule_todo_completed_toast">已完成「%1$s」</string>
+  <string name="schedule_todo_uncompleted_toast">已标记为未完成「%1$s」</string>
 </resources>

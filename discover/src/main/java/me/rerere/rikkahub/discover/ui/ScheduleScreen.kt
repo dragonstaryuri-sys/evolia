@@ -42,6 +42,8 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.PremiumHaptics
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import me.rerere.rikkahub.common.PowerUtils
+import me.rerere.rikkahub.ui.components.ui.ToastAction
+import me.rerere.rikkahub.ui.context.LocalToaster
 import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -94,13 +96,49 @@ fun ScheduleTodoContent(
 
     // 删除待办前的联动确认：待办存在关联日程时提示日程将一并删除
     var pendingDelete by remember { mutableStateOf<ScheduleEntity?>(null) }
+
+    // 撤销提示：与删除智能体一致，操作后顶部弹 AppToast，限时内可点「撤销」恢复
+    val toaster = LocalToaster.current
+
+    // 弹出完成状态切换的撤销 toast（original 为切换前快照，撤销时原样恢复）
+    val showToggleUndoToast: (ScheduleEntity) -> Unit = { original ->
+        val wasCompleted = original.isCompleted
+        val messageRes = if (wasCompleted) {
+            R.string.schedule_todo_uncompleted_toast
+        } else {
+            R.string.schedule_todo_completed_toast
+        }
+        toaster.show(
+            message = context.getString(messageRes, original.title),
+            action = ToastAction(
+                label = context.getString(R.string.schedule_undo)
+            ) {
+                viewModel.restoreSchedule(original)
+            }
+        )
+    }
+
+    // 执行删除并弹出撤销 toast（删除前由 VM 快照关联日程，撤销时一并恢复）
+    val performDeleteWithUndo: (ScheduleEntity) -> Unit = { task ->
+        viewModel.deleteScheduleWithUndo(task) { undo ->
+            toaster.show(
+                message = context.getString(R.string.schedule_todo_deleted_toast, undo.task.title),
+                action = ToastAction(
+                    label = context.getString(R.string.schedule_undo)
+                ) {
+                    viewModel.undoDeleteSchedule(undo)
+                }
+            )
+        }
+    }
+
     val requestDelete: (ScheduleEntity) -> Unit = { task ->
         haptics.perform(HapticPattern.Thud)
         val hasEvents = task.id in scheduledTaskIds
         if (hasEvents) {
             pendingDelete = task
         } else {
-            viewModel.deleteSchedule(task.id)
+            performDeleteWithUndo(task)
         }
     }
 
@@ -193,6 +231,7 @@ fun ScheduleTodoContent(
                                 schedules = items,
                                 onToggle = {
                                     haptics.perform(HapticPattern.Pop)
+                                    showToggleUndoToast(it)
                                     viewModel.toggleComplete(it)
                                 },
                                 onClick = {
@@ -216,6 +255,7 @@ fun ScheduleTodoContent(
                         schedule = schedule,
                         onToggle = {
                             haptics.perform(HapticPattern.Pop)
+                            showToggleUndoToast(schedule)
                             viewModel.toggleComplete(schedule)
                         },
                         onClick = {
@@ -265,7 +305,7 @@ fun ScheduleTodoContent(
             onDismissRequest = { pendingDelete = null },
             onConfirm = {
                 pendingDelete = null
-                viewModel.deleteSchedule(task.id)
+                performDeleteWithUndo(task)
             },
             title = stringResource(R.string.schedule_todo_delete_with_events_title),
             text = stringResource(R.string.schedule_todo_delete_with_events_message),

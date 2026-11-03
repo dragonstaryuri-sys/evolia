@@ -5,11 +5,21 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.core.data.db.entity.ScheduleEntity
+import me.rerere.rikkahub.core.data.db.entity.ScheduleEventEntity
 import me.rerere.rikkahub.discover.repo.ScheduleEventRepository
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
 
 /** 待办视图的排程状态筛选（与难度分类是两个独立维度） */
 enum class ScheduleStatusFilter { UNSCHEDULED, SCHEDULED, ALL }
+
+/**
+ * 待办删除的撤销数据：删除前的待办快照 + 删除时一并被 CASCADE 删除的关联日程快照。
+ * 由 UI 层经 toast action 持有，撤销时原样恢复（保留原 id）。
+ */
+data class ScheduleDeleteUndo(
+    val task: ScheduleEntity,
+    val events: List<ScheduleEventEntity>
+)
 
 class ScheduleViewModel(
     private val repository: ScheduleRepository,
@@ -125,6 +135,33 @@ class ScheduleViewModel(
     fun deleteSchedule(id: Long) {
         viewModelScope.launch {
             repository.deleteSchedule(id)
+        }
+    }
+
+    /**
+     * 删除待办并回调撤销数据（供 UI 弹出可撤销 toast）。
+     * 删除前快照关联日程（CASCADE 会连带删除），撤销时一并恢复。
+     * 撤销数据经回调闭包随 toast 持有，连续多次删除互不干扰。
+     */
+    fun deleteScheduleWithUndo(task: ScheduleEntity, onDeleted: (ScheduleDeleteUndo) -> Unit) {
+        viewModelScope.launch {
+            val events = eventRepository.getEventsForTask(task.id)
+            repository.deleteSchedule(task.id)
+            onDeleted(ScheduleDeleteUndo(task = task, events = events))
+        }
+    }
+
+    /** 撤销删除：单事务恢复待办及其删除时快照的关联日程 */
+    fun undoDeleteSchedule(undo: ScheduleDeleteUndo) {
+        viewModelScope.launch {
+            eventRepository.restoreScheduleWithEvents(undo.task, undo.events)
+        }
+    }
+
+    /** 撤销完成状态切换：恢复切换前的完整快照（含原 updatedAt） */
+    fun restoreSchedule(original: ScheduleEntity) {
+        viewModelScope.launch {
+            repository.updateSchedule(original)
         }
     }
 

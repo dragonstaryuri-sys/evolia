@@ -102,4 +102,8 @@
   <string name="schedule_swipe_complete">Complete</string>
   <string name="schedule_swipe_delete">Delete</string>
   <string name="schedule_swipe_hint">Tip: swipe a card left to delete, right to mark done</string>
+  <string name="schedule_undo">Undo</string>
+  <string name="schedule_todo_deleted_toast">To-do deleted: %1$s</string>
+  <string name="schedule_todo_completed_toast">Marked as done: %1$s</string>
+  <string name="schedule_todo_uncompleted_toast">Marked as not done: %1$s</string>
 </resources>

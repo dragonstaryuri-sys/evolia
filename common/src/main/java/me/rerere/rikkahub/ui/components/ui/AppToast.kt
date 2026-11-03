@@ -62,7 +62,7 @@ import me.rerere.rikkahub.ui.hooks.HapticPattern
 import me.rerere.rikkahub.ui.hooks.rememberPremiumHaptics
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
-import me.rerere.rikkahub.ui.theme.LocalDarkMode
+import me.rerere.rikkahub.common.ui.theme.LocalDarkTheme
 import kotlin.uuid.Uuid
 
 /**
@@ -99,11 +99,11 @@ data class Toast(
 class AppToasterState {
     private val _toasts = mutableStateListOf<Toast>()
     val toasts: List<Toast> get() = _toasts
-    
+
     companion object {
         private const val MAX_VISIBLE_TOASTS = 4
     }
-    
+
     private fun trimOldestIfNeeded() {
         while (_toasts.size > MAX_VISIBLE_TOASTS) {
             _toasts.removeAt(0)
@@ -203,12 +203,12 @@ private fun AppToastItem(
     val scope = rememberCoroutineScope()
     val haptics = rememberPremiumHaptics()
     val density = LocalDensity.current
-    
+
     // Physics parameters
     val dragFriction = 0.7f
     val unlockThresholdPx = with(density) { 80.dp.toPx() }
     val screenWidthPx = with(density) { 800.dp.toPx() }
-    
+
     // All animation state - manual control
     val offsetX = remember { Animatable(0f) }
     val offsetY = remember { Animatable(-200f) } // Start above screen
@@ -217,14 +217,14 @@ private fun AppToastItem(
     var isUnlocked by remember { mutableStateOf(false) }
     var isFlying by remember { mutableStateOf(false) }
     var isDismissed by remember { mutableStateOf(false) }
-    
+
     // Entry animation
     LaunchedEffect(Unit) {
         launch { offsetY.animateTo(0f, spring(dampingRatio = 0.6f, stiffness = 300f)) }
         launch { scale.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = 300f)) }
         launch { alpha.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = 300f)) }
     }
-    
+
     val dismissWithAnimation = {
         if (!isFlying && !isDismissed) {
             scope.launch {
@@ -246,7 +246,7 @@ private fun AppToastItem(
             dismissWithAnimation()
         }
     }
-    
+
     // Handle swipe dismissal - fly off to the side
     fun swipeOff(direction: Float) {
         if (isFlying || isDismissed) return
@@ -254,7 +254,7 @@ private fun AppToastItem(
         haptics.perform(HapticPattern.Pop)
         scope.launch {
             // Fly horizontally off screen - fast
-            launch { 
+            launch {
                 offsetX.animateTo(
                     direction * screenWidthPx,
                     spring(dampingRatio = 0.8f, stiffness = 400f)
@@ -306,12 +306,12 @@ private fun AppToastItem(
                             val currentOffset = offsetX.value
                             val newOffset = (currentOffset + dragAmount * dragFriction)
                                 .coerceIn(-screenWidthPx * 0.5f, screenWidthPx * 0.5f)
-                            
+
                             scope.launch { offsetX.snapTo(newOffset) }
-                            
+
                             val wasUnderThreshold = currentOffset.absoluteValue < unlockThresholdPx
                             val isOverThreshold = newOffset.absoluteValue >= unlockThresholdPx
-                            
+
                             if (wasUnderThreshold && isOverThreshold && !isUnlocked) {
                                 haptics.perform(HapticPattern.Pop)
                                 isUnlocked = true
@@ -406,7 +406,7 @@ private fun ToastContent(
                     )
                 }
             }
-            
+
             // Expand button for long messages
             if (isLongMessage && !isExpanded) {
                 Surface(
@@ -432,7 +432,7 @@ private fun ToastContent(
 @Composable
 private fun getToastColors(type: ToastType): Triple<Color, Color, ImageVector?> {
     return when (type) {
-        ToastType.Normal -> if(LocalDarkMode.current) {
+        ToastType.Normal -> if(LocalDarkTheme.current) {
             Triple(
                 MaterialTheme.colorScheme.surfaceContainerLow,
                 MaterialTheme.colorScheme.onSurface,
@@ -467,4 +467,3 @@ private fun getToastColors(type: ToastType): Triple<Color, Color, ImageVector?> 
         )
     }
 }
-
