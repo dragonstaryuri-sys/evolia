@@ -27,6 +27,9 @@ import kotlin.uuid.Uuid
  *   但必须在上下文组装与自动总结/记忆链路中按普通对话内容纳入（不截断）。
  * - CALL_STATE: Assistant 的「（我接通了电话）」/「（我挂断了电话）」通话状态标记。
  *   skipContext=true，UI/搜索/导出/通话转写区隐藏，但必须进入后续 AI 上下文（不截断）。
+ * - CALL_REQUEST: 用户拨号时向 AI 发出的隐藏接听决策指令（「回复 0 或 1」）。
+ *   skipContext=true，UI/搜索/导出隐藏；仅当轮决策可见，后续对话上下文中必须完全剔除，
+ *   否则 AI 会因读到旧指令而错误回复 0/1。
  */
 @Serializable
 enum class MessageSource {
@@ -34,7 +37,27 @@ enum class MessageSource {
     DIARY_COMMENT,
     AGENT_TASK,
     CALL,
-    CALL_STATE
+    CALL_STATE,
+    CALL_REQUEST
+}
+
+/**
+ * 用户拨号时发给 AI 的隐藏接听决策指令（固定文案，由代码生成）。
+ * 创建与删除兼容匹配共用：历史决策消息（无 callId 的旧数据）凭该前缀在时间窗口内识别。
+ */
+const val CALL_DECISION_INSTRUCTION =
+    "【系统通话决策】用户正在给你打电话，请决定是否接听。只回复数字 1（同意接听）或 0（拒绝接听），不要回复任何其他内容。"
+
+/**
+ * 判断此消息是否为用户拨号的隐藏接听决策指令（[MessageSource.CALL_REQUEST] 或
+ * 旧版本遗留的「NORMAL + skipContext + 固定前缀」决策消息）。
+ * 用于删除通话记录时的关联删除与内存会话同步；正常聊天消息不可能命中该组合条件。
+ */
+fun UIMessage.isCallDecisionRequest(): Boolean {
+    if (role != MessageRole.USER || !skipContext) return false
+    if (messageSource == MessageSource.CALL_REQUEST) return true
+    val text = parts.filterIsInstance<UIMessagePart.Text>().joinToString("") { it.text }.trim()
+    return messageSource == MessageSource.NORMAL && text.startsWith(CALL_DECISION_INSTRUCTION)
 }
 
 // 公共消息抽象, 具体的Provider实现会转换为API接口需要的DTO

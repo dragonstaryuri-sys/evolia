@@ -26,6 +26,7 @@ import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.TokenUsage
 import me.rerere.rikkahub.common.JsonInstant
 import me.rerere.rikkahub.common.deleteChatFiles
+import me.rerere.ai.ui.CALL_DECISION_INSTRUCTION
 import me.rerere.ai.ui.MessageSource
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -67,6 +68,38 @@ class ConversationRepository(
         private const val MESSAGE_LOAD_CHUNK_SIZE = 50
 
         private const val CALL_CONTROL_TOOL_NAME = "call_control"
+
+        // 通话删除时间窗口（与未接通触发轮兜底共用）：
+        // 窗口起点相对 callCreateTime 前移 30s（覆盖时钟偏差），
+        // 终点后移 130s（响铃超时上限 125s + 余量）。
+        private const val CALL_DELETE_WINDOW_START_OFFSET = 30_000L
+        private const val CALL_DELETE_WINDOW_END_OFFSET = 130_000L
+
+        /**
+         * 判断消息是否归属指定通话（删除通话记录时的关联删除/内存同步共用判定）。
+         * - 通话归属消息：`UIMessage.callId` 精确匹配（接通通话的转写/状态标记/决策指令等）。
+         * - call_control 触发轮：未接通通话的 assistant 触发轮不带 callId，按 ToolCall 识别。
+         * - 旧版拨号决策指令：历史版本创建时未携带 callId（NORMAL 来源），
+         *   按「USER + skipContext + 固定决策文案 + 时间窗口」归属，
+         *   双重限定防止误删正常聊天消息或其他通话的消息。
+         */
+        fun isCallRelatedMessageForDelete(msg: UIMessage, callId: String, callCreateTime: Long): Boolean {
+            if (msg.callId == callId) return true
+            if (!msg.callId.isNullOrBlank()) return false
+            val hasCallControlToolCall = msg.parts.any {
+                it is UIMessagePart.ToolCall && it.toolName == CALL_CONTROL_TOOL_NAME
+            }
+            if (hasCallControlToolCall) return true
+            if (msg.role != MessageRole.USER || !msg.skipContext) return false
+            if (msg.messageSource != MessageSource.NORMAL) return false
+            val text = msg.parts.filterIsInstance<UIMessagePart.Text>()
+                .joinToString("") { it.text }.trim()
+            if (!text.startsWith(CALL_DECISION_INSTRUCTION)) return false
+            val msgTimeMs = msg.createdAt.toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+            val windowStart = callCreateTime - CALL_DELETE_WINDOW_START_OFFSET
+            val windowEnd = callCreateTime + CALL_DELETE_WINDOW_END_OFFSET
+            return msgTimeMs in windowStart..windowEnd
+        }
     }
 
     // ------------------------------------------------------------------
@@ -1329,7 +1362,17 @@ class ConversationRepository(
             if (matched) entitiesToDelete.add(entity)
         }
 
-        // 3. 去重后按节点删除（CASCADE 自动清理 messages）
+        // 3. 兼容旧版本数据：用户拨号的隐藏决策消息创建时未携带 callId（NORMAL 来源），
+        //    按「USER + skipContext + 固定决策文案 + 时间窗口」识别一并删除，
+        //    避免删除通话记录后 AI 上下文残留旧通话请求而误回 0/1。
+        //    新版 CALL_REQUEST 决策消息带 callId，已由第 1 步精确覆盖，不在此扩展范围。
+        for (entity in windowEntities) {
+            if (isCallRelatedMessageForDelete(decodeUIMessageSafely(entity), callId, callCreateTime)) {
+                entitiesToDelete.add(entity)
+            }
+        }
+
+        // 4. 去重后按节点删除（CASCADE 自动清理 messages）
         val nodeIds = entitiesToDelete.map { it.nodeId }.distinct()
         if (nodeIds.isNotEmpty()) {
             chatMessageDAO.deleteNodesAndMessages(nodeIds)

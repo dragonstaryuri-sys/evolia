@@ -74,13 +74,9 @@ class HistoryCallVM(
             chatService.mutateConversationAndSave(conversationId) { current ->
                 val filteredNodes = current.messageNodes.filterNot { node ->
                     if (node.messages.isEmpty()) return@filterNot false
-                    val message = node.currentMessage
-                    val isCallMessage = message.callId == callId
-                    val isCallControlTrigger = message.callId.isNullOrBlank() &&
-                        message.parts.any { part ->
-                            part is UIMessagePart.ToolCall && part.toolName == "call_control"
-                        }
-                    isCallMessage || isCallControlTrigger
+                    ConversationRepository.isCallRelatedMessageForDelete(
+                        node.currentMessage, callId, record.createTime
+                    )
                 }
                 current.copy(messageNodes = filteredNodes)
             }

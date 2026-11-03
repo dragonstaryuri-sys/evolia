@@ -37,6 +37,7 @@ import me.rerere.ai.ui.UsedLorebookEntry
 import me.rerere.ai.ui.UsedMemory
 import me.rerere.ai.ui.UsedMode
 import me.rerere.ai.ui.handleMessageChunk
+import me.rerere.ai.ui.isCallDecisionRequest
 import me.rerere.ai.ui.limitContext
 import me.rerere.ai.ui.truncate
 import me.rerere.rikkahub.discover.repo.ScheduleRepository
@@ -1241,24 +1242,31 @@ class GenerationHandler(
             // - DIARY_COMMENT: 完整带入，不截断（用户评论+日记内容是后续对话的重要上下文）
             // - CALL / CALL_STATE: 完整带入，不截断（通话真实转写与通话状态标记必须进入后续上下文）
             // - NORMAL: 历史消息截断到前 100 字，保留最后一条 user 消息完整
-            val lastUserMsgIndex = messages.indexOfLast { it.role == CoreMessageRole.USER }
-            messages.mapIndexed { index, msg ->
-                val isContextWhitelistedSource = msg.messageSource == MessageSource.AGENT_TASK
-                    || msg.messageSource == MessageSource.DIARY_COMMENT
-                    || msg.messageSource == MessageSource.CALL
-                    || msg.messageSource == MessageSource.CALL_STATE
-                val shouldTruncate = msg.skipContext
-                    && !isContextWhitelistedSource
-                    && index != lastUserMsgIndex
-                if (shouldTruncate) {
-                    msg.copy(parts = msg.parts.map { part ->
-                        if (part is UIMessagePart.Text) {
-                            val truncated = part.text.take(100)
-                            UIMessagePart.Text(if (part.text.length > 100) "$truncated..." else truncated)
-                        } else part
-                    })
-                } else msg
-            }
+            // - CALL_REQUEST: 通话决策指令仅在发起当轮（最后一条 user 消息）可见，
+            //   后续对话轮次完全剔除，防止 AI 读到旧指令误回 0/1
+            //   （isCallDecisionRequest 同时覆盖旧版本遗留的无 callId 决策消息）
+            val lastUserMsgId = messages.lastOrNull { it.role == CoreMessageRole.USER }?.id
+            messages
+                .filterIndexed { _, msg ->
+                    !msg.isCallDecisionRequest() || msg.id == lastUserMsgId
+                }
+                .map { msg ->
+                    val isContextWhitelistedSource = msg.messageSource == MessageSource.AGENT_TASK
+                        || msg.messageSource == MessageSource.DIARY_COMMENT
+                        || msg.messageSource == MessageSource.CALL
+                        || msg.messageSource == MessageSource.CALL_STATE
+                    val shouldTruncate = msg.skipContext
+                        && !isContextWhitelistedSource
+                        && msg.id != lastUserMsgId
+                    if (shouldTruncate) {
+                        msg.copy(parts = msg.parts.map { part ->
+                            if (part is UIMessagePart.Text) {
+                                val truncated = part.text.take(100)
+                                UIMessagePart.Text(if (part.text.length > 100) "$truncated..." else truncated)
+                            } else part
+                        })
+                    } else msg
+                }
         } else {
             // 不包含（大多数）skipContext 消息，但 CALL 真实转写与 CALL_STATE 状态标记
             // 必须按来源白名单保留，纳入后续上下文；普通 skipContext 指令维持原有语义。

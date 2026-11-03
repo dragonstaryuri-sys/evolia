@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.CALL_DECISION_INSTRUCTION
 import me.rerere.ai.ui.MessageSource
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
@@ -1332,7 +1333,10 @@ class VoiceCallManager(
 
     /**
      * 用户主动拨号时向 AI 请求接听决策。
-     * 指令为隐藏消息（skipContext=true）；AI 的原始 1/0 回复在解析后立即从数据表移除，
+     * 指令为隐藏消息（skipContext=true），创建时即绑定 [callId] 并标记为
+     * [MessageSource.CALL_REQUEST]：删除通话记录时可按 callId 关联删除；
+     * 仅当轮决策可见，后续对话上下文中会被完全剔除（避免 AI 读到旧指令误回 0/1）。
+     * AI 的原始 1/0 回复在解析后立即从数据表移除，
      * 改由 [persistCallStateMarker] 落库语义化标记（我接通了电话 / 我拒接了电话）。
      * @return true = AI 同意接通；false = AI 拒绝 / 多次无效决策（不默认接通）。
      */
@@ -1340,17 +1344,16 @@ class VoiceCallManager(
         var attempt = 0
         while (attempt < 2) {
             attempt++
-            val instruction =
-                "【系统通话决策】用户正在给你打电话，请决定是否接听。只回复数字 1（同意接听）或 0（拒绝接听），不要回复任何其他内容。"
             val decisionUserNode = UIMessage(
                 role = MessageRole.USER,
-                parts = listOf(UIMessagePart.Text(instruction)),
+                parts = listOf(UIMessagePart.Text(CALL_DECISION_INSTRUCTION)),
                 skipContext = true,
-                messageSource = MessageSource.NORMAL
+                messageSource = MessageSource.CALL_REQUEST,
+                callId = callId
             ).toMessageNode(convId)
             chatService.sendMessage(
                 conversationId = convId,
-                content = listOf(UIMessagePart.Text(instruction)),
+                content = listOf(UIMessagePart.Text(CALL_DECISION_INSTRUCTION)),
                 answer = true,
                 predefinedUserNode = decisionUserNode,
                 skipContextForResponse = true,

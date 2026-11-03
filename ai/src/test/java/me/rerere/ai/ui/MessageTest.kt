@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import me.rerere.ai.core.MessageRole
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -312,5 +313,70 @@ class MessageTest {
                 parts = listOf(UIMessagePart.Text("Message $i"))
             )
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 通话决策指令消息判定（isCallDecisionRequest）
+    // 用于后续对话上下文剔除与删除通话记录时的关联删除
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `isCallDecisionRequest should match CALL_REQUEST decision message`() {
+        val msg = UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text(CALL_DECISION_INSTRUCTION)),
+            skipContext = true,
+            messageSource = MessageSource.CALL_REQUEST,
+            callId = "call_abc123"
+        )
+        assertTrue(msg.isCallDecisionRequest())
+    }
+
+    @Test
+    fun `isCallDecisionRequest should match legacy NORMAL decision message without callId`() {
+        // 旧版本遗留决策消息：无 callId、NORMAL 来源、skipContext、固定决策文案
+        val msg = UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text(CALL_DECISION_INSTRUCTION)),
+            skipContext = true,
+            messageSource = MessageSource.NORMAL
+        )
+        assertTrue(msg.isCallDecisionRequest())
+    }
+
+    @Test
+    fun `isCallDecisionRequest should not match normal user chat message`() {
+        // 正常聊天消息 skipContext=false；即使手动粘贴了指令文案也不应命中
+        val msg = UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text(CALL_DECISION_INSTRUCTION)),
+            skipContext = false,
+            messageSource = MessageSource.NORMAL
+        )
+        assertFalse(msg.isCallDecisionRequest())
+    }
+
+    @Test
+    fun `isCallDecisionRequest should not match similar text without full instruction prefix`() {
+        // 内容相似但非固定决策文案的 skipContext 消息不应命中
+        val msg = UIMessage(
+            role = MessageRole.USER,
+            parts = listOf(UIMessagePart.Text("用户发起了通话请求，请回复 0 或 1，表示挂断或接通。")),
+            skipContext = true,
+            messageSource = MessageSource.NORMAL
+        )
+        assertFalse(msg.isCallDecisionRequest())
+    }
+
+    @Test
+    fun `isCallDecisionRequest should not match assistant CALL_STATE marker`() {
+        val msg = UIMessage(
+            role = MessageRole.ASSISTANT,
+            parts = listOf(UIMessagePart.Text("我接通了电话")),
+            skipContext = true,
+            messageSource = MessageSource.CALL_STATE,
+            callId = "call_abc123"
+        )
+        assertFalse(msg.isCallDecisionRequest())
     }
 }

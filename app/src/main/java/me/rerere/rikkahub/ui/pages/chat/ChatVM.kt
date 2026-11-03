@@ -1107,16 +1107,14 @@ class ChatVM(
             callRecordRepository.deleteById(callId)
 
             // 3. 同步内存会话：移除已被删除的通话节点
+            //    （判定与 DB 删除共用 isCallRelatedMessageForDelete，含旧版无 callId 的决策指令兜底，
+            //    避免 syncMessages 全量回写时把 DB 已删的决策消息复活）
             chatService.mutateConversationAndSave(conversationId) { current ->
                 val filteredNodes = current.messageNodes.filterNot { node ->
                     if (node.messages.isEmpty()) return@filterNot false
-                    val msg = node.currentMessage
-                    val isCallMessage = msg.callId == callId
-                    val isCallControlTrigger = msg.callId.isNullOrBlank() &&
-                        msg.parts.any { part ->
-                            part is UIMessagePart.ToolCall && part.toolName == "call_control"
-                        }
-                    isCallMessage || isCallControlTrigger
+                    ConversationRepository.isCallRelatedMessageForDelete(
+                        node.currentMessage, callId, record.createTime
+                    )
                 }
                 current.copy(messageNodes = filteredNodes)
             }
