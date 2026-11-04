@@ -870,6 +870,8 @@ class VoiceCallManager(
                 if (!ok) {
                     Log.e(TAG, "startCall: session init failed")
                     stopRingtone()
+                    // 未接通收尾：恢复对话页自动朗读（startCall/beginConnectedSession 已 pause，漏 resume 会永久卡死）
+                    customTtsState.resumeAutoReadAfterCall()
                     runCatching {
                         callRecordRepository.updateStatusWithReason(callId, CallRecordStatus.FAILED, "init_failed")
                     }
@@ -883,6 +885,8 @@ class VoiceCallManager(
             } else {
                 persistCallStateMarker(conversationId, callId, "我拒接了电话")
                 stopRingtone()
+                // 未接通收尾：恢复对话页自动朗读（startCall 已 pause，漏 resume 会永久卡死）
+                customTtsState.resumeAutoReadAfterCall()
                 runCatching {
                     callRecordRepository.updateStatusWithReason(callId, CallRecordStatus.REJECTED, "rejected")
                 }
@@ -1221,6 +1225,8 @@ class VoiceCallManager(
                     CallCommandHub.CallResult(callId, CallCommandHub.CallEndStatus.FAILED, "init_failed")
                 )
                 CallCommandHub.dismissIncomingUi(callId)
+                // 未接通收尾：恢复对话页自动朗读（beginConnectedSession 已 pause，漏 resume 会永久卡死）
+                customTtsState.resumeAutoReadAfterCall()
                 _callPhase.value = CallPhase.IDLE
                 activeCallId = null
                 callError("通话失败：语音会话初始化失败")

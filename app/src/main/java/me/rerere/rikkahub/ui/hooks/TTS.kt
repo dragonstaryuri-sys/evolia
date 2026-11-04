@@ -425,7 +425,9 @@ class CustomTtsStateImpl(
                 }
                 // 通话中：暂停自动朗读消费，但不推进 lastProcessed* 指针
                 // 挂断恢复后，从通话开始前的断点继续朗读，保证不漏读也不重复读
+                // 该分支必须保持静默跳过（不推进指针），但打日志便于诊断 resume 遗漏导致的永久失效
                 if (autoReadPaused.get()) {
+                    Log.i(TAG, "[AutoRead] PAUSED by voice call, skip consumption (if this persists, resume is missing)")
                     return@collect
                 }
 
