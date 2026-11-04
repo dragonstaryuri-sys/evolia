@@ -10,13 +10,20 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.toInstant
 import me.rerere.ai.core.MessageRole
@@ -29,6 +36,7 @@ import me.rerere.rikkahub.core.data.ai.prompts.DIARY_NO_INTERACTION_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.DIARY_TIME_REFERENCE_PROMPT
 import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
+import me.rerere.rikkahub.core.data.db.entity.DiaryGenerationStatus
 import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.core.data.repository.DiaryRepository
 import me.rerere.rikkahub.core.data.repository.MemoryRepository
@@ -65,6 +73,43 @@ private const val DIARY_MARKDOWN_INSTRUCTION = """
 你可以使用markdown格式编写你的日记~
 """
 
+/** 手动生成任务的唯一任务名前缀（DiaryVM 同步使用） */
+const val DIARY_MANUAL_WORK_NAME_PREFIX = "diary_gen_"
+
+/** 自动调度任务的唯一任务名前缀（DiarySchedulerWorker 同步使用） */
+const val DIARY_AUTO_WORK_NAME_PREFIX = "auto_diary_"
+
+/**
+ * 查询某助手+目标日期是否存在活跃（ENQUEUED/RUNNING）的日记生成任务。
+ *
+ * 覆盖手动（diary_gen_）与自动（auto_diary_）两个唯一任务名，
+ * 是 GENERATING 状态防永久卡死与并发双任务的唯一可信判据：
+ * 数据库状态只做记录，"任务是否还活着"以 WorkManager 为准。
+ *
+ * @param excludeWorkId 排除的 WorkInfo id（DiaryWorker 检查时排除自身）
+ */
+suspend fun hasActiveDiaryGenerationTask(
+    workManager: WorkManager,
+    assistantId: String,
+    targetDate: String,
+    excludeWorkId: java.util.UUID? = null
+): Boolean {
+    val uniqueNames = listOf(
+        "$DIARY_MANUAL_WORK_NAME_PREFIX$assistantId",
+        "$DIARY_AUTO_WORK_NAME_PREFIX${assistantId}_$targetDate"
+    )
+    return uniqueNames.any { name ->
+        val infos = withContext(Dispatchers.IO) {
+            runCatching { workManager.getWorkInfosForUniqueWork(name).get() }
+                .getOrDefault(emptyList<WorkInfo>())
+        }
+        infos.any { info ->
+            info.id != excludeWorkId &&
+                (info.state == WorkInfo.State.ENQUEUED || info.state == WorkInfo.State.RUNNING)
+        }
+    }
+}
+
 class DiaryWorker(
     context: Context,
     workerParams: WorkerParameters
@@ -83,6 +128,8 @@ class DiaryWorker(
         val isManual = inputData.getBoolean("isManual", false)
 
         // —— 生成过程中使用的共享状态（用于失败时保留已有内容） ——
+        // generatedContent：当前日记全文草稿（续写场景初始化为已有正文，chunk 输出为全文重写）
+        // hadAnyChunkSuccess：DB 中已存在成功保存的正文（含 PARTIAL 续写时继承自历史 chunk）
         var inProgressDiaryId: String? = null
         var generatedContent = ""
         var hadAnyChunkSuccess = false
@@ -100,73 +147,84 @@ class DiaryWorker(
                 return Result.success()
             }
 
-            // 优先使用传入的 targetDate（自动补发昨日时使用），否则用当前日期
+            // 手动生成始终以今天为目标日期（产品规则：不支持补生成历史日期）
             val targetDateStr = inputData.getString("targetDate")
                 ?: LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
             val targetDate = runCatching { LocalDate.parse(targetDateStr, DateTimeFormatter.ISO_LOCAL_DATE) }
                 .getOrDefault(LocalDate.now())
 
-            // —— 目标日期是否已有有效日记：空内容 diary 视为失败残留，不算"已生成" ——
+            // ——————————————————————————————————————————————
+            // 入口决策（见 resolveDiaryEntryAction）：
+            //   CreateNew        → 新建 skeleton（status=GENERATING）
+            //   Resume           → 复用原记录续写 / 重建（PARTIAL 续写、空壳重建、崩溃残留接管）
+            //   SkipAlreadyExists→ 已有有效日记（正文或用户图片），绝不删除/覆盖
+            //   SkipTaskRunning  → GENERATING 且其他活跃任务在跑，避免双任务并发写同一日记
+            // ——————————————————————————————————————————————
             val existingDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), targetDateStr)
-            val hasValidDiary = existingDiary != null && existingDiary.content.isNotBlank()
-            if (hasValidDiary) {
-                // 目标日期已有非空内容的日记 → 无论自动还是手动都直接跳过
-                // 手动生成只用于"自动生成失败/当日没有日记"的补漏场景
-                return if (isManual) {
-                    Result.success(workDataOf("skipped" to true, "reason" to "already_exists"))
-                } else {
-                    Result.success()
+            val otherTaskActive = hasActiveDiaryGenerationTask(
+                workManager = WorkManager.getInstance(applicationContext),
+                assistantId = assistant.id.toString(),
+                targetDate = targetDateStr,
+                excludeWorkId = id
+            )
+            var skeletonCreatedAt = System.currentTimeMillis()
+            val resumeDiary: AgentDiaryEntity? = when (val action = resolveDiaryEntryAction(existingDiary, otherTaskActive)) {
+                DiaryEntryAction.SkipAlreadyExists -> {
+                    return if (isManual) {
+                        Result.success(workDataOf("skipped" to true, "reason" to "already_exists"))
+                    } else {
+                        Result.success()
+                    }
+                }
+                DiaryEntryAction.SkipTaskRunning -> {
+                    Log.i(TAG, "Diary generation skipped: another active task is running for ${assistant.name} $targetDateStr")
+                    return if (isManual) {
+                        Result.success(workDataOf("skipped" to true, "reason" to "task_running"))
+                    } else {
+                        Result.success()
+                    }
+                }
+                DiaryEntryAction.CreateNew -> {
+                    val newId = Uuid.random().toString()
+                    skeletonCreatedAt = System.currentTimeMillis()
+                    diaryRepo.insertDiary(
+                        AgentDiaryEntity(
+                            id = newId,
+                            assistantId = assistant.id.toString(),
+                            content = "",
+                            date = targetDateStr,
+                            createdAt = skeletonCreatedAt,
+                            generationStatus = DiaryGenerationStatus.GENERATING
+                        )
+                    )
+                    inProgressDiaryId = newId
+                    null
+                }
+                is DiaryEntryAction.Resume -> {
+                    // 复用原记录（保留 id/createdAt 语义），置回 GENERATING 继续或重试
+                    inProgressDiaryId = action.diary.id
+                    diaryRepo.updateDiaryStatus(action.diary.id, DiaryGenerationStatus.GENERATING)
+                    generatedContent = action.diary.content
+                    hadAnyChunkSuccess = action.diary.content.isNotBlank()
+                    action.diary
                 }
             }
+            // 入口决策后记录必然已创建/复用，try 内统一使用非空 diaryId
+            val diaryId = requireNotNull(inProgressDiaryId) { "diary id not initialized" }
 
-            // ——————————————————————————————————————————————
-            // skeleton 占位 / 清理策略：
-            //   - 空壳残留（existingDiary 非空但 content 空）→ 先删掉再新建，避免占位卡住
-            //   - 无旧日记 → 新建空 skeleton
-            // skeletonCreatedAt 同时作为无交互日记的 lastMessageAt（无消息可取时用生成时间推进游标）
-            // ——————————————————————————————————————————————
-            val skeletonCreatedAt = System.currentTimeMillis()
-            val skeletonId = if (existingDiary != null && existingDiary.content.isBlank()) {
-                runCatching { diaryRepo.deleteDiaryById(existingDiary.id) }
-                val newId = Uuid.random().toString()
-                diaryRepo.insertDiary(
-                    AgentDiaryEntity(
-                        id = newId,
-                        assistantId = assistant.id.toString(),
-                        content = "",
-                        date = targetDateStr,
-                        createdAt = skeletonCreatedAt
-                    )
-                )
-                newId
-            } else {
-                val newId = Uuid.random().toString()
-                diaryRepo.insertDiary(
-                    AgentDiaryEntity(
-                        id = newId,
-                        assistantId = assistant.id.toString(),
-                        content = "",
-                        date = targetDateStr,
-                        createdAt = skeletonCreatedAt
-                    )
-                )
-                newId
-            }
-            inProgressDiaryId = skeletonId
-
-            // —— 消息起点锚点（两级 fallback）：
-            //    1) 上一篇有内容日记的 lastMessageAt —— 上次实际取到的最后一条消息时间
-            //       （历史日记由迁移回填为 createdAt；新日记由 DiaryWorker 写入真实最后消息时间；
-            //         无交互日记写入 skeletonCreatedAt）。所有有内容日记的 lastMessageAt 都有值。
-            //    2) targetDate 当日 0 点 —— 没有上一篇日记时的回退
+            // —— 消息起点锚点（见 computeStartTimeThreshold）：
+            //    续写优先用原日记自身 lastMessageAt；否则回退最近一篇有正文日记；
+            //    均无时回退 targetDate 当日 0 点（首次生成沿用现有规则）
             val allSortedDiaries = diaryRepo
                 .getDiariesByAssistant(assistant.id.toString())
                 .first()
-                .filter { it.content.isNotBlank() && it.id != skeletonId }
+                .filter { it.content.isNotBlank() && it.id != diaryId }
                 .sortedByDescending { it.date }
-            val lastMeaningfulDiary = allSortedDiaries.firstOrNull()
-            val startTimeThreshold = lastMeaningfulDiary?.lastMessageAt
-                ?: targetDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val startTimeThreshold = computeStartTimeThreshold(
+                resumeDiary = resumeDiary,
+                otherDiariesSortedByDateDesc = allSortedDiaries,
+                fallbackStartOfDayMillis = targetDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            )
 
             // —— Stage 1（SQL 层粗筛）：只取 update_at >= startTimeThreshold 的会话
             //    避免把该智能体历史所有会话全量加载进内存
@@ -180,22 +238,14 @@ class DiaryWorker(
             val allMessages = conversations.flatMap { conv ->
                 conv.messageNodes.mapNotNull { node ->
                     node.messages.getOrNull(node.selectIndex)?.takeIf {
-                        it.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds() > startTimeThreshold
+                        it.createdAtMillis() > startTimeThreshold
                     }
                 }
-            }.sortedBy { it.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds() }
+            }.sortedBy { it.createdAtMillis() }
 
             val newMessages = allMessages.filter {
                 it.role != MessageRole.TOOL && it.toContentText().isNotBlank()
             }
-
-            // 本次取到的最后一条消息的 createdAt（epoch ms），写入新日记作为下次生成的起点锚点。
-            // newMessages 为空（无交互日记）时为 null，此时无交互分支用 skeletonCreatedAt 兜底推进游标。
-            // 注：partial 中断场景下，此值记的是"本应取的最后一条"而非"实际处理到的最后一条"，
-            // 下次生成可能漏掉 partial 日记未处理的部分消息——这是 partial 兜底的已知边界，可接受。
-            val lastMsgTimestamp = newMessages.lastOrNull()?.createdAt
-                ?.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault())
-                ?.toEpochMilliseconds()
 
             val triggerTime = LocalDateTime.now().format(timeFormatter)
             val locale = Locale.getDefault().toLanguageTag()
@@ -206,6 +256,15 @@ class DiaryWorker(
                 ?: error("没有可用模型")
 
             if (newMessages.isEmpty()) {
+                // —— 无交互 / 无新消息分支 ——
+                if (hadAnyChunkSuccess) {
+                    // 续写场景：正文已存在且游标之后没有新消息
+                    // （含"最后一个 chunk 成功后进程被杀，状态停留 GENERATING"的恢复）
+                    // → 全部消息已处理完毕，落定为 COMPLETED，不再重复生成
+                    diaryRepo.updateDiaryStatus(diaryId, DiaryGenerationStatus.COMPLETED)
+                    return Result.success(workDataOf("skipped" to true, "reason" to "no_new_messages"))
+                }
+
                 val memories = memoryRepo.getCombinedMemoriesFlow(assistant.id.toString()).first()
                 val selectedMemories = if (memories.isNotEmpty()) {
                     memories.shuffled().take(3).joinToString("\n") { "- ${it.content}" }
@@ -220,42 +279,35 @@ class DiaryWorker(
                 ) + DIARY_MARKDOWN_INSTRUCTION
 
                 generatedContent = performGeneration(currentSettings, model, assistant, finalPrompt)
-                // 单块分支：成功就立刻写盘
-                // 无交互场景没有消息可取，用 skeletonCreatedAt 推进游标，避免跨天空档时 next-run 漏消息
                 if (generatedContent.isNotBlank()) {
-                    diaryRepo.updateDiary(
-                        diaryRepo.getDiaryById(skeletonId)!!.copy(
-                            content = generatedContent,
-                            lastMessageAt = skeletonCreatedAt
-                        )
-                    )
+                    // 单块分支：成功立刻写盘。
+                    // 无交互场景没有消息可取，用日记记录的 createdAt 推进游标
+                    // （复用记录时保持原 createdAt，符合"无交互日记游标 = 日记创建时间"约定）。
+                    // 该时点之前锚点之后无任何消息存在，未来消息必然 > createdAt，严格大于查询不漏。
+                    val noInteractionCursor = resumeDiary?.createdAt ?: skeletonCreatedAt
+                    diaryRepo.updateDiaryGenerationProgress(diaryId, generatedContent, noInteractionCursor)
+                    diaryRepo.updateDiaryStatus(diaryId, DiaryGenerationStatus.COMPLETED)
                     hadAnyChunkSuccess = true
+                } else {
+                    // 无交互生成返回空 → 清掉空壳避免占位
+                    runCatching { diaryRepo.deleteDiaryById(diaryId) }
+                    return Result.success(workDataOf("skipped" to true, "reason" to "no_content"))
                 }
             } else {
-                val messageGroups = mutableListOf<List<UIMessage>>()
-                var currentGroup = mutableListOf<UIMessage>()
-                var currentLen = 0
-                for (msg in newMessages) {
-                    val text = msg.toContentText()
-                    if (currentLen + text.length > CHUNK_SIZE && currentGroup.isNotEmpty()) {
-                        messageGroups.add(currentGroup)
-                        currentGroup = mutableListOf()
-                        currentLen = 0
-                    }
-                    currentGroup.add(msg)
-                    currentLen += text.length
-                }
-                if (currentGroup.isNotEmpty()) messageGroups.add(currentGroup)
+                val messageGroups = buildDiaryMessageGroups(newMessages, CHUNK_SIZE)
+
+                // 续写时首个 chunk 也走"草稿续写"prompt（generatedContent 已初始化为原正文）
+                val isResumingDraft = !generatedContent.isBlank()
 
                 messageGroups.forEachIndexed { index, group ->
-                    val isFirst = index == 0
+                    val isFirst = index == 0 && !isResumingDraft
                     val chatContent = group.joinToString("\n") { message ->
-                        val time = formatTimestamp(message.createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
+                        val time = formatTimestamp(message.createdAtMillis())
                         "[$time] ${message.role}: ${message.toContentText()}"
                     }
 
-                    val firstMsgTime = formatTimestamp(group.first().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
-                    val lastMsgTime = formatTimestamp(group.last().createdAt.toInstant(kotlinx.datetime.TimeZone.currentSystemDefault()).toEpochMilliseconds())
+                    val firstMsgTime = formatTimestamp(group.first().createdAtMillis())
+                    val lastMsgTime = formatTimestamp(group.last().createdAtMillis())
 
                     val timeRef = "\n\n" + DIARY_TIME_REFERENCE_PROMPT.applyPlaceholders(
                         "today_date" to LocalDate.now().toString() + " (" + LocalDate.now().dayOfWeek.name + ")",
@@ -292,80 +344,121 @@ class DiaryWorker(
 
                     val chunkResult = performGeneration(currentSettings, model, assistant, finalPrompt)
 
-                    // —— ★ 增量落库：每个 chunk 生成成功立刻写 DB，下次断点能续上 ——
-                    if (chunkResult.isNotBlank()) {
-                        generatedContent = chunkResult
-                        // 兜底：若取不到真正的最后一条消息时间，则用日记 createdAt（skeletonCreatedAt）推进游标，
-                        // 避免 lastMessageAt 为 null 导致下次生成回退到 targetDate 0 点、重复处理已写日记的消息。
-                        val finalLastMessageAt = lastMsgTimestamp ?: skeletonCreatedAt
-                        diaryRepo.updateDiary(
-                            diaryRepo.getDiaryById(skeletonId)!!.copy(
-                                content = generatedContent,
-                                lastMessageAt = finalLastMessageAt
-                            )
-                        )
-                        hadAnyChunkSuccess = true
+                    if (chunkResult.isBlank()) {
+                        // —— ★ Chunk 失败（含模型返回空内容）：立即停止后续 chunk（4.3）——
+                        //    游标不推进，已保存内容保留，状态由下方收尾逻辑落定
+                        Log.w(TAG, "Diary chunk $index returned blank, stop remaining chunks; preservedContent=${generatedContent.isNotBlank()}")
+                        return finishWithChunkFailure(isManual, assistantIdStr, diaryId, hadAnyChunkSuccess, "AI 返回了空内容")
                     }
+
+                    // —— ★ 增量落库：每个 chunk 生成成功立刻写 DB，下次断点能续上 ——
+                    //    游标只推进到【本 chunk 最后一条消息】的时间戳（而非整批消息的最后一条），
+                    //    后续 chunk 失败时未处理消息仍会被下一轮查询命中
+                    generatedContent = chunkResult
+                    val chunkCursor = chunkCursorMillis(group)
+                        ?: error("impossible: chunk group is never empty")
+                    diaryRepo.updateDiaryGenerationProgress(diaryId, generatedContent, chunkCursor)
+                    hadAnyChunkSuccess = true
                 }
+
+                // 全部 chunk 成功 → COMPLETED
+                diaryRepo.updateDiaryStatus(diaryId, DiaryGenerationStatus.COMPLETED)
             }
 
-            if (generatedContent.isNotBlank()) {
-                if (!isManual) {
-                    showSuccessNotification(assistant.name, assistant.id.toString())
-                }
-                Result.success(workDataOf("partial" to false))
-            } else {
-                // 没有生成任何内容 → 清掉空壳避免占位
-                inProgressDiaryId?.let { diaryRepo.deleteDiaryById(it) }
-                Result.success(workDataOf("skipped" to true, "reason" to "no_content"))
+            if (!isManual) {
+                showSuccessNotification(assistant.name, assistant.id.toString())
             }
+            Result.success(workDataOf("partial" to false))
         } catch (ce: CancellationException) {
             // ——————————————————————————————————————————————
-            // ★ 修复 ①：CancellationException 必须原样重抛
-            //   - WorkManager/协程取消属于正常行为（用户重复点击、切后台被杀、系统回收）
-            //   - 不弹"失败"通知，不误导用户
-            //   - 如果已有部分内容写入 DB，保留不回滚（用户仍能看到进度）
+            // CancellationException 原样重抛（含首 token 360s / 单 chunk 15min watchdog 超时）
+            //   - WorkManager/协程取消属于正常行为，不弹"失败"通知
+            //   - 已有内容 → PARTIAL（下次可续写）；无内容 → 删空壳
+            //   - 协程已取消，挂起调用必须包 NonCancellable，否则清理语句本身会被取消而失效
             // ——————————————————————————————————————————————
             Log.i(TAG, "Diary job cancelled, hadAnyChunkSuccess=$hadAnyChunkSuccess, preservedDiaryId=$inProgressDiaryId")
-            if (!hadAnyChunkSuccess) {
-                // 完全没产出：删掉 skeleton，避免留下空日记占今日位置
-                inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
+            withContext(NonCancellable) {
+                if (hadAnyChunkSuccess && inProgressDiaryId != null) {
+                    runCatching { diaryRepo.updateDiaryStatus(inProgressDiaryId, DiaryGenerationStatus.PARTIAL) }
+                } else {
+                    inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
+                }
             }
             throw ce
         } catch (e: Exception) {
             Log.e(TAG, "Diary generation failed, hadAnyChunkSuccess=$hadAnyChunkSuccess", e)
             val errorInfo = e.localizedMessage ?: e.toString()
-            return when {
-                // —— 部分成功：保留已生成的内容，提示用户，不记失败不重试 ——
-                hadAnyChunkSuccess && generatedContent.isNotBlank() -> {
-                    if (isManual) {
-                        val partialMsg = applicationContext.getString(
-                            R.string.discover_page_diary_generate_partial,
-                            errorInfo
+            return withContext(NonCancellable) {
+                when {
+                    // —— 部分成功：保留已生成的内容，落定 PARTIAL，提示用户，不记失败不重试 ——
+                    hadAnyChunkSuccess && generatedContent.isNotBlank() -> {
+                        inProgressDiaryId?.let { id ->
+                            runCatching { diaryRepo.updateDiaryStatus(id, DiaryGenerationStatus.PARTIAL) }
+                        }
+                        if (isManual) {
+                            val partialMsg = applicationContext.getString(
+                                R.string.discover_page_diary_generate_partial,
+                                errorInfo
+                            )
+                            showSimpleNotification(partialMsg, assistantIdStr)
+                        }
+                        Result.success(
+                            workDataOf(
+                                "partial" to true,
+                                "reason" to "partial_on_error",
+                                "error" to errorInfo
+                            )
                         )
-                        showSimpleNotification(partialMsg, assistantIdStr)
                     }
-                    Result.success(
-                        workDataOf(
-                            "partial" to true,
-                            "reason" to "partial_on_error",
-                            "error" to errorInfo
-                        )
-                    )
-                }
-                // —— 完全失败且手动触发：直接通知失败，不重试 ——
-                isManual -> {
-                    inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
-                    val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
-                    showSimpleNotification(errorMsg, assistantIdStr)
-                    Result.failure(workDataOf("error" to errorInfo))
-                }
-                // —— 完全失败且自动触发：按现有策略最多重试 3 次 ——
-                else -> {
-                    inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
-                    if (runAttemptCount < 3) Result.retry() else Result.failure()
+                    // —— 完全失败且手动触发：删空壳，直接通知失败，不重试 ——
+                    isManual -> {
+                        inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
+                        val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
+                        showSimpleNotification(errorMsg, assistantIdStr)
+                        Result.failure(workDataOf("error" to errorInfo))
+                    }
+                    // —— 完全失败且自动触发：删空壳，按现有策略最多重试 3 次 ——
+                    else -> {
+                        inProgressDiaryId?.let { runCatching { diaryRepo.deleteDiaryById(it) } }
+                        if (runAttemptCount < 3) Result.retry() else Result.failure()
+                    }
                 }
             }
+        }
+    }
+
+    /**
+     * Chunk 失败（含空白返回）的统一收尾：
+     * - 已有任何成功正文（含 PARTIAL 续写继承的历史正文）→ 状态落定 PARTIAL，可同天/跨天恢复
+     * - 首个 chunk 即失败且无任何正文 → 删空壳（等价 FAILED：记录不存在即可重试）
+     *   手动触发通知失败；自动触发按现有策略 retry（≤3 次）
+     *
+     * 游标不推进、不向正文写入错误信息（2.2/4.3）。
+     */
+    private suspend fun finishWithChunkFailure(
+        isManual: Boolean,
+        assistantIdStr: String?,
+        diaryId: String,
+        hasPreservedContent: Boolean,
+        errorInfo: String
+    ): Result = if (hasPreservedContent) {
+        Log.i(TAG, "Diary chunk failed with preserved content, diary stays PARTIAL, diaryId=$diaryId")
+        runCatching { diaryRepo.updateDiaryStatus(diaryId, DiaryGenerationStatus.PARTIAL) }
+        Result.success(
+            workDataOf(
+                "partial" to true,
+                "reason" to "partial_on_blank_chunk",
+                "error" to errorInfo
+            )
+        )
+    } else {
+        runCatching { diaryRepo.deleteDiaryById(diaryId) }
+        if (isManual) {
+            val errorMsg = applicationContext.getString(R.string.diary_generate_failed, errorInfo)
+            showSimpleNotification(errorMsg, assistantIdStr)
+            Result.failure(workDataOf("error" to errorInfo))
+        } else {
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 

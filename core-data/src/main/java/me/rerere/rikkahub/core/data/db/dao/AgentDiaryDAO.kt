@@ -59,6 +59,27 @@ interface AgentDiaryDAO {
     @Query("UPDATE AgentDiaryEntity SET is_favorite = :favorite WHERE id = :id")
     suspend fun setDiaryFavorite(id: String, favorite: Boolean)
 
+    // --- AI 日记生成进度（DiaryWorker 专用） ---
+    // 均为单条 UPDATE 语句：SQLite 单语句天然原子，正文 + 游标 + 状态三者
+    // 同步生效或同步不生效，等价于一个事务（无需跨表事务包裹）。
+    // 使用定向列更新而非全实体 @Update，避免覆盖 is_favorite / images 等并发列。
+
+    /**
+     * Chunk 生成成功后的原子推进：追加正文 + 推进游标 + 维持 GENERATING。
+     * 游标只允许推进到最后一条【已成功持久化】的消息时间戳。
+     */
+    @Query(
+        "UPDATE AgentDiaryEntity SET content = :content, last_message_at = :lastMessageAt " +
+            "WHERE id = :id"
+    )
+    suspend fun updateDiaryGenerationProgress(id: String, content: String, lastMessageAt: Long?)
+
+    /**
+     * 只更新生成状态（置 GENERATING / COMPLETED / PARTIAL）。
+     */
+    @Query("UPDATE AgentDiaryEntity SET generation_status = :status WHERE id = :id")
+    suspend fun updateDiaryStatus(id: String, status: String)
+
     @Query("SELECT * FROM AgentDiaryEntity WHERE is_favorite = 1 AND assistant_id IN (:assistantIds) ORDER BY date DESC, created_at DESC")
     fun getFavoriteDiariesByAssistants(assistantIds: List<String>): Flow<List<AgentDiaryEntity>>
 

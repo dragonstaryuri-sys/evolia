@@ -43,7 +43,7 @@ import me.rerere.rikkahub.core.data.model.MessageNode
         CallRecordEntity::class,
         ScheduleEventEntity::class
     ],
-    version = 42,
+    version = 43,
     exportSchema = true
 )
 @TypeConverters(
@@ -509,6 +509,26 @@ abstract class AppDatabase : RoomDatabase() {
                 Log.v(TAG, "开始 41->42 迁移：call_records 表新增通话心跳时间 last_heartbeat_at")
                 db.execSQL(
                     "ALTER TABLE `call_records` ADD COLUMN `last_heartbeat_at` INTEGER"
+                )
+            }
+        }
+
+        /**
+         * 42 → 43：AgentDiaryEntity 新增生成状态列 generation_status。
+         *
+         * 支撑日记生成失败恢复机制（chunk 级游标推进 + 同天 PARTIAL 续写）：
+         * - GENERATING：生成任务进行中 / Worker 异常退出残留
+         * - PARTIAL：部分 Chunk 已成功保存，仍有消息未处理
+         * - COMPLETED：全部处理完成
+         * 历史日记全部默认 COMPLETED（视为已完成，不参与续写，保持既有兼容规则）；
+         * 历史遗留空壳记录（content 空 + COMPLETED）由 DiaryWorker 复用重建逻辑兜底。
+         * 仅加列 + 非空默认值，不改动任何既有字段。
+         */
+        val MIGRATION_42_43 = object : Migration(42, 43) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                Log.v(TAG, "开始 42->43 迁移：AgentDiaryEntity 新增生成状态 generation_status")
+                db.execSQL(
+                    "ALTER TABLE `AgentDiaryEntity` ADD COLUMN `generation_status` TEXT NOT NULL DEFAULT 'COMPLETED'"
                 )
             }
         }

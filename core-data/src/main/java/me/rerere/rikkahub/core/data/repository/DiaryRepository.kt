@@ -53,6 +53,15 @@ class DiaryRepository(
         return agentDiaryDao.getLastDiaryOfAssistant(assistantId)
     }
 
+    // --- AI 日记生成进度（DiaryWorker 专用，单语句原子更新） ---
+    suspend fun updateDiaryGenerationProgress(id: String, content: String, lastMessageAt: Long?) {
+        agentDiaryDao.updateDiaryGenerationProgress(id, content, lastMessageAt)
+    }
+
+    suspend fun updateDiaryStatus(id: String, status: String) {
+        agentDiaryDao.updateDiaryStatus(id, status)
+    }
+
     // --- Personnel Filtering ---
     fun getDiariesByAssistants(assistantIds: List<String>): Flow<List<AgentDiaryEntity>> {
         return agentDiaryDao.getDiariesByAssistants(assistantIds)

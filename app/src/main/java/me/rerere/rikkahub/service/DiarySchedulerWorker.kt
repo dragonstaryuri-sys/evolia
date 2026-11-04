@@ -47,17 +47,29 @@ class DiarySchedulerWorker(
                         // 简化逻辑：只看今天是否有日记。
                         // 不再补昨天：DiaryWorker 会从上一篇日记的 lastMessageAt 起取到当前的所有消息，
                         // 即使中间几天没生成日记，下次新建时会一次性覆盖那段空档。
+                        //
+                        // 不能只凭"当天日记存在"就跳过（见 shouldAutoTriggerDiary）：
+                        //   - COMPLETED 正文 → 已完成，跳过；
+                        //   - PARTIAL → 恢复剩余消息（同天续写）；
+                        //   - 空壳记录（正文为空）→ 复用重试，不被空记录阻塞；
+                        //   - GENERATING → 以 WorkManager 活跃任务为准判断任务是否已死，
+                        //     死了才重新调度，避免仅因 DB 状态残留而永久跳过。
                         val todayDiary = diaryRepo.getDiaryByDate(assistant.id.toString(), todayStr)
-                        if (todayDiary == null) {
+                        val generationTaskActive = hasActiveDiaryGenerationTask(
+                            workManager = WorkManager.getInstance(applicationContext),
+                            assistantId = assistant.id.toString(),
+                            targetDate = todayStr
+                        )
+                        if (shouldAutoTriggerDiary(todayDiary, generationTaskActive)) {
                             val isPastScheduledTime = now.isAfter(scheduledTime)
                             if (isPastScheduledTime) {
-                                Log.i(TAG, "Time reached: Triggering TODAY diary for ${assistant.name}")
+                                Log.i(TAG, "Time reached: Triggering TODAY diary for ${assistant.name} (diaryState=${todayDiary?.generationStatus ?: "absent"})")
                                 enqueueDiaryWork(assistant.id.toString(), todayStr)
                             } else {
                                 Log.d(TAG, "Today's diary for ${assistant.name} is not yet due (Scheduled at $timeStr)")
                             }
                         } else {
-                            Log.d(TAG, "Today's diary for ${assistant.name} already exists.")
+                            Log.d(TAG, "Skip auto-diary for ${assistant.name}: diary exists and no recovery needed (state=${todayDiary?.generationStatus}).")
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to check diary for assistant ${assistant.name}", e)

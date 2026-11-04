@@ -150,6 +150,41 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **Type: NOTIFICATION**: Directly pushes a system notification.
 - **Type: DIARY**: Automatically records an entry into the Agent's internal diary database.
 
+## 7.5 AI 日记生成与失败恢复 (Diary Generation & Recovery)
+
+> 核心链路：`DiaryVM`（手动触发） / `DiarySchedulerWorker`（30min 周期调度）→ `DiaryWorker`（`service/DiaryWorker.kt`）→ `DiaryGenerationLogic.kt`（纯决策函数，有单测 `DiaryGenerationLogicTest`）→ `DiaryRepository` / `AgentDiaryDAO`。
+
+### 7.5.1 消息游标 lastMessageAt 的准确语义（硬约束）
+- `lastMessageAt` **只代表当前日记已成功生成并持久化的最后一条消息的时间戳**，不代表本次查询到的最后一条、任务开始/结束时间或计划处理范围终点。
+- **禁止**在任务开始时、查询完成后或整个任务结束时用整个 `newMessages` 集合的最后一条消息时间更新游标（历史 bug 根因）。
+- 游标必须**逐 Chunk 推进**：每个 Chunk 生成成功并持久化后，游标才推进到**该 Chunk 最后一条消息**的 `createdAt`（epoch ms）。
+
+### 7.5.2 Chunk 生成与原子持久化
+- 每个 Chunk 是独立持久化单元：生成 → 校验非空 → 写正文+游标（`updateDiaryGenerationProgress`，**单条 UPDATE 语句原子生效**，等价于事务；禁止用全实体 `@Update` read-modify-write，避免覆盖 is_favorite 等并发列）→ 才允许处理下一个 Chunk。
+- Chunk 失败（异常或返回空白）→ **立即停止后续 Chunk**，游标不推进，不向正文写入错误信息，已保存内容全部保留。
+- **同毫秒时间戳组不可被 Chunk 边界拆开**（`buildDiaryMessageGroups` 的 snap 逻辑，微信模式分句同毫秒落库多条）：否则 `createdAt > 游标` 的严格大于查询会漏掉同 ts 后继消息。新增分批逻辑必须保持此约束（单测固化）。
+
+### 7.5.3 生成状态（generation_status，DB v43+）
+- 持久化状态仅三种（`DiaryGenerationStatus`）：`GENERATING`（生成中/崩溃残留）、`PARTIAL`（部分成功、有未处理消息）、`COMPLETED`（全部完成；含用户手动编辑落定与历史日记默认值）。
+- **FAILED 不落库**：完全失败（无任何正文）时删除空壳记录，「记录不存在」即等价于可重新生成，避免空日记卡片占位。
+- 状态是内部管理信息，**不影响正文展示**：不在正文中插入失败提示，不因状态删除/覆盖内容。
+- 用户手动编辑日记（`DiaryVM.saveDiary` / `updateDiaryWithImages` 编辑分支）必须置 `COMPLETED` 落定，禁止后续自动续写覆盖用户编辑；未处理消息由次日期日记承接，不丢失。
+- `images.isNotEmpty()` 的记录一律视为用户手动内容（扫描日记正文可为空）：**绝不删除、绝不作为空壳重建、不触发 AI 生成**。
+
+### 7.5.4 失败恢复与跨天承接
+- **同天 PARTIAL 恢复**：复用原记录（保留 id/createdAt），锚点 = 自身 `lastMessageAt`，首个 Chunk 走续写草稿 prompt（`generatedContent` 初始化为已有正文），逐 Chunk 追加，完成置 COMPLETED；不得整篇重生成覆盖。
+- **空壳/崩溃残留（空白 COMPLETED 或 GENERATING）**：复用原记录重新生成，不删除重建、不产生重复当天日记。
+- **跨天不回补**：始终以当天为目标日期新建日记；锚点 = 最近一篇有正文日记的 `lastMessageAt`（跨天自动承接未处理消息）。前一天 PARTIAL 日记保留原样，不创建历史日期日记。
+- **无交互日记游标** = 日记记录的 `createdAt`（复用记录时保持原 createdAt）；该时点锚点之后无任何消息，未来消息必然大于 createdAt，严格大于查询不漏。
+- **历史日记兼容规则不变**：缺 `lastMessageAt` 时回退目标日期 0 点（不回溯更早日记游标），不批量重算，不改迁移逻辑（30→31 回填规则保留）。
+
+### 7.5.5 并发保护与 WorkManager 异常恢复
+- 唯一任务名：手动 `diary_gen_{assistantId}`，自动 `auto_diary_{assistantId}_{date}`（KEEP 策略）。
+- **"任务是否还在运行"以 WorkManager 为准，不以 DB 状态推断**：`hasActiveDiaryGenerationTask` 同时查两个唯一任务名的 ENQUEUED/RUNNING WorkInfo（`excludeWorkId` 排除自身）。GENERATING + 无活跃任务 = 崩溃残留 → Worker 接管恢复；有活跃任务 → 跳过（防手动+自动双任务并发写同一日记）。
+- `DiarySchedulerWorker` 判定用 `shouldAutoTriggerDiary`（不能只看当天日记是否存在：PARTIAL 要恢复、空壳要重试、GENERATING 要查任务死活）。
+- Worker 的 CancellationException / 异常清理必须包 `withContext(NonCancellable)`，否则已取消协程内的挂起清理语句会被立即取消而静默失效（历史 bug）。
+- 已知边界：手动+自动在同一瞬间入队（互相都未 RUNNING）时双入口守卫可能同时放行，属可接受残留竞态（与旧行为等价），如需根治需 date+assistant 唯一索引，暂不做。
+
 ## 8. Tool System & Local Capabilities
 
 ### 8.1 Local Execution Engines

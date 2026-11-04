@@ -31,6 +31,7 @@ import me.rerere.rikkahub.core.data.ai.prompts.applyPlaceholders
 import me.rerere.rikkahub.core.data.db.dao.ScheduleDAO
 import me.rerere.rikkahub.core.data.db.entity.AgentDiaryEntity
 import me.rerere.rikkahub.core.data.db.entity.DiaryCommentEntity
+import me.rerere.rikkahub.core.data.db.entity.DiaryGenerationStatus
 import me.rerere.rikkahub.core.data.db.entity.DiaryImage
 import me.rerere.rikkahub.core.data.db.entity.OcrStatus
 import me.rerere.rikkahub.core.data.model.toMessageNode
@@ -38,6 +39,7 @@ import me.rerere.rikkahub.core.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.datastore.findModelById
 import me.rerere.rikkahub.service.ChatService
 import me.rerere.rikkahub.service.DiaryOcrService
+import me.rerere.rikkahub.service.hasActiveDiaryGenerationTask
 import me.rerere.rikkahub.utils.DiaryImageUtil
 import android.graphics.Bitmap
 import java.time.ZoneId
@@ -749,6 +751,8 @@ class DiaryVM(
                 // 修改现有日记：保留原始 createdAt 和 assistantId，使用 @Update 而非 insert(REPLACE)。
                 // insert(REPLACE) 底层是 DELETE+INSERT，DELETE 会触发 DiaryCommentEntity 外键的
                 // CASCADE 删除，导致已有评论全部丢失。
+                // 用户手动编辑视为"落定"：状态置 COMPLETED，禁止 AI 生成流程后续自动续写
+                // 覆盖用户编辑内容（未处理消息由次日期日记承接，不丢失）。
                 val existing = diaryRepo.getDiaryById(id)
                 val entity = AgentDiaryEntity(
                     id = id,
@@ -758,7 +762,8 @@ class DiaryVM(
                     date = date,
                     createdAt = existing?.createdAt ?: System.currentTimeMillis(),
                     lastMessageAt = existing?.lastMessageAt,
-                    isFavorite = existing?.isFavorite ?: false
+                    isFavorite = existing?.isFavorite ?: false,
+                    generationStatus = DiaryGenerationStatus.COMPLETED
                 )
                 diaryRepo.updateDiary(entity)
             } else {
@@ -863,7 +868,9 @@ class DiaryVM(
                         date = date,
                         createdAt = existing?.createdAt ?: System.currentTimeMillis(),
                         lastMessageAt = existing?.lastMessageAt,
-                        isFavorite = existing?.isFavorite ?: false
+                        isFavorite = existing?.isFavorite ?: false,
+                        // 手动编辑落定，禁止后续 AI 自动续写覆盖用户内容
+                        generationStatus = DiaryGenerationStatus.COMPLETED
                     )
                     diaryRepo.updateDiary(entity)
                     onSaved(false)
@@ -1002,15 +1009,13 @@ class DiaryVM(
         val workManager = WorkManager.getInstance(app)
 
         viewModelScope.launch {
-            // 先检查该角色同名任务是否已在队列/运行中：避免重复触发浪费
-            val existing = withContext(Dispatchers.IO) {
-                runCatching { workManager.getWorkInfosForUniqueWork(uniqueName).get() }
-                    .getOrNull()
-                    .orEmpty()
-            }
-            val isRunning = existing.any {
-                it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
-            }
+            // 检查该角色的日记生成任务是否活跃（同时覆盖手动 diary_gen_ 与自动 auto_diary_
+            // 两个唯一任务名，避免自动任务运行期间手动再触发导致双任务并发写同一日记）。
+            val isRunning = hasActiveDiaryGenerationTask(
+                workManager = workManager,
+                assistantId = assistant.id.toString(),
+                targetDate = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+            )
             if (isRunning) {
                 toaster?.show(
                     app.getString(R.string.discover_page_diary_generating_already),
@@ -1097,7 +1102,19 @@ class DiaryVM(
                                     type = ToastType.Warning
                                 )
                             }
+                            // 已有当天有效日记（正文/用户图片），未重复生成
                             isSkipped && reason == "already_exists" -> {
+                                toaster.show(app.getString(R.string.diary_no_new_messages), type = ToastType.Info)
+                            }
+                            // 其他任务正在生成，本次触发被并发保护跳过
+                            isSkipped && reason == "task_running" -> {
+                                toaster.show(
+                                    app.getString(R.string.discover_page_diary_generating_already),
+                                    type = ToastType.Info
+                                )
+                            }
+                            // 无新消息 / 生成内容为空，本次未写入任何内容
+                            isSkipped && (reason == "no_new_messages" || reason == "no_content") -> {
                                 toaster.show(app.getString(R.string.diary_no_new_messages), type = ToastType.Info)
                             }
                             else -> {
