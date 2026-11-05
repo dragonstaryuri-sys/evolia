@@ -208,6 +208,33 @@ The `agent_task_manager` allows an Assistant to schedule instructions for its "f
 - **描述管理**: `McpTool.customDescription` 持久化于 Settings（null 表示未自定义，有效描述 = customDescription 优先 / 原始 description 兜底）。服务同步时原始描述与 Schema 刷新、用户自定义描述原样保留（合并逻辑在 `McpManager.kt` 的 `mergeSyncedTools` 纯函数，有单元测试）。批量简化使用用户配置的全局后台模型（`ui/pages/setting/McpToolDescVM.kt`）。
 - **并发约束**: `McpManager.clients` 是跨协程共享的并发容器（ConcurrentHashMap），直接读写即可；MCP 相关的 Settings 写入必须走 `SettingsStore.update(transform)` 原子事务（见第 4 节），否则多服务并发同步会丢更新。
 
+### 8.5 设备状态监视器（EvoliaMonitorService，2026-11 状态实时性与并发安全改造）
+
+> 核心文件：`service/EvoliaMonitorService.kt`（编排与系统观测）、`service/MonitorDeviceStateLogic.kt`（纯决策函数，有单测 `MonitorDeviceStateLogicTest`）。`user_device_state` 单行表，全部写入方都在本服务内。
+
+#### 8.5.1 设备状态同步机制
+- **请求入口统一**：屏幕亮灭广播（`screenReceiver`）、无障碍 `TYPE_WINDOW_STATE_CHANGED`、30 秒轮询，一律通过 `requestSync()` 投递 `SyncRequest` 进 `Channel(CONFLATED)`，由 `startSyncWorker()` 启动的**单一 worker 协程串行处理**（`processSyncRequest`）。worker 忙时到达的多个请求合并为最新一个（最终状态正确，窗口事件风暴天然去重）。
+- **同步内容**：亮灭、前台应用（`request.newPackage` 优先，其次 DB 值）、今日使用时长（UsageStats）、单应用/全局连续会话起点、WiFi。熄屏时前台置空、会话起点清零（既有语义保留）。
+- **检查门槛**：仅「亮屏」或「location/wifi 发生变化」时执行 `checkAllMonitors`（既有语义保留：熄屏且位置/WiFi 无变化不检查）。
+
+#### 8.5.2 状态并发控制机制（禁止回退的硬约束）
+- **禁止**为每次 sync `scope.launch` 独立协程做「读-算-写」——多个协程基于同一旧状态乱序写库会用旧值覆盖新值（历史回退根因）。
+- `stateWriteMutex` 保护 `user_device_state` 的三类读-改-写事务：sync worker（全量计算）、定位协程（仅位置字段合并）、`recordAction`（仅 recentActions 合并）。**锁内重读最新状态作为 base 再 copy 写入**，任何写者不得基于锁外快照整行覆盖。
+- `monitorCheckMutex` 串行化 `checkAllMonitors` 全程（sync worker 与定位协程都可能进入），防止 `lastTriggerTimeMap` 竞态与同一监视器被双路径同时触发；两个 Mutex 无嵌套（检查在 `stateWriteMutex` 之外执行）。
+- 慢 I/O 必须在锁外：逆地理编码在独立定位协程（`startLocationRefresher`，60s 检查一次、**5 分钟刷新门限不变**，geocode 走 `Dispatchers.IO`）完成后再进锁合并；屏幕扫描在 `stateWriteMutex` 外预扫描、锁内校验「扫描目标 == 最终写入前台」后才采用，不一致置空等下一轮纠正。
+
+#### 8.5.3 监视器触发前刷新机制（旧状态触发修复）
+- 常规评估命中后、`triggerMonitor` 之前，必须经 `revalidateMonitorTrigger`：重新观测亮灭（PowerManager）、前台应用（**活动窗口 `rootInActiveWindow` 优先 → UsageStats 兜底，禁止用 DB 旧 foregroundApp 冒充**；亮屏下两个来源都失败 → 取消触发并记日志）、今日时长（UsageStats）、WiFi，然后用最终状态重新执行 `evaluateConditions`，不满足即取消（冷却表不写，下一轮可重试）。
+- **`oldState` 基准语义不变**：二次评估仍以本次同步前的状态为 oldState，`location_name` / `wifi_ssid` 的「now 匹配 && 之前不匹配」到达边缘判断不受影响。熄屏路径不做前台/屏幕观测（无法观测不构成失败），沿用评估时状态二次评估，保留熄屏下时间/位置类监视器既有触发语义。
+- `ChatService.executeAgentTask()` 只接收 EvoliaMonitorService 已生成的最终指令，不负责重查设备状态。
+- 屏幕文字依赖方（`content_contains` 条件或模板含 `{screen_context}`）触发前**强制重新扫描**（`RoundScanCache` 保证同一轮多监视器命中同一窗口只扫一次），扫描失败（`rootInActiveWindow` 为 null，`scanScreenContext` 返回 null）→ 取消触发，**禁止用旧 screenContext 冒充最新结果**。
+
+#### 8.5.4 屏幕文字扫描的触发条件与扫描时机
+- **需求判定**：`MonitorDeviceStateLogic.monitorNeedsScreenText(conditions, actions)`——conditions 存在非空 `content_contains`，或 SEND_HIDDEN_MESSAGE 模板包含 `{screen_context}`；JSON 解析失败按无需求处理。启用监视器列表由 Room Flow 实时缓存（`cachedEnabledTasks`），增删/暂停监视器自动生效。**无任何需求时不产生任何扫描开销**。
+- **扫描范围**：不再依赖 `shoppingApps` 固定白名单（已删除）——只要有需求，用户实际所在的前台应用（非 Evolia 自身）即可扫描。
+- **扫描时机**：① 常规同步（30s 轮询/广播/窗口事件）按需扫描，同一前台应用 5 秒内复用上次结果（`regularScan*` 缓存）；② 无障碍 `TYPE_VIEW_CLICKED` 只记录 recentActions，**绝不触发全量屏幕扫描**；③ 触发前强制重扫（见 8.5.3）。`AccessibilityNodeInfo` 全节点 recycle、遍历深度 60、文本截断 30 条等资源保护全部保留。
+- `scanScreenContext()` 返回可空 `String?`：null = 扫描失败（无活动窗口），空串 = 扫描成功但无文本，两者语义不得混淆。
+
 ## 9. 会话加载与 UI 同步逻辑 (Chat Loading & UI Sync)
 
 ### 9.1 混合消息流 (Hybrid Message Flow)

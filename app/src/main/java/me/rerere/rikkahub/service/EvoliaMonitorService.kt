@@ -32,9 +32,13 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
 import me.rerere.rikkahub.core.data.db.entity.AgentMonitorTaskEntity
 import me.rerere.rikkahub.core.data.db.entity.AppLockEntity
@@ -57,22 +61,48 @@ class EvoliaMonitorService : AccessibilityService() {
     private val chatService by inject<ChatService>()
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val shoppingApps = listOf(
-        "com.taobao.taobao", "com.jingdong.app.mall", "com.xunmeng.pinduoduo",
-        "com.tmall.android", "com.xingin.xhs", "com.sankuai.meituan",
-        "com.tmall.wireless", "com.dianping.v1", "ailand.lastchat.rikkafork.cocolal",
-        "com.android.chrome", "com.tencent.mtt", "com.quark.browser",
-        "com.netease.cloudmusic", "com.tencent.mm", "cn.missevan",
-        "com.luyuan.custom", "com.openai.chatgpt", "com.larus.nova",
-        "com.anthropic.claude", "ai.x.grok", "com.dragon.read",
-        "com.instagram.android", "com.ss.android.ugc.aweme",
-        "tv.danmaku.bili", "com.tencent.weread"
-    )
+    // 屏幕文字扫描不再依赖固定白名单，改为按监视器实际需求驱动（见 computeScreenContext）
 
     private val lastTriggerTimeMap = mutableMapOf<Long, Long>()
     private var pollingJob: Job? = null
     private var lastLocationCheckTime = 0L
-    private var lastCellId: String? = null
+
+    // ============ 设备状态同步并发控制 ============
+    // 所有同步请求（屏幕广播 / 无障碍窗口事件 / 30s 轮询）统一进入 CONFLATED channel，
+    // 由单一 worker 协程串行处理：worker 忙时到达的多个事件合并为最新一个（最终状态正确），
+    // 从根本上避免「多个协程基于同一旧状态并发计算、乱序写库导致状态回退」。
+    private data class SyncRequest(
+        val newPackage: String? = null,
+        val screenTransition: Boolean = false,
+        val screenOn: Boolean? = null,
+        val source: String
+    )
+
+    private val syncRequests = Channel<SyncRequest>(Channel.CONFLATED)
+    private var syncWorkerJob: Job? = null
+    private var locationJob: Job? = null
+    private var monitorFlowJob: Job? = null
+
+    // 保护 user_device_state 的读-改-写事务：sync worker（全量计算）、定位协程（位置字段合并）、
+    // recordAction（recentActions 合并）三类写者互斥。慢 I/O（geocode）在锁外完成，
+    // 锁内只有快速系统调用 + DB 读写，不会长期阻塞其他写者。
+    private val stateWriteMutex = Mutex()
+
+    // 保护监视器检查全程（含 lastTriggerTimeMap 与触发前重校验）：sync worker 与定位协程
+    // 都可能触发检查，串行化避免冷却表竞态导致的重复触发。
+    private val monitorCheckMutex = Mutex()
+
+    // 启用中的监视器缓存：由 Room Flow 自动刷新（增删/暂停监视器都会触发更新），
+    // 用于判断「是否存在依赖屏幕文字的监视器」，决定是否执行屏幕扫描。
+    @Volatile
+    private var cachedEnabledTasks: List<AgentMonitorTaskEntity> = emptyList()
+
+    // 常规同步的屏幕扫描结果复用：同一前台应用 5 秒内的重复请求（窗口事件风暴）直接复用，
+    // 避免重复遍历无障碍节点。触发前重校验不经过此缓存（强制最新扫描）。
+    private var regularScanPackage: String? = null
+    private var regularScanAtMs: Long = 0L
+    private var regularScanText: String = ""
+    private val regularScanReuseMs = 5_000L
 
     // 应用锁定遮罩：用 TYPE_ACCESSIBILITY_OVERLAY 覆盖在前台应用之上
     private var lockOverlayView: View? = null
@@ -104,12 +134,13 @@ class EvoliaMonitorService : AccessibilityService() {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> syncDeviceState(
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> requestSync(
                     screenTransition = true,
-                    screenOn = true
+                    screenOn = true,
+                    source = "screen_on"
                 )
 
-                Intent.ACTION_SCREEN_OFF -> syncDeviceState(screenTransition = true, screenOn = false)
+                Intent.ACTION_SCREEN_OFF -> requestSync(screenTransition = true, screenOn = false, source = "screen_off")
             }
         }
     }
@@ -126,7 +157,15 @@ class EvoliaMonitorService : AccessibilityService() {
         scope.launch {
             DeviceCommandHub.commands.collectLatest { handleDeviceCommand(it) }
         }
+        // 监视器配置缓存：Room Flow 在增删/暂停监视器时自动推送最新列表
+        monitorFlowJob = scope.launch {
+            monitorTaskRepo.getAllEnabledTasks().collect { tasks ->
+                cachedEnabledTasks = tasks
+            }
+        }
+        startSyncWorker()
         startPolling()
+        startLocationRefresher()
         startAppLockPolling()
     }
 
@@ -139,10 +178,32 @@ class EvoliaMonitorService : AccessibilityService() {
         }
         pollingJob?.cancel()
         appLockPollingJob?.cancel()
+        syncWorkerJob?.cancel()
+        locationJob?.cancel()
+        monitorFlowJob?.cancel()
         // 服务销毁时移除遮罩和待执行的回调，避免悬浮窗泄漏
         cancelPendingHide()
         hideLockOverlay()
         super.onDestroy()
+    }
+
+    /**
+     * 设备状态同步 worker：串行消费 [syncRequests]（CONFLATED，最新请求胜出）。
+     * 任何时刻只有一个协程在读状态-计算-写库，消除并发覆盖/回退。
+     */
+    private fun startSyncWorker() {
+        syncWorkerJob?.cancel()
+        syncWorkerJob = scope.launch {
+            for (request in syncRequests) {
+                try {
+                    processSyncRequest(request)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(tag, "processSyncRequest failed (source=${request.source})", e)
+                }
+            }
+        }
     }
 
     private fun startPolling() {
@@ -151,7 +212,7 @@ class EvoliaMonitorService : AccessibilityService() {
             while (isActive) {
                 // 恢复 30 秒轮询，确保 WiFi 等非定位状态实时同步
                 delay(30_000)
-                syncDeviceState()
+                requestSync(source = "poll")
             }
         }
     }
@@ -229,7 +290,7 @@ class EvoliaMonitorService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val packageName = event.packageName?.toString() ?: return
-                syncDeviceState(newPackage = packageName)
+                requestSync(newPackage = packageName, source = "window_event")
                 // 检测是否为被锁定的应用，若是则显示遮罩，否则隐藏遮罩
                 checkAppLockAndShowOverlay(packageName)
             }
@@ -529,35 +590,60 @@ class EvoliaMonitorService : AccessibilityService() {
         }
     }
 
-    private fun syncDeviceState(
+    /**
+     * 提交一次设备状态同步请求（非阻塞）。请求进入 CONFLATED channel，
+     * 由 [startSyncWorker] 启动的 worker 串行处理；worker 忙时多个请求合并为最新一个。
+     */
+    private fun requestSync(
         newPackage: String? = null,
         screenTransition: Boolean = false,
-        screenOn: Boolean? = null
+        screenOn: Boolean? = null,
+        source: String
     ) {
+        syncRequests.trySend(SyncRequest(newPackage, screenTransition, screenOn, source))
+    }
+
+    /**
+     * 处理一次同步请求：读取最新状态 → 计算全部设备字段 → 原子写库 → 触发监视器检查。
+     *
+     * 锁策略：屏幕扫描（可能的耗时操作）在 mutex 外完成；mutex 内只有快速系统调用
+     * （亮屏/WiFi/UsageStats）+ DB 读 + DB 写，保证 recordAction / 定位协程不会被长期阻塞。
+     * worker 串行 + mutex 双重保证较早的计算结果不会覆盖较晚的写入。
+     *
+     * 地理位置不在此处理：由 [startLocationRefresher] 独立协程按 5 分钟门限刷新后合并写库。
+     */
+    private suspend fun processSyncRequest(request: SyncRequest) {
         val now = System.currentTimeMillis()
+        val needsScreen = hasScreenTextMonitorNeed()
 
-        // --- 地理位置专用频率锁：5 分钟 ---
-        val canRefreshLocation = now - lastLocationCheckTime >= 5 * 60 * 1000
-        if (canRefreshLocation) {
-            lastLocationCheckTime = now
-        }
+        // --- 锁外：按需扫描屏幕文字（目标应用 = 请求指定的新前台，或熄屏时不扫描） ---
+        // 最终写入的前台应用在锁内基于最新 DB 状态计算，扫描目标取锁外可得的最可靠观测：
+        // 窗口事件用事件包名；轮询/广播用 UsageStats 前台。屏幕熄灭时跳过扫描。
+        val preScreenOn = request.screenOn ?: (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        val scanTargetPackage = if (preScreenOn) {
+            request.newPackage ?: getForegroundPackageByUsageStats()
+        } else null
+        val preScannedContext = computeScreenContext(needsScreen, preScreenOn, scanTargetPackage)
 
-        scope.launch {
+        var syncBase: UserDeviceStateEntity? = null
+        var syncNew: UserDeviceStateEntity? = null
+
+        stateWriteMutex.withLock {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-            val oldState = userDeviceStateRepo.getUserDeviceState().run { firstOrNull() } ?: UserDeviceStateEntity()
+            val base = userDeviceStateRepo.getUserDeviceState().run { firstOrNull() } ?: UserDeviceStateEntity()
 
-            val isScreenOn = screenOn ?: powerManager.isInteractive
-            val packageName = (if (isScreenOn) newPackage ?: oldState.foregroundApp else "").ifBlank { "" }
+            val isScreenOn = request.screenOn ?: powerManager.isInteractive
+            val packageName = (if (isScreenOn) request.newPackage ?: base.foregroundApp else "").ifBlank { "" }
 
             // 1. 更新时长与应用状态 (始终保持 30s 实时)
-            var appSessionStart = oldState.appSessionStartMs
-            var continuousStart = oldState.continuousSessionStartMs
+            var appSessionStart = base.appSessionStartMs
+            var continuousStart = base.continuousSessionStartMs
             if (!isScreenOn) {
                 appSessionStart = 0L; continuousStart = 0L
             } else {
-                if (continuousStart <= 0L || (screenTransition && screenOn == true)) continuousStart = now
-                if (packageName.isNotBlank() && (packageName != oldState.foregroundApp || appSessionStart <= 0L)) appSessionStart =
+                if (continuousStart <= 0L || (request.screenTransition && request.screenOn == true)) continuousStart = now
+                if (packageName.isNotBlank() && (packageName != base.foregroundApp || appSessionStart <= 0L)) appSessionStart =
                     now
             }
 
@@ -572,74 +658,153 @@ class EvoliaMonitorService : AccessibilityService() {
                 if (packageName.isNotBlank()) stats?.find { it.packageName == packageName }?.totalTimeInForeground
                     ?: 0L else 0L
             var realTodayDurationMs = systemTotal
-            if (isScreenOn && packageName.isNotBlank() && packageName == oldState.foregroundApp && appSessionStart > 0) {
-                realTodayDurationMs = maxOf(systemTotal, oldState.todayDurationMs, now - appSessionStart)
+            if (isScreenOn && packageName.isNotBlank() && packageName == base.foregroundApp && appSessionStart > 0) {
+                realTodayDurationMs = maxOf(systemTotal, base.todayDurationMs, now - appSessionStart)
             }
 
-            // 2. 更新地理位置 (只有在满足 5 分钟锁时才真正调用系统调用)
-            val locationResult = if (canRefreshLocation) {
-                if (ContextCompat.checkSelfPermission(
-                        this@EvoliaMonitorService,
-                        android.Manifest.permission.ACCESS_COARSE_LOCATION
-                    )
-                    == android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    try {
-                        val currentCell = getCurrentCellId()
-                        if (currentCell != null) lastCellId = currentCell
-
-                        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-                        val loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) ?: lm.getLastKnownLocation(
-                            LocationManager.PASSIVE_PROVIDER
-                        )
-                        if (loc != null) {
-                            val name = withContext(Dispatchers.IO) {
-                                try {
-                                    val geocoder = Geocoder(this@EvoliaMonitorService, Locale.getDefault())
-
-                                    @Suppress("DEPRECATION")
-                                    val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
-                                    addresses?.firstOrNull()?.let { it.getAddressLine(0) ?: it.locality ?: "" } ?: ""
-                                } catch (e: Exception) {
-                                    ""
-                                }
-                            }
-                            Triple(loc.latitude, loc.longitude, if (name.isNotBlank()) name else oldState.locationName)
-                        } else Triple(oldState.latitude, oldState.longitude, oldState.locationName)
-                    } catch (e: Exception) {
-                        Triple(oldState.latitude, oldState.longitude, oldState.locationName)
-                    }
-                } else Triple(oldState.latitude, oldState.longitude, oldState.locationName)
-            } else {
-                // 未到 5 分钟，复用旧位置，不触发请求
-                Triple(oldState.latitude, oldState.longitude, oldState.locationName)
-            }
-
-            // 3. 更新 WiFi 状态 (始终保持 30s 实时)
+            // 2. WiFi 状态 (始终保持 30s 实时)；位置字段由定位协程维护，此处原样保留
             val wifiInfo = getWifiStatus()
 
-            val currentState = oldState.copy(
+            // 3. 屏幕文字：扫描目标与最终写入的前台一致时使用预扫描结果，否则置空
+            //    （不冒充：目标不一致说明前台在扫描间隙变化，旧文本不再适用，等下一轮同步纠正）
+            val screenContext = if (scanTargetPackage != null && scanTargetPackage == packageName) {
+                preScannedContext
+            } else ""
+
+            val currentState = base.copy(
                 foregroundApp = packageName,
                 foregroundAppName = if (packageName.isNotBlank()) getAppName(packageName) else "桌面/熄屏",
                 isScreenOn = isScreenOn,
                 todayDurationMs = realTodayDurationMs,
-                screenContext = if (isScreenOn && shoppingApps.contains(packageName)) scanScreenContext() else "",
+                screenContext = screenContext,
                 appSessionStartMs = appSessionStart,
                 continuousSessionStartMs = continuousStart,
-                latitude = locationResult.first,
-                longitude = locationResult.second,
-                locationName = locationResult.third,
+                latitude = base.latitude,
+                longitude = base.longitude,
+                locationName = base.locationName,
                 wifiSsid = wifiInfo.first,
                 isWifiConnected = wifiInfo.second,
                 lastUpdated = now
             )
 
             userDeviceStateRepo.updateDeviceState(currentState)
-            if (isScreenOn || currentState.locationName != oldState.locationName || currentState.wifiSsid != oldState.wifiSsid) {
-                checkAllMonitors(currentState, oldState)
+            syncBase = base
+            syncNew = currentState
+            Log.d(
+                tag,
+                "sync(${request.source}): screenOn=$isScreenOn, pkg=$packageName, scanned=${screenContext.isNotBlank()}"
+            )
+        }
+
+        val oldState = syncBase ?: return
+        val currentState = syncNew ?: return
+        if (currentState.isScreenOn || currentState.locationName != oldState.locationName || currentState.wifiSsid != oldState.wifiSsid) {
+            checkAllMonitors(currentState, oldState)
+        }
+    }
+
+    /**
+     * 定位刷新协程：每分钟检查一次 5 分钟门限，到期才做定位 + 逆地理编码（慢 I/O 在锁外），
+     * 完成后以 mutex 保护的合并写库更新位置字段，并沿用「位置变化 → 触发监视器检查」的既有语义。
+     * 从同步主路径移出，避免地址解析阻塞屏幕开关等关键状态更新。
+     */
+    private fun startLocationRefresher() {
+        locationJob?.cancel()
+        locationJob = scope.launch {
+            while (isActive) {
+                refreshLocationIfDue()
+                delay(60_000)
             }
         }
     }
+
+    private suspend fun refreshLocationIfDue() {
+        val now = System.currentTimeMillis()
+        if (now - lastLocationCheckTime < 5 * 60 * 1000L) return
+        lastLocationCheckTime = now
+        val freshLocation = collectFreshLocation() ?: return
+
+        var checkPair: Pair<UserDeviceStateEntity, UserDeviceStateEntity>? = null
+        stateWriteMutex.withLock {
+            val base = userDeviceStateRepo.getUserDeviceState().run { firstOrNull() } ?: return@withLock
+            val newLocationName = freshLocation.third.ifBlank { base.locationName }
+            val merged = base.copy(
+                latitude = freshLocation.first,
+                longitude = freshLocation.second,
+                locationName = newLocationName,
+                lastUpdated = now
+            )
+            userDeviceStateRepo.updateDeviceState(merged)
+            // 位置变化 → 触发监视器检查（沿用原有语义：即使熄屏，位置/WiFi 变化也检查）
+            if (merged.isScreenOn || merged.locationName != base.locationName || merged.wifiSsid != base.wifiSsid) {
+                checkPair = merged to base
+            }
+        }
+        // 检查在 stateWriteMutex 之外执行（monitorCheckMutex 内），避免锁嵌套
+        checkPair?.let { (merged, base) -> checkAllMonitors(merged, base) }
+    }
+
+    /**
+     * 采集最新位置（含逆地理编码，Dispatchers.IO）。返回 null 表示本次无新位置
+     * （无权限 / 无定位 / 异常），调用方不写库。
+     */
+    private suspend fun collectFreshLocation(): Triple<Double, Double, String>? {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+            == android.content.pm.PackageManager.PERMISSION_DENIED
+        ) return null
+        return try {
+            val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val loc = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                ?: lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+                ?: return null
+            val name = withContext(Dispatchers.IO) {
+                try {
+                    val geocoder = Geocoder(this@EvoliaMonitorService, Locale.getDefault())
+
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocation(loc.latitude, loc.longitude, 1)
+                    addresses?.firstOrNull()?.let { it.getAddressLine(0) ?: it.locality ?: "" } ?: ""
+                } catch (e: Exception) {
+                    ""
+                }
+            }
+            Triple(loc.latitude, loc.longitude, name)
+        } catch (e: Exception) {
+            Log.e(tag, "collectFreshLocation failed", e)
+            null
+        }
+    }
+
+    /**
+     * 屏幕文字按需扫描：仅当「存在依赖屏幕文字的监视器 && 亮屏 && 前台应用有效且非 Evolia 自身」时扫描。
+     * 同一前台应用 5 秒内的重复请求复用上次结果（窗口事件风暴去重）。
+     * 返回空串表示本次不适用扫描（无需求/熄屏/前台无效）。
+     */
+    private fun computeScreenContext(
+        needsScreen: Boolean,
+        isScreenOn: Boolean,
+        targetPackage: String?
+    ): String {
+        val shouldScan = needsScreen && isScreenOn && !targetPackage.isNullOrBlank() && targetPackage != packageName
+        if (!shouldScan) return ""
+        val pkg = targetPackage ?: return ""
+        val nowMs = System.currentTimeMillis()
+        if (pkg == regularScanPackage && nowMs - regularScanAtMs < regularScanReuseMs) {
+            return regularScanText
+        }
+        val text = scanScreenContext() ?: ""
+        regularScanPackage = pkg
+        regularScanAtMs = nowMs
+        regularScanText = text
+        return text
+    }
+
+    /** 是否存在依赖屏幕文字的监视器（content_contains 条件或 {screen_context} 模板变量）。 */
+    private fun hasScreenTextMonitorNeed(): Boolean =
+        MonitorDeviceStateLogic.anyMonitorNeedsScreenText(cachedEnabledTasks.map { it.conditions to it.actions })
 
     private fun getWifiStatus(): Pair<String, Boolean> {
         return try {
@@ -664,43 +829,159 @@ class EvoliaMonitorService : AccessibilityService() {
         }
     }
 
-    private fun getCurrentCellId(): String? {
-        val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager ?: return null
-        return try {
-            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION)
-                == android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) {
-                tm.allCellInfo?.firstOrNull { it.isRegistered }?.toString()
-            } else null
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     private fun recordAction(action: String) {
         scope.launch {
-            val current = userDeviceStateRepo.getUserDeviceState().run { firstOrNull() } ?: UserDeviceStateEntity()
-            val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-            val existingActions = current.recentActions.lines().filter { it.isNotBlank() }.take(4)
-            val newActions = ("[$time] $action" + "\n" + existingActions.joinToString("\n")).trim()
-            userDeviceStateRepo.updateDeviceState(current.copy(recentActions = newActions))
+            // 锁内重读最新状态后仅合并 recentActions，避免与 sync worker / 定位协程
+            // 的写库互相覆盖（历史实现是裸 read-modify-write，会整行回退其他字段）
+            stateWriteMutex.withLock {
+                val current = userDeviceStateRepo.getUserDeviceState().run { firstOrNull() }
+                    ?: UserDeviceStateEntity()
+                val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+                val existingActions = current.recentActions.lines().filter { it.isNotBlank() }.take(4)
+                val newActions = ("[$time] $action" + "\n" + existingActions.joinToString("\n")).trim()
+                userDeviceStateRepo.updateDeviceState(current.copy(recentActions = newActions))
+            }
         }
     }
 
     private suspend fun checkAllMonitors(state: UserDeviceStateEntity, oldState: UserDeviceStateEntity) {
         val tasks = monitorTaskRepo.getAllEnabledTasks().run { firstOrNull() } ?: return
         val now = System.currentTimeMillis()
-        tasks.forEach { task ->
-            try {
-                // 暂停中（now < pause_until）：跳过评估，不触发也不发消息，到期自动恢复
-                if (task.pauseUntil > 0L && now < task.pauseUntil) return@forEach
-                val conditions = json.parseToJsonElement(task.conditions) as? JsonObject ?: return@forEach
-                if (evaluateConditions(conditions, state, oldState, task.id)) {
-                    triggerMonitor(task, state)
+        // monitorCheckMutex：sync worker 与定位协程可能并发进入，串行化检查全程，
+        // 避免 lastTriggerTimeMap 竞态和同一监视器被双路径同时触发。
+        monitorCheckMutex.withLock {
+            // 同一轮检查内多个监视器命中时复用同一次屏幕扫描（同一窗口只扫一次）
+            val roundScan = RoundScanCache()
+            tasks.forEach { task ->
+                try {
+                    // 暂停中（now < pause_until）：跳过评估，不触发也不发消息，到期自动恢复
+                    if (task.pauseUntil > 0L && now < task.pauseUntil) return@forEach
+                    val conditions = json.parseToJsonElement(task.conditions) as? JsonObject ?: return@forEach
+                    if (evaluateConditions(conditions, state, oldState, task.id)) {
+                        // 触发前刷新最新设备状态并重新校验，条件不再满足则取消
+                        val finalState = revalidateMonitorTrigger(task, state, oldState, roundScan)
+                        if (finalState != null) {
+                            triggerMonitor(task, finalState)
+                        } else {
+                            Log.i(tag, "Monitor ${task.monitorName} cancelled: revalidation failed")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(tag, "Monitor check failed: ${task.monitorName}", e)
                 }
-            } catch (e: Exception) {
-                Log.e(tag, "Monitor check failed: ${task.monitorName}", e)
             }
+        }
+    }
+
+    /**
+     * 触发前重校验：监视器条件在常规同步时满足后，重新观测关键设备状态并二次评估。
+     *
+     * 刷新范围（按需）：
+     * - 屏幕亮灭（PowerManager）；
+     * - 前台应用（活动窗口 → UsageStats 兜底，不用 DB 旧值冒充）；
+     * - 应用今日时长（UsageStats）；
+     * - 屏幕文字（依赖 content_contains / {screen_context} 的监视器强制重新扫描，
+     *   同一轮多监视器命中同一窗口时复用 [RoundScanCache]）；
+     * - WiFi（快速系统调用）。
+     *
+     * 不刷新：地理位置（禁止触发前重新定位）、recent_actions。
+     *
+     * 失败处理：亮屏下前台应用无法获取、或依赖屏幕文字但扫描失败 → 返回 null 取消触发，
+     * 不用旧状态冒充最新状态。熄屏时沿用评估时状态直接二次评估（保留熄屏下时间/位置类
+     * 监视器的既有触发语义）。
+     *
+     * oldState 保持为本次同步前的状态基准，location_name / wifi_ssid 的「状态变化」边缘语义不变。
+     */
+    private suspend fun revalidateMonitorTrigger(
+        task: AgentMonitorTaskEntity,
+        evaluatedState: UserDeviceStateEntity,
+        oldState: UserDeviceStateEntity,
+        roundScan: RoundScanCache
+    ): UserDeviceStateEntity? {
+        val conditions = json.parseToJsonElement(task.conditions) as? JsonObject ?: return null
+        val needsScreen = MonitorDeviceStateLogic.monitorNeedsScreenText(task.conditions, task.actions)
+        val now = System.currentTimeMillis()
+
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val freshScreenOn = powerManager.isInteractive
+
+        // 熄屏：不做前台/屏幕观测（无法观测，也不构成失败），沿用评估时状态二次评估
+        if (!freshScreenOn) {
+            return if (evaluateConditions(conditions, evaluatedState, oldState, task.id)) evaluatedState else null
+        }
+
+        // 前台应用：优先无障碍活动窗口，兜底 UsageStats；都拿不到 → 明确失败取消
+        val freshPackage = queryFreshForegroundPackage()
+        if (freshPackage == null) {
+            Log.w(tag, "[Monitor] ${task.monitorName}: 亮屏但无法获取前台应用，取消触发")
+            return null
+        }
+
+        // 屏幕文字：依赖方强制重新扫描；扫描失败（null）→ 取消，不得用旧 screenContext 冒充
+        val freshContext: String = if (!needsScreen) {
+            ""
+        } else {
+            val scanned = roundScan.getOrScan(freshPackage) { scanScreenContext() }
+            if (scanned == null) {
+                Log.w(tag, "[Monitor] ${task.monitorName}: 屏幕文字扫描失败，取消触发")
+                return null
+            }
+            scanned
+        }
+
+        // 今日时长：按最新前台应用重新查询 UsageStats
+        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val startTime = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val freshDuration = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, now)
+            ?.find { it.packageName == freshPackage }?.totalTimeInForeground ?: 0L
+
+        val freshWifi = getWifiStatus()
+        val freshState = MonitorDeviceStateLogic.buildRevalidatedState(
+            baseState = evaluatedState,
+            freshForegroundPackage = freshPackage,
+            freshForegroundAppName = if (freshPackage.isNotBlank()) getAppName(freshPackage) else "",
+            freshTodayDurationMs = freshDuration,
+            freshScreenContext = freshContext,
+            freshWifiSsid = freshWifi.first,
+            freshWifiConnected = freshWifi.second,
+            now = now
+        ) ?: return null
+
+        // 用最新状态重新执行条件评估（oldState 语义不变）；条件已不满足 → 取消
+        return if (evaluateConditions(conditions, freshState, oldState, task.id)) freshState else null
+    }
+
+    /**
+     * 获取当前前台应用包名：优先 AccessibilityService 活动窗口，兜底 UsageStats 最近前台事件。
+     * 返回 null 表示两个来源都不可用（调用方应视为关键状态获取失败）。
+     */
+    private fun queryFreshForegroundPackage(): String? {
+        rootInActiveWindow?.let { root ->
+            val pkg = root.packageName?.toString()
+            // 节点持有 native 资源，读取包名后立即回收
+            runCatching { root.recycle() }
+            if (!pkg.isNullOrBlank()) return pkg
+        }
+        return getForegroundPackageByUsageStats()
+    }
+
+    /**
+     * 一轮监视器检查内的屏幕扫描复用缓存：多个监视器命中且依赖屏幕文字时，
+     * 同一前台窗口只扫描一次。扫描失败（null）不缓存，逐个上报取消。
+     */
+    private class RoundScanCache {
+        private var cachedPackage: String? = null
+        private var cachedText: String = ""
+
+        fun getOrScan(packageName: String, scan: () -> String?): String? {
+            if (packageName == cachedPackage) return cachedText
+            val text = scan() ?: return null
+            cachedPackage = packageName
+            cachedText = text
+            return text
         }
     }
 
@@ -857,8 +1138,13 @@ class EvoliaMonitorService : AccessibilityService() {
         return if (s <= e) current in s..e else current >= s || current <= e
     }
 
-    private fun scanScreenContext(): String {
-        val rootNode = rootInActiveWindow ?: return ""
+    /**
+     * 扫描当前活动窗口的可见文字。
+     * 返回 null 表示扫描失败（无活动窗口），调用方不得把它当作"窗口无文字"处理；
+     * 返回空串表示扫描成功但窗口无可见文本。
+     */
+    private fun scanScreenContext(): String? {
+        val rootNode = rootInActiveWindow ?: return null
         val texts = mutableListOf<String>()
         val maxDepth = 60
         val stack = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
